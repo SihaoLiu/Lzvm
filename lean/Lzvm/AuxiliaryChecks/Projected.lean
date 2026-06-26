@@ -99,9 +99,8 @@ theorem runtime_performance_observation_auxiliary_projected_core_contracts
             publicInput
             proof
             observed)
-          (runtime_performance_observation_projects_metadata
+          (runtime_performance_observation_projects_proof_timing_batch
             summary
-            (fun summary => summary.proofTimingBatch)
             publicInput
             proof
             observed)

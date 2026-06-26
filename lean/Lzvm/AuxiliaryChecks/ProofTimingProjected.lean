@@ -108,7 +108,7 @@ theorem proof_timing_projected_core_contracts
         finishTiming
         publicInput
         proof ->
-      IgnoredMetadataObservedAcceptance
+      ProofTimingBatchObservedAcceptance
         system
         batchTiming
         publicInput
@@ -168,7 +168,7 @@ theorem proof_timing_projected_core_contracts
           proof
           finishObserved
       proofTimingBatch :=
-        proof_timing_projected_metadata_acceptance_verifier_core_contract
+        proof_timing_batch_acceptance_verifier_core_contract
           assumptions
           batchTiming
           publicInput
