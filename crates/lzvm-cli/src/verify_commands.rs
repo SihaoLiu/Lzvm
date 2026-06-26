@@ -690,6 +690,11 @@ fn verify_setup_validation(
         Some(matched) => matched,
         None => return 1,
     };
+    let all_pipeline_input_bindings_matched = pipeline_input_bindings_matched(
+        eth_block_input_binding.as_ref(),
+        program_image_cache_matched,
+        framed_guest_input_matched,
+    );
     let public_report = match validate_setup_preflight_from_files(
         command.setup_dir,
         command.proof_bin,
@@ -990,7 +995,6 @@ fn verify_setup_validation(
             }
         }
     }
-    let eth_block_input_matched = eth_block_input_binding.is_some();
     if let Some(binding) = eth_block_input_binding {
         write_eth_block_input_binding_summary(
             stdout,
@@ -1004,7 +1008,7 @@ fn verify_setup_validation(
     if framed_guest_input_matched {
         let _ = writeln!(stdout, "framed_guest_input_match=ok");
     }
-    if eth_block_input_matched && program_image_cache_matched && framed_guest_input_matched {
+    if all_pipeline_input_bindings_matched {
         let _ = writeln!(stdout, "pipeline_input_bindings=ok");
     }
     0
@@ -1230,6 +1234,14 @@ fn verify_framed_guest_input_binding(proof_bin: &str, input_data_path: &str) -> 
     Ok(())
 }
 
+fn pipeline_input_bindings_matched(
+    eth_block_input_binding: Option<&EthBlockInputBinding>,
+    program_image_cache_matched: bool,
+    framed_guest_input_matched: bool,
+) -> bool {
+    eth_block_input_binding.is_some() && program_image_cache_matched && framed_guest_input_matched
+}
+
 fn write_challenge_values_summary(
     stdout: &mut dyn Write,
     segment_count: usize,
@@ -1368,10 +1380,11 @@ pub(crate) fn write_contribution_binding_summary(
     if bindings.framed_guest_input_matched {
         let _ = writeln!(stdout, "framed_guest_input_match=ok");
     }
-    if has_eth_block_input_binding
-        && bindings.program_image_cache_matched
-        && bindings.framed_guest_input_matched
-    {
+    if pipeline_input_bindings_matched(
+        bindings.eth_block_input_binding.as_ref(),
+        bindings.program_image_cache_matched,
+        bindings.framed_guest_input_matched,
+    ) {
         let _ = writeln!(stdout, "pipeline_input_bindings=ok");
     }
 }

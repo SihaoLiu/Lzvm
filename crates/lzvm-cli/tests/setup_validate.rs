@@ -16827,6 +16827,7 @@ fn verifies_contribution_reports_bound_program_image_and_eth_block_input() {
     assert!(stdout_text.contains("program_image_cache_gpu_mode=cpu\n"));
     assert!(stdout_text.contains("program_image_cache_match=ok\n"));
     assert!(stdout_text.contains("framed_guest_input_match=ok\n"));
+    assert!(stdout_text.contains("pipeline_input_bindings=ok\n"));
     assert!(stdout_text.contains("eth_block_inputs=1\n"));
     assert!(stdout_text.contains(&format!(
         "eth_block_input_hash={}\n",
@@ -16885,7 +16886,9 @@ fn verifies_contribution_reports_bound_program_image_and_eth_block_input() {
             .len(),
     );
     assert!(writer_stdout_text.contains("framed_guest_input_match=ok\n"));
+    assert!(writer_stdout_text.contains("pipeline_input_bindings=ok\n"));
     assert!(challenge_stdout_text.contains("framed_guest_input_match=ok\n"));
+    assert!(challenge_stdout_text.contains("pipeline_input_bindings=ok\n"));
     assert!(stdout_text.contains(&format!(
         "contribution_challenge={},{},{}\n",
         expected_challenge.c0.to_u64(),
@@ -17561,6 +17564,7 @@ fn verifies_contribution_set_with_external_program_image_and_eth_block_bindings(
     assert!(stdout_text.contains("eth_block_input_match=ok\n"));
     assert!(stdout_text.contains("program_image_cache_match=ok\n"));
     assert!(stdout_text.contains("framed_guest_input_match=ok\n"));
+    assert!(stdout_text.contains("pipeline_input_bindings=ok\n"));
     assert!(stdout_text.contains(&format!(
         "contribution_challenge={},{},{}\n",
         expected_challenge.c0.to_u64(),
