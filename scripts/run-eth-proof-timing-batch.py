@@ -1257,6 +1257,22 @@ def self_test() -> None:
             raise SystemExit("self-test batch directory missing")
         batch_dir = batch_dirs[0]
         batch_json = json.loads((batch_dir / "batch.json").read_text(encoding="utf-8"))
+        expected_spread = {
+            "small_stable_spread_s": 0.002,
+            "large_stable_spread_s": 0.002,
+            "small_stable_relative_spread": 0.001996,
+            "large_stable_relative_spread": 0.000999,
+        }
+        for key, value in expected_spread.items():
+            if batch_json.get(key) != value:
+                raise SystemExit(f"self-test {key} mismatch in batch json")
+        expected_samples = {
+            "small_stable_timing_s": [1.001, 1.002, 1.003],
+            "large_stable_timing_s": [2.001, 2.002, 2.003],
+        }
+        for key, value in expected_samples.items():
+            if batch_json.get(key) != value:
+                raise SystemExit(f"self-test {key} mismatch in batch json")
         for key, name in [
             ("small_stable_timing_summary", "small-stable.proof-timing-summary.csv"),
             ("large_stable_timing_summary", "large-stable.proof-timing-summary.csv"),

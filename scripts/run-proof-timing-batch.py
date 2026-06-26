@@ -968,6 +968,18 @@ def self_test() -> None:
         stable_summary_text = stable_summary.read_text(encoding="utf-8")
         if "aggregate,total_count,valid_total_count" not in stable_summary_text:
             raise SystemExit("self-test stable timing summary missing aggregate row")
+        batch_payload = json.loads((batch_dir / "batch.json").read_text(encoding="utf-8"))
+        for key in [
+            "small_stable_spread_s",
+            "large_stable_spread_s",
+            "small_stable_relative_spread",
+            "large_stable_relative_spread",
+        ]:
+            if batch_payload.get(key) != 0.0:
+                raise SystemExit(f"self-test batch json {key} should be zero")
+        for key in ["small_stable_timing_s", "large_stable_timing_s"]:
+            if batch_payload.get(key) != [1.0, 1.0, 1.0]:
+                raise SystemExit(f"self-test batch json {key} should record samples")
     finally:
         shutil.rmtree(work_dir, ignore_errors=True)
 
