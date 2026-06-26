@@ -307,9 +307,8 @@ impl<'a> SegmentReader<'a> {
                 available: self.bytes.len(),
             });
         }
-        let out = self.bytes[self.offset..end]
-            .try_into()
-            .expect("slice length checked");
+        let mut out = [0_u8; N];
+        out.copy_from_slice(&self.bytes[self.offset..end]);
         self.offset = end;
         Ok(out)
     }
