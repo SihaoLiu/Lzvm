@@ -152,6 +152,25 @@ def RuntimeProofArtifactBindingCheckedAcceptance
     (proof : Proof) : Prop :=
   validation.artifactBindingAccepted artifact publicInput proof
 
+def RuntimeProofArtifactFinalized
+    (system : VerifierModel)
+    (validation : RuntimeProofArtifactBindingValidation system)
+    (artifact : RuntimeArtifact)
+    (publicInput : PublicInput)
+    (proof : Proof) : Prop :=
+  RuntimeProofArtifactBindingCheckedAcceptance
+      system
+      validation
+      artifact
+      publicInput
+      proof
+    /\ RuntimeProofArtifactBindingStructuralObligations
+      system
+      validation
+      artifact
+      publicInput
+      proof
+
 theorem runtime_proof_artifact_binding_checked_acceptance_evidence
     {system : VerifierModel}
     (validation : RuntimeProofArtifactBindingValidation system) :
@@ -463,6 +482,70 @@ theorem runtime_proof_artifact_binding_checked_acceptance_structural_obligations
                   publicInput
                   proof
                   accepted))))))
+
+theorem runtime_proof_artifact_finalized_from_checked_acceptance
+    {system : VerifierModel}
+    (validation : RuntimeProofArtifactBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeProofArtifactBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeProofArtifactFinalized
+          system
+          validation
+          artifact
+          publicInput
+          proof := by
+  intro artifact publicInput proof accepted
+  exact
+    And.intro accepted
+      (runtime_proof_artifact_binding_checked_acceptance_structural_obligations
+        validation
+        artifact
+        publicInput
+        proof
+        accepted)
+
+theorem runtime_proof_artifact_finalized_structural_obligations
+    {system : VerifierModel}
+    (validation : RuntimeProofArtifactBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeProofArtifactFinalized
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeProofArtifactBindingStructuralObligations
+          system
+          validation
+          artifact
+          publicInput
+          proof := by
+  intro artifact publicInput proof finalized
+  exact finalized.right
+
+theorem runtime_proof_artifact_finalized_checked_acceptance
+    {system : VerifierModel}
+    (validation : RuntimeProofArtifactBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeProofArtifactFinalized
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeProofArtifactBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof := by
+  intro artifact publicInput proof finalized
+  exact finalized.left
 
 theorem runtime_proof_artifact_binding_checked_acceptance_obligations
     {system : VerifierModel}

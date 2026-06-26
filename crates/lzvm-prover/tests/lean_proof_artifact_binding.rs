@@ -12,6 +12,9 @@ fn lean_proof_artifact_binding_exports_core_contract_projection() {
     let top_level_path = crate_root.join("../../lean/Lzvm.lean");
     let top_level_source =
         std::fs::read_to_string(&top_level_path).expect("Lean top-level source should read");
+    let proof_artifact_path = crate_root.join("src/proof_artifact.rs");
+    let proof_artifact_source =
+        std::fs::read_to_string(&proof_artifact_path).expect("proof artifact source should read");
 
     assert!(
         top_level_source.contains("import Lzvm.ProofArtifactBinding"),
@@ -30,6 +33,7 @@ fn lean_proof_artifact_binding_exports_core_contract_projection() {
             && lean_source.contains("proofSegmentIdsAllowed")
             && lean_source.contains("proofSegmentIdsUnique")
             && lean_source.contains("proofUnitValuesTraceIdentityCoverage")
+            && lean_source.contains("RuntimeProofArtifactFinalized")
             && lean_source.contains("SoundWitness system publicInput proof"),
         "Lean proof artifact binding should expose checked soundness and verifier core projection"
     );
@@ -45,6 +49,9 @@ fn lean_proof_artifact_binding_exports_core_contract_projection() {
             "runtime_proof_artifact_binding_checked_acceptance_segment_ids_unique",
             "runtime_proof_artifact_binding_checked_acceptance_unit_values_trace_identity_coverage",
             "runtime_proof_artifact_binding_checked_acceptance_structural_obligations",
+            "runtime_proof_artifact_finalized_from_checked_acceptance",
+            "runtime_proof_artifact_finalized_structural_obligations",
+            "runtime_proof_artifact_finalized_checked_acceptance",
             "runtime_proof_artifact_binding_checked_acceptance_sound",
             "runtime_proof_artifact_binding_checked_acceptance_full_contract",
             "runtime_proof_artifact_binding_checked_acceptance_verifier_core_contract",
@@ -100,6 +107,24 @@ fn lean_proof_artifact_binding_exports_core_contract_projection() {
     );
     lean_binding::assert_theorem_body_contains(
         &lean_source,
+        "runtime_proof_artifact_finalized_from_checked_acceptance",
+        &[
+            "And.intro accepted",
+            "runtime_proof_artifact_binding_checked_acceptance_structural_obligations",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_proof_artifact_finalized_structural_obligations",
+        &["finalized.right"],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_proof_artifact_finalized_checked_acceptance",
+        &["finalized.left"],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
         "runtime_proof_artifact_binding_checked_acceptance_sound",
         &[
             "runtime_proof_artifact_binding_checked_acceptance_obligations",
@@ -132,5 +157,11 @@ fn lean_proof_artifact_binding_exports_core_contract_projection() {
             "sound_witness_implies_verifier_core_contract",
             "abstract_verifier_sound",
         ],
+    );
+    assert!(
+        proof_artifact_source.contains("fn finish_proof_artifact(proof: ProofArtifact)")
+            && proof_artifact_source.contains("validate_proof_artifact(&proof)")
+            && proof_artifact_source.matches("finish_proof_artifact(").count() >= 8,
+        "Rust proof artifact builders should finalize constructed artifacts through invariant validation"
     );
 }
