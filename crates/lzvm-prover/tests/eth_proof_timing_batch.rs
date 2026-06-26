@@ -911,6 +911,47 @@ fn eth_proof_timing_batch_combined_check_requires_profile_tools() {
 }
 
 #[test]
+fn eth_proof_timing_batch_check_env_does_not_require_profile_tools_by_default() {
+    let fixture = ProofFixture::new("eth-proof-timing-batch-env-check-missing-tool");
+    let profile_dir = fixture.dir.join("profiles");
+    let mut command = Command::new(script_path());
+    command
+        .arg("--suite")
+        .arg("small")
+        .arg("--check-env")
+        .arg("--profile-output-dir")
+        .arg(&profile_dir)
+        .arg("--nsys-command")
+        .arg(fixture.dir.join("missing-nsys"));
+    fixture.apply_env(&mut command, SMALL_PREFIX);
+
+    let output = command
+        .output()
+        .expect("ETH proof timing batch proof-only env check should run");
+    let success = output.status.success();
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    let profile_created = profile_dir.exists();
+    fixture.cleanup();
+
+    assert!(
+        success,
+        "proof-only env check should not fail on a missing profiler: stderr={stderr}"
+    );
+    assert!(
+        stdout.contains("profile_tool=nsys\n")
+            && stdout.contains("nsys_profiler_status=missing\n")
+            && stdout.contains("status=ok\n")
+            && stdout.contains("small=ready\n"),
+        "proof-only env check should report missing profiler but still validate proof inputs: {stdout}"
+    );
+    assert!(
+        !profile_created,
+        "proof-only env check should not create profile output directories"
+    );
+}
+
+#[test]
 fn eth_proof_timing_batch_check_profile_tools_uses_env_profiler_command() {
     let fixture = ProofFixture::new("eth-proof-timing-batch-profile-tools-env");
     let profile_dir = fixture.dir.join("profiles");
