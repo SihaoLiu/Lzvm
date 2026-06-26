@@ -257,6 +257,8 @@ def positive_integer_env(raw: str, name: str) -> str:
 
 def validate_framed_input_data(path: Path, name: str) -> None:
     data = path.read_bytes()
+    if not data:
+        raise SystemExit(f"{name} framed input is invalid: empty input")
     offset = 0
     while offset < len(data):
         remaining = len(data) - offset

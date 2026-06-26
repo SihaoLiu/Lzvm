@@ -2489,6 +2489,33 @@ fn eth_proof_timing_batch_check_env_rejects_malformed_input_data() {
 }
 
 #[test]
+fn eth_proof_timing_batch_check_env_rejects_empty_input_data() {
+    let fixture = ProofFixture::new("eth-proof-timing-batch-empty-input-data");
+    std::fs::write(&fixture.input_data, []).expect("input fixture should update");
+    let mut command = Command::new(script_path());
+    command.arg("--suite").arg("small").arg("--check-env");
+    fixture.apply_env(&mut command, SMALL_PREFIX);
+
+    let output = command
+        .output()
+        .expect("ETH proof timing batch env check should run");
+    let success = output.status.success();
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    fixture.cleanup();
+
+    assert!(!success, "env check should reject empty framed input data");
+    assert!(
+        !stdout.contains("status=ok"),
+        "failed env check should not report ok: {stdout}"
+    );
+    assert!(
+        stderr.contains("_INPUT_DATA framed input is invalid: empty input"),
+        "env check should explain empty input data: stderr={stderr}"
+    );
+}
+
+#[test]
 fn eth_proof_timing_batch_ignores_legacy_tmp_dir_env() {
     let fixture = ProofFixture::new("eth-proof-timing-batch-legacy-tmp-env");
     let legacy_tmp = workspace_root().join(format!(
