@@ -2,6 +2,9 @@ use lzvm_artifacts::sectioned::{
     encode_sectioned_file, parse_sectioned_file, SectionedError, SectionedFile, SectionedSection,
 };
 
+const HEADER_BYTES: usize = 4 + 4 + 4;
+const SECTION_HEADER_BYTES: usize = 4 + 8;
+
 fn push_u32(out: &mut Vec<u8>, value: u32) {
     out.extend_from_slice(&value.to_le_bytes());
 }
@@ -88,6 +91,28 @@ fn rejects_section_count_that_exceeds_remaining_section_headers() {
 
     assert!(matches!(
         parse_sectioned_file(&bytes, *b"abcd", 1),
-        Err(SectionedError::LengthOverflow)
+        Err(SectionedError::UnexpectedEof {
+            offset: HEADER_BYTES,
+            needed: SECTION_HEADER_BYTES,
+            available: 0
+        })
+    ));
+}
+
+#[test]
+fn rejects_partial_section_headers() {
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(b"abcd");
+    push_u32(&mut bytes, 1);
+    push_u32(&mut bytes, 1);
+    push_u32(&mut bytes, 7);
+
+    assert!(matches!(
+        parse_sectioned_file(&bytes, *b"abcd", 1),
+        Err(SectionedError::UnexpectedEof {
+            offset: HEADER_BYTES,
+            needed: SECTION_HEADER_BYTES,
+            available: 4
+        })
     ));
 }

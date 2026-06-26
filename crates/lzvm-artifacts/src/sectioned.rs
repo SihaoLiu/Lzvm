@@ -124,9 +124,7 @@ pub fn parse_sectioned_file_ref<'a>(
     let section_count = reader.read_u32()?;
     let section_count =
         usize::try_from(section_count).map_err(|_| SectionedError::LengthOverflow)?;
-    if section_count > reader.remaining_len() / SECTION_HEADER_SIZE {
-        return Err(SectionedError::LengthOverflow);
-    }
+    reader.require_items(section_count, SECTION_HEADER_SIZE)?;
 
     let mut sections = Vec::with_capacity(section_count);
     for _ in 0..section_count {
@@ -206,10 +204,6 @@ impl<'a> Reader<'a> {
         self.offset
     }
 
-    fn remaining_len(&self) -> usize {
-        self.bytes.len() - self.offset
-    }
-
     fn read_exact(&mut self, count: usize) -> Result<&'a [u8], SectionedError> {
         let end = self
             .offset
@@ -225,6 +219,24 @@ impl<'a> Reader<'a> {
         let out = &self.bytes[self.offset..end];
         self.offset = end;
         Ok(out)
+    }
+
+    fn require_items(&self, count: usize, item_bytes: usize) -> Result<(), SectionedError> {
+        let needed = count
+            .checked_mul(item_bytes)
+            .ok_or(SectionedError::LengthOverflow)?;
+        let end = self
+            .offset
+            .checked_add(needed)
+            .ok_or(SectionedError::LengthOverflow)?;
+        if end > self.bytes.len() {
+            return Err(SectionedError::UnexpectedEof {
+                offset: self.offset,
+                needed,
+                available: self.bytes.len().saturating_sub(self.offset),
+            });
+        }
+        Ok(())
     }
 
     fn read_u32(&mut self) -> Result<u32, SectionedError> {
