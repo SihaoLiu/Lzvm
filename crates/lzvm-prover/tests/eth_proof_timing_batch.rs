@@ -235,7 +235,8 @@ fn eth_proof_timing_batch_dry_run_builds_small_command_from_env() {
         .arg("--path")
         .arg(fixture.dir.join("improve-log.csv"))
         .arg("--summary")
-        .arg("dry run");
+        .arg("dry run")
+        .env_remove("CUDA_VISIBLE_DEVICES");
     fixture.apply_env(&mut command, SMALL_PREFIX);
 
     let output = command
@@ -327,6 +328,10 @@ fn eth_proof_timing_batch_dry_run_builds_small_command_from_env() {
     assert!(
         stdout.contains("TMPDIR={tmp_dir}"),
         "small command should use the per-run temp dir token: {stdout}"
+    );
+    assert!(
+        !stdout.contains("CUDA_VISIBLE_DEVICES="),
+        "dry-run command should not inject a GPU selector by default: {stdout}"
     );
     assert!(
         !stdout.contains(&fixture.shared_tmp_dir.display().to_string()),
@@ -1526,6 +1531,7 @@ fn eth_proof_timing_batch_env_file_configures_dry_run() {
                 "export {prefix}_INPUT_DATA='{input_data}'\n",
                 "export {prefix}_GUEST_IMAGE='{guest}'\n",
                 "export {prefix}_TRACE_LIMIT=42\n",
+                "export CUDA_VISIBLE_DEVICES=1,0\n",
             ),
             prefix = SMALL_PREFIX,
             bin = fixture.fake_bin.display(),
@@ -1564,7 +1570,11 @@ fn eth_proof_timing_batch_env_file_configures_dry_run() {
     assert!(
         stdout.contains("selected=small\n")
             && stdout.contains("small_mode=combined\n")
-            && stdout.contains("prove witness --guest-pc-trace 42 --timings"),
+            && stdout.contains("prove witness --guest-pc-trace 42 --timings")
+            && stdout.contains("TMPDIR={tmp_dir} CUDA_VISIBLE_DEVICES=1,0")
+            && stdout.matches("CUDA_VISIBLE_DEVICES=1,0").count() >= 2
+            && stdout.contains("&& env -u LZVM_GUEST_PC_TRACE_PARALLEL_LOWER")
+            && stdout.contains("verify proof --eth-block-input"),
         "env-file dry-run should load proof paths and trace limit: {stdout}"
     );
     assert_verify_required_text_args(&stdout, "env-file runner command");

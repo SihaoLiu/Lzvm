@@ -612,6 +612,12 @@ def append_cleared_pipeline_env(parts: list[str]) -> None:
         parts.extend(["-u", name])
 
 
+def append_cuda_visible_devices_assignment(parts: list[str]) -> None:
+    visible_devices = os.environ.get("CUDA_VISIBLE_DEVICES")
+    if visible_devices:
+        parts.append(shell_assign("CUDA_VISIBLE_DEVICES", visible_devices))
+
+
 def command_for_env(
     config: ProofEnv,
     mode: str,
@@ -627,6 +633,7 @@ def command_for_env(
     parts: list[str] = []
     append_cleared_pipeline_env(parts)
     parts.append("TMPDIR={tmp_dir}")
+    append_cuda_visible_devices_assignment(parts)
     for name, value in (mode_env or MODE_ENV[mode]).items():
         parts.append(shell_assign(name, value))
     parts.extend(
@@ -651,9 +658,10 @@ def command_for_env(
     if verify_proof:
         parts.append("&&")
         append_cleared_pipeline_env(parts)
+        parts.append("TMPDIR={tmp_dir}")
+        append_cuda_visible_devices_assignment(parts)
         parts.extend(
             [
-                "TMPDIR={tmp_dir}",
                 shell_arg(bin_path),
                 "verify",
                 "proof",
