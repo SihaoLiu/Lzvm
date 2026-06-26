@@ -402,11 +402,28 @@ def template_envs(args: argparse.Namespace, root: Path) -> list[tuple[ProofEnv, 
 
 
 def env_template_text(args: argparse.Namespace, root: Path) -> str:
+    visible_devices = os.environ.get("CUDA_VISIBLE_DEVICES")
     lines = [
         "# build default binary first:",
         f"# {DEFAULT_BIN_BUILD_COMMAND}",
         "",
     ]
+    if visible_devices:
+        lines.extend(
+            [
+                "# GPU selection captured from the current environment",
+                shell_export("CUDA_VISIBLE_DEVICES", visible_devices),
+                "",
+            ]
+        )
+    else:
+        lines.extend(
+            [
+                "# optional GPU selection for reproducible timing and profiling",
+                "# export CUDA_VISIBLE_DEVICES=0",
+                "",
+            ]
+        )
     for index, (config, mode) in enumerate(template_envs(args, root)):
         if index:
             lines.append("")

@@ -1225,7 +1225,8 @@ fn eth_proof_timing_batch_prints_env_template_without_config() {
     command
         .arg("--suite")
         .arg("small")
-        .arg("--print-env-template");
+        .arg("--print-env-template")
+        .env_remove("CUDA_VISIBLE_DEVICES");
     clear_env(&mut command, SMALL_PREFIX);
     clear_env(&mut command, LARGE_PREFIX);
 
@@ -1267,6 +1268,12 @@ fn eth_proof_timing_batch_prints_env_template_without_config() {
     assert!(
         stdout.contains("export LZVM_REAL_SMALL_PARITY_TRACE_LIMIT=120000000"),
         "small template should include optional trace limit default: {stdout}"
+    );
+    assert!(
+        stdout.contains("# optional GPU selection for reproducible timing and profiling")
+            && stdout.contains("# export CUDA_VISIBLE_DEVICES=0")
+            && !stdout.contains("\nexport CUDA_VISIBLE_DEVICES="),
+        "env template should document GPU selection without hiding devices by default: {stdout}"
     );
     assert!(
         !stdout.contains("LZVM_REAL_SMALL_PARITY_TMP_DIR"),
@@ -1352,7 +1359,8 @@ fn eth_proof_timing_batch_writes_env_template_under_temp() {
         .arg("--commit")
         .arg("&&")
         .arg("--write-env-template")
-        .arg(&template_path);
+        .arg(&template_path)
+        .env("CUDA_VISIBLE_DEVICES", "1,0");
     clear_env(&mut command, SMALL_PREFIX);
     clear_env(&mut command, LARGE_PREFIX);
 
@@ -1441,6 +1449,11 @@ fn eth_proof_timing_batch_writes_env_template_under_temp() {
         template.contains("# run with --small-mode pipeline")
             && template.contains("# run with --large-mode work-units"),
         "template should record selected modes: {template}"
+    );
+    assert!(
+        template.contains("# GPU selection captured from the current environment")
+            && template.contains("export CUDA_VISIBLE_DEVICES=1,0"),
+        "template should preserve explicit GPU selection for reproducible timing: {template}"
     );
     assert!(
         template.contains("export LZVM_REAL_SMALL_PARITY_SETUP=")
