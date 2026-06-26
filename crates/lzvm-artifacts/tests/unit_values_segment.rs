@@ -205,6 +205,28 @@ fn rejects_truncated_unit_values_segments() {
 }
 
 #[test]
+fn rejects_short_unit_values_magic() {
+    assert!(matches!(
+        parse_unit_values_segment(b"u"),
+        Err(UnitValuesSegmentError::UnexpectedEof {
+            needed: 4,
+            available: 1
+        })
+    ));
+}
+
+#[test]
+fn rejects_short_unit_values_count() {
+    assert!(matches!(
+        parse_unit_values_segment(b"uvs0\x01\0\0\0"),
+        Err(UnitValuesSegmentError::UnexpectedEof {
+            needed: 12,
+            available: 8
+        })
+    ));
+}
+
+#[test]
 fn rejects_unit_count_that_exceeds_remaining_unit_headers() {
     let result = parse_unit_values_segment(&segment_header(1));
 

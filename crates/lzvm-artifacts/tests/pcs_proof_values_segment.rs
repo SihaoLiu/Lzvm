@@ -119,3 +119,36 @@ fn rejects_trailing_pcs_proof_values_bytes() {
         Err(PcsProofValuesSegmentError::TrailingBytes { trailing: 1 })
     ));
 }
+
+#[test]
+fn rejects_short_pcs_proof_values_magic() {
+    assert!(matches!(
+        parse_pcs_proof_values_segment(b"p"),
+        Err(PcsProofValuesSegmentError::UnexpectedEof {
+            needed: 4,
+            available: 1
+        })
+    ));
+}
+
+#[test]
+fn rejects_short_pcs_proof_values_version() {
+    assert!(matches!(
+        parse_pcs_proof_values_segment(b"pvs0\x01\0"),
+        Err(PcsProofValuesSegmentError::UnexpectedEof {
+            needed: 8,
+            available: 6
+        })
+    ));
+}
+
+#[test]
+fn rejects_short_pcs_proof_values_count() {
+    assert!(matches!(
+        parse_pcs_proof_values_segment(b"pvs0\x01\0\0\0"),
+        Err(PcsProofValuesSegmentError::UnexpectedEof {
+            needed: 12,
+            available: 8
+        })
+    ));
+}

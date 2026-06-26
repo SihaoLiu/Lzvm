@@ -210,6 +210,28 @@ fn rejects_truncated_pcs_evaluation_segments() {
 }
 
 #[test]
+fn rejects_short_pcs_evaluation_magic() {
+    assert!(matches!(
+        parse_pcs_evaluation_segment(b"e"),
+        Err(PcsEvaluationSegmentError::UnexpectedEof {
+            needed: 4,
+            available: 1
+        })
+    ));
+}
+
+#[test]
+fn rejects_short_pcs_evaluation_count() {
+    assert!(matches!(
+        parse_pcs_evaluation_segment(b"evs0\x01\0\0\0"),
+        Err(PcsEvaluationSegmentError::UnexpectedEof {
+            needed: 12,
+            available: 8
+        })
+    ));
+}
+
+#[test]
 fn rejects_unit_count_that_exceeds_remaining_unit_headers() {
     assert!(matches!(
         parse_pcs_evaluation_segment(&segment_header(1)),

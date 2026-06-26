@@ -89,3 +89,36 @@ fn rejects_value_count_that_exceeds_remaining_extensions() {
         Err(GroupValuesSegmentError::LengthOverflow)
     ));
 }
+
+#[test]
+fn rejects_short_group_values_magic() {
+    assert!(matches!(
+        parse_group_values_segment(b"g"),
+        Err(GroupValuesSegmentError::UnexpectedEof {
+            needed: 4,
+            available: 1
+        })
+    ));
+}
+
+#[test]
+fn rejects_short_group_values_version() {
+    assert!(matches!(
+        parse_group_values_segment(b"gvs0\x01\0"),
+        Err(GroupValuesSegmentError::UnexpectedEof {
+            needed: 8,
+            available: 6
+        })
+    ));
+}
+
+#[test]
+fn rejects_short_group_values_count() {
+    assert!(matches!(
+        parse_group_values_segment(b"gvs0\x01\0\0\0"),
+        Err(GroupValuesSegmentError::UnexpectedEof {
+            needed: 12,
+            available: 8
+        })
+    ));
+}
