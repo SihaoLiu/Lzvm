@@ -2416,10 +2416,10 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         ],
     );
     for (lean_field, runner_key) in [
-        ("smallRunCount", "\"small_logs\""),
-        ("largeRunCount", "\"large_logs\""),
-        ("smallStableRunCount", "\"small_stable_logs\""),
-        ("largeStableRunCount", "\"large_stable_logs\""),
+        ("smallRunCount", "\"small_run_count\""),
+        ("largeRunCount", "\"large_run_count\""),
+        ("smallStableRunCount", "\"small_stable_run_count\""),
+        ("largeStableRunCount", "\"large_stable_run_count\""),
         ("smallStableAverageMilliseconds", "\"small_stable_avg_ms\""),
         ("largeStableAverageMilliseconds", "\"large_stable_avg_ms\""),
         (

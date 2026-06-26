@@ -677,12 +677,16 @@ def write_batch_json(
         "small_require_text": list(args.small_require_text or []),
         "large_require_text": list(args.large_require_text or []),
         "require_proof_output": args.require_proof_output,
+        "small_run_count": len(small_logs or []),
+        "large_run_count": len(large_logs or []),
         "small_logs": path_texts(small_logs or []),
         "large_logs": path_texts(large_logs or []),
         "small_timing_s": small_timing_s,
         "large_timing_s": large_timing_s,
         "small_timing_parse_failed_count": small_timing_parse_failed_count,
         "large_timing_parse_failed_count": large_timing_parse_failed_count,
+        "small_stable_run_count": len(small_stable_logs or []),
+        "large_stable_run_count": len(large_stable_logs or []),
         "small_stable_logs": path_texts(small_stable_logs or []),
         "large_stable_logs": path_texts(large_stable_logs or []),
         "small_stable_timing_s": small_stable_timing_s,
@@ -990,6 +994,15 @@ def self_test() -> None:
         for key in ["small_stable_avg_ms", "large_stable_avg_ms"]:
             if batch_payload.get(key) != 1000:
                 raise SystemExit(f"self-test batch json {key} should record milliseconds")
+        expected_counts = {
+            "small_run_count": 3,
+            "large_run_count": 3,
+            "small_stable_run_count": 3,
+            "large_stable_run_count": 3,
+        }
+        for key, value in expected_counts.items():
+            if batch_payload.get(key) != value:
+                raise SystemExit(f"self-test batch json {key} should record count")
         for key in ["small_stable_timing_s", "large_stable_timing_s"]:
             if batch_payload.get(key) != [1.0, 1.0, 1.0]:
                 raise SystemExit(f"self-test batch json {key} should record samples")

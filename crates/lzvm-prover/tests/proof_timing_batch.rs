@@ -224,6 +224,13 @@ fn proof_timing_batch_runs_commands_and_appends_stable_log() {
         "batch json should record the effective stable-run cap: {batch_json}"
     );
     assert!(
+        batch_json.contains("\"small_run_count\": 3")
+            && batch_json.contains("\"large_run_count\": 3")
+            && batch_json.contains("\"small_stable_run_count\": 3")
+            && batch_json.contains("\"large_stable_run_count\": 3"),
+        "batch json should record explicit run counts: {batch_json}"
+    );
+    assert!(
         batch_json.contains("\"small_command\": \"printf 'status=ok"),
         "batch json should record command templates: {batch_json}"
     );
@@ -454,6 +461,11 @@ fn proof_timing_batch_reruns_until_stable_sample_group() {
     assert!(
         batch_json.contains("\"runs\": 3") && batch_json.contains("\"max_runs\": 4"),
         "batch json should record the stable-run target and cap: {batch_json}"
+    );
+    assert!(
+        batch_json.contains("\"small_run_count\": 4")
+            && batch_json.contains("\"small_stable_run_count\": 3"),
+        "batch json should distinguish attempted and stable run counts: {batch_json}"
     );
     let stable_logs = batch_json
         .split("\"small_stable_logs\": [")
@@ -1324,6 +1336,11 @@ fn proof_timing_batch_records_logs_when_append_fails() {
     assert!(
         batch_json.contains("\"large_logs\": []"),
         "batch json should record no large logs when no large command ran: {batch_json}"
+    );
+    assert!(
+        batch_json.contains("\"large_run_count\": 0")
+            && batch_json.contains("\"large_stable_run_count\": 0"),
+        "batch json should record zero large counts when no large command ran: {batch_json}"
     );
     let append_stderr =
         std::fs::read_to_string(batch_dirs[0].join("append.stderr")).expect("append stderr read");

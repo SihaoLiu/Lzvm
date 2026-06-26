@@ -1334,6 +1334,15 @@ def self_test() -> None:
         for key, value in expected_averages.items():
             if batch_json.get(key) != value:
                 raise SystemExit(f"self-test {key} mismatch in batch json")
+        expected_counts = {
+            "small_run_count": 3,
+            "large_run_count": 3,
+            "small_stable_run_count": 3,
+            "large_stable_run_count": 3,
+        }
+        for key, value in expected_counts.items():
+            if batch_json.get(key) != value:
+                raise SystemExit(f"self-test {key} mismatch in batch json")
         expected_samples = {
             "small_stable_timing_s": [1.001, 1.002, 1.003],
             "large_stable_timing_s": [2.001, 2.002, 2.003],
