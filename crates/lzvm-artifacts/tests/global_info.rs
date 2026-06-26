@@ -155,7 +155,7 @@ fn rejects_air_group_count_that_exceeds_remaining_group_names() {
 
     assert!(matches!(
         parse_global_info(&bytes),
-        Err(GlobalInfoError::LengthOverflow)
+        Err(GlobalInfoError::UnexpectedEof { .. })
     ));
 }
 
@@ -168,7 +168,7 @@ fn rejects_air_section_count_that_exceeds_remaining_sections() {
 
     assert!(matches!(
         parse_global_info(&bytes),
-        Err(GlobalInfoError::LengthOverflow)
+        Err(GlobalInfoError::UnexpectedEof { .. })
     ));
 }
 
@@ -183,7 +183,7 @@ fn rejects_unit_count_that_exceeds_remaining_unit_records() {
 
     assert!(matches!(
         parse_global_info(&bytes),
-        Err(GlobalInfoError::LengthOverflow)
+        Err(GlobalInfoError::UnexpectedEof { .. })
     ));
 }
 
@@ -196,7 +196,7 @@ fn rejects_aggregation_group_count_that_exceeds_remaining_groups() {
 
     assert!(matches!(
         parse_global_info(&bytes),
-        Err(GlobalInfoError::LengthOverflow)
+        Err(GlobalInfoError::UnexpectedEof { .. })
     ));
 }
 
@@ -210,7 +210,7 @@ fn rejects_aggregation_entry_count_that_exceeds_remaining_entries() {
 
     assert!(matches!(
         parse_global_info(&bytes),
-        Err(GlobalInfoError::LengthOverflow)
+        Err(GlobalInfoError::UnexpectedEof { .. })
     ));
 }
 
@@ -222,7 +222,7 @@ fn rejects_challenge_count_that_exceeds_remaining_values() {
 
     assert!(matches!(
         parse_global_info(&bytes),
-        Err(GlobalInfoError::LengthOverflow)
+        Err(GlobalInfoError::UnexpectedEof { .. })
     ));
 }
 
@@ -235,7 +235,7 @@ fn rejects_proof_value_count_that_exceeds_remaining_values() {
 
     assert!(matches!(
         parse_global_info(&bytes),
-        Err(GlobalInfoError::LengthOverflow)
+        Err(GlobalInfoError::UnexpectedEof { .. })
     ));
 }
 
@@ -249,7 +249,7 @@ fn rejects_named_stage_value_count_that_exceeds_remaining_records() {
 
     assert!(matches!(
         parse_global_info(&bytes),
-        Err(GlobalInfoError::LengthOverflow)
+        Err(GlobalInfoError::UnexpectedEof { .. })
     ));
 }
 
@@ -267,7 +267,7 @@ fn rejects_named_stage_value_length_count_that_exceeds_remaining_lengths() {
 
     assert!(matches!(
         parse_global_info(&bytes),
-        Err(GlobalInfoError::LengthOverflow)
+        Err(GlobalInfoError::UnexpectedEof { .. })
     ));
 }
 
@@ -282,7 +282,7 @@ fn rejects_public_value_count_that_exceeds_remaining_records() {
 
     assert!(matches!(
         parse_global_info(&bytes),
-        Err(GlobalInfoError::LengthOverflow)
+        Err(GlobalInfoError::UnexpectedEof { .. })
     ));
 }
 
@@ -300,6 +300,6 @@ fn rejects_public_value_length_count_that_exceeds_remaining_lengths() {
 
     assert!(matches!(
         parse_global_info(&bytes),
-        Err(GlobalInfoError::LengthOverflow)
+        Err(GlobalInfoError::UnexpectedEof { .. })
     ));
 }
