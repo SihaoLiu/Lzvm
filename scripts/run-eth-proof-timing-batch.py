@@ -1243,6 +1243,41 @@ def self_test() -> None:
     work_dir = root / "temp" / f"eth-proof-timing-batch-self-test-{os.getpid()}"
     shutil.rmtree(work_dir, ignore_errors=True)
     work_dir.mkdir(parents=True)
+    empty_env = work_dir / "empty.env"
+    empty_env.write_text("", encoding="utf-8")
+    inherited_env = {
+        name: value
+        for name, value in os.environ.items()
+        if not name.startswith("LZVM_REAL_")
+        and name
+        not in {
+            "LZVM_NSYS_COMMAND",
+            "LZVM_NCU_COMMAND",
+            "LZVM_NVIDIA_SMI_COMMAND",
+        }
+    }
+    missing_result = subprocess.run(
+        [
+            sys.executable,
+            str(Path(__file__).resolve()),
+            "--suite",
+            "both",
+            "--env-file",
+            str(empty_env),
+            "--check-env",
+        ],
+        cwd=root,
+        env=inherited_env,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    if missing_result.returncode == 0:
+        raise SystemExit("self-test missing environment preflight should fail")
+    if "small proof environment is incomplete:" not in missing_result.stderr:
+        raise SystemExit("self-test missing small environment diagnostic")
+    if "large proof environment is incomplete:" not in missing_result.stderr:
+        raise SystemExit("self-test missing large environment diagnostic")
     fake_bin = work_dir / "fake-prover.py"
     fake_bin.write_text(
         "\n".join(
