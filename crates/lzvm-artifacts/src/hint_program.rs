@@ -462,25 +462,19 @@ fn parse_hint_section(
 ) -> Result<HintProgram, HintProgramError> {
     let mut reader = Reader::new(bytes);
     let hint_count = u32_to_usize(reader.read_u32()?)?;
-    if hint_count > reader.remaining_len() / HINT_MIN_BYTES {
-        return Err(HintProgramError::LengthOverflow);
-    }
+    reader.require_items(hint_count, HINT_MIN_BYTES)?;
     let mut hints = Vec::with_capacity(hint_count);
 
     for _ in 0..hint_count {
         let name = reader.read_string()?;
         let field_count = u32_to_usize(reader.read_u32()?)?;
-        if field_count > reader.remaining_len() / FIELD_MIN_BYTES {
-            return Err(HintProgramError::LengthOverflow);
-        }
+        reader.require_items(field_count, FIELD_MIN_BYTES)?;
         let mut fields = Vec::with_capacity(field_count);
 
         for _ in 0..field_count {
             let name = reader.read_string()?;
             let value_count = u32_to_usize(reader.read_u32()?)?;
-            if value_count > reader.remaining_len() / VALUE_MIN_BYTES {
-                return Err(HintProgramError::LengthOverflow);
-            }
+            reader.require_items(value_count, VALUE_MIN_BYTES)?;
             let mut values = Vec::with_capacity(value_count);
 
             for value_index in 0..value_count {
@@ -584,9 +578,7 @@ fn read_hint_value(
     };
 
     let position_count = u32_to_usize(reader.read_u32()?)?;
-    if position_count > reader.remaining_len() / POSITION_BYTES {
-        return Err(HintProgramError::LengthOverflow);
-    }
+    reader.require_items(position_count, POSITION_BYTES)?;
     let mut positions = Vec::with_capacity(position_count);
     for _ in 0..position_count {
         positions.push(reader.read_u32()?);
@@ -810,10 +802,6 @@ impl<'a> Reader<'a> {
         self.offset
     }
 
-    fn remaining_len(&self) -> usize {
-        self.bytes.len() - self.offset
-    }
-
     fn read_exact(&mut self, count: usize) -> Result<&'a [u8], HintProgramError> {
         let end = self
             .offset
@@ -829,6 +817,24 @@ impl<'a> Reader<'a> {
         let out = &self.bytes[self.offset..end];
         self.offset = end;
         Ok(out)
+    }
+
+    fn require_items(&self, count: usize, item_bytes: usize) -> Result<(), HintProgramError> {
+        let needed = count
+            .checked_mul(item_bytes)
+            .ok_or(HintProgramError::LengthOverflow)?;
+        let end = self
+            .offset
+            .checked_add(needed)
+            .ok_or(HintProgramError::LengthOverflow)?;
+        if end > self.bytes.len() {
+            return Err(HintProgramError::UnexpectedEof {
+                offset: self.offset,
+                needed,
+                available: self.bytes.len().saturating_sub(self.offset),
+            });
+        }
+        Ok(())
     }
 
     fn read_u32(&mut self) -> Result<u32, HintProgramError> {

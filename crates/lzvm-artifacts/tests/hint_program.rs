@@ -625,7 +625,7 @@ fn rejects_unknown_hint_operands() {
 fn rejects_truncated_hint_sections() {
     assert!(matches!(
         parse_regular_hint_program(&truncated_hint_file()),
-        Err(HintProgramError::LengthOverflow)
+        Err(HintProgramError::UnexpectedEof { .. })
     ));
 }
 
@@ -633,7 +633,7 @@ fn rejects_truncated_hint_sections() {
 fn rejects_hint_count_that_exceeds_remaining_hint_records() {
     assert!(matches!(
         parse_regular_hint_program(&hint_count_file(1)),
-        Err(HintProgramError::LengthOverflow)
+        Err(HintProgramError::UnexpectedEof { .. })
     ));
 }
 
@@ -641,7 +641,7 @@ fn rejects_hint_count_that_exceeds_remaining_hint_records() {
 fn rejects_field_count_that_exceeds_remaining_field_records() {
     assert!(matches!(
         parse_regular_hint_program(&field_count_file(1)),
-        Err(HintProgramError::LengthOverflow)
+        Err(HintProgramError::UnexpectedEof { .. })
     ));
 }
 
@@ -649,7 +649,7 @@ fn rejects_field_count_that_exceeds_remaining_field_records() {
 fn rejects_value_count_that_exceeds_remaining_value_records() {
     assert!(matches!(
         parse_regular_hint_program(&value_count_file(1)),
-        Err(HintProgramError::LengthOverflow)
+        Err(HintProgramError::UnexpectedEof { .. })
     ));
 }
 
@@ -657,7 +657,7 @@ fn rejects_value_count_that_exceeds_remaining_value_records() {
 fn rejects_position_count_that_exceeds_remaining_positions() {
     assert!(matches!(
         parse_regular_hint_program(&position_count_file(1)),
-        Err(HintProgramError::LengthOverflow)
+        Err(HintProgramError::UnexpectedEof { .. })
     ));
 }
 
