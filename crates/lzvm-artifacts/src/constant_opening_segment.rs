@@ -241,9 +241,7 @@ pub fn parse_constant_opening_segment(
         return Err(ConstantOpeningSegmentError::EmptyUnits);
     }
     let unit_header_bytes = unit_header_bytes(version)?;
-    if unit_count > reader.remaining_len() / unit_header_bytes {
-        return Err(ConstantOpeningSegmentError::LengthOverflow);
-    }
+    reader.require_items(unit_count, unit_header_bytes)?;
 
     let mut units = Vec::with_capacity(unit_count);
     for _ in 0..unit_count {
@@ -255,9 +253,7 @@ pub fn parse_constant_opening_segment(
         };
         let query_count = usize::try_from(reader.read_u32()?)
             .map_err(|_| ConstantOpeningSegmentError::LengthOverflow)?;
-        if query_count > reader.remaining_len() / QUERY_HEADER_BYTES {
-            return Err(ConstantOpeningSegmentError::LengthOverflow);
-        }
+        reader.require_items(query_count, QUERY_HEADER_BYTES)?;
         let mut queries = Vec::with_capacity(query_count);
         for _ in 0..query_count {
             let row_index = reader.read_u64()?;
@@ -265,23 +261,17 @@ pub fn parse_constant_opening_segment(
                 .map_err(|_| ConstantOpeningSegmentError::LengthOverflow)?;
             let level_count = usize::try_from(reader.read_u32()?)
                 .map_err(|_| ConstantOpeningSegmentError::LengthOverflow)?;
-            if value_count > reader.remaining_len() / WORD_BYTES {
-                return Err(ConstantOpeningSegmentError::LengthOverflow);
-            }
+            reader.require_items(value_count, WORD_BYTES)?;
             let mut values = Vec::with_capacity(value_count);
             for _ in 0..value_count {
                 values.push(reader.read_u64()?);
             }
-            if level_count > reader.remaining_len() / LEVEL_HEADER_BYTES {
-                return Err(ConstantOpeningSegmentError::LengthOverflow);
-            }
+            reader.require_items(level_count, LEVEL_HEADER_BYTES)?;
             let mut siblings = Vec::with_capacity(level_count);
             for _ in 0..level_count {
                 let sibling_count = usize::try_from(reader.read_u32()?)
                     .map_err(|_| ConstantOpeningSegmentError::LengthOverflow)?;
-                if sibling_count > reader.remaining_len() / DIGEST_BYTES {
-                    return Err(ConstantOpeningSegmentError::LengthOverflow);
-                }
+                reader.require_items(sibling_count, DIGEST_BYTES)?;
                 let mut level = Vec::with_capacity(sibling_count);
                 for _ in 0..sibling_count {
                     let mut digest = [0_u64; DIGEST_WORDS];
@@ -475,8 +465,25 @@ impl<'a> SegmentReader<'a> {
         Ok(out)
     }
 
-    fn remaining_len(&self) -> usize {
-        self.bytes.len() - self.offset
+    fn require_items(
+        &self,
+        count: usize,
+        item_bytes: usize,
+    ) -> Result<(), ConstantOpeningSegmentError> {
+        let needed_bytes = count
+            .checked_mul(item_bytes)
+            .ok_or(ConstantOpeningSegmentError::LengthOverflow)?;
+        let needed = self
+            .offset
+            .checked_add(needed_bytes)
+            .ok_or(ConstantOpeningSegmentError::LengthOverflow)?;
+        if needed > self.bytes.len() {
+            return Err(ConstantOpeningSegmentError::UnexpectedEof {
+                needed,
+                available: self.bytes.len(),
+            });
+        }
+        Ok(())
     }
 
     fn finish(&self) -> Result<(), ConstantOpeningSegmentError> {

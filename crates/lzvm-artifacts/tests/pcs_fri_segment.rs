@@ -338,7 +338,7 @@ fn rejects_truncated_pcs_fri_opening_segments() {
 fn rejects_unit_count_that_exceeds_remaining_unit_headers() {
     assert!(matches!(
         parse_pcs_fri_opening_segment(&segment_header(1)),
-        Err(PcsFriOpeningSegmentError::LengthOverflow)
+        Err(PcsFriOpeningSegmentError::UnexpectedEof { .. })
     ));
 }
 
@@ -351,7 +351,7 @@ fn rejects_final_count_that_exceeds_remaining_extensions() {
 
     assert!(matches!(
         parse_pcs_fri_opening_segment(&bytes),
-        Err(PcsFriOpeningSegmentError::LengthOverflow)
+        Err(PcsFriOpeningSegmentError::UnexpectedEof { .. })
     ));
 }
 
@@ -365,7 +365,7 @@ fn rejects_v2_final_count_that_exceeds_remaining_extensions() {
 
     assert!(matches!(
         parse_pcs_fri_opening_segment(&bytes),
-        Err(PcsFriOpeningSegmentError::LengthOverflow)
+        Err(PcsFriOpeningSegmentError::UnexpectedEof { .. })
     ));
 }
 
@@ -379,7 +379,7 @@ fn rejects_layer_count_that_exceeds_remaining_layer_headers() {
 
     assert!(matches!(
         parse_pcs_fri_opening_segment(&bytes),
-        Err(PcsFriOpeningSegmentError::LengthOverflow)
+        Err(PcsFriOpeningSegmentError::UnexpectedEof { .. })
     ));
 }
 
@@ -397,7 +397,7 @@ fn rejects_last_level_count_that_exceeds_remaining_digests() {
 
     assert!(matches!(
         parse_pcs_fri_opening_segment(&bytes),
-        Err(PcsFriOpeningSegmentError::LengthOverflow)
+        Err(PcsFriOpeningSegmentError::UnexpectedEof { .. })
     ));
 }
 
@@ -415,7 +415,7 @@ fn rejects_query_count_that_exceeds_remaining_query_headers() {
 
     assert!(matches!(
         parse_pcs_fri_opening_segment(&bytes),
-        Err(PcsFriOpeningSegmentError::LengthOverflow)
+        Err(PcsFriOpeningSegmentError::UnexpectedEof { .. })
     ));
 }
 
@@ -436,7 +436,7 @@ fn rejects_value_count_that_exceeds_remaining_extensions() {
 
     assert!(matches!(
         parse_pcs_fri_opening_segment(&bytes),
-        Err(PcsFriOpeningSegmentError::LengthOverflow)
+        Err(PcsFriOpeningSegmentError::UnexpectedEof { .. })
     ));
 }
 
@@ -458,7 +458,7 @@ fn rejects_level_count_that_exceeds_remaining_level_headers() {
 
     assert!(matches!(
         parse_pcs_fri_opening_segment(&bytes),
-        Err(PcsFriOpeningSegmentError::LengthOverflow)
+        Err(PcsFriOpeningSegmentError::UnexpectedEof { .. })
     ));
 }
 
@@ -481,6 +481,6 @@ fn rejects_sibling_count_that_exceeds_remaining_digests() {
 
     assert!(matches!(
         parse_pcs_fri_opening_segment(&bytes),
-        Err(PcsFriOpeningSegmentError::LengthOverflow)
+        Err(PcsFriOpeningSegmentError::UnexpectedEof { .. })
     ));
 }

@@ -230,7 +230,7 @@ fn rejects_truncated_witness_opening_segments() {
 fn rejects_unit_count_that_exceeds_remaining_unit_headers() {
     assert!(matches!(
         parse_witness_opening_segment(&segment_header(1)),
-        Err(WitnessOpeningSegmentError::LengthOverflow)
+        Err(WitnessOpeningSegmentError::UnexpectedEof { .. })
     ));
 }
 
@@ -242,7 +242,7 @@ fn rejects_query_count_that_exceeds_remaining_query_headers() {
 
     assert!(matches!(
         parse_witness_opening_segment(&bytes),
-        Err(WitnessOpeningSegmentError::LengthOverflow)
+        Err(WitnessOpeningSegmentError::UnexpectedEof { .. })
     ));
 }
 
@@ -255,7 +255,7 @@ fn rejects_v2_query_count_that_exceeds_remaining_query_headers() {
 
     assert!(matches!(
         parse_witness_opening_segment(&bytes),
-        Err(WitnessOpeningSegmentError::LengthOverflow)
+        Err(WitnessOpeningSegmentError::UnexpectedEof { .. })
     ));
 }
 
@@ -269,7 +269,7 @@ fn rejects_stage_count_that_exceeds_remaining_stage_headers() {
 
     assert!(matches!(
         parse_witness_opening_segment(&bytes),
-        Err(WitnessOpeningSegmentError::LengthOverflow)
+        Err(WitnessOpeningSegmentError::UnexpectedEof { .. })
     ));
 }
 
@@ -286,7 +286,7 @@ fn rejects_value_count_that_exceeds_remaining_words() {
 
     assert!(matches!(
         parse_witness_opening_segment(&bytes),
-        Err(WitnessOpeningSegmentError::LengthOverflow)
+        Err(WitnessOpeningSegmentError::UnexpectedEof { .. })
     ));
 }
 
@@ -304,7 +304,7 @@ fn rejects_level_count_that_exceeds_remaining_level_headers() {
 
     assert!(matches!(
         parse_witness_opening_segment(&bytes),
-        Err(WitnessOpeningSegmentError::LengthOverflow)
+        Err(WitnessOpeningSegmentError::UnexpectedEof { .. })
     ));
 }
 
@@ -323,6 +323,6 @@ fn rejects_sibling_count_that_exceeds_remaining_digests() {
 
     assert!(matches!(
         parse_witness_opening_segment(&bytes),
-        Err(WitnessOpeningSegmentError::LengthOverflow)
+        Err(WitnessOpeningSegmentError::UnexpectedEof { .. })
     ));
 }

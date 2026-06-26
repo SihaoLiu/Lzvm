@@ -362,9 +362,7 @@ pub fn parse_pcs_fri_opening_segment(
         return Err(PcsFriOpeningSegmentError::EmptyUnits);
     }
     let unit_header_bytes = unit_header_bytes(version)?;
-    if unit_count > reader.remaining_len() / unit_header_bytes {
-        return Err(PcsFriOpeningSegmentError::LengthOverflow);
-    }
+    reader.require_items(unit_count, unit_header_bytes)?;
 
     let mut units = Vec::with_capacity(unit_count);
     for _ in 0..unit_count {
@@ -378,16 +376,12 @@ pub fn parse_pcs_fri_opening_segment(
             .map_err(|_| PcsFriOpeningSegmentError::LengthOverflow)?;
         let final_count = usize::try_from(reader.read_u32()?)
             .map_err(|_| PcsFriOpeningSegmentError::LengthOverflow)?;
-        if final_count > reader.remaining_len() / EXTENSION_BYTES {
-            return Err(PcsFriOpeningSegmentError::LengthOverflow);
-        }
+        reader.require_items(final_count, EXTENSION_BYTES)?;
         let mut final_polynomial = Vec::with_capacity(final_count);
         for _ in 0..final_count {
             final_polynomial.push(reader.read_extension()?);
         }
-        if layer_count > reader.remaining_len() / LAYER_HEADER_BYTES {
-            return Err(PcsFriOpeningSegmentError::LengthOverflow);
-        }
+        reader.require_items(layer_count, LAYER_HEADER_BYTES)?;
         let mut layers = Vec::with_capacity(layer_count);
         for _ in 0..layer_count {
             let layer_index = reader.read_u32()?;
@@ -396,16 +390,12 @@ pub fn parse_pcs_fri_opening_segment(
                 .map_err(|_| PcsFriOpeningSegmentError::LengthOverflow)?;
             let query_count = usize::try_from(reader.read_u32()?)
                 .map_err(|_| PcsFriOpeningSegmentError::LengthOverflow)?;
-            if last_level_count > reader.remaining_len() / ROOT_BYTES {
-                return Err(PcsFriOpeningSegmentError::LengthOverflow);
-            }
+            reader.require_items(last_level_count, ROOT_BYTES)?;
             let mut last_level = Vec::with_capacity(last_level_count);
             for _ in 0..last_level_count {
                 last_level.push(reader.read_digest()?);
             }
-            if query_count > reader.remaining_len() / QUERY_HEADER_BYTES {
-                return Err(PcsFriOpeningSegmentError::LengthOverflow);
-            }
+            reader.require_items(query_count, QUERY_HEADER_BYTES)?;
             let mut queries = Vec::with_capacity(query_count);
             for _ in 0..query_count {
                 let row_index = reader.read_u64()?;
@@ -413,23 +403,17 @@ pub fn parse_pcs_fri_opening_segment(
                     .map_err(|_| PcsFriOpeningSegmentError::LengthOverflow)?;
                 let level_count = usize::try_from(reader.read_u32()?)
                     .map_err(|_| PcsFriOpeningSegmentError::LengthOverflow)?;
-                if value_count > reader.remaining_len() / EXTENSION_BYTES {
-                    return Err(PcsFriOpeningSegmentError::LengthOverflow);
-                }
+                reader.require_items(value_count, EXTENSION_BYTES)?;
                 let mut values = Vec::with_capacity(value_count);
                 for _ in 0..value_count {
                     values.push(reader.read_extension()?);
                 }
-                if level_count > reader.remaining_len() / LEVEL_HEADER_BYTES {
-                    return Err(PcsFriOpeningSegmentError::LengthOverflow);
-                }
+                reader.require_items(level_count, LEVEL_HEADER_BYTES)?;
                 let mut siblings = Vec::with_capacity(level_count);
                 for _ in 0..level_count {
                     let sibling_count = usize::try_from(reader.read_u32()?)
                         .map_err(|_| PcsFriOpeningSegmentError::LengthOverflow)?;
-                    if sibling_count > reader.remaining_len() / ROOT_BYTES {
-                        return Err(PcsFriOpeningSegmentError::LengthOverflow);
-                    }
+                    reader.require_items(sibling_count, ROOT_BYTES)?;
                     let mut level = Vec::with_capacity(sibling_count);
                     for _ in 0..sibling_count {
                         level.push(reader.read_digest()?);
@@ -727,8 +711,25 @@ impl<'a> SegmentReader<'a> {
         Ok(out)
     }
 
-    fn remaining_len(&self) -> usize {
-        self.bytes.len() - self.offset
+    fn require_items(
+        &self,
+        count: usize,
+        item_bytes: usize,
+    ) -> Result<(), PcsFriOpeningSegmentError> {
+        let needed_bytes = count
+            .checked_mul(item_bytes)
+            .ok_or(PcsFriOpeningSegmentError::LengthOverflow)?;
+        let needed = self
+            .offset
+            .checked_add(needed_bytes)
+            .ok_or(PcsFriOpeningSegmentError::LengthOverflow)?;
+        if needed > self.bytes.len() {
+            return Err(PcsFriOpeningSegmentError::UnexpectedEof {
+                needed,
+                available: self.bytes.len(),
+            });
+        }
+        Ok(())
     }
 
     fn finish(&self) -> Result<(), PcsFriOpeningSegmentError> {

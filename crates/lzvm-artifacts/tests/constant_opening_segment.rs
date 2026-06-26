@@ -232,7 +232,7 @@ fn rejects_truncated_constant_opening_segments() {
 fn rejects_unit_count_that_exceeds_remaining_unit_headers() {
     assert!(matches!(
         parse_constant_opening_segment(&segment_header(1)),
-        Err(ConstantOpeningSegmentError::LengthOverflow)
+        Err(ConstantOpeningSegmentError::UnexpectedEof { .. })
     ));
 }
 
@@ -244,7 +244,7 @@ fn rejects_query_count_that_exceeds_remaining_query_headers() {
 
     assert!(matches!(
         parse_constant_opening_segment(&bytes),
-        Err(ConstantOpeningSegmentError::LengthOverflow)
+        Err(ConstantOpeningSegmentError::UnexpectedEof { .. })
     ));
 }
 
@@ -257,7 +257,7 @@ fn rejects_v2_query_count_that_exceeds_remaining_query_headers() {
 
     assert!(matches!(
         parse_constant_opening_segment(&bytes),
-        Err(ConstantOpeningSegmentError::LengthOverflow)
+        Err(ConstantOpeningSegmentError::UnexpectedEof { .. })
     ));
 }
 
@@ -272,7 +272,7 @@ fn rejects_value_count_that_exceeds_remaining_words() {
 
     assert!(matches!(
         parse_constant_opening_segment(&bytes),
-        Err(ConstantOpeningSegmentError::LengthOverflow)
+        Err(ConstantOpeningSegmentError::UnexpectedEof { .. })
     ));
 }
 
@@ -288,7 +288,7 @@ fn rejects_level_count_that_exceeds_remaining_level_headers() {
 
     assert!(matches!(
         parse_constant_opening_segment(&bytes),
-        Err(ConstantOpeningSegmentError::LengthOverflow)
+        Err(ConstantOpeningSegmentError::UnexpectedEof { .. })
     ));
 }
 
@@ -305,6 +305,6 @@ fn rejects_sibling_count_that_exceeds_remaining_digests() {
 
     assert!(matches!(
         parse_constant_opening_segment(&bytes),
-        Err(ConstantOpeningSegmentError::LengthOverflow)
+        Err(ConstantOpeningSegmentError::UnexpectedEof { .. })
     ));
 }
