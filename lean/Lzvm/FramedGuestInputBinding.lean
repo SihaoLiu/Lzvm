@@ -20,6 +20,7 @@ structure RuntimeFramedGuestInputBindingValidation (system : VerifierModel) wher
   framedGuestInputWellFormed : RuntimeArtifact -> PublicInput -> Proof -> Prop
   framedGuestInputProofSegmentPresent : RuntimeArtifact -> PublicInput -> Proof -> Prop
   framedGuestInputProofSegmentPayloadExact : RuntimeArtifact -> PublicInput -> Proof -> Prop
+  framedGuestInputProofSegmentPayloadNonempty : RuntimeArtifact -> PublicInput -> Proof -> Prop
   framedGuestInputCoBoundWithEthBlock : RuntimeArtifact -> PublicInput -> Proof -> Prop
   framedGuestInputCoBoundWithProgramImage : RuntimeArtifact -> PublicInput -> Proof -> Prop
   framedGuestInputAcceptedImpliesEthBlockAccepted :
@@ -42,6 +43,10 @@ structure RuntimeFramedGuestInputBindingValidation (system : VerifierModel) wher
     forall artifact publicInput proof,
       framedGuestInputAccepted artifact publicInput proof ->
         framedGuestInputProofSegmentPayloadExact artifact publicInput proof
+  framedGuestInputAcceptedImpliesProofSegmentPayloadNonempty :
+    forall artifact publicInput proof,
+      framedGuestInputAccepted artifact publicInput proof ->
+        framedGuestInputProofSegmentPayloadNonempty artifact publicInput proof
   framedGuestInputAcceptedImpliesEthBlockCoBinding :
     forall artifact publicInput proof,
       framedGuestInputAccepted artifact publicInput proof ->
@@ -60,6 +65,7 @@ def RuntimeFramedGuestInputBindingEvidence
   validation.framedGuestInputWellFormed artifact publicInput proof
     /\ validation.framedGuestInputProofSegmentPresent artifact publicInput proof
     /\ validation.framedGuestInputProofSegmentPayloadExact artifact publicInput proof
+    /\ validation.framedGuestInputProofSegmentPayloadNonempty artifact publicInput proof
     /\ validation.framedGuestInputCoBoundWithEthBlock artifact publicInput proof
     /\ validation.framedGuestInputCoBoundWithProgramImage artifact publicInput proof
     /\ RuntimeEthBlockPublicInputBindingEvidence
@@ -244,6 +250,11 @@ theorem runtime_framed_guest_input_binding_checked_acceptance_evidence
         publicInput
         proof
         accepted,
+      validation.framedGuestInputAcceptedImpliesProofSegmentPayloadNonempty
+        artifact
+        publicInput
+        proof
+        accepted,
       validation.framedGuestInputAcceptedImpliesEthBlockCoBinding
         artifact
         publicInput
@@ -290,6 +301,25 @@ theorem runtime_framed_guest_input_binding_checked_acceptance_segment_payload_ex
   intro artifact publicInput proof accepted
   exact
     validation.framedGuestInputAcceptedImpliesProofSegmentPayloadExact
+      artifact
+      publicInput
+      proof
+      accepted
+
+theorem runtime_framed_guest_input_binding_checked_acceptance_segment_payload_nonempty
+    {system : VerifierModel}
+    (validation : RuntimeFramedGuestInputBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeFramedGuestInputBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        validation.framedGuestInputProofSegmentPayloadNonempty artifact publicInput proof := by
+  intro artifact publicInput proof accepted
+  exact
+    validation.framedGuestInputAcceptedImpliesProofSegmentPayloadNonempty
       artifact
       publicInput
       proof
@@ -456,7 +486,7 @@ theorem runtime_framed_guest_input_binding_checked_acceptance_sound
       artifact
       publicInput
       proof := by
-    rcases evidence with ⟨_, _, _, _, _, _, cacheEvidence⟩
+    rcases evidence with ⟨_, _, _, _, _, _, _, cacheEvidence⟩
     exact cacheEvidence
   exact
     ⟨evidence,

@@ -2184,6 +2184,9 @@ fn lean_framed_guest_input_binding_tracks_runtime_checks() {
     let proof_artifact_path = crate_root.join("src/proof_artifact.rs");
     let proof_artifact_source =
         std::fs::read_to_string(&proof_artifact_path).expect("proof artifact source should read");
+    let guest_input_segment_path = crate_root.join("../lzvm-artifacts/src/guest_input_segment.rs");
+    let guest_input_segment_source = std::fs::read_to_string(&guest_input_segment_path)
+        .expect("framed guest input segment source should read");
     let query_plan_path = crate_root.join("src/pcs_query_plan.rs");
     let query_plan_source =
         std::fs::read_to_string(&query_plan_path).expect("query plan source should read");
@@ -2205,6 +2208,7 @@ fn lean_framed_guest_input_binding_tracks_runtime_checks() {
             && lean_source.contains("RuntimeProgramImageCacheBindingSoundnessContract")
             && lean_source.contains("framedGuestInputProofSegmentPresent")
             && lean_source.contains("framedGuestInputProofSegmentPayloadExact")
+            && lean_source.contains("framedGuestInputProofSegmentPayloadNonempty")
             && lean_source.contains("framedGuestInputCoBoundWithEthBlock")
             && lean_source.contains("framedGuestInputCoBoundWithProgramImage")
             && lean_source.contains(
@@ -2212,6 +2216,9 @@ fn lean_framed_guest_input_binding_tracks_runtime_checks() {
             )
             && lean_source.contains(
                 "runtime_framed_guest_input_binding_checked_acceptance_segment_payload_exact"
+            )
+            && lean_source.contains(
+                "runtime_framed_guest_input_binding_checked_acceptance_segment_payload_nonempty"
             )
             && lean_source.contains(
                 "runtime_framed_guest_input_binding_checked_acceptance_eth_block_co_binding"
@@ -2232,6 +2239,7 @@ fn lean_framed_guest_input_binding_tracks_runtime_checks() {
         batch_script_source.contains(
             "validate_framed_input_data(paths[\"input_data\"], config.var(\"INPUT_DATA\"))"
         ) && batch_script_source.contains("# INPUT_DATA must be framed guest stdin")
+            && batch_script_source.contains("framed input is invalid: empty input")
             && batch_script_source.contains("--input-data")
             && batch_script_source.contains("framed_guest_input_match=ok"),
         "proof timing batches should require framed guest stdin before invoking the proof path"
@@ -2241,6 +2249,10 @@ fn lean_framed_guest_input_binding_tracks_runtime_checks() {
             && proof_artifact_source.contains("validate_framed_guest_input_binding")
             && proof_artifact_source.contains("FRAMED_GUEST_INPUT_SEGMENT_ID"),
         "proof artifact construction should embed framed guest stdin as a proof binding segment"
+    );
+    assert!(
+        guest_input_segment_source.contains("FramedStdinError::EmptyInput"),
+        "framed guest stdin segment encoding should reject an empty proof binding payload"
     );
     assert!(
         query_plan_source.contains("FRAMED_GUEST_INPUT_SEGMENT_ID")
