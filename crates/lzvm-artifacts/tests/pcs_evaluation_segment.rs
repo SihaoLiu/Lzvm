@@ -6,6 +6,7 @@ use lzvm_artifacts::pcs_evaluation_segment::{
 const NON_CANONICAL_FIELD: u64 = 0xffff_ffff_0000_0001;
 const HEADER_BYTES: usize = 12;
 const V1_UNIT_HEADER_BYTES: usize = 4 + 4;
+const V2_UNIT_HEADER_BYTES: usize = 4 + 4 + 4;
 const FIRST_VALUE_OFFSET: usize = HEADER_BYTES + V1_UNIT_HEADER_BYTES;
 const EXTENSION_BYTES: usize = 3 * 8;
 
@@ -27,9 +28,13 @@ fn sample_segment() -> PcsEvaluationSegment {
 }
 
 fn segment_header(unit_count: u32) -> Vec<u8> {
+    segment_header_with_version(1, unit_count)
+}
+
+fn segment_header_with_version(version: u32, unit_count: u32) -> Vec<u8> {
     let mut bytes = Vec::new();
     bytes.extend_from_slice(b"evs0");
-    push_u32(&mut bytes, 1);
+    push_u32(&mut bytes, version);
     push_u32(&mut bytes, unit_count);
     bytes
 }
@@ -246,6 +251,17 @@ fn rejects_unit_count_that_exceeds_remaining_unit_headers() {
 }
 
 #[test]
+fn rejects_v2_unit_count_that_exceeds_remaining_unit_headers() {
+    assert!(matches!(
+        parse_pcs_evaluation_segment(&segment_header_with_version(2, 1)),
+        Err(PcsEvaluationSegmentError::UnexpectedEof {
+            needed,
+            available: HEADER_BYTES
+        }) if needed == HEADER_BYTES + V2_UNIT_HEADER_BYTES
+    ));
+}
+
+#[test]
 fn rejects_value_count_that_exceeds_remaining_extensions() {
     let mut bytes = segment_header(1);
     push_u32(&mut bytes, 0);
@@ -258,6 +274,22 @@ fn rejects_value_count_that_exceeds_remaining_extensions() {
             available
         }) if needed == FIRST_VALUE_OFFSET + EXTENSION_BYTES
             && available == FIRST_VALUE_OFFSET
+    ));
+}
+
+#[test]
+fn rejects_truncated_pcs_evaluation_payload() {
+    let mut encoded =
+        encode_pcs_evaluation_segment(&sample_segment()).expect("evaluation segment should encode");
+    encoded.pop();
+
+    assert!(matches!(
+        parse_pcs_evaluation_segment(&encoded),
+        Err(PcsEvaluationSegmentError::UnexpectedEof {
+            needed,
+            available
+        }) if needed == HEADER_BYTES + V1_UNIT_HEADER_BYTES * 2 + EXTENSION_BYTES * 3
+            && available == HEADER_BYTES + V1_UNIT_HEADER_BYTES * 2 + EXTENSION_BYTES * 3 - 1
     ));
 }
 

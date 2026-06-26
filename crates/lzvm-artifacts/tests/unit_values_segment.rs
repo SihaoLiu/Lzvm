@@ -6,6 +6,7 @@ use lzvm_artifacts::unit_values_segment::{
 const NON_CANONICAL_FIELD: u64 = 0xffff_ffff_0000_0001;
 const HEADER_BYTES: usize = 12;
 const V1_UNIT_HEADER_BYTES: usize = 4 + 4;
+const V2_UNIT_HEADER_BYTES: usize = 4 + 4 + 4;
 const WORD_BYTES: usize = 8;
 const FIRST_VALUE_OFFSET: usize = HEADER_BYTES + V1_UNIT_HEADER_BYTES;
 
@@ -27,9 +28,13 @@ fn sample_segment() -> UnitValuesSegment {
 }
 
 fn segment_header(unit_count: u32) -> Vec<u8> {
+    segment_header_with_version(1, unit_count)
+}
+
+fn segment_header_with_version(version: u32, unit_count: u32) -> Vec<u8> {
     let mut bytes = Vec::new();
     bytes.extend_from_slice(b"uvs0");
-    push_u32(&mut bytes, 1);
+    push_u32(&mut bytes, version);
     push_u32(&mut bytes, unit_count);
     bytes
 }
@@ -239,6 +244,19 @@ fn rejects_unit_count_that_exceeds_remaining_unit_headers() {
             needed,
             available: HEADER_BYTES
         }) if needed == HEADER_BYTES + V1_UNIT_HEADER_BYTES
+    ));
+}
+
+#[test]
+fn rejects_v2_unit_count_that_exceeds_remaining_unit_headers() {
+    let result = parse_unit_values_segment(&segment_header_with_version(2, 1));
+
+    assert!(matches!(
+        result,
+        Err(UnitValuesSegmentError::UnexpectedEof {
+            needed,
+            available: HEADER_BYTES
+        }) if needed == HEADER_BYTES + V2_UNIT_HEADER_BYTES
     ));
 }
 

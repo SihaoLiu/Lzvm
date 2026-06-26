@@ -5,6 +5,7 @@ use lzvm_artifacts::pcs_query_segment::{
 
 const HEADER_BYTES: usize = 12;
 const V1_UNIT_HEADER_BYTES: usize = 4 + 4;
+const V2_UNIT_HEADER_BYTES: usize = 4 + 4 + 4;
 const QUERY_BYTES: usize = 8;
 
 fn sample_segment() -> PcsQueryPlanSegment {
@@ -25,9 +26,13 @@ fn sample_segment() -> PcsQueryPlanSegment {
 }
 
 fn segment_header(unit_count: u32) -> Vec<u8> {
+    segment_header_with_version(1, unit_count)
+}
+
+fn segment_header_with_version(version: u32, unit_count: u32) -> Vec<u8> {
     let mut bytes = Vec::new();
     bytes.extend_from_slice(b"pqs0");
-    push_u32(&mut bytes, 1);
+    push_u32(&mut bytes, version);
     push_u32(&mut bytes, unit_count);
     bytes
 }
@@ -219,6 +224,17 @@ fn rejects_unit_count_that_exceeds_remaining_unit_headers() {
 }
 
 #[test]
+fn rejects_v2_unit_count_that_exceeds_remaining_unit_headers() {
+    assert!(matches!(
+        parse_pcs_query_plan_segment(&segment_header_with_version(2, 1)),
+        Err(PcsQueryPlanSegmentError::UnexpectedEof {
+            needed,
+            available: HEADER_BYTES
+        }) if needed == HEADER_BYTES + V2_UNIT_HEADER_BYTES
+    ));
+}
+
+#[test]
 fn rejects_query_count_that_exceeds_remaining_queries() {
     let mut bytes = segment_header(1);
     push_u32(&mut bytes, 0);
@@ -231,5 +247,21 @@ fn rejects_query_count_that_exceeds_remaining_queries() {
             available
         }) if needed == HEADER_BYTES + V1_UNIT_HEADER_BYTES + QUERY_BYTES
             && available == HEADER_BYTES + V1_UNIT_HEADER_BYTES
+    ));
+}
+
+#[test]
+fn rejects_truncated_pcs_query_payload() {
+    let mut encoded =
+        encode_pcs_query_plan_segment(&sample_segment()).expect("query segment should encode");
+    encoded.pop();
+
+    assert!(matches!(
+        parse_pcs_query_plan_segment(&encoded),
+        Err(PcsQueryPlanSegmentError::UnexpectedEof {
+            needed,
+            available
+        }) if needed == HEADER_BYTES + V1_UNIT_HEADER_BYTES * 2 + QUERY_BYTES * 5
+            && available == HEADER_BYTES + V1_UNIT_HEADER_BYTES * 2 + QUERY_BYTES * 5 - 1
     ));
 }
