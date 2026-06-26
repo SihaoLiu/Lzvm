@@ -23,6 +23,7 @@ DEFAULT_NCU_SET = "basic"
 DEFAULT_NCU_TARGET_PROCESSES = "all"
 DEFAULT_NVIDIA_SMI_COMMAND = "nvidia-smi"
 DEFAULT_MIN_GPU_FREE_MIB = 1024
+DEFAULT_EXTRA_RUN_BUDGET = 2
 ENV_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 REQUIRED_PATHS = [
@@ -433,6 +434,12 @@ def mode_args(args: argparse.Namespace) -> list[str]:
     return result
 
 
+def effective_max_runs(args: argparse.Namespace) -> int:
+    if args.max_runs is not None:
+        return args.max_runs
+    return args.runs + DEFAULT_EXTRA_RUN_BUDGET
+
+
 def next_command_parts(
     args: argparse.Namespace,
     root: Path,
@@ -464,8 +471,7 @@ def next_command_parts(
             "--env-file",
         )
         parts.extend(["--env-file", display_path_for_shell(env_file_path, root)])
-    if args.max_runs is not None:
-        parts.extend(["--max-runs", str(args.max_runs)])
+    parts.extend(["--max-runs", str(effective_max_runs(args))])
     parts.extend(
         [
             "--small-timeout",
@@ -985,6 +991,8 @@ def runner_command(args: argparse.Namespace, root: Path) -> list[str]:
         str(runner),
         "--runs",
         str(args.runs),
+        "--max-runs",
+        str(effective_max_runs(args)),
         "--small-timeout",
         str(args.small_timeout),
         "--large-timeout",
@@ -999,8 +1007,6 @@ def runner_command(args: argparse.Namespace, root: Path) -> list[str]:
         "--max-relative-spread",
         str(args.max_relative_spread),
     ]
-    if args.max_runs is not None:
-        command.extend(["--max-runs", str(args.max_runs)])
     if not args.skip_verify_proof:
         for required_text in VERIFY_REQUIRED_TEXTS:
             command.extend(["--require-text", required_text])
@@ -1028,7 +1034,7 @@ def dry_run_summary_lines(args: argparse.Namespace, root: Path) -> list[str]:
         f"suite={args.suite}",
         f"selected={','.join(selected_labels)}",
         f"runs={args.runs}",
-        f"max_runs={args.max_runs if args.max_runs is not None else args.runs}",
+        f"max_runs={effective_max_runs(args)}",
         f"verify_proof={str(not args.skip_verify_proof).lower()}",
     ]
     for config, mode in selected:
@@ -1042,7 +1048,7 @@ def dry_run_summary_lines(args: argparse.Namespace, root: Path) -> list[str]:
 
 def run(args: argparse.Namespace) -> int:
     root = workspace_root()
-    if args.max_runs is not None and args.max_runs < args.runs:
+    if effective_max_runs(args) < args.runs:
         raise SystemExit("--max-runs must be at least --runs")
     if args.print_env_template:
         print_env_template(args, root)

@@ -247,6 +247,12 @@ fn eth_proof_timing_batch_dry_run_builds_small_command_from_env() {
         stdout.contains("--require-proof-output"),
         "runner command should require proof markers: {stdout}"
     );
+    assert!(
+        stdout.contains("--max-runs 5")
+            && stdout.contains("runs=3\n")
+            && stdout.contains("max_runs=5\n"),
+        "runner command should reserve replacement attempts by default: {stdout}"
+    );
     assert_verify_required_text_args(&stdout, "runner command");
     assert!(
         stdout.contains("small_command=env -u LZVM_GUEST_PC_TRACE_PARALLEL_LOWER"),
