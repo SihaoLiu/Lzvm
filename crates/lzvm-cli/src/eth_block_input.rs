@@ -1,5 +1,5 @@
-use std::fmt;
-use std::io::Write;
+use std::fmt::{self, Write as FmtWrite};
+use std::io::{self, Write};
 use std::path::Path;
 
 use lzvm_artifacts::eth_block_input::{
@@ -291,85 +291,98 @@ fn write_input_summary(
     digest: &[u8; 32],
     input: &EthBlockInput,
     include_block_rlp_bytes: bool,
-) -> Result<(), EthBlockInputError> {
+) -> Result<(), BlockInputSummaryError> {
     let (extra_header_fields, extra_body_fields) = eth_block_input_extra_field_counts(input)?;
     let (legacy_transactions, typed_transactions) = eth_block_input_transaction_kind_counts(input)?;
     let receipt_kind_counts = eth_block_input_receipt_kind_counts(input)?;
     let withdrawal_count = eth_block_input_withdrawal_count(input)?;
     let withdrawals_root = match (&input.withdrawals, input.withdrawals_root) {
         (Some(_), Some(root)) => Some(root),
-        (Some(_), None) => return Err(EthBlockInputError::MissingWithdrawalsRoot),
+        (Some(_), None) => return Err(EthBlockInputError::MissingWithdrawalsRoot.into()),
         (None, _) => None,
     };
 
-    let _ = writeln!(stdout, "status=ok");
-    let _ = writeln!(stdout, "block_input={}", input_path.display());
-    let _ = writeln!(stdout, "bytes={encoded_len}");
-    let _ = writeln!(stdout, "block_input_hash={}", format_hash(digest));
+    let mut output = String::new();
+    let _ = writeln!(&mut output, "status=ok");
+    let _ = writeln!(&mut output, "block_input={}", input_path.display());
+    let _ = writeln!(&mut output, "bytes={encoded_len}");
+    let _ = writeln!(&mut output, "block_input_hash={}", format_hash(digest));
     if include_block_rlp_bytes {
-        let _ = writeln!(stdout, "block_rlp_bytes={}", input.block_rlp.len());
+        let _ = writeln!(&mut output, "block_rlp_bytes={}", input.block_rlp.len());
     }
     if extra_header_fields > 0 || extra_body_fields > 0 {
-        let _ = writeln!(stdout, "extra_header_fields={extra_header_fields}");
-        let _ = writeln!(stdout, "extra_body_fields={extra_body_fields}");
+        let _ = writeln!(&mut output, "extra_header_fields={extra_header_fields}");
+        let _ = writeln!(&mut output, "extra_body_fields={extra_body_fields}");
     }
-    let _ = writeln!(stdout, "block_hash={}", format_hash(&input.block_hash));
-    let _ = writeln!(stdout, "parent_hash={}", format_hash(&input.parent_hash));
-    let _ = writeln!(stdout, "ommers_hash={}", format_hash(&input.ommers_hash));
-    let _ = writeln!(stdout, "beneficiary={}", format_hex(&input.beneficiary));
-    let _ = writeln!(stdout, "state_root={}", format_hash(&input.state_root));
+    let _ = writeln!(&mut output, "block_hash={}", format_hash(&input.block_hash));
     let _ = writeln!(
-        stdout,
+        &mut output,
+        "parent_hash={}",
+        format_hash(&input.parent_hash)
+    );
+    let _ = writeln!(
+        &mut output,
+        "ommers_hash={}",
+        format_hash(&input.ommers_hash)
+    );
+    let _ = writeln!(
+        &mut output,
+        "beneficiary={}",
+        format_hex(&input.beneficiary)
+    );
+    let _ = writeln!(&mut output, "state_root={}", format_hash(&input.state_root));
+    let _ = writeln!(
+        &mut output,
         "receipts_root={}",
         format_hash(&input.receipts_root)
     );
-    let _ = writeln!(stdout, "logs_bloom={}", format_hex(&input.logs_bloom));
-    let _ = writeln!(stdout, "difficulty={}", format_u256(&input.difficulty));
-    let _ = writeln!(stdout, "block_number={}", input.block_number);
-    let _ = writeln!(stdout, "timestamp={}", input.timestamp);
-    let _ = writeln!(stdout, "extra_data={}", format_hex(&input.extra_data));
-    let _ = writeln!(stdout, "gas_limit={}", input.gas_limit);
-    let _ = writeln!(stdout, "gas_used={}", input.gas_used);
+    let _ = writeln!(&mut output, "logs_bloom={}", format_hex(&input.logs_bloom));
+    let _ = writeln!(&mut output, "difficulty={}", format_u256(&input.difficulty));
+    let _ = writeln!(&mut output, "block_number={}", input.block_number);
+    let _ = writeln!(&mut output, "timestamp={}", input.timestamp);
+    let _ = writeln!(&mut output, "extra_data={}", format_hex(&input.extra_data));
+    let _ = writeln!(&mut output, "gas_limit={}", input.gas_limit);
+    let _ = writeln!(&mut output, "gas_used={}", input.gas_used);
     let _ = writeln!(
-        stdout,
+        &mut output,
         "base_fee_per_gas={}",
         format_optional_u256(input.base_fee_per_gas.as_ref())
     );
-    let _ = writeln!(stdout, "mix_hash={}", format_hash(&input.mix_hash));
-    let _ = writeln!(stdout, "nonce={}", format_hex(&input.nonce));
+    let _ = writeln!(&mut output, "mix_hash={}", format_hash(&input.mix_hash));
+    let _ = writeln!(&mut output, "nonce={}", format_hex(&input.nonce));
     let _ = writeln!(
-        stdout,
+        &mut output,
         "transactions_root={}",
         format_hash(&input.transactions_root)
     );
     let _ = writeln!(
-        stdout,
+        &mut output,
         "transaction_trie_preimages={}",
         input.transactions.hash_preimages.len()
     );
     let transaction_count = legacy_transactions + typed_transactions;
-    let _ = writeln!(stdout, "transaction_count={transaction_count}");
-    let _ = writeln!(stdout, "legacy_transactions={legacy_transactions}");
-    let _ = writeln!(stdout, "typed_transactions={typed_transactions}");
+    let _ = writeln!(&mut output, "transaction_count={transaction_count}");
+    let _ = writeln!(&mut output, "legacy_transactions={legacy_transactions}");
+    let _ = writeln!(&mut output, "typed_transactions={typed_transactions}");
     if let Some(receipts) = &input.receipts {
-        let _ = writeln!(stdout, "receipts=present");
+        let _ = writeln!(&mut output, "receipts=present");
         if let Some(receipts_rlp) = &input.receipts_rlp {
-            let _ = writeln!(stdout, "receipts_rlp_bytes={}", receipts_rlp.len());
+            let _ = writeln!(&mut output, "receipts_rlp_bytes={}", receipts_rlp.len());
         }
         let _ = writeln!(
-            stdout,
+            &mut output,
             "receipt_trie_preimages={}",
             receipts.hash_preimages.len()
         );
         if let Some((legacy_receipts, typed_receipts)) = receipt_kind_counts {
             let receipt_count = legacy_receipts + typed_receipts;
-            let _ = writeln!(stdout, "receipt_count={receipt_count}");
-            let _ = writeln!(stdout, "legacy_receipts={legacy_receipts}");
-            let _ = writeln!(stdout, "typed_receipts={typed_receipts}");
+            let _ = writeln!(&mut output, "receipt_count={receipt_count}");
+            let _ = writeln!(&mut output, "legacy_receipts={legacy_receipts}");
+            let _ = writeln!(&mut output, "typed_receipts={typed_receipts}");
         }
     }
     let _ = writeln!(
-        stdout,
+        &mut output,
         "withdrawals={}",
         if input.withdrawals.is_some() {
             "present"
@@ -379,22 +392,55 @@ fn write_input_summary(
     );
     if let Some(withdrawals) = &input.withdrawals {
         if let Some(withdrawal_count) = withdrawal_count {
-            let _ = writeln!(stdout, "withdrawal_count={withdrawal_count}");
+            let _ = writeln!(&mut output, "withdrawal_count={withdrawal_count}");
         }
         let withdrawals_root =
             withdrawals_root.ok_or(EthBlockInputError::MissingWithdrawalsRoot)?;
         let _ = writeln!(
-            stdout,
+            &mut output,
             "withdrawals_root={}",
             format_hash(&withdrawals_root)
         );
         let _ = writeln!(
-            stdout,
+            &mut output,
             "withdrawals_trie_preimages={}",
             withdrawals.hash_preimages.len()
         );
     }
+    stdout
+        .write_all(output.as_bytes())
+        .map_err(BlockInputSummaryError::Write)?;
     Ok(())
+}
+
+#[derive(Debug)]
+enum BlockInputSummaryError {
+    Input(EthBlockInputError),
+    Write(io::Error),
+}
+
+impl fmt::Display for BlockInputSummaryError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Input(error) => write!(f, "{error}"),
+            Self::Write(error) => write!(f, "write summary failed: {error}"),
+        }
+    }
+}
+
+impl std::error::Error for BlockInputSummaryError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Input(error) => Some(error),
+            Self::Write(error) => Some(error),
+        }
+    }
+}
+
+impl From<EthBlockInputError> for BlockInputSummaryError {
+    fn from(error: EthBlockInputError) -> Self {
+        Self::Input(error)
+    }
 }
 
 fn decode_hex_bytes(input: &[u8]) -> Result<Vec<u8>, HexDecodeError> {
@@ -562,7 +608,116 @@ mod tests {
             false,
         );
 
-        assert!(matches!(result, Err(EthBlockInputError::Block(_))));
+        assert!(matches!(
+            result,
+            Err(BlockInputSummaryError::Input(EthBlockInputError::Block(_)))
+        ));
         assert!(stdout.is_empty());
+    }
+
+    #[test]
+    fn summary_returns_writer_errors() {
+        let block_rlp = sample_block_rlp();
+        let input = build_eth_block_input(&block_rlp).expect("block input should build");
+        let mut writer = FailingWriter;
+
+        let result = write_input_summary(
+            &mut writer,
+            Path::new("block.input"),
+            0,
+            &[0; 32],
+            &input,
+            false,
+        );
+
+        assert!(matches!(result, Err(BlockInputSummaryError::Write(_))));
+    }
+
+    struct FailingWriter;
+
+    impl Write for FailingWriter {
+        fn write(&mut self, _buf: &[u8]) -> io::Result<usize> {
+            Err(io::Error::new(io::ErrorKind::BrokenPipe, "closed"))
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+
+    fn sample_block_rlp() -> Vec<u8> {
+        let header_rlp = rlp_list(&[
+            rlp_bytes(&[0x11; 32]),
+            rlp_bytes(&hex32(
+                "1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347",
+            )),
+            rlp_bytes(&[0x33; 20]),
+            rlp_bytes(&[0x44; 32]),
+            rlp_bytes(&hex32(
+                "56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421",
+            )),
+            rlp_bytes(&[0x66; 32]),
+            rlp_bytes(&[0; 256]),
+            rlp_bytes(&[1]),
+            rlp_bytes(&[2]),
+            rlp_bytes(&[0x0f, 0x42, 0x40]),
+            rlp_bytes(&[]),
+            rlp_bytes(&[0x65]),
+            rlp_bytes(b"lzvm"),
+            rlp_bytes(&[0xaa; 32]),
+            rlp_bytes(&[0xbb; 8]),
+        ]);
+        let empty_list = rlp_list(&[]);
+        rlp_list(&[header_rlp, empty_list.clone(), empty_list])
+    }
+
+    fn hex32(value: &str) -> [u8; 32] {
+        let bytes = value.as_bytes();
+        assert_eq!(bytes.len(), 64);
+        let mut out = [0_u8; 32];
+        for (index, chunk) in bytes.chunks_exact(2).enumerate() {
+            let text = std::str::from_utf8(chunk).expect("hex should be utf-8");
+            out[index] = u8::from_str_radix(text, 16).expect("hex byte should parse");
+        }
+        out
+    }
+
+    fn rlp_bytes(bytes: &[u8]) -> Vec<u8> {
+        if bytes.len() == 1 && bytes[0] < 0x80 {
+            return bytes.to_vec();
+        }
+        let mut out = Vec::new();
+        rlp_header(&mut out, 0x80, bytes.len());
+        out.extend_from_slice(bytes);
+        out
+    }
+
+    fn rlp_list(items: &[Vec<u8>]) -> Vec<u8> {
+        let payload_len = items.iter().map(Vec::len).sum();
+        let mut out = Vec::new();
+        rlp_header(&mut out, 0xc0, payload_len);
+        for item in items {
+            out.extend_from_slice(item);
+        }
+        out
+    }
+
+    fn rlp_header(out: &mut Vec<u8>, base: u8, len: usize) {
+        if len < 56 {
+            out.push(base + u8::try_from(len).expect("fixture length fits u8"));
+        } else {
+            let len_bytes = usize_be_bytes(len);
+            out.push(base + 55 + u8::try_from(len_bytes.len()).expect("length-of-length fits u8"));
+            out.extend_from_slice(&len_bytes);
+        }
+    }
+
+    fn usize_be_bytes(value: usize) -> Vec<u8> {
+        let bytes = value.to_be_bytes();
+        bytes
+            .iter()
+            .position(|byte| *byte != 0)
+            .map(|index| bytes[index..].to_vec())
+            .unwrap_or_else(|| vec![0])
     }
 }
