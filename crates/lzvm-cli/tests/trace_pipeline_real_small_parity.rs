@@ -902,6 +902,8 @@ fn verify_command(config: &RealParityConfig, output_dir: &Path) -> Command {
         .arg(&config.block_input)
         .arg("--program-image-cache")
         .arg(&config.program_image_cache)
+        .arg("--input-data")
+        .arg(&config.input_data)
         .arg(&config.setup_dir)
         .arg(output_dir.join("proof.bin"))
         .arg(output_dir.join("eth-block-public-values.bin"))
@@ -1189,6 +1191,8 @@ fn verify_command_binds_eth_inputs_and_program_cache() {
             config.block_input.clone(),
             PathBuf::from("--program-image-cache"),
             config.program_image_cache.clone(),
+            PathBuf::from("--input-data"),
+            config.input_data.clone(),
             config.setup_dir.clone(),
             output_dir.join("proof.bin"),
             output_dir.join("eth-block-public-values.bin"),
@@ -1269,6 +1273,7 @@ fn assert_successful_verify(label: &str, output: &Output) {
         "artifact_proof_match=ok",
         "eth_block_input_match=ok",
         "program_image_cache_match=ok",
+        "framed_guest_input_match=ok",
     ] {
         assert!(
             combined.contains(marker),
