@@ -5,6 +5,7 @@ Authors: Sihao Liu
 -/
 
 import Lzvm.Conformance
+import Lzvm.ProofSegmentIds
 
 /-!
 Runtime proof artifact binding obligations.
@@ -170,6 +171,85 @@ def RuntimeProofArtifactFinalized
       artifact
       publicInput
       proof
+
+structure RuntimeProofArtifactSegmentIdView where
+  proofSegmentIds : RuntimeArtifact -> PublicInput -> Proof -> List Nat
+
+def RuntimeProofArtifactConcreteSegmentIdsAllowed
+    (view : RuntimeProofArtifactSegmentIdView)
+    (artifact : RuntimeArtifact)
+    (publicInput : PublicInput)
+    (proof : Proof) : Prop :=
+  forall id,
+    id ∈ view.proofSegmentIds artifact publicInput proof ->
+      IsAllowedProofSegmentId id
+
+structure RuntimeProofArtifactConcreteSegmentIdBinding
+    {system : VerifierModel}
+    (validation : RuntimeProofArtifactBindingValidation system) where
+  segmentIdView : RuntimeProofArtifactSegmentIdView
+  proofSegmentIdsAllowedImpliesConcrete :
+    forall artifact publicInput proof,
+      validation.proofSegmentIdsAllowed artifact publicInput proof ->
+        RuntimeProofArtifactConcreteSegmentIdsAllowed
+          segmentIdView
+          artifact
+          publicInput
+          proof
+
+theorem runtime_proof_artifact_binding_checked_acceptance_concrete_segment_ids_allowed
+    {system : VerifierModel}
+    (validation : RuntimeProofArtifactBindingValidation system)
+    (binding : RuntimeProofArtifactConcreteSegmentIdBinding validation) :
+    forall artifact publicInput proof,
+      RuntimeProofArtifactBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeProofArtifactConcreteSegmentIdsAllowed
+          binding.segmentIdView
+          artifact
+          publicInput
+          proof := by
+  intro artifact publicInput proof accepted
+  exact
+    binding.proofSegmentIdsAllowedImpliesConcrete
+      artifact
+      publicInput
+      proof
+      (validation.bindingAcceptedImpliesProofSegmentIdsAllowed
+        artifact
+        publicInput
+        proof
+        accepted)
+
+theorem runtime_proof_artifact_finalized_concrete_segment_ids_allowed
+    {system : VerifierModel}
+    (validation : RuntimeProofArtifactBindingValidation system)
+    (binding : RuntimeProofArtifactConcreteSegmentIdBinding validation) :
+    forall artifact publicInput proof,
+      RuntimeProofArtifactFinalized
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeProofArtifactConcreteSegmentIdsAllowed
+          binding.segmentIdView
+          artifact
+          publicInput
+          proof := by
+  intro artifact publicInput proof finalized
+  exact
+    runtime_proof_artifact_binding_checked_acceptance_concrete_segment_ids_allowed
+      validation
+      binding
+      artifact
+      publicInput
+      proof
+      finalized.left
 
 theorem runtime_proof_artifact_binding_checked_acceptance_evidence
     {system : VerifierModel}

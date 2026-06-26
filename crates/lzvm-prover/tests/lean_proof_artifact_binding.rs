@@ -21,6 +21,10 @@ fn lean_proof_artifact_binding_exports_core_contract_projection() {
         "top-level Lean module should import proof artifact binding"
     );
     assert!(
+        lean_source.contains("import Lzvm.ProofSegmentIds"),
+        "proof artifact binding should import the concrete proof segment ID allowlist"
+    );
+    assert!(
         lean_source.contains("RuntimeProofArtifactBindingValidation")
             && lean_source.contains("def RuntimeProofArtifactBindingValidationAgreement")
             && lean_source.contains("RuntimeConformanceValidationAgreement")
@@ -34,6 +38,10 @@ fn lean_proof_artifact_binding_exports_core_contract_projection() {
             && lean_source.contains("proofSegmentIdsUnique")
             && lean_source.contains("proofUnitValuesTraceIdentityCoverage")
             && lean_source.contains("RuntimeProofArtifactFinalized")
+            && lean_source.contains("RuntimeProofArtifactSegmentIdView")
+            && lean_source.contains("RuntimeProofArtifactConcreteSegmentIdBinding")
+            && lean_source.contains("RuntimeProofArtifactConcreteSegmentIdsAllowed")
+            && lean_source.contains("IsAllowedProofSegmentId")
             && lean_source.contains("SoundWitness system publicInput proof"),
         "Lean proof artifact binding should expose checked soundness and verifier core projection"
     );
@@ -49,6 +57,8 @@ fn lean_proof_artifact_binding_exports_core_contract_projection() {
             "runtime_proof_artifact_binding_checked_acceptance_segment_ids_unique",
             "runtime_proof_artifact_binding_checked_acceptance_unit_values_trace_identity_coverage",
             "runtime_proof_artifact_binding_checked_acceptance_structural_obligations",
+            "runtime_proof_artifact_binding_checked_acceptance_concrete_segment_ids_allowed",
+            "runtime_proof_artifact_finalized_concrete_segment_ids_allowed",
             "runtime_proof_artifact_finalized_from_checked_acceptance",
             "runtime_proof_artifact_finalized_structural_obligations",
             "runtime_proof_artifact_finalized_checked_acceptance",
@@ -105,6 +115,22 @@ fn lean_proof_artifact_binding_exports_core_contract_projection() {
             "bindingAcceptedImpliesProofSegmentIdsAllowed",
             "bindingAcceptedImpliesProofSegmentIdsUnique",
             "bindingAcceptedImpliesProofUnitValuesTraceIdentityCoverage",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_proof_artifact_binding_checked_acceptance_concrete_segment_ids_allowed",
+        &[
+            "proofSegmentIdsAllowedImpliesConcrete",
+            "bindingAcceptedImpliesProofSegmentIdsAllowed",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_proof_artifact_finalized_concrete_segment_ids_allowed",
+        &[
+            "runtime_proof_artifact_binding_checked_acceptance_concrete_segment_ids_allowed",
+            "finalized.left",
         ],
     );
     lean_binding::assert_theorem_body_contains(
