@@ -465,7 +465,7 @@ fn rejects_column_count_that_exceeds_remaining_column_records() {
 
     assert!(matches!(
         parse_fixed_columns(&bytes),
-        Err(FixedColumnError::LengthOverflow)
+        Err(FixedColumnError::UnexpectedEof { .. })
     ));
 }
 
@@ -478,7 +478,7 @@ fn rejects_dimension_count_that_exceeds_remaining_dimensions() {
 
     assert!(matches!(
         parse_fixed_columns(&bytes),
-        Err(FixedColumnError::LengthOverflow)
+        Err(FixedColumnError::UnexpectedEof { .. })
     ));
 }
 
@@ -491,6 +491,6 @@ fn rejects_column_count_that_exceeds_remaining_column_values() {
 
     assert!(matches!(
         parse_fixed_columns(&bytes),
-        Err(FixedColumnError::LengthOverflow)
+        Err(FixedColumnError::UnexpectedEof { .. })
     ));
 }

@@ -677,9 +677,7 @@ fn parse_fixed_columns_section(bytes: &[u8]) -> Result<FixedColumns, FixedColumn
             .checked_add(U32_BYTES)
             .and_then(|value| value.checked_add(row_value_bytes))
             .ok_or(FixedColumnError::LengthOverflow)?;
-        if column_count > reader.remaining_len() / column_min_bytes {
-            return Err(FixedColumnError::LengthOverflow);
-        }
+        reader.require_items(column_count, column_min_bytes)?;
     }
     let mut columns = Vec::with_capacity(column_count);
 
@@ -845,9 +843,7 @@ fn read_bounded_count(
     record_min_bytes: usize,
 ) -> Result<usize, FixedColumnError> {
     let count = u32_to_usize(reader.read_u32()?)?;
-    if count > reader.remaining_len() / record_min_bytes {
-        return Err(FixedColumnError::LengthOverflow);
-    }
+    reader.require_items(count, record_min_bytes)?;
     Ok(count)
 }
 
@@ -869,10 +865,6 @@ impl<'a> Reader<'a> {
         self.offset
     }
 
-    fn remaining_len(&self) -> usize {
-        self.bytes.len() - self.offset
-    }
-
     fn read_exact(&mut self, count: usize) -> Result<&'a [u8], FixedColumnError> {
         let end = self
             .offset
@@ -888,6 +880,24 @@ impl<'a> Reader<'a> {
         let out = &self.bytes[self.offset..end];
         self.offset = end;
         Ok(out)
+    }
+
+    fn require_items(&self, count: usize, item_bytes: usize) -> Result<(), FixedColumnError> {
+        let needed = count
+            .checked_mul(item_bytes)
+            .ok_or(FixedColumnError::LengthOverflow)?;
+        let end = self
+            .offset
+            .checked_add(needed)
+            .ok_or(FixedColumnError::LengthOverflow)?;
+        if end > self.bytes.len() {
+            return Err(FixedColumnError::UnexpectedEof {
+                offset: self.offset,
+                needed,
+                available: self.bytes.len().saturating_sub(self.offset),
+            });
+        }
+        Ok(())
     }
 
     fn read_u32(&mut self) -> Result<u32, FixedColumnError> {
