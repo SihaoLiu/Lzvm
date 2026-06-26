@@ -72,6 +72,7 @@ fn lean_runtime_soundness_binding_exports_core_contract_projection() {
             "runtime_soundness_checked_acceptance_metadata_canonical",
             "runtime_soundness_checked_acceptance_segment_payloads_nonempty",
             "runtime_soundness_checked_acceptance_segment_ids_allowed",
+            "runtime_soundness_checked_acceptance_concrete_segment_ids_allowed",
             "runtime_soundness_checked_acceptance_segment_ids_unique",
             "runtime_soundness_checked_acceptance_unit_values_trace_identity_coverage",
             "runtime_soundness_checked_acceptance_verifier_core_contract",
@@ -207,6 +208,27 @@ fn lean_runtime_soundness_binding_exports_core_contract_projection() {
         )
         .contains("AssumptionBundle"),
         "allowed proof segment-id projection should not require cryptographic assumptions"
+    );
+    assert!(
+        theorem_prefix(
+            &lean_source,
+            "runtime_soundness_checked_acceptance_concrete_segment_ids_allowed"
+        )
+        .contains("RuntimeProofArtifactConcreteSegmentIdBinding")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_soundness_checked_acceptance_concrete_segment_ids_allowed"
+            )
+            .contains("RuntimeProofArtifactConcreteSegmentIdsAllowed proof"),
+        "runtime soundness should expose concrete allowed proof segment IDs"
+    );
+    assert!(
+        !theorem_prefix(
+            &lean_source,
+            "runtime_soundness_checked_acceptance_concrete_segment_ids_allowed"
+        )
+        .contains("AssumptionBundle"),
+        "concrete allowed proof segment-id projection should not require cryptographic assumptions"
     );
     assert!(
         theorem_prefix(
@@ -1575,6 +1597,11 @@ fn lean_runtime_soundness_binding_exports_core_contract_projection() {
         &lean_source,
         "runtime_soundness_checked_acceptance_segment_ids_allowed",
         &["runtime_transcript_binding_checked_acceptance_segment_ids_allowed"],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_soundness_checked_acceptance_concrete_segment_ids_allowed",
+        &["runtime_transcript_binding_checked_acceptance_concrete_segment_ids_allowed"],
     );
     lean_binding::assert_theorem_body_contains(
         &lean_source,

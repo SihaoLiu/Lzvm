@@ -481,6 +481,36 @@ theorem runtime_transcript_binding_checked_acceptance_segment_ids_allowed
       proof
       artifactAccepted
 
+theorem runtime_transcript_binding_checked_acceptance_concrete_segment_ids_allowed
+    {system : VerifierModel}
+    (validation : RuntimeTranscriptBindingValidation system)
+    (binding :
+      RuntimeProofArtifactConcreteSegmentIdBinding
+        validation.artifactBindingValidation) :
+    forall artifact publicInput proof,
+      RuntimeTranscriptBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeProofArtifactConcreteSegmentIdsAllowed proof := by
+  intro artifact publicInput proof accepted
+  have artifactAccepted :=
+    validation.transcriptAcceptedImpliesArtifactBindingAccepted
+      artifact
+      publicInput
+      proof
+      accepted
+  exact
+    runtime_proof_artifact_binding_checked_acceptance_concrete_segment_ids_allowed
+      validation.artifactBindingValidation
+      binding
+      artifact
+      publicInput
+      proof
+      artifactAccepted
+
 theorem runtime_transcript_binding_checked_acceptance_segments_present
     {system : VerifierModel}
     (validation : RuntimeTranscriptBindingValidation system) :

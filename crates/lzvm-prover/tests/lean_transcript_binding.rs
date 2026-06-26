@@ -45,6 +45,7 @@ fn lean_transcript_binding_exports_core_contract_projection() {
             "runtime_transcript_binding_checked_acceptance_metadata_canonical",
             "runtime_transcript_binding_checked_acceptance_segment_payloads_nonempty",
             "runtime_transcript_binding_checked_acceptance_segment_ids_allowed",
+            "runtime_transcript_binding_checked_acceptance_concrete_segment_ids_allowed",
             "runtime_transcript_binding_checked_acceptance_segments_present",
             "runtime_transcript_binding_checked_acceptance_artifact_payload_contract",
             "runtime_transcript_binding_checked_acceptance_full_contract",
@@ -239,6 +240,28 @@ fn lean_transcript_binding_exports_core_contract_projection() {
             "validation.transcriptAcceptedImpliesArtifactBindingAccepted",
             "runtime_proof_artifact_binding_checked_acceptance_segment_ids_allowed",
         ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_transcript_binding_checked_acceptance_concrete_segment_ids_allowed",
+        &[
+            "RuntimeTranscriptBindingCheckedAcceptance",
+            "RuntimeProofArtifactConcreteSegmentIdBinding",
+            "RuntimeProofArtifactConcreteSegmentIdsAllowed proof",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_transcript_binding_checked_acceptance_concrete_segment_ids_allowed",
+        &[
+            "validation.transcriptAcceptedImpliesArtifactBindingAccepted",
+            "runtime_proof_artifact_binding_checked_acceptance_concrete_segment_ids_allowed",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_omits(
+        &lean_source,
+        "runtime_transcript_binding_checked_acceptance_concrete_segment_ids_allowed",
+        &["AssumptionBundle"],
     );
     lean_binding::assert_theorem_prefix_contains(
         &lean_source,

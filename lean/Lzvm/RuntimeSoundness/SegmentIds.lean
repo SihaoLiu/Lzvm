@@ -178,4 +178,29 @@ theorem runtime_soundness_checked_acceptance_segment_ids_allowed
       proof
       checked.left
 
+theorem runtime_soundness_checked_acceptance_concrete_segment_ids_allowed
+    {system : VerifierModel}
+    (validation : RuntimeSoundnessValidation system)
+    (binding :
+      RuntimeProofArtifactConcreteSegmentIdBinding
+        validation.transcriptValidation.artifactBindingValidation) :
+    forall artifact publicInput proof requiresExternalSource,
+      RuntimeSoundnessCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof
+          requiresExternalSource ->
+        RuntimeProofArtifactConcreteSegmentIdsAllowed proof := by
+  intro artifact publicInput proof requiresExternalSource checked
+  exact
+    runtime_transcript_binding_checked_acceptance_concrete_segment_ids_allowed
+      validation.transcriptValidation
+      binding
+      artifact
+      publicInput
+      proof
+      checked.left
+
 end Lzvm
