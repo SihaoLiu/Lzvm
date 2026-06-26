@@ -1228,11 +1228,76 @@ enum PendingWitnessStageOpeningGroup {
     DeviceSiblings {
         row_indices: Vec<u64>,
         values_by_row: Vec<Vec<Felt>>,
+        positions: Option<Vec<usize>>,
     },
     DeviceRows {
         row_indices: Vec<u64>,
         row_values: super::CompactOnDemandOpeningDeviceRows,
+        positions: Option<Vec<usize>>,
     },
+}
+
+struct UniqueWitnessStageOpeningRows {
+    row_indices: Vec<u64>,
+    #[cfg_attr(not(feature = "cuda"), allow(dead_code))]
+    query_rows: Vec<usize>,
+    positions: Vec<usize>,
+}
+
+fn unique_witness_stage_opening_rows(
+    row_indices: &[u64],
+    query_rows: &[usize],
+) -> Option<UniqueWitnessStageOpeningRows> {
+    if row_indices.len() != query_rows.len() || row_indices.len() < 2 {
+        return None;
+    }
+
+    let mut unique_row_indices = Vec::with_capacity(row_indices.len());
+    let mut unique_query_rows = Vec::with_capacity(query_rows.len());
+    let mut positions = Vec::with_capacity(query_rows.len());
+    for (row_index, query_row) in row_indices.iter().copied().zip(query_rows.iter().copied()) {
+        match unique_query_rows.iter().position(|row| *row == query_row) {
+            Some(position) => positions.push(position),
+            None => {
+                positions.push(unique_query_rows.len());
+                unique_row_indices.push(row_index);
+                unique_query_rows.push(query_row);
+            }
+        }
+    }
+
+    if unique_query_rows.len() == query_rows.len() {
+        None
+    } else {
+        Some(UniqueWitnessStageOpeningRows {
+            row_indices: unique_row_indices,
+            query_rows: unique_query_rows,
+            positions,
+        })
+    }
+}
+
+fn expand_unique_items<T: Clone>(
+    items: &[T],
+    positions: &[usize],
+) -> Result<Vec<T>, WitnessStageOpeningError> {
+    let mut expanded = Vec::with_capacity(positions.len());
+    for position in positions {
+        expanded.push(
+            items
+                .get(*position)
+                .ok_or(WitnessStageOpeningError::LengthOverflow)?
+                .clone(),
+        );
+    }
+    Ok(expanded)
+}
+
+fn expand_unique_witness_stage_openings(
+    openings: &[WitnessStageOpening],
+    positions: &[usize],
+) -> Result<Vec<WitnessStageOpening>, WitnessStageOpeningError> {
+    expand_unique_items(openings, positions)
 }
 
 #[cfg(feature = "cuda")]
@@ -1256,10 +1321,19 @@ pub(crate) fn open_witness_stage_commitment_batches_with_source_devices_timing(
             request.row_count,
             request.column_count,
         )?;
+        let unique = unique_witness_stage_opening_rows(request.row_indices, &query_rows);
+        let (opening_row_indices, opening_query_rows, positions) = match &unique {
+            Some(unique) => (
+                unique.row_indices.as_slice(),
+                unique.query_rows.as_slice(),
+                Some(unique.positions.clone()),
+            ),
+            None => (request.row_indices, query_rows.as_slice(), None),
+        };
         match request
             .commitment
             .open_compact_batch_on_demand_device_siblings_with_source_device(
-                &query_rows,
+                opening_query_rows,
                 usize::try_from(request.row_count)
                     .map_err(|_| WitnessStageOpeningError::LengthOverflow)?,
                 request.column_count,
@@ -1269,15 +1343,16 @@ pub(crate) fn open_witness_stage_commitment_batches_with_source_devices_timing(
             Some(device_siblings) => {
                 sibling_batches.push(device_siblings.siblings_by_row);
                 pending_groups.push(PendingWitnessStageOpeningGroup::DeviceSiblings {
-                    row_indices: request.row_indices.to_vec(),
+                    row_indices: opening_row_indices.to_vec(),
                     values_by_row: device_siblings.values_by_row,
+                    positions,
                 });
             }
             None => {
                 match request
                     .commitment
                     .open_compact_batch_on_demand_device_rows_with_source_device(
-                        &query_rows,
+                        opening_query_rows,
                         usize::try_from(request.row_count)
                             .map_err(|_| WitnessStageOpeningError::LengthOverflow)?,
                         request.column_count,
@@ -1286,8 +1361,9 @@ pub(crate) fn open_witness_stage_commitment_batches_with_source_devices_timing(
                     )? {
                     Some(row_values) => {
                         pending_groups.push(PendingWitnessStageOpeningGroup::DeviceRows {
-                            row_indices: request.row_indices.to_vec(),
+                            row_indices: opening_row_indices.to_vec(),
                             row_values,
+                            positions,
                         });
                     }
                     None => {
@@ -1396,6 +1472,7 @@ pub(crate) fn open_witness_stage_commitment_batches_with_source_devices_timing(
             PendingWitnessStageOpeningGroup::DeviceSiblings {
                 row_indices,
                 values_by_row,
+                positions,
             } => {
                 let siblings_by_row = decoded_siblings
                     .next()
@@ -1405,6 +1482,16 @@ pub(crate) fn open_witness_stage_commitment_batches_with_source_devices_timing(
                 {
                     return Err(WitnessStageOpeningError::LengthOverflow);
                 }
+                let (row_indices, values_by_row, siblings_by_row) =
+                    if let Some(positions) = positions {
+                        (
+                            expand_unique_items(&row_indices, &positions)?,
+                            expand_unique_items(&values_by_row, &positions)?,
+                            expand_unique_items(&siblings_by_row, &positions)?,
+                        )
+                    } else {
+                        (row_indices, values_by_row, siblings_by_row)
+                    };
                 outputs.push(
                     row_indices
                         .into_iter()
@@ -1419,6 +1506,7 @@ pub(crate) fn open_witness_stage_commitment_batches_with_source_devices_timing(
             PendingWitnessStageOpeningGroup::DeviceRows {
                 row_indices,
                 row_values,
+                positions,
             } => {
                 let values_by_row = std::mem::take(&mut decoded_device_rows[group_index]);
                 if row_indices.len() != values_by_row.len()
@@ -1426,11 +1514,21 @@ pub(crate) fn open_witness_stage_commitment_batches_with_source_devices_timing(
                 {
                     return Err(WitnessStageOpeningError::LengthOverflow);
                 }
+                let (row_indices, values_by_row, siblings_by_row) =
+                    if let Some(positions) = positions {
+                        (
+                            expand_unique_items(&row_indices, &positions)?,
+                            expand_unique_items(&values_by_row, &positions)?,
+                            expand_unique_items(&row_values.siblings_by_row, &positions)?,
+                        )
+                    } else {
+                        (row_indices, values_by_row, row_values.siblings_by_row)
+                    };
                 outputs.push(
                     row_indices
                         .into_iter()
                         .zip(values_by_row)
-                        .zip(row_values.siblings_by_row)
+                        .zip(siblings_by_row)
                         .map(|((row_index, values), siblings)| {
                             WitnessStageOpening::new(row_index, values, siblings)
                         })
@@ -1498,6 +1596,20 @@ fn open_witness_stage_commitments_inner(
     let query_rows =
         checked_witness_stage_opening_rows(commitment, row_indices, row_count, column_count)?;
     let rows = usize::try_from(row_count).map_err(|_| WitnessStageOpeningError::LengthOverflow)?;
+
+    if let Some(unique) = unique_witness_stage_opening_rows(row_indices, &query_rows) {
+        let openings = open_witness_stage_commitments_inner(
+            commitment,
+            &unique.row_indices,
+            row_count,
+            column_count,
+            #[cfg(feature = "cuda")]
+            source_device,
+            #[cfg(feature = "cuda")]
+            timing.as_deref_mut(),
+        )?;
+        return expand_unique_witness_stage_openings(&openings, &unique.positions);
+    }
 
     #[cfg(feature = "cuda")]
     let compact_openings = commitment.open_compact_batch_on_demand_with_source_device(
@@ -1818,6 +1930,7 @@ mod tests {
         commit_witness_stage_leaves, commit_witness_stage_leaves_compact_with_leaf_hashes,
         commit_witness_stage_leaves_owned, commit_witness_stage_leaves_owned_with_leaf_hashes,
         commit_witness_stage_zero_compact, open_witness_stage_commitment,
+        open_witness_stage_commitments, unique_witness_stage_opening_rows,
         verify_witness_stage_opening_root, WitnessStageCommitmentError, WitnessStageLeaves,
         WORD_BYTES,
     };
@@ -1827,6 +1940,59 @@ mod tests {
     use crate::witness_commitment::WitnessStageOpeningWorkTiming;
     use crate::witness_layout::WitnessTraceStageValues;
     use lzvm_field::{coset_extend_evaluations, Felt, FieldError, MODULUS};
+
+    #[test]
+    fn unique_opening_rows_preserves_first_occurrence_positions() {
+        let row_indices = [3, 1, 3, 2, 1];
+        let query_rows = [3_usize, 1, 3, 2, 1];
+
+        let unique = unique_witness_stage_opening_rows(&row_indices, &query_rows)
+            .expect("duplicate rows should be compacted");
+
+        assert_eq!(unique.row_indices, vec![3, 1, 2]);
+        assert_eq!(unique.positions, vec![0, 1, 0, 2, 1]);
+        assert!(unique_witness_stage_opening_rows(&[0, 2], &[0, 2]).is_none());
+    }
+
+    #[test]
+    fn batch_opening_preserves_duplicate_rows() {
+        let row_count = 4;
+        let column_count = 2;
+        let arity = 2;
+        let mut bytes = Vec::new();
+        for value in 1..=row_count * column_count {
+            bytes.extend_from_slice(&Felt::from_u64(value as u64).to_le_bytes());
+        }
+        let leaves = WitnessStageLeaves::new(0, row_count, row_count, column_count, bytes);
+        let commitment =
+            commit_witness_stage_leaves(&leaves, arity).expect("commitment should build");
+        let row_indices = [2, 0, 2, 3, 0];
+
+        let openings = open_witness_stage_commitments(
+            &commitment,
+            &row_indices,
+            row_count as u64,
+            column_count,
+        )
+        .expect("batch opening should build");
+
+        assert_eq!(openings.len(), row_indices.len());
+        assert_eq!(
+            openings
+                .iter()
+                .map(|opening| opening.row_index())
+                .collect::<Vec<_>>(),
+            row_indices
+        );
+        assert_eq!(openings[0], openings[2]);
+        assert_eq!(openings[1], openings[4]);
+        for opening in &openings {
+            assert!(
+                verify_witness_stage_opening_root(commitment.root(), arity, opening)
+                    .expect("opening should verify")
+            );
+        }
+    }
 
     #[cfg(feature = "cuda")]
     struct RetainedSourceDeviceBudgetGuard {
@@ -3167,7 +3333,7 @@ mod tests {
         assert!(device.drop_retained_leaf_digest_level_for_test());
 
         let rows_a = [0_u64];
-        let rows_b = [3891_u64, 4095_u64];
+        let rows_b = [3891_u64, 4095_u64, 3891_u64];
         let mut expected_timing_a = WitnessStageOpeningWorkTiming::default();
         let expected_a = open_witness_stage_commitments_with_source_device_timing(
             &device,
@@ -3213,16 +3379,14 @@ mod tests {
         .expect("opening groups should build");
 
         assert_eq!(actual, vec![expected_a, expected_b]);
+        assert_eq!(actual[1][0], actual[1][2]);
         assert_eq!(timings[0].row_values_device_row_count, rows_a.len());
-        assert_eq!(timings[1].row_values_device_row_count, rows_b.len());
+        assert_eq!(timings[1].row_values_device_row_count, 2);
         assert_eq!(
             timings[0].row_values_word_count,
             rows_a.len() * column_count
         );
-        assert_eq!(
-            timings[1].row_values_word_count,
-            rows_b.len() * column_count
-        );
+        assert_eq!(timings[1].row_values_word_count, 2 * column_count);
         assert_eq!(timings[0].row_values_device_download_batch_count, 0);
         assert_eq!(timings[1].row_values_device_download_batch_count, 1);
         assert_eq!(
