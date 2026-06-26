@@ -1052,14 +1052,19 @@ def selected_envs(args: argparse.Namespace, root: Path) -> list[tuple[ProofEnv, 
             + "\nnext_env_template_command="
             + env_template_command_for_missing_config(args, root)
         )
+    missing_configs = []
     for config, _mode in selected:
         missing = config.missing()
         if missing:
-            raise SystemExit(
+            missing_configs.append(
                 f"{config.label} proof environment is incomplete: {', '.join(missing)}"
-                + "\nnext_env_template_command="
-                + env_template_command_for_missing_config(args, root)
             )
+    if missing_configs:
+        raise SystemExit(
+            "\n".join(missing_configs)
+            + "\nnext_env_template_command="
+            + env_template_command_for_missing_config(args, root)
+        )
     return selected
 
 
