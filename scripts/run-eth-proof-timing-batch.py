@@ -232,6 +232,16 @@ def positive_mib(raw: str) -> int:
     return value
 
 
+def positive_integer(raw: str) -> int:
+    try:
+        value = int(raw)
+    except ValueError as error:
+        raise argparse.ArgumentTypeError(f"invalid integer: {raw!r}") from error
+    if value <= 0:
+        raise argparse.ArgumentTypeError("value must be positive")
+    return value
+
+
 def nonnegative_float(raw: str) -> float:
     try:
         value = float(raw)
@@ -430,6 +440,29 @@ def mode_args(args: argparse.Namespace) -> list[str]:
     return result
 
 
+def mode_env_for_args(args: argparse.Namespace, mode: str) -> dict[str, str]:
+    mode_env = dict(MODE_ENV[mode])
+    if args.parallel_lower_workers is not None and (
+        "LZVM_GUEST_PC_TRACE_PARALLEL_LOWER" in mode_env
+        or "LZVM_GUEST_PC_TRACE_PARALLEL_LOWER_WORK_UNITS" in mode_env
+    ):
+        mode_env["LZVM_GUEST_PC_TRACE_PARALLEL_LOWER_WORKERS"] = str(
+            args.parallel_lower_workers
+        )
+    if args.parallel_lower_job_queue is not None and (
+        "LZVM_GUEST_PC_TRACE_PARALLEL_LOWER" in mode_env
+        or "LZVM_GUEST_PC_TRACE_PARALLEL_LOWER_WORK_UNITS" in mode_env
+    ):
+        mode_env["LZVM_GUEST_PC_TRACE_PARALLEL_LOWER_JOB_QUEUE"] = str(
+            args.parallel_lower_job_queue
+        )
+    if args.segment_commit_workers is not None:
+        mode_env["LZVM_GUEST_PC_TRACE_SEGMENT_COMMIT_WORKERS"] = str(
+            args.segment_commit_workers
+        )
+    return mode_env
+
+
 def effective_max_runs(args: argparse.Namespace) -> int:
     if args.max_runs is not None:
         return args.max_runs
@@ -518,6 +551,12 @@ def next_command_parts(
         parts.extend(["--small-max-avg-s", str(args.small_max_avg_s)])
     if args.large_max_avg_s is not None:
         parts.extend(["--large-max-avg-s", str(args.large_max_avg_s)])
+    if args.parallel_lower_workers is not None:
+        parts.extend(["--parallel-lower-workers", str(args.parallel_lower_workers)])
+    if args.parallel_lower_job_queue is not None:
+        parts.extend(["--parallel-lower-job-queue", str(args.parallel_lower_job_queue)])
+    if args.segment_commit_workers is not None:
+        parts.extend(["--segment-commit-workers", str(args.segment_commit_workers)])
     if args.commit is not None:
         parts.extend(["--commit", args.commit])
     return parts
@@ -556,7 +595,12 @@ def append_cleared_pipeline_env(parts: list[str]) -> None:
         parts.extend(["-u", name])
 
 
-def command_for_env(config: ProofEnv, mode: str, verify_proof: bool) -> str:
+def command_for_env(
+    config: ProofEnv,
+    mode: str,
+    verify_proof: bool,
+    mode_env: dict[str, str] | None = None,
+) -> str:
     paths = configured_paths(config)
     bin_path = paths["bin"]
     output_dir = f"{{batch_dir}}/{config.label}-{{run_padded}}.proof"
@@ -566,7 +610,7 @@ def command_for_env(config: ProofEnv, mode: str, verify_proof: bool) -> str:
     parts: list[str] = []
     append_cleared_pipeline_env(parts)
     parts.append("TMPDIR={tmp_dir}")
-    for name, value in MODE_ENV[mode].items():
+    for name, value in (mode_env or MODE_ENV[mode]).items():
         parts.append(shell_assign(name, value))
     parts.extend(
         [
@@ -876,7 +920,12 @@ def profile_command_for_env(
     tmp_dir = profile_dir / "tmp"
     profile_output_dir = profile_dir / tool
     proof_command = expand_profile_command_template(
-        command_for_env(config, mode, not args.skip_verify_proof),
+        command_for_env(
+            config,
+            mode,
+            not args.skip_verify_proof,
+            mode_env_for_args(args, mode),
+        ),
         config.label,
         batch_dir,
         tmp_dir,
@@ -1031,7 +1080,17 @@ def runner_command(args: argparse.Namespace, root: Path) -> list[str]:
             command.extend(["--large-max-avg-s", str(large_max_avg_s)])
     for config, mode in selected:
         option = "--small-command" if config.label == "small" else "--large-command"
-        command.extend([option, command_for_env(config, mode, not args.skip_verify_proof)])
+        command.extend(
+            [
+                option,
+                command_for_env(
+                    config,
+                    mode,
+                    not args.skip_verify_proof,
+                    mode_env_for_args(args, mode),
+                ),
+            ]
+        )
     return command
 
 
@@ -1044,6 +1103,9 @@ def dry_run_summary_lines(args: argparse.Namespace, root: Path) -> list[str]:
         f"runs={args.runs}",
         f"max_runs={effective_max_runs(args)}",
         f"verify_proof={str(not args.skip_verify_proof).lower()}",
+        f"parallel_lower_workers={args.parallel_lower_workers or ''}",
+        f"parallel_lower_job_queue={args.parallel_lower_job_queue or ''}",
+        f"segment_commit_workers={args.segment_commit_workers or ''}",
     ]
     for config, mode in selected:
         max_avg_s = target_max_avg_s(args, config.label)
@@ -1218,6 +1280,9 @@ def self_test() -> None:
         check_env=False,
         enforce_targets=False,
         large_max_avg_s=None,
+        parallel_lower_job_queue=None,
+        parallel_lower_workers=None,
+        segment_commit_workers=None,
         print_env_template=False,
         check_profile_tools=False,
         check_gpu_memory=False,
@@ -1296,6 +1361,9 @@ def main() -> None:
     parser.add_argument("--large-timeout", type=positive_timeout, default=180.0)
     parser.add_argument("--small-max-avg-s", type=positive_timeout, default=None)
     parser.add_argument("--large-max-avg-s", type=positive_timeout, default=None)
+    parser.add_argument("--parallel-lower-workers", type=positive_integer, default=None)
+    parser.add_argument("--parallel-lower-job-queue", type=positive_integer, default=None)
+    parser.add_argument("--segment-commit-workers", type=positive_integer, default=None)
     parser.add_argument("--work-dir", default="temp/proof-timing-batch")
     parser.add_argument("--path", default="temp/improve-log.csv")
     parser.add_argument("--summary")

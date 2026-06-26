@@ -339,6 +339,54 @@ fn eth_proof_timing_batch_dry_run_builds_small_command_from_env() {
 }
 
 #[test]
+fn eth_proof_timing_batch_dry_run_applies_worker_overrides() {
+    let fixture = ProofFixture::new("eth-proof-timing-batch-worker-overrides");
+    let mut command = Command::new(script_path());
+    command
+        .arg("--suite")
+        .arg("small")
+        .arg("--dry-run")
+        .arg("--parallel-lower-workers")
+        .arg("6")
+        .arg("--parallel-lower-job-queue")
+        .arg("12")
+        .arg("--segment-commit-workers")
+        .arg("3")
+        .arg("--summary")
+        .arg("worker overrides");
+    fixture.apply_env(&mut command, SMALL_PREFIX);
+
+    let output = command
+        .output()
+        .expect("ETH proof timing batch dry-run should run");
+    let success = output.status.success();
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    fixture.cleanup();
+
+    assert!(
+        success,
+        "dry-run should build worker override command: stderr={stderr}"
+    );
+    for assignment in [
+        "LZVM_GUEST_PC_TRACE_PARALLEL_LOWER_WORKERS=6",
+        "LZVM_GUEST_PC_TRACE_PARALLEL_LOWER_JOB_QUEUE=12",
+        "LZVM_GUEST_PC_TRACE_SEGMENT_COMMIT_WORKERS=3",
+    ] {
+        assert!(
+            stdout.contains(assignment),
+            "dry-run command should apply worker override {assignment}: {stdout}"
+        );
+    }
+    assert!(
+        stdout.contains("parallel_lower_workers=6\n")
+            && stdout.contains("parallel_lower_job_queue=12\n")
+            && stdout.contains("segment_commit_workers=3\n"),
+        "dry-run metadata should report worker overrides: {stdout}"
+    );
+}
+
+#[test]
 fn eth_proof_timing_batch_target_thresholds_follow_selected_suite() {
     let fixture = ProofFixture::new("eth-proof-timing-batch-target-thresholds");
     let mut command = Command::new(script_path());
