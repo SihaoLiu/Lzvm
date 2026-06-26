@@ -45,22 +45,25 @@ pub(super) fn start_constant_tree_material_validation(
     catalog: &KeyDirectoryCatalog,
     schedule: &ProveSchedule,
     enabled: bool,
-) -> Option<ConstantTreeMaterialValidationJob> {
+) -> Result<Option<ConstantTreeMaterialValidationJob>, String> {
     if !enabled {
-        return None;
+        return Ok(None);
     }
     let catalog = catalog.clone();
     let schedule = schedule.clone();
-    Some(ConstantTreeMaterialValidationJob {
+    let handle = thread::Builder::new()
+        .name("lzvm-ct-val".to_owned())
+        .spawn(move || {
+            lzvm_prover::validate_constant_opening_materials(&catalog, &schedule)
+                .map_err(|error| error.to_string())
+        })
+        .map_err(|error| {
+            format!("constant-tree material validation thread failed to spawn: {error}")
+        })?;
+    Ok(Some(ConstantTreeMaterialValidationJob {
         started: Instant::now(),
-        handle: thread::Builder::new()
-            .name("lzvm-ct-val".to_owned())
-            .spawn(move || {
-                lzvm_prover::validate_constant_opening_materials(&catalog, &schedule)
-                    .map_err(|error| error.to_string())
-            })
-            .expect("constant-tree material validation thread should spawn"),
-    })
+        handle,
+    }))
 }
 
 pub(super) fn join_constant_tree_material_validation(

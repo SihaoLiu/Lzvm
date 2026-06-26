@@ -187,14 +187,20 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
         }
     };
     let contribution_only = contribution_artifact_requested(&plan);
-    let mut constant_tree_material_validation = start_constant_tree_material_validation(
+    let mut constant_tree_material_validation = match start_constant_tree_material_validation(
         &catalog,
         &plan.run_plan.schedule,
         eager_constant_material_validation_enabled_from_env(
             plan.inputs.public_inputs.is_some(),
             contribution_only,
         ),
-    );
+    ) {
+        Ok(job) => job,
+        Err(message) => {
+            let _ = writeln!(stderr, "prove witness failed: {message}");
+            return 1;
+        }
+    };
     if parsed.evaluation_values_segment.is_some()
         && !(parsed.all_units || plan.run_plan.options.aggregate)
     {
