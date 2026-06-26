@@ -13,6 +13,7 @@ import Lzvm.Conformance
 import Lzvm.DigestPrefix
 import Lzvm.EthBlockPublicInputBinding
 import Lzvm.ExternalSource
+import Lzvm.FramedGuestInputBinding
 import Lzvm.MerklePathSoundness
 import Lzvm.Model
 import Lzvm.ProofArtifactBinding

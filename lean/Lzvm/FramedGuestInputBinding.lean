@@ -1,0 +1,382 @@
+/-
+Copyright (c) 2026 Sihao Liu. All rights reserved.
+Released under MIT OR Apache-2.0 license.
+Authors: Sihao Liu
+-/
+
+import Lzvm.EthBlockPublicInputBinding
+import Lzvm.ProgramImageCacheBinding
+
+/-!
+Runtime framed guest-input binding obligations.
+-/
+
+namespace Lzvm
+
+structure RuntimeFramedGuestInputBindingValidation (system : VerifierModel) where
+  ethBlockValidation : RuntimeEthBlockPublicInputBindingValidation system
+  programImageCacheValidation : RuntimeProgramImageCacheBindingValidation system
+  framedGuestInputAccepted : RuntimeArtifact -> PublicInput -> Proof -> Prop
+  framedGuestInputWellFormed : RuntimeArtifact -> PublicInput -> Proof -> Prop
+  framedGuestInputBoundToEthBlock : RuntimeArtifact -> PublicInput -> Proof -> Prop
+  framedGuestInputBoundToProgramImage : RuntimeArtifact -> PublicInput -> Proof -> Prop
+  framedGuestInputAcceptedImpliesEthBlockAccepted :
+    forall artifact publicInput proof,
+      framedGuestInputAccepted artifact publicInput proof ->
+        ethBlockValidation.ethBlockBindingAccepted artifact publicInput proof
+  framedGuestInputAcceptedImpliesProgramImageCacheAccepted :
+    forall artifact publicInput proof,
+      framedGuestInputAccepted artifact publicInput proof ->
+        programImageCacheValidation.programImageCacheBindingAccepted artifact publicInput proof
+  framedGuestInputAcceptedImpliesWellFormed :
+    forall artifact publicInput proof,
+      framedGuestInputAccepted artifact publicInput proof ->
+        framedGuestInputWellFormed artifact publicInput proof
+  framedGuestInputAcceptedImpliesEthBlockBinding :
+    forall artifact publicInput proof,
+      framedGuestInputAccepted artifact publicInput proof ->
+        framedGuestInputBoundToEthBlock artifact publicInput proof
+  framedGuestInputAcceptedImpliesProgramImageBinding :
+    forall artifact publicInput proof,
+      framedGuestInputAccepted artifact publicInput proof ->
+        framedGuestInputBoundToProgramImage artifact publicInput proof
+
+def RuntimeFramedGuestInputBindingEvidence
+    (system : VerifierModel)
+    (validation : RuntimeFramedGuestInputBindingValidation system)
+    (artifact : RuntimeArtifact)
+    (publicInput : PublicInput)
+    (proof : Proof) : Prop :=
+  validation.framedGuestInputWellFormed artifact publicInput proof
+    /\ validation.framedGuestInputBoundToEthBlock artifact publicInput proof
+    /\ validation.framedGuestInputBoundToProgramImage artifact publicInput proof
+    /\ RuntimeEthBlockPublicInputBindingEvidence
+      system
+      validation.ethBlockValidation
+      artifact
+      publicInput
+      proof
+    /\ RuntimeProgramImageCacheBindingEvidence
+      system
+      validation.programImageCacheValidation
+      artifact
+      publicInput
+      proof
+
+def RuntimeFramedGuestInputBindingStructuralObligations
+    (system : VerifierModel)
+    (validation : RuntimeFramedGuestInputBindingValidation system)
+    (artifact : RuntimeArtifact)
+    (publicInput : PublicInput)
+    (proof : Proof) : Prop :=
+  RuntimeFramedGuestInputBindingEvidence
+      system
+      validation
+      artifact
+      publicInput
+      proof
+    /\ RuntimeEthBlockPublicInputBindingStructuralObligations
+      system
+      validation.ethBlockValidation
+      artifact
+      publicInput
+      proof
+    /\ RuntimeProgramImageCacheBindingStructuralObligations
+      system
+      validation.programImageCacheValidation
+      artifact
+      publicInput
+      proof
+
+def RuntimeFramedGuestInputBindingCheckedAcceptance
+    (_system : VerifierModel)
+    (validation : RuntimeFramedGuestInputBindingValidation _system)
+    (artifact : RuntimeArtifact)
+    (publicInput : PublicInput)
+    (proof : Proof) : Prop :=
+  validation.framedGuestInputAccepted artifact publicInput proof
+
+theorem runtime_framed_guest_input_binding_checked_acceptance_eth_block_binding
+    {system : VerifierModel}
+    (validation : RuntimeFramedGuestInputBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeFramedGuestInputBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeEthBlockPublicInputBindingCheckedAcceptance
+          system
+          validation.ethBlockValidation
+          artifact
+          publicInput
+          proof := by
+  intro artifact publicInput proof accepted
+  exact
+    validation.framedGuestInputAcceptedImpliesEthBlockAccepted
+      artifact
+      publicInput
+      proof
+      accepted
+
+theorem runtime_framed_guest_input_binding_checked_acceptance_program_image_cache_binding
+    {system : VerifierModel}
+    (validation : RuntimeFramedGuestInputBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeFramedGuestInputBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeProgramImageCacheBindingCheckedAcceptance
+          system
+          validation.programImageCacheValidation
+          artifact
+          publicInput
+          proof := by
+  intro artifact publicInput proof accepted
+  exact
+    validation.framedGuestInputAcceptedImpliesProgramImageCacheAccepted
+      artifact
+      publicInput
+      proof
+      accepted
+
+theorem runtime_framed_guest_input_binding_checked_acceptance_evidence
+    {system : VerifierModel}
+    (validation : RuntimeFramedGuestInputBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeFramedGuestInputBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeFramedGuestInputBindingEvidence
+          system
+          validation
+          artifact
+          publicInput
+          proof := by
+  intro artifact publicInput proof accepted
+  have ethAccepted :=
+    runtime_framed_guest_input_binding_checked_acceptance_eth_block_binding
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have cacheAccepted :=
+    runtime_framed_guest_input_binding_checked_acceptance_program_image_cache_binding
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have ethEvidence :=
+    runtime_eth_block_public_input_binding_checked_acceptance_evidence
+      validation.ethBlockValidation
+      artifact
+      publicInput
+      proof
+      ethAccepted
+  have cacheEvidence :=
+    runtime_program_image_cache_binding_checked_acceptance_evidence
+      validation.programImageCacheValidation
+      artifact
+      publicInput
+      proof
+      cacheAccepted
+  exact
+    ⟨validation.framedGuestInputAcceptedImpliesWellFormed
+        artifact
+        publicInput
+        proof
+        accepted,
+      validation.framedGuestInputAcceptedImpliesEthBlockBinding
+        artifact
+        publicInput
+        proof
+        accepted,
+      validation.framedGuestInputAcceptedImpliesProgramImageBinding
+        artifact
+        publicInput
+        proof
+        accepted,
+      ethEvidence,
+      cacheEvidence⟩
+
+theorem runtime_framed_guest_input_binding_checked_acceptance_structural_obligations
+    {system : VerifierModel}
+    (validation : RuntimeFramedGuestInputBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeFramedGuestInputBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeFramedGuestInputBindingStructuralObligations
+          system
+          validation
+          artifact
+          publicInput
+          proof := by
+  intro artifact publicInput proof accepted
+  have evidence :=
+    runtime_framed_guest_input_binding_checked_acceptance_evidence
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have ethAccepted :=
+    runtime_framed_guest_input_binding_checked_acceptance_eth_block_binding
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have cacheAccepted :=
+    runtime_framed_guest_input_binding_checked_acceptance_program_image_cache_binding
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have ethStructural :=
+    runtime_eth_block_public_input_binding_checked_acceptance_structural_obligations
+      validation.ethBlockValidation
+      artifact
+      publicInput
+      proof
+      ethAccepted
+  have cacheStructural :=
+    runtime_program_image_cache_binding_checked_acceptance_structural_obligations
+      validation.programImageCacheValidation
+      artifact
+      publicInput
+      proof
+      cacheAccepted
+  exact
+    ⟨evidence, ethStructural, cacheStructural⟩
+
+theorem runtime_framed_guest_input_binding_checked_acceptance_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeFramedGuestInputBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeFramedGuestInputBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeFramedGuestInputBindingEvidence
+            system
+            validation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeEthBlockPublicInputBindingEvidence
+            system
+            validation.ethBlockValidation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeProgramImageCacheBindingEvidence
+            system
+            validation.programImageCacheValidation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro artifact publicInput proof accepted
+  have evidence :=
+    runtime_framed_guest_input_binding_checked_acceptance_evidence
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have ethAccepted :=
+    runtime_framed_guest_input_binding_checked_acceptance_eth_block_binding
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have ethSound :=
+    runtime_eth_block_public_input_binding_checked_acceptance_sound
+      assumptions
+      validation.ethBlockValidation
+      artifact
+      publicInput
+      proof
+      ethAccepted
+  have core :=
+    runtime_eth_block_public_input_binding_checked_acceptance_verifier_core_contract
+      assumptions
+      validation.ethBlockValidation
+      artifact
+      publicInput
+      proof
+      ethAccepted
+  exact
+    ⟨evidence,
+      ethSound.left,
+      evidence.right.right.right.right,
+      core,
+      ethSound.right.right.right⟩
+
+theorem runtime_framed_guest_input_binding_checked_acceptance_full_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeFramedGuestInputBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeFramedGuestInputBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeFramedGuestInputBindingEvidence
+            system
+            validation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeFramedGuestInputBindingStructuralObligations
+            system
+            validation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro artifact publicInput proof accepted
+  have sound :=
+    runtime_framed_guest_input_binding_checked_acceptance_sound
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have structural :=
+    runtime_framed_guest_input_binding_checked_acceptance_structural_obligations
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  exact
+    ⟨sound.left,
+      structural,
+      sound.right.right.right.left,
+      sound.right.right.right.right⟩
+
+end Lzvm

@@ -2167,6 +2167,51 @@ fn lean_eth_block_public_input_binding_tracks_runtime_checks() {
 }
 
 #[test]
+fn lean_framed_guest_input_binding_tracks_runtime_checks() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let lean_path = crate_root.join("../../lean/Lzvm/FramedGuestInputBinding.lean");
+    let lean_source =
+        std::fs::read_to_string(&lean_path).expect("Lean framed guest input source should read");
+    let lean_root_path = crate_root.join("../../lean/Lzvm.lean");
+    let lean_root_source =
+        std::fs::read_to_string(&lean_root_path).expect("Lean root source should read");
+    let batch_script_path = crate_root.join("../../scripts/run-eth-proof-timing-batch.py");
+    let batch_script_source =
+        std::fs::read_to_string(&batch_script_path).expect("proof timing batch script should read");
+    let cli_test_path = crate_root.join("../lzvm-cli/tests/setup_validate.rs");
+    let cli_test_source = std::fs::read_to_string(&cli_test_path)
+        .expect("CLI setup validation test source should read");
+
+    assert!(
+        lean_root_source.contains("import Lzvm.FramedGuestInputBinding"),
+        "top-level Lean module should include the framed guest input binding model"
+    );
+    assert!(
+        lean_source.contains("structure RuntimeFramedGuestInputBindingValidation")
+            && lean_source.contains("RuntimeFramedGuestInputBindingEvidence")
+            && lean_source.contains("RuntimeEthBlockPublicInputBindingEvidence")
+            && lean_source.contains("RuntimeProgramImageCacheBindingEvidence")
+            && lean_source.contains("RuntimeVerifierCoreContract system publicInput proof")
+            && lean_source.contains("SoundWitness system publicInput proof")
+            && lean_source
+                .contains("runtime_framed_guest_input_binding_checked_acceptance_full_contract"),
+        "Lean should expose a framed guest input binding contract over the ETH block and program image evidence"
+    );
+    assert!(
+        batch_script_source.contains(
+            "validate_framed_input_data(paths[\"input_data\"], config.var(\"INPUT_DATA\"))"
+        ) && batch_script_source.contains("# INPUT_DATA must be framed guest stdin"),
+        "proof timing batches should require framed guest stdin before invoking the proof path"
+    );
+    assert!(
+        cli_test_source
+            .contains("guest_pc_trace_proves_and_verifies_eth_block_input_with_program_image_cache")
+            && cli_test_source.contains("framed_stdin_chunk(&[7_u8])"),
+        "CLI proof coverage should bind framed guest stdin with ETH block input and the program image cache"
+    );
+}
+
+#[test]
 fn lean_challenge_segment_binding_tracks_runtime_transcript_checks() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let lean_path = crate_root.join("../../lean/Lzvm/ChallengeSegmentBinding.lean");
