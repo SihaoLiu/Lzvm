@@ -120,10 +120,19 @@ fn lean_proof_artifact_binding_exports_core_contract_projection() {
             "bindingAcceptedImpliesProofUnitValuesTraceIdentityCoverage",
         ],
     );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_proof_artifact_binding_validation_agreement_segment_ids_allowed",
+        &[
+            "RuntimeProofArtifactBindingValidationAgreement left right",
+            "left.proofSegmentIdsAllowed artifact publicInput proof <->",
+            "right.proofSegmentIdsAllowed artifact publicInput proof",
+        ],
+    );
     lean_binding::assert_theorem_body_contains(
         &lean_source,
         "runtime_proof_artifact_binding_validation_agreement_segment_ids_allowed",
-        &["proofSegmentIdsAllowedAgreement"],
+        &["rcases agreement"],
     );
     lean_binding::assert_theorem_prefix_contains(
         &lean_source,
@@ -138,7 +147,7 @@ fn lean_proof_artifact_binding_exports_core_contract_projection() {
         &lean_source,
         "runtime_proof_artifact_concrete_segment_id_binding_of_agreement_left",
         &[
-            "proofSegmentIdsAllowedImpliesConcrete",
+            "binding.proofSegmentIdsAllowedImpliesConcrete",
             "runtime_proof_artifact_binding_validation_agreement_segment_ids_allowed",
             ".mp leftAllowed",
         ],
@@ -156,7 +165,7 @@ fn lean_proof_artifact_binding_exports_core_contract_projection() {
         &lean_source,
         "runtime_proof_artifact_concrete_segment_id_binding_of_agreement_right",
         &[
-            "proofSegmentIdsAllowedImpliesConcrete",
+            "binding.proofSegmentIdsAllowedImpliesConcrete",
             "runtime_proof_artifact_binding_validation_agreement_segment_ids_allowed",
             ".mpr rightAllowed",
         ],
