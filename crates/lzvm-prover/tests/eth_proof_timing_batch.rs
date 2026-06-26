@@ -315,6 +315,15 @@ fn eth_proof_timing_batch_dry_run_builds_small_command_from_env() {
         stdout.contains("LZVM_GUEST_PC_TRACE_COMMIT_PIPELINE=1"),
         "combined mode should set its mode environment: {stdout}"
     );
+    for assignment in [
+        "LZVM_GUEST_PC_TRACE_PARALLEL_LOWER_WORKERS=2",
+        "LZVM_GUEST_PC_TRACE_SEGMENT_COMMIT_WORKERS=1",
+    ] {
+        assert!(
+            !stdout.contains(assignment),
+            "dry-run command should leave worker sizing to backend defaults: {stdout}"
+        );
+    }
     assert!(
         stdout.contains("TMPDIR={tmp_dir}"),
         "small command should use the per-run temp dir token: {stdout}"
