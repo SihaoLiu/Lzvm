@@ -547,13 +547,6 @@ def path_texts(paths: list[Path]) -> list[str]:
     return [str(path) for path in paths]
 
 
-def average_timing_seconds(paths: list[Path]) -> float | None:
-    if not paths:
-        return None
-    average = sum(timing_total_seconds_from_log(path) for path in paths) / len(paths)
-    return round(average, 3)
-
-
 def timing_seconds_values(paths: list[Path]) -> tuple[list[float], int]:
     values = []
     failed = 0
@@ -563,6 +556,12 @@ def timing_seconds_values(paths: list[Path]) -> tuple[list[float], int]:
         except (OSError, SystemExit):
             failed += 1
     return values, failed
+
+
+def timing_average_seconds(values: list[float]) -> float | None:
+    if not values:
+        return None
+    return round(sum(values) / len(values), 3)
 
 
 def timing_spread_seconds(values: list[float]) -> float | None:
@@ -581,16 +580,13 @@ def timing_relative_spread(values: list[float]) -> float | None:
     return round((ordered[-1] - ordered[0]) / median, 6)
 
 
-def print_stable_average(label: str, logs: list[Path]) -> None:
-    average = average_timing_seconds(logs)
-    if average is not None:
-        print(f"{label}_stable_avg_s={average:.3f}")
-
-
-def print_stable_spread(label: str, logs: list[Path]) -> None:
+def print_stable_timing(label: str, logs: list[Path]) -> None:
     values, failed = timing_seconds_values(logs)
+    average = timing_average_seconds(values)
     spread = timing_spread_seconds(values)
     relative_spread = timing_relative_spread(values)
+    if average is not None:
+        print(f"{label}_stable_avg_s={average:.3f}")
     if spread is not None:
         print(f"{label}_stable_spread_s={spread:.3f}")
     if relative_spread is not None:
@@ -681,8 +677,8 @@ def write_batch_json(
         "large_stable_logs": path_texts(large_stable_logs or []),
         "small_stable_timing_s": small_stable_timing_s,
         "large_stable_timing_s": large_stable_timing_s,
-        "small_stable_avg_s": average_timing_seconds(small_stable_logs or []),
-        "large_stable_avg_s": average_timing_seconds(large_stable_logs or []),
+        "small_stable_avg_s": timing_average_seconds(small_stable_timing_s),
+        "large_stable_avg_s": timing_average_seconds(large_stable_timing_s),
         "small_stable_spread_s": timing_spread_seconds(small_stable_timing_s),
         "large_stable_spread_s": timing_spread_seconds(large_stable_timing_s),
         "small_stable_relative_spread": timing_relative_spread(small_stable_timing_s),
@@ -887,8 +883,7 @@ def run_batch(args: argparse.Namespace) -> Path:
     if small_logs:
         print(f"small_runs={len(small_logs)}")
         print(f"small_stable_runs={len(small_stable_logs)}")
-        print_stable_average("small", small_stable_logs)
-        print_stable_spread("small", small_stable_logs)
+        print_stable_timing("small", small_stable_logs)
         print(
             "small_timing_summaries="
             f"{len(discovered_run_paths(batch_dir, 'small', '.proof-timing-summary.csv'))}"
@@ -898,8 +893,7 @@ def run_batch(args: argparse.Namespace) -> Path:
     if large_logs:
         print(f"large_runs={len(large_logs)}")
         print(f"large_stable_runs={len(large_stable_logs)}")
-        print_stable_average("large", large_stable_logs)
-        print_stable_spread("large", large_stable_logs)
+        print_stable_timing("large", large_stable_logs)
         print(
             "large_timing_summaries="
             f"{len(discovered_run_paths(batch_dir, 'large', '.proof-timing-summary.csv'))}"
