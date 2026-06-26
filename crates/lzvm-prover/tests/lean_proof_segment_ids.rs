@@ -1,5 +1,23 @@
 use std::path::Path;
 
+use lzvm_artifacts::challenge_values_segment::CHALLENGE_VALUES_SEGMENT_ID;
+use lzvm_artifacts::constant_opening_segment::CONSTANT_OPENING_SEGMENT_ID;
+use lzvm_artifacts::contribution_segment::CONTRIBUTION_SEGMENT_ID;
+use lzvm_artifacts::eth_block_input_segment::ETH_BLOCK_INPUT_SEGMENT_ID;
+use lzvm_artifacts::group_values_segment::GROUP_VALUES_SEGMENT_ID;
+use lzvm_artifacts::guest_input_segment::FRAMED_GUEST_INPUT_SEGMENT_ID;
+use lzvm_artifacts::pcs_evaluation_segment::PCS_EVALUATION_SEGMENT_ID;
+use lzvm_artifacts::pcs_fri_segment::PCS_FRI_OPENING_SEGMENT_ID;
+use lzvm_artifacts::pcs_material_segment::PCS_MATERIAL_MANIFEST_SEGMENT_ID;
+use lzvm_artifacts::pcs_nonce_segment::PCS_QUERY_NONCE_SEGMENT_ID;
+use lzvm_artifacts::pcs_proof_values_segment::PCS_PROOF_VALUES_SEGMENT_ID;
+use lzvm_artifacts::pcs_query_segment::PCS_QUERY_PLAN_SEGMENT_ID;
+use lzvm_artifacts::program_image_segment::PROGRAM_IMAGE_CACHE_SEGMENT_ID;
+use lzvm_artifacts::trace_constraint_segment::TRACE_CONSTRAINT_SEGMENT_ID;
+use lzvm_artifacts::unit_values_segment::UNIT_VALUES_SEGMENT_ID;
+use lzvm_artifacts::witness_opening_segment::WITNESS_OPENING_SEGMENT_ID;
+use lzvm_artifacts::witness_segment::WITNESS_COMMITMENT_SEGMENT_BASE_ID;
+
 #[test]
 fn lean_proof_segment_ids_track_runtime_allowlist() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
@@ -52,93 +70,93 @@ fn lean_proof_segment_ids_track_runtime_allowlist() {
 struct ExpectedSegmentId {
     lean_name: &'static str,
     rust_name: &'static str,
-    value: &'static str,
+    value: u32,
 }
 
 const EXPECTED_SEGMENT_IDS: &[ExpectedSegmentId] = &[
     ExpectedSegmentId {
         lean_name: "witnessCommitmentSegmentBaseId",
         rust_name: "WITNESS_COMMITMENT_SEGMENT_BASE_ID",
-        value: "100",
+        value: WITNESS_COMMITMENT_SEGMENT_BASE_ID,
     },
     ExpectedSegmentId {
         lean_name: "pcsMaterialManifestSegmentId",
         rust_name: "PCS_MATERIAL_MANIFEST_SEGMENT_ID",
-        value: "10000",
+        value: PCS_MATERIAL_MANIFEST_SEGMENT_ID,
     },
     ExpectedSegmentId {
         lean_name: "pcsQueryPlanSegmentId",
         rust_name: "PCS_QUERY_PLAN_SEGMENT_ID",
-        value: "10001",
+        value: PCS_QUERY_PLAN_SEGMENT_ID,
     },
     ExpectedSegmentId {
         lean_name: "witnessOpeningSegmentId",
         rust_name: "WITNESS_OPENING_SEGMENT_ID",
-        value: "10002",
+        value: WITNESS_OPENING_SEGMENT_ID,
     },
     ExpectedSegmentId {
         lean_name: "constantOpeningSegmentId",
         rust_name: "CONSTANT_OPENING_SEGMENT_ID",
-        value: "10003",
+        value: CONSTANT_OPENING_SEGMENT_ID,
     },
     ExpectedSegmentId {
         lean_name: "pcsFriOpeningSegmentId",
         rust_name: "PCS_FRI_OPENING_SEGMENT_ID",
-        value: "10004",
+        value: PCS_FRI_OPENING_SEGMENT_ID,
     },
     ExpectedSegmentId {
         lean_name: "pcsQueryNonceSegmentId",
         rust_name: "PCS_QUERY_NONCE_SEGMENT_ID",
-        value: "10005",
+        value: PCS_QUERY_NONCE_SEGMENT_ID,
     },
     ExpectedSegmentId {
         lean_name: "pcsEvaluationSegmentId",
         rust_name: "PCS_EVALUATION_SEGMENT_ID",
-        value: "10006",
+        value: PCS_EVALUATION_SEGMENT_ID,
     },
     ExpectedSegmentId {
         lean_name: "pcsProofValuesSegmentId",
         rust_name: "PCS_PROOF_VALUES_SEGMENT_ID",
-        value: "10007",
+        value: PCS_PROOF_VALUES_SEGMENT_ID,
     },
     ExpectedSegmentId {
         lean_name: "groupValuesSegmentId",
         rust_name: "GROUP_VALUES_SEGMENT_ID",
-        value: "10008",
+        value: GROUP_VALUES_SEGMENT_ID,
     },
     ExpectedSegmentId {
         lean_name: "unitValuesSegmentId",
         rust_name: "UNIT_VALUES_SEGMENT_ID",
-        value: "10009",
+        value: UNIT_VALUES_SEGMENT_ID,
     },
     ExpectedSegmentId {
         lean_name: "programImageCacheSegmentId",
         rust_name: "PROGRAM_IMAGE_CACHE_SEGMENT_ID",
-        value: "10010",
+        value: PROGRAM_IMAGE_CACHE_SEGMENT_ID,
     },
     ExpectedSegmentId {
         lean_name: "contributionSegmentId",
         rust_name: "CONTRIBUTION_SEGMENT_ID",
-        value: "10011",
+        value: CONTRIBUTION_SEGMENT_ID,
     },
     ExpectedSegmentId {
         lean_name: "challengeValuesSegmentId",
         rust_name: "CHALLENGE_VALUES_SEGMENT_ID",
-        value: "10012",
+        value: CHALLENGE_VALUES_SEGMENT_ID,
     },
     ExpectedSegmentId {
         lean_name: "ethBlockInputSegmentId",
         rust_name: "ETH_BLOCK_INPUT_SEGMENT_ID",
-        value: "10013",
+        value: ETH_BLOCK_INPUT_SEGMENT_ID,
     },
     ExpectedSegmentId {
         lean_name: "traceConstraintSegmentId",
         rust_name: "TRACE_CONSTRAINT_SEGMENT_ID",
-        value: "10014",
+        value: TRACE_CONSTRAINT_SEGMENT_ID,
     },
     ExpectedSegmentId {
         lean_name: "framedGuestInputSegmentId",
         rust_name: "FRAMED_GUEST_INPUT_SEGMENT_ID",
-        value: "10015",
+        value: FRAMED_GUEST_INPUT_SEGMENT_ID,
     },
 ];
