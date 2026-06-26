@@ -626,9 +626,7 @@ fn read_bounded_count(
     record_min_bytes: usize,
 ) -> Result<usize, VerifierInfoError> {
     let count = u32_to_usize(reader.read_u32()?)?;
-    if count > reader.remaining_len() / record_min_bytes {
-        return Err(VerifierInfoError::LengthOverflow);
-    }
+    reader.require_items(count, record_min_bytes)?;
     Ok(count)
 }
 
@@ -656,10 +654,6 @@ impl<'a> Reader<'a> {
 
     fn position(&self) -> usize {
         self.offset
-    }
-
-    fn remaining_len(&self) -> usize {
-        self.bytes.len() - self.offset
     }
 
     fn read_destination(&mut self) -> Result<VerifierDestination, VerifierInfoError> {
@@ -736,6 +730,24 @@ impl<'a> Reader<'a> {
         std::str::from_utf8(bytes)
             .map(str::to_owned)
             .map_err(|_| VerifierInfoError::InvalidUtf8)
+    }
+
+    fn require_items(&self, count: usize, item_bytes: usize) -> Result<(), VerifierInfoError> {
+        let needed = count
+            .checked_mul(item_bytes)
+            .ok_or(VerifierInfoError::LengthOverflow)?;
+        let end = self
+            .offset
+            .checked_add(needed)
+            .ok_or(VerifierInfoError::LengthOverflow)?;
+        if end > self.bytes.len() {
+            return Err(VerifierInfoError::UnexpectedEof {
+                offset: self.offset,
+                needed,
+                available: self.bytes.len().saturating_sub(self.offset),
+            });
+        }
+        Ok(())
     }
 
     fn read_u8(&mut self) -> Result<u8, VerifierInfoError> {

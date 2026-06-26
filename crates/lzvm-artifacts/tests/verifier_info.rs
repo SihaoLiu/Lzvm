@@ -197,7 +197,7 @@ fn rejects_operation_count_that_exceeds_remaining_operation_records() {
 
     assert!(matches!(
         parse_verifier_info(&bytes),
-        Err(VerifierInfoError::LengthOverflow)
+        Err(VerifierInfoError::UnexpectedEof { .. })
     ));
 }
 
@@ -207,6 +207,6 @@ fn rejects_source_count_that_exceeds_remaining_source_operands() {
 
     assert!(matches!(
         parse_verifier_info(&bytes),
-        Err(VerifierInfoError::LengthOverflow)
+        Err(VerifierInfoError::UnexpectedEof { .. })
     ));
 }
