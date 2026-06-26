@@ -191,6 +191,11 @@ fn eth_proof_timing_batch_self_test_runs() {
         "self-test should report the stable small average: {stdout}"
     );
     assert!(
+        stdout.contains("small_stable_spread_s=0.002")
+            && stdout.contains("small_stable_relative_spread=0.001996"),
+        "self-test should report the stable small spread: {stdout}"
+    );
+    assert!(
         stdout.contains("small_timing_summaries=3"),
         "self-test should summarize small timing logs: {stdout}"
     );
@@ -205,6 +210,11 @@ fn eth_proof_timing_batch_self_test_runs() {
     assert!(
         stdout.contains("large_stable_avg_s=2.002"),
         "self-test should report the stable large average: {stdout}"
+    );
+    assert!(
+        stdout.contains("large_stable_spread_s=0.002")
+            && stdout.contains("large_stable_relative_spread=0.000999"),
+        "self-test should report the stable large spread: {stdout}"
     );
     assert!(
         stdout.contains("large_timing_summaries=3"),

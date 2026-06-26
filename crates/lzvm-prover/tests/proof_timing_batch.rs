@@ -167,6 +167,11 @@ fn proof_timing_batch_runs_commands_and_appends_stable_log() {
         "batch output should report the stable small average: {stdout}"
     );
     assert!(
+        stdout.contains("small_stable_spread_s=0.002")
+            && stdout.contains("small_stable_relative_spread=0.001996"),
+        "batch output should report stable small timing spread: {stdout}"
+    );
+    assert!(
         stdout.contains("small_timing_summaries=3"),
         "batch output should report small timing summary count: {stdout}"
     );
@@ -185,6 +190,11 @@ fn proof_timing_batch_runs_commands_and_appends_stable_log() {
     assert!(
         stdout.contains("large_stable_avg_s=2.002"),
         "batch output should report the stable large average: {stdout}"
+    );
+    assert!(
+        stdout.contains("large_stable_spread_s=0.002")
+            && stdout.contains("large_stable_relative_spread=0.000999"),
+        "batch output should report stable large timing spread: {stdout}"
     );
     assert!(
         stdout.contains("large_timing_summaries=3"),
@@ -411,6 +421,11 @@ fn proof_timing_batch_reruns_until_stable_sample_group() {
     assert!(
         stdout.contains("small_stable_avg_s=1.003"),
         "batch output should report the stable subset average: {stdout}"
+    );
+    assert!(
+        stdout.contains("small_stable_spread_s=0.002")
+            && stdout.contains("small_stable_relative_spread=0.001994"),
+        "batch output should report the stable subset spread: {stdout}"
     );
     let batch_dir = stdout
         .lines()
