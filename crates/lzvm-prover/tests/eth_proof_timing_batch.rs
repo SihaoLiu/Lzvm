@@ -1385,7 +1385,7 @@ fn eth_proof_timing_batch_prints_env_template_without_config() {
         "env template should not warn about missing inputs: stderr={stderr}"
     );
     assert!(
-        stdout.contains("# cargo build --release -p lzvm-cli --bin lzvm"),
+        stdout.contains("# cargo build --release -p lzvm-cli --bin lzvm --features cuda"),
         "env template should include the default binary build command: {stdout}"
     );
     assert!(

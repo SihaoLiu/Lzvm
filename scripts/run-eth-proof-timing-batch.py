@@ -13,7 +13,7 @@ from typing import NamedTuple
 SMALL_PREFIX = "LZVM_REAL_SMALL_PARITY"
 LARGE_PREFIX = "LZVM_REAL_LARGE_PARITY"
 DEFAULT_BIN_RELATIVE = Path("target/release/lzvm")
-DEFAULT_BIN_BUILD_COMMAND = "cargo build --release -p lzvm-cli --bin lzvm"
+DEFAULT_BIN_BUILD_COMMAND = "cargo build --release -p lzvm-cli --bin lzvm --features cuda"
 DEFAULT_RUNNER = "scripts/run-proof-timing-batch.py"
 DEFAULT_ENV_TEMPLATE_PATH = "temp/real-proof.env"
 DEFAULT_PROFILE_OUTPUT_DIR = "temp/proof-profiles"
