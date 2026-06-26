@@ -204,13 +204,6 @@ theorem runtime_framed_guest_input_binding_checked_acceptance_concrete_segment_i
           proof ->
         RuntimeProofArtifactConcreteSegmentIdsAllowed proof := by
   intro artifact publicInput proof accepted
-  have ethAccepted :=
-    runtime_framed_guest_input_binding_checked_acceptance_eth_block_acceptance
-      validation
-      artifact
-      publicInput
-      proof
-      accepted
   exact
     runtime_eth_block_public_input_binding_checked_acceptance_concrete_segment_ids_allowed
       validation.ethBlockValidation
@@ -218,7 +211,12 @@ theorem runtime_framed_guest_input_binding_checked_acceptance_concrete_segment_i
       artifact
       publicInput
       proof
-      ethAccepted
+      (runtime_framed_guest_input_binding_checked_acceptance_eth_block_acceptance
+        validation
+        artifact
+        publicInput
+        proof
+        accepted)
 
 theorem runtime_framed_guest_input_binding_checked_acceptance_evidence
     {system : VerifierModel}

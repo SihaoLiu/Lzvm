@@ -353,13 +353,6 @@ theorem runtime_eth_block_public_input_binding_checked_acceptance_concrete_segme
           proof ->
         RuntimeProofArtifactConcreteSegmentIdsAllowed proof := by
   intro artifact publicInput proof accepted
-  have artifactAccepted :=
-    runtime_eth_block_public_input_binding_checked_acceptance_artifact_binding
-      validation
-      artifact
-      publicInput
-      proof
-      accepted
   exact
     runtime_proof_artifact_binding_checked_acceptance_concrete_segment_ids_allowed
       validation.proofArtifactBindingValidation
@@ -367,7 +360,12 @@ theorem runtime_eth_block_public_input_binding_checked_acceptance_concrete_segme
       artifact
       publicInput
       proof
-      artifactAccepted
+      (runtime_eth_block_public_input_binding_checked_acceptance_artifact_binding
+        validation
+        artifact
+        publicInput
+        proof
+        accepted)
 
 theorem runtime_eth_block_public_input_binding_checked_acceptance_structural_obligations
     {system : VerifierModel}

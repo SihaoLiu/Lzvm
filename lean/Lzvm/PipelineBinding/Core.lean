@@ -1080,13 +1080,6 @@ theorem runtime_pipeline_binding_checked_acceptance_eth_concrete_segment_ids_all
           proof ->
         RuntimeProofArtifactConcreteSegmentIdsAllowed proof := by
   intro artifact publicInput proof accepted
-  have ethAccepted :=
-    runtime_pipeline_binding_checked_acceptance_eth
-      validation
-      artifact
-      publicInput
-      proof
-      accepted
   exact
     runtime_eth_block_public_input_binding_checked_acceptance_concrete_segment_ids_allowed
       validation.ethBindingValidation
@@ -1094,7 +1087,12 @@ theorem runtime_pipeline_binding_checked_acceptance_eth_concrete_segment_ids_all
       artifact
       publicInput
       proof
-      ethAccepted
+      (runtime_pipeline_binding_checked_acceptance_eth
+        validation
+        artifact
+        publicInput
+        proof
+        accepted)
 
 theorem runtime_pipeline_binding_checked_acceptance_eth_full_contract
     {system : VerifierModel}
@@ -1203,14 +1201,6 @@ theorem runtime_pipeline_binding_checked_acceptance_framed_guest_input_concrete_
           proof ->
         RuntimeProofArtifactConcreteSegmentIdsAllowed proof := by
   intro artifact publicInput proof accepted
-  have framedAccepted :=
-    runtime_pipeline_binding_checked_acceptance_framed_guest_input
-      validation
-      bridge
-      artifact
-      publicInput
-      proof
-      accepted
   exact
     runtime_framed_guest_input_binding_checked_acceptance_concrete_segment_ids_allowed
       bridge.framedGuestInputBindingValidation
@@ -1218,7 +1208,13 @@ theorem runtime_pipeline_binding_checked_acceptance_framed_guest_input_concrete_
       artifact
       publicInput
       proof
-      framedAccepted
+      (runtime_pipeline_binding_checked_acceptance_framed_guest_input
+        validation
+        bridge
+        artifact
+        publicInput
+        proof
+        accepted)
 
 theorem runtime_pipeline_binding_checked_acceptance_framed_guest_input_full_contract
     {system : VerifierModel}
