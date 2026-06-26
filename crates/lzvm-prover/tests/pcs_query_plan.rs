@@ -1,6 +1,8 @@
 use lzvm_artifacts::challenge_values_segment::{
     encode_challenge_values_segment, ChallengeValuesSegment, CHALLENGE_VALUES_SEGMENT_ID,
 };
+use lzvm_artifacts::eth_block_input_segment::ETH_BLOCK_INPUT_SEGMENT_ID;
+use lzvm_artifacts::guest_input_segment::FRAMED_GUEST_INPUT_SEGMENT_ID;
 use lzvm_artifacts::key_directory::KeyUnitKind;
 use lzvm_artifacts::pcs_evaluation_segment::{
     encode_pcs_evaluation_segment, PcsEvaluationSegment, PcsEvaluationUnitSegment,
@@ -48,7 +50,8 @@ use lzvm_prover::{
     build_pcs_query_nonce_segment_from_transcript_segments,
     build_pcs_query_nonce_segment_with_streams, build_pcs_query_plan_segment,
     build_pcs_query_plan_segment_from_challenge,
-    build_pcs_query_plan_segment_from_transcript_segments, ProveSchedule, ProveUnitSchedule,
+    build_pcs_query_plan_segment_from_transcript_segments,
+    build_pcs_query_plan_segment_with_bindings, ProveSchedule, ProveUnitSchedule,
 };
 
 #[test]
@@ -429,6 +432,45 @@ fn rejects_seeded_pcs_query_plan_mismatches_with_challenge_values_segment() {
 }
 
 #[test]
+fn rejects_seeded_pcs_query_plan_mismatches_with_pipeline_input_binding_segments() {
+    for binding_segment in [
+        input_binding_segment(ETH_BLOCK_INPUT_SEGMENT_ID, &[1, 2, 3, 4]),
+        input_binding_segment(FRAMED_GUEST_INPUT_SEGMENT_ID, &[5, 6, 7, 8]),
+    ] {
+        let schedule = query_sensitive_schedule();
+        let public_hash = [7; 32];
+        let material = material_segment();
+        let witness = witness_segment(0);
+        let query = build_pcs_query_plan_segment(
+            &schedule,
+            public_hash,
+            &material,
+            std::slice::from_ref(&witness),
+        )
+        .expect("query plan should build");
+        let bound_query = build_pcs_query_plan_segment_with_bindings(
+            &schedule,
+            public_hash,
+            &material,
+            std::slice::from_ref(&witness),
+            std::slice::from_ref(&binding_segment),
+        )
+        .expect("bound query plan should build");
+        assert_ne!(
+            query.data, bound_query.data,
+            "binding segment {} should affect query plan",
+            binding_segment.id
+        );
+        let segments = vec![material, witness, binding_segment, query];
+
+        let error = validate_seeded_pcs_query_plan_segments(&schedule, public_hash, &segments)
+            .expect_err("query plan mismatch should be rejected");
+
+        assert_eq!(error, ValidatePcsQueryPlanSegmentsError::QueryPlanMismatch);
+    }
+}
+
+#[test]
 fn rejects_seeded_pcs_query_plan_duplicate_binding_segments() {
     let schedule = sample_schedule();
     let public_hash = [7; 32];
@@ -583,6 +625,22 @@ fn rejects_transcript_pcs_query_plan_duplicate_binding_segments() {
             PROGRAM_IMAGE_CACHE_SEGMENT_ID
         )
     );
+}
+
+#[test]
+fn rejects_transcript_pcs_query_plan_mismatches_with_pipeline_input_binding_segments() {
+    for binding_segment in [
+        input_binding_segment(ETH_BLOCK_INPUT_SEGMENT_ID, &[1, 2, 3, 4]),
+        input_binding_segment(FRAMED_GUEST_INPUT_SEGMENT_ID, &[5, 6, 7, 8]),
+    ] {
+        let (schedule, mut segments) = transcript_query_plan_segments();
+        segments.push(binding_segment);
+
+        let error = validate_transcript_pcs_query_plan_segments(&schedule, &[], &segments)
+            .expect_err("query plan mismatch should be rejected");
+
+        assert_eq!(error, ValidatePcsQueryPlanSegmentsError::QueryPlanMismatch);
+    }
 }
 
 #[test]
@@ -1524,6 +1582,13 @@ fn challenge_values_segment(values: [u64; 3]) -> ProofSegment {
             values: vec![values],
         })
         .expect("challenge values segment should encode"),
+    }
+}
+
+fn input_binding_segment(id: u32, data: &[u8]) -> ProofSegment {
+    ProofSegment {
+        id,
+        data: data.to_vec(),
     }
 }
 
