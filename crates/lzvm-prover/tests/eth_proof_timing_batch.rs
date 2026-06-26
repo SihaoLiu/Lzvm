@@ -1832,6 +1832,12 @@ fn eth_proof_timing_batch_prints_profile_commands_from_env() {
         .arg("small")
         .arg("--small-mode")
         .arg("stream-pipeline")
+        .arg("--parallel-lower-workers")
+        .arg("6")
+        .arg("--parallel-lower-job-queue")
+        .arg("12")
+        .arg("--segment-commit-workers")
+        .arg("3")
         .arg("--profile-tool")
         .arg("both")
         .arg("--profile-output-dir")
@@ -1938,9 +1944,12 @@ fn eth_proof_timing_batch_prints_profile_commands_from_env() {
             && stdout.contains("prove witness --guest-pc-trace 120000000 --timings")
             && stdout.contains("verify proof --eth-block-input")
             && stdout.contains("&& env -u LZVM_GUEST_PC_TRACE_PARALLEL_LOWER")
+            && stdout.contains("LZVM_GUEST_PC_TRACE_PARALLEL_LOWER_WORKERS=6")
+            && stdout.contains("LZVM_GUEST_PC_TRACE_PARALLEL_LOWER_JOB_QUEUE=12")
+            && stdout.contains("LZVM_GUEST_PC_TRACE_SEGMENT_COMMIT_WORKERS=3")
             && stdout.contains(" TMPDIR=")
             && stdout.contains("verify_proof_status=ok"),
-        "profile command should wrap the same prove-then-verify shell command with managed TMPDIR: {stdout}"
+        "profile command should wrap the same prove-then-verify shell command with managed worker overrides and TMPDIR: {stdout}"
     );
     assert!(
         stdout.contains("small-profile.proof")
@@ -2022,6 +2031,12 @@ fn eth_proof_timing_batch_profile_commands_skip_verify_when_requested() {
         .arg("small")
         .arg("--profile-tool")
         .arg("both")
+        .arg("--parallel-lower-workers")
+        .arg("6")
+        .arg("--parallel-lower-job-queue")
+        .arg("12")
+        .arg("--segment-commit-workers")
+        .arg("3")
         .arg("--profile-arg=--kernel-name-base=demangled")
         .arg("--profile-arg=--launch-skip=1")
         .arg("--skip-verify-proof")
@@ -2062,6 +2077,12 @@ fn eth_proof_timing_batch_profile_commands_skip_verify_when_requested() {
         "profile commands should still be printed: {stdout}"
     );
     assert!(
+        stdout.contains("LZVM_GUEST_PC_TRACE_PARALLEL_LOWER_WORKERS=6")
+            && stdout.contains("LZVM_GUEST_PC_TRACE_PARALLEL_LOWER_JOB_QUEUE=12")
+            && stdout.contains("LZVM_GUEST_PC_TRACE_SEGMENT_COMMIT_WORKERS=3"),
+        "skip verify profile commands should preserve worker overrides: {stdout}"
+    );
+    assert!(
         stdout.contains("--profile-arg=--kernel-name-base=demangled")
             && stdout.contains("--profile-arg=--launch-skip=1")
             && !stdout.contains("--profile-arg --kernel-name-base=demangled")
@@ -2074,6 +2095,15 @@ fn eth_proof_timing_batch_profile_commands_skip_verify_when_requested() {
             && ncu_dry_run.contains("--kernel-name-base=demangled")
             && ncu_dry_run.contains("--launch-skip=1"),
         "generated profile commands should parse profiler args under dry-run: nsys={nsys_dry_run} ncu={ncu_dry_run}"
+    );
+    assert!(
+        nsys_dry_run.contains("LZVM_GUEST_PC_TRACE_PARALLEL_LOWER_WORKERS=6")
+            && nsys_dry_run.contains("LZVM_GUEST_PC_TRACE_PARALLEL_LOWER_JOB_QUEUE=12")
+            && nsys_dry_run.contains("LZVM_GUEST_PC_TRACE_SEGMENT_COMMIT_WORKERS=3")
+            && ncu_dry_run.contains("LZVM_GUEST_PC_TRACE_PARALLEL_LOWER_WORKERS=6")
+            && ncu_dry_run.contains("LZVM_GUEST_PC_TRACE_PARALLEL_LOWER_JOB_QUEUE=12")
+            && ncu_dry_run.contains("LZVM_GUEST_PC_TRACE_SEGMENT_COMMIT_WORKERS=3"),
+        "generated profile commands should preserve worker overrides under dry-run: nsys={nsys_dry_run} ncu={ncu_dry_run}"
     );
     assert!(
         !stdout.contains("verify proof --eth-block-input")
