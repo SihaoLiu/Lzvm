@@ -5,6 +5,7 @@ use lzvm_artifacts::pcs_proof_values_segment::{
 
 const NON_CANONICAL_FIELD: u64 = 0xffff_ffff_0000_0001;
 const FIRST_VALUE_OFFSET: usize = 12;
+const EXTENSION_BYTES: usize = 3 * 8;
 
 fn segment_header(value_count: u32) -> Vec<u8> {
     let mut bytes = Vec::new();
@@ -94,7 +95,11 @@ fn rejects_truncated_pcs_proof_values_segments() {
 
     assert!(matches!(
         parse_pcs_proof_values_segment(&bytes),
-        Err(PcsProofValuesSegmentError::LengthOverflow)
+        Err(PcsProofValuesSegmentError::UnexpectedEof {
+            needed,
+            available
+        }) if needed == FIRST_VALUE_OFFSET + EXTENSION_BYTES
+            && available == FIRST_VALUE_OFFSET + EXTENSION_BYTES - 1
     ));
 }
 
@@ -102,7 +107,10 @@ fn rejects_truncated_pcs_proof_values_segments() {
 fn rejects_value_count_that_exceeds_remaining_extensions() {
     assert!(matches!(
         parse_pcs_proof_values_segment(&segment_header(1)),
-        Err(PcsProofValuesSegmentError::LengthOverflow)
+        Err(PcsProofValuesSegmentError::UnexpectedEof {
+            needed,
+            available: FIRST_VALUE_OFFSET
+        }) if needed == FIRST_VALUE_OFFSET + EXTENSION_BYTES
     ));
 }
 

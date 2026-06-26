@@ -5,6 +5,7 @@ use lzvm_artifacts::group_values_segment::{
 
 const NON_CANONICAL_FIELD: u64 = 0xffff_ffff_0000_0001;
 const FIRST_VALUE_OFFSET: usize = 12;
+const EXTENSION_BYTES: usize = 3 * 8;
 
 fn segment_header(value_count: u32) -> Vec<u8> {
     let mut bytes = Vec::new();
@@ -86,7 +87,28 @@ fn rejects_non_canonical_group_values_when_parsing() {
 fn rejects_value_count_that_exceeds_remaining_extensions() {
     assert!(matches!(
         parse_group_values_segment(&segment_header(1)),
-        Err(GroupValuesSegmentError::LengthOverflow)
+        Err(GroupValuesSegmentError::UnexpectedEof {
+            needed,
+            available: FIRST_VALUE_OFFSET
+        }) if needed == FIRST_VALUE_OFFSET + EXTENSION_BYTES
+    ));
+}
+
+#[test]
+fn rejects_truncated_group_values_segments() {
+    let segment = GroupValuesSegment {
+        values: vec![[7, 8, 9]],
+    };
+    let mut bytes = encode_group_values_segment(&segment).expect("segment should encode");
+    bytes.pop();
+
+    assert!(matches!(
+        parse_group_values_segment(&bytes),
+        Err(GroupValuesSegmentError::UnexpectedEof {
+            needed,
+            available
+        }) if needed == FIRST_VALUE_OFFSET + EXTENSION_BYTES
+            && available == FIRST_VALUE_OFFSET + EXTENSION_BYTES - 1
     ));
 }
 
