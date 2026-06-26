@@ -128,7 +128,7 @@ pub fn parse_witness_trace(
         values.push(value);
     }
 
-    Ok(WitnessTraceBuffer::from_values(rows, columns, values).expect("shape already validated"))
+    WitnessTraceBuffer::from_values(rows, columns, values)
 }
 
 fn validate_trace_shape(
@@ -149,4 +149,49 @@ fn validate_trace_shape(
         return Err(WitnessTraceError::ElementCountMismatch { expected, found });
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_trace_bytes_in_row_major_order() {
+        let bytes = [1_u64, 2, 3, 4]
+            .into_iter()
+            .flat_map(u64::to_le_bytes)
+            .collect::<Vec<_>>();
+
+        let trace = parse_witness_trace(&bytes, 2, 2).expect("trace should parse");
+
+        assert_eq!(trace.row_count(), 2);
+        assert_eq!(trace.column_count(), 2);
+        assert_eq!(
+            trace.values(),
+            &[
+                Felt::from_canonical(1).expect("value should be canonical"),
+                Felt::from_canonical(2).expect("value should be canonical"),
+                Felt::from_canonical(3).expect("value should be canonical"),
+                Felt::from_canonical(4).expect("value should be canonical"),
+            ]
+        );
+    }
+
+    #[test]
+    fn rejects_trace_bytes_with_mismatched_shape() {
+        let bytes = [1_u64, 2, 3]
+            .into_iter()
+            .flat_map(u64::to_le_bytes)
+            .collect::<Vec<_>>();
+
+        let error = parse_witness_trace(&bytes, 2, 2).expect_err("shape should fail");
+
+        assert_eq!(
+            error,
+            WitnessTraceError::ElementCountMismatch {
+                expected: 4,
+                found: 3
+            }
+        );
+    }
 }
