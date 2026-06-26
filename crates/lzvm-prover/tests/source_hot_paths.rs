@@ -9403,6 +9403,32 @@ fn contribution_proof_artifact_timing_reports_segment_verify_and_challenge_work(
     );
 }
 
+#[test]
+fn proof_runner_summary_gates_require_opening_row_dedup_shape() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+
+    for relative_path in [
+        "../../scripts/run-proof-timing-batch.py",
+        "../../scripts/run-proof-profile.py",
+    ] {
+        let source_path = crate_root.join(relative_path);
+        let source =
+            std::fs::read_to_string(&source_path).expect("proof runner script source should read");
+        let required_keys = source_between(&source, "TIMING_SUMMARY_REQUIRED_KEYS = [", "]\n");
+
+        for required in [
+            "timing_finish_witness_opening_row_dedup_input_rows",
+            "timing_finish_witness_opening_row_dedup_unique_rows",
+            "timing_finish_witness_opening_row_dedup_elided_rows",
+        ] {
+            assert!(
+                required_keys.contains(required),
+                "{relative_path} timing summary gate should require {required}"
+            );
+        }
+    }
+}
+
 fn function_body<'a>(source: &'a str, start: &str, end: &str) -> &'a str {
     let body = source
         .split_once(start)
@@ -9410,5 +9436,15 @@ fn function_body<'a>(source: &'a str, start: &str, end: &str) -> &'a str {
         .1;
     body.split_once(end)
         .unwrap_or_else(|| panic!("missing function end: {end}"))
+        .0
+}
+
+fn source_between<'a>(source: &'a str, start: &str, end: &str) -> &'a str {
+    let body = source
+        .split_once(start)
+        .unwrap_or_else(|| panic!("missing source start: {start}"))
+        .1;
+    body.split_once(end)
+        .unwrap_or_else(|| panic!("missing source end: {end}"))
         .0
 }
