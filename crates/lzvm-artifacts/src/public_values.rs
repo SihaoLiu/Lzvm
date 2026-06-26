@@ -445,22 +445,22 @@ impl<'a> Reader<'a> {
     }
 
     fn read_u32(&mut self) -> Result<u32, PublicValuesError> {
-        let bytes = self.read_exact(4)?;
-        Ok(u32::from_le_bytes(
-            bytes.try_into().expect("slice length checked"),
-        ))
+        Ok(u32::from_le_bytes(self.read_array::<4>()?))
     }
 
     fn read_u64(&mut self) -> Result<u64, PublicValuesError> {
-        let bytes = self.read_exact(8)?;
-        Ok(u64::from_le_bytes(
-            bytes.try_into().expect("slice length checked"),
-        ))
+        Ok(u64::from_le_bytes(self.read_array::<8>()?))
     }
 
     fn read_hash(&mut self) -> Result<[u8; 32], PublicValuesError> {
-        let bytes = self.read_exact(32)?;
-        Ok(bytes.try_into().expect("slice length checked"))
+        self.read_array::<32>()
+    }
+
+    fn read_array<const N: usize>(&mut self) -> Result<[u8; N], PublicValuesError> {
+        let bytes = self.read_exact(N)?;
+        let mut out = [0_u8; N];
+        out.copy_from_slice(bytes);
+        Ok(out)
     }
 
     fn read_string(&mut self) -> Result<String, PublicValuesError> {

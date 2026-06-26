@@ -101,12 +101,10 @@ pub fn parse_proof_artifact(bytes: &[u8]) -> Result<ProofArtifact, ProofArtifact
         });
     }
 
-    let setup_hash: [u8; 32] = metadata.data[..HASH_BYTES]
-        .try_into()
-        .expect("slice length checked");
-    let public_values_hash: [u8; 32] = metadata.data[HASH_BYTES..METADATA_BYTES]
-        .try_into()
-        .expect("slice length checked");
+    let mut setup_hash = [0_u8; 32];
+    setup_hash.copy_from_slice(&metadata.data[..HASH_BYTES]);
+    let mut public_values_hash = [0_u8; 32];
+    public_values_hash.copy_from_slice(&metadata.data[HASH_BYTES..METADATA_BYTES]);
     let mut segments = Vec::new();
     for section in file.sections {
         if section.id == METADATA_SECTION_ID {
