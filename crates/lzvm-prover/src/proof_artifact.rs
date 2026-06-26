@@ -43,6 +43,7 @@ use crate::group_values::build_group_values_segment;
 use crate::pcs_transcript::aggregate_pcs_final_query_challenges_iter;
 use crate::proof_artifact_timing::WitnessProofArtifactTiming;
 use crate::proof_preflight::{contains_named_eth_block_public_values, public_values_as_fields};
+use crate::proof_segment_ids::unexpected_proof_segment_id;
 use crate::proof_values::{
     build_pcs_proof_values_segment_from_packed_values, flatten_pcs_proof_values,
     load_pcs_proof_values_from_segments,
@@ -432,6 +433,11 @@ pub struct ProofArtifactInputs<'a> {
 fn finish_proof_artifact(proof: ProofArtifact) -> Result<ProofArtifact, String> {
     validate_proof_artifact(&proof)
         .map_err(|error| format!("build proof artifact failed: {error}"))?;
+    if let Some(id) = unexpected_proof_segment_id(&proof.segments) {
+        return Err(format!(
+            "build proof artifact failed: unexpected proof segment id: {id}"
+        ));
+    }
     Ok(proof)
 }
 
@@ -2068,6 +2074,25 @@ mod tests {
         assert_eq!(
             error,
             "build proof artifact failed: duplicate proof segment id: 100"
+        );
+    }
+
+    #[test]
+    fn finalization_rejects_unknown_fixed_segment_ids() {
+        let proof = ProofArtifact {
+            setup_hash: [0x11; 32],
+            public_values_hash: [0x22; 32],
+            segments: vec![ProofSegment {
+                id: 20_000,
+                data: vec![1],
+            }],
+        };
+
+        let error = finish_proof_artifact(proof).expect_err("unknown segment should reject");
+
+        assert_eq!(
+            error,
+            "build proof artifact failed: unexpected proof segment id: 20000"
         );
     }
 
