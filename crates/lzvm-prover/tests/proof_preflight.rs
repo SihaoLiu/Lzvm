@@ -9,7 +9,12 @@ use lzvm_artifacts::eth_block_input_segment::{
 use lzvm_artifacts::eth_block_public_values::{
     public_values_from_eth_block_input, public_values_from_eth_block_input_for_metadata,
 };
+use lzvm_artifacts::framed_stdin::FramedStdinError;
 use lzvm_artifacts::global_info::{CurveKind, GlobalInfo, PublicValue};
+use lzvm_artifacts::guest_input_segment::{
+    encode_framed_guest_input_segment, framed_guest_input_segment_digest,
+    FRAMED_GUEST_INPUT_SEGMENT_ID,
+};
 use lzvm_artifacts::program_image::{ProgramImageCommitmentCache, ProgramImageGpuMode};
 use lzvm_artifacts::program_image_segment::{
     encode_program_image_cache_segment, program_image_cache_segment_digest,
@@ -90,6 +95,15 @@ fn sample_block_rlp() -> Vec<u8> {
     let transactions = rlp_list(&[rlp_list(&[rlp_bytes(&[1])])]);
     let empty_list = rlp_list(&[]);
     rlp_list(&[header_rlp, transactions, empty_list])
+}
+
+fn framed_stdin_chunk(payload: &[u8]) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(&(payload.len() as u64).to_le_bytes());
+    bytes.extend_from_slice(payload);
+    let padding_len = (8 - (bytes.len() % 8)) % 8;
+    bytes.resize(bytes.len() + padding_len, 0);
+    bytes
 }
 
 fn legacy_header_items(
@@ -200,6 +214,10 @@ fn validates_proof_public_value_preflight_hashes() {
             trace_constraint_segment_count: 0,
             trace_constraint_segment_byte_counts: Vec::new(),
             trace_constraint_units: Vec::new(),
+            framed_guest_input_count: 0,
+            framed_guest_input_hashes: Vec::new(),
+            framed_guest_input_byte_counts: Vec::new(),
+            framed_guest_input_chunk_counts: Vec::new(),
             eth_block_input_count: 0,
             eth_block_input_hashes: Vec::new(),
             eth_block_input_byte_counts: Vec::new(),
@@ -482,6 +500,49 @@ fn reports_challenge_values_segments() {
         vec![segment_len]
     );
     assert_eq!(report.challenge_values_value_counts, vec![2]);
+}
+
+#[test]
+fn reports_framed_guest_input_segments() {
+    let public_values = sample_public_values();
+    let mut proof = sample_proof(&public_values);
+    let segment_data = encode_framed_guest_input_segment(&framed_stdin_chunk(&[7_u8, 8_u8]))
+        .expect("framed input segment should encode");
+    let segment_hash = framed_guest_input_segment_digest(&segment_data);
+    let segment_len = segment_data.len();
+    proof.segments.push(ProofSegment {
+        id: FRAMED_GUEST_INPUT_SEGMENT_ID,
+        data: segment_data,
+    });
+
+    let report = validate_proof_public_values(&proof, &public_values)
+        .expect("proof and public values should match");
+
+    assert_eq!(report.framed_guest_input_count, 1);
+    assert_eq!(report.framed_guest_input_hashes, vec![segment_hash]);
+    assert_eq!(report.framed_guest_input_byte_counts, vec![segment_len]);
+    assert_eq!(report.framed_guest_input_chunk_counts, vec![1]);
+}
+
+#[test]
+fn rejects_malformed_framed_guest_input_segments() {
+    let public_values = sample_public_values();
+    let mut proof = sample_proof(&public_values);
+    proof.segments.push(ProofSegment {
+        id: FRAMED_GUEST_INPUT_SEGMENT_ID,
+        data: vec![1, 2, 3],
+    });
+
+    let error = validate_proof_public_values(&proof, &public_values)
+        .expect_err("framed input segment should parse");
+
+    assert_eq!(
+        error,
+        ProofPreflightError::FramedGuestInput(FramedStdinError::TruncatedLength {
+            offset: 0,
+            remaining: 3,
+        })
+    );
 }
 
 #[test]
