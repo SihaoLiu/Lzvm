@@ -158,8 +158,19 @@ pub fn parse_pcs_material_manifest_segment(
     if unit_count == 0 {
         return Err(PcsMaterialManifestSegmentError::EmptyUnits);
     }
-    if unit_count > reader.remaining_len() / UNIT_BYTES {
-        return Err(PcsMaterialManifestSegmentError::LengthOverflow);
+    let expected_len = reader
+        .offset
+        .checked_add(
+            unit_count
+                .checked_mul(UNIT_BYTES)
+                .ok_or(PcsMaterialManifestSegmentError::LengthOverflow)?,
+        )
+        .ok_or(PcsMaterialManifestSegmentError::LengthOverflow)?;
+    if expected_len > bytes.len() {
+        return Err(PcsMaterialManifestSegmentError::UnexpectedEof {
+            needed: expected_len,
+            available: bytes.len(),
+        });
     }
 
     let mut units = Vec::with_capacity(unit_count);
@@ -241,10 +252,6 @@ impl<'a> SegmentReader<'a> {
 
     fn read_u64(&mut self) -> Result<u64, PcsMaterialManifestSegmentError> {
         Ok(u64::from_le_bytes(self.read_array::<8>()?))
-    }
-
-    fn remaining_len(&self) -> usize {
-        self.bytes.len() - self.offset
     }
 
     fn read_array<const N: usize>(&mut self) -> Result<[u8; N], PcsMaterialManifestSegmentError> {

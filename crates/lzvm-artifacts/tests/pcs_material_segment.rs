@@ -4,7 +4,9 @@ use lzvm_artifacts::pcs_material_segment::{
 };
 
 const NON_CANONICAL_FIELD: u64 = 0xffff_ffff_0000_0001;
-const FIRST_UNIT_ROOT_OFFSET: usize = 12 + 4 + 32 * 3;
+const HEADER_BYTES: usize = 12;
+const UNIT_BYTES: usize = 4 + 32 * 3 + 4 * 8 + 4 * 8;
+const FIRST_UNIT_ROOT_OFFSET: usize = HEADER_BYTES + 4 + 32 * 3;
 
 fn sample_segment() -> PcsMaterialManifestSegment {
     PcsMaterialManifestSegment {
@@ -138,6 +140,9 @@ fn rejects_truncated_pcs_material_manifest_segments() {
 fn rejects_unit_count_that_exceeds_remaining_units() {
     assert!(matches!(
         parse_pcs_material_manifest_segment(&segment_header(1)),
-        Err(PcsMaterialManifestSegmentError::LengthOverflow)
+        Err(PcsMaterialManifestSegmentError::UnexpectedEof {
+            needed,
+            available: HEADER_BYTES,
+        }) if needed == HEADER_BYTES + UNIT_BYTES
     ));
 }

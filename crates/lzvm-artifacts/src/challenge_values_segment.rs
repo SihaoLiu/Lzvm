@@ -112,8 +112,19 @@ pub fn parse_challenge_values_segment(
     }
     let value_count = usize::try_from(reader.read_u32()?)
         .map_err(|_| ChallengeValuesSegmentError::LengthOverflow)?;
-    if value_count > reader.remaining_len() / EXTENSION_BYTES {
-        return Err(ChallengeValuesSegmentError::LengthOverflow);
+    let expected_len = reader
+        .offset
+        .checked_add(
+            value_count
+                .checked_mul(EXTENSION_BYTES)
+                .ok_or(ChallengeValuesSegmentError::LengthOverflow)?,
+        )
+        .ok_or(ChallengeValuesSegmentError::LengthOverflow)?;
+    if expected_len > bytes.len() {
+        return Err(ChallengeValuesSegmentError::UnexpectedEof {
+            needed: expected_len,
+            available: bytes.len(),
+        });
     }
     let mut values = Vec::with_capacity(value_count);
     for _ in 0..value_count {
@@ -190,10 +201,6 @@ impl<'a> SegmentReader<'a> {
 
     fn read_extension(&mut self) -> Result<[u64; EXTENSION_WORDS], ChallengeValuesSegmentError> {
         Ok([self.read_u64()?, self.read_u64()?, self.read_u64()?])
-    }
-
-    fn remaining_len(&self) -> usize {
-        self.bytes.len() - self.offset
     }
 
     fn read_array<const N: usize>(&mut self) -> Result<[u8; N], ChallengeValuesSegmentError> {

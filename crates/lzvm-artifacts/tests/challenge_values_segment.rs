@@ -5,6 +5,7 @@ use lzvm_artifacts::challenge_values_segment::{
 
 const NON_CANONICAL_FIELD: u64 = 0xffff_ffff_0000_0001;
 const FIRST_VALUE_OFFSET: usize = 12;
+const EXTENSION_BYTES: usize = 3 * 8;
 
 fn segment_header(value_count: u32) -> Vec<u8> {
     let mut bytes = Vec::new();
@@ -66,6 +67,9 @@ fn rejects_non_canonical_challenge_values_when_parsing() {
 fn rejects_value_count_that_exceeds_remaining_extensions() {
     assert!(matches!(
         parse_challenge_values_segment(&segment_header(1)),
-        Err(ChallengeValuesSegmentError::LengthOverflow)
+        Err(ChallengeValuesSegmentError::UnexpectedEof {
+            needed,
+            available: 12,
+        }) if needed == 12 + EXTENSION_BYTES
     ));
 }
