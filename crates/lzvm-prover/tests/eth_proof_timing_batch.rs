@@ -16,6 +16,7 @@ const VERIFY_REQUIRED_TEXTS: &[&str] = &[
     "eth_block_input_match=ok",
     "program_image_cache_match=ok",
     "framed_guest_input_match=ok",
+    "pipeline_input_bindings=ok",
 ];
 
 fn workspace_root() -> &'static std::path::Path {
@@ -505,7 +506,8 @@ fn eth_proof_timing_batch_skip_verify_omits_external_verify() {
             && !stdout.contains("artifact_proof_match=ok")
             && !stdout.contains("eth_block_input_match=ok")
             && !stdout.contains("program_image_cache_match=ok")
-            && !stdout.contains("framed_guest_input_match=ok"),
+            && !stdout.contains("framed_guest_input_match=ok")
+            && !stdout.contains("pipeline_input_bindings=ok"),
         "skip mode should omit external proof verification: {stdout}"
     );
 }
@@ -539,7 +541,8 @@ fn eth_proof_timing_batch_check_env_reports_ready_paths() {
             && stdout.contains("small_verify_required_text=artifact_proof_match=ok\n")
             && stdout.contains("small_verify_required_text=eth_block_input_match=ok\n")
             && stdout.contains("small_verify_required_text=program_image_cache_match=ok\n")
-            && stdout.contains("small_verify_required_text=framed_guest_input_match=ok\n"),
+            && stdout.contains("small_verify_required_text=framed_guest_input_match=ok\n")
+            && stdout.contains("small_verify_required_text=pipeline_input_bindings=ok\n"),
         "env check should report required proof verification markers: {stdout}"
     );
     assert!(stdout.contains("small_trace_limit=120000000\n"), "{stdout}");

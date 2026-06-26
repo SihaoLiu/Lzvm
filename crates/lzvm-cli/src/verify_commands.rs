@@ -990,6 +990,7 @@ fn verify_setup_validation(
             }
         }
     }
+    let eth_block_input_matched = eth_block_input_binding.is_some();
     if let Some(binding) = eth_block_input_binding {
         write_eth_block_input_binding_summary(
             stdout,
@@ -1002,6 +1003,9 @@ fn verify_setup_validation(
     }
     if framed_guest_input_matched {
         let _ = writeln!(stdout, "framed_guest_input_match=ok");
+    }
+    if eth_block_input_matched && program_image_cache_matched && framed_guest_input_matched {
+        let _ = writeln!(stdout, "pipeline_input_bindings=ok");
     }
     0
 }
@@ -1363,6 +1367,12 @@ pub(crate) fn write_contribution_binding_summary(
     }
     if bindings.framed_guest_input_matched {
         let _ = writeln!(stdout, "framed_guest_input_match=ok");
+    }
+    if has_eth_block_input_binding
+        && bindings.program_image_cache_matched
+        && bindings.framed_guest_input_matched
+    {
+        let _ = writeln!(stdout, "pipeline_input_bindings=ok");
     }
 }
 

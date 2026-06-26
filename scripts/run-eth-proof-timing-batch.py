@@ -53,6 +53,7 @@ VERIFY_REQUIRED_TEXTS = [
     "eth_block_input_match=ok",
     "program_image_cache_match=ok",
     "framed_guest_input_match=ok",
+    "pipeline_input_bindings=ok",
 ]
 
 PIPELINE_ENV_TO_CLEAR = [
@@ -1163,6 +1164,7 @@ def self_test() -> None:
                 "    print('eth_block_input_match=ok')",
                 "    print('program_image_cache_match=ok')",
                 "    print('framed_guest_input_match=ok')",
+                "    print('pipeline_input_bindings=ok')",
                 "    sys.exit(0)",
                 "tmp = os.environ.get('TMPDIR')",
                 "if not tmp or not os.path.isdir(tmp):",

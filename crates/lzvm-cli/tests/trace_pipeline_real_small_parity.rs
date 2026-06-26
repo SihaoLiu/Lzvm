@@ -1274,6 +1274,7 @@ fn assert_successful_verify(label: &str, output: &Output) {
         "eth_block_input_match=ok",
         "program_image_cache_match=ok",
         "framed_guest_input_match=ok",
+        "pipeline_input_bindings=ok",
     ] {
         assert!(
             combined.contains(marker),
