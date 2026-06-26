@@ -72,8 +72,8 @@ use crate::pcs_transcript_segments::{
     PcsTranscriptProofSegmentsError, PcsTranscriptUnitChallenges,
 };
 use crate::proof_preflight::{
-    validate_proof_public_values_for_setup_preflight_with_fields, ProofPreflightError,
-    ProofPreflightReport, PublicValueFieldError, TraceConstraintPreflightUnit,
+    public_values_as_fields, validate_proof_public_values_for_setup_preflight_with_fields,
+    ProofPreflightError, ProofPreflightReport, PublicValueFieldError, TraceConstraintPreflightUnit,
 };
 use crate::proof_values::{
     flatten_pcs_proof_values, load_pcs_proof_values_from_segments, LoadPcsProofValuesSegmentError,
@@ -679,15 +679,9 @@ pub fn validate_public_values_metadata(
     global_info: &GlobalInfo,
     public_values: &PublicValues,
 ) -> Result<(), SetupPreflightError> {
-    let public_value_field_count =
-        public_values
-            .values
-            .iter()
-            .try_fold(0_usize, |count, entry| {
-                count
-                    .checked_add(entry.elements.len())
-                    .ok_or(SetupPreflightError::PublicValueCountOverflow)
-            })?;
+    let public_value_field_count = public_values_as_fields(public_values)
+        .map_err(SetupPreflightError::PublicValues)?
+        .len();
     validate_public_values_metadata_with_field_count(
         global_info,
         public_values,

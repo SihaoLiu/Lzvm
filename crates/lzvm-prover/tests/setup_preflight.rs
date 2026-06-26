@@ -23,7 +23,9 @@ use lzvm_artifacts::pcs_material::PcsSetupMaterial;
 use lzvm_artifacts::pcs_plan::derive_pcs_setup_plan;
 use lzvm_artifacts::pcs_query_segment::parse_pcs_query_plan_segment;
 use lzvm_artifacts::proof::{ProofArtifact, ProofArtifactError, ProofSegment};
-use lzvm_artifacts::public_values::{public_values_digest, PublicValueEntry, PublicValues};
+use lzvm_artifacts::public_values::{
+    public_values_digest, PublicValueEntry, PublicValues, PublicValuesError,
+};
 use lzvm_artifacts::setup_info::{FriStep, StageValue, StarkStruct, UnitSetupInfo};
 use lzvm_artifacts::trace_constraint_segment::{
     encode_trace_constraint_segment, TraceConstraintSegment, TraceConstraintUnitSegment,
@@ -51,10 +53,10 @@ use lzvm_prover::pcs_fri::{
 use lzvm_prover::pcs_query_plan::{
     build_pcs_query_plan_segment, ValidatePcsQueryPlanSegmentsError,
 };
-use lzvm_prover::proof_preflight::ProofPreflightError;
+use lzvm_prover::proof_preflight::{ProofPreflightError, PublicValueFieldError};
 use lzvm_prover::setup_preflight::{
-    validate_setup_preflight, validate_setup_preflight_hashes, SetupPreflightError,
-    SetupPreflightReport,
+    validate_public_values_metadata, validate_setup_preflight, validate_setup_preflight_hashes,
+    SetupPreflightError, SetupPreflightReport,
 };
 use lzvm_prover::unit_values::LoadUnitValuesSegmentError;
 use lzvm_prover::witness_commitment::{
@@ -972,6 +974,26 @@ fn rejects_setup_preflight_public_value_array_shape_mismatches() {
             expected: 4,
             found: 3,
         }
+    );
+}
+
+#[test]
+fn rejects_public_values_metadata_with_duplicate_names() {
+    let catalog = sample_catalog();
+    let setup_hash = key_directory_catalog_digest(&catalog).expect("catalog digest should compute");
+    let mut public_values = sample_public_values(setup_hash);
+    public_values.values[1].name = "block_number".to_owned();
+
+    let error = validate_public_values_metadata(&catalog.layout.global_info, &public_values)
+        .expect_err("setup metadata validation should reject duplicate public values");
+
+    assert_eq!(
+        error,
+        SetupPreflightError::PublicValues(PublicValueFieldError::PublicValues(
+            PublicValuesError::DuplicateName {
+                name: "block_number".to_owned()
+            }
+        ))
     );
 }
 

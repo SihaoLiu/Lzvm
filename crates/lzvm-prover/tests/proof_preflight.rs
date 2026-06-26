@@ -21,7 +21,9 @@ use lzvm_artifacts::program_image_segment::{
     ProgramImageCacheSegmentError, PROGRAM_IMAGE_CACHE_SEGMENT_ID,
 };
 use lzvm_artifacts::proof::{ProofArtifact, ProofSegment};
-use lzvm_artifacts::public_values::{public_values_digest, PublicValueEntry, PublicValues};
+use lzvm_artifacts::public_values::{
+    public_values_digest, PublicValueEntry, PublicValues, PublicValuesError,
+};
 use lzvm_artifacts::sectioned::{encode_sectioned_file, parse_sectioned_file};
 use lzvm_artifacts::trace_constraint_segment::{
     encode_trace_constraint_segment, TraceConstraintSegment, TraceConstraintUnitSegment,
@@ -1241,5 +1243,33 @@ fn rejects_noncanonical_public_values_for_field_conversion() {
     assert_eq!(
         error,
         PublicValueFieldError::Field(FieldError::NonCanonical { value: MODULUS })
+    );
+}
+
+#[test]
+fn rejects_duplicate_public_values_for_field_conversion() {
+    let public_values = PublicValues {
+        schema_version: 1,
+        setup_hash: sample_hash(0x44),
+        values: vec![
+            PublicValueEntry {
+                name: "block_number".to_owned(),
+                elements: vec![12_345],
+            },
+            PublicValueEntry {
+                name: "block_number".to_owned(),
+                elements: vec![67_890],
+            },
+        ],
+    };
+
+    let error = public_values_as_fields(&public_values)
+        .expect_err("field conversion should reject duplicate public values");
+
+    assert_eq!(
+        error,
+        PublicValueFieldError::PublicValues(PublicValuesError::DuplicateName {
+            name: "block_number".to_owned()
+        })
     );
 }

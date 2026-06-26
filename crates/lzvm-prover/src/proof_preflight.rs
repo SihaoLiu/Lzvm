@@ -181,6 +181,7 @@ pub enum ProofPreflightError {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PublicValueFieldError {
     Field(FieldError),
+    PublicValues(PublicValuesError),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -291,6 +292,7 @@ impl fmt::Display for PublicValueFieldError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Field(error) => write!(f, "invalid PCS transcript public value: {error}"),
+            Self::PublicValues(error) => write!(f, "{error}"),
         }
     }
 }
@@ -341,6 +343,7 @@ impl std::error::Error for PublicValueFieldError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             Self::Field(error) => Some(error),
+            Self::PublicValues(error) => Some(error),
         }
     }
 }
@@ -969,11 +972,13 @@ pub fn validate_proof_public_values_from_files(
 pub fn public_values_as_fields(
     public_values: &PublicValues,
 ) -> Result<Vec<Felt>, PublicValueFieldError> {
-    public_values
+    let fields = public_values
         .values
         .iter()
         .flat_map(|entry| entry.elements.iter().copied())
         .map(Felt::from_canonical)
         .collect::<Result<Vec<_>, _>>()
-        .map_err(PublicValueFieldError::Field)
+        .map_err(PublicValueFieldError::Field)?;
+    public_values_digest(public_values).map_err(PublicValueFieldError::PublicValues)?;
+    Ok(fields)
 }
