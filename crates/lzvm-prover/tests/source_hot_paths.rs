@@ -8477,7 +8477,7 @@ fn lean_query_plan_binding_tracks_runtime_transcript_opening_checks() {
                 .count()
                 == 1
             && !setup_preflight_source.contains("load_unit_values_for_identity_from_segments")
-            && !setup_preflight_source.contains("public_values_as_fields")
+            && setup_preflight_source.contains("public_values_as_fields(public_values)")
             && !setup_preflight_source.contains("parse_unit_values_segment")
             && !setup_preflight_source.contains("parse_witness_commitment_segment")
             && !setup_preflight_source.contains("load_witness_commitment_segments("),
@@ -8551,7 +8551,7 @@ fn lean_pipeline_binding_tracks_runtime_preflight_and_artifact_checks() {
             && setup_preflight_source.contains("validate_optional_trace_constraint_segment")
             && setup_preflight_source.contains("report.trace_constraint_units")
             && !setup_preflight_source.contains("parse_trace_constraint_segment")
-            && !setup_preflight_source.contains("public_values_as_fields")
+            && setup_preflight_source.contains("public_values_as_fields(public_values)")
             && !setup_preflight_source.contains("parse_witness_commitment_segment")
             && setup_preflight_source.contains("validate_pcs_query_plan_segments")
             && setup_preflight_source.contains("validate_constant_opening_segments")
