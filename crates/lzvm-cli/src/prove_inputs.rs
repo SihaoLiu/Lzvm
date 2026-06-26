@@ -167,7 +167,13 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
         }
     }
     if let Some(path) = &parsed.trace_bytes {
-        let trace_bytes = trace_bytes.expect("trace bytes metadata should be available");
+        let Some(trace_bytes) = trace_bytes else {
+            let _ = writeln!(
+                stderr,
+                "prove inputs failed: trace bytes metadata is missing"
+            );
+            return 1;
+        };
         let _ = writeln!(stdout, "trace_bytes={}", path.display());
         let _ = writeln!(stdout, "trace_bytes_file_bytes={}", trace_bytes.file_bytes);
         let _ = writeln!(
