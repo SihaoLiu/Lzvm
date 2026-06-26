@@ -188,9 +188,7 @@ fn parse_expression_section(bytes: &[u8]) -> Result<ExpressionProgram, Expressio
     let numbers_len = reader.read_u32()?;
     let entry_count = u32_to_usize(reader.read_u32()?)?;
 
-    if entry_count > reader.remaining_len() / ENTRY_MIN_BYTES {
-        return Err(ExpressionProgramError::LengthOverflow);
-    }
+    reader.require_items(entry_count, ENTRY_MIN_BYTES)?;
     let mut entries = Vec::with_capacity(entry_count);
     for _ in 0..entry_count {
         entries.push(ExpressionEntry {
@@ -216,17 +214,13 @@ fn parse_expression_section(bytes: &[u8]) -> Result<ExpressionProgram, Expressio
 
     let ops = reader.read_exact(ops_count)?.to_vec();
 
-    if args_count > reader.remaining_len() / ARG_BYTES {
-        return Err(ExpressionProgramError::LengthOverflow);
-    }
+    reader.require_items(args_count, ARG_BYTES)?;
     let mut args = Vec::with_capacity(args_count);
     for _ in 0..args_count {
         args.push(reader.read_u16()?);
     }
 
-    if numbers_count > reader.remaining_len() / NUMBER_BYTES {
-        return Err(ExpressionProgramError::LengthOverflow);
-    }
+    reader.require_items(numbers_count, NUMBER_BYTES)?;
     let mut numbers = Vec::with_capacity(numbers_count);
     for index in 0..numbers_count {
         let value = reader.read_u64()?;
@@ -383,10 +377,6 @@ impl<'a> Reader<'a> {
         self.offset
     }
 
-    fn remaining_len(&self) -> usize {
-        self.bytes.len() - self.offset
-    }
-
     fn read_exact(&mut self, count: usize) -> Result<&'a [u8], ExpressionProgramError> {
         let end = self
             .offset
@@ -402,6 +392,24 @@ impl<'a> Reader<'a> {
         let out = &self.bytes[self.offset..end];
         self.offset = end;
         Ok(out)
+    }
+
+    fn require_items(&self, count: usize, item_bytes: usize) -> Result<(), ExpressionProgramError> {
+        let needed = count
+            .checked_mul(item_bytes)
+            .ok_or(ExpressionProgramError::LengthOverflow)?;
+        let end = self
+            .offset
+            .checked_add(needed)
+            .ok_or(ExpressionProgramError::LengthOverflow)?;
+        if end > self.bytes.len() {
+            return Err(ExpressionProgramError::UnexpectedEof {
+                offset: self.offset,
+                needed,
+                available: self.bytes.len().saturating_sub(self.offset),
+            });
+        }
+        Ok(())
     }
 
     fn read_u16(&mut self) -> Result<u16, ExpressionProgramError> {

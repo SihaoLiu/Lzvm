@@ -10,6 +10,10 @@ use std::fs;
 use std::path::PathBuf;
 
 const NON_CANONICAL_FIELD: u64 = 0xffff_ffff_0000_0001;
+const SECTION_HEADER_BYTES: usize = 8 * 4;
+const ENTRY_MIN_BYTES: usize = 10 * 4 + 1;
+const ARG_BYTES: usize = 2;
+const NUMBER_BYTES: usize = 8;
 
 fn sample_program() -> ExpressionProgram {
     ExpressionProgram {
@@ -204,7 +208,11 @@ fn rejects_entry_count_that_exceeds_remaining_entry_records() {
 
     assert!(matches!(
         parse_expression_program(&bytes),
-        Err(ExpressionProgramError::LengthOverflow)
+        Err(ExpressionProgramError::UnexpectedEof {
+            offset: SECTION_HEADER_BYTES,
+            needed: ENTRY_MIN_BYTES,
+            available: 0
+        })
     ));
 }
 
@@ -214,7 +222,11 @@ fn rejects_args_count_that_exceeds_remaining_args() {
 
     assert!(matches!(
         parse_expression_program(&bytes),
-        Err(ExpressionProgramError::LengthOverflow)
+        Err(ExpressionProgramError::UnexpectedEof {
+            offset: SECTION_HEADER_BYTES,
+            needed: ARG_BYTES,
+            available: 0
+        })
     ));
 }
 
@@ -224,7 +236,11 @@ fn rejects_numbers_count_that_exceeds_remaining_numbers() {
 
     assert!(matches!(
         parse_expression_program(&bytes),
-        Err(ExpressionProgramError::LengthOverflow)
+        Err(ExpressionProgramError::UnexpectedEof {
+            offset: SECTION_HEADER_BYTES,
+            needed: NUMBER_BYTES,
+            available: 0
+        })
     ));
 }
 
