@@ -4,7 +4,10 @@ use lzvm_artifacts::contribution_segment::{
 };
 
 const NON_CANONICAL_FIELD: u64 = 0xffff_ffff_0000_0001;
-const FIRST_VALUE_OFFSET: usize = 12 + 4 + 4 + 4 + 4;
+const HEADER_BYTES: usize = 12;
+const ENTRY_HEADER_BYTES: usize = 4 + 4 + 4 + 4;
+const WORD_BYTES: usize = 8;
+const FIRST_VALUE_OFFSET: usize = HEADER_BYTES + ENTRY_HEADER_BYTES;
 
 fn sample_segment() -> ContributionSegment {
     ContributionSegment {
@@ -173,7 +176,10 @@ fn rejects_truncated_contribution_segments() {
 fn rejects_entry_count_that_exceeds_remaining_entry_headers() {
     assert!(matches!(
         parse_contribution_segment(&segment_header(1)),
-        Err(ContributionSegmentError::LengthOverflow)
+        Err(ContributionSegmentError::UnexpectedEof {
+            needed,
+            available: HEADER_BYTES
+        }) if needed == HEADER_BYTES + ENTRY_HEADER_BYTES
     ));
 }
 
@@ -187,7 +193,27 @@ fn rejects_value_count_that_exceeds_remaining_words() {
 
     assert!(matches!(
         parse_contribution_segment(&bytes),
-        Err(ContributionSegmentError::LengthOverflow)
+        Err(ContributionSegmentError::UnexpectedEof {
+            needed,
+            available
+        }) if needed == FIRST_VALUE_OFFSET + WORD_BYTES
+            && available == FIRST_VALUE_OFFSET
+    ));
+}
+
+#[test]
+fn rejects_truncated_contribution_payload() {
+    let mut encoded =
+        encode_contribution_segment(&sample_segment()).expect("segment should encode");
+    encoded.pop();
+
+    assert!(matches!(
+        parse_contribution_segment(&encoded),
+        Err(ContributionSegmentError::UnexpectedEof {
+            needed,
+            available
+        }) if needed == HEADER_BYTES + ENTRY_HEADER_BYTES * 2 + WORD_BYTES * 6
+            && available == HEADER_BYTES + ENTRY_HEADER_BYTES * 2 + WORD_BYTES * 6 - 1
     ));
 }
 

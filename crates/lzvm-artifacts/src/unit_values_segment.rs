@@ -166,9 +166,7 @@ pub fn parse_unit_values_segment(
     } else {
         V1_UNIT_HEADER_BYTES
     };
-    if unit_count > reader.remaining_len() / unit_header_bytes {
-        return Err(UnitValuesSegmentError::LengthOverflow);
-    }
+    reader.require_items(unit_count, unit_header_bytes)?;
 
     let mut units = Vec::with_capacity(unit_count);
     for _ in 0..unit_count {
@@ -180,9 +178,7 @@ pub fn parse_unit_values_segment(
         };
         let value_count = usize::try_from(reader.read_u32()?)
             .map_err(|_| UnitValuesSegmentError::LengthOverflow)?;
-        if value_count > reader.remaining_len() / WORD_BYTES {
-            return Err(UnitValuesSegmentError::LengthOverflow);
-        }
+        reader.require_items(value_count, WORD_BYTES)?;
         let mut values = Vec::with_capacity(value_count);
         for _ in 0..value_count {
             values.push(reader.read_u64()?);
@@ -291,8 +287,21 @@ impl<'a> SegmentReader<'a> {
         Ok(u64::from_le_bytes(self.read_array::<8>()?))
     }
 
-    fn remaining_len(&self) -> usize {
-        self.bytes.len() - self.offset
+    fn require_items(&self, count: usize, item_bytes: usize) -> Result<(), UnitValuesSegmentError> {
+        let payload_bytes = count
+            .checked_mul(item_bytes)
+            .ok_or(UnitValuesSegmentError::LengthOverflow)?;
+        let expected_len = self
+            .offset
+            .checked_add(payload_bytes)
+            .ok_or(UnitValuesSegmentError::LengthOverflow)?;
+        if expected_len > self.bytes.len() {
+            return Err(UnitValuesSegmentError::UnexpectedEof {
+                needed: expected_len,
+                available: self.bytes.len(),
+            });
+        }
+        Ok(())
     }
 
     fn read_array<const N: usize>(&mut self) -> Result<[u8; N], UnitValuesSegmentError> {

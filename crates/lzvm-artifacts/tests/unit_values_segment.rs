@@ -4,7 +4,10 @@ use lzvm_artifacts::unit_values_segment::{
 };
 
 const NON_CANONICAL_FIELD: u64 = 0xffff_ffff_0000_0001;
-const FIRST_VALUE_OFFSET: usize = 12 + 4 + 4;
+const HEADER_BYTES: usize = 12;
+const V1_UNIT_HEADER_BYTES: usize = 4 + 4;
+const WORD_BYTES: usize = 8;
+const FIRST_VALUE_OFFSET: usize = HEADER_BYTES + V1_UNIT_HEADER_BYTES;
 
 fn sample_segment() -> UnitValuesSegment {
     UnitValuesSegment {
@@ -232,7 +235,10 @@ fn rejects_unit_count_that_exceeds_remaining_unit_headers() {
 
     assert!(matches!(
         result,
-        Err(UnitValuesSegmentError::LengthOverflow)
+        Err(UnitValuesSegmentError::UnexpectedEof {
+            needed,
+            available: HEADER_BYTES
+        }) if needed == HEADER_BYTES + V1_UNIT_HEADER_BYTES
     ));
 }
 
@@ -244,7 +250,26 @@ fn rejects_value_count_that_exceeds_remaining_words() {
 
     assert!(matches!(
         parse_unit_values_segment(&bytes),
-        Err(UnitValuesSegmentError::LengthOverflow)
+        Err(UnitValuesSegmentError::UnexpectedEof {
+            needed,
+            available
+        }) if needed == FIRST_VALUE_OFFSET + WORD_BYTES
+            && available == FIRST_VALUE_OFFSET
+    ));
+}
+
+#[test]
+fn rejects_truncated_unit_values_payload() {
+    let mut encoded = encode_unit_values_segment(&sample_segment()).expect("segment should encode");
+    encoded.pop();
+
+    assert!(matches!(
+        parse_unit_values_segment(&encoded),
+        Err(UnitValuesSegmentError::UnexpectedEof {
+            needed,
+            available
+        }) if needed == HEADER_BYTES + V1_UNIT_HEADER_BYTES * 2 + WORD_BYTES * 6
+            && available == HEADER_BYTES + V1_UNIT_HEADER_BYTES * 2 + WORD_BYTES * 6 - 1
     ));
 }
 
