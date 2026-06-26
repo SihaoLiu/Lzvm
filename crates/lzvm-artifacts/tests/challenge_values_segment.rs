@@ -73,3 +73,21 @@ fn rejects_value_count_that_exceeds_remaining_extensions() {
         }) if needed == 12 + EXTENSION_BYTES
     ));
 }
+
+#[test]
+fn rejects_truncated_challenge_values_segments() {
+    let segment = ChallengeValuesSegment {
+        values: vec![[7, 8, 9]],
+    };
+    let mut bytes = encode_challenge_values_segment(&segment).expect("segment should encode");
+    bytes.pop();
+
+    assert!(matches!(
+        parse_challenge_values_segment(&bytes),
+        Err(ChallengeValuesSegmentError::UnexpectedEof {
+            needed,
+            available
+        }) if needed == FIRST_VALUE_OFFSET + EXTENSION_BYTES
+            && available == FIRST_VALUE_OFFSET + EXTENSION_BYTES - 1
+    ));
+}

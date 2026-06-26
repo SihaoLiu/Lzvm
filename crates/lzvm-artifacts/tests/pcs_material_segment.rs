@@ -146,3 +146,19 @@ fn rejects_unit_count_that_exceeds_remaining_units() {
         }) if needed == HEADER_BYTES + UNIT_BYTES
     ));
 }
+
+#[test]
+fn rejects_truncated_pcs_material_manifest_units() {
+    let mut bytes =
+        encode_pcs_material_manifest_segment(&sample_segment()).expect("manifest should encode");
+    bytes.pop();
+
+    assert!(matches!(
+        parse_pcs_material_manifest_segment(&bytes),
+        Err(PcsMaterialManifestSegmentError::UnexpectedEof {
+            needed,
+            available
+        }) if needed == HEADER_BYTES + UNIT_BYTES * 2
+            && available == HEADER_BYTES + UNIT_BYTES * 2 - 1
+    ));
+}
