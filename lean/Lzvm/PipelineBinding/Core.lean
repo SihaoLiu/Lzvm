@@ -1094,6 +1094,50 @@ theorem runtime_pipeline_binding_checked_acceptance_eth_concrete_segment_ids_all
         proof
         accepted)
 
+theorem runtime_pipeline_binding_eth_concrete_segment_id_binding_of_query_binding
+    {system : VerifierModel}
+    (validation : RuntimePipelineBindingValidation system)
+    (binding :
+      let queryPlanValidation := validation.queryPlanBindingValidation
+      let challengeValidation := queryPlanValidation.challengeValidation
+      RuntimeProofArtifactConcreteSegmentIdBinding
+        challengeValidation.transcriptValidation.artifactBindingValidation) :
+    RuntimeProofArtifactConcreteSegmentIdBinding
+      validation.ethBindingValidation.proofArtifactBindingValidation := by
+  exact
+    runtime_proof_artifact_concrete_segment_id_binding_of_agreement_left
+      validation.artifactBindingValidationAgreement
+      binding
+
+theorem
+    runtime_pipeline_binding_checked_acceptance_eth_concrete_segment_ids_allowed_of_query_binding
+    {system : VerifierModel}
+    (validation : RuntimePipelineBindingValidation system)
+    (binding :
+      let queryPlanValidation := validation.queryPlanBindingValidation
+      let challengeValidation := queryPlanValidation.challengeValidation
+      RuntimeProofArtifactConcreteSegmentIdBinding
+        challengeValidation.transcriptValidation.artifactBindingValidation) :
+    forall artifact publicInput proof,
+      RuntimePipelineBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeProofArtifactConcreteSegmentIdsAllowed proof := by
+  intro artifact publicInput proof accepted
+  exact
+    runtime_pipeline_binding_checked_acceptance_eth_concrete_segment_ids_allowed
+      validation
+      (runtime_pipeline_binding_eth_concrete_segment_id_binding_of_query_binding
+        validation
+        binding)
+      artifact
+      publicInput
+      proof
+      accepted
+
 theorem runtime_pipeline_binding_checked_acceptance_eth_full_contract
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
