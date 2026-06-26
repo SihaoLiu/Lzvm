@@ -236,7 +236,7 @@ fn eth_proof_timing_batch_dry_run_builds_small_command_from_env() {
         .arg(fixture.dir.join("improve-log.csv"))
         .arg("--summary")
         .arg("dry run")
-        .env_remove("CUDA_VISIBLE_DEVICES");
+        .env("CUDA_VISIBLE_DEVICES", "");
     fixture.apply_env(&mut command, SMALL_PREFIX);
 
     let output = command
@@ -1231,7 +1231,7 @@ fn eth_proof_timing_batch_prints_env_template_without_config() {
         .arg("--suite")
         .arg("small")
         .arg("--print-env-template")
-        .env_remove("CUDA_VISIBLE_DEVICES");
+        .env("CUDA_VISIBLE_DEVICES", "");
     clear_env(&mut command, SMALL_PREFIX);
     clear_env(&mut command, LARGE_PREFIX);
 
@@ -1568,13 +1568,20 @@ fn eth_proof_timing_batch_env_file_configures_dry_run() {
         "env-file dry-run should build a command from the env file: stderr={stderr}"
     );
     assert!(
+        stdout.contains("prove witness --guest-pc-trace 42 --timings")
+            && stdout.contains("TMPDIR={tmp_dir} CUDA_VISIBLE_DEVICES=1,0"),
+        "env-file dry-run should pin the prove command to the configured GPU selector: {stdout}"
+    );
+    let verify_command = verify_command_tail(&stdout);
+    assert!(
+        verify_command.contains("TMPDIR={tmp_dir} CUDA_VISIBLE_DEVICES=1,0")
+            && verify_command.contains("verify proof --eth-block-input"),
+        "env-file dry-run should pin the verify command to the configured GPU selector: {stdout}"
+    );
+    assert!(
         stdout.contains("selected=small\n")
             && stdout.contains("small_mode=combined\n")
-            && stdout.contains("prove witness --guest-pc-trace 42 --timings")
-            && stdout.contains("TMPDIR={tmp_dir} CUDA_VISIBLE_DEVICES=1,0")
-            && stdout.matches("CUDA_VISIBLE_DEVICES=1,0").count() >= 2
-            && stdout.contains("&& env -u LZVM_GUEST_PC_TRACE_PARALLEL_LOWER")
-            && stdout.contains("verify proof --eth-block-input"),
+            && stdout.contains("&& env -u LZVM_GUEST_PC_TRACE_PARALLEL_LOWER"),
         "env-file dry-run should load proof paths and trace limit: {stdout}"
     );
     assert_verify_required_text_args(&stdout, "env-file runner command");
@@ -2024,6 +2031,14 @@ fn eth_proof_timing_batch_profile_commands_preserve_env_profiler_commands() {
     let success = output.status.success();
     let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
     let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    let nsys_command = stdout
+        .lines()
+        .find(|line| line.starts_with("small_nsys_profile_command="))
+        .expect("nsys profile command should be printed");
+    let ncu_command = stdout
+        .lines()
+        .find(|line| line.starts_with("small_ncu_profile_command="))
+        .expect("ncu profile command should be printed");
     let profile_created = profile_dir.exists();
     fixture.cleanup();
 
@@ -2037,9 +2052,9 @@ fn eth_proof_timing_batch_profile_commands_preserve_env_profiler_commands() {
         "profile command output should embed profiler commands selected from env: {stdout}"
     );
     assert!(
-        stdout.contains(
+        nsys_command.starts_with(
             "small_nsys_profile_command=env CUDA_VISIBLE_DEVICES=1,0 scripts/run-proof-profile.py"
-        ) && stdout.contains(
+        ) && ncu_command.starts_with(
             "small_ncu_profile_command=env CUDA_VISIBLE_DEVICES=1,0 scripts/run-proof-profile.py"
         ),
         "profile command output should preserve explicit GPU selection in copied commands: {stdout}"
@@ -2047,6 +2062,55 @@ fn eth_proof_timing_batch_profile_commands_preserve_env_profiler_commands() {
     assert!(
         !stdout.contains("LZVM_NSYS_COMMAND") && !stdout.contains("LZVM_NCU_COMMAND"),
         "profile command output should not depend on ambient profiler env names: {stdout}"
+    );
+    assert!(
+        !profile_created,
+        "printing profile commands should not create profile output directories"
+    );
+}
+
+#[test]
+fn eth_proof_timing_batch_profile_commands_ignore_empty_cuda_visible_devices() {
+    let fixture = ProofFixture::new("eth-proof-timing-batch-profile-empty-cuda-visible-devices");
+    let profile_dir = fixture.dir.join("profiles");
+    let mut command = Command::new(script_path());
+    command
+        .arg("--suite")
+        .arg("small")
+        .arg("--profile-tool")
+        .arg("both")
+        .arg("--profile-output-dir")
+        .arg(&profile_dir)
+        .arg("--print-profile-commands")
+        .env("CUDA_VISIBLE_DEVICES", "");
+    fixture.apply_env(&mut command, SMALL_PREFIX);
+
+    let output = command
+        .output()
+        .expect("ETH proof timing batch profile command should print");
+    let success = output.status.success();
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    let nsys_command = stdout
+        .lines()
+        .find(|line| line.starts_with("small_nsys_profile_command="))
+        .expect("nsys profile command should be printed");
+    let ncu_command = stdout
+        .lines()
+        .find(|line| line.starts_with("small_ncu_profile_command="))
+        .expect("ncu profile command should be printed");
+    let profile_created = profile_dir.exists();
+    fixture.cleanup();
+
+    assert!(
+        success,
+        "profile command output should ignore an empty GPU selector: stderr={stderr}"
+    );
+    assert!(
+        nsys_command.starts_with("small_nsys_profile_command=scripts/run-proof-profile.py")
+            && ncu_command.starts_with("small_ncu_profile_command=scripts/run-proof-profile.py")
+            && !stdout.contains("CUDA_VISIBLE_DEVICES="),
+        "profile command output should not emit an empty GPU selector: {stdout}"
     );
     assert!(
         !profile_created,
