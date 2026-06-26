@@ -78,6 +78,24 @@ impl Drop for TestEnvVarGuard {
 }
 
 #[test]
+fn guest_pc_trace_thread_spawn_error_preserves_source() {
+    let error = GuestPcTraceBackendError::ThreadSpawn {
+        name: "lzvm-gp-test",
+        source: std::io::Error::new(std::io::ErrorKind::WouldBlock, "thread limit"),
+    };
+
+    assert!(error
+        .to_string()
+        .contains("guest PC trace backend thread lzvm-gp-test failed to spawn"));
+    let source =
+        std::error::Error::source(&error).expect("thread spawn source should be preserved");
+    let io_source = source
+        .downcast_ref::<std::io::Error>()
+        .expect("thread spawn source should remain an I/O error");
+    assert_eq!(io_source.kind(), std::io::ErrorKind::WouldBlock);
+}
+
+#[test]
 fn guest_trace_detail_timing_sample_stride_uses_positive_env_values() {
     let _env_lock = GUEST_PC_TRACE_ENV_LOCK
         .lock()

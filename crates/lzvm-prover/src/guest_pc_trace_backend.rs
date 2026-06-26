@@ -2993,6 +2993,10 @@ enum GuestPcTraceBackendError {
     ZiskInput(ZiskInputFcallError),
     GuestRun(GuestMachineRunError),
     TraceBuild(WitnessTraceBuildError),
+    ThreadSpawn {
+        name: &'static str,
+        source: std::io::Error,
+    },
     ZiskMainLower {
         row: usize,
         source: ZiskMainLowerError,
@@ -3057,6 +3061,10 @@ impl fmt::Display for GuestPcTraceBackendError {
             Self::TraceBuild(error) => {
                 write!(f, "guest PC trace backend layout trace build failed: {error}")
             }
+            Self::ThreadSpawn { name, source } => write!(
+                f,
+                "guest PC trace backend thread {name} failed to spawn: {source}"
+            ),
             Self::ZiskMainLower { row, source } => write!(
                 f,
                 "guest PC trace backend row {row} Zisk Main lowering failed: {source}"
@@ -3120,6 +3128,7 @@ impl std::error::Error for GuestPcTraceBackendError {
             Self::ZiskInput(error) => Some(error),
             Self::GuestRun(error) => Some(error),
             Self::TraceBuild(error) => Some(error),
+            Self::ThreadSpawn { source, .. } => Some(source),
             Self::ZiskMainLower { source, .. } => Some(source),
             Self::MissingGuestImage
             | Self::MissingGuestImageInfo
@@ -4295,9 +4304,7 @@ where
     thread::Builder::new()
         .name(name.to_owned())
         .spawn_scoped(scope, f)
-        .map_err(|error| GuestPcTraceBackendError::InvalidPcTraceLayout {
-            message: format!("guest PC trace thread {name} failed to spawn: {error}"),
-        })
+        .map_err(|source| GuestPcTraceBackendError::ThreadSpawn { name, source })
 }
 
 fn produce_guest_pc_trace_segments(
