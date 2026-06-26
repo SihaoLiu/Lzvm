@@ -1025,6 +1025,62 @@ theorem runtime_soundness_checked_acceptance_full_soundness_contract
         (And.intro coreContract
           (And.intro executionObligations sound.right)))
 
+theorem runtime_soundness_checked_acceptance_finalized_full_soundness_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeSoundnessValidation system) :
+    forall artifact publicInput proof requiresExternalSource,
+      RuntimeSoundnessCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof
+          requiresExternalSource ->
+        RuntimeProofArtifactFinalized
+            system
+            validation.transcriptValidation.artifactBindingValidation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeSoundnessEvidence
+            system
+            validation
+            artifact
+            publicInput
+            proof
+            requiresExternalSource
+          /\ RuntimeArtifactSoundnessObligations
+            system
+            validation.transcriptValidation.artifactBindingValidation.runtimeValidation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ (exists witness trace constraints,
+            system.traceConsistent publicInput proof trace
+              /\ system.constraintsSatisfied constraints trace
+              /\ system.witnessMatchesTrace witness trace)
+          /\ SoundWitness system publicInput proof := by
+  intro artifact publicInput proof requiresExternalSource checked
+  have artifactFinalized :=
+    runtime_transcript_binding_checked_acceptance_artifact_finalized
+      validation.transcriptValidation
+      artifact
+      publicInput
+      proof
+      checked.left
+  have fullContract :=
+    runtime_soundness_checked_acceptance_full_soundness_contract
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      checked
+  exact And.intro artifactFinalized fullContract
+
 theorem runtime_soundness_checked_acceptance_accepts_full_soundness_contract
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
