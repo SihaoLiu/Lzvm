@@ -14200,6 +14200,125 @@ fn runs_setup_aware_verify_preflight() {
 }
 
 #[test]
+fn verifies_setup_preflight_matches_framed_guest_input() {
+    let dir = temp_dir("verify-setup-preflight-framed-input");
+    let _ = fs::remove_dir_all(&dir);
+    write_execution_ready_setup_directory(&dir);
+    let catalog = read_key_directory_catalog(&dir).expect("catalog should load");
+    let setup_hash = key_directory_catalog_digest(&catalog).expect("digest should compute");
+    let public_values = sample_public_values(setup_hash);
+    let input_data = framed_stdin_chunk(&[7_u8, 8_u8]);
+    let segment_data =
+        encode_framed_guest_input_segment(&input_data).expect("framed input should encode");
+    let framed_segment = ProofSegment {
+        id: FRAMED_GUEST_INPUT_SEGMENT_ID,
+        data: segment_data.clone(),
+    };
+    let schedule = derive_prove_schedule(&catalog).expect("schedule should derive");
+    let material_segment =
+        build_pcs_material_manifest_segment(&schedule).expect("material segment should build");
+    let witness_segment = sample_witness_proof_segment(&schedule, 0);
+    let trace_constraint_segment = sample_trace_constraint_segment(&schedule, &catalog, 0);
+    let query_segment = build_pcs_query_plan_segment_with_bindings(
+        &schedule,
+        public_values_digest(&public_values).expect("digest should compute"),
+        &material_segment,
+        std::slice::from_ref(&witness_segment),
+        std::slice::from_ref(&framed_segment),
+    )
+    .expect("query segment should build");
+    let constant_opening_segment =
+        build_constant_opening_segment(&catalog, &schedule, &query_segment)
+            .expect("constant opening segment should build");
+    let opening_segment = sample_witness_opening_segment(&schedule, &query_segment, 0);
+    let proof = ProofArtifact {
+        setup_hash,
+        public_values_hash: public_values_digest(&public_values).expect("digest should compute"),
+        segments: vec![
+            material_segment,
+            query_segment,
+            constant_opening_segment,
+            opening_segment,
+            witness_segment,
+            trace_constraint_segment,
+            framed_segment,
+        ],
+    };
+    let proof_path = dir.join("proof.bin");
+    let public_values_path = dir.join("public_values.bin");
+    let input_path = dir.join("input.bin");
+    let other_input_path = dir.join("other-input.bin");
+    write_bytes(
+        &proof_path,
+        encode_proof_artifact(&proof).expect("proof should encode"),
+    );
+    write_bytes(
+        &public_values_path,
+        encode_public_values(&public_values).expect("public values should encode"),
+    );
+    write_bytes(&input_path, &input_data);
+    write_bytes(&other_input_path, framed_stdin_chunk(&[9_u8]));
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "verify",
+            "setup-preflight",
+            "--input-data",
+            input_path.to_str().expect("input path should be utf-8"),
+            dir.to_str().expect("path should be utf-8"),
+            proof_path.to_str().expect("proof path should be utf-8"),
+            public_values_path
+                .to_str()
+                .expect("public values path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    let mut mismatch_stdout = Vec::new();
+    let mut mismatch_stderr = Vec::new();
+    let mismatch_code = run_cli(
+        &[
+            "verify",
+            "setup-preflight",
+            "--input-data",
+            other_input_path
+                .to_str()
+                .expect("other input path should be utf-8"),
+            dir.to_str().expect("path should be utf-8"),
+            proof_path.to_str().expect("proof path should be utf-8"),
+            public_values_path
+                .to_str()
+                .expect("public values path should be utf-8"),
+        ],
+        &mut mismatch_stdout,
+        &mut mismatch_stderr,
+    );
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 0, "{}", String::from_utf8_lossy(&stderr));
+    assert!(stderr.is_empty());
+    let stdout = String::from_utf8(stdout).expect("stdout should be utf-8");
+    assert!(stdout.contains("status=ok\n"));
+    assert!(stdout.contains("segments=7\n"));
+    assert!(stdout.contains("framed_guest_inputs=1\n"));
+    assert!(stdout.contains(&format!(
+        "framed_guest_input_bytes={}\n",
+        segment_data.len()
+    )));
+    assert!(stdout.contains("framed_guest_input_chunks=1\n"));
+    assert!(stdout.contains("framed_guest_input_match=ok\n"));
+    assert_eq!(mismatch_code, 1);
+    assert!(mismatch_stdout.is_empty());
+    assert_eq!(
+        String::from_utf8(mismatch_stderr).expect("mismatch stderr should be utf-8"),
+        "verify setup-preflight failed: framed guest input proof segment mismatch\n"
+    );
+}
+
+#[test]
 fn runs_setup_aware_verify_preflight_with_source_generated_key_directory() {
     let dir = temp_dir("verify-setup-preflight-source-generated");
     let _ = fs::remove_dir_all(&dir);
