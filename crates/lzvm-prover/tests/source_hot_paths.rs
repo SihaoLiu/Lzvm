@@ -6614,6 +6614,43 @@ fn cuda_allocator_timing_reports_pending_wait_shape() {
             "CUDA allocator byte counter should saturate: {saturated_addition}"
         );
     }
+    assert!(
+        native_source.contains("std::size_t saturated_increment(std::size_t value)")
+            && native_source.contains("return saturated_add(value, 1);"),
+        "CUDA allocator count counters should share the saturating increment helper"
+    );
+    assert!(
+        native_source.contains("total = saturated_add(total, allocation.bytes)")
+            && native_source.contains("count = saturated_add(count, 1)"),
+        "allocator cache accounting should saturate cached byte and block counts"
+    );
+    assert!(
+        !native_source.contains("++g_cuda_"),
+        "CUDA allocator stats counters should avoid raw prefix increments"
+    );
+    let native_source_flat = native_source
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
+    for saturated_counter in [
+        "g_cuda_host_register_calls",
+        "g_cuda_host_unregister_calls",
+        "g_cuda_event_synchronize_calls",
+        "g_cuda_free_calls",
+        "g_cuda_event_query_calls",
+        "g_cuda_event_query_ready_count",
+        "g_cuda_event_query_not_ready_count",
+        "g_cuda_cached_reuse_count",
+        "g_cuda_no_wait_bypass_count",
+        "g_cuda_pending_reuse_count",
+        "g_cuda_malloc_calls",
+    ] {
+        let update = format!("{saturated_counter} = saturated_increment({saturated_counter})");
+        assert!(
+            native_source_flat.contains(&update),
+            "CUDA allocator stats counter should saturate: {saturated_counter}"
+        );
+    }
 
     assert!(
         accel_source.contains("pub struct CudaAllocatorStats")
