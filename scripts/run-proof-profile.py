@@ -37,6 +37,12 @@ class GpuMemoryRow(NamedTuple):
     free: int
 
 
+class ProofTimingSummaryResult(NamedTuple):
+    written: bool
+    skip_reason: str | None
+    missing_keys: list[str]
+
+
 def workspace_root() -> Path:
     return Path(__file__).resolve().parent.parent
 
@@ -489,6 +495,8 @@ def write_profile_json(
     status: str,
     profile_exit_code: int | None = None,
     proof_timing_summary_written: bool = False,
+    proof_timing_summary_skip_reason: str | None = None,
+    proof_timing_summary_missing_keys: list[str] | None = None,
     tool_summary_paths: list[Path] | None = None,
     gpu_memory_check: dict[str, object] | None = None,
     error: str | None = None,
@@ -509,6 +517,10 @@ def write_profile_json(
             display_path_for_shell(path, root) for path in (tool_summary_paths or [])
         ],
     }
+    if proof_timing_summary_skip_reason is not None:
+        payload["proof_timing_summary_skip_reason"] = proof_timing_summary_skip_reason
+    if proof_timing_summary_missing_keys:
+        payload["proof_timing_summary_missing_keys"] = proof_timing_summary_missing_keys
     if gpu_memory_check is not None:
         payload["gpu_memory_check"] = gpu_memory_check
     if error is not None:
@@ -569,18 +581,18 @@ def summarize_proof_timing(
     root: Path,
     outputs: dict[str, Path],
     extra_args: list[str] | None = None,
-) -> bool:
+) -> ProofTimingSummaryResult:
     profile_log = outputs["profile_log"]
     log_text = profile_log.read_text(encoding="utf-8")
     if TIMING_TOTAL_RE.search(log_text) is None:
         remove_stale_summary(outputs["proof_timing_summary"])
         print("proof_timing_summary=skipped_no_timing_total")
-        return False
+        return ProofTimingSummaryResult(False, "missing_timing_total", [])
     missing_keys = missing_timing_summary_keys(log_text)
     if missing_keys:
         remove_stale_summary(outputs["proof_timing_summary"])
         print("proof_timing_summary=skipped_missing_keys=" + ";".join(missing_keys))
-        return False
+        return ProofTimingSummaryResult(False, "missing_keys", missing_keys)
     command = ["scripts/prove-timing-root-summary.py"]
     if extra_args:
         command.extend(extra_args)
@@ -595,7 +607,7 @@ def summarize_proof_timing(
         "proof_timing_summary="
         f"{display_path_for_shell(outputs['proof_timing_summary'], root)}"
     )
-    return True
+    return ProofTimingSummaryResult(True, None, [])
 
 
 def validate_static_profile_args(args: argparse.Namespace, root: Path) -> tuple[Path, Path]:
@@ -882,9 +894,14 @@ def run_profile(args: argparse.Namespace) -> int:
         )
         raise
     proof_timing_summary_written = False
+    proof_timing_summary_skip_reason = None
+    proof_timing_summary_missing_keys: list[str] = []
     tool_summary_paths: list[Path] = []
     if args.summarize:
-        proof_timing_summary_written = summarize_proof_timing(root, outputs)
+        proof_timing_result = summarize_proof_timing(root, outputs)
+        proof_timing_summary_written = proof_timing_result.written
+        proof_timing_summary_skip_reason = proof_timing_result.skip_reason
+        proof_timing_summary_missing_keys = proof_timing_result.missing_keys
     if args.tool == "nsys" and not args.skip_nsys_export:
         try:
             export_nsys_sqlite(args, root, outputs)
@@ -908,19 +925,23 @@ def run_profile(args: argparse.Namespace) -> int:
                 print(
                     f"nsys_copy_summary={display_path_for_shell(outputs['copy_summary'], root)}"
                 )
-                proof_timing_summary_written = (
-                    summarize_proof_timing(
-                        root,
-                        outputs,
-                        [
-                            "--nsys-kernel-summary",
-                            str(outputs["kernel_summary"]),
-                            "--nsys-copy-summary",
-                            str(outputs["copy_summary"]),
-                        ],
-                    )
-                    or proof_timing_summary_written
+                proof_timing_result = summarize_proof_timing(
+                    root,
+                    outputs,
+                    [
+                        "--nsys-kernel-summary",
+                        str(outputs["kernel_summary"]),
+                        "--nsys-copy-summary",
+                        str(outputs["copy_summary"]),
+                    ],
                 )
+                if proof_timing_result.written:
+                    proof_timing_summary_written = True
+                    proof_timing_summary_skip_reason = None
+                    proof_timing_summary_missing_keys = []
+                elif not proof_timing_summary_written:
+                    proof_timing_summary_skip_reason = proof_timing_result.skip_reason
+                    proof_timing_summary_missing_keys = proof_timing_result.missing_keys
         except SystemExit as error:
             if args.summarize:
                 remove_stale_summary(outputs["proof_timing_summary"])
@@ -946,14 +967,18 @@ def run_profile(args: argparse.Namespace) -> int:
             print(
                 f"ncu_kernel_summary={display_path_for_shell(outputs['kernel_summary'], root)}"
             )
-            proof_timing_summary_written = (
-                summarize_proof_timing(
-                    root,
-                    outputs,
-                    ["--ncu-kernel-summary", str(outputs["kernel_summary"])],
-                )
-                or proof_timing_summary_written
+            proof_timing_result = summarize_proof_timing(
+                root,
+                outputs,
+                ["--ncu-kernel-summary", str(outputs["kernel_summary"])],
             )
+            if proof_timing_result.written:
+                proof_timing_summary_written = True
+                proof_timing_summary_skip_reason = None
+                proof_timing_summary_missing_keys = []
+            elif not proof_timing_summary_written:
+                proof_timing_summary_skip_reason = proof_timing_result.skip_reason
+                proof_timing_summary_missing_keys = proof_timing_result.missing_keys
         except SystemExit as error:
             remove_stale_summary(outputs["proof_timing_summary"])
             write_profile_json(
@@ -981,6 +1006,8 @@ def run_profile(args: argparse.Namespace) -> int:
         "ok",
         profile_exit_code=profile_code,
         proof_timing_summary_written=proof_timing_summary_written,
+        proof_timing_summary_skip_reason=proof_timing_summary_skip_reason,
+        proof_timing_summary_missing_keys=proof_timing_summary_missing_keys,
         tool_summary_paths=tool_summary_paths,
         gpu_memory_check=gpu_memory_payload,
     )
@@ -1226,6 +1253,11 @@ def self_test() -> None:
             raise SystemExit("fake ncu missing-key profile json did not record success")
         if missing_json.get("proof_timing_summary_written") is not False:
             raise SystemExit("fake ncu missing-key profile json recorded a summary")
+        if missing_json.get("proof_timing_summary_skip_reason") != "missing_keys":
+            raise SystemExit("fake ncu missing-key profile json missed the skip reason")
+        missing_keys = missing_json.get("proof_timing_summary_missing_keys", [])
+        if "timing_guest_stage_tree_commit_root_count" not in missing_keys:
+            raise SystemExit("fake ncu missing-key profile json missed required keys")
 
         failed_summary_base = dict(base)
         failed_summary_base["name"] = "self-test-ncu-summary-failure"
