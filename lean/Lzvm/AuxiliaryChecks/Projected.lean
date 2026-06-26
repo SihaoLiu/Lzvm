@@ -61,6 +61,7 @@ theorem runtime_performance_observation_auxiliary_projected_core_contracts
           summary.cudaBackend
           summary.cudaAllocatorTiming
           summary.proofArtifactFinishTiming
+          summary.proofTimingBatch
           publicInput
           proof
           (runtime_performance_observation_projects_witness_opening_row_value_timing
@@ -95,6 +96,12 @@ theorem runtime_performance_observation_auxiliary_projected_core_contracts
             observed)
           (runtime_performance_observation_projects_proof_artifact_finish_timing
             summary
+            publicInput
+            proof
+            observed)
+          (runtime_performance_observation_projects_metadata
+            summary
+            (fun summary => summary.proofTimingBatch)
             publicInput
             proof
             observed)

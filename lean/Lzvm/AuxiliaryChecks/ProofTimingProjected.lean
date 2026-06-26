@@ -70,6 +70,8 @@ structure ProofTimingProjectedCoreContracts
     RuntimeVerifierCoreContract system publicInput proof
   proofArtifactFinishTiming :
     RuntimeVerifierCoreContract system publicInput proof
+  proofTimingBatch :
+    RuntimeVerifierCoreContract system publicInput proof
 
 theorem proof_timing_projected_core_contracts
     {system : VerifierModel}
@@ -80,7 +82,8 @@ theorem proof_timing_projected_core_contracts
     (gpuRunOptions : Option GpuRunOptionsSummary)
     (cudaBackend : Option CudaBackendSummary)
     (cudaAllocatorTiming : Option CudaAllocatorTimingSummary)
-    (finishTiming : Option ProofArtifactFinishTimingSummary) :
+    (finishTiming : Option ProofArtifactFinishTimingSummary)
+    (batchTiming : Option ProofTimingBatchSummary) :
     forall publicInput proof,
       WitnessOpeningRowValueTimingObservedAcceptance
         system
@@ -105,10 +108,15 @@ theorem proof_timing_projected_core_contracts
         finishTiming
         publicInput
         proof ->
+      IgnoredMetadataObservedAcceptance
+        system
+        batchTiming
+        publicInput
+        proof ->
         ProofTimingProjectedCoreContracts system publicInput proof := by
   intro publicInput proof rowValueObserved constantMaterialObserved
     gpuModeObserved gpuRunOptionsObserved cudaBackendObserved
-    cudaAllocatorObserved finishObserved
+    cudaAllocatorObserved finishObserved batchObserved
   exact
     { witnessOpeningRowValueTiming :=
         proof_timing_projected_metadata_acceptance_verifier_core_contract
@@ -158,6 +166,13 @@ theorem proof_timing_projected_core_contracts
           finishTiming
           publicInput
           proof
-          finishObserved }
+          finishObserved
+      proofTimingBatch :=
+        proof_timing_projected_metadata_acceptance_verifier_core_contract
+          assumptions
+          batchTiming
+          publicInput
+          proof
+          batchObserved }
 
 end Lzvm
