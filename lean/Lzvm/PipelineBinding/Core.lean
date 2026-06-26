@@ -606,6 +606,38 @@ theorem runtime_pipeline_binding_checked_acceptance_framed_guest_input
       proof
       accepted
 
+theorem runtime_pipeline_binding_checked_acceptance_framed_guest_input_segment_payload_nonempty
+    {system : VerifierModel}
+    (validation : RuntimePipelineBindingValidation system)
+    (bridge : RuntimePipelineFramedGuestInputBindingBridge system validation) :
+    forall artifact publicInput proof,
+      RuntimePipelineBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        bridge.framedGuestInputBindingValidation.framedGuestInputProofSegmentPayloadNonempty
+          artifact
+          publicInput
+          proof := by
+  intro artifact publicInput proof accepted
+  have framedAccepted :=
+    runtime_pipeline_binding_checked_acceptance_framed_guest_input
+      validation
+      bridge
+      artifact
+      publicInput
+      proof
+      accepted
+  exact
+    runtime_framed_guest_input_binding_checked_acceptance_segment_payload_nonempty
+      bridge.framedGuestInputBindingValidation
+      artifact
+      publicInput
+      proof
+      framedAccepted
+
 theorem runtime_pipeline_binding_checked_acceptance_trace
     {system : VerifierModel}
     (validation : RuntimePipelineBindingValidation system) :
