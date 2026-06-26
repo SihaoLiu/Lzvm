@@ -903,6 +903,63 @@ fn proof_timing_batch_rejects_file_cwd_before_creating_batch_dir() {
     assert!(!log_created, "rejected run should not create a log");
 }
 
+#[cfg(unix)]
+#[test]
+fn proof_timing_batch_rejects_status_path_replaced_with_symlink() {
+    let script_path = batch_script_path();
+    let dir = test_dir("proof-timing-batch-status-symlink");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("fixture dir should be created");
+    let log_path = dir.join("improve-log.csv");
+    let redirected = dir.join("redirected.status");
+    std::fs::write(&redirected, "sentinel\n").expect("redirect target should write");
+    let command = format!(
+        "ln -s '{}' {{batch_dir}}/small-001.status; printf 'timing_total_ms=1000\\n'",
+        redirected.display()
+    );
+
+    let output = Command::new(&script_path)
+        .arg("--work-dir")
+        .arg(&dir)
+        .arg("--path")
+        .arg(&log_path)
+        .arg("--commit")
+        .arg("test")
+        .arg("--runs")
+        .arg("3")
+        .arg("--small-command")
+        .arg(command)
+        .arg("--summary")
+        .arg("status link guard")
+        .output()
+        .expect("proof timing batch should run");
+    let success = output.status.success();
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    let redirected_text =
+        std::fs::read_to_string(&redirected).expect("redirect target should remain readable");
+    let batch_dir = single_batch_dir(&dir);
+    let batch_json =
+        std::fs::read_to_string(batch_dir.join("batch.json")).expect("batch json should read");
+    let _ = std::fs::remove_dir_all(&dir);
+
+    assert!(
+        !success,
+        "proof timing batch should reject status symlink output"
+    );
+    assert!(
+        stderr.contains("output path must not be a symlink"),
+        "status symlink rejection should explain the path constraint: stderr={stderr}"
+    );
+    assert_eq!(
+        redirected_text, "sentinel\n",
+        "rejected status write should not overwrite a symlink target"
+    );
+    assert!(
+        batch_json.contains("\"appended\": false"),
+        "failed symlink run should still record batch json: {batch_json}"
+    );
+}
+
 #[test]
 fn proof_timing_batch_rejects_missing_required_output_text() {
     let script_path = batch_script_path();

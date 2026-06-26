@@ -89,6 +89,24 @@ def read_text(path: Path) -> str:
     return path.read_text(encoding="utf-8", errors="replace")
 
 
+def open_text_no_follow(path: Path, mode: int = 0o600):
+    flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    try:
+        descriptor = os.open(path, flags, mode)
+    except OSError as error:
+        if path.is_symlink():
+            raise SystemExit(f"output path must not be a symlink: {path}") from error
+        raise
+    return os.fdopen(descriptor, "w", encoding="utf-8")
+
+
+def write_text_no_follow(path: Path, text: str) -> None:
+    with open_text_no_follow(path) as output:
+        output.write(text)
+
+
 def write_combined_log(path: Path, stdout: str, stderr: str) -> None:
     combined = ["[stdout]\n", stdout]
     if stdout and not stdout.endswith("\n"):
@@ -96,11 +114,11 @@ def write_combined_log(path: Path, stdout: str, stderr: str) -> None:
     combined.extend(["[stderr]\n", stderr])
     if stderr and not stderr.endswith("\n"):
         combined.append("\n")
-    path.write_text("".join(combined), encoding="utf-8")
+    write_text_no_follow(path, "".join(combined))
 
 
 def write_status(path: Path, lines: list[str]) -> None:
-    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    write_text_no_follow(path, "\n".join(lines) + "\n")
 
 
 def line_key_present(text: str, key: str) -> bool:
@@ -221,8 +239,8 @@ def write_timing_summary(
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
     )
-    output_path.write_text(result.stdout, encoding="utf-8")
-    stderr_path.write_text(result.stderr, encoding="utf-8")
+    write_text_no_follow(output_path, result.stdout)
+    write_text_no_follow(stderr_path, result.stderr)
     if result.returncode != 0:
         raise SystemExit(
             "timing summary failed with status "
@@ -250,8 +268,8 @@ def write_group_timing_summary(
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
     )
-    output_path.write_text(result.stdout, encoding="utf-8")
-    stderr_path.write_text(result.stderr, encoding="utf-8")
+    write_text_no_follow(output_path, result.stdout)
+    write_text_no_follow(stderr_path, result.stderr)
     if result.returncode != 0:
         raise SystemExit(
             "group timing summary failed with status "
@@ -342,8 +360,8 @@ def run_once(
 
     start = time.monotonic()
     timed_out = False
-    with stdout_path.open("w", encoding="utf-8") as stdout_file:
-        with stderr_path.open("w", encoding="utf-8") as stderr_file:
+    with open_text_no_follow(stdout_path) as stdout_file:
+        with open_text_no_follow(stderr_path) as stderr_file:
             process = subprocess.Popen(
                 command,
                 cwd=cwd,
@@ -490,8 +508,8 @@ def append_improve_log(
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
     )
-    (batch_dir / "append.stdout").write_text(output.stdout, encoding="utf-8")
-    (batch_dir / "append.stderr").write_text(output.stderr, encoding="utf-8")
+    write_text_no_follow(batch_dir / "append.stdout", output.stdout)
+    write_text_no_follow(batch_dir / "append.stderr", output.stderr)
     if output.returncode != 0:
         raise SystemExit(
             "append-improve-log failed with status "
@@ -582,7 +600,7 @@ def write_batch_json(
             str(large_stable_timing_summary) if large_stable_timing_summary else None
         ),
     }
-    path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    write_text_no_follow(path, json.dumps(payload, indent=2, sort_keys=True) + "\n")
 
 
 def batch_dir_name() -> str:
