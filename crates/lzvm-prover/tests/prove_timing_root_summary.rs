@@ -61,6 +61,43 @@ fn prove_timing_root_summary_script_is_directly_executable() {
 }
 
 #[test]
+fn prove_timing_root_summary_rejects_duplicate_timing_fields() {
+    let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let script_path = crate_root.join("../../scripts/prove-timing-root-summary.py");
+    let dir = crate_root.join(format!(
+        "../../temp/prove-timing-duplicate-field-{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("duplicate timing fixture dir should be created");
+    let log_path = dir.join("duplicate.log");
+    let input = [
+        "timing_total_ms=1000",
+        "timing_total_ms=2000",
+        "timing_guest_stage_tree_commit_root_count=1",
+        "timing_guest_stage_tree_commit_root_materialization_groups=1",
+        "timing_guest_stage_tree_commit_root_materialization_max_group_size=1",
+    ]
+    .join("\n");
+    std::fs::write(&log_path, input).expect("duplicate timing fixture should be written");
+
+    let output = Command::new("python3")
+        .arg(&script_path)
+        .arg(&log_path)
+        .output()
+        .expect("prove timing root summary should run");
+    let success = output.status.success();
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    let _ = std::fs::remove_dir_all(&dir);
+
+    assert!(!success, "duplicate timing fields should be rejected");
+    assert!(
+        stderr.contains("duplicate timing field: timing_total_ms"),
+        "duplicate timing rejection should name the repeated field: stderr={stderr}"
+    );
+}
+
+#[test]
 fn prove_timing_root_summary_reports_stream_chunk_process_time() {
     let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
     let script_path = crate_root.join("../../scripts/prove-timing-root-summary.py");

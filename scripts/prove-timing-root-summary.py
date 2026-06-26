@@ -1580,6 +1580,8 @@ def parse_timing_log(text: str) -> dict[str, int | str]:
             and OPENING_STAGE_ROW_VALUE_DEVICE_SINGLE_DOWNLOAD_RE.match(key) is None
         ):
             continue
+        if key in values:
+            raise SystemExit(f"duplicate timing field: {key}")
         try:
             values[key] = int(value.strip())
         except ValueError:
