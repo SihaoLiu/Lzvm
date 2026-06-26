@@ -43,6 +43,8 @@ use lzvm_artifacts::witness_segment::{
 };
 use lzvm_field::{Felt, FieldError};
 
+use crate::proof_segment_ids::unexpected_proof_segment_id;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TraceConstraintPreflightUnit {
     pub unit_index: u32,
@@ -175,6 +177,9 @@ pub enum ProofPreflightError {
     EthBlockPublicValues(EthBlockPublicValuesError),
     FramedGuestInput(FramedStdinError),
     MissingEthBlockInput,
+    UnexpectedProofSegment {
+        id: u32,
+    },
     ProofArtifact(ProofArtifactError),
 }
 
@@ -283,6 +288,9 @@ impl fmt::Display for ProofPreflightError {
             Self::EthBlockPublicValues(error) => write!(f, "{error}"),
             Self::FramedGuestInput(error) => write!(f, "invalid framed guest input segment: {error}"),
             Self::MissingEthBlockInput => write!(f, "missing ETH block input proof segment"),
+            Self::UnexpectedProofSegment { id } => {
+                write!(f, "unexpected proof segment id: {id}")
+            }
             Self::ProofArtifact(error) => write!(f, "{error}"),
         }
     }
@@ -334,7 +342,8 @@ impl std::error::Error for ProofPreflightError {
             | Self::TraceConstraintUnexpectedWitnessCommitment { .. }
             | Self::TraceConstraintWitnessUnitMismatch { .. }
             | Self::TraceConstraintWitnessShapeMismatch { .. }
-            | Self::MissingEthBlockInput => None,
+            | Self::MissingEthBlockInput
+            | Self::UnexpectedProofSegment { .. } => None,
         }
     }
 }
@@ -396,6 +405,9 @@ fn validate_proof_public_values_inner(
     require_trace_constraint_evidence: bool,
 ) -> Result<ProofPreflightValidation, ProofPreflightError> {
     validate_proof_artifact(proof).map_err(ProofPreflightError::ProofArtifact)?;
+    if let Some(id) = unexpected_proof_segment_id(&proof.segments) {
+        return Err(ProofPreflightError::UnexpectedProofSegment { id });
+    }
 
     if proof.setup_hash != public_values.setup_hash {
         return Err(ProofPreflightError::SetupHashMismatch);

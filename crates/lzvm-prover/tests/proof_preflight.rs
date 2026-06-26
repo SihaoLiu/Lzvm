@@ -15,6 +15,7 @@ use lzvm_artifacts::guest_input_segment::{
     encode_framed_guest_input_segment, framed_guest_input_segment_digest,
     FRAMED_GUEST_INPUT_SEGMENT_ID,
 };
+use lzvm_artifacts::pcs_material_segment::PCS_MATERIAL_MANIFEST_SEGMENT_ID;
 use lzvm_artifacts::program_image::{ProgramImageCommitmentCache, ProgramImageGpuMode};
 use lzvm_artifacts::program_image_segment::{
     encode_program_image_cache_segment, program_image_cache_segment_digest,
@@ -40,7 +41,7 @@ use lzvm_prover::proof_preflight::{
     ProofPreflightReport, PublicValueFieldError, TraceConstraintPreflightUnit,
 };
 
-const SAMPLE_AUX_SEGMENT_ID: u32 = 20_000;
+const SAMPLE_AUX_SEGMENT_ID: u32 = PCS_MATERIAL_MANIFEST_SEGMENT_ID;
 const FIRST_CHALLENGE_VALUE_OFFSET: usize = 12;
 const PROGRAM_IMAGE_SEGMENT_PAYLOAD_OFFSET: usize = 8;
 const PROGRAM_IMAGE_SEGMENT_TREE_ROOT_OFFSET: usize = PROGRAM_IMAGE_SEGMENT_PAYLOAD_OFFSET + 32 * 3;
@@ -296,6 +297,27 @@ fn rejects_duplicate_proof_segments_in_memory() {
     assert_eq!(
         error.to_string(),
         format!("duplicate proof segment id: {SAMPLE_AUX_SEGMENT_ID}")
+    );
+}
+
+#[test]
+fn rejects_unknown_fixed_proof_segments_in_memory() {
+    let public_values = sample_public_values();
+    let mut proof = sample_proof(&public_values);
+    let unknown_segment_id = 20_000;
+    proof.segments.push(ProofSegment {
+        id: unknown_segment_id,
+        data: vec![5, 6, 7, 8],
+    });
+
+    let error = validate_proof_public_values(&proof, &public_values)
+        .expect_err("proof preflight should reject unknown fixed proof segments");
+
+    assert_eq!(
+        error,
+        ProofPreflightError::UnexpectedProofSegment {
+            id: unknown_segment_id
+        }
     );
 }
 

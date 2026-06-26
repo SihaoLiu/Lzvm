@@ -5,24 +5,13 @@ use std::path::Path;
 use lzvm_artifacts::challenge_values_segment::{
     parse_challenge_values_segment, ChallengeValuesSegmentError, CHALLENGE_VALUES_SEGMENT_ID,
 };
-use lzvm_artifacts::constant_opening_segment::CONSTANT_OPENING_SEGMENT_ID;
 use lzvm_artifacts::contribution_segment::CONTRIBUTION_SEGMENT_ID;
-use lzvm_artifacts::eth_block_input_segment::ETH_BLOCK_INPUT_SEGMENT_ID;
 use lzvm_artifacts::global_info::{GlobalInfo, PublicValue};
-use lzvm_artifacts::group_values_segment::GROUP_VALUES_SEGMENT_ID;
-use lzvm_artifacts::guest_input_segment::FRAMED_GUEST_INPUT_SEGMENT_ID;
 use lzvm_artifacts::key_directory::{
     key_directory_catalog_digest, read_key_directory_catalog, KeyDirectoryCatalog,
     KeyDirectoryError,
 };
-use lzvm_artifacts::pcs_evaluation_segment::PCS_EVALUATION_SEGMENT_ID;
-use lzvm_artifacts::pcs_fri_segment::PCS_FRI_OPENING_SEGMENT_ID;
-use lzvm_artifacts::pcs_material_segment::PCS_MATERIAL_MANIFEST_SEGMENT_ID;
-use lzvm_artifacts::pcs_nonce_segment::PCS_QUERY_NONCE_SEGMENT_ID;
-use lzvm_artifacts::pcs_proof_values_segment::PCS_PROOF_VALUES_SEGMENT_ID;
-use lzvm_artifacts::pcs_query_segment::PCS_QUERY_PLAN_SEGMENT_ID;
 use lzvm_artifacts::program_image::ProgramImageCommitmentCache;
-use lzvm_artifacts::program_image_segment::PROGRAM_IMAGE_CACHE_SEGMENT_ID;
 use lzvm_artifacts::proof::{
     read_proof_artifact_file, ProofArtifact, ProofArtifactError, ProofSegment,
 };
@@ -31,12 +20,8 @@ use lzvm_artifacts::setup_manifest::{
     build_setup_directory_manifest, validate_setup_directory_manifest_file,
     SetupDirectoryManifestError, SETUP_DIRECTORY_MANIFEST_FILE,
 };
-use lzvm_artifacts::trace_constraint_segment::{
-    TraceConstraintSegmentError, TRACE_CONSTRAINT_SEGMENT_ID,
-};
+use lzvm_artifacts::trace_constraint_segment::TraceConstraintSegmentError;
 use lzvm_artifacts::unit_values_segment::UNIT_VALUES_SEGMENT_ID;
-use lzvm_artifacts::witness_opening_segment::WITNESS_OPENING_SEGMENT_ID;
-use lzvm_artifacts::witness_segment::WITNESS_COMMITMENT_SEGMENT_BASE_ID;
 use lzvm_field::{Ext3, Felt, FieldError};
 
 use crate::constant_opening::{
@@ -75,6 +60,7 @@ use crate::proof_preflight::{
     public_values_as_fields, validate_proof_public_values_for_setup_preflight_with_fields,
     ProofPreflightError, ProofPreflightReport, PublicValueFieldError, TraceConstraintPreflightUnit,
 };
+use crate::proof_segment_ids::unexpected_proof_segment_id;
 use crate::proof_values::{
     flatten_pcs_proof_values, load_pcs_proof_values_from_segments, LoadPcsProofValuesSegmentError,
     ProvePcsProofValuesSegmentError,
@@ -1109,11 +1095,8 @@ fn validate_optional_contribution_challenge_values(
 }
 
 fn validate_setup_proof_segment_ids(segments: &[ProofSegment]) -> Result<(), SetupPreflightError> {
-    for segment in segments {
-        if is_setup_proof_segment_id(segment.id) {
-            continue;
-        }
-        return Err(SetupPreflightError::UnexpectedProofSegment { id: segment.id });
+    if let Some(id) = unexpected_proof_segment_id(segments) {
+        return Err(SetupPreflightError::UnexpectedProofSegment { id });
     }
     Ok(())
 }
@@ -1219,32 +1202,6 @@ fn validate_optional_trace_constraint_segment(
         }
     }
     Ok(())
-}
-
-pub(crate) fn is_setup_proof_segment_id(id: u32) -> bool {
-    if (WITNESS_COMMITMENT_SEGMENT_BASE_ID..PCS_MATERIAL_MANIFEST_SEGMENT_ID).contains(&id) {
-        return true;
-    }
-
-    matches!(
-        id,
-        PCS_MATERIAL_MANIFEST_SEGMENT_ID
-            | PCS_QUERY_PLAN_SEGMENT_ID
-            | WITNESS_OPENING_SEGMENT_ID
-            | CONSTANT_OPENING_SEGMENT_ID
-            | PCS_FRI_OPENING_SEGMENT_ID
-            | PCS_QUERY_NONCE_SEGMENT_ID
-            | PCS_EVALUATION_SEGMENT_ID
-            | PCS_PROOF_VALUES_SEGMENT_ID
-            | GROUP_VALUES_SEGMENT_ID
-            | CHALLENGE_VALUES_SEGMENT_ID
-            | UNIT_VALUES_SEGMENT_ID
-            | TRACE_CONSTRAINT_SEGMENT_ID
-            | PROGRAM_IMAGE_CACHE_SEGMENT_ID
-            | CONTRIBUTION_SEGMENT_ID
-            | ETH_BLOCK_INPUT_SEGMENT_ID
-            | FRAMED_GUEST_INPUT_SEGMENT_ID
-    )
 }
 
 pub fn validate_setup_preflight_from_files(

@@ -66,6 +66,7 @@ pub mod pcs_transcript_segments;
 mod proof_artifact;
 mod proof_artifact_timing;
 pub mod proof_preflight;
+mod proof_segment_ids;
 pub mod proof_values;
 mod prove_fri_opening;
 mod prove_fri_polynomial;

@@ -67,7 +67,7 @@ use lzvm_prover::witness_layout::derive_witness_trace_layout;
 use lzvm_prover::witness_trace::parse_witness_trace;
 use lzvm_prover::{build_pcs_material_manifest_segment, derive_prove_schedule, ProveScheduleError};
 
-const SAMPLE_AUX_SEGMENT_ID: u32 = 20_000;
+const SAMPLE_AUX_SEGMENT_ID: u32 = CONSTANT_OPENING_SEGMENT_ID;
 
 fn sample_catalog() -> KeyDirectoryCatalog {
     KeyDirectoryCatalog {
