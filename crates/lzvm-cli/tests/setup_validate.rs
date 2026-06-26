@@ -9760,6 +9760,57 @@ fn prove_witness_guest_pc_trace_rejects_eth_public_input_before_generating_block
 }
 
 #[test]
+fn prove_witness_guest_pc_trace_rejects_malformed_framed_input() {
+    let dir = temp_dir("prove-witness-guest-pc-trace-malformed-input");
+    let _ = fs::remove_dir_all(&dir);
+    let output_dir = dir.join("proof-out");
+    let guest_image = dir.join("guest.elf");
+    let input_data = dir.join("input.bin");
+    let block_input_path = dir.join("block.input");
+    let proof_path = output_dir.join("proof.bin");
+    let block_input = build_eth_block_input(&sample_block_rlp()).expect("block input should build");
+    write_execution_ready_setup_directory_with_eth_block_public_values(&dir, &block_input);
+    write_bytes(&guest_image, sample_guest_pc_trace_image());
+    write_bytes(&input_data, [7_u8]);
+    write_bytes(
+        &block_input_path,
+        encode_eth_block_input(&block_input).expect("block input should encode"),
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "prove",
+            "witness",
+            "--guest-pc-trace",
+            "8",
+            "--eth-block-input",
+            block_input_path
+                .to_str()
+                .expect("block input path should be utf-8"),
+            "--input-data",
+            input_data.to_str().expect("input path should be utf-8"),
+            dir.to_str().expect("path should be utf-8"),
+            output_dir.to_str().expect("output path should be utf-8"),
+            guest_image.to_str().expect("guest path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+    let proof_exists = proof_path.exists();
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 1);
+    assert!(stdout.is_empty());
+    assert_eq!(
+        String::from_utf8(stderr).expect("stderr should be utf-8"),
+        "prove witness failed: framed guest input is invalid: truncated chunk length at offset 0: expected 8 bytes, found 1\n"
+    );
+    assert!(!proof_exists);
+}
+
+#[test]
 fn prove_witness_generates_eth_block_public_values_when_missing() {
     let dir = temp_dir("prove-witness-eth-public-values");
     let _ = fs::remove_dir_all(&dir);
