@@ -2189,10 +2189,16 @@ fn lean_framed_guest_input_binding_tracks_runtime_checks() {
     assert!(
         lean_source.contains("structure RuntimeFramedGuestInputBindingValidation")
             && lean_source.contains("RuntimeFramedGuestInputBindingEvidence")
+            && lean_source.contains("RuntimeFramedGuestInputBindingSoundnessContract")
             && lean_source.contains("RuntimeEthBlockPublicInputBindingEvidence")
+            && lean_source.contains("RuntimeEthBlockPublicInputBindingSoundnessContract")
             && lean_source.contains("RuntimeProgramImageCacheBindingEvidence")
+            && lean_source.contains("RuntimeProgramImageCacheBindingSoundnessContract")
             && lean_source.contains("RuntimeVerifierCoreContract system publicInput proof")
             && lean_source.contains("SoundWitness system publicInput proof")
+            && lean_source.contains(
+                "runtime_framed_guest_input_binding_checked_acceptance_soundness_contract"
+            )
             && lean_source
                 .contains("runtime_framed_guest_input_binding_checked_acceptance_full_contract"),
         "Lean should expose a framed guest input binding contract over the ETH block and program image evidence"

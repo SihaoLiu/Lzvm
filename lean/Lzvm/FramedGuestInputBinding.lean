@@ -96,6 +96,33 @@ def RuntimeFramedGuestInputBindingCheckedAcceptance
     (proof : Proof) : Prop :=
   validation.framedGuestInputAccepted artifact publicInput proof
 
+def RuntimeFramedGuestInputBindingSoundnessContract
+    (system : VerifierModel)
+    (validation : RuntimeFramedGuestInputBindingValidation system)
+    (artifact : RuntimeArtifact)
+    (publicInput : PublicInput)
+    (proof : Proof) : Prop :=
+  RuntimeFramedGuestInputBindingEvidence
+      system
+      validation
+      artifact
+      publicInput
+      proof
+    /\ RuntimeEthBlockPublicInputBindingSoundnessContract
+      system
+      validation.ethBlockValidation
+      artifact
+      publicInput
+      proof
+    /\ RuntimeProgramImageCacheBindingSoundnessContract
+      system
+      validation.programImageCacheValidation
+      artifact
+      publicInput
+      proof
+    /\ RuntimeVerifierCoreContract system publicInput proof
+    /\ SoundWitness system publicInput proof
+
 theorem runtime_framed_guest_input_binding_checked_acceptance_eth_block_binding
     {system : VerifierModel}
     (validation : RuntimeFramedGuestInputBindingValidation system) :
@@ -331,6 +358,76 @@ theorem runtime_framed_guest_input_binding_checked_acceptance_sound
       evidence.right.right.right.right,
       core,
       ethSound.right.right.right⟩
+
+theorem runtime_framed_guest_input_binding_checked_acceptance_soundness_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeFramedGuestInputBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeFramedGuestInputBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeFramedGuestInputBindingSoundnessContract
+          system
+          validation
+          artifact
+          publicInput
+          proof := by
+  intro artifact publicInput proof accepted
+  have evidence :=
+    runtime_framed_guest_input_binding_checked_acceptance_evidence
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have ethAccepted :=
+    runtime_framed_guest_input_binding_checked_acceptance_eth_block_binding
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have cacheAccepted :=
+    runtime_framed_guest_input_binding_checked_acceptance_program_image_cache_binding
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have ethContract :=
+    runtime_eth_block_public_input_binding_checked_acceptance_soundness_contract
+      assumptions
+      validation.ethBlockValidation
+      artifact
+      publicInput
+      proof
+      ethAccepted
+  have cacheContract :=
+    runtime_program_image_cache_binding_checked_acceptance_soundness_contract
+      assumptions
+      validation.programImageCacheValidation
+      artifact
+      publicInput
+      proof
+      cacheAccepted
+  have sound :=
+    runtime_framed_guest_input_binding_checked_acceptance_sound
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  exact
+    ⟨evidence,
+      ethContract,
+      cacheContract,
+      sound.right.right.right.left,
+      sound.right.right.right.right⟩
 
 theorem runtime_framed_guest_input_binding_checked_acceptance_full_contract
     {system : VerifierModel}
