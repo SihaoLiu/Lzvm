@@ -78,11 +78,14 @@ pub fn parse_program_image_cache_segment(
             available: bytes.len(),
         });
     }
-    let magic: [u8; 4] = bytes[..4].try_into().expect("slice length checked");
+    let mut magic = [0_u8; 4];
+    magic.copy_from_slice(&bytes[..4]);
     if magic != PROGRAM_IMAGE_CACHE_SEGMENT_MAGIC {
         return Err(ProgramImageCacheSegmentError::InvalidMagic);
     }
-    let version = u32::from_le_bytes(bytes[4..8].try_into().expect("slice length checked"));
+    let mut version_bytes = [0_u8; 4];
+    version_bytes.copy_from_slice(&bytes[4..8]);
+    let version = u32::from_le_bytes(version_bytes);
     if version != PROGRAM_IMAGE_CACHE_SEGMENT_VERSION {
         return Err(ProgramImageCacheSegmentError::UnsupportedVersion { version });
     }
