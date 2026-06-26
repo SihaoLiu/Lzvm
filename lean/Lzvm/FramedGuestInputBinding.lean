@@ -565,6 +565,46 @@ theorem runtime_framed_guest_input_binding_checked_acceptance_soundness_contract
       sound.right.right.right.left,
       sound.right.right.right.right⟩
 
+theorem runtime_framed_guest_input_binding_checked_acceptance_soundness_and_structural_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeFramedGuestInputBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeFramedGuestInputBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeFramedGuestInputBindingSoundnessContract
+            system
+            validation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeFramedGuestInputBindingStructuralObligations
+            system
+            validation
+            artifact
+            publicInput
+            proof := by
+  intro artifact publicInput proof accepted
+  exact
+    And.intro
+      (runtime_framed_guest_input_binding_checked_acceptance_soundness_contract
+        assumptions
+        validation
+        artifact
+        publicInput
+        proof
+        accepted)
+      (runtime_framed_guest_input_binding_checked_acceptance_structural_obligations
+        validation
+        artifact
+        publicInput
+        proof
+        accepted)
+
 theorem runtime_framed_guest_input_binding_checked_acceptance_full_contract
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
