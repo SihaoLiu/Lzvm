@@ -10,6 +10,10 @@ use lzvm_artifacts::sectioned::{encode_sectioned_file, SectionedFile, SectionedS
 use lzvm_field::FieldError;
 
 const NON_CANONICAL_FIELD: u64 = 0xffff_ffff_0000_0001;
+const SECTION_HEADER_BYTES: usize = 4 + 32 + 4;
+const VALUE_ENTRY_HEADER_BYTES: usize = 4 + 4;
+const ONE_BYTE_NAME_ELEMENT_COUNT_END: usize = SECTION_HEADER_BYTES + 4 + 1 + 4;
+const ELEMENT_BYTES: usize = 8;
 
 fn sample_hash(byte: u8) -> [u8; 32] {
     [byte; 32]
@@ -246,7 +250,11 @@ fn rejects_value_count_that_exceeds_remaining_entry_headers() {
 
     assert!(matches!(
         parse_public_values(&bytes),
-        Err(PublicValuesError::LengthOverflow)
+        Err(PublicValuesError::UnexpectedEof {
+            offset: SECTION_HEADER_BYTES,
+            needed: VALUE_ENTRY_HEADER_BYTES,
+            available: 0
+        })
     ));
 }
 
@@ -259,6 +267,28 @@ fn rejects_element_count_that_exceeds_remaining_elements() {
 
     assert!(matches!(
         parse_public_values(&bytes),
-        Err(PublicValuesError::LengthOverflow)
+        Err(PublicValuesError::UnexpectedEof {
+            offset: ONE_BYTE_NAME_ELEMENT_COUNT_END,
+            needed: ELEMENT_BYTES,
+            available: 0
+        })
+    ));
+}
+
+#[test]
+fn rejects_truncated_public_value_elements() {
+    let mut section = section_header(1);
+    push_string(&mut section, "x");
+    push_u32(&mut section, 2);
+    push_u64(&mut section, 7);
+    let bytes = public_values_file(section);
+
+    assert!(matches!(
+        parse_public_values(&bytes),
+        Err(PublicValuesError::UnexpectedEof {
+            offset: ONE_BYTE_NAME_ELEMENT_COUNT_END,
+            needed,
+            available: ELEMENT_BYTES
+        }) if needed == ELEMENT_BYTES * 2
     ));
 }
