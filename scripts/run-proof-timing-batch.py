@@ -18,6 +18,9 @@ TIMING_SUMMARY_REQUIRED_KEYS = [
     "timing_guest_stage_tree_commit_root_count",
     "timing_guest_stage_tree_commit_root_materialization_groups",
     "timing_guest_stage_tree_commit_root_materialization_max_group_size",
+    "timing_finish_witness_opening_row_dedup_input_rows",
+    "timing_finish_witness_opening_row_dedup_unique_rows",
+    "timing_finish_witness_opening_row_dedup_elided_rows",
 ]
 
 
@@ -818,7 +821,10 @@ def self_test() -> None:
                 "print('timing_total_ms=1000'); "
                 "print('timing_guest_stage_tree_commit_root_count=1'); "
                 "print('timing_guest_stage_tree_commit_root_materialization_groups=1'); "
-                "print('timing_guest_stage_tree_commit_root_materialization_max_group_size=1')"
+                "print('timing_guest_stage_tree_commit_root_materialization_max_group_size=1'); "
+                "print('timing_finish_witness_opening_row_dedup_input_rows=0'); "
+                "print('timing_finish_witness_opening_row_dedup_unique_rows=0'); "
+                "print('timing_finish_witness_opening_row_dedup_elided_rows=0')"
             ),
         ]
     )

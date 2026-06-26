@@ -128,14 +128,20 @@ fn proof_timing_batch_runs_commands_and_appends_stable_log() {
             "printf 'status=ok\\nverify_outputs=true\\ntiming_total_ms=100{run}\\n",
             "timing_guest_stage_tree_commit_root_count=1\\n",
             "timing_guest_stage_tree_commit_root_materialization_groups=1\\n",
-            "timing_guest_stage_tree_commit_root_materialization_max_group_size=1\\n'"
+            "timing_guest_stage_tree_commit_root_materialization_max_group_size=1\\n",
+            "timing_finish_witness_opening_row_dedup_input_rows=0\\n",
+            "timing_finish_witness_opening_row_dedup_unique_rows=0\\n",
+            "timing_finish_witness_opening_row_dedup_elided_rows=0\\n'"
         ))
         .arg("--large-command")
         .arg(concat!(
             "printf 'status=ok\\nverify_outputs=true\\ntiming_total_ms=200{run}\\n",
             "timing_guest_stage_tree_commit_root_count=1\\n",
             "timing_guest_stage_tree_commit_root_materialization_groups=1\\n",
-            "timing_guest_stage_tree_commit_root_materialization_max_group_size=1\\n'"
+            "timing_guest_stage_tree_commit_root_materialization_max_group_size=1\\n",
+            "timing_finish_witness_opening_row_dedup_input_rows=0\\n",
+            "timing_finish_witness_opening_row_dedup_unique_rows=0\\n",
+            "timing_finish_witness_opening_row_dedup_elided_rows=0\\n'"
         ))
         .arg("--summary")
         .arg("batch timing")
@@ -291,7 +297,10 @@ fn proof_timing_batch_defaults_commit_to_head() {
             "printf 'timing_total_ms=1000\\n",
             "timing_guest_stage_tree_commit_root_count=1\\n",
             "timing_guest_stage_tree_commit_root_materialization_groups=1\\n",
-            "timing_guest_stage_tree_commit_root_materialization_max_group_size=1\\n'"
+            "timing_guest_stage_tree_commit_root_materialization_max_group_size=1\\n",
+            "timing_finish_witness_opening_row_dedup_input_rows=0\\n",
+            "timing_finish_witness_opening_row_dedup_unique_rows=0\\n",
+            "timing_finish_witness_opening_row_dedup_elided_rows=0\\n'"
         ))
         .arg("--summary")
         .arg("default commit")
@@ -344,7 +353,10 @@ fn proof_timing_batch_reruns_until_stable_sample_group() {
             "else printf 'timing_total_ms=100{run}\\n'; fi; ",
             "printf 'timing_guest_stage_tree_commit_root_count=1\\n",
             "timing_guest_stage_tree_commit_root_materialization_groups=1\\n",
-            "timing_guest_stage_tree_commit_root_materialization_max_group_size=1\\n'"
+            "timing_guest_stage_tree_commit_root_materialization_max_group_size=1\\n",
+            "timing_finish_witness_opening_row_dedup_input_rows=0\\n",
+            "timing_finish_witness_opening_row_dedup_unique_rows=0\\n",
+            "timing_finish_witness_opening_row_dedup_elided_rows=0\\n'"
         ))
         .arg("--summary")
         .arg("rerun stable")
@@ -503,7 +515,10 @@ fn proof_timing_batch_records_batch_json_when_stable_summary_fails() {
             "printf 'timing_total_ms=100{run}\\n",
             "timing_guest_stage_tree_commit_root_count=1\\n",
             "timing_guest_stage_tree_commit_root_materialization_groups=1\\n",
-            "timing_guest_stage_tree_commit_root_materialization_max_group_size=1\\n'"
+            "timing_guest_stage_tree_commit_root_materialization_max_group_size=1\\n",
+            "timing_finish_witness_opening_row_dedup_input_rows=0\\n",
+            "timing_finish_witness_opening_row_dedup_unique_rows=0\\n",
+            "timing_finish_witness_opening_row_dedup_elided_rows=0\\n'"
         ))
         .arg("--summary")
         .arg("stable summary failure")

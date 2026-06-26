@@ -1,3 +1,5 @@
+use std::collections::{hash_map::Entry, HashMap};
+
 use lzvm_field::Felt;
 
 #[cfg(feature = "cuda")]
@@ -1252,14 +1254,17 @@ fn unique_witness_stage_opening_rows(
         return None;
     }
 
+    let mut unique_positions_by_query_row = HashMap::with_capacity(query_rows.len());
     let mut unique_row_indices = Vec::with_capacity(row_indices.len());
     let mut unique_query_rows = Vec::with_capacity(query_rows.len());
     let mut positions = Vec::with_capacity(query_rows.len());
     for (row_index, query_row) in row_indices.iter().copied().zip(query_rows.iter().copied()) {
-        match unique_query_rows.iter().position(|row| *row == query_row) {
-            Some(position) => positions.push(position),
-            None => {
-                positions.push(unique_query_rows.len());
+        match unique_positions_by_query_row.entry(query_row) {
+            Entry::Occupied(entry) => positions.push(*entry.get()),
+            Entry::Vacant(entry) => {
+                let position = unique_query_rows.len();
+                entry.insert(position);
+                positions.push(position);
                 unique_row_indices.push(row_index);
                 unique_query_rows.push(query_row);
             }

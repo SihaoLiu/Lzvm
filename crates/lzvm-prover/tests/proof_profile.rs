@@ -41,7 +41,8 @@ fn proof_profile_self_test_runs() {
             && stdout.contains("timing_guest_stage_tree_commit_root_count")
             && stdout.contains("timing_guest_stage_tree_commit_root_materialization_groups")
             && stdout
-                .contains("timing_guest_stage_tree_commit_root_materialization_max_group_size"),
+                .contains("timing_guest_stage_tree_commit_root_materialization_max_group_size")
+            && stdout.contains("timing_finish_witness_opening_row_dedup_input_rows"),
         "self-test should skip incomplete proof timing summaries without failing: {stdout}"
     );
 }
