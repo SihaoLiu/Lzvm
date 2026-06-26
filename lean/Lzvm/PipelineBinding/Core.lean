@@ -1065,6 +1065,37 @@ theorem runtime_pipeline_binding_checked_acceptance_eth_artifact_wellformed_cont
       proof
       ethAccepted
 
+theorem runtime_pipeline_binding_checked_acceptance_eth_concrete_segment_ids_allowed
+    {system : VerifierModel}
+    (validation : RuntimePipelineBindingValidation system)
+    (binding :
+      RuntimeProofArtifactConcreteSegmentIdBinding
+        validation.ethBindingValidation.proofArtifactBindingValidation) :
+    forall artifact publicInput proof,
+      RuntimePipelineBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeProofArtifactConcreteSegmentIdsAllowed proof := by
+  intro artifact publicInput proof accepted
+  have ethAccepted :=
+    runtime_pipeline_binding_checked_acceptance_eth
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  exact
+    runtime_eth_block_public_input_binding_checked_acceptance_concrete_segment_ids_allowed
+      validation.ethBindingValidation
+      binding
+      artifact
+      publicInput
+      proof
+      ethAccepted
+
 theorem runtime_pipeline_binding_checked_acceptance_eth_full_contract
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
@@ -1149,6 +1180,41 @@ theorem runtime_pipeline_binding_checked_acceptance_framed_guest_input_soundness
     runtime_framed_guest_input_binding_checked_acceptance_soundness_contract
       assumptions
       bridge.framedGuestInputBindingValidation
+      artifact
+      publicInput
+      proof
+      framedAccepted
+
+theorem runtime_pipeline_binding_checked_acceptance_framed_guest_input_concrete_segment_ids_allowed
+    {system : VerifierModel}
+    (validation : RuntimePipelineBindingValidation system)
+    (bridge : RuntimePipelineFramedGuestInputBindingBridge system validation)
+    (binding :
+      let framedValidation := bridge.framedGuestInputBindingValidation
+      let inputValidation := framedValidation.ethBlockValidation
+      RuntimeProofArtifactConcreteSegmentIdBinding
+        inputValidation.proofArtifactBindingValidation) :
+    forall artifact publicInput proof,
+      RuntimePipelineBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeProofArtifactConcreteSegmentIdsAllowed proof := by
+  intro artifact publicInput proof accepted
+  have framedAccepted :=
+    runtime_pipeline_binding_checked_acceptance_framed_guest_input
+      validation
+      bridge
+      artifact
+      publicInput
+      proof
+      accepted
+  exact
+    runtime_framed_guest_input_binding_checked_acceptance_concrete_segment_ids_allowed
+      bridge.framedGuestInputBindingValidation
+      binding
       artifact
       publicInput
       proof
