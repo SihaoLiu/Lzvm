@@ -120,6 +120,20 @@ def write_combined_log(path: Path, stdout: str, stderr: str) -> None:
     write_text_no_follow(path, "".join(combined))
 
 
+def first_diagnostic_line(text: str) -> str:
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    return lines[0][:200] if lines else ""
+
+
+def remove_summary_outputs(output_path: Path) -> None:
+    stderr_path = prefixed_path(output_path.parent, output_path.name, ".stderr")
+    for path in [output_path, stderr_path]:
+        try:
+            path.unlink()
+        except FileNotFoundError:
+            pass
+
+
 def write_status(path: Path, lines: list[str]) -> None:
     write_text_no_follow(path, "\n".join(lines) + "\n")
 
@@ -233,6 +247,7 @@ def write_timing_summary(
 ) -> str:
     missing_keys = missing_timing_summary_keys(text)
     if missing_keys:
+        remove_summary_outputs(output_path)
         return "skipped_missing_keys=" + ";".join(missing_keys)
     stderr_path = prefixed_path(output_path.parent, output_path.name, ".stderr")
     result = subprocess.run(
@@ -245,9 +260,13 @@ def write_timing_summary(
     write_text_no_follow(output_path, result.stdout)
     write_text_no_follow(stderr_path, result.stderr)
     if result.returncode != 0:
+        diagnostic = first_diagnostic_line(result.stderr)
+        diagnostic_suffix = f"; first stderr line: {diagnostic}" if diagnostic else ""
+        remove_summary_outputs(output_path)
         raise SystemExit(
             "timing summary failed with status "
             f"{result.returncode}; stderr: {stderr_path}"
+            f"{diagnostic_suffix}"
         )
     return str(output_path)
 
@@ -274,9 +293,13 @@ def write_group_timing_summary(
     write_text_no_follow(output_path, result.stdout)
     write_text_no_follow(stderr_path, result.stderr)
     if result.returncode != 0:
+        diagnostic = first_diagnostic_line(result.stderr)
+        diagnostic_suffix = f"; first stderr line: {diagnostic}" if diagnostic else ""
+        remove_summary_outputs(output_path)
         raise SystemExit(
             "group timing summary failed with status "
             f"{result.returncode}; stderr: {stderr_path}"
+            f"{diagnostic_suffix}"
         )
     return output_path
 

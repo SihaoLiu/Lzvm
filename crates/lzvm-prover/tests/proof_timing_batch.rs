@@ -479,6 +479,87 @@ fn proof_timing_batch_rejects_average_above_max() {
 }
 
 #[test]
+fn proof_timing_batch_removes_failed_per_run_summary_outputs() {
+    let script_path = batch_script_path();
+    let dir = test_dir("proof-timing-batch-run-summary-fails");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("fixture dir should be created");
+    let log_path = dir.join("improve-log.csv");
+    let summary_script = dir.join("summary-helper.py");
+    std::fs::write(
+        &summary_script,
+        "import sys\nsys.stderr.write('run summary failed\\n')\nsys.exit(9)\n",
+    )
+    .expect("summary helper should write");
+
+    let output = Command::new(&script_path)
+        .arg("--work-dir")
+        .arg(&dir)
+        .arg("--path")
+        .arg(&log_path)
+        .arg("--commit")
+        .arg("test")
+        .arg("--runs")
+        .arg("3")
+        .arg("--timing-summary-script")
+        .arg(&summary_script)
+        .arg("--small-command")
+        .arg(concat!(
+            "printf 'timing_total_ms=100{run}\\n",
+            "timing_guest_stage_tree_commit_root_count=1\\n",
+            "timing_guest_stage_tree_commit_root_materialization_groups=1\\n",
+            "timing_guest_stage_tree_commit_root_materialization_max_group_size=1\\n",
+            "timing_finish_witness_opening_row_dedup_input_rows=0\\n",
+            "timing_finish_witness_opening_row_dedup_unique_rows=0\\n",
+            "timing_finish_witness_opening_row_dedup_elided_rows=0\\n'"
+        ))
+        .arg("--summary")
+        .arg("run summary failure")
+        .output()
+        .expect("proof timing batch should run");
+
+    let success = output.status.success();
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    let batch_dir = single_batch_dir(&dir);
+    let batch_json =
+        std::fs::read_to_string(batch_dir.join("batch.json")).expect("batch json should read");
+    let status =
+        std::fs::read_to_string(batch_dir.join("small-001.status")).expect("status should read");
+    let summary = batch_dir.join("small-001.proof-timing-summary.csv");
+    let summary_stderr = batch_dir.join("small-001.proof-timing-summary.csv.stderr");
+    let summary_exists = summary.exists();
+    let summary_stderr_exists = summary_stderr.exists();
+    let log_created = log_path.exists();
+    let _ = std::fs::remove_dir_all(&dir);
+
+    assert!(
+        !success,
+        "proof timing batch should fail on per-run summary errors"
+    );
+    assert!(
+        stderr.contains("timing summary failed with status 9")
+            && stderr.contains("first stderr line: run summary failed"),
+        "per-run summary failure should include status and diagnostic: stderr={stderr}"
+    );
+    assert!(
+        status.contains("validation_error=timing summary failed with status 9"),
+        "run status should record the summary validation error: {status}"
+    );
+    assert!(
+        batch_json.contains("\"appended\": false") && batch_json.contains("small-001.log"),
+        "batch json should retain the failed run log and append state: {batch_json}"
+    );
+    assert!(
+        !summary_exists && !summary_stderr_exists,
+        "failed per-run summary outputs should be removed"
+    );
+    assert!(
+        !log_created,
+        "per-run summary failure should not append improve log"
+    );
+}
+
+#[test]
 fn proof_timing_batch_records_batch_json_when_stable_summary_fails() {
     let script_path = batch_script_path();
     let dir = test_dir("proof-timing-batch-stable-summary-fails");
@@ -530,6 +611,10 @@ fn proof_timing_batch_records_batch_json_when_stable_summary_fails() {
     let batch_dir = single_batch_dir(&dir);
     let batch_json =
         std::fs::read_to_string(batch_dir.join("batch.json")).expect("batch json should read");
+    let stable_summary = batch_dir.join("small-stable.proof-timing-summary.csv");
+    let stable_summary_stderr = batch_dir.join("small-stable.proof-timing-summary.csv.stderr");
+    let stable_summary_exists = stable_summary.exists();
+    let stable_summary_stderr_exists = stable_summary_stderr.exists();
     let log_created = log_path.exists();
     let _ = std::fs::remove_dir_all(&dir);
 
@@ -540,6 +625,10 @@ fn proof_timing_batch_records_batch_json_when_stable_summary_fails() {
     assert!(
         stderr.contains("group timing summary failed with status 7"),
         "stable summary failure should report the helper status: stderr={stderr}"
+    );
+    assert!(
+        stderr.contains("first stderr line: group summary failed"),
+        "stable summary failure should include the helper diagnostic: stderr={stderr}"
     );
     assert!(
         batch_json.contains("\"appended\": false")
@@ -555,6 +644,10 @@ fn proof_timing_batch_records_batch_json_when_stable_summary_fails() {
     assert!(
         !log_created,
         "stable summary failure should not append improve log"
+    );
+    assert!(
+        !stable_summary_exists && !stable_summary_stderr_exists,
+        "failed stable summary output should be removed"
     );
 }
 
