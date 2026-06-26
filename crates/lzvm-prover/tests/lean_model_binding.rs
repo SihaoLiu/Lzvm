@@ -18,11 +18,13 @@ fn lean_model_exports_verifier_core_contract() {
     );
     assert!(
         model_source.contains("structure VerifierModel where")
+            && model_source.contains("structure Proof where")
+            && model_source.contains("segmentIds : List Nat := []")
             && model_source.contains("def RuntimeVerifierCoreContract")
             && model_source.contains("def SoundWitness")
             && model_source.contains("def ProofSystemSound")
             && model_source.contains("system.accepts publicInput proof -> SoundWitness system publicInput proof"),
-        "Lean model should expose verifier acceptance, core contract, sound witnesses, and proof-system soundness"
+        "Lean model should expose proof segment IDs, verifier acceptance, core contract, sound witnesses, and proof-system soundness"
     );
     assert!(
         model_source.contains("system.transcriptBound publicInput proof")

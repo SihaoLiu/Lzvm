@@ -38,9 +38,9 @@ fn lean_proof_artifact_binding_exports_core_contract_projection() {
             && lean_source.contains("proofSegmentIdsUnique")
             && lean_source.contains("proofUnitValuesTraceIdentityCoverage")
             && lean_source.contains("RuntimeProofArtifactFinalized")
-            && lean_source.contains("RuntimeProofArtifactSegmentIdView")
             && lean_source.contains("RuntimeProofArtifactConcreteSegmentIdBinding")
             && lean_source.contains("RuntimeProofArtifactConcreteSegmentIdsAllowed")
+            && lean_source.contains("id ∈ proof.segmentIds")
             && lean_source.contains("IsAllowedProofSegmentId")
             && lean_source.contains("SoundWitness system publicInput proof"),
         "Lean proof artifact binding should expose checked soundness and verifier core projection"
@@ -124,6 +124,11 @@ fn lean_proof_artifact_binding_exports_core_contract_projection() {
             "proofSegmentIdsAllowedImpliesConcrete",
             "bindingAcceptedImpliesProofSegmentIdsAllowed",
         ],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &lean_source,
+        "runtime_proof_artifact_binding_checked_acceptance_concrete_segment_ids_allowed",
+        &["segmentIdView"],
     );
     lean_binding::assert_theorem_body_contains(
         &lean_source,

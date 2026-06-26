@@ -172,29 +172,19 @@ def RuntimeProofArtifactFinalized
       publicInput
       proof
 
-structure RuntimeProofArtifactSegmentIdView where
-  proofSegmentIds : RuntimeArtifact -> PublicInput -> Proof -> List Nat
-
 def RuntimeProofArtifactConcreteSegmentIdsAllowed
-    (view : RuntimeProofArtifactSegmentIdView)
-    (artifact : RuntimeArtifact)
-    (publicInput : PublicInput)
     (proof : Proof) : Prop :=
   forall id,
-    id ∈ view.proofSegmentIds artifact publicInput proof ->
+    id ∈ proof.segmentIds ->
       IsAllowedProofSegmentId id
 
 structure RuntimeProofArtifactConcreteSegmentIdBinding
     {system : VerifierModel}
     (validation : RuntimeProofArtifactBindingValidation system) where
-  segmentIdView : RuntimeProofArtifactSegmentIdView
   proofSegmentIdsAllowedImpliesConcrete :
     forall artifact publicInput proof,
       validation.proofSegmentIdsAllowed artifact publicInput proof ->
         RuntimeProofArtifactConcreteSegmentIdsAllowed
-          segmentIdView
-          artifact
-          publicInput
           proof
 
 theorem runtime_proof_artifact_binding_checked_acceptance_concrete_segment_ids_allowed
@@ -209,9 +199,6 @@ theorem runtime_proof_artifact_binding_checked_acceptance_concrete_segment_ids_a
           publicInput
           proof ->
         RuntimeProofArtifactConcreteSegmentIdsAllowed
-          binding.segmentIdView
-          artifact
-          publicInput
           proof := by
   intro artifact publicInput proof accepted
   exact
@@ -237,9 +224,6 @@ theorem runtime_proof_artifact_finalized_concrete_segment_ids_allowed
           publicInput
           proof ->
         RuntimeProofArtifactConcreteSegmentIdsAllowed
-          binding.segmentIdView
-          artifact
-          publicInput
           proof := by
   intro artifact publicInput proof finalized
   exact

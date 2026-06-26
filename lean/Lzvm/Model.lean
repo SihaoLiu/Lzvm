@@ -25,6 +25,7 @@ deriving DecidableEq, Repr
 
 structure Proof where
   id : Nat
+  segmentIds : List Nat := []
 deriving DecidableEq, Repr
 
 structure Witness where
