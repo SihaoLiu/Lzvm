@@ -1510,6 +1510,20 @@ fn eth_proof_timing_batch_writes_env_template_under_temp() {
     let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
     let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
     let template = std::fs::read_to_string(&template_path).expect("env template should be written");
+    let profile_tool_prefix = format!(
+        "next_profile_tool_check_command=scripts/run-eth-proof-timing-batch.py --suite both --small-mode pipeline --large-mode work-units --runs 3 --env-file {template_rel}"
+    );
+    let profile_tool_line = stdout
+        .lines()
+        .find(|line| line.starts_with("next_profile_tool_check_command="))
+        .unwrap_or("");
+    let preflight_prefix = format!(
+        "next_preflight_command=scripts/run-eth-proof-timing-batch.py --suite both --small-mode pipeline --large-mode work-units --runs 3 --env-file {template_rel}"
+    );
+    let preflight_line = stdout
+        .lines()
+        .find(|line| line.starts_with("next_preflight_command="))
+        .unwrap_or("");
     fixture.cleanup();
 
     assert!(
@@ -1531,17 +1545,14 @@ fn eth_proof_timing_batch_writes_env_template_under_temp() {
         "env template should report a check command: {stdout}"
     );
     assert!(
-        stdout.contains(&format!(
-            "next_profile_tool_check_command=scripts/run-eth-proof-timing-batch.py --suite both --small-mode pipeline --large-mode work-units --runs 3 --env-file {template_rel}"
-        ))
-            && stdout.contains("--check-profile-tools"),
+        profile_tool_line.starts_with(&profile_tool_prefix)
+            && profile_tool_line.contains("--check-profile-tools")
+            && !profile_tool_line.contains("--check-env"),
         "env template should report a proof-independent profile tool check command: {stdout}"
     );
     assert!(
-        stdout.contains(&format!(
-            "next_preflight_command=scripts/run-eth-proof-timing-batch.py --suite both --small-mode pipeline --large-mode work-units --runs 3 --env-file {template_rel}"
-        ))
-            && stdout.contains("--check-env --check-profile-tools"),
+        preflight_line.starts_with(&preflight_prefix)
+            && preflight_line.contains("--check-env --check-profile-tools"),
         "env template should report a combined proof and profile preflight command: {stdout}"
     );
     assert!(
