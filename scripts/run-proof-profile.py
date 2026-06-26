@@ -514,6 +514,7 @@ def write_profile_json(
         "command": command,
         "profile_command": profile_command,
         "summarize": args.summarize,
+        "require_proof_timing_summary": args.require_proof_timing_summary,
         "outputs": profile_json_outputs(outputs, root),
         "proof_timing_summary_written": proof_timing_summary_written,
         "tool_summaries": [
@@ -616,6 +617,8 @@ def summarize_proof_timing(
 def validate_static_profile_args(args: argparse.Namespace, root: Path) -> tuple[Path, Path]:
     if args.tool == "nsys" and args.summarize and args.skip_nsys_export:
         raise SystemExit("--summarize requires nsys SQLite export; remove --skip-nsys-export")
+    if args.require_proof_timing_summary and not args.summarize:
+        raise SystemExit("--require-proof-timing-summary requires --summarize")
     output_dir = require_workspace_temp_path(
         resolve_workspace_path(args.output_dir, root),
         root,
@@ -1017,6 +1020,29 @@ def run_profile(args: argparse.Namespace) -> int:
                 error=str(error),
             )
             raise
+    if args.require_proof_timing_summary and not proof_timing_summary_written:
+        reason = proof_timing_summary_skip_reason or "not_written"
+        if proof_timing_summary_missing_keys:
+            reason += ": " + ",".join(proof_timing_summary_missing_keys)
+        error = f"required proof timing summary was not written: {reason}"
+        print(error, file=sys.stderr)
+        write_profile_json(
+            args,
+            root,
+            cwd,
+            profile_command,
+            command,
+            outputs,
+            "summary_failed",
+            profile_exit_code=profile_code,
+            proof_timing_summary_written=False,
+            proof_timing_summary_skip_reason=proof_timing_summary_skip_reason,
+            proof_timing_summary_missing_keys=proof_timing_summary_missing_keys,
+            tool_summary_paths=tool_summary_paths,
+            gpu_memory_check=gpu_memory_payload,
+            error=error,
+        )
+        return 1
     write_profile_json(
         args,
         root,
@@ -1136,6 +1162,7 @@ def self_test() -> None:
             "nsys_trace": "cuda,nvtx,osrt",
             "skip_nsys_export": False,
             "summarize": False,
+            "require_proof_timing_summary": False,
             "check_gpu_memory": False,
             "min_gpu_free_mib": DEFAULT_MIN_GPU_FREE_MIB,
             "nvidia_smi_command": None,
@@ -1417,6 +1444,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--profile-arg", action="append", default=[])
     parser.add_argument("--skip-nsys-export", action="store_true")
     parser.add_argument("--summarize", action="store_true")
+    parser.add_argument("--require-proof-timing-summary", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--check-tool", action="store_true")
     parser.add_argument("--check-gpu-memory", action="store_true")

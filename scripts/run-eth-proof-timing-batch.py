@@ -880,6 +880,11 @@ def profile_command_for_env(
         tmp_dir,
         root,
     )
+    summary_args = (
+        []
+        if tool == "nsys" and args.skip_nsys_export
+        else ["--summarize", "--require-proof-timing-summary"]
+    )
     profiler_command: list[str] = []
     profiler_command.extend(profile_tool_cli_parts(args, root, tool))
     if tool == "nsys" and args.nsys_trace != DEFAULT_NSYS_TRACE:
@@ -903,7 +908,7 @@ def profile_command_for_env(
         display_path_for_shell(profile_output_dir, root),
         "--name",
         profile_name,
-        *([] if tool == "nsys" and args.skip_nsys_export else ["--summarize"]),
+        *summary_args,
         "--cwd",
         ".",
         *profiler_command,

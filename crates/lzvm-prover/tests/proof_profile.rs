@@ -296,6 +296,32 @@ fn proof_profile_ncu_dry_run_uses_custom_profile_command() {
     );
 }
 
+#[test]
+fn proof_profile_rejects_required_summary_without_summarize() {
+    let output = Command::new(script_path())
+        .arg("--tool")
+        .arg("ncu")
+        .arg("--require-proof-timing-summary")
+        .arg("--dry-run")
+        .arg("--")
+        .arg("python3")
+        .arg("-c")
+        .arg("print('timing_total_ms=1000')")
+        .output()
+        .expect("proof profile dry-run should reject missing summary mode");
+
+    assert!(
+        !output.status.success(),
+        "required proof timing summaries should require summary mode"
+    );
+    assert!(
+        String::from_utf8_lossy(&output.stderr)
+            .contains("--require-proof-timing-summary requires --summarize"),
+        "required-summary rejection should explain the missing mode: stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
 #[cfg(unix)]
 fn write_executable(path: &std::path::Path) {
     write_executable_script(path, "#!/bin/sh\nexit 0\n");
@@ -319,6 +345,86 @@ fn prepend_path(command: &mut Command, path: &std::path::Path) {
     paths.insert(0, path.to_path_buf());
     let joined = std::env::join_paths(paths).expect("fixture PATH should join");
     command.env("PATH", joined);
+}
+
+#[cfg(unix)]
+#[test]
+fn proof_profile_requires_complete_proof_timing_summary() {
+    let output_dir = workspace_root().join(format!(
+        "temp/proof-profile-required-summary-{}",
+        std::process::id()
+    ));
+    let profiler_path = output_dir.join("fake-ncu");
+    let profile_dir = output_dir.join("profiles");
+    let _ = std::fs::remove_dir_all(&output_dir);
+    std::fs::create_dir_all(&output_dir).expect("fixture dir should be created");
+    write_executable_script(
+        &profiler_path,
+        concat!(
+            "#!/usr/bin/env python3\n",
+            "import pathlib, subprocess, sys\n",
+            "args = sys.argv[1:]\n",
+            "if '--log-file' in args:\n",
+            "    pathlib.Path(args[args.index('--log-file') + 1]).write_text('Kernel Name,gpu__time_duration.sum\\nself,1\\n', encoding='utf-8')\n",
+            "if '--export' in args:\n",
+            "    pathlib.Path(args[args.index('--export') + 1]).write_text('report\\n', encoding='utf-8')\n",
+            "if '--' in args:\n",
+            "    command = args[args.index('--') + 1:]\n",
+            "    if command:\n",
+            "        raise SystemExit(subprocess.run(command).returncode)\n",
+        ),
+    );
+
+    let output = Command::new(script_path())
+        .arg("--tool")
+        .arg("ncu")
+        .arg("--ncu-command")
+        .arg(&profiler_path)
+        .arg("--output-dir")
+        .arg(&profile_dir)
+        .arg("--name")
+        .arg("required-summary")
+        .arg("--summarize")
+        .arg("--require-proof-timing-summary")
+        .arg("--")
+        .arg("python3")
+        .arg("-c")
+        .arg("print('timing_total_ms=1000')")
+        .output()
+        .expect("proof profile should enforce required timing summaries");
+    let success = output.status.success();
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    let json_path = profile_dir.join("required-summary.profile.json");
+    let json_text = std::fs::read_to_string(&json_path).unwrap_or_default();
+    let summary_exists = profile_dir
+        .join("required-summary.proof-timing-summary.csv")
+        .exists();
+    let _ = std::fs::remove_dir_all(&output_dir);
+
+    assert!(
+        !success,
+        "required proof timing summaries should fail when required keys are absent"
+    );
+    assert!(
+        stdout.contains("proof_timing_summary=skipped_missing_keys="),
+        "profile stdout should report the skipped timing summary: {stdout}"
+    );
+    assert!(
+        stderr.contains("required proof timing summary was not written: missing_keys"),
+        "profile stderr should explain the required summary failure: {stderr}"
+    );
+    assert!(
+        json_text.contains("\"status\": \"summary_failed\"")
+            && json_text.contains("\"require_proof_timing_summary\": true")
+            && json_text.contains("\"proof_timing_summary_skip_reason\": \"missing_keys\"")
+            && json_text.contains("timing_guest_stage_tree_commit_root_count"),
+        "profile JSON should record the required summary failure: {json_text}"
+    );
+    assert!(
+        !summary_exists,
+        "failed required timing summary should not leave a stale CSV"
+    );
 }
 
 #[cfg(unix)]

@@ -1785,11 +1785,15 @@ fn eth_proof_timing_batch_prints_profile_commands_from_env() {
         "profile command output should preserve GPU memory preflight in downstream commands: {stdout}"
     );
     assert!(
-        nsys_command.contains("--skip-nsys-export") && !nsys_command.contains("--summarize"),
+        nsys_command.contains("--skip-nsys-export")
+            && !nsys_command.contains("--summarize")
+            && !nsys_command.contains("--require-proof-timing-summary"),
         "nsys command should avoid the downstream-rejected summarize plus skip-export combination: {stdout}"
     );
     assert!(
-        ncu_command.contains("--summarize") && !ncu_command.contains("--skip-nsys-export"),
+        ncu_command.contains("--summarize")
+            && ncu_command.contains("--require-proof-timing-summary")
+            && !ncu_command.contains("--skip-nsys-export"),
         "ncu command should still request summary files without nsys-only flags: {stdout}"
     );
     assert!(
