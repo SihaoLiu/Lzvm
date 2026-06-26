@@ -21,6 +21,8 @@ fn lean_challenge_segment_binding_exports_core_contract_projection() {
         lean_source.contains("RuntimeChallengeSegmentBindingValidation")
             && lean_source.contains("RuntimeChallengeSegmentBindingEvidence")
             && lean_source.contains("RuntimeTranscriptBindingEvidence")
+            && lean_source.contains("RuntimeProofArtifactFinalized")
+            && lean_source.contains("RuntimeProofArtifactBindingStructuralObligations")
             && lean_source.contains("system.transcriptBound publicInput proof")
             && lean_source.contains("RuntimeVerifierCoreContract system publicInput proof")
             && lean_source.contains("SoundWitness system publicInput proof"),
@@ -32,6 +34,8 @@ fn lean_challenge_segment_binding_exports_core_contract_projection() {
             "runtime_challenge_segment_binding_evidence_implies_payload_valid",
             "runtime_challenge_segment_binding_evidence_implies_segment_matches_transcript",
             "runtime_challenge_segment_binding_evidence_implies_challenge_segment_bound",
+            "runtime_challenge_segment_binding_checked_acceptance_artifact_finalized",
+            "runtime_challenge_segment_binding_checked_acceptance_artifact_structural_obligations",
             "runtime_challenge_segment_binding_checked_acceptance_payload_valid",
             "runtime_challenge_segment_binding_checked_acceptance_segment_matches_transcript",
             "runtime_challenge_segment_binding_checked_acceptance_challenge_segment_bound",
@@ -87,6 +91,22 @@ fn lean_challenge_segment_binding_exports_core_contract_projection() {
     );
     lean_binding::assert_theorem_body_contains(
         &lean_source,
+        "runtime_challenge_segment_binding_checked_acceptance_artifact_finalized",
+        &[
+            "runtime_challenge_segment_binding_checked_acceptance_transcript",
+            "runtime_transcript_binding_checked_acceptance_artifact_finalized",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_challenge_segment_binding_checked_acceptance_artifact_structural_obligations",
+        &[
+            "runtime_challenge_segment_binding_checked_acceptance_artifact_finalized",
+            "runtime_proof_artifact_finalized_structural_obligations",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
         "runtime_challenge_segment_binding_checked_acceptance_challenge_segment_bound",
         &["validation.challengeSegmentChecksImplyBound"],
     );
@@ -102,8 +122,8 @@ fn lean_challenge_segment_binding_exports_core_contract_projection() {
         &lean_source,
         "runtime_challenge_segment_binding_checked_acceptance_segment_ids_unique",
         &[
-            "runtime_challenge_segment_binding_checked_acceptance_transcript",
-            "runtime_transcript_binding_checked_acceptance_segment_ids_unique",
+            "runtime_challenge_segment_binding_checked_acceptance_artifact_structural_obligations",
+            "artifactStructural.right.right.right.right.right.left",
         ],
     );
     lean_binding::assert_theorem_prefix_contains(
@@ -119,8 +139,8 @@ fn lean_challenge_segment_binding_exports_core_contract_projection() {
         &lean_source,
         "runtime_challenge_segment_binding_checked_acceptance_unit_values_trace_identity_coverage",
         &[
-            "runtime_challenge_segment_binding_checked_acceptance_transcript",
-            "runtime_transcript_binding_checked_acceptance_unit_values_trace_identity_coverage",
+            "runtime_challenge_segment_binding_checked_acceptance_artifact_structural_obligations",
+            "artifactStructural.right.right.right.right.right.right",
         ],
     );
     lean_binding::assert_theorem_prefix_contains(
@@ -135,8 +155,8 @@ fn lean_challenge_segment_binding_exports_core_contract_projection() {
         &lean_source,
         "runtime_challenge_segment_binding_checked_acceptance_container_canonical",
         &[
-            "runtime_challenge_segment_binding_checked_acceptance_transcript",
-            "runtime_transcript_binding_checked_acceptance_container_canonical",
+            "runtime_challenge_segment_binding_checked_acceptance_artifact_structural_obligations",
+            "artifactStructural.left",
         ],
     );
     lean_binding::assert_theorem_prefix_contains(
@@ -151,8 +171,8 @@ fn lean_challenge_segment_binding_exports_core_contract_projection() {
         &lean_source,
         "runtime_challenge_segment_binding_checked_acceptance_metadata_canonical",
         &[
-            "runtime_challenge_segment_binding_checked_acceptance_transcript",
-            "runtime_transcript_binding_checked_acceptance_metadata_canonical",
+            "runtime_challenge_segment_binding_checked_acceptance_artifact_structural_obligations",
+            "artifactStructural.right.left",
         ],
     );
     lean_binding::assert_theorem_prefix_contains(
@@ -167,8 +187,8 @@ fn lean_challenge_segment_binding_exports_core_contract_projection() {
         &lean_source,
         "runtime_challenge_segment_binding_checked_acceptance_segment_payloads_nonempty",
         &[
-            "runtime_challenge_segment_binding_checked_acceptance_transcript",
-            "runtime_transcript_binding_checked_acceptance_segment_payloads_nonempty",
+            "runtime_challenge_segment_binding_checked_acceptance_artifact_structural_obligations",
+            "artifactStructural.right.right.right.left",
         ],
     );
     lean_binding::assert_theorem_prefix_contains(
@@ -183,8 +203,8 @@ fn lean_challenge_segment_binding_exports_core_contract_projection() {
         &lean_source,
         "runtime_challenge_segment_binding_checked_acceptance_segment_ids_allowed",
         &[
-            "runtime_challenge_segment_binding_checked_acceptance_transcript",
-            "runtime_transcript_binding_checked_acceptance_segment_ids_allowed",
+            "runtime_challenge_segment_binding_checked_acceptance_artifact_structural_obligations",
+            "artifactStructural.right.right.right.right.left",
         ],
     );
     lean_binding::assert_theorem_prefix_contains(
@@ -199,8 +219,8 @@ fn lean_challenge_segment_binding_exports_core_contract_projection() {
         &lean_source,
         "runtime_challenge_segment_binding_checked_acceptance_segments_present",
         &[
-            "runtime_challenge_segment_binding_checked_acceptance_transcript",
-            "runtime_transcript_binding_checked_acceptance_segments_present",
+            "runtime_challenge_segment_binding_checked_acceptance_artifact_structural_obligations",
+            "artifactStructural.right.right.left",
         ],
     );
     lean_binding::assert_theorem_prefix_contains(

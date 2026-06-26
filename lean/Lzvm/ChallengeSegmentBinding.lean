@@ -172,6 +172,70 @@ theorem runtime_challenge_segment_binding_checked_acceptance_transcript
       proof
       accepted
 
+theorem runtime_challenge_segment_binding_checked_acceptance_artifact_finalized
+    {system : VerifierModel}
+    (validation : RuntimeChallengeSegmentBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeChallengeSegmentBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeProofArtifactFinalized
+          system
+          validation.transcriptValidation.artifactBindingValidation
+          artifact
+          publicInput
+          proof := by
+  intro artifact publicInput proof accepted
+  have transcriptAccepted :=
+    runtime_challenge_segment_binding_checked_acceptance_transcript
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  exact
+    runtime_transcript_binding_checked_acceptance_artifact_finalized
+      validation.transcriptValidation
+      artifact
+      publicInput
+      proof
+      transcriptAccepted
+
+theorem runtime_challenge_segment_binding_checked_acceptance_artifact_structural_obligations
+    {system : VerifierModel}
+    (validation : RuntimeChallengeSegmentBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeChallengeSegmentBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeProofArtifactBindingStructuralObligations
+          system
+          validation.transcriptValidation.artifactBindingValidation
+          artifact
+          publicInput
+          proof := by
+  intro artifact publicInput proof accepted
+  have artifactFinalized :=
+    runtime_challenge_segment_binding_checked_acceptance_artifact_finalized
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  exact
+    runtime_proof_artifact_finalized_structural_obligations
+      validation.transcriptValidation.artifactBindingValidation
+      artifact
+      publicInput
+      proof
+      artifactFinalized
+
 theorem runtime_challenge_segment_binding_checked_acceptance_payload_valid
     {system : VerifierModel}
     (validation : RuntimeChallengeSegmentBindingValidation system) :
@@ -257,20 +321,14 @@ theorem runtime_challenge_segment_binding_checked_acceptance_segment_ids_unique
           publicInput
           proof := by
   intro artifact publicInput proof accepted
-  have transcriptAccepted :=
-    runtime_challenge_segment_binding_checked_acceptance_transcript
+  have artifactStructural :=
+    runtime_challenge_segment_binding_checked_acceptance_artifact_structural_obligations
       validation
       artifact
       publicInput
       proof
       accepted
-  exact
-    runtime_transcript_binding_checked_acceptance_segment_ids_unique
-      validation.transcriptValidation
-      artifact
-      publicInput
-      proof
-      transcriptAccepted
+  exact artifactStructural.right.right.right.right.right.left
 
 theorem runtime_challenge_segment_binding_checked_acceptance_unit_values_trace_identity_coverage
     {system : VerifierModel}
@@ -285,20 +343,14 @@ theorem runtime_challenge_segment_binding_checked_acceptance_unit_values_trace_i
         let artifactValidation := validation.transcriptValidation.artifactBindingValidation
         artifactValidation.proofUnitValuesTraceIdentityCoverage artifact publicInput proof := by
   intro artifact publicInput proof accepted
-  have transcriptAccepted :=
-    runtime_challenge_segment_binding_checked_acceptance_transcript
+  have artifactStructural :=
+    runtime_challenge_segment_binding_checked_acceptance_artifact_structural_obligations
       validation
       artifact
       publicInput
       proof
       accepted
-  exact
-    runtime_transcript_binding_checked_acceptance_unit_values_trace_identity_coverage
-      validation.transcriptValidation
-      artifact
-      publicInput
-      proof
-      transcriptAccepted
+  exact artifactStructural.right.right.right.right.right.right
 
 theorem runtime_challenge_segment_binding_checked_acceptance_payload_reuse_contract
     {system : VerifierModel}
@@ -359,20 +411,14 @@ theorem runtime_challenge_segment_binding_checked_acceptance_container_canonical
           publicInput
           proof := by
   intro artifact publicInput proof accepted
-  have transcriptAccepted :=
-    runtime_challenge_segment_binding_checked_acceptance_transcript
+  have artifactStructural :=
+    runtime_challenge_segment_binding_checked_acceptance_artifact_structural_obligations
       validation
       artifact
       publicInput
       proof
       accepted
-  exact
-    runtime_transcript_binding_checked_acceptance_container_canonical
-      validation.transcriptValidation
-      artifact
-      publicInput
-      proof
-      transcriptAccepted
+  exact artifactStructural.left
 
 theorem runtime_challenge_segment_binding_checked_acceptance_metadata_canonical
     {system : VerifierModel}
@@ -389,20 +435,14 @@ theorem runtime_challenge_segment_binding_checked_acceptance_metadata_canonical
           publicInput
           proof := by
   intro artifact publicInput proof accepted
-  have transcriptAccepted :=
-    runtime_challenge_segment_binding_checked_acceptance_transcript
+  have artifactStructural :=
+    runtime_challenge_segment_binding_checked_acceptance_artifact_structural_obligations
       validation
       artifact
       publicInput
       proof
       accepted
-  exact
-    runtime_transcript_binding_checked_acceptance_metadata_canonical
-      validation.transcriptValidation
-      artifact
-      publicInput
-      proof
-      transcriptAccepted
+  exact artifactStructural.right.left
 
 theorem runtime_challenge_segment_binding_checked_acceptance_segment_payloads_nonempty
     {system : VerifierModel}
@@ -419,20 +459,14 @@ theorem runtime_challenge_segment_binding_checked_acceptance_segment_payloads_no
           publicInput
           proof := by
   intro artifact publicInput proof accepted
-  have transcriptAccepted :=
-    runtime_challenge_segment_binding_checked_acceptance_transcript
+  have artifactStructural :=
+    runtime_challenge_segment_binding_checked_acceptance_artifact_structural_obligations
       validation
       artifact
       publicInput
       proof
       accepted
-  exact
-    runtime_transcript_binding_checked_acceptance_segment_payloads_nonempty
-      validation.transcriptValidation
-      artifact
-      publicInput
-      proof
-      transcriptAccepted
+  exact artifactStructural.right.right.right.left
 
 theorem runtime_challenge_segment_binding_checked_acceptance_segment_ids_allowed
     {system : VerifierModel}
@@ -449,20 +483,14 @@ theorem runtime_challenge_segment_binding_checked_acceptance_segment_ids_allowed
           publicInput
           proof := by
   intro artifact publicInput proof accepted
-  have transcriptAccepted :=
-    runtime_challenge_segment_binding_checked_acceptance_transcript
+  have artifactStructural :=
+    runtime_challenge_segment_binding_checked_acceptance_artifact_structural_obligations
       validation
       artifact
       publicInput
       proof
       accepted
-  exact
-    runtime_transcript_binding_checked_acceptance_segment_ids_allowed
-      validation.transcriptValidation
-      artifact
-      publicInput
-      proof
-      transcriptAccepted
+  exact artifactStructural.right.right.right.right.left
 
 theorem runtime_challenge_segment_binding_checked_acceptance_segments_present
     {system : VerifierModel}
@@ -479,20 +507,14 @@ theorem runtime_challenge_segment_binding_checked_acceptance_segments_present
           publicInput
           proof := by
   intro artifact publicInput proof accepted
-  have transcriptAccepted :=
-    runtime_challenge_segment_binding_checked_acceptance_transcript
+  have artifactStructural :=
+    runtime_challenge_segment_binding_checked_acceptance_artifact_structural_obligations
       validation
       artifact
       publicInput
       proof
       accepted
-  exact
-    runtime_transcript_binding_checked_acceptance_segments_present
-      validation.transcriptValidation
-      artifact
-      publicInput
-      proof
-      transcriptAccepted
+  exact artifactStructural.right.right.left
 
 theorem runtime_challenge_segment_binding_checked_acceptance_transcript_payload_contract
     {system : VerifierModel}
