@@ -245,6 +245,39 @@ def positive_integer_env(raw: str, name: str) -> str:
     return str(value)
 
 
+def validate_framed_input_data(path: Path, name: str) -> None:
+    data = path.read_bytes()
+    offset = 0
+    while offset < len(data):
+        remaining = len(data) - offset
+        if remaining < 8:
+            raise SystemExit(
+                f"{name} framed input is invalid: truncated chunk length at offset "
+                f"{offset}: expected 8 bytes, found {remaining}"
+            )
+        payload_len = int.from_bytes(data[offset : offset + 8], "little")
+        payload_offset = offset + 8
+        payload_end = payload_offset + payload_len
+        if payload_end > len(data):
+            raise SystemExit(
+                f"{name} framed input is invalid: truncated chunk at offset {offset}: "
+                f"expected {payload_len} bytes, found {len(data) - payload_offset}"
+            )
+        next_offset = (payload_end + 7) // 8 * 8
+        padding = data[payload_end:next_offset]
+        if any(padding):
+            raise SystemExit(
+                f"{name} framed input is invalid: nonzero chunk padding at offset "
+                f"{payload_end}"
+            )
+        offset = next_offset
+
+
+def framed_input_data(payload: bytes) -> bytes:
+    data = len(payload).to_bytes(8, "little") + payload
+    return data + b"\0" * ((8 - (len(data) % 8)) % 8)
+
+
 def target_max_avg_s(args: argparse.Namespace, label: str) -> float | None:
     explicit = args.small_max_avg_s if label == "small" else args.large_max_avg_s
     if explicit is not None:
@@ -305,6 +338,7 @@ class GpuMemoryRow(NamedTuple):
 
 def configured_paths(config: ProofEnv) -> dict[str, Path]:
     paths = {suffix.lower(): config.path(suffix) for suffix in REQUIRED_SUFFIXES}
+    validate_framed_input_data(paths["input_data"], config.var("INPUT_DATA"))
     bin_value = os.environ.get(config.var("BIN"))
     bin_path = (
         resolve_workspace_path(bin_value, config.root)
@@ -1117,6 +1151,8 @@ def self_test() -> None:
             path = work_dir / f"{prefix.lower()}-{suffix.lower()}"
             if suffix == "SETUP":
                 path.mkdir()
+            elif suffix == "INPUT_DATA":
+                path.write_bytes(framed_input_data(b"fixture"))
             else:
                 path.write_bytes(b"fixture")
             os.environ[f"{prefix}_{suffix}"] = str(path)

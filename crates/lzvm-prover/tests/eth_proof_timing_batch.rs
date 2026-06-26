@@ -76,7 +76,7 @@ impl ProofFixture {
         std::fs::create_dir_all(&setup).expect("setup dir should be created");
         let block_input = write_fixture(&dir, "block.input");
         let cache = write_fixture(&dir, "program-image.cache");
-        let input_data = write_fixture(&dir, "input-data.bin");
+        let input_data = write_framed_fixture(&dir, "input-data.bin", b"fixture");
         let guest = write_fixture(&dir, "guest.elf");
         let shared_tmp_dir = dir.join("tmp");
 
@@ -2406,6 +2406,36 @@ fn eth_proof_timing_batch_check_env_rejects_wrong_input_types() {
 }
 
 #[test]
+fn eth_proof_timing_batch_check_env_rejects_malformed_input_data() {
+    let fixture = ProofFixture::new("eth-proof-timing-batch-malformed-input-data");
+    std::fs::write(&fixture.input_data, [1_u8, 2, 3]).expect("input fixture should update");
+    let mut command = Command::new(script_path());
+    command.arg("--suite").arg("small").arg("--check-env");
+    fixture.apply_env(&mut command, SMALL_PREFIX);
+
+    let output = command
+        .output()
+        .expect("ETH proof timing batch env check should run");
+    let success = output.status.success();
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    fixture.cleanup();
+
+    assert!(
+        !success,
+        "env check should reject malformed framed input data"
+    );
+    assert!(
+        !stdout.contains("status=ok"),
+        "failed env check should not report ok: {stdout}"
+    );
+    assert!(
+        stderr.contains("_INPUT_DATA framed input is invalid"),
+        "env check should explain malformed input data: stderr={stderr}"
+    );
+}
+
+#[test]
 fn eth_proof_timing_batch_ignores_legacy_tmp_dir_env() {
     let fixture = ProofFixture::new("eth-proof-timing-batch-legacy-tmp-env");
     let legacy_tmp = workspace_root().join(format!(
@@ -2507,6 +2537,16 @@ fn eth_proof_timing_batch_available_suite_uses_only_configured_large_env() {
 fn write_fixture(dir: &std::path::Path, name: &str) -> std::path::PathBuf {
     let path = dir.join(name);
     std::fs::write(&path, b"fixture").expect("fixture should write");
+    path
+}
+
+fn write_framed_fixture(dir: &std::path::Path, name: &str, payload: &[u8]) -> std::path::PathBuf {
+    let path = dir.join(name);
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(&(payload.len() as u64).to_le_bytes());
+    bytes.extend_from_slice(payload);
+    bytes.resize(bytes.len().next_multiple_of(8), 0);
+    std::fs::write(&path, bytes).expect("framed fixture should write");
     path
 }
 
