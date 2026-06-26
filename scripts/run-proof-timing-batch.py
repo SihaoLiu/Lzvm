@@ -554,6 +554,12 @@ def average_timing_seconds(paths: list[Path]) -> float | None:
     return round(average, 3)
 
 
+def print_stable_average(label: str, logs: list[Path]) -> None:
+    average = average_timing_seconds(logs)
+    if average is not None:
+        print(f"{label}_stable_avg_s={average:.3f}")
+
+
 def safe_stable_timing_group(
     logs: list[Path],
     max_relative_spread: float,
@@ -822,6 +828,7 @@ def run_batch(args: argparse.Namespace) -> Path:
     if small_logs:
         print(f"small_runs={len(small_logs)}")
         print(f"small_stable_runs={len(small_stable_logs)}")
+        print_stable_average("small", small_stable_logs)
         print(
             "small_timing_summaries="
             f"{len(discovered_run_paths(batch_dir, 'small', '.proof-timing-summary.csv'))}"
@@ -831,6 +838,7 @@ def run_batch(args: argparse.Namespace) -> Path:
     if large_logs:
         print(f"large_runs={len(large_logs)}")
         print(f"large_stable_runs={len(large_stable_logs)}")
+        print_stable_average("large", large_stable_logs)
         print(
             "large_timing_summaries="
             f"{len(discovered_run_paths(batch_dir, 'large', '.proof-timing-summary.csv'))}"
