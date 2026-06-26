@@ -9,6 +9,13 @@ use lzvm_artifacts::sectioned::{encode_sectioned_file, SectionedFile, SectionedS
 
 mod fixtures;
 
+const STAGE_WIDTH_COUNT_END: usize = 54;
+const OPENING_POINT_COUNT_END: usize = 62;
+const FRI_LAYER_COUNT_END: usize = 66;
+const STAGE_COMMIT_WIDTH_BYTES: usize = 4;
+const OPENING_POINT_BYTES: usize = 8;
+const FRI_LAYER_BYTES: usize = 4 + 4 + 8;
+
 fn temp_file_path(name: &str) -> PathBuf {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
@@ -173,7 +180,11 @@ fn rejects_stage_commit_width_count_that_exceeds_remaining_widths() {
 
     assert!(matches!(
         parse_pcs_setup_plan(&bytes),
-        Err(PcsPlanError::LengthOverflow)
+        Err(PcsPlanError::UnexpectedEof {
+            offset: STAGE_WIDTH_COUNT_END,
+            needed: STAGE_COMMIT_WIDTH_BYTES,
+            available: 0
+        })
     ));
 }
 
@@ -187,7 +198,11 @@ fn rejects_opening_point_count_that_exceeds_remaining_points() {
 
     assert!(matches!(
         parse_pcs_setup_plan(&bytes),
-        Err(PcsPlanError::LengthOverflow)
+        Err(PcsPlanError::UnexpectedEof {
+            offset: OPENING_POINT_COUNT_END,
+            needed: OPENING_POINT_BYTES,
+            available: 0
+        })
     ));
 }
 
@@ -202,7 +217,11 @@ fn rejects_fri_layer_count_that_exceeds_remaining_layers() {
 
     assert!(matches!(
         parse_pcs_setup_plan(&bytes),
-        Err(PcsPlanError::LengthOverflow)
+        Err(PcsPlanError::UnexpectedEof {
+            offset: FRI_LAYER_COUNT_END,
+            needed: FRI_LAYER_BYTES,
+            available: 0
+        })
     ));
 }
 

@@ -307,27 +307,21 @@ fn parse_pcs_setup_plan_section(bytes: &[u8]) -> Result<PcsSetupPlan, PcsPlanErr
     let constant_width = reader.read_u32()?;
 
     let stage_commit_width_count = u32_to_usize(reader.read_u32()?)?;
-    if stage_commit_width_count > reader.remaining_len() / STAGE_COMMIT_WIDTH_BYTES {
-        return Err(PcsPlanError::LengthOverflow);
-    }
+    reader.require_items(stage_commit_width_count, STAGE_COMMIT_WIDTH_BYTES)?;
     let mut stage_commit_widths = Vec::with_capacity(stage_commit_width_count);
     for _ in 0..stage_commit_width_count {
         stage_commit_widths.push(reader.read_u32()?);
     }
 
     let opening_point_count = u32_to_usize(reader.read_u32()?)?;
-    if opening_point_count > reader.remaining_len() / OPENING_POINT_BYTES {
-        return Err(PcsPlanError::LengthOverflow);
-    }
+    reader.require_items(opening_point_count, OPENING_POINT_BYTES)?;
     let mut opening_points = Vec::with_capacity(opening_point_count);
     for _ in 0..opening_point_count {
         opening_points.push(reader.read_i64()?);
     }
 
     let fri_layer_count = u32_to_usize(reader.read_u32()?)?;
-    if fri_layer_count > reader.remaining_len() / FRI_LAYER_BYTES {
-        return Err(PcsPlanError::LengthOverflow);
-    }
+    reader.require_items(fri_layer_count, FRI_LAYER_BYTES)?;
     let mut fri_layers = Vec::with_capacity(fri_layer_count);
     for _ in 0..fri_layer_count {
         fri_layers.push(PcsFriLayer {
@@ -485,10 +479,6 @@ impl<'a> Reader<'a> {
         self.offset
     }
 
-    fn remaining_len(&self) -> usize {
-        self.bytes.len() - self.offset
-    }
-
     fn read_u8(&mut self) -> Result<u8, PcsPlanError> {
         let bytes = self.read_exact(1)?;
         Ok(bytes[0])
@@ -529,6 +519,24 @@ impl<'a> Reader<'a> {
             1 => Ok(true),
             value => Err(PcsPlanError::InvalidFlag { field, value }),
         }
+    }
+
+    fn require_items(&self, count: usize, item_bytes: usize) -> Result<(), PcsPlanError> {
+        let needed = count
+            .checked_mul(item_bytes)
+            .ok_or(PcsPlanError::LengthOverflow)?;
+        let end = self
+            .offset
+            .checked_add(needed)
+            .ok_or(PcsPlanError::LengthOverflow)?;
+        if end > self.bytes.len() {
+            return Err(PcsPlanError::UnexpectedEof {
+                offset: self.offset,
+                needed,
+                available: self.bytes.len().saturating_sub(self.offset),
+            });
+        }
+        Ok(())
     }
 
     fn read_exact(&mut self, count: usize) -> Result<&'a [u8], PcsPlanError> {

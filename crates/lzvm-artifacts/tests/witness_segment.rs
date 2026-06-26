@@ -8,7 +8,9 @@ use lzvm_artifacts::witness_segment::{
 };
 
 const NON_CANONICAL_FIELD: u64 = 0xffff_ffff_0000_0001;
-const FIRST_STAGE_ROOT_OFFSET: usize = 40 + 8;
+const HEADER_BYTES: usize = 40;
+const STAGE_BYTES: usize = 4 + 4 + 4 * 8 + 8 + 32;
+const FIRST_STAGE_ROOT_OFFSET: usize = HEADER_BYTES + 8;
 
 fn sample_segment() -> WitnessCommitmentSegment {
     WitnessCommitmentSegment {
@@ -178,6 +180,25 @@ fn rejects_truncated_witness_commitment_segments() {
 fn rejects_stage_count_that_exceeds_remaining_stage_records() {
     assert!(matches!(
         parse_witness_commitment_segment(&segment_header(1)),
-        Err(WitnessCommitmentSegmentError::LengthOverflow)
+        Err(WitnessCommitmentSegmentError::UnexpectedEof {
+            needed,
+            available: HEADER_BYTES
+        }) if needed == HEADER_BYTES + STAGE_BYTES
+    ));
+}
+
+#[test]
+fn rejects_truncated_witness_commitment_stage_payload() {
+    let mut encoded =
+        encode_witness_commitment_segment(&sample_segment()).expect("segment should encode");
+    encoded.pop();
+
+    assert!(matches!(
+        parse_witness_commitment_segment(&encoded),
+        Err(WitnessCommitmentSegmentError::UnexpectedEof {
+            needed,
+            available
+        }) if needed == HEADER_BYTES + STAGE_BYTES
+            && available == HEADER_BYTES + STAGE_BYTES - 1
     ));
 }
