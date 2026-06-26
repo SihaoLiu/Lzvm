@@ -2489,6 +2489,39 @@ fn eth_proof_timing_batch_check_env_rejects_malformed_input_data() {
 }
 
 #[test]
+fn eth_proof_timing_batch_check_env_rejects_truncated_input_padding() {
+    let fixture = ProofFixture::new("eth-proof-timing-batch-truncated-input-padding");
+    let mut input_data = Vec::new();
+    input_data.extend_from_slice(&1_u64.to_le_bytes());
+    input_data.push(9);
+    std::fs::write(&fixture.input_data, input_data).expect("input fixture should update");
+    let mut command = Command::new(script_path());
+    command.arg("--suite").arg("small").arg("--check-env");
+    fixture.apply_env(&mut command, SMALL_PREFIX);
+
+    let output = command
+        .output()
+        .expect("ETH proof timing batch env check should run");
+    let success = output.status.success();
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    fixture.cleanup();
+
+    assert!(
+        !success,
+        "env check should reject truncated framed input padding"
+    );
+    assert!(
+        !stdout.contains("status=ok"),
+        "failed env check should not report ok: {stdout}"
+    );
+    assert!(
+        stderr.contains("_INPUT_DATA framed input is invalid: truncated chunk padding"),
+        "env check should explain truncated input padding: stderr={stderr}"
+    );
+}
+
+#[test]
 fn eth_proof_timing_batch_check_env_rejects_empty_input_data() {
     let fixture = ProofFixture::new("eth-proof-timing-batch-empty-input-data");
     std::fs::write(&fixture.input_data, []).expect("input fixture should update");

@@ -9,6 +9,10 @@ use lzvm_artifacts::constraint_program::GlobalConstraintProgram;
 use lzvm_artifacts::expression_info::ExpressionInfo;
 use lzvm_artifacts::expression_program::ExpressionProgram;
 use lzvm_artifacts::global_info::{CurveKind, GlobalInfo, PublicValue};
+use lzvm_artifacts::guest_input_segment::{
+    encode_framed_guest_input_segment, framed_guest_input_segment_digest,
+    FRAMED_GUEST_INPUT_SEGMENT_ID,
+};
 use lzvm_artifacts::hint_program::HintProgram;
 use lzvm_artifacts::key_directory::{
     key_directory_catalog_digest, GlobalKeyPaths, KeyDirectoryCatalog, KeyDirectoryLayout,
@@ -139,6 +143,15 @@ fn sample_proof(public_values: &PublicValues) -> ProofArtifact {
             data: vec![1, 2, 3, 4],
         }],
     }
+}
+
+fn framed_stdin_chunk(data: &[u8]) -> Vec<u8> {
+    let mut encoded = Vec::new();
+    encoded.extend_from_slice(&(data.len() as u64).to_le_bytes());
+    encoded.extend_from_slice(data);
+    let padding = (8 - ((8 + data.len()) % 8)) % 8;
+    encoded.extend(std::iter::repeat_n(0, padding));
+    encoded
 }
 
 fn sample_empty_public_values(setup_hash: [u8; 32]) -> PublicValues {
@@ -825,6 +838,35 @@ fn validates_setup_preflight_hashes() {
             eth_block_input_withdrawal_preimage_counts: Vec::new(),
         }
     );
+}
+
+#[test]
+fn validates_setup_preflight_reports_framed_guest_input() {
+    let catalog = sample_catalog();
+    let setup_hash = key_directory_catalog_digest(&catalog).expect("catalog digest should compute");
+    let public_values = sample_public_values(setup_hash);
+    let mut proof = sample_proof(&public_values);
+    let framed_input = framed_stdin_chunk(&[3_u8, 5_u8, 8_u8]);
+    let framed_segment = encode_framed_guest_input_segment(&framed_input)
+        .expect("framed guest input segment should encode");
+    let framed_segment_hash = framed_guest_input_segment_digest(&framed_segment);
+    let framed_segment_len = framed_segment.len();
+    proof.segments.push(ProofSegment {
+        id: FRAMED_GUEST_INPUT_SEGMENT_ID,
+        data: framed_segment,
+    });
+
+    let report = validate_setup_preflight_hashes(&catalog, &proof, &public_values)
+        .expect("setup preflight hashes should validate framed guest input");
+
+    assert_eq!(report.segment_count, 2);
+    assert_eq!(report.framed_guest_input_count, 1);
+    assert_eq!(report.framed_guest_input_hashes, vec![framed_segment_hash]);
+    assert_eq!(
+        report.framed_guest_input_byte_counts,
+        vec![framed_segment_len]
+    );
+    assert_eq!(report.framed_guest_input_chunk_counts, vec![1]);
 }
 
 #[test]

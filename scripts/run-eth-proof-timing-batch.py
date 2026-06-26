@@ -276,6 +276,12 @@ def validate_framed_input_data(path: Path, name: str) -> None:
                 f"expected {payload_len} bytes, found {len(data) - payload_offset}"
             )
         next_offset = (payload_end + 7) // 8 * 8
+        if next_offset > len(data):
+            raise SystemExit(
+                f"{name} framed input is invalid: truncated chunk padding at offset "
+                f"{payload_end}: expected {next_offset - payload_end} bytes, "
+                f"found {len(data) - payload_end}"
+            )
         padding = data[payload_end:next_offset]
         if any(padding):
             raise SystemExit(
