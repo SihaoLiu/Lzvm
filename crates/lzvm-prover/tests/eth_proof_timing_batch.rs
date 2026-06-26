@@ -1575,6 +1575,51 @@ fn eth_proof_timing_batch_rejects_env_file_outside_temp() {
     );
 }
 
+#[cfg(unix)]
+#[test]
+fn eth_proof_timing_batch_rejects_symlinked_env_file() {
+    use std::os::unix::fs::symlink;
+
+    let fixture = ProofFixture::new("eth-proof-timing-batch-env-file-symlink");
+    let redirected = fixture.dir.join("redirected.env");
+    let env_path = fixture.dir.join("linked.env");
+    std::fs::write(&redirected, "PATH=bad\n").expect("redirected env file should write");
+    symlink(&redirected, &env_path).expect("env-file symlink fixture should be created");
+    let mut command = Command::new(script_path());
+    command
+        .arg("--suite")
+        .arg("small")
+        .arg("--check-env")
+        .arg("--env-file")
+        .arg(&env_path);
+    clear_env(&mut command, SMALL_PREFIX);
+    clear_env(&mut command, LARGE_PREFIX);
+
+    let output = command
+        .output()
+        .expect("ETH proof timing batch env-file symlink check should run");
+    let success = output.status.success();
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    let redirected_text =
+        std::fs::read_to_string(&redirected).expect("redirected env file should read");
+    fixture.cleanup();
+
+    assert!(!success, "env-file symlink should be rejected");
+    assert!(
+        stdout.is_empty(),
+        "env-file symlink rejection should happen before partial diagnostics: {stdout}"
+    );
+    assert!(
+        stderr.contains("--env-file must not be a symlink"),
+        "env-file symlink rejection should explain the path constraint: stderr={stderr}"
+    );
+    assert_eq!(
+        redirected_text, "PATH=bad\n",
+        "rejected env-file should not modify a symlink target"
+    );
+}
+
 #[test]
 fn eth_proof_timing_batch_env_template_preserves_env_profiler_commands() {
     let fixture = ProofFixture::new("eth-proof-timing-batch-write-env-profile-env");

@@ -182,6 +182,7 @@ def load_env_file(path: Path, root: Path) -> None:
         raise SystemExit(
             f"--env-file path does not exist: {path}; create a template with: {command}"
         )
+    reject_symlinked_output_path(path, "--env-file")
     if not path.is_file():
         raise SystemExit(f"--env-file must be a file: {path}")
     with path.open(encoding="utf-8") as source:
