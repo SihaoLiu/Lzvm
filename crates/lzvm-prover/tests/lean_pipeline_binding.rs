@@ -192,6 +192,20 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
             "runtime_pipeline_binding_required_external_source_artifact_audited_soundness_core_contract",
         ],
     );
+    for name in [
+        "runtime_pipeline_binding_required_external_source_artifact_contracts_core_contract",
+        "runtime_pipeline_binding_required_external_source_artifact_audited_soundness_core_contract",
+    ] {
+        lean_binding::assert_theorem_prefix_contains(
+            &lean_source,
+            name,
+            &[
+                "(requiresExternalSource : Prop)",
+                "RuntimePipelineBindingCheckedAcceptance",
+                "proof ->\n        requiresExternalSource ->",
+            ],
+        );
+    }
     assert!(
         pipeline_source.contains("import Lzvm.PipelineBinding.Core"),
         "Lean pipeline binding module should import the core pipeline binding module"

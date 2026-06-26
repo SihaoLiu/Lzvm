@@ -116,6 +116,22 @@ fn lean_runtime_soundness_binding_exports_core_contract_projection() {
             "runtime_soundness_required_external_source_artifact_audited_segment_ids_contract",
         ],
     );
+    for name in [
+        "runtime_soundness_required_external_source_artifact_contracts_core_contract",
+        "runtime_soundness_required_external_source_artifact_audited_soundness_core_contract",
+        "runtime_soundness_required_external_source_artifact_segment_ids_contract",
+        "runtime_soundness_required_external_source_artifact_audited_segment_ids_contract",
+    ] {
+        lean_binding::assert_theorem_prefix_contains(
+            &lean_source,
+            name,
+            &[
+                "(requiresExternalSource : Prop)",
+                "RuntimeSoundnessCheckedAcceptance",
+                "proof\n          requiresExternalSource ->\n        requiresExternalSource ->",
+            ],
+        );
+    }
     assert!(theorem_prefix(
         &lean_source,
         "runtime_soundness_checked_acceptance_runtime_artifact_evidence"
@@ -1506,7 +1522,14 @@ fn lean_runtime_soundness_binding_exports_core_contract_projection() {
             "system.accepts publicInput proof",
             "ExternalSourceOpeningEvidence",
             "validation.sourceValidation",
+            "system.transcriptBound publicInput proof",
+            "system.publicInputBound publicInput proof",
+            "system.pcsOpeningsValid publicInput proof",
+            "system.friQueriesValid publicInput proof",
             "RuntimeVerifierCoreContract system publicInput proof",
+            "system.traceConsistent publicInput proof trace",
+            "system.constraintsSatisfied constraints trace",
+            "system.witnessMatchesTrace witness trace",
             "SoundWitness system publicInput proof",
             "artifactValidation.proofContainerCanonical artifact publicInput proof",
             "artifactValidation.proofSegmentsPresent artifact publicInput proof",
@@ -1555,7 +1578,14 @@ fn lean_runtime_soundness_binding_exports_core_contract_projection() {
             "system.accepts publicInput proof",
             "ExternalSourceOpeningEvidence",
             "validation.sourceValidation",
+            "system.transcriptBound publicInput proof",
+            "system.publicInputBound publicInput proof",
+            "system.pcsOpeningsValid publicInput proof",
+            "system.friQueriesValid publicInput proof",
             "RuntimeVerifierCoreContract system publicInput proof",
+            "system.traceConsistent publicInput proof trace",
+            "system.constraintsSatisfied constraints trace",
+            "system.witnessMatchesTrace witness trace",
             "SoundWitness system publicInput proof",
             "artifactValidation.proofContainerCanonical artifact publicInput proof",
             "artifactValidation.proofSegmentsPresent artifact publicInput proof",
