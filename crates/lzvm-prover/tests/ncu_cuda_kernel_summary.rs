@@ -19,6 +19,7 @@ fn ncu_cuda_kernel_summary_reports_duration_throughput_and_occupancy_limits() {
         "kernel_metric_summary",
         "occupancy_limits",
         "memory_bound_candidates",
+        "kernel_pressure_summary",
         "kernel_separation_candidates",
     ] {
         assert!(
@@ -48,6 +49,10 @@ fn ncu_cuda_kernel_summary_reports_duration_throughput_and_occupancy_limits() {
         "registers_per_thread",
         "occupancy_limits",
         "memory_bound_candidates",
+        "kernel_pressure_summary",
+        "pressure_class",
+        "memory_to_sm_delta_pct",
+        "register_pressure",
         "kernel_separation_candidates",
         "separation_hint",
         "split_or_reduce_register_pressure",
@@ -406,6 +411,10 @@ fn ncu_cuda_kernel_summary_flags_descriptor_expansion_shape_candidates() {
         stdout.contains("expand_main_trace_descriptors_kernel,1,4.735,34.450,3.900,0.386,40.000,redesign_descriptor_fields_before_kernel_split"),
         "low-issue descriptor expansion should be flagged with a representation-level hint: {stdout}"
     );
+    assert!(
+        stdout.contains("expand_main_trace_descriptors_kernel,1,4.735,memory_pressure"),
+        "descriptor expansion should carry a pressure class for profile comparisons: {stdout}"
+    );
 }
 
 #[test]
@@ -453,6 +462,10 @@ fn ncu_cuda_kernel_summary_downgrades_tiny_register_limited_kernels() {
     assert!(
         stdout.contains("ntt_stage_block_twiddle_kernel,1,0.034,38.000,6.000,6.000,14.000,60.967,53.829,kernel_time_secondary"),
         "tiny register-limited kernels should not drive kernel splitting: {stdout}"
+    );
+    assert!(
+        stdout.contains("ntt_stage_block_twiddle_kernel,1,0.034,tiny_kernel"),
+        "tiny kernels should be marked as secondary in the pressure summary: {stdout}"
     );
 }
 

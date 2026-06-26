@@ -668,6 +668,146 @@ def descriptor_expansion_shape_hint(metrics: KernelMetrics) -> str:
     return "profile_descriptor_field_widths_before_changing_kernel"
 
 
+def memory_signal(metrics: KernelMetrics) -> float | None:
+    values = [
+        metrics.avg(METRIC_DRAM_THROUGHPUT),
+        metrics.avg(METRIC_MEMORY_THROUGHPUT),
+    ]
+    present = [value for value in values if value is not None]
+    if not present:
+        return None
+    return max(present)
+
+
+def memory_to_sm_delta(metrics: KernelMetrics) -> float | None:
+    memory = memory_signal(metrics)
+    sm = metrics.avg(METRIC_SM_THROUGHPUT)
+    if memory is None or sm is None:
+        return None
+    return memory - sm
+
+
+def pressure_class(metrics: KernelMetrics) -> tuple[str, str]:
+    if metrics.duration_profiles <= 0:
+        return (
+            "metric_coverage_gap",
+            "collect_duration_metrics_before_using_kernel_pressure",
+        )
+    if metrics.duration_us < KERNEL_SEPARATION_MIN_DURATION_US:
+        return (
+            "tiny_kernel",
+            "kernel time is below the split-priority threshold",
+        )
+
+    delta = memory_to_sm_delta(metrics)
+    memory = memory_signal(metrics)
+    if delta is not None and memory is not None and delta >= 10.0 and memory >= 40.0:
+        return (
+            "memory_pressure",
+            "memory throughput is at least ten percentage points above SM throughput",
+        )
+
+    issue_active = metrics.avg(METRIC_ISSUE_ACTIVE)
+    active_warps = metrics.avg(METRIC_ACTIVE_WARPS)
+    if (
+        issue_active is not None
+        and issue_active <= 5.0
+        and active_warps is not None
+        and active_warps >= 50.0
+    ):
+        return (
+            "issue_gap",
+            "warps are resident but issue activity is low",
+        )
+
+    occupancy_limit = minimum_occupancy_limit(metrics)
+    if occupancy_limit is not None and occupancy_limit <= 8.0:
+        limiting = metrics.limiting_factors()
+        if "register_limited" in limiting:
+            return ("register_pressure", "register limit is the tightest launch resource")
+        if "shared_mem_limited" in limiting:
+            return (
+                "shared_memory_pressure",
+                "shared memory limit is the tightest launch resource",
+            )
+        if "warp_limited" in limiting:
+            return ("warp_pressure", "warp limit is the tightest launch resource")
+        if "block_limited" in limiting:
+            return ("block_shape_pressure", "block limit is the tightest launch resource")
+        return ("occupancy_pressure", "launch occupancy is capped by a low block limit")
+
+    if memory is None and metrics.avg(METRIC_SM_THROUGHPUT) is None:
+        return (
+            "duration_only",
+            "collect throughput metrics before assigning a pressure class",
+        )
+    return ("mixed_or_balanced", "no single pressure dominates these summary metrics")
+
+
+def print_kernel_pressure_summary(
+    writer: csv.writer, rows: list[KernelMetrics], limit: int
+) -> None:
+    print()
+    print("kernel_pressure_summary")
+    writerow(
+        writer,
+        [
+            "kernel",
+            "profiles",
+            "duration_ms",
+            "pressure_class",
+            "limiting_factors",
+            "memory_to_sm_delta_pct",
+            "issue_active_pct",
+            "active_warps_pct",
+            "separation_hint",
+            "pressure_detail",
+        ],
+    )
+    ranked = sorted(
+        rows,
+        key=lambda metrics: (
+            pressure_class(metrics)[0] == "mixed_or_balanced",
+            metrics.duration_profiles <= 0,
+            -metrics.duration_us,
+            metrics.kernel,
+        ),
+    )
+    for metrics in ranked[:limit]:
+        pressure, detail = pressure_class(metrics)
+        writerow(
+            writer,
+            [
+                metrics.kernel,
+                metrics.profiles,
+                fmt(metrics.duration_us / 1000.0),
+                pressure,
+                metrics.limiting_factors(),
+                fmt(memory_to_sm_delta(metrics)),
+                fmt(metrics.avg(METRIC_ISSUE_ACTIVE)),
+                fmt(metrics.avg(METRIC_ACTIVE_WARPS)),
+                separation_hint(metrics),
+                detail,
+            ],
+        )
+    if not rows:
+        writerow(
+            writer,
+            [
+                "none",
+                0,
+                "0.000",
+                "metric_coverage_gap",
+                "unknown",
+                "na",
+                "na",
+                "na",
+                "profile_more_before_splitting",
+                "no kernel metrics were present",
+            ],
+        )
+
+
 def print_descriptor_expansion_shape_candidates(
     writer: csv.writer, rows: list[KernelMetrics], limit: int
 ) -> None:
@@ -798,6 +938,7 @@ def summarize(rows: list[dict[str, str]], label: str, limit: int) -> None:
     print_kernel_metric_summary(writer, metrics, limit)
     print_occupancy_limits(writer, metrics, limit)
     print_memory_bound_candidates(writer, metrics, limit)
+    print_kernel_pressure_summary(writer, metrics, limit)
     print_descriptor_expansion_shape_candidates(writer, metrics, limit)
     print_kernel_separation_candidates(writer, metrics, limit)
 
