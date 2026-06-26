@@ -1163,15 +1163,15 @@ def run(args: argparse.Namespace) -> int:
         return 0
     if args.env_file is not None:
         load_env_file(resolve_workspace_path(args.env_file, root), root)
+    if args.check_env:
+        check_env(args, root, require_profile_tools=args.check_profile_tools)
+        return 0
     if args.check_profile_tools:
         profile_ready = print_profile_tool_checks(args, root)
         gpu_ready = True
         if args.check_gpu_memory:
             gpu_ready = print_gpu_memory_check(args, root)
         return 0 if profile_ready and gpu_ready else 1
-    if args.check_env:
-        check_env(args, root)
-        return 0
     if args.print_profile_commands:
         if args.check_gpu_memory and not print_gpu_memory_check(args, root):
             return 1
@@ -1195,8 +1195,10 @@ def run(args: argparse.Namespace) -> int:
     return subprocess.run(command, cwd=root).returncode
 
 
-def check_env(args: argparse.Namespace, root: Path) -> None:
-    print_profile_tool_checks(args, root)
+def check_env(
+    args: argparse.Namespace, root: Path, require_profile_tools: bool = False
+) -> None:
+    profile_ready = print_profile_tool_checks(args, root)
     gpu_ready = True
     if args.check_gpu_memory:
         gpu_ready = print_gpu_memory_check(args, root)
@@ -1205,6 +1207,8 @@ def check_env(args: argparse.Namespace, root: Path) -> None:
         (config, mode, configured_paths(config), config.trace_limit())
         for config, mode in selected
     ]
+    if require_profile_tools and not profile_ready:
+        raise SystemExit("profile tool preflight failed")
     if not gpu_ready:
         raise SystemExit("GPU memory preflight failed")
     print("status=ok")

@@ -818,6 +818,99 @@ fn eth_proof_timing_batch_check_profile_tools_runs_without_proof_env() {
 }
 
 #[test]
+fn eth_proof_timing_batch_combined_check_still_validates_proof_env() {
+    let fixture = ProofFixture::new("eth-proof-timing-batch-combined-check-missing-env");
+    let profile_dir = fixture.dir.join("profiles");
+    let tool_path = write_fixture(&fixture.dir, "custom-nsys");
+    make_executable(&tool_path);
+    let mut command = Command::new(script_path());
+    command
+        .arg("--suite")
+        .arg("small")
+        .arg("--check-env")
+        .arg("--check-profile-tools")
+        .arg("--profile-output-dir")
+        .arg(&profile_dir)
+        .arg("--nsys-command")
+        .arg(&tool_path);
+    clear_env(&mut command, SMALL_PREFIX);
+    clear_env(&mut command, LARGE_PREFIX);
+
+    let output = command
+        .output()
+        .expect("ETH proof timing batch combined env check should run");
+    let success = output.status.success();
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    let profile_created = profile_dir.exists();
+    fixture.cleanup();
+
+    assert!(
+        !success,
+        "combined env/profile check should fail when proof inputs are missing"
+    );
+    assert!(
+        stdout.contains("profile_tool=nsys\n")
+            && stdout.contains("nsys_profiler_status=ready\n")
+            && !stdout.contains("status=ok\n"),
+        "combined check should report profiler readiness before proof env failure: {stdout}"
+    );
+    assert!(
+        stderr.contains("small proof environment is incomplete"),
+        "combined check should not skip proof env validation: stderr={stderr}"
+    );
+    assert!(
+        !profile_created,
+        "combined check should not create profile output directories"
+    );
+}
+
+#[test]
+fn eth_proof_timing_batch_combined_check_requires_profile_tools() {
+    let fixture = ProofFixture::new("eth-proof-timing-batch-combined-check-missing-tool");
+    let profile_dir = fixture.dir.join("profiles");
+    let mut command = Command::new(script_path());
+    command
+        .arg("--suite")
+        .arg("small")
+        .arg("--check-env")
+        .arg("--check-profile-tools")
+        .arg("--profile-output-dir")
+        .arg(&profile_dir)
+        .arg("--nsys-command")
+        .arg(fixture.dir.join("missing-nsys"));
+    fixture.apply_env(&mut command, SMALL_PREFIX);
+
+    let output = command
+        .output()
+        .expect("ETH proof timing batch combined missing tool check should run");
+    let success = output.status.success();
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    let profile_created = profile_dir.exists();
+    fixture.cleanup();
+
+    assert!(
+        !success,
+        "combined env/profile check should fail when the requested profiler is missing"
+    );
+    assert!(
+        stdout.contains("profile_tool=nsys\n")
+            && stdout.contains("nsys_profiler_status=missing\n")
+            && !stdout.contains("status=ok\n"),
+        "combined check should report the missing profiler without proof-ready status: {stdout}"
+    );
+    assert!(
+        stderr.contains("profile tool preflight failed"),
+        "combined check should explain profiler readiness failure: stderr={stderr}"
+    );
+    assert!(
+        !profile_created,
+        "combined check should not create profile output directories"
+    );
+}
+
+#[test]
 fn eth_proof_timing_batch_check_profile_tools_uses_env_profiler_command() {
     let fixture = ProofFixture::new("eth-proof-timing-batch-profile-tools-env");
     let profile_dir = fixture.dir.join("profiles");
