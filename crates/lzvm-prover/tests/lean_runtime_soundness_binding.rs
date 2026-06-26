@@ -112,6 +112,8 @@ fn lean_runtime_soundness_binding_exports_core_contract_projection() {
             "runtime_soundness_required_external_source_contracts_audited_soundness_core_contract",
             "runtime_soundness_required_external_source_artifact_contracts_core_contract",
             "runtime_soundness_required_external_source_artifact_audited_soundness_core_contract",
+            "runtime_soundness_required_external_source_artifact_segment_ids_contract",
+            "runtime_soundness_required_external_source_artifact_audited_segment_ids_contract",
         ],
     );
     assert!(theorem_prefix(
@@ -1487,6 +1489,102 @@ fn lean_runtime_soundness_binding_exports_core_contract_projection() {
     lean_binding::assert_theorem_body_omits(
         &lean_source,
         "runtime_soundness_required_external_source_artifact_audited_soundness_core_contract",
+        &[
+            "runtime_soundness_required_external_source_audited_soundness_proof_system_contract",
+            "RuntimeSoundnessEvidence",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_soundness_required_external_source_artifact_segment_ids_contract",
+        &[
+            "let artifactValidation :=",
+            "RuntimeArtifactEvidence",
+            "artifactValidation.runtimeValidation",
+            "RequiredCryptographicAssumptionStatements assumptions.crypto",
+            "ProofSystemSound system",
+            "system.accepts publicInput proof",
+            "ExternalSourceOpeningEvidence",
+            "validation.sourceValidation",
+            "RuntimeVerifierCoreContract system publicInput proof",
+            "SoundWitness system publicInput proof",
+            "artifactValidation.proofContainerCanonical artifact publicInput proof",
+            "artifactValidation.proofSegmentsPresent artifact publicInput proof",
+            "artifactValidation.proofMetadataCanonical artifact publicInput proof",
+            "artifactValidation.proofSegmentPayloadsNonempty artifact publicInput proof",
+            "artifactValidation.proofSegmentIdsAllowed artifact publicInput proof",
+            "artifactValidation.proofSegmentIdsUnique artifact publicInput proof",
+            "artifactValidation.proofUnitValuesTraceIdentityCoverage",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_omits(
+        &lean_source,
+        "runtime_soundness_required_external_source_artifact_segment_ids_contract",
+        &[
+            "RequiredSemanticAssumptionStatements assumptions.semantic",
+            "RuntimeSoundnessEvidence",
+            "RuntimeArtifactSoundnessObligations",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_soundness_required_external_source_artifact_segment_ids_contract",
+        &[
+            "runtime_soundness_required_external_source_artifact_contracts_core_contract",
+            "runtime_soundness_checked_acceptance_artifact_segment_ids_contract",
+        ],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &lean_source,
+        "runtime_soundness_required_external_source_artifact_segment_ids_contract",
+        &[
+            "runtime_soundness_required_external_source_full_soundness_contract",
+            "RuntimeSoundnessEvidence",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_soundness_required_external_source_artifact_audited_segment_ids_contract",
+        &[
+            "let artifactValidation :=",
+            "RuntimeArtifactEvidence",
+            "artifactValidation.runtimeValidation",
+            "RequiredCryptographicAssumptionStatements assumptions.crypto",
+            "RequiredSemanticAssumptionStatements assumptions.semantic",
+            "ProofSystemSound system",
+            "system.accepts publicInput proof",
+            "ExternalSourceOpeningEvidence",
+            "validation.sourceValidation",
+            "RuntimeVerifierCoreContract system publicInput proof",
+            "SoundWitness system publicInput proof",
+            "artifactValidation.proofContainerCanonical artifact publicInput proof",
+            "artifactValidation.proofSegmentsPresent artifact publicInput proof",
+            "artifactValidation.proofMetadataCanonical artifact publicInput proof",
+            "artifactValidation.proofSegmentPayloadsNonempty artifact publicInput proof",
+            "artifactValidation.proofSegmentIdsAllowed artifact publicInput proof",
+            "artifactValidation.proofSegmentIdsUnique artifact publicInput proof",
+            "artifactValidation.proofUnitValuesTraceIdentityCoverage",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_omits(
+        &lean_source,
+        "runtime_soundness_required_external_source_artifact_audited_segment_ids_contract",
+        &[
+            "RuntimeSoundnessEvidence",
+            "RuntimeArtifactSoundnessObligations",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_soundness_required_external_source_artifact_audited_segment_ids_contract",
+        &[
+            "runtime_soundness_required_external_source_artifact_segment_ids_contract",
+            "assumption_bundle_carries_required_evidence",
+        ],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &lean_source,
+        "runtime_soundness_required_external_source_artifact_audited_segment_ids_contract",
         &[
             "runtime_soundness_required_external_source_audited_soundness_proof_system_contract",
             "RuntimeSoundnessEvidence",
