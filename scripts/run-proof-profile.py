@@ -615,6 +615,19 @@ def summarize_proof_timing(
     return ProofTimingSummaryResult(True, None, [])
 
 
+def merge_proof_timing_result(
+    result: ProofTimingSummaryResult,
+    written: bool,
+    skip_reason: str | None,
+    missing_keys: list[str],
+) -> ProofTimingSummaryResult:
+    if result.written:
+        return ProofTimingSummaryResult(True, None, [])
+    if written:
+        return ProofTimingSummaryResult(written, skip_reason, missing_keys)
+    return result
+
+
 def validate_static_profile_args(args: argparse.Namespace, root: Path) -> tuple[Path, Path]:
     if args.tool == "nsys" and args.summarize and args.skip_nsys_export:
         raise SystemExit("--summarize requires nsys SQLite export; remove --skip-nsys-export")
@@ -908,7 +921,7 @@ def run_profile(args: argparse.Namespace) -> int:
     proof_timing_summary_skip_reason = None
     proof_timing_summary_missing_keys: list[str] = []
     tool_summary_paths: list[Path] = []
-    if args.summarize or args.proof_timing_summary:
+    if args.proof_timing_summary:
         try:
             proof_timing_result = summarize_proof_timing(root, outputs)
         except SystemExit as error:
@@ -964,13 +977,15 @@ def run_profile(args: argparse.Namespace) -> int:
                         str(outputs["copy_summary"]),
                     ],
                 )
-                if proof_timing_result.written:
-                    proof_timing_summary_written = True
-                    proof_timing_summary_skip_reason = None
-                    proof_timing_summary_missing_keys = []
-                elif not proof_timing_summary_written:
-                    proof_timing_summary_skip_reason = proof_timing_result.skip_reason
-                    proof_timing_summary_missing_keys = proof_timing_result.missing_keys
+                merged = merge_proof_timing_result(
+                    proof_timing_result,
+                    proof_timing_summary_written,
+                    proof_timing_summary_skip_reason,
+                    proof_timing_summary_missing_keys,
+                )
+                proof_timing_summary_written = merged.written
+                proof_timing_summary_skip_reason = merged.skip_reason
+                proof_timing_summary_missing_keys = merged.missing_keys
         except SystemExit as error:
             if args.summarize:
                 remove_stale_summary(outputs["proof_timing_summary"])
@@ -1001,13 +1016,15 @@ def run_profile(args: argparse.Namespace) -> int:
                 outputs,
                 ["--ncu-kernel-summary", str(outputs["kernel_summary"])],
             )
-            if proof_timing_result.written:
-                proof_timing_summary_written = True
-                proof_timing_summary_skip_reason = None
-                proof_timing_summary_missing_keys = []
-            elif not proof_timing_summary_written:
-                proof_timing_summary_skip_reason = proof_timing_result.skip_reason
-                proof_timing_summary_missing_keys = proof_timing_result.missing_keys
+            merged = merge_proof_timing_result(
+                proof_timing_result,
+                proof_timing_summary_written,
+                proof_timing_summary_skip_reason,
+                proof_timing_summary_missing_keys,
+            )
+            proof_timing_summary_written = merged.written
+            proof_timing_summary_skip_reason = merged.skip_reason
+            proof_timing_summary_missing_keys = merged.missing_keys
         except SystemExit as error:
             remove_stale_summary(outputs["proof_timing_summary"])
             write_profile_json(

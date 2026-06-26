@@ -555,6 +555,12 @@ def write_env_template(args: argparse.Namespace, root: Path) -> None:
     print(f"next_run_command={run_command}")
 
 
+def append_cleared_pipeline_env(parts: list[str]) -> None:
+    parts.append("env")
+    for name in PIPELINE_ENV_TO_CLEAR:
+        parts.extend(["-u", name])
+
+
 def command_for_env(config: ProofEnv, mode: str, verify_proof: bool) -> str:
     paths = configured_paths(config)
     bin_path = paths["bin"]
@@ -562,9 +568,8 @@ def command_for_env(config: ProofEnv, mode: str, verify_proof: bool) -> str:
     proof_path = f"{output_dir}/proof.bin"
     public_values_path = f"{output_dir}/eth-block-public-values.bin"
 
-    parts = ["env"]
-    for name in PIPELINE_ENV_TO_CLEAR:
-        parts.extend(["-u", name])
+    parts: list[str] = []
+    append_cleared_pipeline_env(parts)
     parts.append("TMPDIR={tmp_dir}")
     for name, value in MODE_ENV[mode].items():
         parts.append(shell_assign(name, value))
@@ -588,10 +593,10 @@ def command_for_env(config: ProofEnv, mode: str, verify_proof: bool) -> str:
         ]
     )
     if verify_proof:
+        parts.append("&&")
+        append_cleared_pipeline_env(parts)
         parts.extend(
             [
-                "&&",
-                "env",
                 "TMPDIR={tmp_dir}",
                 shell_arg(bin_path),
                 "verify",

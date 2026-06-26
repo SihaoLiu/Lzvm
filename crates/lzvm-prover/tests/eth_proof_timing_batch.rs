@@ -289,6 +289,10 @@ fn eth_proof_timing_batch_dry_run_builds_small_command_from_env() {
         "small command should run an external proof verification after proving: {stdout}"
     );
     assert!(
+        stdout.contains("&& env -u LZVM_GUEST_PC_TRACE_PARALLEL_LOWER"),
+        "external proof verification should clear pipeline environment controls: {stdout}"
+    );
+    assert!(
         stdout.contains("LZVM_GUEST_PC_TRACE_COMMIT_PIPELINE=1"),
         "combined mode should set its mode environment: {stdout}"
     );
@@ -449,6 +453,10 @@ fn eth_proof_timing_batch_run_uses_runner_tmpdir_token() {
             && verify_command.contains("--input-data")
             && verify_command.contains("verify_proof_status=ok"),
         "runner should receive a prove-then-verify command: {runner_args}"
+    );
+    assert!(
+        runner_args.contains("&& env -u LZVM_GUEST_PC_TRACE_PARALLEL_LOWER"),
+        "runner verify command should clear pipeline environment controls: {runner_args}"
     );
     assert!(
         !runner_args.contains(&fixture.shared_tmp_dir.display().to_string()),
@@ -1851,7 +1859,8 @@ fn eth_proof_timing_batch_prints_profile_commands_from_env() {
         stdout.contains("sh -lc")
             && stdout.contains("prove witness --guest-pc-trace 120000000 --timings")
             && stdout.contains("verify proof --eth-block-input")
-            && stdout.contains("&& env TMPDIR=")
+            && stdout.contains("&& env -u LZVM_GUEST_PC_TRACE_PARALLEL_LOWER")
+            && stdout.contains(" TMPDIR=")
             && stdout.contains("verify_proof_status=ok"),
         "profile command should wrap the same prove-then-verify shell command with managed TMPDIR: {stdout}"
     );
