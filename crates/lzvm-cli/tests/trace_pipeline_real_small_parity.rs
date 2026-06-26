@@ -685,6 +685,7 @@ fn run_prove_witness(
     fs::write(work_dir.join(format!("{label}.stderr")), &output.stderr)
         .expect("stderr should be written");
     let output_text = assert_successful_proof(label, &output);
+    run_verify_proof(config, work_dir, label, &output_dir);
     match mode {
         RealParityMode::Default => {
             assert_timing_equals(&output_text, "timing_guest_trace_parallel_lower_workers", 0);
@@ -787,6 +788,23 @@ fn run_prove_witness(
     ProveRun { output_dir }
 }
 
+fn run_verify_proof(config: &RealParityConfig, work_dir: &Path, label: &str, output_dir: &Path) {
+    let output = verify_command(config, output_dir)
+        .output()
+        .unwrap_or_else(|error| panic!("{label} verify command should run: {error}"));
+    fs::write(
+        work_dir.join(format!("{label}.verify.stdout")),
+        &output.stdout,
+    )
+    .expect("verify stdout should be written");
+    fs::write(
+        work_dir.join(format!("{label}.verify.stderr")),
+        &output.stderr,
+    )
+    .expect("verify stderr should be written");
+    assert_successful_verify(label, &output);
+}
+
 fn prove_command(config: &RealParityConfig, output_dir: &Path, mode: RealParityMode) -> Command {
     let mut command = Command::new(&config.bin);
     command
@@ -872,6 +890,24 @@ fn prove_command(config: &RealParityConfig, output_dir: &Path, mode: RealParityM
                 .env(COMMIT_PIPELINE_ENV, "1");
         }
     }
+    command
+}
+
+fn verify_command(config: &RealParityConfig, output_dir: &Path) -> Command {
+    let mut command = Command::new(&config.bin);
+    command
+        .arg("verify")
+        .arg("proof")
+        .arg("--eth-block-input")
+        .arg(&config.block_input)
+        .arg("--program-image-cache")
+        .arg(&config.program_image_cache)
+        .arg(&config.setup_dir)
+        .arg(output_dir.join("proof.bin"))
+        .arg(output_dir.join("eth-block-public-values.bin"))
+        .env("TMPDIR", &config.tmp_dir);
+
+    clear_pipeline_env(&mut command);
     command
 }
 
@@ -1122,6 +1158,48 @@ fn work_unit_pipeline_mode_sets_dedicated_env() {
     assert_env_removed(&command, PARALLEL_REPLAY_SNAPSHOT_ENV);
 }
 
+#[test]
+fn verify_command_binds_eth_inputs_and_program_cache() {
+    let workspace = workspace_root();
+    let config = RealParityConfig {
+        bin: workspace.join("target").join("release").join("lzvm"),
+        setup_dir: workspace.join("temp").join("setup"),
+        block_input: workspace.join("temp").join("eth-block.input"),
+        program_image_cache: workspace.join("temp").join("program-image.cache"),
+        input_data: workspace.join("temp").join("input-data.bin"),
+        guest_image: workspace.join("temp").join("guest.elf"),
+        trace_limit: "1".to_owned(),
+        work_dir: workspace.join("temp"),
+        tmp_dir: workspace.join("temp").join("tmp"),
+    };
+    let output_dir = workspace.join("temp").join("proof-output");
+
+    let command = verify_command(&config, &output_dir);
+    let args = command
+        .get_args()
+        .map(PathBuf::from)
+        .collect::<Vec<PathBuf>>();
+
+    assert_eq!(
+        args,
+        vec![
+            PathBuf::from("verify"),
+            PathBuf::from("proof"),
+            PathBuf::from("--eth-block-input"),
+            config.block_input.clone(),
+            PathBuf::from("--program-image-cache"),
+            config.program_image_cache.clone(),
+            config.setup_dir.clone(),
+            output_dir.join("proof.bin"),
+            output_dir.join("eth-block-public-values.bin"),
+        ]
+    );
+    assert_command_env_path_equals(&command, "TMPDIR", &config.tmp_dir);
+    assert_env_removed(&command, PARALLEL_LOWER_ENV);
+    assert_env_removed(&command, COMMIT_PIPELINE_ENV);
+    assert_env_removed(&command, OWNED_STREAMING_LOWER_ENV);
+}
+
 fn assert_env_removed(command: &Command, name: &str) {
     let state = command
         .get_envs()
@@ -1145,6 +1223,19 @@ fn assert_command_env_equals(command: &Command, name: &str, expected: &str) {
     );
 }
 
+fn assert_command_env_path_equals(command: &Command, name: &str, expected: &Path) {
+    let state = command
+        .get_envs()
+        .find(|(key, _)| *key == OsStr::new(name))
+        .map(|(_, value)| value);
+    assert_eq!(
+        state,
+        Some(Some(expected.as_os_str())),
+        "{name} should be set to {}, got {state:?}",
+        expected.display()
+    );
+}
+
 fn assert_successful_proof(label: &str, output: &Output) -> String {
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
@@ -1162,6 +1253,28 @@ fn assert_successful_proof(label: &str, output: &Output) -> String {
         "{label} prove command did not report verify_outputs=true\n{combined}"
     );
     combined
+}
+
+fn assert_successful_verify(label: &str, output: &Output) {
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success(),
+        "{label} verify command failed\nstdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+    let combined = format!("{stdout}{stderr}");
+    for marker in [
+        "status=ok",
+        "artifact_public_input_match=ok",
+        "artifact_proof_match=ok",
+        "eth_block_input_match=ok",
+        "program_image_cache_match=ok",
+    ] {
+        assert!(
+            combined.contains(marker),
+            "{label} verify command did not report {marker}\n{combined}"
+        );
+    }
 }
 
 fn assert_timing_equals(output: &str, key: &str, expected: u64) {
