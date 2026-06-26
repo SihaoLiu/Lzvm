@@ -77,6 +77,7 @@ fn lean_assumption_audit_exports_runtime_soundness_coverage() {
             "assumption_bundle_trace_extraction",
             "assumption_bundle_constraint_satisfaction",
             "assumption_bundle_witness_extraction",
+            "assumption_bundle_verifier_core_contract",
         ],
     );
     assert!(
@@ -204,6 +205,25 @@ fn lean_assumption_audit_exports_runtime_soundness_coverage() {
             ],
         );
     }
+    lean_binding::assert_theorem_prefix_contains(
+        &audit_source,
+        "assumption_bundle_verifier_core_contract",
+        &[
+            "AssumptionBundle system",
+            "system.accepts publicInput proof",
+            "RuntimeVerifierCoreContract system publicInput proof",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &audit_source,
+        "assumption_bundle_verifier_core_contract",
+        &[
+            "assumption_bundle_fiat_shamir_transcript_binding",
+            "assumption_bundle_public_input_binding",
+            "assumption_bundle_pcs_opening_soundness",
+            "assumption_bundle_fri_query_soundness",
+        ],
+    );
     lean_binding::assert_theorem_prefix_contains(
         &audit_source,
         "required_crypto_assumptions_merkle_compression_no_collision",
@@ -342,6 +362,11 @@ fn lean_assumption_audit_exports_runtime_soundness_coverage() {
     assert!(
         soundness_source.contains("assumption_bundle_carries_required_crypto_evidence"),
         "abstract soundness should use the audited assumption bundle projection"
+    );
+    lean_binding::assert_theorem_body_contains(
+        &soundness_source,
+        "abstract_verifier_sound",
+        &["assumption_bundle_verifier_core_contract"],
     );
     lean_binding::assert_theorem_declarations(
         &soundness_source,

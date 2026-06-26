@@ -17,30 +17,17 @@ theorem abstract_verifier_sound
     (assumptions : AssumptionBundle system) :
     ProofSystemSound system := by
   intro publicInput proof accepted
-  have transcriptBound :=
-    assumption_bundle_fiat_shamir_transcript_binding
+  have coreContract :=
+    assumption_bundle_verifier_core_contract
       assumptions
       publicInput
       proof
       accepted
-  have publicInputBound :=
-    assumption_bundle_public_input_binding
-      assumptions
-      publicInput
-      proof
-      accepted
-  have pcsOpeningsValid :=
-    assumption_bundle_pcs_opening_soundness
-      assumptions
-      publicInput
-      proof
-      accepted
-  have friQueriesValid :=
-    assumption_bundle_fri_query_soundness
-      assumptions
-      publicInput
-      proof
-      accepted
+  rcases coreContract with
+    ⟨transcriptBound,
+      publicInputBound,
+      pcsOpeningsValid,
+      friQueriesValid⟩
   cases assumption_bundle_trace_extraction assumptions publicInput proof accepted with
   | intro trace traceConsistent =>
     cases assumption_bundle_constraint_satisfaction
