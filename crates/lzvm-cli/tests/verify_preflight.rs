@@ -12,6 +12,10 @@ use lzvm_artifacts::eth_block_input_segment::{
 };
 use lzvm_artifacts::eth_block_public_values::public_values_from_eth_block_input;
 use lzvm_artifacts::eth_trie::{receipt_trie_build, withdrawals_trie_build};
+use lzvm_artifacts::guest_input_segment::{
+    encode_framed_guest_input_segment, framed_guest_input_segment_digest,
+    FRAMED_GUEST_INPUT_SEGMENT_ID,
+};
 use lzvm_artifacts::program_image::{ProgramImageCommitmentCache, ProgramImageGpuMode};
 use lzvm_artifacts::program_image_segment::{
     encode_program_image_cache_segment, program_image_cache_segment_digest,
@@ -129,6 +133,15 @@ fn sample_witness_commitment(
             tree_digest: [0x5a; 32],
         }],
     }
+}
+
+fn framed_stdin_chunk(payload: &[u8]) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(&(payload.len() as u64).to_le_bytes());
+    bytes.extend_from_slice(payload);
+    let padding_len = (8 - (bytes.len() % 8)) % 8;
+    bytes.resize(bytes.len() + padding_len, 0);
+    bytes
 }
 
 fn sample_program_image_cache() -> ProgramImageCommitmentCache {
@@ -667,6 +680,103 @@ fn verifies_preflight_reports_challenge_values_segments() {
         )
     );
     assert!(stderr.is_empty());
+}
+
+#[test]
+fn verifies_preflight_matches_framed_guest_input() {
+    let values = sample_public_values();
+    let public_values_hash = public_values_digest(&values).expect("digest should compute");
+    let input_data = framed_stdin_chunk(&[7_u8, 8_u8]);
+    let segment_data =
+        encode_framed_guest_input_segment(&input_data).expect("framed input should encode");
+    let segment_hash = framed_guest_input_segment_digest(&segment_data);
+    let mut proof = sample_proof(&values);
+    proof.segments.push(ProofSegment {
+        id: FRAMED_GUEST_INPUT_SEGMENT_ID,
+        data: segment_data.clone(),
+    });
+    let (dir, proof_path, public_path) = write_fixture_pair("framed-guest-input", &proof, &values);
+    let input_path = dir.join("input.bin");
+    write_bytes(&input_path, &input_data);
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "verify",
+            "preflight",
+            "--input-data",
+            input_path.to_str().expect("input path should be utf-8"),
+            proof_path.to_str().expect("proof path should be utf-8"),
+            public_path.to_str().expect("public path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 0);
+    assert_eq!(
+        String::from_utf8(stdout).expect("stdout should be utf-8"),
+        format!(
+            concat!(
+                "status=ok\n",
+                "segments=2\n",
+                "public_values=2\n",
+                "public_values_hash={}\n",
+                "public_value_fields=5\n",
+                "framed_guest_inputs=1\n",
+                "framed_guest_input_hash={}\n",
+                "framed_guest_input_bytes={}\n",
+                "framed_guest_input_chunks=1\n",
+                "framed_guest_input_match=ok\n",
+            ),
+            to_hex(&public_values_hash),
+            to_hex(&segment_hash),
+            segment_data.len()
+        )
+    );
+    assert!(stderr.is_empty());
+}
+
+#[test]
+fn rejects_preflight_with_mismatched_framed_guest_input() {
+    let values = sample_public_values();
+    let input_data = framed_stdin_chunk(&[7_u8, 8_u8]);
+    let segment_data =
+        encode_framed_guest_input_segment(&input_data).expect("framed input should encode");
+    let mut proof = sample_proof(&values);
+    proof.segments.push(ProofSegment {
+        id: FRAMED_GUEST_INPUT_SEGMENT_ID,
+        data: segment_data,
+    });
+    let (dir, proof_path, public_path) =
+        write_fixture_pair("framed-guest-input-mismatch", &proof, &values);
+    let input_path = dir.join("input.bin");
+    write_bytes(&input_path, framed_stdin_chunk(&[9_u8]));
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "verify",
+            "preflight",
+            "--input-data",
+            input_path.to_str().expect("input path should be utf-8"),
+            proof_path.to_str().expect("proof path should be utf-8"),
+            public_path.to_str().expect("public path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 1);
+    assert!(stdout.is_empty());
+    assert_eq!(
+        String::from_utf8(stderr).expect("stderr should be utf-8"),
+        "verify preflight failed: framed guest input proof segment mismatch\n"
+    );
 }
 
 #[test]
