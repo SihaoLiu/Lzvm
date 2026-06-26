@@ -554,6 +554,33 @@ def average_timing_seconds(paths: list[Path]) -> float | None:
     return round(average, 3)
 
 
+def timing_seconds_values(paths: list[Path]) -> tuple[list[float], int]:
+    values = []
+    failed = 0
+    for path in paths:
+        try:
+            values.append(round(timing_total_seconds_from_log(path), 3))
+        except (OSError, SystemExit):
+            failed += 1
+    return values, failed
+
+
+def timing_spread_seconds(values: list[float]) -> float | None:
+    if not values:
+        return None
+    return round(max(values) - min(values), 3)
+
+
+def timing_relative_spread(values: list[float]) -> float | None:
+    if not values:
+        return None
+    ordered = sorted(values)
+    median = ordered[len(ordered) // 2]
+    if median == 0.0:
+        return None
+    return round((ordered[-1] - ordered[0]) / median, 6)
+
+
 def print_stable_average(label: str, logs: list[Path]) -> None:
     average = average_timing_seconds(logs)
     if average is not None:
@@ -601,6 +628,14 @@ def write_batch_json(
     large_stable_timing_summary: Path | None,
     appended: bool,
 ) -> None:
+    small_timing_s, small_timing_parse_failed_count = timing_seconds_values(small_logs or [])
+    large_timing_s, large_timing_parse_failed_count = timing_seconds_values(large_logs or [])
+    small_stable_timing_s, small_stable_timing_parse_failed_count = timing_seconds_values(
+        small_stable_logs or []
+    )
+    large_stable_timing_s, large_stable_timing_parse_failed_count = timing_seconds_values(
+        large_stable_logs or []
+    )
     payload = {
         "created_at": datetime.now().astimezone().strftime("%Y-%m-%dT%H:%M:%S%z"),
         "workspace": str(root),
@@ -626,10 +661,22 @@ def write_batch_json(
         "require_proof_output": args.require_proof_output,
         "small_logs": path_texts(small_logs or []),
         "large_logs": path_texts(large_logs or []),
+        "small_timing_s": small_timing_s,
+        "large_timing_s": large_timing_s,
+        "small_timing_parse_failed_count": small_timing_parse_failed_count,
+        "large_timing_parse_failed_count": large_timing_parse_failed_count,
         "small_stable_logs": path_texts(small_stable_logs or []),
         "large_stable_logs": path_texts(large_stable_logs or []),
+        "small_stable_timing_s": small_stable_timing_s,
+        "large_stable_timing_s": large_stable_timing_s,
         "small_stable_avg_s": average_timing_seconds(small_stable_logs or []),
         "large_stable_avg_s": average_timing_seconds(large_stable_logs or []),
+        "small_stable_spread_s": timing_spread_seconds(small_stable_timing_s),
+        "large_stable_spread_s": timing_spread_seconds(large_stable_timing_s),
+        "small_stable_relative_spread": timing_relative_spread(small_stable_timing_s),
+        "large_stable_relative_spread": timing_relative_spread(large_stable_timing_s),
+        "small_stable_timing_parse_failed_count": small_stable_timing_parse_failed_count,
+        "large_stable_timing_parse_failed_count": large_stable_timing_parse_failed_count,
         "small_statuses": path_texts(small_statuses or []),
         "large_statuses": path_texts(large_statuses or []),
         "small_timing_summaries": path_texts(small_timing_summaries or []),

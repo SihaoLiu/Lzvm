@@ -234,6 +234,24 @@ fn proof_timing_batch_runs_commands_and_appends_stable_log() {
         "batch json should record stable average proof times: {batch_json}"
     );
     assert!(
+        batch_json.contains("\"small_timing_s\": [")
+            && batch_json.contains("1.001")
+            && batch_json.contains("1.003")
+            && batch_json.contains("\"large_timing_s\": [")
+            && batch_json.contains("2.001")
+            && batch_json.contains("2.003"),
+        "batch json should record raw proof timing samples: {batch_json}"
+    );
+    assert!(
+        batch_json.contains("\"small_stable_spread_s\": 0.002")
+            && batch_json.contains("\"large_stable_spread_s\": 0.002")
+            && batch_json.contains("\"small_stable_relative_spread\": 0.001996")
+            && batch_json.contains("\"large_stable_relative_spread\": 0.000999")
+            && batch_json.contains("\"small_timing_parse_failed_count\": 0")
+            && batch_json.contains("\"large_timing_parse_failed_count\": 0"),
+        "batch json should record stable timing spread and parse status: {batch_json}"
+    );
+    assert!(
         batch_json.contains("\"small_statuses\": [") && batch_json.contains("small-001.status"),
         "batch json should record per-run status paths: {batch_json}"
     );
@@ -429,6 +447,35 @@ fn proof_timing_batch_reruns_until_stable_sample_group() {
             && stable_logs.contains("small-003.log")
             && stable_logs.contains("small-004.log"),
         "batch json should identify the stable timing subset: {batch_json}"
+    );
+    let raw_timings = batch_json
+        .split("\"small_timing_s\": [")
+        .nth(1)
+        .and_then(|tail| tail.split(']').next())
+        .expect("batch json should contain small raw timings");
+    assert!(
+        raw_timings.contains("9.0")
+            && raw_timings.contains("1.002")
+            && raw_timings.contains("1.003")
+            && raw_timings.contains("1.004"),
+        "batch json should keep every parseable timing sample: {batch_json}"
+    );
+    let stable_timings = batch_json
+        .split("\"small_stable_timing_s\": [")
+        .nth(1)
+        .and_then(|tail| tail.split(']').next())
+        .expect("batch json should contain stable small timings");
+    assert!(
+        !stable_timings.contains("9.0")
+            && stable_timings.contains("1.002")
+            && stable_timings.contains("1.003")
+            && stable_timings.contains("1.004"),
+        "batch json should keep the stable timing values separate from the outlier: {batch_json}"
+    );
+    assert!(
+        batch_json.contains("\"small_stable_spread_s\": 0.002")
+            && batch_json.contains("\"small_stable_relative_spread\": 0.001994"),
+        "batch json should report stable subset spread after dropping the outlier: {batch_json}"
     );
     let stable_summary =
         std::fs::read_to_string(batch_dir.join("small-stable.proof-timing-summary.csv"))
