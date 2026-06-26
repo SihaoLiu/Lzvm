@@ -13,8 +13,31 @@ fn lean_framed_guest_input_binding_exports_soundness_structural_contract() {
     lean_binding::assert_theorem_declarations(
         &lean_source,
         &[
+            "runtime_framed_guest_input_binding_checked_acceptance_concrete_segment_ids_allowed",
             "runtime_framed_guest_input_binding_checked_acceptance_soundness_and_structural_contract",
         ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_framed_guest_input_binding_checked_acceptance_concrete_segment_ids_allowed",
+        &[
+            "RuntimeFramedGuestInputBindingCheckedAcceptance",
+            "RuntimeProofArtifactConcreteSegmentIdBinding",
+            "RuntimeProofArtifactConcreteSegmentIdsAllowed proof",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_framed_guest_input_binding_checked_acceptance_concrete_segment_ids_allowed",
+        &[
+            "runtime_framed_guest_input_binding_checked_acceptance_eth_block_acceptance",
+            "runtime_eth_block_public_input_binding_checked_acceptance_concrete_segment_ids_allowed",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_omits(
+        &lean_source,
+        "runtime_framed_guest_input_binding_checked_acceptance_concrete_segment_ids_allowed",
+        &["AssumptionBundle"],
     );
     lean_binding::assert_theorem_prefix_contains(
         &lean_source,

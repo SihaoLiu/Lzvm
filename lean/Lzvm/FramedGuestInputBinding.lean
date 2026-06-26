@@ -189,6 +189,37 @@ theorem runtime_framed_guest_input_binding_checked_acceptance_program_image_cach
       proof
       accepted
 
+theorem runtime_framed_guest_input_binding_checked_acceptance_concrete_segment_ids_allowed
+    {system : VerifierModel}
+    (validation : RuntimeFramedGuestInputBindingValidation system)
+    (binding :
+      RuntimeProofArtifactConcreteSegmentIdBinding
+        validation.ethBlockValidation.proofArtifactBindingValidation) :
+    forall artifact publicInput proof,
+      RuntimeFramedGuestInputBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeProofArtifactConcreteSegmentIdsAllowed proof := by
+  intro artifact publicInput proof accepted
+  have ethAccepted :=
+    runtime_framed_guest_input_binding_checked_acceptance_eth_block_acceptance
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  exact
+    runtime_eth_block_public_input_binding_checked_acceptance_concrete_segment_ids_allowed
+      validation.ethBlockValidation
+      binding
+      artifact
+      publicInput
+      proof
+      ethAccepted
+
 theorem runtime_framed_guest_input_binding_checked_acceptance_evidence
     {system : VerifierModel}
     (validation : RuntimeFramedGuestInputBindingValidation system) :
