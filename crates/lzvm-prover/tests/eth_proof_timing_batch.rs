@@ -253,6 +253,11 @@ fn eth_proof_timing_batch_dry_run_builds_small_command_from_env() {
             && stdout.contains("max_runs=5\n"),
         "runner command should reserve replacement attempts by default: {stdout}"
     );
+    assert!(
+        stdout.contains("--small-max-avg-s 10.0")
+            && stdout.contains("small_target_max_avg_s=10.0\n"),
+        "runner command should enforce the default small target: {stdout}"
+    );
     assert_verify_required_text_args(&stdout, "runner command");
     assert!(
         stdout.contains("small_command=env -u LZVM_GUEST_PC_TRACE_PARALLEL_LOWER"),
@@ -353,6 +358,37 @@ fn eth_proof_timing_batch_target_thresholds_follow_selected_suite() {
     assert!(
         !stdout.contains("large_target_max_avg_s="),
         "dry-run metadata should only report selected suites: {stdout}"
+    );
+}
+
+#[test]
+fn eth_proof_timing_batch_skip_targets_omits_default_thresholds() {
+    let fixture = ProofFixture::new("eth-proof-timing-batch-skip-targets");
+    let mut command = Command::new(script_path());
+    command
+        .arg("--suite")
+        .arg("small")
+        .arg("--dry-run")
+        .arg("--skip-targets")
+        .arg("--summary")
+        .arg("skip targets");
+    fixture.apply_env(&mut command, SMALL_PREFIX);
+
+    let output = command
+        .output()
+        .expect("ETH proof timing batch dry-run should run");
+    let success = output.status.success();
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    fixture.cleanup();
+
+    assert!(
+        success,
+        "dry-run should allow skipping default targets: stderr={stderr}"
+    );
+    assert!(
+        !stdout.contains("--small-max-avg-s") && stdout.contains("small_target_max_avg_s=\n"),
+        "skip-targets should omit default target thresholds: {stdout}"
     );
 }
 

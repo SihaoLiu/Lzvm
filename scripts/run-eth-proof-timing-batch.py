@@ -302,7 +302,7 @@ def target_max_avg_s(args: argparse.Namespace, label: str) -> float | None:
     explicit = args.small_max_avg_s if label == "small" else args.large_max_avg_s
     if explicit is not None:
         return explicit
-    if not args.enforce_targets:
+    if args.skip_targets:
         return None
     return 10.0 if label == "small" else 30.0
 
@@ -517,6 +517,8 @@ def next_command_parts(
     parts.extend(gpu_memory_cli_parts(args, root))
     if args.enforce_targets:
         parts.append("--enforce-targets")
+    if args.skip_targets:
+        parts.append("--skip-targets")
     if args.small_max_avg_s is not None:
         parts.extend(["--small-max-avg-s", str(args.small_max_avg_s)])
     if args.large_max_avg_s is not None:
@@ -1054,6 +1056,8 @@ def dry_run_summary_lines(args: argparse.Namespace, root: Path) -> list[str]:
 
 def run(args: argparse.Namespace) -> int:
     root = workspace_root()
+    if args.enforce_targets and args.skip_targets:
+        raise SystemExit("--skip-targets conflicts with --enforce-targets")
     if effective_max_runs(args) < args.runs:
         raise SystemExit("--max-runs must be at least --runs")
     if args.print_env_template:
@@ -1205,6 +1209,7 @@ def self_test() -> None:
         runs=3,
         small_mode="combined",
         small_timeout=10.0,
+        skip_targets=False,
         small_max_avg_s=None,
         suite="both",
         summary="self test",
@@ -1284,6 +1289,7 @@ def main() -> None:
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--check-env", action="store_true")
     parser.add_argument("--enforce-targets", action="store_true")
+    parser.add_argument("--skip-targets", action="store_true")
     parser.add_argument("--print-env-template", action="store_true")
     parser.add_argument("--write-env-template")
     parser.add_argument("--check-profile-tools", action="store_true")
