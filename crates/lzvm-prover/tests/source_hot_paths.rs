@@ -382,25 +382,20 @@ fn cuda_graph_extension_runner_counters_saturate() {
         .expect("CUDA graph extension source should read");
 
     assert!(
-        graph_runner_source.contains("fn saturating_counter_increment(counter: &mut usize)")
-            && graph_runner_source.contains("*counter = counter.saturating_add(1);"),
-        "CUDA graph runner counters should share the saturating increment helper"
-    );
-    assert!(
         !graph_runner_source.contains("capture_count += 1")
             && !graph_runner_source.contains("launch_count += 1"),
         "CUDA graph runner counters should avoid raw increments"
     );
     assert_eq!(
         graph_runner_source
-            .matches("saturating_counter_increment(&mut self.capture_count)")
+            .matches("self.capture_count = self.capture_count.saturating_add(1)")
             .count(),
         2,
         "both CUDA graph runners should saturate capture counts"
     );
     assert_eq!(
         graph_runner_source
-            .matches("saturating_counter_increment(&mut self.launch_count)")
+            .matches("self.launch_count = self.launch_count.saturating_add(1)")
             .count(),
         2,
         "both CUDA graph runners should saturate launch counts"
@@ -6654,7 +6649,7 @@ fn cuda_allocator_timing_reports_pending_wait_shape() {
     );
     assert!(
         native_source.contains("total = saturated_add(total, allocation.bytes)")
-            && native_source.contains("count = saturated_add(count, 1)"),
+            && native_source.contains("count = saturated_increment(count)"),
         "allocator cache accounting should saturate cached byte and block counts"
     );
     assert!(
@@ -6669,6 +6664,7 @@ fn cuda_allocator_timing_reports_pending_wait_shape() {
         "g_cuda_host_register_calls",
         "g_cuda_host_unregister_calls",
         "g_cuda_event_synchronize_calls",
+        "g_cuda_device_synchronize_calls",
         "g_cuda_free_calls",
         "g_cuda_event_query_calls",
         "g_cuda_event_query_ready_count",

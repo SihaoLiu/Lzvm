@@ -99,8 +99,17 @@ struct RegisteredHostRange {
     bool registered = false;
 };
 
-std::size_t saturated_add(std::size_t left, std::size_t right);
-std::size_t saturated_increment(std::size_t value);
+std::size_t saturated_add(std::size_t left, std::size_t right) {
+    const auto max = std::numeric_limits<std::size_t>::max();
+    if (max - left < right) {
+        return max;
+    }
+    return left + right;
+}
+
+std::size_t saturated_increment(std::size_t value) {
+    return saturated_add(value, 1);
+}
 
 std::size_t cached_bytes_locked() {
     std::size_t total = 0;
@@ -114,7 +123,7 @@ std::size_t cached_blocks_for_size_locked(int device, std::size_t bytes) {
     std::size_t count = 0;
     for (const CachedAllocation& allocation : g_cached_allocations) {
         if (allocation.device == device && allocation.bytes == bytes) {
-            count = saturated_add(count, 1);
+            count = saturated_increment(count);
         }
     }
     return count;
@@ -135,18 +144,6 @@ std::size_t saturated_nanoseconds_since(std::chrono::steady_clock::time_point st
         return max;
     }
     return static_cast<std::size_t>(ns);
-}
-
-std::size_t saturated_add(std::size_t left, std::size_t right) {
-    const auto max = std::numeric_limits<std::size_t>::max();
-    if (max - left < right) {
-        return max;
-    }
-    return left + right;
-}
-
-std::size_t saturated_increment(std::size_t value) {
-    return saturated_add(value, 1);
 }
 
 std::size_t saturated_multiply(std::size_t left, std::size_t right) {
@@ -192,7 +189,7 @@ void record_wait_by_size(
         if (size_stats.count == 0) {
             size_stats.bytes = bytes;
         }
-        size_stats.count = saturated_add(size_stats.count, 1);
+        size_stats.count = saturated_increment(size_stats.count);
         size_stats.wait_ns = saturated_add(size_stats.wait_ns, elapsed_ns);
         return;
     }
@@ -299,7 +296,7 @@ void record_cuda_copy_wait(
         max_wait_ns == nullptr) {
         return;
     }
-    *calls = saturated_add(*calls, 1);
+    *calls = saturated_increment(*calls);
     *byte_count = saturated_add(*byte_count, bytes);
     *wait_ns = saturated_add(*wait_ns, elapsed_ns);
     if (elapsed_ns > *max_wait_ns) {
@@ -345,7 +342,8 @@ void record_cuda_copy_d2d_wait(std::size_t bytes, std::size_t elapsed_ns) {
 }
 
 void record_cuda_device_synchronize_wait(std::size_t elapsed_ns) {
-    g_cuda_device_synchronize_calls = saturated_add(g_cuda_device_synchronize_calls, 1);
+    g_cuda_device_synchronize_calls =
+        saturated_increment(g_cuda_device_synchronize_calls);
     g_cuda_device_synchronize_wait_ns =
         saturated_add(g_cuda_device_synchronize_wait_ns, elapsed_ns);
     if (elapsed_ns > g_cuda_device_synchronize_max_wait_ns) {
