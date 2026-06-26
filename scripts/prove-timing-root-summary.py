@@ -1583,9 +1583,12 @@ def parse_timing_log(text: str) -> dict[str, int | str]:
         if key in values:
             raise SystemExit(f"duplicate timing field: {key}")
         try:
-            values[key] = int(value.strip())
+            parsed_value = int(value.strip())
         except ValueError:
-            continue
+            raise SystemExit(f"invalid timing field: {key}")
+        if parsed_value < 0:
+            raise SystemExit(f"negative timing field: {key}")
+        values[key] = parsed_value
     if ncu_top_kernel is not None and ncu_top_kernel in ncu_top_kernel_limits:
         values[NCU_TOP_KERNEL_LIMITING_FACTORS_KEY] = ncu_top_kernel_limits[ncu_top_kernel]
     if ncu_top_kernel is not None and ncu_top_kernel in ncu_top_kernel_separation_hints:

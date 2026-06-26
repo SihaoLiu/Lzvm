@@ -98,6 +98,58 @@ fn prove_timing_root_summary_rejects_duplicate_timing_fields() {
 }
 
 #[test]
+fn prove_timing_root_summary_rejects_malformed_timing_fields() {
+    let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let script_path = crate_root.join("../../scripts/prove-timing-root-summary.py");
+    let dir = crate_root.join(format!(
+        "../../temp/prove-timing-malformed-field-{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("malformed timing fixture dir should be created");
+
+    for (name, first_line, expected) in [
+        (
+            "invalid",
+            "timing_total_ms=not-a-number",
+            "invalid timing field: timing_total_ms",
+        ),
+        (
+            "negative",
+            "timing_total_ms=-1",
+            "negative timing field: timing_total_ms",
+        ),
+    ] {
+        let log_path = dir.join(format!("{name}.log"));
+        let input = [
+            first_line,
+            "timing_guest_stage_tree_commit_root_count=1",
+            "timing_guest_stage_tree_commit_root_materialization_groups=1",
+            "timing_guest_stage_tree_commit_root_materialization_max_group_size=1",
+        ]
+        .join("\n");
+        std::fs::write(&log_path, input).expect("malformed timing fixture should be written");
+
+        let output = Command::new("python3")
+            .arg(&script_path)
+            .arg(&log_path)
+            .output()
+            .expect("prove timing root summary should run");
+        assert!(
+            !output.status.success(),
+            "malformed timing field {name} should be rejected"
+        );
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            stderr.contains(expected),
+            "malformed timing rejection should name the bad field: stderr={stderr}"
+        );
+    }
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
 fn prove_timing_root_summary_reports_stream_chunk_process_time() {
     let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
     let script_path = crate_root.join("../../scripts/prove-timing-root-summary.py");
