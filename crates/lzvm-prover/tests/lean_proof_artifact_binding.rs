@@ -191,6 +191,11 @@ fn lean_proof_artifact_binding_exports_core_contract_projection() {
             && proof_artifact_source.contains("validate_proof_artifact(&proof)"),
         "Rust proof artifact builders should finalize constructed artifacts through invariant validation"
     );
+    assert!(
+        proof_artifact_source.contains("use crate::proof_segment_ids::unexpected_proof_segment_id;")
+            && proof_artifact_source.contains("unexpected_proof_segment_id(&proof.segments)"),
+        "Rust proof artifact finalization should reject proof segment IDs outside the checked runtime set"
+    );
     assert_production_proof_artifact_literals_are_finalized(&proof_artifact_source);
 }
 
