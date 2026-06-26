@@ -15,6 +15,9 @@ fn lean_query_plan_binding_exports_opening_segment_projections() {
     let query_plan_build_path = crate_root.join("src/pcs_query_plan/build.rs");
     let query_plan_build_source = std::fs::read_to_string(&query_plan_build_path)
         .expect("PCS query plan build source should read");
+    let query_plan_tests_path = crate_root.join("tests/pcs_query_plan.rs");
+    let query_plan_tests_source = std::fs::read_to_string(&query_plan_tests_path)
+        .expect("PCS query plan tests source should read");
     let fri_validation_path = crate_root.join("src/pcs_fri/validation.rs");
     let fri_validation_source =
         std::fs::read_to_string(&fri_validation_path).expect("FRI validation source should read");
@@ -596,6 +599,18 @@ fn lean_query_plan_binding_exports_opening_segment_projections() {
             && fri_validation_source.contains("seeded_query_plan_requires_fri_opening")
             && fri_validation_source.contains("fri_opening_required_units"),
         "runtime seeded query-plan validation should bind witness tree digests and require FRI openings for FRI-bearing seeded units"
+    );
+    assert!(
+        query_plan_source.contains("fn is_proof_binding_id")
+            && query_plan_source.contains("ETH_BLOCK_INPUT_SEGMENT_ID")
+            && query_plan_source.contains("FRAMED_GUEST_INPUT_SEGMENT_ID")
+            && query_plan_tests_source.contains(
+                "rejects_seeded_pcs_query_plan_mismatches_with_pipeline_input_binding_segments"
+            )
+            && query_plan_tests_source.contains(
+                "rejects_transcript_pcs_query_plan_mismatches_with_pipeline_input_binding_segments"
+            ),
+        "runtime query-plan binding should include and test pipeline input proof segment IDs"
     );
     let transcript_builder_body = function_body(
         &proof_artifact_source,
