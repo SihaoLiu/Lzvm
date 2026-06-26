@@ -773,6 +773,13 @@ def gpu_memory_cli_parts(args: argparse.Namespace, root: Path) -> list[str]:
     return ["--nvidia-smi-command", profile_tool_command_arg(raw, root)]
 
 
+def cuda_visible_devices_command_prefix() -> list[str]:
+    visible_devices = os.environ.get("CUDA_VISIBLE_DEVICES")
+    if not visible_devices:
+        return []
+    return ["env", f"CUDA_VISIBLE_DEVICES={visible_devices}"]
+
+
 def parse_gpu_memory_rows(text: str) -> list[GpuMemoryRow]:
     rows: list[GpuMemoryRow] = []
     for line in text.splitlines():
@@ -969,6 +976,7 @@ def profile_command_for_env(
         profiler_command.extend(["--min-gpu-free-mib", str(args.min_gpu_free_mib)])
     profiler_command.extend(gpu_memory_cli_parts(args, root))
     return [
+        *cuda_visible_devices_command_prefix(),
         "scripts/run-proof-profile.py",
         "--tool",
         tool,

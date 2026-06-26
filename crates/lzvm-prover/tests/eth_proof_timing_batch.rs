@@ -2004,7 +2004,8 @@ fn eth_proof_timing_batch_profile_commands_preserve_env_profiler_commands() {
         .arg(&profile_dir)
         .arg("--print-profile-commands")
         .env("LZVM_NSYS_COMMAND", &nsys_path)
-        .env("LZVM_NCU_COMMAND", &ncu_path);
+        .env("LZVM_NCU_COMMAND", &ncu_path)
+        .env("CUDA_VISIBLE_DEVICES", "1,0");
     fixture.apply_env(&mut command, SMALL_PREFIX);
 
     let output = command
@@ -2024,6 +2025,14 @@ fn eth_proof_timing_batch_profile_commands_preserve_env_profiler_commands() {
         stdout.contains(&format!("--nsys-command '{nsys_rel}'"))
             && stdout.contains(&format!("--ncu-command '{ncu_rel}'")),
         "profile command output should embed profiler commands selected from env: {stdout}"
+    );
+    assert!(
+        stdout.contains(
+            "small_nsys_profile_command=env CUDA_VISIBLE_DEVICES=1,0 scripts/run-proof-profile.py"
+        ) && stdout.contains(
+            "small_ncu_profile_command=env CUDA_VISIBLE_DEVICES=1,0 scripts/run-proof-profile.py"
+        ),
+        "profile command output should preserve explicit GPU selection in copied commands: {stdout}"
     );
     assert!(
         !stdout.contains("LZVM_NSYS_COMMAND") && !stdout.contains("LZVM_NCU_COMMAND"),
