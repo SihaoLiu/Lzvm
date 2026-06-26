@@ -68,6 +68,9 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         crate_root.join("../../lean/Lzvm/AuxiliaryChecks/RuntimePerformance.lean");
     let runtime_performance_source = std::fs::read_to_string(&runtime_performance_path)
         .expect("Lean runtime performance checks should read");
+    let proof_batch_runner_path = crate_root.join("../../scripts/run-proof-timing-batch.py");
+    let proof_batch_runner_source =
+        std::fs::read_to_string(&proof_batch_runner_path).expect("proof batch runner should read");
     let lean_source = [
         auxiliary_source.as_str(),
         auxiliary_all_source.as_str(),
@@ -2353,6 +2356,29 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         assert!(
             lean_source.contains(field),
             "Lean proof timing batch summary should expose {field}"
+        );
+    }
+    for (lean_field, runner_key) in [
+        ("smallRunCount", "\"small_logs\""),
+        ("largeRunCount", "\"large_logs\""),
+        ("smallStableRunCount", "\"small_stable_logs\""),
+        ("largeStableRunCount", "\"large_stable_logs\""),
+        ("smallStableAverageMilliseconds", "\"small_stable_avg_s\""),
+        ("largeStableAverageMilliseconds", "\"large_stable_avg_s\""),
+        ("smallStableSpreadMilliseconds", "\"small_stable_spread_s\""),
+        ("largeStableSpreadMilliseconds", "\"large_stable_spread_s\""),
+        (
+            "smallTimingParseFailedCount",
+            "\"small_timing_parse_failed_count\"",
+        ),
+        (
+            "largeTimingParseFailedCount",
+            "\"large_timing_parse_failed_count\"",
+        ),
+    ] {
+        assert!(
+            lean_source.contains(lean_field) && proof_batch_runner_source.contains(runner_key),
+            "Lean proof timing batch field {lean_field} should align with runner key {runner_key}"
         );
     }
     for line_name in [
