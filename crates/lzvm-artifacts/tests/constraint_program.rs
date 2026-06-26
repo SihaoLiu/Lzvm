@@ -12,6 +12,11 @@ use std::fs;
 use std::path::PathBuf;
 
 const NON_CANONICAL_FIELD: u64 = 0xffff_ffff_0000_0001;
+const SECTION_HEADER_BYTES: usize = 4 * 4;
+const REGULAR_ENTRY_MIN_BYTES: usize = 12 * 4 + 1;
+const GLOBAL_ENTRY_MIN_BYTES: usize = 8 * 4 + 1;
+const ARG_BYTES: usize = 2;
+const NUMBER_BYTES: usize = 8;
 
 fn sample_regular_program() -> ConstraintProgram {
     ConstraintProgram {
@@ -235,7 +240,11 @@ fn rejects_regular_entry_count_that_exceeds_remaining_entry_records() {
 
     assert!(matches!(
         parse_regular_constraint_program(&bytes),
-        Err(ConstraintProgramError::LengthOverflow)
+        Err(ConstraintProgramError::UnexpectedEof {
+            offset: SECTION_HEADER_BYTES,
+            needed: REGULAR_ENTRY_MIN_BYTES,
+            available: 0
+        })
     ));
 }
 
@@ -245,7 +254,11 @@ fn rejects_global_entry_count_that_exceeds_remaining_entry_records() {
 
     assert!(matches!(
         parse_global_constraint_program(&bytes),
-        Err(ConstraintProgramError::LengthOverflow)
+        Err(ConstraintProgramError::UnexpectedEof {
+            offset: SECTION_HEADER_BYTES,
+            needed: GLOBAL_ENTRY_MIN_BYTES,
+            available: 0
+        })
     ));
 }
 
@@ -255,7 +268,11 @@ fn rejects_args_count_that_exceeds_remaining_args() {
 
     assert!(matches!(
         parse_regular_constraint_program(&bytes),
-        Err(ConstraintProgramError::LengthOverflow)
+        Err(ConstraintProgramError::UnexpectedEof {
+            offset: SECTION_HEADER_BYTES,
+            needed: ARG_BYTES,
+            available: 0
+        })
     ));
 }
 
@@ -265,7 +282,11 @@ fn rejects_numbers_count_that_exceeds_remaining_numbers() {
 
     assert!(matches!(
         parse_regular_constraint_program(&bytes),
-        Err(ConstraintProgramError::LengthOverflow)
+        Err(ConstraintProgramError::UnexpectedEof {
+            offset: SECTION_HEADER_BYTES,
+            needed: NUMBER_BYTES,
+            available: 0
+        })
     ));
 }
 
