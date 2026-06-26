@@ -4212,7 +4212,8 @@ fn for_each_guest_pc_trace_segment<E>(
                 Err(error) => GuestPcTraceSegmentStreamMessage::Error(error),
             };
             let _ = sender.send(message);
-        });
+        })
+        .map_err(stream_backend_error::<E>)?;
 
         let mut emit_error = None;
         let mut stream_result: Option<
@@ -4286,7 +4287,7 @@ fn spawn_guest_pc_trace_thread<'scope, 'env, F, T>(
     scope: &'scope thread::Scope<'scope, 'env>,
     name: &'static str,
     f: F,
-) -> thread::ScopedJoinHandle<'scope, T>
+) -> Result<thread::ScopedJoinHandle<'scope, T>, GuestPcTraceBackendError>
 where
     F: FnOnce() -> T + Send + 'scope,
     T: Send + 'scope,
@@ -4294,7 +4295,9 @@ where
     thread::Builder::new()
         .name(name.to_owned())
         .spawn_scoped(scope, f)
-        .expect("guest PC trace thread should spawn")
+        .map_err(|error| GuestPcTraceBackendError::InvalidPcTraceLayout {
+            message: format!("guest PC trace thread {name} failed to spawn: {error}"),
+        })
 }
 
 fn produce_guest_pc_trace_segments(
@@ -4499,7 +4502,7 @@ fn produce_guest_pc_trace_segments(
                 Err(error) => GuestPcTracePendingSegmentMessage::Error(error),
             };
             let _ = pending_sender.send(message);
-        });
+        })?;
 
         let lowerer_started = Instant::now();
         let mut timing = GuestPcTraceStreamTiming::default();
@@ -7810,7 +7813,7 @@ fn lower_guest_pc_trace_pending_segments_parallel(
                         }
                     }
                 },
-            ));
+            )?);
         }
 
         let dispatcher_sender = result_sender.clone();
@@ -8162,7 +8165,7 @@ fn lower_guest_pc_trace_pending_segments_parallel(
                     }
                 }
             }
-        });
+        })?;
         drop(result_sender);
 
         let mut next_emit_index = 0_u32;
