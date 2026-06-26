@@ -2205,11 +2205,19 @@ fn lean_framed_guest_input_binding_tracks_runtime_checks() {
             && lean_source.contains("RuntimeProgramImageCacheBindingSoundnessContract")
             && lean_source.contains("framedGuestInputProofSegmentPresent")
             && lean_source.contains("framedGuestInputProofSegmentPayloadExact")
+            && lean_source.contains("framedGuestInputCoBoundWithEthBlock")
+            && lean_source.contains("framedGuestInputCoBoundWithProgramImage")
             && lean_source.contains(
                 "runtime_framed_guest_input_binding_checked_acceptance_segment_present"
             )
             && lean_source.contains(
                 "runtime_framed_guest_input_binding_checked_acceptance_segment_payload_exact"
+            )
+            && lean_source.contains(
+                "runtime_framed_guest_input_binding_checked_acceptance_eth_block_co_binding"
+            )
+            && lean_source.contains(
+                "runtime_framed_guest_input_binding_checked_acceptance_program_image_cache_co_binding"
             )
             && lean_source.contains("RuntimeVerifierCoreContract system publicInput proof")
             && lean_source.contains("SoundWitness system publicInput proof")

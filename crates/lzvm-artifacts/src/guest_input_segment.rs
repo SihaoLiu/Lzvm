@@ -5,13 +5,16 @@ use crate::framed_stdin::{parse_framed_stdin_chunks, FramedStdinChunk, FramedStd
 pub const FRAMED_GUEST_INPUT_SEGMENT_ID: u32 = 10_015;
 
 pub fn encode_framed_guest_input_segment(bytes: &[u8]) -> Result<Vec<u8>, FramedStdinError> {
-    parse_framed_stdin_chunks(bytes)?;
+    parse_framed_guest_input_segment(bytes)?;
     Ok(bytes.to_vec())
 }
 
 pub fn parse_framed_guest_input_segment(
     bytes: &[u8],
 ) -> Result<Vec<FramedStdinChunk>, FramedStdinError> {
+    if bytes.is_empty() {
+        return Err(FramedStdinError::EmptyInput);
+    }
     parse_framed_stdin_chunks(bytes)
 }
 

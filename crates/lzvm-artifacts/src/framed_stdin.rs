@@ -11,6 +11,7 @@ pub struct FramedStdinChunk {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FramedStdinError {
+    EmptyInput,
     TruncatedLength {
         offset: usize,
         remaining: usize,
@@ -104,6 +105,7 @@ pub fn parse_framed_stdin_chunks(bytes: &[u8]) -> Result<Vec<FramedStdinChunk>, 
 impl fmt::Display for FramedStdinError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::EmptyInput => write!(f, "framed input is empty"),
             Self::TruncatedLength { offset, remaining } => write!(
                 f,
                 "truncated chunk length at offset {offset}: expected 8 bytes, found {remaining}"
