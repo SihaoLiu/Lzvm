@@ -3,6 +3,10 @@ use lzvm_artifacts::pcs_query_segment::{
     PcsQueryPlanSegmentError, PcsQueryPlanUnit,
 };
 
+const HEADER_BYTES: usize = 12;
+const V1_UNIT_HEADER_BYTES: usize = 4 + 4;
+const QUERY_BYTES: usize = 8;
+
 fn sample_segment() -> PcsQueryPlanSegment {
     PcsQueryPlanSegment {
         units: vec![
@@ -207,7 +211,10 @@ fn duplicate_trace_instance_segment_bytes() -> Vec<u8> {
 fn rejects_unit_count_that_exceeds_remaining_unit_headers() {
     assert!(matches!(
         parse_pcs_query_plan_segment(&segment_header(1)),
-        Err(PcsQueryPlanSegmentError::LengthOverflow)
+        Err(PcsQueryPlanSegmentError::UnexpectedEof {
+            needed,
+            available: HEADER_BYTES
+        }) if needed == HEADER_BYTES + V1_UNIT_HEADER_BYTES
     ));
 }
 
@@ -219,6 +226,10 @@ fn rejects_query_count_that_exceeds_remaining_queries() {
 
     assert!(matches!(
         parse_pcs_query_plan_segment(&bytes),
-        Err(PcsQueryPlanSegmentError::LengthOverflow)
+        Err(PcsQueryPlanSegmentError::UnexpectedEof {
+            needed,
+            available
+        }) if needed == HEADER_BYTES + V1_UNIT_HEADER_BYTES + QUERY_BYTES
+            && available == HEADER_BYTES + V1_UNIT_HEADER_BYTES
     ));
 }

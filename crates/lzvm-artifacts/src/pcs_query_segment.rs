@@ -142,9 +142,7 @@ pub fn parse_pcs_query_plan_segment(
         return Err(PcsQueryPlanSegmentError::EmptyUnits);
     }
     let unit_header_bytes = unit_header_bytes(version)?;
-    if unit_count > reader.remaining_len() / unit_header_bytes {
-        return Err(PcsQueryPlanSegmentError::LengthOverflow);
-    }
+    reader.require_items(unit_count, unit_header_bytes)?;
 
     let mut units = Vec::with_capacity(unit_count);
     for _ in 0..unit_count {
@@ -156,9 +154,7 @@ pub fn parse_pcs_query_plan_segment(
         };
         let query_count = usize::try_from(reader.read_u32()?)
             .map_err(|_| PcsQueryPlanSegmentError::LengthOverflow)?;
-        if query_count > reader.remaining_len() / QUERY_BYTES {
-            return Err(PcsQueryPlanSegmentError::LengthOverflow);
-        }
+        reader.require_items(query_count, QUERY_BYTES)?;
         let mut queries = Vec::with_capacity(query_count);
         for _ in 0..query_count {
             queries.push(reader.read_u64()?);
@@ -250,8 +246,25 @@ impl<'a> SegmentReader<'a> {
         Ok(u64::from_le_bytes(self.read_array::<8>()?))
     }
 
-    fn remaining_len(&self) -> usize {
-        self.bytes.len() - self.offset
+    fn require_items(
+        &self,
+        count: usize,
+        item_bytes: usize,
+    ) -> Result<(), PcsQueryPlanSegmentError> {
+        let payload_bytes = count
+            .checked_mul(item_bytes)
+            .ok_or(PcsQueryPlanSegmentError::LengthOverflow)?;
+        let expected_len = self
+            .offset
+            .checked_add(payload_bytes)
+            .ok_or(PcsQueryPlanSegmentError::LengthOverflow)?;
+        if expected_len > self.bytes.len() {
+            return Err(PcsQueryPlanSegmentError::UnexpectedEof {
+                needed: expected_len,
+                available: self.bytes.len(),
+            });
+        }
+        Ok(())
     }
 
     fn read_array<const N: usize>(&mut self) -> Result<[u8; N], PcsQueryPlanSegmentError> {

@@ -4,7 +4,10 @@ use lzvm_artifacts::pcs_evaluation_segment::{
 };
 
 const NON_CANONICAL_FIELD: u64 = 0xffff_ffff_0000_0001;
-const FIRST_VALUE_OFFSET: usize = 12 + 4 + 4;
+const HEADER_BYTES: usize = 12;
+const V1_UNIT_HEADER_BYTES: usize = 4 + 4;
+const FIRST_VALUE_OFFSET: usize = HEADER_BYTES + V1_UNIT_HEADER_BYTES;
+const EXTENSION_BYTES: usize = 3 * 8;
 
 fn sample_segment() -> PcsEvaluationSegment {
     PcsEvaluationSegment {
@@ -235,7 +238,10 @@ fn rejects_short_pcs_evaluation_count() {
 fn rejects_unit_count_that_exceeds_remaining_unit_headers() {
     assert!(matches!(
         parse_pcs_evaluation_segment(&segment_header(1)),
-        Err(PcsEvaluationSegmentError::LengthOverflow)
+        Err(PcsEvaluationSegmentError::UnexpectedEof {
+            needed,
+            available: HEADER_BYTES
+        }) if needed == HEADER_BYTES + V1_UNIT_HEADER_BYTES
     ));
 }
 
@@ -247,7 +253,11 @@ fn rejects_value_count_that_exceeds_remaining_extensions() {
 
     assert!(matches!(
         parse_pcs_evaluation_segment(&bytes),
-        Err(PcsEvaluationSegmentError::LengthOverflow)
+        Err(PcsEvaluationSegmentError::UnexpectedEof {
+            needed,
+            available
+        }) if needed == FIRST_VALUE_OFFSET + EXTENSION_BYTES
+            && available == FIRST_VALUE_OFFSET
     ));
 }
 
