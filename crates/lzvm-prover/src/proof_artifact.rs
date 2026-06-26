@@ -232,7 +232,7 @@ fn build_witness_proof_core_artifact_with_bindings_and_material_summaries(
     ];
     segments.extend(witness_segments);
 
-    Ok(ProofArtifact {
+    finish_proof_artifact(ProofArtifact {
         setup_hash: schedule.setup_hash,
         public_values_hash,
         segments,
@@ -316,9 +316,7 @@ fn build_witness_proof_artifact_with_bindings_and_material_summaries(
         proof.segments.push(segment);
     }
     append_binding_segments(&mut proof.segments, inputs.binding_segments);
-    validate_proof_artifact(&proof)
-        .map_err(|error| format!("build proof artifact failed: {error}"))?;
-    Ok(proof)
+    finish_proof_artifact(proof)
 }
 
 fn build_witness_proof_artifact_from_trace_outputs_with_bindings_and_material_summaries(
@@ -421,9 +419,7 @@ fn build_witness_proof_artifact_from_trace_outputs_with_bindings_and_material_su
         public_values_hash,
         segments,
     };
-    validate_proof_artifact(&proof)
-        .map_err(|error| format!("build proof artifact failed: {error}"))?;
-    Ok(proof)
+    finish_proof_artifact(proof)
 }
 
 pub struct ProofArtifactInputs<'a> {
@@ -431,6 +427,12 @@ pub struct ProofArtifactInputs<'a> {
     pub group_values: &'a [Ext3],
     pub unit_values: &'a [ProveUnitValues],
     pub binding_segments: &'a [ProofSegment],
+}
+
+fn finish_proof_artifact(proof: ProofArtifact) -> Result<ProofArtifact, String> {
+    validate_proof_artifact(&proof)
+        .map_err(|error| format!("build proof artifact failed: {error}"))?;
+    Ok(proof)
 }
 
 fn build_trace_constraint_evidence_segment(
@@ -771,6 +773,7 @@ fn build_witness_proof_artifact_for_unit_inner(
         public_values_hash,
         segments,
     };
+    let proof = finish_proof_artifact(proof)?;
     if let Some(contribution_entries) = &contribution_entries {
         if request.challenge_values_segment.is_none() {
             return Err(
@@ -863,6 +866,7 @@ pub fn build_witness_contribution_proof_artifact_for_unit(
         public_values_hash,
         segments,
     };
+    let proof = finish_proof_artifact(proof)?;
     if request.verify_outputs || request.challenge_values_segment.is_some() {
         validate_contribution_proof_output(
             request.catalog,
@@ -969,6 +973,7 @@ pub fn build_witness_contribution_proof_artifact_for_all_units(
         public_values_hash,
         segments,
     };
+    let proof = finish_proof_artifact(proof)?;
     if request.verify_outputs || request.challenge_values_segment.is_some() {
         validate_contribution_proof_output(
             request.catalog,
@@ -1108,6 +1113,7 @@ fn build_witness_proof_artifact_for_all_units_inner(
     if needs_transcript {
         append_binding_segments(&mut proof.segments, &binding_segments.segments);
     }
+    let proof = finish_proof_artifact(proof)?;
     if let Some(contribution_entries) = &contribution_entries {
         if request.challenge_values_segment.is_none() {
             return Err(
@@ -1791,7 +1797,7 @@ fn build_witness_transcript_proof_artifact_for_all_units(
         segments.push(segment);
     }
 
-    Ok(ProofArtifact {
+    finish_proof_artifact(ProofArtifact {
         setup_hash: request.schedule.setup_hash,
         public_values_hash,
         segments,
@@ -2039,6 +2045,31 @@ mod tests {
     use lzvm_artifacts::program_image::ProgramImageGpuMode;
     use lzvm_artifacts::public_values::PublicValueEntry;
     use lzvm_field::MODULUS;
+
+    #[test]
+    fn finalizes_artifacts_through_segment_invariant_validation() {
+        let proof = ProofArtifact {
+            setup_hash: [0x11; 32],
+            public_values_hash: [0x22; 32],
+            segments: vec![
+                ProofSegment {
+                    id: 100,
+                    data: vec![1],
+                },
+                ProofSegment {
+                    id: 100,
+                    data: vec![2],
+                },
+            ],
+        };
+
+        let error = finish_proof_artifact(proof).expect_err("duplicate segment should reject");
+
+        assert_eq!(
+            error,
+            "build proof artifact failed: duplicate proof segment id: 100"
+        );
+    }
 
     #[test]
     fn selects_packed_unit_values_by_trace_identity() {
