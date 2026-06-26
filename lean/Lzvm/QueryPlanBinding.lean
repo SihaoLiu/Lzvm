@@ -367,6 +367,70 @@ theorem runtime_query_plan_binding_checked_acceptance_challenge
       proof
       accepted
 
+theorem runtime_query_plan_binding_checked_acceptance_artifact_finalized
+    {system : VerifierModel}
+    (validation : RuntimeQueryPlanBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeQueryPlanBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeProofArtifactFinalized
+          system
+          validation.challengeValidation.transcriptValidation.artifactBindingValidation
+          artifact
+          publicInput
+          proof := by
+  intro artifact publicInput proof accepted
+  have challengeAccepted :=
+    runtime_query_plan_binding_checked_acceptance_challenge
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  exact
+    runtime_challenge_segment_binding_checked_acceptance_artifact_finalized
+      validation.challengeValidation
+      artifact
+      publicInput
+      proof
+      challengeAccepted
+
+theorem runtime_query_plan_binding_checked_acceptance_artifact_structural_obligations
+    {system : VerifierModel}
+    (validation : RuntimeQueryPlanBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeQueryPlanBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeProofArtifactBindingStructuralObligations
+          system
+          validation.challengeValidation.transcriptValidation.artifactBindingValidation
+          artifact
+          publicInput
+          proof := by
+  intro artifact publicInput proof accepted
+  have artifactFinalized :=
+    runtime_query_plan_binding_checked_acceptance_artifact_finalized
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  exact
+    runtime_proof_artifact_finalized_structural_obligations
+      validation.challengeValidation.transcriptValidation.artifactBindingValidation
+      artifact
+      publicInput
+      proof
+      artifactFinalized
+
 theorem runtime_query_plan_binding_checked_acceptance_opening
     {system : VerifierModel}
     (validation : RuntimeQueryPlanBindingValidation system) :
@@ -619,20 +683,14 @@ theorem runtime_query_plan_binding_checked_acceptance_segment_ids_unique
           validation.challengeValidation.transcriptValidation.artifactBindingValidation
         artifactValidation.proofSegmentIdsUnique artifact publicInput proof := by
   intro artifact publicInput proof accepted
-  have challengeAccepted :=
-    runtime_query_plan_binding_checked_acceptance_challenge
+  have artifactStructural :=
+    runtime_query_plan_binding_checked_acceptance_artifact_structural_obligations
       validation
       artifact
       publicInput
       proof
       accepted
-  exact
-    runtime_challenge_segment_binding_checked_acceptance_segment_ids_unique
-      validation.challengeValidation
-      artifact
-      publicInput
-      proof
-      challengeAccepted
+  exact artifactStructural.right.right.right.right.right.left
 
 theorem runtime_query_plan_binding_checked_acceptance_unit_values_trace_identity_coverage
     {system : VerifierModel}
@@ -648,20 +706,14 @@ theorem runtime_query_plan_binding_checked_acceptance_unit_values_trace_identity
           validation.challengeValidation.transcriptValidation.artifactBindingValidation
         artifactValidation.proofUnitValuesTraceIdentityCoverage artifact publicInput proof := by
   intro artifact publicInput proof accepted
-  have challengeAccepted :=
-    runtime_query_plan_binding_checked_acceptance_challenge
+  have artifactStructural :=
+    runtime_query_plan_binding_checked_acceptance_artifact_structural_obligations
       validation
       artifact
       publicInput
       proof
       accepted
-  exact
-    runtime_challenge_segment_binding_checked_acceptance_unit_values_trace_identity_coverage
-      validation.challengeValidation
-      artifact
-      publicInput
-      proof
-      challengeAccepted
+  exact artifactStructural.right.right.right.right.right.right
 
 theorem runtime_query_plan_binding_checked_acceptance_container_canonical
     {system : VerifierModel}
@@ -677,20 +729,14 @@ theorem runtime_query_plan_binding_checked_acceptance_container_canonical
           validation.challengeValidation.transcriptValidation.artifactBindingValidation
         artifactValidation.proofContainerCanonical artifact publicInput proof := by
   intro artifact publicInput proof accepted
-  have challengeAccepted :=
-    runtime_query_plan_binding_checked_acceptance_challenge
+  have artifactStructural :=
+    runtime_query_plan_binding_checked_acceptance_artifact_structural_obligations
       validation
       artifact
       publicInput
       proof
       accepted
-  exact
-    runtime_challenge_segment_binding_checked_acceptance_container_canonical
-      validation.challengeValidation
-      artifact
-      publicInput
-      proof
-      challengeAccepted
+  exact artifactStructural.left
 
 theorem runtime_query_plan_binding_checked_acceptance_metadata_canonical
     {system : VerifierModel}
@@ -706,20 +752,14 @@ theorem runtime_query_plan_binding_checked_acceptance_metadata_canonical
           validation.challengeValidation.transcriptValidation.artifactBindingValidation
         artifactValidation.proofMetadataCanonical artifact publicInput proof := by
   intro artifact publicInput proof accepted
-  have challengeAccepted :=
-    runtime_query_plan_binding_checked_acceptance_challenge
+  have artifactStructural :=
+    runtime_query_plan_binding_checked_acceptance_artifact_structural_obligations
       validation
       artifact
       publicInput
       proof
       accepted
-  exact
-    runtime_challenge_segment_binding_checked_acceptance_metadata_canonical
-      validation.challengeValidation
-      artifact
-      publicInput
-      proof
-      challengeAccepted
+  exact artifactStructural.right.left
 
 theorem runtime_query_plan_binding_checked_acceptance_segment_payloads_nonempty
     {system : VerifierModel}
@@ -735,20 +775,14 @@ theorem runtime_query_plan_binding_checked_acceptance_segment_payloads_nonempty
           validation.challengeValidation.transcriptValidation.artifactBindingValidation
         artifactValidation.proofSegmentPayloadsNonempty artifact publicInput proof := by
   intro artifact publicInput proof accepted
-  have challengeAccepted :=
-    runtime_query_plan_binding_checked_acceptance_challenge
+  have artifactStructural :=
+    runtime_query_plan_binding_checked_acceptance_artifact_structural_obligations
       validation
       artifact
       publicInput
       proof
       accepted
-  exact
-    runtime_challenge_segment_binding_checked_acceptance_segment_payloads_nonempty
-      validation.challengeValidation
-      artifact
-      publicInput
-      proof
-      challengeAccepted
+  exact artifactStructural.right.right.right.left
 
 theorem runtime_query_plan_binding_checked_acceptance_segment_ids_allowed
     {system : VerifierModel}
@@ -764,20 +798,14 @@ theorem runtime_query_plan_binding_checked_acceptance_segment_ids_allowed
           validation.challengeValidation.transcriptValidation.artifactBindingValidation
         artifactValidation.proofSegmentIdsAllowed artifact publicInput proof := by
   intro artifact publicInput proof accepted
-  have challengeAccepted :=
-    runtime_query_plan_binding_checked_acceptance_challenge
+  have artifactStructural :=
+    runtime_query_plan_binding_checked_acceptance_artifact_structural_obligations
       validation
       artifact
       publicInput
       proof
       accepted
-  exact
-    runtime_challenge_segment_binding_checked_acceptance_segment_ids_allowed
-      validation.challengeValidation
-      artifact
-      publicInput
-      proof
-      challengeAccepted
+  exact artifactStructural.right.right.right.right.left
 
 theorem runtime_query_plan_binding_checked_acceptance_segments_present
     {system : VerifierModel}
@@ -793,20 +821,14 @@ theorem runtime_query_plan_binding_checked_acceptance_segments_present
           validation.challengeValidation.transcriptValidation.artifactBindingValidation
         artifactValidation.proofSegmentsPresent artifact publicInput proof := by
   intro artifact publicInput proof accepted
-  have challengeAccepted :=
-    runtime_query_plan_binding_checked_acceptance_challenge
+  have artifactStructural :=
+    runtime_query_plan_binding_checked_acceptance_artifact_structural_obligations
       validation
       artifact
       publicInput
       proof
       accepted
-  exact
-    runtime_challenge_segment_binding_checked_acceptance_segments_present
-      validation.challengeValidation
-      artifact
-      publicInput
-      proof
-      challengeAccepted
+  exact artifactStructural.right.right.left
 
 theorem runtime_query_plan_binding_checked_acceptance_opening_segment_evidence
     {system : VerifierModel}

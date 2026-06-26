@@ -70,6 +70,8 @@ fn lean_query_plan_binding_exports_opening_segment_projections() {
             "runtime_query_plan_binding_checked_acceptance_seeded_contract",
             "runtime_query_plan_binding_checked_acceptance_seed_binds_witness_tree_digests",
             "runtime_query_plan_binding_checked_acceptance_seeded_fri_opening_requirements_checked",
+            "runtime_query_plan_binding_checked_acceptance_artifact_finalized",
+            "runtime_query_plan_binding_checked_acceptance_artifact_structural_obligations",
             "runtime_query_plan_binding_checked_acceptance_segment_ids_unique",
             "runtime_query_plan_binding_checked_acceptance_unit_values_trace_identity_coverage",
             "runtime_query_plan_binding_checked_acceptance_container_canonical",
@@ -291,10 +293,26 @@ fn lean_query_plan_binding_exports_opening_segment_projections() {
     );
     lean_binding::assert_theorem_body_contains(
         &lean_source,
-        "runtime_query_plan_binding_checked_acceptance_segment_ids_unique",
+        "runtime_query_plan_binding_checked_acceptance_artifact_finalized",
         &[
             "runtime_query_plan_binding_checked_acceptance_challenge",
-            "runtime_challenge_segment_binding_checked_acceptance_segment_ids_unique",
+            "runtime_challenge_segment_binding_checked_acceptance_artifact_finalized",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_query_plan_binding_checked_acceptance_artifact_structural_obligations",
+        &[
+            "runtime_query_plan_binding_checked_acceptance_artifact_finalized",
+            "runtime_proof_artifact_finalized_structural_obligations",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_query_plan_binding_checked_acceptance_segment_ids_unique",
+        &[
+            "runtime_query_plan_binding_checked_acceptance_artifact_structural_obligations",
+            "artifactStructural.right.right.right.right.right.left",
         ],
     );
     lean_binding::assert_theorem_prefix_contains(
@@ -311,8 +329,8 @@ fn lean_query_plan_binding_exports_opening_segment_projections() {
         &lean_source,
         "runtime_query_plan_binding_checked_acceptance_unit_values_trace_identity_coverage",
         &[
-            "runtime_query_plan_binding_checked_acceptance_challenge",
-            "runtime_challenge_segment_binding_checked_acceptance_unit_values_trace_identity_coverage",
+            "runtime_query_plan_binding_checked_acceptance_artifact_structural_obligations",
+            "artifactStructural.right.right.right.right.right.right",
         ],
     );
     lean_binding::assert_theorem_prefix_contains(
@@ -329,8 +347,8 @@ fn lean_query_plan_binding_exports_opening_segment_projections() {
         &lean_source,
         "runtime_query_plan_binding_checked_acceptance_container_canonical",
         &[
-            "runtime_query_plan_binding_checked_acceptance_challenge",
-            "runtime_challenge_segment_binding_checked_acceptance_container_canonical",
+            "runtime_query_plan_binding_checked_acceptance_artifact_structural_obligations",
+            "artifactStructural.left",
         ],
     );
     lean_binding::assert_theorem_prefix_contains(
@@ -347,8 +365,8 @@ fn lean_query_plan_binding_exports_opening_segment_projections() {
         &lean_source,
         "runtime_query_plan_binding_checked_acceptance_metadata_canonical",
         &[
-            "runtime_query_plan_binding_checked_acceptance_challenge",
-            "runtime_challenge_segment_binding_checked_acceptance_metadata_canonical",
+            "runtime_query_plan_binding_checked_acceptance_artifact_structural_obligations",
+            "artifactStructural.right.left",
         ],
     );
     lean_binding::assert_theorem_prefix_contains(
@@ -365,8 +383,8 @@ fn lean_query_plan_binding_exports_opening_segment_projections() {
         &lean_source,
         "runtime_query_plan_binding_checked_acceptance_segment_payloads_nonempty",
         &[
-            "runtime_query_plan_binding_checked_acceptance_challenge",
-            "runtime_challenge_segment_binding_checked_acceptance_segment_payloads_nonempty",
+            "runtime_query_plan_binding_checked_acceptance_artifact_structural_obligations",
+            "artifactStructural.right.right.right.left",
         ],
     );
     lean_binding::assert_theorem_prefix_contains(
@@ -383,8 +401,8 @@ fn lean_query_plan_binding_exports_opening_segment_projections() {
         &lean_source,
         "runtime_query_plan_binding_checked_acceptance_segment_ids_allowed",
         &[
-            "runtime_query_plan_binding_checked_acceptance_challenge",
-            "runtime_challenge_segment_binding_checked_acceptance_segment_ids_allowed",
+            "runtime_query_plan_binding_checked_acceptance_artifact_structural_obligations",
+            "artifactStructural.right.right.right.right.left",
         ],
     );
     lean_binding::assert_theorem_prefix_contains(
@@ -401,8 +419,8 @@ fn lean_query_plan_binding_exports_opening_segment_projections() {
         &lean_source,
         "runtime_query_plan_binding_checked_acceptance_segments_present",
         &[
-            "runtime_query_plan_binding_checked_acceptance_challenge",
-            "runtime_challenge_segment_binding_checked_acceptance_segments_present",
+            "runtime_query_plan_binding_checked_acceptance_artifact_structural_obligations",
+            "artifactStructural.right.right.left",
         ],
     );
     lean_binding::assert_theorem_prefix_contains(
