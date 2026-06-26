@@ -6588,6 +6588,32 @@ fn cuda_allocator_timing_reports_pending_wait_shape() {
             && alloc_body.contains("g_cuda_no_wait_bypass_bytes"),
         "allocator no-wait bypass should count bypassed pending cache entries"
     );
+    assert_eq!(
+        native_source
+            .matches("saturated_add(g_cuda_event_synchronize_bytes, allocation.bytes)")
+            .count(),
+        2,
+        "both cached-allocation event wait paths should saturate synchronized byte counts"
+    );
+    for raw_addition in [
+        "g_cuda_event_synchronize_bytes += allocation.bytes",
+        "g_cuda_no_wait_bypass_bytes += bytes",
+        "g_cuda_malloc_bytes += bytes",
+    ] {
+        assert!(
+            !native_source.contains(raw_addition),
+            "CUDA allocator byte counters should avoid unsaturated additions: {raw_addition}"
+        );
+    }
+    for saturated_addition in [
+        "saturated_add(g_cuda_no_wait_bypass_bytes, bytes)",
+        "saturated_add(g_cuda_malloc_bytes, bytes)",
+    ] {
+        assert!(
+            native_source.contains(saturated_addition),
+            "CUDA allocator byte counter should saturate: {saturated_addition}"
+        );
+    }
 
     assert!(
         accel_source.contains("pub struct CudaAllocatorStats")

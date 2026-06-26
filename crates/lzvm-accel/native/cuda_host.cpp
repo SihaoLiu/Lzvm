@@ -471,7 +471,8 @@ int free_cached_allocation_on_device(const CachedAllocation& allocation) {
     int status = set_allocation_device(allocation.device, &previous_device);
     if (status == 0 && allocation.ready_event != nullptr) {
         ++g_cuda_event_synchronize_calls;
-        g_cuda_event_synchronize_bytes += allocation.bytes;
+        g_cuda_event_synchronize_bytes =
+            saturated_add(g_cuda_event_synchronize_bytes, allocation.bytes);
         if (allocation.bytes > g_cuda_event_synchronize_max_bytes) {
             g_cuda_event_synchronize_max_bytes = allocation.bytes;
         }
@@ -584,7 +585,8 @@ int alloc_bytes_impl(void** out, std::size_t bytes) {
         if (pending_index != std::numeric_limits<std::size_t>::max()) {
             if (bytes <= pending_cache_no_wait_bytes(kPendingCacheNoWaitBytes)) {
                 ++g_cuda_no_wait_bypass_count;
-                g_cuda_no_wait_bypass_bytes += bytes;
+                g_cuda_no_wait_bypass_bytes =
+                    saturated_add(g_cuda_no_wait_bypass_bytes, bytes);
                 pending_index = std::numeric_limits<std::size_t>::max();
             }
         }
@@ -592,7 +594,8 @@ int alloc_bytes_impl(void** out, std::size_t bytes) {
             CachedAllocation& allocation = g_cached_allocations[pending_index];
             if (allocation.ready_event != nullptr) {
                 ++g_cuda_event_synchronize_calls;
-                g_cuda_event_synchronize_bytes += allocation.bytes;
+                g_cuda_event_synchronize_bytes =
+                    saturated_add(g_cuda_event_synchronize_bytes, allocation.bytes);
                 if (allocation.bytes > g_cuda_event_synchronize_max_bytes) {
                     g_cuda_event_synchronize_max_bytes = allocation.bytes;
                 }
@@ -657,7 +660,7 @@ int alloc_bytes_impl(void** out, std::size_t bytes) {
         *out = ptr;
         std::lock_guard<std::mutex> lock(g_allocator_mutex);
         ++g_cuda_malloc_calls;
-        g_cuda_malloc_bytes += bytes;
+        g_cuda_malloc_bytes = saturated_add(g_cuda_malloc_bytes, bytes);
     }
     return status;
 }
