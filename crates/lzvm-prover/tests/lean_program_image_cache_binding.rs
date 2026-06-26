@@ -39,6 +39,7 @@ fn lean_program_image_cache_binding_exports_core_contract_projection() {
             "runtime_program_image_cache_binding_checked_acceptance_artifact_finalized",
             "runtime_program_image_cache_binding_checked_acceptance_artifact_evidence_contract",
             "runtime_program_image_cache_binding_checked_acceptance_artifact_wellformed_contract",
+            "runtime_program_image_cache_binding_checked_acceptance_concrete_segment_ids_allowed",
             "runtime_program_image_cache_binding_checked_acceptance_sound",
             "runtime_program_image_cache_binding_checked_acceptance_verifier_core_contract",
             "runtime_program_image_cache_binding_checked_acceptance_soundness_contract",
@@ -109,6 +110,28 @@ fn lean_program_image_cache_binding_exports_core_contract_projection() {
             "runtime_program_image_cache_binding_checked_acceptance_artifact_finalized",
             "runtime_proof_artifact_finalized_structural_obligations",
         ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_program_image_cache_binding_checked_acceptance_concrete_segment_ids_allowed",
+        &[
+            "RuntimeProgramImageCacheBindingCheckedAcceptance",
+            "RuntimeProofArtifactConcreteSegmentIdBinding",
+            "RuntimeProofArtifactConcreteSegmentIdsAllowed proof",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_program_image_cache_binding_checked_acceptance_concrete_segment_ids_allowed",
+        &[
+            "runtime_program_image_cache_binding_checked_acceptance_artifact_finalized",
+            "runtime_proof_artifact_finalized_concrete_segment_ids_allowed",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_omits(
+        &lean_source,
+        "runtime_program_image_cache_binding_checked_acceptance_concrete_segment_ids_allowed",
+        &["AssumptionBundle"],
     );
     lean_binding::assert_theorem_body_contains(
         &lean_source,

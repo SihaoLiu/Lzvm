@@ -341,6 +341,37 @@ theorem runtime_program_image_cache_binding_checked_acceptance_artifact_wellform
       proof
       artifactFinalized
 
+theorem runtime_program_image_cache_binding_checked_acceptance_concrete_segment_ids_allowed
+    {system : VerifierModel}
+    (validation : RuntimeProgramImageCacheBindingValidation system)
+    (binding :
+      RuntimeProofArtifactConcreteSegmentIdBinding
+        validation.proofArtifactBindingValidation) :
+    forall artifact publicInput proof,
+      RuntimeProgramImageCacheBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeProofArtifactConcreteSegmentIdsAllowed proof := by
+  intro artifact publicInput proof accepted
+  have artifactFinalized :=
+    runtime_program_image_cache_binding_checked_acceptance_artifact_finalized
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  exact
+    runtime_proof_artifact_finalized_concrete_segment_ids_allowed
+      validation.proofArtifactBindingValidation
+      binding
+      artifact
+      publicInput
+      proof
+      artifactFinalized
+
 theorem runtime_program_image_cache_binding_checked_acceptance_structural_obligations
     {system : VerifierModel}
     (validation : RuntimeProgramImageCacheBindingValidation system) :

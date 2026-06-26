@@ -338,6 +338,37 @@ theorem runtime_eth_block_public_input_binding_checked_acceptance_artifact_wellf
       segmentIdsUnique,
       unitValuesTraceIdentityCoverage⟩
 
+theorem runtime_eth_block_public_input_binding_checked_acceptance_concrete_segment_ids_allowed
+    {system : VerifierModel}
+    (validation : RuntimeEthBlockPublicInputBindingValidation system)
+    (binding :
+      RuntimeProofArtifactConcreteSegmentIdBinding
+        validation.proofArtifactBindingValidation) :
+    forall artifact publicInput proof,
+      RuntimeEthBlockPublicInputBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeProofArtifactConcreteSegmentIdsAllowed proof := by
+  intro artifact publicInput proof accepted
+  have artifactAccepted :=
+    runtime_eth_block_public_input_binding_checked_acceptance_artifact_binding
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  exact
+    runtime_proof_artifact_binding_checked_acceptance_concrete_segment_ids_allowed
+      validation.proofArtifactBindingValidation
+      binding
+      artifact
+      publicInput
+      proof
+      artifactAccepted
+
 theorem runtime_eth_block_public_input_binding_checked_acceptance_structural_obligations
     {system : VerifierModel}
     (validation : RuntimeEthBlockPublicInputBindingValidation system) :

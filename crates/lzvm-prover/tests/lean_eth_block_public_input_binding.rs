@@ -39,6 +39,7 @@ fn lean_eth_block_public_input_binding_exports_core_contract_projection() {
         &[
             "runtime_eth_block_public_input_binding_checked_acceptance_artifact_evidence_contract",
             "runtime_eth_block_public_input_binding_checked_acceptance_artifact_wellformed_contract",
+            "runtime_eth_block_public_input_binding_checked_acceptance_concrete_segment_ids_allowed",
             "runtime_eth_block_public_input_binding_checked_acceptance_sound",
             "runtime_eth_block_public_input_binding_checked_acceptance_verifier_core_contract",
             "runtime_eth_block_public_input_binding_checked_acceptance_structural_obligations",
@@ -121,6 +122,28 @@ fn lean_eth_block_public_input_binding_exports_core_contract_projection() {
             "abstract_verifier_sound",
             "RuntimeProofArtifactBindingEvidence",
         ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_eth_block_public_input_binding_checked_acceptance_concrete_segment_ids_allowed",
+        &[
+            "RuntimeEthBlockPublicInputBindingCheckedAcceptance",
+            "RuntimeProofArtifactConcreteSegmentIdBinding",
+            "RuntimeProofArtifactConcreteSegmentIdsAllowed proof",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_eth_block_public_input_binding_checked_acceptance_concrete_segment_ids_allowed",
+        &[
+            "runtime_eth_block_public_input_binding_checked_acceptance_artifact_binding",
+            "runtime_proof_artifact_binding_checked_acceptance_concrete_segment_ids_allowed",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_omits(
+        &lean_source,
+        "runtime_eth_block_public_input_binding_checked_acceptance_concrete_segment_ids_allowed",
+        &["AssumptionBundle"],
     );
     lean_binding::assert_theorem_body_contains(
         &lean_source,
