@@ -673,7 +673,23 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
     );
     lean_binding::assert_theorem_declarations(
         &proof_timing_projected_source,
-        &["proof_timing_projected_metadata_acceptance_verifier_core_contract"],
+        &[
+            "proof_timing_projected_metadata_acceptance_verifier_core_contract",
+            "proof_timing_projected_finish_summary_required_verifier_core_contract",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &proof_timing_projected_source,
+        "proof_timing_projected_finish_summary_required_verifier_core_contract",
+        &["proof_artifact_finish_timing_some_summary_acceptance_verifier_core_contract"],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &proof_timing_projected_source,
+        "proof_timing_projected_finish_summary_required_verifier_core_contract",
+        &[
+            "proof_artifact_finish_timing_some_summary_acceptance_sound",
+            "sound_witness_implies_verifier_core_contract",
+        ],
     );
     lean_binding::assert_theorem_body_contains(
         &proof_timing_projected_source,
