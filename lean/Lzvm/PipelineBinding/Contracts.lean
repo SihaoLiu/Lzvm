@@ -1676,6 +1676,121 @@ theorem runtime_pipeline_binding_checked_acceptance_contracts_audited_soundness_
       executionObligations,
       soundWitness⟩
 
+theorem runtime_pipeline_binding_checked_acceptance_artifact_contracts_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimePipelineBindingValidation system) :
+    forall artifact publicInput proof (_requiresExternalSource : Prop),
+      RuntimePipelineBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeArtifactEvidence
+          system
+          validation.ethBindingValidation.proofArtifactBindingValidation.runtimeValidation
+          artifact
+          publicInput
+          proof
+          /\ RequiredCryptographicAssumptionStatements assumptions.crypto
+          /\ ProofSystemSound system
+          /\ system.accepts publicInput proof
+          /\ system.transcriptBound publicInput proof
+          /\ system.publicInputBound publicInput proof
+          /\ system.pcsOpeningsValid publicInput proof
+          /\ system.friQueriesValid publicInput proof
+          /\ validation.queryPlanBindingValidation.queryPlanSeedBindsWitnessTreeDigests
+            artifact
+            publicInput
+            proof
+          /\ validation.queryPlanBindingValidation.queryPlanSeededFriOpeningRequirementsChecked
+            artifact
+            publicInput
+            proof
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ (exists witness trace constraints,
+            system.traceConsistent publicInput proof trace
+              /\ system.constraintsSatisfied constraints trace
+              /\ system.witnessMatchesTrace witness trace)
+          /\ SoundWitness system publicInput proof := by
+  intro artifact publicInput proof requiresExternalSource accepted
+  have artifactEvidence :=
+    runtime_pipeline_binding_checked_acceptance_runtime_artifact_evidence
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have compactContract :=
+    runtime_pipeline_binding_checked_acceptance_contracts_core_contract
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      accepted
+  exact ⟨artifactEvidence, compactContract⟩
+
+theorem runtime_pipeline_binding_checked_acceptance_artifact_audited_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimePipelineBindingValidation system) :
+    forall artifact publicInput proof (_requiresExternalSource : Prop),
+      RuntimePipelineBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeArtifactEvidence
+          system
+          validation.ethBindingValidation.proofArtifactBindingValidation.runtimeValidation
+          artifact
+          publicInput
+          proof
+          /\ RequiredCryptographicAssumptionStatements assumptions.crypto
+          /\ RequiredSemanticAssumptionStatements assumptions.semantic
+          /\ ProofSystemSound system
+          /\ system.accepts publicInput proof
+          /\ system.transcriptBound publicInput proof
+          /\ system.publicInputBound publicInput proof
+          /\ system.pcsOpeningsValid publicInput proof
+          /\ system.friQueriesValid publicInput proof
+          /\ validation.queryPlanBindingValidation.queryPlanSeedBindsWitnessTreeDigests
+            artifact
+            publicInput
+            proof
+          /\ validation.queryPlanBindingValidation.queryPlanSeededFriOpeningRequirementsChecked
+            artifact
+            publicInput
+            proof
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ (exists witness trace constraints,
+            system.traceConsistent publicInput proof trace
+              /\ system.constraintsSatisfied constraints trace
+              /\ system.witnessMatchesTrace witness trace)
+          /\ SoundWitness system publicInput proof := by
+  intro artifact publicInput proof requiresExternalSource accepted
+  have artifactEvidence :=
+    runtime_pipeline_binding_checked_acceptance_runtime_artifact_evidence
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have auditedCompactContract :=
+    runtime_pipeline_binding_checked_acceptance_contracts_audited_soundness_core_contract
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      accepted
+  exact ⟨artifactEvidence, auditedCompactContract⟩
+
 theorem runtime_pipeline_required_external_source_concrete_opening_core_contract
     {Digest : Type uDigest}
     {system : VerifierModel}

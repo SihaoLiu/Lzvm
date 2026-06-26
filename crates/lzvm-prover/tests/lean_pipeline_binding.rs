@@ -163,6 +163,8 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
             "runtime_pipeline_binding_checked_acceptance_audited_proof_system_core_contract",
             "runtime_pipeline_binding_checked_acceptance_contracts_core_contract",
             "runtime_pipeline_binding_checked_acceptance_contracts_audited_soundness_core_contract",
+            "runtime_pipeline_binding_checked_acceptance_artifact_contracts_core_contract",
+            "runtime_pipeline_binding_checked_acceptance_artifact_audited_core_contract",
             "runtime_pipeline_binding_evidence_audited_core_contract",
             "runtime_pipeline_binding_checked_acceptance_audited_accepts_sound_witness_contract",
             "runtime_pipeline_binding_checked_acceptance_audited_soundness_accepts_contract",
@@ -1565,6 +1567,92 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
     lean_binding::assert_theorem_body_omits(
         &lean_source,
         "runtime_pipeline_binding_checked_acceptance_contracts_audited_soundness_core_contract",
+        &[
+            "runtime_pipeline_binding_checked_acceptance_audited_soundness_accepts_contract",
+            "RuntimePipelineBindingEvidence",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_pipeline_binding_checked_acceptance_artifact_contracts_core_contract",
+        &[
+            "RuntimeArtifactEvidence",
+            "validation.ethBindingValidation.proofArtifactBindingValidation.runtimeValidation",
+            "RequiredCryptographicAssumptionStatements assumptions.crypto",
+            "ProofSystemSound system",
+            "system.accepts publicInput proof",
+            "system.transcriptBound publicInput proof",
+            "system.publicInputBound publicInput proof",
+            "system.pcsOpeningsValid publicInput proof",
+            "system.friQueriesValid publicInput proof",
+            "validation.queryPlanBindingValidation.queryPlanSeedBindsWitnessTreeDigests",
+            "validation.queryPlanBindingValidation.queryPlanSeededFriOpeningRequirementsChecked",
+            "RuntimeVerifierCoreContract system publicInput proof",
+            "system.traceConsistent publicInput proof trace",
+            "system.constraintsSatisfied constraints trace",
+            "system.witnessMatchesTrace witness trace",
+            "SoundWitness system publicInput proof",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_omits(
+        &lean_source,
+        "runtime_pipeline_binding_checked_acceptance_artifact_contracts_core_contract",
+        &[
+            "RequiredSemanticAssumptionStatements assumptions.semantic",
+            "RuntimePipelineBindingEvidence",
+            "RuntimeArtifactSoundnessObligations",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_pipeline_binding_checked_acceptance_artifact_contracts_core_contract",
+        &[
+            "runtime_pipeline_binding_checked_acceptance_runtime_artifact_evidence",
+            "runtime_pipeline_binding_checked_acceptance_contracts_core_contract",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_pipeline_binding_checked_acceptance_artifact_audited_core_contract",
+        &[
+            "RuntimeArtifactEvidence",
+            "validation.ethBindingValidation.proofArtifactBindingValidation.runtimeValidation",
+            "RequiredCryptographicAssumptionStatements assumptions.crypto",
+            "RequiredSemanticAssumptionStatements assumptions.semantic",
+            "ProofSystemSound system",
+            "system.accepts publicInput proof",
+            "system.transcriptBound publicInput proof",
+            "system.publicInputBound publicInput proof",
+            "system.pcsOpeningsValid publicInput proof",
+            "system.friQueriesValid publicInput proof",
+            "validation.queryPlanBindingValidation.queryPlanSeedBindsWitnessTreeDigests",
+            "validation.queryPlanBindingValidation.queryPlanSeededFriOpeningRequirementsChecked",
+            "RuntimeVerifierCoreContract system publicInput proof",
+            "system.traceConsistent publicInput proof trace",
+            "system.constraintsSatisfied constraints trace",
+            "system.witnessMatchesTrace witness trace",
+            "SoundWitness system publicInput proof",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_omits(
+        &lean_source,
+        "runtime_pipeline_binding_checked_acceptance_artifact_audited_core_contract",
+        &[
+            "RuntimePipelineBindingEvidence",
+            "RuntimeArtifactSoundnessObligations",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_pipeline_binding_checked_acceptance_artifact_audited_core_contract",
+        &[
+            "runtime_pipeline_binding_checked_acceptance_runtime_artifact_evidence",
+            "runtime_pipeline_binding_checked_acceptance_contracts_audited_soundness_core_contract",
+        ],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &lean_source,
+        "runtime_pipeline_binding_checked_acceptance_artifact_audited_core_contract",
         &[
             "runtime_pipeline_binding_checked_acceptance_audited_soundness_accepts_contract",
             "RuntimePipelineBindingEvidence",
