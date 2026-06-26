@@ -1571,6 +1571,15 @@ fn eth_proof_timing_batch_writes_env_template_under_temp() {
         .arg("--nvidia-smi-command")
         .arg(&smi_path)
         .arg("--skip-nsys-export")
+        .arg("--gpu-preallocate")
+        .arg("--minimal-memory")
+        .arg("--no-pack-trace")
+        .arg("--gpu-streams")
+        .arg("7")
+        .arg("--witness-thread-pools")
+        .arg("5")
+        .arg("--stored-witnesses")
+        .arg("3")
         .arg("--profile-arg=--kernel-name-base=demangled")
         .arg("--commit")
         .arg("&&")
@@ -1648,6 +1657,19 @@ fn eth_proof_timing_batch_writes_env_template_under_temp() {
         stdout.contains("--max-runs 5") && stdout.contains("--summary 'real proof timing'"),
         "run command should preserve the retry cap and summary placeholder: {stdout}"
     );
+    for proof_arg in [
+        "--gpu-preallocate",
+        "--minimal-memory",
+        "--no-pack-trace",
+        "--gpu-streams 7",
+        "--witness-thread-pools 5",
+        "--stored-witnesses 3",
+    ] {
+        assert!(
+            stdout.contains(proof_arg),
+            "next commands should preserve proof tuning argument {proof_arg}: {stdout}"
+        );
+    }
     assert!(
         stdout.contains(&format!("--runner '{runner_rel}'")),
         "env template command should preserve custom runner paths: {stdout}"
@@ -2117,6 +2139,15 @@ fn eth_proof_timing_batch_prints_profile_commands_from_env() {
         .arg(min_gpu_free_mib)
         .arg("--nvidia-smi-command")
         .arg(&smi_path)
+        .arg("--gpu-preallocate")
+        .arg("--minimal-memory")
+        .arg("--no-pack-trace")
+        .arg("--gpu-streams")
+        .arg("7")
+        .arg("--witness-thread-pools")
+        .arg("5")
+        .arg("--stored-witnesses")
+        .arg("3")
         .arg("--profile-arg=--kernel-name-base=demangled")
         .arg("--profile-arg=--launch-skip=1")
         .arg("--print-profile-commands")
@@ -2201,6 +2232,12 @@ fn eth_proof_timing_batch_prints_profile_commands_from_env() {
     assert!(
         stdout.contains("sh -lc")
             && stdout.contains("prove witness --guest-pc-trace 120000000 --timings")
+            && stdout.contains("--gpu-preallocate")
+            && stdout.contains("--minimal-memory")
+            && stdout.contains("--no-pack-trace")
+            && stdout.contains("--gpu-streams 7")
+            && stdout.contains("--witness-thread-pools 5")
+            && stdout.contains("--stored-witnesses 3")
             && stdout.contains("verify proof --eth-block-input")
             && stdout.contains("&& env -u LZVM_GUEST_PC_TRACE_PARALLEL_LOWER")
             && stdout.contains("LZVM_GUEST_PC_TRACE_PARALLEL_LOWER_WORKERS=6")
@@ -2209,6 +2246,19 @@ fn eth_proof_timing_batch_prints_profile_commands_from_env() {
             && stdout.contains(" TMPDIR=")
             && stdout.contains("verify_proof_status=ok"),
         "profile command should wrap the same prove-then-verify shell command with managed worker overrides and TMPDIR: {stdout}"
+    );
+    let profile_verify_command = nsys_command
+        .split(" && env ")
+        .nth(1)
+        .expect("profile command should include verification");
+    assert!(
+        !profile_verify_command.contains("--gpu-preallocate")
+            && !profile_verify_command.contains("--minimal-memory")
+            && !profile_verify_command.contains("--no-pack-trace")
+            && !profile_verify_command.contains("--gpu-streams")
+            && !profile_verify_command.contains("--witness-thread-pools")
+            && !profile_verify_command.contains("--stored-witnesses"),
+        "profile verify command should not receive proof-only tuning flags: {stdout}"
     );
     assert!(
         stdout.contains("small-profile.proof")
