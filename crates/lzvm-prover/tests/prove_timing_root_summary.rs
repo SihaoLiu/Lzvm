@@ -4046,6 +4046,9 @@ fn prove_timing_root_summary_reports_retained_parent_checkpoint_opening_shape() 
         "timing_finish_witness_opening_path_parent_hash_retained_parent_checkpoint_prefix_ms=3",
         "timing_finish_witness_opening_path_parent_hash_retained_parent_checkpoint_suffix_launches=790",
         "timing_finish_witness_opening_path_parent_hash_retained_parent_checkpoint_suffix_ms=14",
+        "timing_finish_witness_opening_row_dedup_input_rows=120",
+        "timing_finish_witness_opening_row_dedup_unique_rows=119",
+        "timing_finish_witness_opening_row_dedup_elided_rows=1",
         "timing_finish_witness_opening_row_values_device_rows=43",
         "timing_finish_witness_opening_row_values_device_download_batches=0",
         "timing_finish_witness_opening_row_values_device_single_downloads=43",
@@ -4094,9 +4097,15 @@ fn prove_timing_root_summary_reports_retained_parent_checkpoint_opening_shape() 
     );
     assert!(
         stdout.contains(
-            ",43,0,0,0.000,none,77,77,yes,0,79,79,yes,0,0,79,3,0,0,790,14,869,17,11,858,device_batched_path_secondary,0,0,0,0,0,0,43,0,0,0,single_query_unit_boundary_blocks_row_value_batch,external_source_unit_boundary_blocks_row_value_batch,"
+            ",43,0,0,0.000,none,120,119,1,0.833,77,77,yes,0,79,79,yes,0,0,79,3,0,0,790,14,869,17,11,858,device_batched_path_secondary,0,0,0,0,0,0,43,0,0,0,single_query_unit_boundary_blocks_row_value_batch,external_source_unit_boundary_blocks_row_value_batch,"
         ),
         "prove timing root summary should identify external-source unit boundaries behind single-row D2H: stdout={stdout}"
+    );
+    assert!(
+        stdout.contains(
+            "opening_row_dedup_input_rows,opening_row_dedup_unique_rows,opening_row_dedup_elided_rows,opening_row_dedup_elided_pct"
+        ),
+        "prove timing root summary should expose row dedup shape: stdout={stdout}"
     );
 }
 

@@ -506,6 +506,9 @@ OPENING_ROW_VALUE_SOURCE_ROWS_KEY = "timing_finish_witness_opening_row_values_so
 OPENING_ROW_VALUE_SOURCE_EXTEND_MS_KEY = (
     "timing_finish_witness_opening_row_value_source_extend_ms"
 )
+OPENING_ROW_DEDUP_INPUT_ROWS_KEY = "timing_finish_witness_opening_row_dedup_input_rows"
+OPENING_ROW_DEDUP_UNIQUE_ROWS_KEY = "timing_finish_witness_opening_row_dedup_unique_rows"
+OPENING_ROW_DEDUP_ELIDED_ROWS_KEY = "timing_finish_witness_opening_row_dedup_elided_rows"
 OPENING_RETAINED_LEAF_COUNT_KEY = (
     "timing_finish_witness_opening_retained_leaf_digest_openings"
 )
@@ -796,6 +799,8 @@ HEADER = (
     "opening_source_rebuild_hint,opening_row_value_device_rows,"
     "opening_row_value_source_rows,opening_row_value_source_extend_ms,"
     "opening_row_value_source_extend_pct,opening_source_row_value_action_hint,"
+    "opening_row_dedup_input_rows,opening_row_dedup_unique_rows,"
+    "opening_row_dedup_elided_rows,opening_row_dedup_elided_pct,"
     "retained_leaf_openings,retained_leaf_rows,retained_leaf_all_single_row,"
     "retained_leaf_path_launches,retained_parent_checkpoint_openings,"
     "retained_parent_checkpoint_rows,retained_parent_checkpoint_all_single_row,"
@@ -1203,6 +1208,9 @@ TIMING_KEYS = {
     OPENING_ROW_VALUE_DEVICE_ROWS_KEY,
     OPENING_ROW_VALUE_SOURCE_ROWS_KEY,
     OPENING_ROW_VALUE_SOURCE_EXTEND_MS_KEY,
+    OPENING_ROW_DEDUP_INPUT_ROWS_KEY,
+    OPENING_ROW_DEDUP_UNIQUE_ROWS_KEY,
+    OPENING_ROW_DEDUP_ELIDED_ROWS_KEY,
     OPENING_RETAINED_LEAF_COUNT_KEY,
     OPENING_RETAINED_LEAF_ROWS_KEY,
     OPENING_RETAINED_LEAF_ALL_SINGLE_ROW_KEY,
@@ -4633,6 +4641,14 @@ def summarize_profile_values(
     opening_row_value_source_extend_pct = (
         opening_row_value_source_extend_ms * 100.0 / total_ms if total_ms else 0.0
     )
+    opening_row_dedup_input_rows = values.get(OPENING_ROW_DEDUP_INPUT_ROWS_KEY, 0)
+    opening_row_dedup_unique_rows = values.get(OPENING_ROW_DEDUP_UNIQUE_ROWS_KEY, 0)
+    opening_row_dedup_elided_rows = values.get(OPENING_ROW_DEDUP_ELIDED_ROWS_KEY, 0)
+    opening_row_dedup_elided_pct = (
+        opening_row_dedup_elided_rows * 100.0 / opening_row_dedup_input_rows
+        if opening_row_dedup_input_rows
+        else 0.0
+    )
     retained_leaf_openings = values.get(OPENING_RETAINED_LEAF_COUNT_KEY, 0)
     retained_leaf_rows = values.get(OPENING_RETAINED_LEAF_ROWS_KEY, 0)
     retained_leaf_all_single_row_value = values.get(
@@ -5194,6 +5210,8 @@ def summarize_profile_values(
         f"{source_rebuild_hint},{opening_row_value_device_rows},"
         f"{opening_row_value_source_rows},{opening_row_value_source_extend_ms},"
         f"{opening_row_value_source_extend_pct:.3f},{opening_source_row_value_hint},"
+        f"{opening_row_dedup_input_rows},{opening_row_dedup_unique_rows},"
+        f"{opening_row_dedup_elided_rows},{opening_row_dedup_elided_pct:.3f},"
         f"{retained_leaf_openings},{retained_leaf_rows},"
         f"{retained_leaf_all_single_row},{retained_leaf_path_launches},"
         f"{retained_parent_checkpoint_openings},{retained_parent_checkpoint_rows},"
