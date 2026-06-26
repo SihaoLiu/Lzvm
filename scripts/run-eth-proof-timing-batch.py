@@ -1319,10 +1319,19 @@ def self_test() -> None:
         expected_spread = {
             "small_stable_spread_s": 0.002,
             "large_stable_spread_s": 0.002,
+            "small_stable_spread_ms": 2,
+            "large_stable_spread_ms": 2,
             "small_stable_relative_spread": 0.001996,
             "large_stable_relative_spread": 0.000999,
         }
         for key, value in expected_spread.items():
+            if batch_json.get(key) != value:
+                raise SystemExit(f"self-test {key} mismatch in batch json")
+        expected_averages = {
+            "small_stable_avg_ms": 1002,
+            "large_stable_avg_ms": 2002,
+        }
+        for key, value in expected_averages.items():
             if batch_json.get(key) != value:
                 raise SystemExit(f"self-test {key} mismatch in batch json")
         expected_samples = {
