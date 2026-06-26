@@ -109,6 +109,7 @@ fn lean_runtime_soundness_binding_exports_core_contract_projection() {
             "runtime_soundness_checked_acceptance_artifact_contracts_core_contract",
             "runtime_soundness_checked_acceptance_artifact_audited_soundness_contracts_core_contract",
             "runtime_soundness_required_external_source_contracts_core_contract",
+            "runtime_soundness_required_external_source_contracts_audited_soundness_core_contract",
         ],
     );
     assert!(theorem_prefix(
@@ -1344,6 +1345,63 @@ fn lean_runtime_soundness_binding_exports_core_contract_projection() {
             )
             .contains("RuntimeArtifactSoundnessObligations"),
         "runtime required external-source contracts wrapper should keep the compact core surface"
+    );
+    assert!(
+        theorem_prefix(
+            &lean_source,
+            "runtime_soundness_required_external_source_contracts_audited_soundness_core_contract"
+        )
+        .contains("RequiredCryptographicAssumptionStatements assumptions.crypto")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_soundness_required_external_source_contracts_audited_soundness_core_contract"
+            )
+            .contains("RequiredSemanticAssumptionStatements assumptions.semantic")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_soundness_required_external_source_contracts_audited_soundness_core_contract"
+            )
+            .contains("ExternalSourceOpeningEvidence")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_soundness_required_external_source_contracts_audited_soundness_core_contract"
+            )
+            .contains("RuntimeVerifierCoreContract system publicInput proof")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_soundness_required_external_source_contracts_audited_soundness_core_contract"
+            )
+            .contains("SoundWitness system publicInput proof"),
+        "runtime contracts should expose compact audited required external-source obligations"
+    );
+    assert!(
+        !theorem_prefix(
+            &lean_source,
+            "runtime_soundness_required_external_source_contracts_audited_soundness_core_contract"
+        )
+        .contains("RuntimeSoundnessEvidence")
+            && !theorem_prefix(
+                &lean_source,
+                "runtime_soundness_required_external_source_contracts_audited_soundness_core_contract"
+            )
+            .contains("RuntimeArtifactSoundnessObligations"),
+        "runtime audited required external-source contracts wrapper should keep the compact core surface"
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_soundness_required_external_source_contracts_audited_soundness_core_contract",
+        &[
+            "runtime_soundness_required_external_source_contracts_core_contract",
+            "assumption_bundle_carries_required_evidence",
+        ],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &lean_source,
+        "runtime_soundness_required_external_source_contracts_audited_soundness_core_contract",
+        &[
+            "runtime_soundness_required_external_source_audited_soundness_proof_system_contract",
+            "RuntimeArtifactSoundnessObligations",
+        ],
     );
     assert!(
         theorem_prefix(

@@ -546,4 +546,74 @@ theorem runtime_soundness_required_external_source_contracts_core_contract
       checked
       required
 
+theorem runtime_soundness_required_external_source_contracts_audited_soundness_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeSoundnessValidation system) :
+    forall artifact publicInput proof (requiresExternalSource : Prop),
+      RuntimeSoundnessCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof
+          requiresExternalSource ->
+        requiresExternalSource ->
+          RequiredCryptographicAssumptionStatements assumptions.crypto
+            /\ RequiredSemanticAssumptionStatements assumptions.semantic
+            /\ ProofSystemSound system
+            /\ system.accepts publicInput proof
+            /\ ExternalSourceOpeningEvidence
+              system
+              validation.sourceValidation
+              publicInput
+              proof
+            /\ system.transcriptBound publicInput proof
+            /\ system.publicInputBound publicInput proof
+            /\ system.pcsOpeningsValid publicInput proof
+            /\ system.friQueriesValid publicInput proof
+            /\ RuntimeVerifierCoreContract system publicInput proof
+            /\ (exists witness trace constraints,
+              system.traceConsistent publicInput proof trace
+                /\ system.constraintsSatisfied constraints trace
+                /\ system.witnessMatchesTrace witness trace)
+            /\ SoundWitness system publicInput proof := by
+  intro artifact publicInput proof requiresExternalSource checked required
+  have compactContract :=
+    runtime_soundness_required_external_source_contracts_core_contract
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      checked
+      required
+  have auditedAssumptions :=
+    assumption_bundle_carries_required_evidence assumptions
+  rcases compactContract with
+    ⟨_auditedCrypto,
+      proofSystemSound,
+      verifierAccepts,
+      externalSourceEvidence,
+      transcriptBound,
+      publicInputBound,
+      pcsOpenings,
+      friQueries,
+      verifierCore,
+      executionObligations,
+      soundWitness⟩
+  exact
+    And.intro auditedAssumptions.left
+      (And.intro auditedAssumptions.right
+        (And.intro proofSystemSound
+          (And.intro verifierAccepts
+            (And.intro externalSourceEvidence
+              (And.intro transcriptBound
+                (And.intro publicInputBound
+                  (And.intro pcsOpenings
+                    (And.intro friQueries
+                      (And.intro verifierCore
+                        (And.intro executionObligations soundWitness))))))))))
+
 end Lzvm
