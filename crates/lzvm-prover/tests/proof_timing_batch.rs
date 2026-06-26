@@ -221,6 +221,11 @@ fn proof_timing_batch_runs_commands_and_appends_stable_log() {
         "batch json should record stable timing log paths: {batch_json}"
     );
     assert!(
+        batch_json.contains("\"small_stable_avg_s\": 1.002")
+            && batch_json.contains("\"large_stable_avg_s\": 2.002"),
+        "batch json should record stable average proof times: {batch_json}"
+    );
+    assert!(
         batch_json.contains("\"small_statuses\": [") && batch_json.contains("small-001.status"),
         "batch json should record per-run status paths: {batch_json}"
     );
@@ -472,6 +477,7 @@ fn proof_timing_batch_rejects_average_above_max() {
     );
     assert!(
         batch_json.contains("\"small_max_avg_s\": 1.0")
+            && batch_json.contains("\"small_stable_avg_s\": 1.5")
             && batch_json.contains("\"appended\": false"),
         "batch json should record the configured max and failed append state: {batch_json}"
     );

@@ -547,6 +547,13 @@ def path_texts(paths: list[Path]) -> list[str]:
     return [str(path) for path in paths]
 
 
+def average_timing_seconds(paths: list[Path]) -> float | None:
+    if not paths:
+        return None
+    average = sum(timing_total_seconds_from_log(path) for path in paths) / len(paths)
+    return round(average, 3)
+
+
 def safe_stable_timing_group(
     logs: list[Path],
     max_relative_spread: float,
@@ -615,6 +622,8 @@ def write_batch_json(
         "large_logs": path_texts(large_logs or []),
         "small_stable_logs": path_texts(small_stable_logs or []),
         "large_stable_logs": path_texts(large_stable_logs or []),
+        "small_stable_avg_s": average_timing_seconds(small_stable_logs or []),
+        "large_stable_avg_s": average_timing_seconds(large_stable_logs or []),
         "small_statuses": path_texts(small_statuses or []),
         "large_statuses": path_texts(large_statuses or []),
         "small_timing_summaries": path_texts(small_timing_summaries or []),
