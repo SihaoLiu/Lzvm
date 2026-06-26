@@ -471,9 +471,12 @@ def run_summary(
     stderr_path = prefixed_path(output_path.parent, output_path.name, ".stderr")
     code = run_captured(command, cwd, output_path, stderr_path, env)
     if code != 0:
+        diagnostic = first_diagnostic_line(stderr_path.read_text(encoding="utf-8"))
+        diagnostic_suffix = f"; first stderr line: {diagnostic}" if diagnostic else ""
         raise SystemExit(
             f"summary command failed with status {code}: "
             f"{shell_join(command)}; stderr: {stderr_path}"
+            f"{diagnostic_suffix}"
         )
 
 
@@ -898,7 +901,25 @@ def run_profile(args: argparse.Namespace) -> int:
     proof_timing_summary_missing_keys: list[str] = []
     tool_summary_paths: list[Path] = []
     if args.summarize:
-        proof_timing_result = summarize_proof_timing(root, outputs)
+        try:
+            proof_timing_result = summarize_proof_timing(root, outputs)
+        except SystemExit as error:
+            remove_stale_summary(outputs["proof_timing_summary"])
+            write_profile_json(
+                args,
+                root,
+                cwd,
+                profile_command,
+                command,
+                outputs,
+                "summary_failed",
+                profile_exit_code=profile_code,
+                proof_timing_summary_written=False,
+                tool_summary_paths=tool_summary_paths,
+                gpu_memory_check=gpu_memory_payload,
+                error=str(error),
+            )
+            raise
         proof_timing_summary_written = proof_timing_result.written
         proof_timing_summary_skip_reason = proof_timing_result.skip_reason
         proof_timing_summary_missing_keys = proof_timing_result.missing_keys
@@ -1258,6 +1279,63 @@ def self_test() -> None:
         missing_keys = missing_json.get("proof_timing_summary_missing_keys", [])
         if "timing_guest_stage_tree_commit_root_count" not in missing_keys:
             raise SystemExit("fake ncu missing-key profile json missed required keys")
+
+        duplicate_base = dict(base)
+        duplicate_base["command"] = [
+            sys.executable,
+            "-c",
+            (
+                "print('timing_total_ms=1000'); "
+                "print('timing_total_ms=1001'); "
+                "print('timing_guest_stage_tree_commit_root_count=1'); "
+                "print('timing_guest_stage_tree_commit_root_materialization_groups=1'); "
+                "print('timing_guest_stage_tree_commit_root_materialization_max_group_size=1'); "
+                "print('timing_finish_witness_opening_row_dedup_input_rows=0'); "
+                "print('timing_finish_witness_opening_row_dedup_unique_rows=0'); "
+                "print('timing_finish_witness_opening_row_dedup_elided_rows=0')"
+            ),
+        ]
+        duplicate_base["name"] = "self-test-ncu-duplicate-timing"
+        duplicate_base["summarize"] = True
+        duplicate_summary = (
+            work_dir
+            / "profiles"
+            / "self-test-ncu-duplicate-timing.proof-timing-summary.csv"
+        )
+        duplicate_summary_stderr = prefixed_path(
+            duplicate_summary.parent,
+            duplicate_summary.name,
+            ".stderr",
+        )
+        duplicate_summary.write_text("stale\n", encoding="utf-8")
+        duplicate_summary_stderr.write_text("stale\n", encoding="utf-8")
+        duplicate_args = argparse.Namespace(
+            **duplicate_base,
+            tool="ncu",
+            nsys_command=None,
+            ncu_command=str(fake_ncu),
+        )
+        try:
+            run_profile(duplicate_args)
+        except SystemExit:
+            pass
+        else:
+            raise SystemExit("fake ncu duplicate timing summary unexpectedly passed")
+        if duplicate_summary.exists() or duplicate_summary_stderr.exists():
+            raise SystemExit("fake ncu duplicate proof timing summary was not removed")
+        duplicate_json = json.loads(
+            (
+                work_dir
+                / "profiles"
+                / "self-test-ncu-duplicate-timing.profile.json"
+            ).read_text(encoding="utf-8")
+        )
+        if duplicate_json.get("status") != "summary_failed":
+            raise SystemExit("fake ncu duplicate profile json did not record failure")
+        if duplicate_json.get("proof_timing_summary_written") is not False:
+            raise SystemExit("fake ncu duplicate profile json recorded a summary")
+        if "duplicate timing field" not in duplicate_json.get("error", ""):
+            raise SystemExit("fake ncu duplicate profile json did not record the error")
 
         failed_summary_base = dict(base)
         failed_summary_base["name"] = "self-test-ncu-summary-failure"
