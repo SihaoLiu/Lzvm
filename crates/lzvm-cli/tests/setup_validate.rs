@@ -9250,6 +9250,7 @@ fn guest_pc_trace_proves_and_verifies_eth_block_input_with_program_image_cache()
     assert!(verify_stdout_text.contains("program_image_cache_match=ok\n"));
     assert!(verify_stdout_text.contains("framed_guest_inputs=1\n"));
     assert!(verify_stdout_text.contains("framed_guest_input_match=ok\n"));
+    assert!(verify_stdout_text.contains("pipeline_input_bindings=ok\n"));
     assert_eq!(mismatch_code, 1);
     assert!(mismatch_stdout.is_empty());
     assert_eq!(

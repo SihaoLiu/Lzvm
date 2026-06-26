@@ -2269,7 +2269,8 @@ fn lean_framed_guest_input_binding_tracks_runtime_checks() {
         ) && batch_script_source.contains("# INPUT_DATA must be framed guest stdin")
             && batch_script_source.contains("framed input is invalid: empty input")
             && batch_script_source.contains("--input-data")
-            && batch_script_source.contains("framed_guest_input_match=ok"),
+            && batch_script_source.contains("framed_guest_input_match=ok")
+            && batch_script_source.contains("pipeline_input_bindings=ok"),
         "proof timing batches should require framed guest stdin before invoking the proof path"
     );
     assert!(
@@ -2291,7 +2292,8 @@ fn lean_framed_guest_input_binding_tracks_runtime_checks() {
         cli_test_source
             .contains("guest_pc_trace_proves_and_verifies_eth_block_input_with_program_image_cache")
             && cli_test_source.contains("framed_stdin_chunk(&[7_u8])")
-            && cli_test_source.contains("framed_guest_input_match=ok"),
+            && cli_test_source.contains("framed_guest_input_match=ok")
+            && cli_test_source.contains("pipeline_input_bindings=ok"),
         "CLI proof coverage should bind framed guest stdin with ETH block input and the program image cache"
     );
 }
