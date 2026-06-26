@@ -57,6 +57,9 @@ fn lean_proof_artifact_binding_exports_core_contract_projection() {
             "runtime_proof_artifact_binding_checked_acceptance_segment_ids_unique",
             "runtime_proof_artifact_binding_checked_acceptance_unit_values_trace_identity_coverage",
             "runtime_proof_artifact_binding_checked_acceptance_structural_obligations",
+            "runtime_proof_artifact_binding_validation_agreement_segment_ids_allowed",
+            "runtime_proof_artifact_concrete_segment_id_binding_of_agreement_left",
+            "runtime_proof_artifact_concrete_segment_id_binding_of_agreement_right",
             "runtime_proof_artifact_binding_checked_acceptance_concrete_segment_ids_allowed",
             "runtime_proof_artifact_finalized_concrete_segment_ids_allowed",
             "runtime_proof_artifact_finalized_from_checked_acceptance",
@@ -115,6 +118,47 @@ fn lean_proof_artifact_binding_exports_core_contract_projection() {
             "bindingAcceptedImpliesProofSegmentIdsAllowed",
             "bindingAcceptedImpliesProofSegmentIdsUnique",
             "bindingAcceptedImpliesProofUnitValuesTraceIdentityCoverage",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_proof_artifact_binding_validation_agreement_segment_ids_allowed",
+        &["proofSegmentIdsAllowedAgreement"],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_proof_artifact_concrete_segment_id_binding_of_agreement_left",
+        &[
+            "RuntimeProofArtifactBindingValidationAgreement left right",
+            "RuntimeProofArtifactConcreteSegmentIdBinding right",
+            "RuntimeProofArtifactConcreteSegmentIdBinding left",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_proof_artifact_concrete_segment_id_binding_of_agreement_left",
+        &[
+            "proofSegmentIdsAllowedImpliesConcrete",
+            "runtime_proof_artifact_binding_validation_agreement_segment_ids_allowed",
+            ".mp leftAllowed",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_proof_artifact_concrete_segment_id_binding_of_agreement_right",
+        &[
+            "RuntimeProofArtifactBindingValidationAgreement left right",
+            "RuntimeProofArtifactConcreteSegmentIdBinding left",
+            "RuntimeProofArtifactConcreteSegmentIdBinding right",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_proof_artifact_concrete_segment_id_binding_of_agreement_right",
+        &[
+            "proofSegmentIdsAllowedImpliesConcrete",
+            "runtime_proof_artifact_binding_validation_agreement_segment_ids_allowed",
+            ".mpr rightAllowed",
         ],
     );
     lean_binding::assert_theorem_body_contains(

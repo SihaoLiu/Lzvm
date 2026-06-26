@@ -187,6 +187,67 @@ structure RuntimeProofArtifactConcreteSegmentIdBinding
         RuntimeProofArtifactConcreteSegmentIdsAllowed
           proof
 
+theorem runtime_proof_artifact_binding_validation_agreement_segment_ids_allowed
+    {system : VerifierModel}
+    {left right : RuntimeProofArtifactBindingValidation system}
+    (agreement : RuntimeProofArtifactBindingValidationAgreement left right) :
+    forall artifact publicInput proof,
+      left.proofSegmentIdsAllowed artifact publicInput proof <->
+        right.proofSegmentIdsAllowed artifact publicInput proof := by
+  intro artifact publicInput proof
+  rcases agreement with
+    ⟨_runtimeValidationAgreement,
+      _artifactBindingAcceptedAgreement,
+      _setupHashMatchesAgreement,
+      _publicValuesHashMatchesAgreement,
+      _proofPayloadMatchesAgreement,
+      _proofContainerCanonicalAgreement,
+      _proofMetadataCanonicalAgreement,
+      _proofSegmentsPresentAgreement,
+      _proofSegmentPayloadsNonemptyAgreement,
+      proofSegmentIdsAllowedAgreement,
+      _proofSegmentIdsUniqueAgreement,
+      _proofUnitValuesTraceIdentityCoverageAgreement⟩
+  exact proofSegmentIdsAllowedAgreement artifact publicInput proof
+
+theorem runtime_proof_artifact_concrete_segment_id_binding_of_agreement_left
+    {system : VerifierModel}
+    {left right : RuntimeProofArtifactBindingValidation system}
+    (agreement : RuntimeProofArtifactBindingValidationAgreement left right)
+    (binding : RuntimeProofArtifactConcreteSegmentIdBinding right) :
+    RuntimeProofArtifactConcreteSegmentIdBinding left where
+  proofSegmentIdsAllowedImpliesConcrete := by
+    intro artifact publicInput proof leftAllowed
+    exact
+      binding.proofSegmentIdsAllowedImpliesConcrete
+        artifact
+        publicInput
+        proof
+        ((runtime_proof_artifact_binding_validation_agreement_segment_ids_allowed
+          agreement
+          artifact
+          publicInput
+          proof).mp leftAllowed)
+
+theorem runtime_proof_artifact_concrete_segment_id_binding_of_agreement_right
+    {system : VerifierModel}
+    {left right : RuntimeProofArtifactBindingValidation system}
+    (agreement : RuntimeProofArtifactBindingValidationAgreement left right)
+    (binding : RuntimeProofArtifactConcreteSegmentIdBinding left) :
+    RuntimeProofArtifactConcreteSegmentIdBinding right where
+  proofSegmentIdsAllowedImpliesConcrete := by
+    intro artifact publicInput proof rightAllowed
+    exact
+      binding.proofSegmentIdsAllowedImpliesConcrete
+        artifact
+        publicInput
+        proof
+        ((runtime_proof_artifact_binding_validation_agreement_segment_ids_allowed
+          agreement
+          artifact
+          publicInput
+          proof).mpr rightAllowed)
+
 theorem runtime_proof_artifact_binding_checked_acceptance_concrete_segment_ids_allowed
     {system : VerifierModel}
     (validation : RuntimeProofArtifactBindingValidation system)
