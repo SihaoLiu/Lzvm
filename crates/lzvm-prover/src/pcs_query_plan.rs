@@ -14,6 +14,7 @@ pub use errors::ProvePcsQueryPlanSegmentError;
 
 use lzvm_artifacts::challenge_values_segment::CHALLENGE_VALUES_SEGMENT_ID;
 use lzvm_artifacts::eth_block_input_segment::ETH_BLOCK_INPUT_SEGMENT_ID;
+use lzvm_artifacts::guest_input_segment::FRAMED_GUEST_INPUT_SEGMENT_ID;
 use lzvm_artifacts::pcs_evaluation_segment::PCS_EVALUATION_SEGMENT_ID;
 use lzvm_artifacts::pcs_material_segment::{
     parse_pcs_material_manifest_segment, PcsMaterialManifestSegment,
@@ -359,6 +360,7 @@ pub(crate) fn proof_binding_segments(segments: &[ProofSegment]) -> Vec<ProofSegm
                 segment.id,
                 PROGRAM_IMAGE_CACHE_SEGMENT_ID
                     | ETH_BLOCK_INPUT_SEGMENT_ID
+                    | FRAMED_GUEST_INPUT_SEGMENT_ID
                     | CHALLENGE_VALUES_SEGMENT_ID
             )
         })
@@ -391,7 +393,10 @@ pub(crate) fn checked_proof_binding_segments(
 fn is_proof_binding_id(id: u32) -> bool {
     matches!(
         id,
-        PROGRAM_IMAGE_CACHE_SEGMENT_ID | ETH_BLOCK_INPUT_SEGMENT_ID | CHALLENGE_VALUES_SEGMENT_ID
+        PROGRAM_IMAGE_CACHE_SEGMENT_ID
+            | ETH_BLOCK_INPUT_SEGMENT_ID
+            | FRAMED_GUEST_INPUT_SEGMENT_ID
+            | CHALLENGE_VALUES_SEGMENT_ID
     )
 }
 

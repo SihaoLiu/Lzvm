@@ -51,6 +51,7 @@ VERIFY_REQUIRED_TEXTS = [
     "artifact_proof_match=ok",
     "eth_block_input_match=ok",
     "program_image_cache_match=ok",
+    "framed_guest_input_match=ok",
 ]
 
 PIPELINE_ENV_TO_CLEAR = [
@@ -582,6 +583,8 @@ def command_for_env(config: ProofEnv, mode: str, verify_proof: bool) -> str:
                 shell_arg(paths["block_input"]),
                 "--program-image-cache",
                 shell_arg(paths["program_image_cache"]),
+                "--input-data",
+                shell_arg(paths["input_data"]),
                 shell_arg(paths["setup"]),
                 proof_path,
                 public_values_path,
@@ -1130,6 +1133,7 @@ def self_test() -> None:
                 "    print('artifact_proof_match=ok')",
                 "    print('eth_block_input_match=ok')",
                 "    print('program_image_cache_match=ok')",
+                "    print('framed_guest_input_match=ok')",
                 "    sys.exit(0)",
                 "tmp = os.environ.get('TMPDIR')",
                 "if not tmp or not os.path.isdir(tmp):",

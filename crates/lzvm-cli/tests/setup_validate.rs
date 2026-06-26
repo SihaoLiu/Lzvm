@@ -36,6 +36,9 @@ use lzvm_artifacts::group_values_segment::{
     GROUP_VALUES_SEGMENT_ID,
 };
 use lzvm_artifacts::guest_image::parse_guest_image;
+use lzvm_artifacts::guest_input_segment::{
+    parse_framed_guest_input_segment, FRAMED_GUEST_INPUT_SEGMENT_ID,
+};
 use lzvm_artifacts::hint_program::{
     encode_global_hint_program, encode_regular_hint_program,
     regular_hint_program_from_expression_info, Hint, HintField, HintOperand, HintProgram,
@@ -9162,6 +9165,17 @@ fn guest_pc_trace_proves_and_verifies_eth_block_input_with_program_image_cache()
         .expect("ETH block input segment should be present");
     let parsed_block_input = parse_eth_block_input_segment(&block_segment.data)
         .expect("block input segment should parse");
+    let framed_segment = proof
+        .segments
+        .iter()
+        .find(|segment| segment.id == FRAMED_GUEST_INPUT_SEGMENT_ID)
+        .expect("framed guest input segment should be present");
+    let input_data_bytes = fs::read(&input_data).expect("input data should read");
+    assert_eq!(framed_segment.data, input_data_bytes);
+    let framed_chunks = parse_framed_guest_input_segment(&framed_segment.data)
+        .expect("framed guest input segment should parse");
+    assert_eq!(framed_chunks.len(), 1);
+    assert_eq!(framed_chunks[0].data, vec![7_u8]);
 
     let mut verify_stdout = Vec::new();
     let mut verify_stderr = Vec::new();
@@ -9175,6 +9189,8 @@ fn guest_pc_trace_proves_and_verifies_eth_block_input_with_program_image_cache()
             block_input_path
                 .to_str()
                 .expect("block input path should be utf-8"),
+            "--input-data",
+            input_data.to_str().expect("input path should be utf-8"),
             dir.to_str().expect("path should be utf-8"),
             proof_path.to_str().expect("proof path should be utf-8"),
             public_values_path
@@ -9183,6 +9199,33 @@ fn guest_pc_trace_proves_and_verifies_eth_block_input_with_program_image_cache()
         ],
         &mut verify_stdout,
         &mut verify_stderr,
+    );
+    let other_input_data = dir.join("other-input.bin");
+    write_bytes(&other_input_data, framed_stdin_chunk(&[9_u8]));
+    let mut mismatch_stdout = Vec::new();
+    let mut mismatch_stderr = Vec::new();
+    let mismatch_code = run_cli(
+        &[
+            "verify",
+            "proof",
+            "--program-image-cache",
+            cache_path.to_str().expect("cache path should be utf-8"),
+            "--eth-block-input",
+            block_input_path
+                .to_str()
+                .expect("block input path should be utf-8"),
+            "--input-data",
+            other_input_data
+                .to_str()
+                .expect("other input path should be utf-8"),
+            dir.to_str().expect("path should be utf-8"),
+            proof_path.to_str().expect("proof path should be utf-8"),
+            public_values_path
+                .to_str()
+                .expect("public values path should be utf-8"),
+        ],
+        &mut mismatch_stdout,
+        &mut mismatch_stderr,
     );
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 
@@ -9204,6 +9247,14 @@ fn guest_pc_trace_proves_and_verifies_eth_block_input_with_program_image_cache()
         String::from_utf8(verify_stdout).expect("verify stdout should be utf-8");
     assert!(verify_stdout_text.contains("eth_block_input_match=ok\n"));
     assert!(verify_stdout_text.contains("program_image_cache_match=ok\n"));
+    assert!(verify_stdout_text.contains("framed_guest_inputs=1\n"));
+    assert!(verify_stdout_text.contains("framed_guest_input_match=ok\n"));
+    assert_eq!(mismatch_code, 1);
+    assert!(mismatch_stdout.is_empty());
+    assert_eq!(
+        String::from_utf8(mismatch_stderr).expect("mismatch stderr should be utf-8"),
+        "verify proof failed: framed guest input proof segment mismatch\n"
+    );
 }
 
 #[test]
@@ -19166,7 +19217,7 @@ fn reports_usage_for_missing_setup_preflight_inputs() {
     assert!(stdout.is_empty());
     assert_eq!(
         String::from_utf8(stderr).expect("stderr should be utf-8"),
-        "usage: lzvm verify setup-preflight [--eth-block-input <block-input>] [--eth-public-input <public-input>] [--eth-public-input-allow-trailing] [--program-image-cache <cache-bin>] <setup-dir> <proof-bin> <public-values>\n"
+        "usage: lzvm verify setup-preflight [--eth-block-input <block-input>] [--eth-public-input <public-input>] [--eth-public-input-allow-trailing] [--program-image-cache <cache-bin>] [--input-data <input>] <setup-dir> <proof-bin> <public-values>\n"
     );
 }
 
@@ -19303,7 +19354,7 @@ fn reports_usage_for_missing_verify_proof_inputs() {
     assert!(stdout.is_empty());
     assert_eq!(
         String::from_utf8(stderr).expect("stderr should be utf-8"),
-        "usage: lzvm verify proof [--eth-block-input <block-input>] [--eth-public-input <public-input>] [--eth-public-input-allow-trailing] [--program-image-cache <cache-bin>] <setup-dir> <proof-bin> <public-values>\n"
+        "usage: lzvm verify proof [--eth-block-input <block-input>] [--eth-public-input <public-input>] [--eth-public-input-allow-trailing] [--program-image-cache <cache-bin>] [--input-data <input>] <setup-dir> <proof-bin> <public-values>\n"
     );
 }
 
@@ -19436,6 +19487,33 @@ fn verify_proof_rejects_missing_program_image_cache_value_before_next_option() {
     assert_eq!(
         String::from_utf8(stderr).expect("stderr should be utf-8"),
         "verify proof failed: missing --program-image-cache value\n"
+    );
+}
+
+#[test]
+fn verify_proof_rejects_missing_input_data_value_before_next_option() {
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "verify",
+            "proof",
+            "--input-data",
+            "--eth-block-input",
+            "block.input",
+            "setup",
+            "proof.bin",
+            "public.bin",
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    assert_eq!(code, 1);
+    assert!(stdout.is_empty());
+    assert_eq!(
+        String::from_utf8(stderr).expect("stderr should be utf-8"),
+        "verify proof failed: missing --input-data value\n"
     );
 }
 

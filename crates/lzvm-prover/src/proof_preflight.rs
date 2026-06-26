@@ -16,6 +16,11 @@ use lzvm_artifacts::eth_block_input_segment::{
 use lzvm_artifacts::eth_block_public_values::{
     validate_eth_block_public_values, EthBlockPublicValuesError,
 };
+use lzvm_artifacts::framed_stdin::FramedStdinError;
+use lzvm_artifacts::guest_input_segment::{
+    framed_guest_input_segment_digest, parse_framed_guest_input_segment,
+    FRAMED_GUEST_INPUT_SEGMENT_ID,
+};
 use lzvm_artifacts::pcs_material_segment::PCS_MATERIAL_MANIFEST_SEGMENT_ID;
 use lzvm_artifacts::program_image::ProgramImageCommitmentCache;
 use lzvm_artifacts::program_image_segment::{
@@ -66,6 +71,10 @@ pub struct ProofPreflightReport {
     pub trace_constraint_segment_count: usize,
     pub trace_constraint_segment_byte_counts: Vec<usize>,
     pub trace_constraint_units: Vec<TraceConstraintPreflightUnit>,
+    pub framed_guest_input_count: usize,
+    pub framed_guest_input_hashes: Vec<[u8; 32]>,
+    pub framed_guest_input_byte_counts: Vec<usize>,
+    pub framed_guest_input_chunk_counts: Vec<usize>,
     pub eth_block_input_count: usize,
     pub eth_block_input_hashes: Vec<[u8; 32]>,
     pub eth_block_input_byte_counts: Vec<usize>,
@@ -164,6 +173,7 @@ pub enum ProofPreflightError {
     },
     EthBlockInput(EthBlockInputError),
     EthBlockPublicValues(EthBlockPublicValuesError),
+    FramedGuestInput(FramedStdinError),
     MissingEthBlockInput,
     ProofArtifact(ProofArtifactError),
 }
@@ -270,6 +280,7 @@ impl fmt::Display for ProofPreflightError {
             ),
             Self::EthBlockInput(error) => write!(f, "{error}"),
             Self::EthBlockPublicValues(error) => write!(f, "{error}"),
+            Self::FramedGuestInput(error) => write!(f, "invalid framed guest input segment: {error}"),
             Self::MissingEthBlockInput => write!(f, "missing ETH block input proof segment"),
             Self::ProofArtifact(error) => write!(f, "{error}"),
         }
@@ -307,6 +318,7 @@ impl std::error::Error for ProofPreflightError {
             Self::TraceConstraintWitness(error) => Some(error),
             Self::EthBlockInput(error) => Some(error),
             Self::EthBlockPublicValues(error) => Some(error),
+            Self::FramedGuestInput(error) => Some(error),
             Self::ProofArtifact(error) => Some(error),
             Self::SetupHashMismatch
             | Self::PublicValuesHashMismatch
@@ -457,6 +469,21 @@ fn validate_proof_public_values_inner(
         return Err(ProofPreflightError::MissingTraceConstraintEvidence);
     }
     validate_trace_constraint_witness_commitments(proof, &trace_constraint_units)?;
+    let mut framed_guest_input_hashes = Vec::new();
+    let mut framed_guest_input_byte_counts = Vec::new();
+    let mut framed_guest_input_chunk_counts = Vec::new();
+    for segment in proof
+        .segments
+        .iter()
+        .filter(|segment| segment.id == FRAMED_GUEST_INPUT_SEGMENT_ID)
+    {
+        let chunks = parse_framed_guest_input_segment(&segment.data)
+            .map_err(ProofPreflightError::FramedGuestInput)?;
+        framed_guest_input_hashes.push(framed_guest_input_segment_digest(&segment.data));
+        framed_guest_input_byte_counts.push(segment.data.len());
+        framed_guest_input_chunk_counts.push(chunks.len());
+    }
+    let framed_guest_input_count = framed_guest_input_hashes.len();
     let mut eth_block_input_hashes = Vec::new();
     let mut eth_block_input_byte_counts = Vec::new();
     let mut eth_block_input_block_rlp_byte_counts = Vec::new();
@@ -583,6 +610,10 @@ fn validate_proof_public_values_inner(
             trace_constraint_segment_count,
             trace_constraint_segment_byte_counts,
             trace_constraint_units,
+            framed_guest_input_count,
+            framed_guest_input_hashes,
+            framed_guest_input_byte_counts,
+            framed_guest_input_chunk_counts,
             eth_block_input_count,
             eth_block_input_hashes,
             eth_block_input_byte_counts,

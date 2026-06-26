@@ -11,6 +11,7 @@ use lzvm_artifacts::contribution_segment::{
 };
 use lzvm_artifacts::eth_block_input_segment::ETH_BLOCK_INPUT_SEGMENT_ID;
 use lzvm_artifacts::global_info::{CurveKind, GlobalInfo, NamedStageValue};
+use lzvm_artifacts::guest_input_segment::FRAMED_GUEST_INPUT_SEGMENT_ID;
 use lzvm_artifacts::key_directory::{read_key_directory_catalog, KeyDirectoryError};
 use lzvm_artifacts::pcs_proof_values_segment::PCS_PROOF_VALUES_SEGMENT_ID;
 use lzvm_artifacts::program_image::ProgramImageCommitmentCache;
@@ -667,7 +668,9 @@ fn contribution_bound_segments(segments: &[ProofSegment]) -> Vec<ProofSegment> {
         .filter(|segment| {
             matches!(
                 segment.id,
-                PROGRAM_IMAGE_CACHE_SEGMENT_ID | ETH_BLOCK_INPUT_SEGMENT_ID
+                PROGRAM_IMAGE_CACHE_SEGMENT_ID
+                    | ETH_BLOCK_INPUT_SEGMENT_ID
+                    | FRAMED_GUEST_INPUT_SEGMENT_ID
             )
         })
         .cloned()
@@ -964,6 +967,7 @@ fn is_contribution_proof_segment_id(id: u32) -> bool {
             | CONTRIBUTION_SEGMENT_ID
             | PROGRAM_IMAGE_CACHE_SEGMENT_ID
             | ETH_BLOCK_INPUT_SEGMENT_ID
+            | FRAMED_GUEST_INPUT_SEGMENT_ID
             | CHALLENGE_VALUES_SEGMENT_ID
     )
 }

@@ -17,6 +17,7 @@ pub mod global_info;
 pub mod global_program;
 pub mod group_values_segment;
 pub mod guest_image;
+pub mod guest_input_segment;
 pub mod hint_program;
 pub mod key_directory;
 pub mod metadata_bundle;

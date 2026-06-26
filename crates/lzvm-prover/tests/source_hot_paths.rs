@@ -2181,6 +2181,15 @@ fn lean_framed_guest_input_binding_tracks_runtime_checks() {
     let cli_test_path = crate_root.join("../lzvm-cli/tests/setup_validate.rs");
     let cli_test_source = std::fs::read_to_string(&cli_test_path)
         .expect("CLI setup validation test source should read");
+    let proof_artifact_path = crate_root.join("src/proof_artifact.rs");
+    let proof_artifact_source =
+        std::fs::read_to_string(&proof_artifact_path).expect("proof artifact source should read");
+    let query_plan_path = crate_root.join("src/pcs_query_plan.rs");
+    let query_plan_source =
+        std::fs::read_to_string(&query_plan_path).expect("query plan source should read");
+    let contribution_path = crate_root.join("src/contribution.rs");
+    let contribution_source =
+        std::fs::read_to_string(&contribution_path).expect("contribution source should read");
 
     assert!(
         lean_root_source.contains("import Lzvm.FramedGuestInputBinding"),
@@ -2206,13 +2215,27 @@ fn lean_framed_guest_input_binding_tracks_runtime_checks() {
     assert!(
         batch_script_source.contains(
             "validate_framed_input_data(paths[\"input_data\"], config.var(\"INPUT_DATA\"))"
-        ) && batch_script_source.contains("# INPUT_DATA must be framed guest stdin"),
+        ) && batch_script_source.contains("# INPUT_DATA must be framed guest stdin")
+            && batch_script_source.contains("--input-data")
+            && batch_script_source.contains("framed_guest_input_match=ok"),
         "proof timing batches should require framed guest stdin before invoking the proof path"
+    );
+    assert!(
+        proof_artifact_source.contains("fn build_framed_guest_input_proof_segment")
+            && proof_artifact_source.contains("validate_framed_guest_input_binding")
+            && proof_artifact_source.contains("FRAMED_GUEST_INPUT_SEGMENT_ID"),
+        "proof artifact construction should embed framed guest stdin as a proof binding segment"
+    );
+    assert!(
+        query_plan_source.contains("FRAMED_GUEST_INPUT_SEGMENT_ID")
+            && contribution_source.contains("FRAMED_GUEST_INPUT_SEGMENT_ID"),
+        "framed guest stdin segments should remain query-plan and contribution bound"
     );
     assert!(
         cli_test_source
             .contains("guest_pc_trace_proves_and_verifies_eth_block_input_with_program_image_cache")
-            && cli_test_source.contains("framed_stdin_chunk(&[7_u8])"),
+            && cli_test_source.contains("framed_stdin_chunk(&[7_u8])")
+            && cli_test_source.contains("framed_guest_input_match=ok"),
         "CLI proof coverage should bind framed guest stdin with ETH block input and the program image cache"
     );
 }

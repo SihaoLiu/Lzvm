@@ -1,6 +1,10 @@
+use std::fs;
 use std::io::Write;
 use std::path::PathBuf;
 
+use lzvm_artifacts::guest_input_segment::{
+    encode_framed_guest_input_segment, FRAMED_GUEST_INPUT_SEGMENT_ID,
+};
 use lzvm_artifacts::program_image::read_program_image_commitment_cache_file;
 use lzvm_artifacts::program_image_segment::{
     encode_program_image_cache_segment, PROGRAM_IMAGE_CACHE_SEGMENT_ID,
@@ -66,6 +70,15 @@ pub(super) fn verify_preflight(
         Some(matched) => matched,
         None => return 1,
     };
+    let framed_guest_input_matched = match verify_requested_framed_guest_input_binding(
+        "verify preflight",
+        parsed.proof_bin,
+        parsed.input_data,
+        stderr,
+    ) {
+        Some(matched) => matched,
+        None => return 1,
+    };
     let report = match validate_proof_public_values_from_files(
         parsed.proof_bin,
         parsed.public_values_path,
@@ -118,6 +131,13 @@ pub(super) fn verify_preflight(
         &report.trace_constraint_segment_byte_counts,
         &report.trace_constraint_units,
     );
+    write_framed_guest_input_summary(
+        stdout,
+        report.framed_guest_input_count,
+        &report.framed_guest_input_hashes,
+        &report.framed_guest_input_byte_counts,
+        &report.framed_guest_input_chunk_counts,
+    );
     if report.eth_block_input_count > 0 {
         let _ = writeln!(stdout, "eth_block_inputs={}", report.eth_block_input_count);
         for (index, hash) in report.eth_block_input_hashes.iter().enumerate() {
@@ -136,6 +156,9 @@ pub(super) fn verify_preflight(
     }
     if program_image_cache_matched {
         let _ = writeln!(stdout, "program_image_cache_match=ok");
+    }
+    if framed_guest_input_matched {
+        let _ = writeln!(stdout, "framed_guest_input_match=ok");
     }
     0
 }
@@ -163,6 +186,7 @@ pub(super) fn verify_setup_preflight(
             eth_public_input: parsed.eth_public_input,
             eth_public_input_allow_trailing: parsed.eth_public_input_allow_trailing,
             program_image_cache: parsed.program_image_cache,
+            input_data: parsed.input_data,
             proof_artifact_match_summary: false,
         },
         stdout,
@@ -178,6 +202,7 @@ struct ParsedSetupValidationArgs<'a> {
     eth_public_input: Option<&'a str>,
     eth_public_input_allow_trailing: bool,
     program_image_cache: Option<&'a str>,
+    input_data: Option<&'a str>,
 }
 
 struct ParsedPreflightArgs<'a> {
@@ -187,6 +212,7 @@ struct ParsedPreflightArgs<'a> {
     eth_public_input: Option<&'a str>,
     eth_public_input_allow_trailing: bool,
     program_image_cache: Option<&'a str>,
+    input_data: Option<&'a str>,
 }
 
 struct ParsedContributionSetArgs<'a> {
@@ -197,6 +223,7 @@ struct ParsedContributionSetArgs<'a> {
     eth_public_input: Option<&'a str>,
     eth_public_input_allow_trailing: bool,
     program_image_cache: Option<&'a str>,
+    input_data: Option<&'a str>,
 }
 
 pub(crate) struct ParsedBindingArgs<'a> {
@@ -205,11 +232,13 @@ pub(crate) struct ParsedBindingArgs<'a> {
     pub(crate) eth_public_input: Option<&'a str>,
     pub(crate) eth_public_input_allow_trailing: bool,
     pub(crate) program_image_cache: Option<&'a str>,
+    pub(crate) input_data: Option<&'a str>,
 }
 
 pub(crate) struct VerifiedContributionBindings {
     eth_block_input_binding: Option<EthBlockInputBinding>,
     program_image_cache_matched: bool,
+    framed_guest_input_matched: bool,
 }
 
 pub(crate) struct ContributionBindingRequest<'a> {
@@ -220,6 +249,7 @@ pub(crate) struct ContributionBindingRequest<'a> {
     pub(crate) eth_public_input: Option<&'a str>,
     pub(crate) eth_public_input_allow_trailing: bool,
     pub(crate) program_image_cache: Option<&'a str>,
+    pub(crate) input_data: Option<&'a str>,
 }
 
 fn parse_verify_preflight_args<'a>(
@@ -237,6 +267,7 @@ fn parse_verify_preflight_args<'a>(
         eth_public_input: parsed.eth_public_input,
         eth_public_input_allow_trailing: parsed.eth_public_input_allow_trailing,
         program_image_cache: parsed.program_image_cache,
+        input_data: parsed.input_data,
     })
 }
 
@@ -274,6 +305,7 @@ fn parse_verify_contribution_set_args<'a>(
         eth_public_input: parsed.eth_public_input,
         eth_public_input_allow_trailing: parsed.eth_public_input_allow_trailing,
         program_image_cache: parsed.program_image_cache,
+        input_data: parsed.input_data,
     })
 }
 
@@ -293,6 +325,7 @@ fn parse_setup_validation_args<'a>(
         eth_public_input: parsed.eth_public_input,
         eth_public_input_allow_trailing: parsed.eth_public_input_allow_trailing,
         program_image_cache: parsed.program_image_cache,
+        input_data: parsed.input_data,
     })
 }
 
@@ -303,6 +336,7 @@ pub(crate) fn parse_binding_args<'a>(
     let mut eth_public_input = None;
     let mut eth_public_input_allow_trailing = false;
     let mut program_image_cache = None;
+    let mut input_data = None;
     let mut positionals = Vec::with_capacity(args.len());
     let mut index = 0;
     while index < args.len() {
@@ -365,6 +399,22 @@ pub(crate) fn parse_binding_args<'a>(
                 }
                 eth_public_input_allow_trailing = true;
             }
+            "--input-data" => {
+                index += 1;
+                let value = args.get(index).ok_or_else(|| {
+                    SetupValidationArgError::Invalid("missing --input-data value".to_owned())
+                })?;
+                if value.starts_with("--") {
+                    return Err(SetupValidationArgError::Invalid(
+                        "missing --input-data value".to_owned(),
+                    ));
+                }
+                if input_data.replace(*value).is_some() {
+                    return Err(SetupValidationArgError::Invalid(
+                        "duplicate --input-data option".to_owned(),
+                    ));
+                }
+            }
             value if value.starts_with("--") => {
                 return Err(SetupValidationArgError::Invalid(format!(
                     "unknown option {value}"
@@ -380,6 +430,7 @@ pub(crate) fn parse_binding_args<'a>(
         eth_public_input,
         eth_public_input_allow_trailing,
         program_image_cache,
+        input_data,
     })
 }
 
@@ -424,6 +475,7 @@ pub(super) fn verify_proof(args: &[&str], stdout: &mut dyn Write, stderr: &mut d
             eth_public_input: parsed.eth_public_input,
             eth_public_input_allow_trailing: parsed.eth_public_input_allow_trailing,
             program_image_cache: parsed.program_image_cache,
+            input_data: parsed.input_data,
             proof_artifact_match_summary: true,
         },
         stdout,
@@ -465,6 +517,15 @@ pub(super) fn verify_contribution(
         Some(matched) => matched,
         None => return 1,
     };
+    let framed_guest_input_matched = match verify_requested_framed_guest_input_binding(
+        "verify contribution",
+        parsed.proof_bin,
+        parsed.input_data,
+        stderr,
+    ) {
+        Some(matched) => matched,
+        None => return 1,
+    };
     let report = match derive_global_challenge_from_files(
         parsed.setup_dir,
         parsed.proof_bin,
@@ -493,6 +554,7 @@ pub(super) fn verify_contribution(
     let bindings = VerifiedContributionBindings {
         eth_block_input_binding,
         program_image_cache_matched,
+        framed_guest_input_matched,
     };
     write_contribution_binding_summary(stdout, &report, &bindings);
     let _ = writeln!(stdout, "proof_values={}", report.proof_value_count);
@@ -529,6 +591,7 @@ pub(super) fn verify_contribution_set(
             eth_public_input: parsed.eth_public_input,
             eth_public_input_allow_trailing: parsed.eth_public_input_allow_trailing,
             program_image_cache: parsed.program_image_cache,
+            input_data: parsed.input_data,
         },
         stderr,
     ) {
@@ -588,6 +651,7 @@ struct VerifySetupValidationCommand<'a> {
     eth_public_input: Option<&'a str>,
     eth_public_input_allow_trailing: bool,
     program_image_cache: Option<&'a str>,
+    input_data: Option<&'a str>,
     proof_artifact_match_summary: bool,
 }
 
@@ -612,6 +676,15 @@ fn verify_setup_validation(
         command.role,
         command.proof_bin,
         command.program_image_cache,
+        stderr,
+    ) {
+        Some(matched) => matched,
+        None => return 1,
+    };
+    let framed_guest_input_matched = match verify_requested_framed_guest_input_binding(
+        command.role,
+        command.proof_bin,
+        command.input_data,
         stderr,
     ) {
         Some(matched) => matched,
@@ -712,6 +785,13 @@ fn verify_setup_validation(
         public_report.trace_constraint_segment_count,
         &public_report.trace_constraint_segment_byte_counts,
         &public_report.trace_constraint_units,
+    );
+    write_framed_guest_input_summary(
+        stdout,
+        public_report.framed_guest_input_count,
+        &public_report.framed_guest_input_hashes,
+        &public_report.framed_guest_input_byte_counts,
+        &public_report.framed_guest_input_chunk_counts,
     );
     if public_report.eth_block_input_count > 0 {
         let _ = writeln!(
@@ -920,6 +1000,9 @@ fn verify_setup_validation(
     if program_image_cache_matched {
         let _ = writeln!(stdout, "program_image_cache_match=ok");
     }
+    if framed_guest_input_matched {
+        let _ = writeln!(stdout, "framed_guest_input_match=ok");
+    }
     0
 }
 
@@ -987,6 +1070,24 @@ fn verify_requested_program_image_cache_binding(
     }
 }
 
+fn verify_requested_framed_guest_input_binding(
+    role: &str,
+    proof_bin: &str,
+    input_data: Option<&str>,
+    stderr: &mut dyn Write,
+) -> Option<bool> {
+    let Some(path) = input_data else {
+        return Some(false);
+    };
+    match verify_framed_guest_input_binding(proof_bin, path) {
+        Ok(()) => Some(true),
+        Err(message) => {
+            let _ = writeln!(stderr, "{role} failed: {message}");
+            None
+        }
+    }
+}
+
 pub(crate) fn verify_requested_contribution_bindings(
     request: ContributionBindingRequest<'_>,
     stderr: &mut dyn Write,
@@ -1006,9 +1107,16 @@ pub(crate) fn verify_requested_contribution_bindings(
         request.program_image_cache,
         stderr,
     )?;
+    let framed_guest_input_matched = verify_requested_framed_guest_input_bindings(
+        request.role,
+        request.proof_bins,
+        request.input_data,
+        stderr,
+    )?;
     Some(VerifiedContributionBindings {
         eth_block_input_binding,
         program_image_cache_matched,
+        framed_guest_input_matched,
     })
 }
 
@@ -1062,6 +1170,21 @@ fn verify_requested_program_image_cache_bindings(
     Some(true)
 }
 
+fn verify_requested_framed_guest_input_bindings(
+    role: &str,
+    proof_bins: &[&str],
+    input_data: Option<&str>,
+    stderr: &mut dyn Write,
+) -> Option<bool> {
+    if input_data.is_none() {
+        return Some(false);
+    }
+    for proof_bin in proof_bins {
+        verify_requested_framed_guest_input_binding(role, proof_bin, input_data, stderr)?;
+    }
+    Some(true)
+}
+
 fn verify_program_image_cache_binding(proof_bin: &str, cache_path: &str) -> Result<(), String> {
     let proof = read_proof_artifact_file(proof_bin)
         .map_err(|error| format!("read proof artifact failed: {proof_bin}: {error}"))?;
@@ -1076,6 +1199,29 @@ fn verify_program_image_cache_binding(proof_bin: &str, cache_path: &str) -> Resu
         .ok_or_else(|| "missing program image cache proof segment".to_owned())?;
     if segment.data != expected {
         return Err("program image cache proof segment mismatch".to_owned());
+    }
+    Ok(())
+}
+
+fn verify_framed_guest_input_binding(proof_bin: &str, input_data_path: &str) -> Result<(), String> {
+    let proof = read_proof_artifact_file(proof_bin)
+        .map_err(|error| format!("read proof artifact failed: {proof_bin}: {error}"))?;
+    let input = fs::read(input_data_path)
+        .map_err(|error| format!("read input data failed: {input_data_path}: {error}"))?;
+    let expected = encode_framed_guest_input_segment(&input)
+        .map_err(|error| format!("encode framed guest input segment failed: {error}"))?;
+    let mut segments = proof
+        .segments
+        .iter()
+        .filter(|segment| segment.id == FRAMED_GUEST_INPUT_SEGMENT_ID);
+    let segment = segments
+        .next()
+        .ok_or_else(|| "missing framed guest input proof segment".to_owned())?;
+    if segments.next().is_some() {
+        return Err("duplicate framed guest input proof segment".to_owned());
+    }
+    if segment.data != expected {
+        return Err("framed guest input proof segment mismatch".to_owned());
     }
     Ok(())
 }
@@ -1149,6 +1295,28 @@ fn write_trace_constraint_summary(
     }
 }
 
+fn write_framed_guest_input_summary(
+    stdout: &mut dyn Write,
+    segment_count: usize,
+    hashes: &[[u8; 32]],
+    byte_counts: &[usize],
+    chunk_counts: &[usize],
+) {
+    if segment_count == 0 {
+        return;
+    }
+    let _ = writeln!(stdout, "framed_guest_inputs={segment_count}");
+    for ((hash, byte_count), chunk_count) in hashes.iter().zip(byte_counts).zip(chunk_counts) {
+        let _ = writeln!(
+            stdout,
+            "framed_guest_input_hash={}",
+            prove_plan::format_hash(hash)
+        );
+        let _ = writeln!(stdout, "framed_guest_input_bytes={byte_count}");
+        let _ = writeln!(stdout, "framed_guest_input_chunks={chunk_count}");
+    }
+}
+
 pub(crate) fn write_contribution_binding_summary(
     stdout: &mut dyn Write,
     report: &ContributionChallengeReport,
@@ -1193,12 +1361,15 @@ pub(crate) fn write_contribution_binding_summary(
     if bindings.program_image_cache_matched {
         let _ = writeln!(stdout, "program_image_cache_match=ok");
     }
+    if bindings.framed_guest_input_matched {
+        let _ = writeln!(stdout, "framed_guest_input_match=ok");
+    }
 }
 
 pub(super) fn write_verify_preflight_usage(stderr: &mut dyn Write) -> i32 {
     let _ = writeln!(
         stderr,
-        "usage: lzvm verify preflight [--eth-block-input <block-input>] [--eth-public-input <public-input>] [--eth-public-input-allow-trailing] [--program-image-cache <cache-bin>] <proof-bin> <public-values>"
+        "usage: lzvm verify preflight [--eth-block-input <block-input>] [--eth-public-input <public-input>] [--eth-public-input-allow-trailing] [--program-image-cache <cache-bin>] [--input-data <input>] <proof-bin> <public-values>"
     );
     2
 }
@@ -1206,7 +1377,7 @@ pub(super) fn write_verify_preflight_usage(stderr: &mut dyn Write) -> i32 {
 pub(super) fn write_verify_setup_preflight_usage(stderr: &mut dyn Write) -> i32 {
     let _ = writeln!(
         stderr,
-        "usage: lzvm verify setup-preflight [--eth-block-input <block-input>] [--eth-public-input <public-input>] [--eth-public-input-allow-trailing] [--program-image-cache <cache-bin>] <setup-dir> <proof-bin> <public-values>"
+        "usage: lzvm verify setup-preflight [--eth-block-input <block-input>] [--eth-public-input <public-input>] [--eth-public-input-allow-trailing] [--program-image-cache <cache-bin>] [--input-data <input>] <setup-dir> <proof-bin> <public-values>"
     );
     2
 }
@@ -1214,7 +1385,7 @@ pub(super) fn write_verify_setup_preflight_usage(stderr: &mut dyn Write) -> i32 
 fn write_verify_proof_usage(stderr: &mut dyn Write) -> i32 {
     let _ = writeln!(
         stderr,
-        "usage: lzvm verify proof [--eth-block-input <block-input>] [--eth-public-input <public-input>] [--eth-public-input-allow-trailing] [--program-image-cache <cache-bin>] <setup-dir> <proof-bin> <public-values>"
+        "usage: lzvm verify proof [--eth-block-input <block-input>] [--eth-public-input <public-input>] [--eth-public-input-allow-trailing] [--program-image-cache <cache-bin>] [--input-data <input>] <setup-dir> <proof-bin> <public-values>"
     );
     2
 }
@@ -1222,7 +1393,7 @@ fn write_verify_proof_usage(stderr: &mut dyn Write) -> i32 {
 pub(super) fn write_verify_contribution_usage(stderr: &mut dyn Write) -> i32 {
     let _ = writeln!(
         stderr,
-        "usage: lzvm verify contribution [--eth-block-input <block-input>] [--eth-public-input <public-input>] [--eth-public-input-allow-trailing] [--program-image-cache <cache-bin>] <setup-dir> <proof-bin> <public-values>"
+        "usage: lzvm verify contribution [--eth-block-input <block-input>] [--eth-public-input <public-input>] [--eth-public-input-allow-trailing] [--program-image-cache <cache-bin>] [--input-data <input>] <setup-dir> <proof-bin> <public-values>"
     );
     2
 }
@@ -1230,7 +1401,7 @@ pub(super) fn write_verify_contribution_usage(stderr: &mut dyn Write) -> i32 {
 pub(super) fn write_verify_contribution_set_usage(stderr: &mut dyn Write) -> i32 {
     let _ = writeln!(
         stderr,
-        "usage: lzvm verify contribution-set [--eth-block-input <block-input>] [--eth-public-input <public-input>] [--eth-public-input-allow-trailing] [--program-image-cache <cache-bin>] <setup-dir> <public-values> <proof-bin> [proof-bin ...]"
+        "usage: lzvm verify contribution-set [--eth-block-input <block-input>] [--eth-public-input <public-input>] [--eth-public-input-allow-trailing] [--program-image-cache <cache-bin>] [--input-data <input>] <setup-dir> <public-values> <proof-bin> [proof-bin ...]"
     );
     2
 }

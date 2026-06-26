@@ -12,6 +12,9 @@ use lzvm_artifacts::eth_block_input_segment::{
 use lzvm_artifacts::eth_block_public_values::{
     validate_eth_block_public_values, validate_program_image_cache_public_values,
 };
+use lzvm_artifacts::guest_input_segment::{
+    encode_framed_guest_input_segment, FRAMED_GUEST_INPUT_SEGMENT_ID,
+};
 use lzvm_artifacts::key_directory::KeyDirectoryCatalog;
 use lzvm_artifacts::pcs_evaluation_segment::parse_pcs_evaluation_segment;
 use lzvm_artifacts::pcs_nonce_segment::parse_pcs_query_nonce_segment;
@@ -472,6 +475,7 @@ pub struct WitnessProofRequest<'a> {
     pub verify_outputs: bool,
     pub program_image_cache: Option<&'a ProgramImageCommitmentCache>,
     pub eth_block_input: Option<&'a EthBlockInput>,
+    pub framed_guest_input: Option<&'a [u8]>,
     pub challenge_values_segment: Option<&'a ProofSegment>,
     pub include_contribution_segment: bool,
 }
@@ -505,10 +509,12 @@ fn build_witness_proof_artifact_for_unit_inner(
         public_values,
         request.program_image_cache,
         request.eth_block_input,
+        request.framed_guest_input,
     )?;
     let binding_segments = build_proof_binding_segments(
         request.program_image_cache,
         request.eth_block_input,
+        request.framed_guest_input,
         request.challenge_values_segment,
     )?;
     let binding_segments_slice = binding_segments.segments.as_slice();
@@ -810,10 +816,12 @@ pub fn build_witness_contribution_proof_artifact_for_unit(
         public_values,
         request.program_image_cache,
         request.eth_block_input,
+        request.framed_guest_input,
     )?;
     let binding_segments = build_proof_binding_segments(
         request.program_image_cache,
         request.eth_block_input,
+        request.framed_guest_input,
         request.challenge_values_segment,
     )?;
     let unit_values = request
@@ -884,6 +892,7 @@ pub struct WitnessAllUnitsProofRequest<'a> {
     pub verify_outputs: bool,
     pub program_image_cache: Option<&'a ProgramImageCommitmentCache>,
     pub eth_block_input: Option<&'a EthBlockInput>,
+    pub framed_guest_input: Option<&'a [u8]>,
     pub challenge_values_segment: Option<&'a ProofSegment>,
     pub include_contribution_segment: bool,
 }
@@ -903,10 +912,12 @@ pub fn build_witness_contribution_proof_artifact_for_all_units(
         public_values,
         request.program_image_cache,
         request.eth_block_input,
+        request.framed_guest_input,
     )?;
     let binding_segments = build_proof_binding_segments(
         request.program_image_cache,
         request.eth_block_input,
+        request.framed_guest_input,
         request.challenge_values_segment,
     )?;
     let contribution_sources = request
@@ -1002,10 +1013,12 @@ fn build_witness_proof_artifact_for_all_units_inner(
         public_values,
         request.program_image_cache,
         request.eth_block_input,
+        request.framed_guest_input,
     )?;
     let binding_segments = build_proof_binding_segments(
         request.program_image_cache,
         request.eth_block_input,
+        request.framed_guest_input,
         request.challenge_values_segment,
     )?;
     let binding_segments_slice = binding_segments.segments.as_slice();
@@ -1165,13 +1178,29 @@ fn build_eth_block_input_proof_segment(
     }))
 }
 
+fn build_framed_guest_input_proof_segment(
+    input: Option<&[u8]>,
+) -> Result<Option<ProofSegment>, String> {
+    let Some(input) = input else {
+        return Ok(None);
+    };
+    let data = encode_framed_guest_input_segment(input)
+        .map_err(|error| format!("build framed guest input segment failed: {error}"))?;
+    Ok(Some(ProofSegment {
+        id: FRAMED_GUEST_INPUT_SEGMENT_ID,
+        data,
+    }))
+}
+
 fn validate_proof_bindings(
     public_values: &PublicValues,
     program_image_cache: Option<&ProgramImageCommitmentCache>,
     eth_block_input: Option<&EthBlockInput>,
+    framed_guest_input: Option<&[u8]>,
 ) -> Result<(), String> {
     validate_program_image_cache_binding(public_values, program_image_cache)?;
-    validate_eth_block_binding(public_values, eth_block_input)
+    validate_eth_block_binding(public_values, eth_block_input)?;
+    validate_framed_guest_input_binding(framed_guest_input)
 }
 
 fn validate_program_image_cache_binding(
@@ -1196,6 +1225,14 @@ fn validate_eth_block_binding(
             .map_err(|error| error.to_string())?;
     } else if contains_named_eth_block_public_values(public_values) {
         return Err("missing ETH block input proof segment".to_owned());
+    }
+    Ok(())
+}
+
+fn validate_framed_guest_input_binding(input: Option<&[u8]>) -> Result<(), String> {
+    if let Some(input) = input {
+        encode_framed_guest_input_segment(input)
+            .map_err(|error| format!("framed guest input is invalid: {error}"))?;
     }
     Ok(())
 }
@@ -1311,6 +1348,7 @@ struct PreloadedContributionProofData<'a> {
 fn build_proof_binding_segments(
     cache: Option<&ProgramImageCommitmentCache>,
     eth_block_input: Option<&EthBlockInput>,
+    framed_guest_input: Option<&[u8]>,
     challenge_values_segment: Option<&ProofSegment>,
 ) -> Result<ProofBindingSegments, String> {
     let mut segments = Vec::new();
@@ -1319,6 +1357,9 @@ fn build_proof_binding_segments(
         segments.push(segment);
     }
     if let Some(segment) = build_eth_block_input_proof_segment(eth_block_input)? {
+        segments.push(segment);
+    }
+    if let Some(segment) = build_framed_guest_input_proof_segment(framed_guest_input)? {
         segments.push(segment);
     }
     if let Some(segment) = challenge_values_segment {
@@ -2176,7 +2217,7 @@ mod tests {
             data: vec![1],
         };
 
-        let error = build_proof_binding_segments(None, None, Some(&segment))
+        let error = build_proof_binding_segments(None, None, None, Some(&segment))
             .expect_err("challenge values binding segment should parse");
 
         assert_eq!(

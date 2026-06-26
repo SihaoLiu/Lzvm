@@ -10,6 +10,7 @@ use lzvm_artifacts::contribution_segment::CONTRIBUTION_SEGMENT_ID;
 use lzvm_artifacts::eth_block_input_segment::ETH_BLOCK_INPUT_SEGMENT_ID;
 use lzvm_artifacts::global_info::{GlobalInfo, PublicValue};
 use lzvm_artifacts::group_values_segment::GROUP_VALUES_SEGMENT_ID;
+use lzvm_artifacts::guest_input_segment::FRAMED_GUEST_INPUT_SEGMENT_ID;
 use lzvm_artifacts::key_directory::{
     key_directory_catalog_digest, read_key_directory_catalog, KeyDirectoryCatalog,
     KeyDirectoryError,
@@ -113,6 +114,10 @@ pub struct SetupPreflightReport {
     pub trace_constraint_segment_count: usize,
     pub trace_constraint_segment_byte_counts: Vec<usize>,
     pub trace_constraint_units: Vec<TraceConstraintPreflightUnit>,
+    pub framed_guest_input_count: usize,
+    pub framed_guest_input_hashes: Vec<[u8; 32]>,
+    pub framed_guest_input_byte_counts: Vec<usize>,
+    pub framed_guest_input_chunk_counts: Vec<usize>,
     pub eth_block_input_count: usize,
     pub eth_block_input_hashes: Vec<[u8; 32]>,
     pub eth_block_input_byte_counts: Vec<usize>,
@@ -543,6 +548,10 @@ fn validate_setup_preflight_hashes_with_fields(
         trace_constraint_segment_count,
         trace_constraint_segment_byte_counts,
         trace_constraint_units,
+        framed_guest_input_count,
+        framed_guest_input_hashes,
+        framed_guest_input_byte_counts,
+        framed_guest_input_chunk_counts,
         eth_block_input_count,
         eth_block_input_hashes,
         eth_block_input_byte_counts,
@@ -624,6 +633,10 @@ fn validate_setup_preflight_hashes_with_fields(
             trace_constraint_segment_count,
             trace_constraint_segment_byte_counts,
             trace_constraint_units,
+            framed_guest_input_count,
+            framed_guest_input_hashes,
+            framed_guest_input_byte_counts,
+            framed_guest_input_chunk_counts,
             eth_block_input_count,
             eth_block_input_hashes,
             eth_block_input_byte_counts,
@@ -1236,6 +1249,7 @@ pub(crate) fn is_setup_proof_segment_id(id: u32) -> bool {
             | PROGRAM_IMAGE_CACHE_SEGMENT_ID
             | CONTRIBUTION_SEGMENT_ID
             | ETH_BLOCK_INPUT_SEGMENT_ID
+            | FRAMED_GUEST_INPUT_SEGMENT_ID
     )
 }
 

@@ -15,6 +15,7 @@ const VERIFY_REQUIRED_TEXTS: &[&str] = &[
     "artifact_proof_match=ok",
     "eth_block_input_match=ok",
     "program_image_cache_match=ok",
+    "framed_guest_input_match=ok",
 ];
 
 fn workspace_root() -> &'static std::path::Path {
@@ -269,6 +270,7 @@ fn eth_proof_timing_batch_dry_run_builds_small_command_from_env() {
     assert!(
         verify_command.contains("verify proof --eth-block-input")
             && verify_command.contains("--program-image-cache")
+            && verify_command.contains("--input-data")
             && verify_command.contains("{batch_dir}/small-{run_padded}.proof/proof.bin")
             && verify_command
                 .contains("{batch_dir}/small-{run_padded}.proof/eth-block-public-values.bin")
@@ -402,6 +404,7 @@ fn eth_proof_timing_batch_run_uses_runner_tmpdir_token() {
     assert!(
         verify_command.contains("verify proof --eth-block-input")
             && verify_command.contains("--program-image-cache")
+            && verify_command.contains("--input-data")
             && verify_command.contains("verify_proof_status=ok"),
         "runner should receive a prove-then-verify command: {runner_args}"
     );
@@ -443,7 +446,8 @@ fn eth_proof_timing_batch_skip_verify_omits_external_verify() {
             && !stdout.contains("artifact_public_input_match=ok")
             && !stdout.contains("artifact_proof_match=ok")
             && !stdout.contains("eth_block_input_match=ok")
-            && !stdout.contains("program_image_cache_match=ok"),
+            && !stdout.contains("program_image_cache_match=ok")
+            && !stdout.contains("framed_guest_input_match=ok"),
         "skip mode should omit external proof verification: {stdout}"
     );
 }
@@ -476,7 +480,8 @@ fn eth_proof_timing_batch_check_env_reports_ready_paths() {
             && stdout.contains("small_verify_required_text=artifact_public_input_match=ok\n")
             && stdout.contains("small_verify_required_text=artifact_proof_match=ok\n")
             && stdout.contains("small_verify_required_text=eth_block_input_match=ok\n")
-            && stdout.contains("small_verify_required_text=program_image_cache_match=ok\n"),
+            && stdout.contains("small_verify_required_text=program_image_cache_match=ok\n")
+            && stdout.contains("small_verify_required_text=framed_guest_input_match=ok\n"),
         "env check should report required proof verification markers: {stdout}"
     );
     assert!(stdout.contains("small_trace_limit=120000000\n"), "{stdout}");
@@ -2569,6 +2574,7 @@ fn eth_proof_timing_batch_available_suite_uses_only_configured_large_env() {
     assert!(
         verify_command.contains("verify proof --eth-block-input")
             && verify_command.contains("--program-image-cache")
+            && verify_command.contains("--input-data")
             && verify_command.contains("verify_proof_status=ok"),
         "available suite should include external verification in the large command: {stdout}"
     );

@@ -7,6 +7,7 @@ use lzvm_artifacts::constant_tree::ConstantTreeFileSummary;
 use lzvm_artifacts::eth_block_input::EthBlockInput;
 use lzvm_artifacts::eth_block_public_values::validate_eth_block_public_values_with_program_image_cache;
 use lzvm_artifacts::global_info::GlobalInfo;
+use lzvm_artifacts::guest_input_segment::encode_framed_guest_input_segment;
 use lzvm_artifacts::key_directory::KeyDirectoryCatalog;
 use lzvm_artifacts::program_image::ProgramImageCommitmentCache;
 use lzvm_artifacts::proof::{encode_proof_artifact, ProofArtifact, ProofSegment};
@@ -139,6 +140,13 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
         }
     };
     timings.mark("plan");
+    let framed_guest_input_bytes = match framed_guest_input_bytes_for_plan(&parsed, &plan) {
+        Ok(bytes) => bytes,
+        Err(message) => {
+            let _ = writeln!(stderr, "prove witness failed: {message}");
+            return 1;
+        }
+    };
     if let Err(message) = validate_large_guest_pc_gpu(parsed.guest_pc_trace_instruction_limit) {
         let _ = writeln!(stderr, "prove witness failed: {message}");
         return 1;
@@ -315,6 +323,7 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
                         public_input: parsed.eth_public_input.as_deref(),
                     },
                     challenge_values_segment: challenge_values_segment.as_ref(),
+                    framed_guest_input: framed_guest_input_bytes.as_deref(),
                 },
                 stdout,
                 &mut timings,
@@ -375,6 +384,7 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
                         public_input: parsed.eth_public_input.as_deref(),
                     },
                     challenge_values_segment: challenge_values_segment.as_ref(),
+                    framed_guest_input: framed_guest_input_bytes.as_deref(),
                 },
                 stdout,
                 &mut timings,
@@ -499,6 +509,7 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
                             public_input: parsed.eth_public_input.as_deref(),
                         },
                         challenge_values_segment: challenge_values_segment.as_ref(),
+                        framed_guest_input: framed_guest_input_bytes.as_deref(),
                     },
                     stdout,
                     &mut timings,
@@ -614,6 +625,7 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
             .as_ref()
             .map(|summary| &summary.input),
         challenge_values_segment: challenge_values_segment.as_ref(),
+        framed_guest_input: framed_guest_input_bytes.as_deref(),
         output: &output,
         contribution_only,
         include_contribution_segment: false,
@@ -695,7 +707,11 @@ fn contribution_artifact_requested(plan: &ProveExecutionPlan) -> bool {
 }
 
 fn partition_input_data(request: &ProveRunRequest) -> Option<&Path> {
-    match &request.pass {
+    partition_input_data_from_pass(&request.pass)
+}
+
+fn partition_input_data_from_pass(pass: &ProvePassRequest) -> Option<&Path> {
+    match pass {
         ProvePassRequest::Contributions(partitions) | ProvePassRequest::Full(partitions) => {
             partitions.input_data.as_deref()
         }
@@ -711,6 +727,27 @@ fn validate_guest_pc_trace_eth_input_binding(parsed: &ParsedWitnessArgs) -> Resu
         return Err("--eth-block-input/--eth-public-input with --guest-pc-trace requires --input-data with framed guest stdin".to_owned());
     }
     Ok(())
+}
+
+fn framed_guest_input_bytes_for_plan(
+    parsed: &ParsedWitnessArgs,
+    plan: &ProveExecutionPlan,
+) -> Result<Option<Vec<u8>>, String> {
+    if parsed.guest_pc_trace_instruction_limit.is_none() {
+        return Ok(None);
+    }
+    let Some(input_path) = partition_input_data_from_pass(&plan.run_plan.pass) else {
+        return Ok(None);
+    };
+    let bytes = fs::read(input_path).map_err(|error| {
+        format!(
+            "read framed guest input failed: {}: {error}",
+            input_path.display()
+        )
+    })?;
+    encode_framed_guest_input_segment(&bytes)
+        .map_err(|error| format!("framed guest input is invalid: {error}"))?;
+    Ok(Some(bytes))
 }
 
 fn selected_single_unit_index(
@@ -762,6 +799,7 @@ struct FinishAllUnitsWitnessRunRequest<'a> {
     outputs: &'a [ProveWitnessTraceCommitments],
     eth_block_input: FinishEthBlockInput<'a>,
     challenge_values_segment: Option<&'a ProofSegment>,
+    framed_guest_input: Option<&'a [u8]>,
 }
 
 struct WitnessAuxiliaryInputRequest<'a> {
@@ -824,6 +862,7 @@ struct WitnessOutputSaveRequest<'a> {
     program_image_cache: Option<&'a ProgramImageCommitmentCache>,
     eth_block_input: Option<&'a EthBlockInput>,
     challenge_values_segment: Option<&'a ProofSegment>,
+    framed_guest_input: Option<&'a [u8]>,
     output: &'a ProveWitnessTraceCommitments,
     contribution_only: bool,
     include_contribution_segment: bool,
@@ -962,6 +1001,7 @@ fn finish_all_units_witness_run(
         outputs,
         eth_block_input,
         challenge_values_segment,
+        framed_guest_input,
     } = request;
     let unit_values = load_batch_unit_values_inputs(
         &plan.run_plan.schedule,
@@ -1009,6 +1049,7 @@ fn finish_all_units_witness_run(
             .map(|summary| &summary.cache),
         eth_block_input: eth_block_input.summary.map(|summary| &summary.input),
         challenge_values_segment,
+        framed_guest_input,
         include_contribution_segment: !contribution_artifact_requested(plan)
             && plan.run_plan.options.aggregate
             && challenge_values_segment.is_some(),
@@ -1061,6 +1102,7 @@ fn finish_all_units_witness_run(
                     .map(|summary| &summary.cache),
                 eth_block_input: eth_block_input.summary.map(|summary| &summary.input),
                 challenge_values_segment,
+                framed_guest_input,
                 output,
                 contribution_only: contribution_artifact_requested(plan),
                 include_contribution_segment: !contribution_artifact_requested(plan)
@@ -1201,6 +1243,7 @@ fn build_proof_bytes(
                 program_image_cache: request.program_image_cache,
                 eth_block_input: request.eth_block_input,
                 challenge_values_segment: request.challenge_values_segment,
+                framed_guest_input: request.framed_guest_input,
                 include_contribution_segment: false,
             },
         )?
@@ -1219,6 +1262,7 @@ fn build_proof_bytes(
                 program_image_cache: request.program_image_cache,
                 eth_block_input: request.eth_block_input,
                 challenge_values_segment: request.challenge_values_segment,
+                framed_guest_input: request.framed_guest_input,
                 include_contribution_segment: request.include_contribution_segment,
             },
             &mut proof_artifact_timing,

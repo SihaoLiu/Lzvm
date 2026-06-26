@@ -947,6 +947,6 @@ fn reports_usage_for_missing_preflight_inputs() {
     assert!(stdout.is_empty());
     assert_eq!(
         String::from_utf8(stderr).expect("stderr should be utf-8"),
-        "usage: lzvm verify preflight [--eth-block-input <block-input>] [--eth-public-input <public-input>] [--eth-public-input-allow-trailing] [--program-image-cache <cache-bin>] <proof-bin> <public-values>\n"
+        "usage: lzvm verify preflight [--eth-block-input <block-input>] [--eth-public-input <public-input>] [--eth-public-input-allow-trailing] [--program-image-cache <cache-bin>] [--input-data <input>] <proof-bin> <public-values>\n"
     );
 }

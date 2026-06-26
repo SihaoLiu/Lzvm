@@ -18,6 +18,7 @@ struct ParsedWriteArgs<'a> {
     eth_public_input: Option<&'a str>,
     eth_public_input_allow_trailing: bool,
     program_image_cache: Option<&'a str>,
+    input_data: Option<&'a str>,
 }
 
 fn parse_write_args<'a>(
@@ -37,6 +38,7 @@ fn parse_write_args<'a>(
         eth_public_input: parsed.eth_public_input,
         eth_public_input_allow_trailing: parsed.eth_public_input_allow_trailing,
         program_image_cache: parsed.program_image_cache,
+        input_data: parsed.input_data,
     })
 }
 
@@ -65,6 +67,7 @@ fn run_parsed(parsed: ParsedWriteArgs<'_>, stdout: &mut dyn Write, stderr: &mut 
             eth_public_input: parsed.eth_public_input,
             eth_public_input_allow_trailing: parsed.eth_public_input_allow_trailing,
             program_image_cache: parsed.program_image_cache,
+            input_data: parsed.input_data,
         },
         stderr,
     ) {
@@ -170,6 +173,7 @@ struct ParsedVerifyArgs<'a> {
     eth_public_input: Option<&'a str>,
     eth_public_input_allow_trailing: bool,
     program_image_cache: Option<&'a str>,
+    input_data: Option<&'a str>,
 }
 
 fn parse_verify_args<'a>(
@@ -189,6 +193,7 @@ fn parse_verify_args<'a>(
         eth_public_input: parsed.eth_public_input,
         eth_public_input_allow_trailing: parsed.eth_public_input_allow_trailing,
         program_image_cache: parsed.program_image_cache,
+        input_data: parsed.input_data,
     })
 }
 
@@ -220,6 +225,7 @@ fn verify_parsed(
             eth_public_input: parsed.eth_public_input,
             eth_public_input_allow_trailing: parsed.eth_public_input_allow_trailing,
             program_image_cache: parsed.program_image_cache,
+            input_data: parsed.input_data,
         },
         stderr,
     ) {
@@ -324,7 +330,7 @@ fn verify_inner(
 pub(crate) fn write_usage(stderr: &mut dyn Write) -> i32 {
     let _ = writeln!(
         stderr,
-        "usage: lzvm prove write-contribution-challenges [--eth-block-input <block-input>] [--eth-public-input <public-input>] [--eth-public-input-allow-trailing] [--program-image-cache <cache-bin>] <setup-dir> <public-values> <out-challenge-values-segment> <proof-bin> [proof-bin ...]"
+        "usage: lzvm prove write-contribution-challenges [--eth-block-input <block-input>] [--eth-public-input <public-input>] [--eth-public-input-allow-trailing] [--program-image-cache <cache-bin>] [--input-data <input>] <setup-dir> <public-values> <out-challenge-values-segment> <proof-bin> [proof-bin ...]"
     );
     2
 }
@@ -332,7 +338,7 @@ pub(crate) fn write_usage(stderr: &mut dyn Write) -> i32 {
 pub(crate) fn write_verify_usage(stderr: &mut dyn Write) -> i32 {
     let _ = writeln!(
         stderr,
-        "usage: lzvm verify contribution-challenge [--eth-block-input <block-input>] [--eth-public-input <public-input>] [--eth-public-input-allow-trailing] [--program-image-cache <cache-bin>] <setup-dir> <public-values> <challenge-values-segment> <proof-bin> [proof-bin ...]"
+        "usage: lzvm verify contribution-challenge [--eth-block-input <block-input>] [--eth-public-input <public-input>] [--eth-public-input-allow-trailing] [--program-image-cache <cache-bin>] [--input-data <input>] <setup-dir> <public-values> <challenge-values-segment> <proof-bin> [proof-bin ...]"
     );
     2
 }

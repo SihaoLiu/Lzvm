@@ -59,6 +59,8 @@ fn parses_binding_options_for_verify_preflight_args() {
         "--eth-public-input-allow-trailing",
         "--program-image-cache",
         "cache.bin",
+        "--input-data",
+        "input.bin",
         "proof.bin",
         "public-values.bin",
     ])
@@ -69,6 +71,7 @@ fn parses_binding_options_for_verify_preflight_args() {
     assert_eq!(result.eth_public_input, Some("public.bin"));
     assert!(result.eth_public_input_allow_trailing);
     assert_eq!(result.program_image_cache, Some("cache.bin"));
+    assert_eq!(result.input_data, Some("input.bin"));
 }
 
 #[test]
@@ -78,6 +81,8 @@ fn parses_binding_options_for_verify_contribution_args() {
         "block.input",
         "--program-image-cache",
         "cache.bin",
+        "--input-data",
+        "input.bin",
         "setup",
         "proof.bin",
         "public-values.bin",
@@ -89,6 +94,7 @@ fn parses_binding_options_for_verify_contribution_args() {
     assert_eq!(result.public_values_path, "public-values.bin");
     assert_eq!(result.eth_block_input, Some("block.input"));
     assert_eq!(result.program_image_cache, Some("cache.bin"));
+    assert_eq!(result.input_data, Some("input.bin"));
 }
 
 #[test]
@@ -117,6 +123,8 @@ fn parses_binding_options_for_verify_contribution_set_args() {
         "block.input",
         "--program-image-cache",
         "cache.bin",
+        "--input-data",
+        "input.bin",
         "setup",
         "public-values.bin",
         "proof-a.bin",
@@ -129,6 +137,7 @@ fn parses_binding_options_for_verify_contribution_set_args() {
     assert_eq!(result.proof_bins, vec!["proof-a.bin", "proof-b.bin"]);
     assert_eq!(result.eth_block_input, Some("block.input"));
     assert_eq!(result.program_image_cache, Some("cache.bin"));
+    assert_eq!(result.input_data, Some("input.bin"));
 }
 
 #[test]
@@ -179,6 +188,22 @@ fn rejects_missing_eth_public_input_value_for_verify_preflight_args() {
     assert!(matches!(
         result,
         Err(SetupValidationArgError::Invalid(message)) if message == "missing --eth-public-input value"
+    ));
+}
+
+#[test]
+fn rejects_missing_input_data_value_for_verify_preflight_args() {
+    let result = parse_verify_preflight_args(&[
+        "--input-data",
+        "--program-image-cache",
+        "cache.bin",
+        "proof.bin",
+        "public-values.bin",
+    ]);
+
+    assert!(matches!(
+        result,
+        Err(SetupValidationArgError::Invalid(message)) if message == "missing --input-data value"
     ));
 }
 
