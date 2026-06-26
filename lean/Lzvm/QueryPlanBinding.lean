@@ -807,6 +807,36 @@ theorem runtime_query_plan_binding_checked_acceptance_segment_ids_allowed
       accepted
   exact artifactStructural.right.right.right.right.left
 
+theorem runtime_query_plan_binding_checked_acceptance_concrete_segment_ids_allowed
+    {system : VerifierModel}
+    (validation : RuntimeQueryPlanBindingValidation system)
+    (binding :
+      RuntimeProofArtifactConcreteSegmentIdBinding
+        validation.challengeValidation.transcriptValidation.artifactBindingValidation) :
+    forall artifact publicInput proof,
+      RuntimeQueryPlanBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeProofArtifactConcreteSegmentIdsAllowed proof := by
+  intro artifact publicInput proof accepted
+  have challengeAccepted :=
+    validation.queryPlanBindingAcceptedImpliesChallengeAccepted
+      artifact
+      publicInput
+      proof
+      accepted
+  exact
+    runtime_challenge_segment_binding_checked_acceptance_concrete_segment_ids_allowed
+      validation.challengeValidation
+      binding
+      artifact
+      publicInput
+      proof
+      challengeAccepted
+
 theorem runtime_query_plan_binding_checked_acceptance_segments_present
     {system : VerifierModel}
     (validation : RuntimeQueryPlanBindingValidation system) :

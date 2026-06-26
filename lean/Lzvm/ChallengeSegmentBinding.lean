@@ -492,6 +492,36 @@ theorem runtime_challenge_segment_binding_checked_acceptance_segment_ids_allowed
       accepted
   exact artifactStructural.right.right.right.right.left
 
+theorem runtime_challenge_segment_binding_checked_acceptance_concrete_segment_ids_allowed
+    {system : VerifierModel}
+    (validation : RuntimeChallengeSegmentBindingValidation system)
+    (binding :
+      RuntimeProofArtifactConcreteSegmentIdBinding
+        validation.transcriptValidation.artifactBindingValidation) :
+    forall artifact publicInput proof,
+      RuntimeChallengeSegmentBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeProofArtifactConcreteSegmentIdsAllowed proof := by
+  intro artifact publicInput proof accepted
+  have transcriptAccepted :=
+    validation.challengeBindingAcceptedImpliesTranscriptAccepted
+      artifact
+      publicInput
+      proof
+      accepted
+  exact
+    runtime_transcript_binding_checked_acceptance_concrete_segment_ids_allowed
+      validation.transcriptValidation
+      binding
+      artifact
+      publicInput
+      proof
+      transcriptAccepted
+
 theorem runtime_challenge_segment_binding_checked_acceptance_segments_present
     {system : VerifierModel}
     (validation : RuntimeChallengeSegmentBindingValidation system) :

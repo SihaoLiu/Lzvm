@@ -935,6 +935,38 @@ theorem runtime_pipeline_binding_checked_acceptance_segment_ids_allowed
       accepted
   exact artifactStructural.right.right.right.right.left
 
+theorem runtime_pipeline_binding_checked_acceptance_concrete_segment_ids_allowed
+    {system : VerifierModel}
+    (validation : RuntimePipelineBindingValidation system)
+    (binding :
+      let queryPlanValidation := validation.queryPlanBindingValidation
+      let challengeValidation := queryPlanValidation.challengeValidation
+      RuntimeProofArtifactConcreteSegmentIdBinding
+        challengeValidation.transcriptValidation.artifactBindingValidation) :
+    forall artifact publicInput proof,
+      RuntimePipelineBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeProofArtifactConcreteSegmentIdsAllowed proof := by
+  intro artifact publicInput proof accepted
+  have queryPlanAccepted :=
+    validation.pipelineBindingAcceptedImpliesQueryPlanBindingAccepted
+      artifact
+      publicInput
+      proof
+      accepted
+  exact
+    runtime_query_plan_binding_checked_acceptance_concrete_segment_ids_allowed
+      validation.queryPlanBindingValidation
+      binding
+      artifact
+      publicInput
+      proof
+      queryPlanAccepted
+
 theorem runtime_pipeline_binding_checked_acceptance_segments_present
     {system : VerifierModel}
     (validation : RuntimePipelineBindingValidation system) :

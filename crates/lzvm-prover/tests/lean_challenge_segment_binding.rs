@@ -45,6 +45,7 @@ fn lean_challenge_segment_binding_exports_core_contract_projection() {
             "runtime_challenge_segment_binding_checked_acceptance_metadata_canonical",
             "runtime_challenge_segment_binding_checked_acceptance_segment_payloads_nonempty",
             "runtime_challenge_segment_binding_checked_acceptance_segment_ids_allowed",
+            "runtime_challenge_segment_binding_checked_acceptance_concrete_segment_ids_allowed",
             "runtime_challenge_segment_binding_checked_acceptance_segments_present",
             "runtime_challenge_segment_binding_checked_acceptance_transcript_payload_contract",
             "runtime_challenge_segment_binding_checked_acceptance_sound",
@@ -188,6 +189,28 @@ fn lean_challenge_segment_binding_exports_core_contract_projection() {
         &lean_source,
         "runtime_challenge_segment_binding_checked_acceptance_segment_ids_allowed",
         &["runtime_challenge_segment_binding_checked_acceptance_artifact_structural_obligations"],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_challenge_segment_binding_checked_acceptance_concrete_segment_ids_allowed",
+        &[
+            "RuntimeChallengeSegmentBindingCheckedAcceptance",
+            "RuntimeProofArtifactConcreteSegmentIdBinding",
+            "RuntimeProofArtifactConcreteSegmentIdsAllowed proof",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_challenge_segment_binding_checked_acceptance_concrete_segment_ids_allowed",
+        &[
+            "validation.challengeBindingAcceptedImpliesTranscriptAccepted",
+            "runtime_transcript_binding_checked_acceptance_concrete_segment_ids_allowed",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_omits(
+        &lean_source,
+        "runtime_challenge_segment_binding_checked_acceptance_concrete_segment_ids_allowed",
+        &["AssumptionBundle"],
     );
     lean_binding::assert_theorem_prefix_contains(
         &lean_source,

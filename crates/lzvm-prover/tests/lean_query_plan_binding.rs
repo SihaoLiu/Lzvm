@@ -78,6 +78,7 @@ fn lean_query_plan_binding_exports_opening_segment_projections() {
             "runtime_query_plan_binding_checked_acceptance_metadata_canonical",
             "runtime_query_plan_binding_checked_acceptance_segment_payloads_nonempty",
             "runtime_query_plan_binding_checked_acceptance_segment_ids_allowed",
+            "runtime_query_plan_binding_checked_acceptance_concrete_segment_ids_allowed",
             "runtime_query_plan_binding_checked_acceptance_segments_present",
             "runtime_query_plan_binding_checked_acceptance_opening_segment_evidence",
             "runtime_query_plan_binding_checked_acceptance_opening_segment_bound_contract",
@@ -386,6 +387,28 @@ fn lean_query_plan_binding_exports_opening_segment_projections() {
         &lean_source,
         "runtime_query_plan_binding_checked_acceptance_segment_ids_allowed",
         &["runtime_query_plan_binding_checked_acceptance_artifact_structural_obligations"],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_query_plan_binding_checked_acceptance_concrete_segment_ids_allowed",
+        &[
+            "RuntimeQueryPlanBindingCheckedAcceptance",
+            "RuntimeProofArtifactConcreteSegmentIdBinding",
+            "RuntimeProofArtifactConcreteSegmentIdsAllowed proof",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_query_plan_binding_checked_acceptance_concrete_segment_ids_allowed",
+        &[
+            "validation.queryPlanBindingAcceptedImpliesChallengeAccepted",
+            "runtime_challenge_segment_binding_checked_acceptance_concrete_segment_ids_allowed",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_omits(
+        &lean_source,
+        "runtime_query_plan_binding_checked_acceptance_concrete_segment_ids_allowed",
+        &["AssumptionBundle"],
     );
     lean_binding::assert_theorem_prefix_contains(
         &lean_source,
