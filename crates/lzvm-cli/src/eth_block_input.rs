@@ -6,7 +6,7 @@ use lzvm_artifacts::eth_block_input::{
     build_eth_block_input, build_eth_block_input_with_receipts, encode_eth_block_input,
     eth_block_input_bytes_digest, eth_block_input_extra_field_counts,
     eth_block_input_receipt_kind_counts, eth_block_input_transaction_kind_counts,
-    eth_block_input_withdrawal_count, parse_eth_block_input, EthBlockInput,
+    eth_block_input_withdrawal_count, parse_eth_block_input, EthBlockInput, EthBlockInputError,
 };
 
 use crate::eth_rpc_block::{
@@ -227,7 +227,12 @@ fn write_block_input(
     }
 
     let digest = eth_block_input_bytes_digest(&encoded);
-    write_input_summary(stdout, output_path, encoded.len(), &digest, &input, false);
+    if let Err(error) =
+        write_input_summary(stdout, output_path, encoded.len(), &digest, &input, false)
+    {
+        let _ = writeln!(stderr, "eth block input failed: {error}");
+        return 1;
+    }
     0
 }
 
@@ -265,14 +270,17 @@ fn summarize_block_input(input_path: &str, stdout: &mut dyn Write, stderr: &mut 
     };
 
     let digest = eth_block_input_bytes_digest(&encoded);
-    write_input_summary(
+    if let Err(error) = write_input_summary(
         stdout,
         Path::new(input_path),
         encoded.len(),
         &digest,
         &input,
         true,
-    );
+    ) {
+        let _ = writeln!(stderr, "eth block input summary failed: {error}");
+        return 1;
+    }
     0
 }
 
@@ -283,7 +291,17 @@ fn write_input_summary(
     digest: &[u8; 32],
     input: &EthBlockInput,
     include_block_rlp_bytes: bool,
-) {
+) -> Result<(), EthBlockInputError> {
+    let (extra_header_fields, extra_body_fields) = eth_block_input_extra_field_counts(input)?;
+    let (legacy_transactions, typed_transactions) = eth_block_input_transaction_kind_counts(input)?;
+    let receipt_kind_counts = eth_block_input_receipt_kind_counts(input)?;
+    let withdrawal_count = eth_block_input_withdrawal_count(input)?;
+    let withdrawals_root = match (&input.withdrawals, input.withdrawals_root) {
+        (Some(_), Some(root)) => Some(root),
+        (Some(_), None) => return Err(EthBlockInputError::MissingWithdrawalsRoot),
+        (None, _) => None,
+    };
+
     let _ = writeln!(stdout, "status=ok");
     let _ = writeln!(stdout, "block_input={}", input_path.display());
     let _ = writeln!(stdout, "bytes={encoded_len}");
@@ -291,8 +309,6 @@ fn write_input_summary(
     if include_block_rlp_bytes {
         let _ = writeln!(stdout, "block_rlp_bytes={}", input.block_rlp.len());
     }
-    let (extra_header_fields, extra_body_fields) = eth_block_input_extra_field_counts(input)
-        .expect("ETH block input summary requires validated block data");
     if extra_header_fields > 0 || extra_body_fields > 0 {
         let _ = writeln!(stdout, "extra_header_fields={extra_header_fields}");
         let _ = writeln!(stdout, "extra_body_fields={extra_body_fields}");
@@ -331,7 +347,6 @@ fn write_input_summary(
         "transaction_trie_preimages={}",
         input.transactions.hash_preimages.len()
     );
-    let (legacy_transactions, typed_transactions) = transaction_kind_counts(input);
     let transaction_count = legacy_transactions + typed_transactions;
     let _ = writeln!(stdout, "transaction_count={transaction_count}");
     let _ = writeln!(stdout, "legacy_transactions={legacy_transactions}");
@@ -346,9 +361,7 @@ fn write_input_summary(
             "receipt_trie_preimages={}",
             receipts.hash_preimages.len()
         );
-        if let Some((legacy_receipts, typed_receipts)) = eth_block_input_receipt_kind_counts(input)
-            .expect("ETH block input summary requires validated receipt data")
-        {
+        if let Some((legacy_receipts, typed_receipts)) = receipt_kind_counts {
             let receipt_count = legacy_receipts + typed_receipts;
             let _ = writeln!(stdout, "receipt_count={receipt_count}");
             let _ = writeln!(stdout, "legacy_receipts={legacy_receipts}");
@@ -365,14 +378,11 @@ fn write_input_summary(
         }
     );
     if let Some(withdrawals) = &input.withdrawals {
-        if let Some(withdrawal_count) = eth_block_input_withdrawal_count(input)
-            .expect("ETH block input summary requires validated withdrawal data")
-        {
+        if let Some(withdrawal_count) = withdrawal_count {
             let _ = writeln!(stdout, "withdrawal_count={withdrawal_count}");
         }
-        let withdrawals_root = input
-            .withdrawals_root
-            .expect("withdrawals build requires withdrawals root");
+        let withdrawals_root =
+            withdrawals_root.ok_or(EthBlockInputError::MissingWithdrawalsRoot)?;
         let _ = writeln!(
             stdout,
             "withdrawals_root={}",
@@ -384,11 +394,7 @@ fn write_input_summary(
             withdrawals.hash_preimages.len()
         );
     }
-}
-
-fn transaction_kind_counts(input: &EthBlockInput) -> (usize, usize) {
-    eth_block_input_transaction_kind_counts(input)
-        .expect("ETH block input summary requires validated transaction data")
+    Ok(())
 }
 
 fn decode_hex_bytes(input: &[u8]) -> Result<Vec<u8>, HexDecodeError> {
@@ -508,4 +514,55 @@ fn write_usage(stderr: &mut dyn Write) -> i32 {
 fn write_summary_usage(stderr: &mut dyn Write) -> i32 {
     let _ = writeln!(stderr, "usage: lzvm eth block-input-summary <block-input>");
     2
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use lzvm_artifacts::eth_trie::IndexedTrieBuild;
+
+    #[test]
+    fn summary_returns_error_without_success_output_for_invalid_block_data() {
+        let input = EthBlockInput {
+            block_rlp: vec![0x80],
+            block_hash: [0; 32],
+            parent_hash: [0; 32],
+            beneficiary: [0; 20],
+            state_root: [0; 32],
+            receipts_root: [0; 32],
+            logs_bloom: [0; 256],
+            difficulty: [0; 32],
+            block_number: 0,
+            timestamp: 0,
+            extra_data: Vec::new(),
+            gas_limit: 0,
+            gas_used: 0,
+            base_fee_per_gas: None,
+            mix_hash: [0; 32],
+            nonce: [0; 8],
+            ommers_hash: [0; 32],
+            transactions_root: [0; 32],
+            withdrawals_root: None,
+            transactions: IndexedTrieBuild {
+                root: [0; 32],
+                hash_preimages: Vec::new(),
+            },
+            receipts_rlp: None,
+            receipts: None,
+            withdrawals: None,
+        };
+        let mut stdout = Vec::new();
+
+        let result = write_input_summary(
+            &mut stdout,
+            Path::new("block.input"),
+            0,
+            &[0; 32],
+            &input,
+            false,
+        );
+
+        assert!(matches!(result, Err(EthBlockInputError::Block(_))));
+        assert!(stdout.is_empty());
+    }
 }
