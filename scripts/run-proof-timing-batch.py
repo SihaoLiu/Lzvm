@@ -570,6 +570,12 @@ def timing_spread_seconds(values: list[float]) -> float | None:
     return round(max(values) - min(values), 3)
 
 
+def timing_milliseconds(value: float | None) -> int:
+    if value is None:
+        return 0
+    return int(round(value * 1000))
+
+
 def timing_relative_spread(values: list[float]) -> float | None:
     if not values:
         return None
@@ -644,6 +650,10 @@ def write_batch_json(
     large_stable_timing_s, large_stable_timing_parse_failed_count = timing_seconds_values(
         large_stable_logs or []
     )
+    small_stable_avg_s = timing_average_seconds(small_stable_timing_s)
+    large_stable_avg_s = timing_average_seconds(large_stable_timing_s)
+    small_stable_spread_s = timing_spread_seconds(small_stable_timing_s)
+    large_stable_spread_s = timing_spread_seconds(large_stable_timing_s)
     payload = {
         "created_at": datetime.now().astimezone().strftime("%Y-%m-%dT%H:%M:%S%z"),
         "workspace": str(root),
@@ -677,10 +687,14 @@ def write_batch_json(
         "large_stable_logs": path_texts(large_stable_logs or []),
         "small_stable_timing_s": small_stable_timing_s,
         "large_stable_timing_s": large_stable_timing_s,
-        "small_stable_avg_s": timing_average_seconds(small_stable_timing_s),
-        "large_stable_avg_s": timing_average_seconds(large_stable_timing_s),
-        "small_stable_spread_s": timing_spread_seconds(small_stable_timing_s),
-        "large_stable_spread_s": timing_spread_seconds(large_stable_timing_s),
+        "small_stable_avg_s": small_stable_avg_s,
+        "large_stable_avg_s": large_stable_avg_s,
+        "small_stable_avg_ms": timing_milliseconds(small_stable_avg_s),
+        "large_stable_avg_ms": timing_milliseconds(large_stable_avg_s),
+        "small_stable_spread_s": small_stable_spread_s,
+        "large_stable_spread_s": large_stable_spread_s,
+        "small_stable_spread_ms": timing_milliseconds(small_stable_spread_s),
+        "large_stable_spread_ms": timing_milliseconds(large_stable_spread_s),
         "small_stable_relative_spread": timing_relative_spread(small_stable_timing_s),
         "large_stable_relative_spread": timing_relative_spread(large_stable_timing_s),
         "small_stable_timing_parse_failed_count": small_stable_timing_parse_failed_count,
@@ -968,9 +982,14 @@ def self_test() -> None:
             "large_stable_spread_s",
             "small_stable_relative_spread",
             "large_stable_relative_spread",
+            "small_stable_spread_ms",
+            "large_stable_spread_ms",
         ]:
             if batch_payload.get(key) != 0.0:
                 raise SystemExit(f"self-test batch json {key} should be zero")
+        for key in ["small_stable_avg_ms", "large_stable_avg_ms"]:
+            if batch_payload.get(key) != 1000:
+                raise SystemExit(f"self-test batch json {key} should record milliseconds")
         for key in ["small_stable_timing_s", "large_stable_timing_s"]:
             if batch_payload.get(key) != [1.0, 1.0, 1.0]:
                 raise SystemExit(f"self-test batch json {key} should record samples")

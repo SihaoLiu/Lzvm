@@ -240,7 +240,9 @@ fn proof_timing_batch_runs_commands_and_appends_stable_log() {
     );
     assert!(
         batch_json.contains("\"small_stable_avg_s\": 1.002")
-            && batch_json.contains("\"large_stable_avg_s\": 2.002"),
+            && batch_json.contains("\"large_stable_avg_s\": 2.002")
+            && batch_json.contains("\"small_stable_avg_ms\": 1002")
+            && batch_json.contains("\"large_stable_avg_ms\": 2002"),
         "batch json should record stable average proof times: {batch_json}"
     );
     assert!(
@@ -255,6 +257,8 @@ fn proof_timing_batch_runs_commands_and_appends_stable_log() {
     assert!(
         batch_json.contains("\"small_stable_spread_s\": 0.002")
             && batch_json.contains("\"large_stable_spread_s\": 0.002")
+            && batch_json.contains("\"small_stable_spread_ms\": 2")
+            && batch_json.contains("\"large_stable_spread_ms\": 2")
             && batch_json.contains("\"small_stable_relative_spread\": 0.001996")
             && batch_json.contains("\"large_stable_relative_spread\": 0.000999")
             && batch_json.contains("\"small_timing_parse_failed_count\": 0")
@@ -489,6 +493,7 @@ fn proof_timing_batch_reruns_until_stable_sample_group() {
     );
     assert!(
         batch_json.contains("\"small_stable_spread_s\": 0.002")
+            && batch_json.contains("\"small_stable_spread_ms\": 2")
             && batch_json.contains("\"small_stable_relative_spread\": 0.001994"),
         "batch json should report stable subset spread after dropping the outlier: {batch_json}"
     );
@@ -552,6 +557,7 @@ fn proof_timing_batch_rejects_average_above_max() {
     assert!(
         batch_json.contains("\"small_max_avg_s\": 1.0")
             && batch_json.contains("\"small_stable_avg_s\": 1.5")
+            && batch_json.contains("\"small_stable_avg_ms\": 1500")
             && batch_json.contains("\"appended\": false"),
         "batch json should record the configured max and failed append state: {batch_json}"
     );

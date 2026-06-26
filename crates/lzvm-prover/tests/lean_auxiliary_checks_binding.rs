@@ -527,6 +527,11 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "runtime_performance_observation_projects_proof_artifact_finish_timing",
             "proof_artifact_finish_timing_acceptance_sound",
         ),
+        (
+            "runtime_performance_observation_proof_timing_batch_acceptance_sound",
+            "runtime_performance_observation_projects_proof_timing_batch",
+            "proof_timing_batch_acceptance_sound",
+        ),
     ] {
         lean_binding::assert_theorem_body_contains(
             &runtime_performance_source,
@@ -587,6 +592,11 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "runtime_performance_observation_finish_timing_acceptance_verifier_core_contract",
             "runtime_performance_observation_projects_proof_artifact_finish_timing",
             "proof_artifact_finish_timing_acceptance_verifier_core_contract",
+        ),
+        (
+            "runtime_performance_observation_proof_timing_batch_acceptance_verifier_core_contract",
+            "runtime_performance_observation_projects_proof_timing_batch",
+            "proof_timing_batch_acceptance_verifier_core_contract",
         ),
     ] {
         lean_binding::assert_theorem_body_contains(
@@ -687,6 +697,14 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         &[
             "proof_timing_projected_metadata_acceptance_verifier_core_contract",
             "proof_timing_projected_finish_summary_required_verifier_core_contract",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &proof_timing_projected_source,
+        "proof_timing_projected_core_contracts",
+        &[
+            "batchTiming : Option ProofTimingBatchSummary",
+            "ProofTimingBatchObservedAcceptance",
         ],
     );
     lean_binding::assert_theorem_body_contains(
@@ -2371,15 +2389,47 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "proof_timing_batch_acceptance_verifier_core_contract",
         ],
     );
+    lean_binding::assert_theorem_body_contains(
+        &lean_proof_timing_source,
+        "proof_timing_batch_acceptance_sound",
+        &["ignored_metadata_acceptance_sound"],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_proof_timing_source,
+        "proof_timing_batch_acceptance_verifier_core_contract",
+        &["ignored_metadata_acceptance_verifier_core_contract"],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &lean_proof_timing_source,
+        "proof_timing_batch_acceptance_verifier_core_contract",
+        &[
+            "proof_timing_batch_acceptance_sound",
+            "sound_witness_implies_verifier_core_contract",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &runtime_performance_source,
+        "runtime_performance_observation_projects_proof_timing_batch",
+        &[
+            "ProofTimingBatchObservedAcceptance",
+            "summary.proofTimingBatch",
+        ],
+    );
     for (lean_field, runner_key) in [
         ("smallRunCount", "\"small_logs\""),
         ("largeRunCount", "\"large_logs\""),
         ("smallStableRunCount", "\"small_stable_logs\""),
         ("largeStableRunCount", "\"large_stable_logs\""),
-        ("smallStableAverageMilliseconds", "\"small_stable_avg_s\""),
-        ("largeStableAverageMilliseconds", "\"large_stable_avg_s\""),
-        ("smallStableSpreadMilliseconds", "\"small_stable_spread_s\""),
-        ("largeStableSpreadMilliseconds", "\"large_stable_spread_s\""),
+        ("smallStableAverageMilliseconds", "\"small_stable_avg_ms\""),
+        ("largeStableAverageMilliseconds", "\"large_stable_avg_ms\""),
+        (
+            "smallStableSpreadMilliseconds",
+            "\"small_stable_spread_ms\"",
+        ),
+        (
+            "largeStableSpreadMilliseconds",
+            "\"large_stable_spread_ms\"",
+        ),
         (
             "smallTimingParseFailedCount",
             "\"small_timing_parse_failed_count\"",
