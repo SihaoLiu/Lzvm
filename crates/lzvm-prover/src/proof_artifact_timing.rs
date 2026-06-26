@@ -18,6 +18,9 @@ pub struct WitnessProofArtifactTiming {
     pub witness_opening_retained_leaf_digest_opening_row_count: usize,
     pub witness_opening_retained_parent_checkpoint_opening_count: usize,
     pub witness_opening_retained_parent_checkpoint_opening_row_count: usize,
+    pub witness_opening_row_dedup_input_row_count: usize,
+    pub witness_opening_row_dedup_unique_row_count: usize,
+    pub witness_opening_row_dedup_elided_row_count: usize,
     pub witness_external_source: Duration,
     pub witness_external_source_descriptor_upload: Duration,
     pub witness_external_source_descriptor_upload_byte_count: usize,
@@ -121,6 +124,9 @@ pub struct WitnessProofStageOpeningWork {
     pub retained_leaf_digest_opening_row_count: usize,
     pub retained_parent_checkpoint_opening_count: usize,
     pub retained_parent_checkpoint_opening_row_count: usize,
+    pub row_dedup_input_row_count: usize,
+    pub row_dedup_unique_row_count: usize,
+    pub row_dedup_elided_row_count: usize,
     pub leaf_hash_row_count: usize,
     pub leaf_hash_byte_count: usize,
     pub leaf_hash_arity2_row_count: usize,
@@ -190,6 +196,9 @@ impl WitnessOpeningSourceKind {
 impl WitnessProofStageOpeningWork {
     fn add(&mut self, timing: &crate::witness_commitment::WitnessStageOpeningWorkTiming) {
         self.leaf_hash_row_count += timing.leaf_hash_rows;
+        self.row_dedup_input_row_count += timing.row_dedup_input_row_count;
+        self.row_dedup_unique_row_count += timing.row_dedup_unique_row_count;
+        self.row_dedup_elided_row_count += timing.row_dedup_elided_row_count;
         self.leaf_hash_byte_count += timing.leaf_hash_bytes;
         self.leaf_hash_arity2_row_count += timing.leaf_hash_arity2_row_count;
         self.leaf_hash_arity2_byte_count += timing.leaf_hash_arity2_byte_count;
@@ -379,6 +388,9 @@ impl WitnessProofArtifactTiming {
         timing: &crate::witness_commitment::WitnessStageOpeningWorkTiming,
     ) {
         self.witness_opening_leaf_hash += timing.leaf_hash;
+        self.witness_opening_row_dedup_input_row_count += timing.row_dedup_input_row_count;
+        self.witness_opening_row_dedup_unique_row_count += timing.row_dedup_unique_row_count;
+        self.witness_opening_row_dedup_elided_row_count += timing.row_dedup_elided_row_count;
         self.witness_opening_leaf_hash_row_count += timing.leaf_hash_rows;
         self.witness_opening_leaf_hash_byte_count += timing.leaf_hash_bytes;
         self.witness_opening_leaf_hash_arity2_row_count += timing.leaf_hash_arity2_row_count;

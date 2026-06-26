@@ -25,6 +25,8 @@ theorem proof_artifact_finish_aggregate_timing_acceptance_verifier_core_contract
       witnessOpeningRetainedLeafDigestOpeningRowCount
       witnessOpeningRetainedParentCheckpointOpeningCount
       witnessOpeningRetainedParentCheckpointOpeningRowCount
+      witnessOpeningRowDedupInputRowCount witnessOpeningRowDedupUniqueRowCount
+      witnessOpeningRowDedupElidedRowCount
       descriptorUploadByteCount descriptorUploadWordCount descriptorUploadRowCount
       friOpeningMilliseconds proofEncodeMilliseconds contributionSegmentMilliseconds
       contributionVerifyMilliseconds : Nat) :
@@ -53,6 +55,12 @@ theorem proof_artifact_finish_aggregate_timing_acceptance_verifier_core_contract
               witnessOpeningRetainedParentCheckpointOpeningCount
             finishWitnessOpeningRetainedParentCheckpointOpeningRowCount :=
               witnessOpeningRetainedParentCheckpointOpeningRowCount
+            finishWitnessOpeningRowDedupInputRowCount :=
+              witnessOpeningRowDedupInputRowCount
+            finishWitnessOpeningRowDedupUniqueRowCount :=
+              witnessOpeningRowDedupUniqueRowCount
+            finishWitnessOpeningRowDedupElidedRowCount :=
+              witnessOpeningRowDedupElidedRowCount
             finishWitnessExternalSourceDescriptorUploadByteCount := descriptorUploadByteCount
             finishWitnessExternalSourceDescriptorUploadWordCount := descriptorUploadWordCount
             finishWitnessExternalSourceDescriptorUploadRowCount := descriptorUploadRowCount
@@ -88,6 +96,12 @@ theorem proof_artifact_finish_aggregate_timing_acceptance_verifier_core_contract
           witnessOpeningRetainedParentCheckpointOpeningCount
         finishWitnessOpeningRetainedParentCheckpointOpeningRowCount :=
           witnessOpeningRetainedParentCheckpointOpeningRowCount
+        finishWitnessOpeningRowDedupInputRowCount :=
+          witnessOpeningRowDedupInputRowCount
+        finishWitnessOpeningRowDedupUniqueRowCount :=
+          witnessOpeningRowDedupUniqueRowCount
+        finishWitnessOpeningRowDedupElidedRowCount :=
+          witnessOpeningRowDedupElidedRowCount
         finishWitnessExternalSourceDescriptorUploadByteCount := descriptorUploadByteCount
         finishWitnessExternalSourceDescriptorUploadWordCount := descriptorUploadWordCount
         finishWitnessExternalSourceDescriptorUploadRowCount := descriptorUploadRowCount

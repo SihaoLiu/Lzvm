@@ -1341,6 +1341,9 @@ pub(crate) fn open_witness_stage_commitment_batches_with_source_devices_timing(
                 Some(timing),
             )? {
             Some(device_siblings) => {
+                if let Some(unique) = &unique {
+                    timing.record_row_dedup(request.row_indices.len(), unique.row_indices.len());
+                }
                 sibling_batches.push(device_siblings.siblings_by_row);
                 pending_groups.push(PendingWitnessStageOpeningGroup::DeviceSiblings {
                     row_indices: opening_row_indices.to_vec(),
@@ -1360,6 +1363,12 @@ pub(crate) fn open_witness_stage_commitment_batches_with_source_devices_timing(
                         Some(timing),
                     )? {
                     Some(row_values) => {
+                        if let Some(unique) = &unique {
+                            timing.record_row_dedup(
+                                request.row_indices.len(),
+                                unique.row_indices.len(),
+                            );
+                        }
                         pending_groups.push(PendingWitnessStageOpeningGroup::DeviceRows {
                             row_indices: opening_row_indices.to_vec(),
                             row_values,
@@ -1598,6 +1607,10 @@ fn open_witness_stage_commitments_inner(
     let rows = usize::try_from(row_count).map_err(|_| WitnessStageOpeningError::LengthOverflow)?;
 
     if let Some(unique) = unique_witness_stage_opening_rows(row_indices, &query_rows) {
+        #[cfg(feature = "cuda")]
+        if let Some(timing) = timing.as_deref_mut() {
+            timing.record_row_dedup(row_indices.len(), unique.row_indices.len());
+        }
         let openings = open_witness_stage_commitments_inner(
             commitment,
             &unique.row_indices,
@@ -3380,6 +3393,12 @@ mod tests {
 
         assert_eq!(actual, vec![expected_a, expected_b]);
         assert_eq!(actual[1][0], actual[1][2]);
+        assert_eq!(timings[0].row_dedup_input_row_count, 0);
+        assert_eq!(timings[0].row_dedup_unique_row_count, 0);
+        assert_eq!(timings[0].row_dedup_elided_row_count, 0);
+        assert_eq!(timings[1].row_dedup_input_row_count, rows_b.len());
+        assert_eq!(timings[1].row_dedup_unique_row_count, 2);
+        assert_eq!(timings[1].row_dedup_elided_row_count, 1);
         assert_eq!(timings[0].row_values_device_row_count, rows_a.len());
         assert_eq!(timings[1].row_values_device_row_count, 2);
         assert_eq!(

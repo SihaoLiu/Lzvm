@@ -80,6 +80,9 @@ pub(crate) struct WitnessStageOpeningWorkTiming {
     pub(crate) retained_leaf_digest_opening_row_count: usize,
     pub(crate) retained_parent_checkpoint_opening_count: usize,
     pub(crate) retained_parent_checkpoint_opening_row_count: usize,
+    pub(crate) row_dedup_input_row_count: usize,
+    pub(crate) row_dedup_unique_row_count: usize,
+    pub(crate) row_dedup_elided_row_count: usize,
     pub(crate) path_parent_hash: Duration,
     pub(crate) path_parent_hash_recomputed: Duration,
     pub(crate) path_parent_hash_retained_leaf_digest: Duration,
@@ -170,6 +173,16 @@ impl WitnessStageOpeningWorkTiming {
     pub(crate) fn record_retained_parent_checkpoint_opening(&mut self, row_count: usize) {
         self.retained_parent_checkpoint_opening_count += 1;
         self.retained_parent_checkpoint_opening_row_count += row_count;
+    }
+
+    #[cfg_attr(not(feature = "cuda"), allow(dead_code))]
+    pub(crate) fn record_row_dedup(&mut self, input_row_count: usize, unique_row_count: usize) {
+        if input_row_count <= unique_row_count {
+            return;
+        }
+        self.row_dedup_input_row_count += input_row_count;
+        self.row_dedup_unique_row_count += unique_row_count;
+        self.row_dedup_elided_row_count += input_row_count - unique_row_count;
     }
 
     #[cfg_attr(not(feature = "cuda"), allow(dead_code))]

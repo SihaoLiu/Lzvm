@@ -71,6 +71,18 @@ pub(super) fn record_proof_artifact_timing(
         timing.witness_opening_retained_parent_checkpoint_opening_count,
         timing.witness_opening_retained_parent_checkpoint_opening_row_count,
     );
+    timings.record_count(
+        "finish_witness_opening_row_dedup_input_rows",
+        timing.witness_opening_row_dedup_input_row_count,
+    );
+    timings.record_count(
+        "finish_witness_opening_row_dedup_unique_rows",
+        timing.witness_opening_row_dedup_unique_row_count,
+    );
+    timings.record_count(
+        "finish_witness_opening_row_dedup_elided_rows",
+        timing.witness_opening_row_dedup_elided_row_count,
+    );
     timings.record(
         "finish_witness_external_source",
         timing.witness_external_source,
@@ -409,6 +421,27 @@ pub(super) fn record_proof_artifact_timing(
             ),
             stage_work.retained_parent_checkpoint_opening_count,
             stage_work.retained_parent_checkpoint_opening_row_count,
+        );
+        timings.record_count_dynamic(
+            format!(
+                "finish_witness_stage_{}_opening_row_dedup_input_rows",
+                stage_work.stage_index
+            ),
+            stage_work.row_dedup_input_row_count,
+        );
+        timings.record_count_dynamic(
+            format!(
+                "finish_witness_stage_{}_opening_row_dedup_unique_rows",
+                stage_work.stage_index
+            ),
+            stage_work.row_dedup_unique_row_count,
+        );
+        timings.record_count_dynamic(
+            format!(
+                "finish_witness_stage_{}_opening_row_dedup_elided_rows",
+                stage_work.stage_index
+            ),
+            stage_work.row_dedup_elided_row_count,
         );
         timings.record_count_dynamic(
             format!(

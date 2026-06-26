@@ -361,6 +361,9 @@ fn proof_artifact_timing_reports_parent_hash_shape_counts() {
         witness_opening_retained_leaf_digest_opening_row_count: 32,
         witness_opening_retained_parent_checkpoint_opening_count: 33,
         witness_opening_retained_parent_checkpoint_opening_row_count: 36,
+        witness_opening_row_dedup_input_row_count: 9,
+        witness_opening_row_dedup_unique_row_count: 7,
+        witness_opening_row_dedup_elided_row_count: 2,
         witness_opening_query_count: 3,
         witness_opening_stage_count: 4,
         ..lzvm_prover::WitnessProofArtifactTiming::default()
@@ -453,6 +456,9 @@ fn proof_artifact_timing_reports_parent_hash_shape_counts() {
     assert!(stdout.contains(
         "timing_finish_witness_opening_retained_parent_checkpoint_all_single_row_openings=0\n"
     ));
+    assert!(stdout.contains("timing_finish_witness_opening_row_dedup_input_rows=9\n"));
+    assert!(stdout.contains("timing_finish_witness_opening_row_dedup_unique_rows=7\n"));
+    assert!(stdout.contains("timing_finish_witness_opening_row_dedup_elided_rows=2\n"));
     assert!(stdout.contains("timing_finish_witness_opening_path_parent_hash_rows_per_stage=30\n"));
     assert!(
         stdout.contains("timing_finish_witness_opening_path_parent_hash_launches_per_stage=3\n")
@@ -554,6 +560,9 @@ fn proof_artifact_timing_reports_per_stage_opening_work_shape() {
                 retained_leaf_digest_opening_row_count: 7,
                 retained_parent_checkpoint_opening_count: 8,
                 retained_parent_checkpoint_opening_row_count: 9,
+                row_dedup_input_row_count: 14,
+                row_dedup_unique_row_count: 11,
+                row_dedup_elided_row_count: 3,
                 leaf_hash_row_count: 10,
                 leaf_hash_byte_count: 11,
                 leaf_hash_arity2_row_count: 26,
@@ -632,6 +641,9 @@ fn proof_artifact_timing_reports_per_stage_opening_work_shape() {
         "timing_finish_witness_stage_7_opening_retained_parent_checkpoint_rows=9\n",
         "timing_finish_witness_stage_7_opening_retained_parent_checkpoint_opening_extra_rows=1\n",
         "timing_finish_witness_stage_7_opening_retained_parent_checkpoint_all_single_row_openings=0\n",
+        "timing_finish_witness_stage_7_opening_row_dedup_input_rows=14\n",
+        "timing_finish_witness_stage_7_opening_row_dedup_unique_rows=11\n",
+        "timing_finish_witness_stage_7_opening_row_dedup_elided_rows=3\n",
         "timing_finish_witness_stage_7_opening_leaf_hash_rows=10\n",
         "timing_finish_witness_stage_7_opening_leaf_hash_bytes=11\n",
         "timing_finish_witness_stage_7_opening_leaf_hash_arity2_rows=26\n",

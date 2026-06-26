@@ -461,6 +461,9 @@ structure ProofArtifactFinishTimingSummary where
   finishWitnessOpeningRetainedLeafDigestOpeningRowCount : Nat
   finishWitnessOpeningRetainedParentCheckpointOpeningCount : Nat
   finishWitnessOpeningRetainedParentCheckpointOpeningRowCount : Nat
+  finishWitnessOpeningRowDedupInputRowCount : Nat
+  finishWitnessOpeningRowDedupUniqueRowCount : Nat
+  finishWitnessOpeningRowDedupElidedRowCount : Nat
   finishWitnessExternalSourceMilliseconds : Nat
   finishWitnessExternalSourceDescriptorUploadMilliseconds : Nat
   finishWitnessExternalSourceDescriptorUploadByteCount : Nat

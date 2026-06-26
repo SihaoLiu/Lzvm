@@ -894,7 +894,8 @@ theorem proof_artifact_finish_witness_opening_shape_acceptance_sound
     (queryCount queryUnitCount singleQueryUnitCount maxQueriesPerUnit stageCount
       retainedSourceCount externalSourceCount embeddedSourceCount missingSourceCount
       retainedLeafDigestOpeningCount retainedLeafDigestOpeningRowCount
-      retainedParentCheckpointOpeningCount retainedParentCheckpointOpeningRowCount : Nat) :
+      retainedParentCheckpointOpeningCount retainedParentCheckpointOpeningRowCount
+      rowDedupInputRowCount rowDedupUniqueRowCount rowDedupElidedRowCount : Nat) :
     forall publicInput proof,
       ProofArtifactFinishTimingObservedAcceptance
         system
@@ -915,7 +916,10 @@ theorem proof_artifact_finish_witness_opening_shape_acceptance_sound
             finishWitnessOpeningRetainedParentCheckpointOpeningCount :=
               retainedParentCheckpointOpeningCount
             finishWitnessOpeningRetainedParentCheckpointOpeningRowCount :=
-              retainedParentCheckpointOpeningRowCount })
+              retainedParentCheckpointOpeningRowCount
+            finishWitnessOpeningRowDedupInputRowCount := rowDedupInputRowCount
+            finishWitnessOpeningRowDedupUniqueRowCount := rowDedupUniqueRowCount
+            finishWitnessOpeningRowDedupElidedRowCount := rowDedupElidedRowCount })
         publicInput
         proof ->
         SoundWitness system publicInput proof := by
@@ -939,7 +943,10 @@ theorem proof_artifact_finish_witness_opening_shape_acceptance_sound
         finishWitnessOpeningRetainedParentCheckpointOpeningCount :=
           retainedParentCheckpointOpeningCount
         finishWitnessOpeningRetainedParentCheckpointOpeningRowCount :=
-          retainedParentCheckpointOpeningRowCount }
+          retainedParentCheckpointOpeningRowCount
+        finishWitnessOpeningRowDedupInputRowCount := rowDedupInputRowCount
+        finishWitnessOpeningRowDedupUniqueRowCount := rowDedupUniqueRowCount
+        finishWitnessOpeningRowDedupElidedRowCount := rowDedupElidedRowCount }
       publicInput
       proof
       observed
@@ -951,7 +958,8 @@ theorem proof_artifact_finish_witness_opening_shape_acceptance_verifier_core_con
     (queryCount queryUnitCount singleQueryUnitCount maxQueriesPerUnit stageCount
       retainedSourceCount externalSourceCount embeddedSourceCount missingSourceCount
       retainedLeafDigestOpeningCount retainedLeafDigestOpeningRowCount
-      retainedParentCheckpointOpeningCount retainedParentCheckpointOpeningRowCount : Nat) :
+      retainedParentCheckpointOpeningCount retainedParentCheckpointOpeningRowCount
+      rowDedupInputRowCount rowDedupUniqueRowCount rowDedupElidedRowCount : Nat) :
     forall publicInput proof,
       ProofArtifactFinishTimingObservedAcceptance
         system
@@ -972,7 +980,10 @@ theorem proof_artifact_finish_witness_opening_shape_acceptance_verifier_core_con
             finishWitnessOpeningRetainedParentCheckpointOpeningCount :=
               retainedParentCheckpointOpeningCount
             finishWitnessOpeningRetainedParentCheckpointOpeningRowCount :=
-              retainedParentCheckpointOpeningRowCount })
+              retainedParentCheckpointOpeningRowCount
+            finishWitnessOpeningRowDedupInputRowCount := rowDedupInputRowCount
+            finishWitnessOpeningRowDedupUniqueRowCount := rowDedupUniqueRowCount
+            finishWitnessOpeningRowDedupElidedRowCount := rowDedupElidedRowCount })
         publicInput
         proof ->
         RuntimeVerifierCoreContract system publicInput proof := by
@@ -996,7 +1007,10 @@ theorem proof_artifact_finish_witness_opening_shape_acceptance_verifier_core_con
         finishWitnessOpeningRetainedParentCheckpointOpeningCount :=
           retainedParentCheckpointOpeningCount
         finishWitnessOpeningRetainedParentCheckpointOpeningRowCount :=
-          retainedParentCheckpointOpeningRowCount }
+          retainedParentCheckpointOpeningRowCount
+        finishWitnessOpeningRowDedupInputRowCount := rowDedupInputRowCount
+        finishWitnessOpeningRowDedupUniqueRowCount := rowDedupUniqueRowCount
+        finishWitnessOpeningRowDedupElidedRowCount := rowDedupElidedRowCount }
       publicInput
       proof
       observed
@@ -1686,6 +1700,8 @@ theorem proof_artifact_finish_aggregate_timing_acceptance_sound
       witnessOpeningRetainedLeafDigestOpeningRowCount
       witnessOpeningRetainedParentCheckpointOpeningCount
       witnessOpeningRetainedParentCheckpointOpeningRowCount
+      witnessOpeningRowDedupInputRowCount witnessOpeningRowDedupUniqueRowCount
+      witnessOpeningRowDedupElidedRowCount
       descriptorUploadByteCount descriptorUploadWordCount descriptorUploadRowCount
       friOpeningMilliseconds proofEncodeMilliseconds contributionSegmentMilliseconds
       contributionVerifyMilliseconds : Nat) :
@@ -1714,6 +1730,12 @@ theorem proof_artifact_finish_aggregate_timing_acceptance_sound
               witnessOpeningRetainedParentCheckpointOpeningCount
             finishWitnessOpeningRetainedParentCheckpointOpeningRowCount :=
               witnessOpeningRetainedParentCheckpointOpeningRowCount
+            finishWitnessOpeningRowDedupInputRowCount :=
+              witnessOpeningRowDedupInputRowCount
+            finishWitnessOpeningRowDedupUniqueRowCount :=
+              witnessOpeningRowDedupUniqueRowCount
+            finishWitnessOpeningRowDedupElidedRowCount :=
+              witnessOpeningRowDedupElidedRowCount
             finishWitnessExternalSourceDescriptorUploadByteCount := descriptorUploadByteCount
             finishWitnessExternalSourceDescriptorUploadWordCount := descriptorUploadWordCount
             finishWitnessExternalSourceDescriptorUploadRowCount := descriptorUploadRowCount
@@ -1749,6 +1771,12 @@ theorem proof_artifact_finish_aggregate_timing_acceptance_sound
           witnessOpeningRetainedParentCheckpointOpeningCount
         finishWitnessOpeningRetainedParentCheckpointOpeningRowCount :=
           witnessOpeningRetainedParentCheckpointOpeningRowCount
+        finishWitnessOpeningRowDedupInputRowCount :=
+          witnessOpeningRowDedupInputRowCount
+        finishWitnessOpeningRowDedupUniqueRowCount :=
+          witnessOpeningRowDedupUniqueRowCount
+        finishWitnessOpeningRowDedupElidedRowCount :=
+          witnessOpeningRowDedupElidedRowCount
         finishWitnessExternalSourceDescriptorUploadByteCount := descriptorUploadByteCount
         finishWitnessExternalSourceDescriptorUploadWordCount := descriptorUploadWordCount
         finishWitnessExternalSourceDescriptorUploadRowCount := descriptorUploadRowCount

@@ -2390,6 +2390,9 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         "finishWitnessOpeningRetainedLeafDigestOpeningRowCount",
         "finishWitnessOpeningRetainedParentCheckpointOpeningCount",
         "finishWitnessOpeningRetainedParentCheckpointOpeningRowCount",
+        "finishWitnessOpeningRowDedupInputRowCount",
+        "finishWitnessOpeningRowDedupUniqueRowCount",
+        "finishWitnessOpeningRowDedupElidedRowCount",
         "finishWitnessExternalSourceMilliseconds",
         "finishWitnessExternalSourceDescriptorUploadMilliseconds",
         "finishWitnessExternalSourceDescriptorUploadByteCount",
@@ -2524,6 +2527,18 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         (
             "\"finish_witness_opening_retained_parent_checkpoint_rows\"",
             "witness_opening_retained_parent_checkpoint_opening_row_count",
+        ),
+        (
+            "\"finish_witness_opening_row_dedup_input_rows\"",
+            "witness_opening_row_dedup_input_row_count",
+        ),
+        (
+            "\"finish_witness_opening_row_dedup_unique_rows\"",
+            "witness_opening_row_dedup_unique_row_count",
+        ),
+        (
+            "\"finish_witness_opening_row_dedup_elided_rows\"",
+            "witness_opening_row_dedup_elided_row_count",
         ),
     ] {
         assert!(
