@@ -734,4 +734,69 @@ theorem runtime_proof_artifact_binding_checked_acceptance_verifier_core_contract
       accepted
   exact obligations.right.right.right
 
+theorem runtime_proof_artifact_finalized_full_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeProofArtifactBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeProofArtifactFinalized
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeProofArtifactBindingEvidence
+            system
+            validation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeProofArtifactBindingStructuralObligations
+            system
+            validation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeArtifactEvidence
+            system
+            validation.runtimeValidation
+            artifact
+            publicInput
+            proof
+          /\ SoundWitness system publicInput proof := by
+  intro artifact publicInput proof finalized
+  have sound :=
+    runtime_proof_artifact_binding_checked_acceptance_sound
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      finalized.left
+  exact
+    And.intro sound.left
+      (And.intro finalized.right sound.right)
+
+theorem runtime_proof_artifact_finalized_verifier_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeProofArtifactBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeProofArtifactFinalized
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeVerifierCoreContract system publicInput proof := by
+  intro artifact publicInput proof finalized
+  exact
+    runtime_proof_artifact_binding_checked_acceptance_verifier_core_contract
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      finalized.left
+
 end Lzvm
