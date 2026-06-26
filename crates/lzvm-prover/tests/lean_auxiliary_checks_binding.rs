@@ -678,7 +678,8 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
     assert!(
         proof_timing_projected_source.contains("structure ProofTimingProjectedCoreContracts")
             && proof_timing_projected_source.contains("witnessOpeningRowValueTiming :")
-            && proof_timing_projected_source.contains("proofArtifactFinishTiming :"),
+            && proof_timing_projected_source.contains("proofArtifactFinishTiming :")
+            && proof_timing_projected_source.contains("proofTimingBatch :"),
         "Lean proof timing checks should batch top-level proof timing wrapper core contracts"
     );
     lean_binding::assert_theorem_declarations(
@@ -704,7 +705,10 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
     lean_binding::assert_theorem_body_contains(
         &proof_timing_projected_source,
         "proof_timing_projected_core_contracts",
-        &["proof_timing_projected_metadata_acceptance_verifier_core_contract"],
+        &[
+            "proof_timing_projected_metadata_acceptance_verifier_core_contract",
+            "proof_timing_batch_acceptance_verifier_core_contract",
+        ],
     );
     lean_binding::assert_theorem_body_omits(
         &proof_timing_projected_source,
@@ -745,6 +749,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "runtime_performance_observation_projects_cuda_backend",
             "runtime_performance_observation_projects_cuda_allocator_timing",
             "runtime_performance_observation_projects_proof_artifact_finish_timing",
+            "runtime_performance_observation_projects_proof_timing_batch",
         ],
     );
     lean_binding::assert_theorem_body_omits(
@@ -2358,6 +2363,14 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "Lean proof timing batch summary should expose {field}"
         );
     }
+    lean_binding::assert_theorem_declarations(
+        &lean_proof_timing_source,
+        &[
+            "proof_timing_batch_observed_acceptance_projects_verifier_acceptance",
+            "proof_timing_batch_acceptance_sound",
+            "proof_timing_batch_acceptance_verifier_core_contract",
+        ],
+    );
     for (lean_field, runner_key) in [
         ("smallRunCount", "\"small_logs\""),
         ("largeRunCount", "\"large_logs\""),
