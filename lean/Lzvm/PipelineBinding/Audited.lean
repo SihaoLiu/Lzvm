@@ -265,11 +265,11 @@ theorem runtime_pipeline_binding_required_external_source_audited_soundness_proo
       requiresExternalSource
       accepted
       required
+  have auditedAssumptions :=
+    assumption_bundle_carries_required_evidence assumptions
   exact
-    And.intro auditedContract.left
-      (And.intro
-        (assumption_bundle_carries_required_semantic_evidence assumptions)
-        auditedContract.right)
+    And.intro auditedAssumptions.left
+      (And.intro auditedAssumptions.right auditedContract.right)
 
 theorem runtime_pipeline_binding_required_external_source_audited_accepts_sound_witness_contract
     {system : VerifierModel}

@@ -72,6 +72,7 @@ fn lean_assumption_audit_exports_runtime_soundness_coverage() {
             "required_semantic_assumptions_witness_extraction",
             "semantic_assumptions_carry_required_evidence",
             "assumption_bundle_carries_required_semantic_evidence",
+            "assumption_bundle_carries_required_evidence",
             "assumption_bundle_public_input_binding",
             "assumption_bundle_trace_extraction",
             "assumption_bundle_constraint_satisfaction",
@@ -359,11 +360,19 @@ fn lean_assumption_audit_exports_runtime_soundness_coverage() {
         ],
     );
     lean_binding::assert_theorem_body_contains(
+        &audit_source,
+        "assumption_bundle_carries_required_evidence",
+        &[
+            "assumption_bundle_carries_required_crypto_evidence",
+            "assumption_bundle_carries_required_semantic_evidence",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
         &soundness_source,
         "abstract_verifier_sound_with_audited_soundness_obligations",
         &[
             "abstract_verifier_sound_with_audited_assumptions",
-            "assumption_bundle_carries_required_semantic_evidence",
+            "assumption_bundle_carries_required_evidence",
         ],
     );
 }

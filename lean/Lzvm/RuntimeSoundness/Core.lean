@@ -684,11 +684,11 @@ theorem runtime_soundness_checked_acceptance_audited_soundness_obligations
   have audited :=
     runtime_soundness_checked_acceptance_audited_assumptions
       assumptions validation artifact publicInput proof requiresExternalSource checked
+  have auditedAssumptions :=
+    assumption_bundle_carries_required_evidence assumptions
   exact
-    And.intro audited.left
-      (And.intro
-        (assumption_bundle_carries_required_semantic_evidence assumptions)
-        audited.right)
+    And.intro auditedAssumptions.left
+      (And.intro auditedAssumptions.right audited.right)
 
 theorem runtime_soundness_checked_acceptance_audited_core_contract
     {system : VerifierModel}
@@ -1216,11 +1216,11 @@ theorem runtime_soundness_checked_acceptance_audited_soundness_proof_system_cont
       proof
       requiresExternalSource
       checked
+  have auditedAssumptions :=
+    assumption_bundle_carries_required_evidence assumptions
   exact
-    And.intro auditedContract.left
-      (And.intro
-        (assumption_bundle_carries_required_semantic_evidence assumptions)
-        auditedContract.right)
+    And.intro auditedAssumptions.left
+      (And.intro auditedAssumptions.right auditedContract.right)
 
 
 end Lzvm

@@ -1270,11 +1270,11 @@ theorem runtime_pipeline_binding_checked_acceptance_audited_soundness_obligation
   have audited :=
     runtime_pipeline_binding_checked_acceptance_audited_assumptions
       assumptions validation artifact publicInput proof requiresExternalSource accepted
+  have auditedAssumptions :=
+    assumption_bundle_carries_required_evidence assumptions
   exact
-    And.intro audited.left
-      (And.intro
-        (assumption_bundle_carries_required_semantic_evidence assumptions)
-        audited.right)
+    And.intro auditedAssumptions.left
+      (And.intro auditedAssumptions.right audited.right)
 
 theorem runtime_pipeline_binding_checked_acceptance_transcript_bound_without_assumptions
     {system : VerifierModel}

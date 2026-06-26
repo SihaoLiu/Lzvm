@@ -403,6 +403,16 @@ theorem assumption_bundle_carries_required_semantic_evidence
     RequiredSemanticAssumptionStatements assumptions.semantic := by
   exact semantic_assumptions_carry_required_evidence assumptions.semantic
 
+theorem assumption_bundle_carries_required_evidence
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system) :
+    RequiredCryptographicAssumptionStatements assumptions.crypto
+      /\ RequiredSemanticAssumptionStatements assumptions.semantic := by
+  exact
+    And.intro
+      (assumption_bundle_carries_required_crypto_evidence assumptions)
+      (assumption_bundle_carries_required_semantic_evidence assumptions)
+
 theorem assumption_bundle_public_input_binding
     {system : VerifierModel}
     (assumptions : AssumptionBundle system) :

@@ -143,10 +143,10 @@ theorem runtime_pipeline_binding_checked_acceptance_audited_soundness_accepts_co
       proof
       _requiresExternalSource
       accepted
+  have auditedAssumptions :=
+    assumption_bundle_carries_required_evidence assumptions
   exact
-    And.intro audited.left
-      (And.intro
-        (assumption_bundle_carries_required_semantic_evidence assumptions)
-        audited.right)
+    And.intro auditedAssumptions.left
+      (And.intro auditedAssumptions.right audited.right)
 
 end Lzvm

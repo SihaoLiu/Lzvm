@@ -1129,7 +1129,7 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
         "runtime_pipeline_binding_checked_acceptance_audited_soundness_obligations",
         &[
             "runtime_pipeline_binding_checked_acceptance_audited_assumptions",
-            "assumption_bundle_carries_required_semantic_evidence",
+            "assumption_bundle_carries_required_evidence",
         ],
     );
     assert!(
@@ -1165,7 +1165,7 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
         "runtime_pipeline_binding_checked_acceptance_audited_soundness_accepts_contract",
         &[
             "runtime_pipeline_binding_checked_acceptance_audited_accepts_sound_witness_contract",
-            "assumption_bundle_carries_required_semantic_evidence",
+            "assumption_bundle_carries_required_evidence",
         ],
     );
     assert!(
@@ -2055,7 +2055,7 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
         "runtime_pipeline_binding_required_external_source_audited_soundness_proof_system_contract",
         &[
             "runtime_pipeline_binding_required_external_source_audited_proof_system_contract",
-            "assumption_bundle_carries_required_semantic_evidence",
+            "assumption_bundle_carries_required_evidence",
         ],
     );
     assert!(
