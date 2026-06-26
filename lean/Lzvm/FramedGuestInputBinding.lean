@@ -18,6 +18,8 @@ structure RuntimeFramedGuestInputBindingValidation (system : VerifierModel) wher
   programImageCacheValidation : RuntimeProgramImageCacheBindingValidation system
   framedGuestInputAccepted : RuntimeArtifact -> PublicInput -> Proof -> Prop
   framedGuestInputWellFormed : RuntimeArtifact -> PublicInput -> Proof -> Prop
+  framedGuestInputProofSegmentPresent : RuntimeArtifact -> PublicInput -> Proof -> Prop
+  framedGuestInputProofSegmentPayloadExact : RuntimeArtifact -> PublicInput -> Proof -> Prop
   framedGuestInputBoundToEthBlock : RuntimeArtifact -> PublicInput -> Proof -> Prop
   framedGuestInputBoundToProgramImage : RuntimeArtifact -> PublicInput -> Proof -> Prop
   framedGuestInputAcceptedImpliesEthBlockAccepted :
@@ -32,6 +34,14 @@ structure RuntimeFramedGuestInputBindingValidation (system : VerifierModel) wher
     forall artifact publicInput proof,
       framedGuestInputAccepted artifact publicInput proof ->
         framedGuestInputWellFormed artifact publicInput proof
+  framedGuestInputAcceptedImpliesProofSegmentPresent :
+    forall artifact publicInput proof,
+      framedGuestInputAccepted artifact publicInput proof ->
+        framedGuestInputProofSegmentPresent artifact publicInput proof
+  framedGuestInputAcceptedImpliesProofSegmentPayloadExact :
+    forall artifact publicInput proof,
+      framedGuestInputAccepted artifact publicInput proof ->
+        framedGuestInputProofSegmentPayloadExact artifact publicInput proof
   framedGuestInputAcceptedImpliesEthBlockBinding :
     forall artifact publicInput proof,
       framedGuestInputAccepted artifact publicInput proof ->
@@ -48,6 +58,8 @@ def RuntimeFramedGuestInputBindingEvidence
     (publicInput : PublicInput)
     (proof : Proof) : Prop :=
   validation.framedGuestInputWellFormed artifact publicInput proof
+    /\ validation.framedGuestInputProofSegmentPresent artifact publicInput proof
+    /\ validation.framedGuestInputProofSegmentPayloadExact artifact publicInput proof
     /\ validation.framedGuestInputBoundToEthBlock artifact publicInput proof
     /\ validation.framedGuestInputBoundToProgramImage artifact publicInput proof
     /\ RuntimeEthBlockPublicInputBindingEvidence
@@ -222,6 +234,16 @@ theorem runtime_framed_guest_input_binding_checked_acceptance_evidence
         publicInput
         proof
         accepted,
+      validation.framedGuestInputAcceptedImpliesProofSegmentPresent
+        artifact
+        publicInput
+        proof
+        accepted,
+      validation.framedGuestInputAcceptedImpliesProofSegmentPayloadExact
+        artifact
+        publicInput
+        proof
+        accepted,
       validation.framedGuestInputAcceptedImpliesEthBlockBinding
         artifact
         publicInput
@@ -234,6 +256,44 @@ theorem runtime_framed_guest_input_binding_checked_acceptance_evidence
         accepted,
       ethEvidence,
       cacheEvidence⟩
+
+theorem runtime_framed_guest_input_binding_checked_acceptance_segment_present
+    {system : VerifierModel}
+    (validation : RuntimeFramedGuestInputBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeFramedGuestInputBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        validation.framedGuestInputProofSegmentPresent artifact publicInput proof := by
+  intro artifact publicInput proof accepted
+  exact
+    validation.framedGuestInputAcceptedImpliesProofSegmentPresent
+      artifact
+      publicInput
+      proof
+      accepted
+
+theorem runtime_framed_guest_input_binding_checked_acceptance_segment_payload_exact
+    {system : VerifierModel}
+    (validation : RuntimeFramedGuestInputBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeFramedGuestInputBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        validation.framedGuestInputProofSegmentPayloadExact artifact publicInput proof := by
+  intro artifact publicInput proof accepted
+  exact
+    validation.framedGuestInputAcceptedImpliesProofSegmentPayloadExact
+      artifact
+      publicInput
+      proof
+      accepted
 
 theorem runtime_framed_guest_input_binding_checked_acceptance_structural_obligations
     {system : VerifierModel}
@@ -352,10 +412,18 @@ theorem runtime_framed_guest_input_binding_checked_acceptance_sound
       publicInput
       proof
       ethAccepted
+  have cacheEvidence : RuntimeProgramImageCacheBindingEvidence
+      system
+      validation.programImageCacheValidation
+      artifact
+      publicInput
+      proof := by
+    rcases evidence with ⟨_, _, _, _, _, _, cacheEvidence⟩
+    exact cacheEvidence
   exact
     ⟨evidence,
       ethSound.left,
-      evidence.right.right.right.right,
+      cacheEvidence,
       core,
       ethSound.right.right.right⟩
 
