@@ -881,7 +881,7 @@ def profile_command_for_env(
         root,
     )
     summary_args = (
-        []
+        ["--proof-timing-summary", "--require-proof-timing-summary"]
         if tool == "nsys" and args.skip_nsys_export
         else ["--summarize", "--require-proof-timing-summary"]
     )

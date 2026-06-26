@@ -514,6 +514,7 @@ def write_profile_json(
         "command": command,
         "profile_command": profile_command,
         "summarize": args.summarize,
+        "proof_timing_summary": args.proof_timing_summary,
         "require_proof_timing_summary": args.require_proof_timing_summary,
         "outputs": profile_json_outputs(outputs, root),
         "proof_timing_summary_written": proof_timing_summary_written,
@@ -617,8 +618,12 @@ def summarize_proof_timing(
 def validate_static_profile_args(args: argparse.Namespace, root: Path) -> tuple[Path, Path]:
     if args.tool == "nsys" and args.summarize and args.skip_nsys_export:
         raise SystemExit("--summarize requires nsys SQLite export; remove --skip-nsys-export")
-    if args.require_proof_timing_summary and not args.summarize:
-        raise SystemExit("--require-proof-timing-summary requires --summarize")
+    if args.require_proof_timing_summary and not (
+        args.summarize or args.proof_timing_summary
+    ):
+        raise SystemExit(
+            "--require-proof-timing-summary requires --summarize or --proof-timing-summary"
+        )
     output_dir = require_workspace_temp_path(
         resolve_workspace_path(args.output_dir, root),
         root,
@@ -903,7 +908,7 @@ def run_profile(args: argparse.Namespace) -> int:
     proof_timing_summary_skip_reason = None
     proof_timing_summary_missing_keys: list[str] = []
     tool_summary_paths: list[Path] = []
-    if args.summarize:
+    if args.summarize or args.proof_timing_summary:
         try:
             proof_timing_result = summarize_proof_timing(root, outputs)
         except SystemExit as error:
@@ -1162,6 +1167,7 @@ def self_test() -> None:
             "nsys_trace": "cuda,nvtx,osrt",
             "skip_nsys_export": False,
             "summarize": False,
+            "proof_timing_summary": False,
             "require_proof_timing_summary": False,
             "check_gpu_memory": False,
             "min_gpu_free_mib": DEFAULT_MIN_GPU_FREE_MIB,
@@ -1444,6 +1450,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--profile-arg", action="append", default=[])
     parser.add_argument("--skip-nsys-export", action="store_true")
     parser.add_argument("--summarize", action="store_true")
+    parser.add_argument("--proof-timing-summary", action="store_true")
     parser.add_argument("--require-proof-timing-summary", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--check-tool", action="store_true")

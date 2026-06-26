@@ -1787,8 +1787,9 @@ fn eth_proof_timing_batch_prints_profile_commands_from_env() {
     assert!(
         nsys_command.contains("--skip-nsys-export")
             && !nsys_command.contains("--summarize")
-            && !nsys_command.contains("--require-proof-timing-summary"),
-        "nsys command should avoid the downstream-rejected summarize plus skip-export combination: {stdout}"
+            && nsys_command.contains("--proof-timing-summary")
+            && nsys_command.contains("--require-proof-timing-summary"),
+        "nsys command should avoid the downstream-rejected summarize plus skip-export combination while still requiring timing evidence: {stdout}"
     );
     assert!(
         ncu_command.contains("--summarize")

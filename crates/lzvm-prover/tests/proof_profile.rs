@@ -297,7 +297,7 @@ fn proof_profile_ncu_dry_run_uses_custom_profile_command() {
 }
 
 #[test]
-fn proof_profile_rejects_required_summary_without_summarize() {
+fn proof_profile_rejects_required_summary_without_summary_request() {
     let output = Command::new(script_path())
         .arg("--tool")
         .arg("ncu")
@@ -315,8 +315,9 @@ fn proof_profile_rejects_required_summary_without_summarize() {
         "required proof timing summaries should require summary mode"
     );
     assert!(
-        String::from_utf8_lossy(&output.stderr)
-            .contains("--require-proof-timing-summary requires --summarize"),
+        String::from_utf8_lossy(&output.stderr).contains(
+            "--require-proof-timing-summary requires --summarize or --proof-timing-summary"
+        ),
         "required-summary rejection should explain the missing mode: stderr={}",
         String::from_utf8_lossy(&output.stderr)
     );
@@ -424,6 +425,94 @@ fn proof_profile_requires_complete_proof_timing_summary() {
     assert!(
         !summary_exists,
         "failed required timing summary should not leave a stale CSV"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn proof_profile_can_require_proof_timing_summary_without_nsys_export() {
+    let output_dir = workspace_root().join(format!(
+        "temp/proof-profile-proof-summary-only-{}",
+        std::process::id()
+    ));
+    let profiler_path = output_dir.join("fake-nsys");
+    let profile_dir = output_dir.join("profiles");
+    let _ = std::fs::remove_dir_all(&output_dir);
+    std::fs::create_dir_all(&output_dir).expect("fixture dir should be created");
+    write_executable_script(
+        &profiler_path,
+        concat!(
+            "#!/usr/bin/env python3\n",
+            "import pathlib, subprocess, sys\n",
+            "args = sys.argv[1:]\n",
+            "if 'profile' in args and '--output' in args:\n",
+            "    prefix = pathlib.Path(args[args.index('--output') + 1])\n",
+            "    pathlib.Path(str(prefix) + '.nsys-rep').write_text('report\\n', encoding='utf-8')\n",
+            "if '--' in args:\n",
+            "    command = args[args.index('--') + 1:]\n",
+            "    if command:\n",
+            "        raise SystemExit(subprocess.run(command).returncode)\n",
+        ),
+    );
+
+    let output = Command::new(script_path())
+        .arg("--tool")
+        .arg("nsys")
+        .arg("--nsys-command")
+        .arg(&profiler_path)
+        .arg("--skip-nsys-export")
+        .arg("--proof-timing-summary")
+        .arg("--require-proof-timing-summary")
+        .arg("--output-dir")
+        .arg(&profile_dir)
+        .arg("--name")
+        .arg("proof-summary-only")
+        .arg("--")
+        .arg("python3")
+        .arg("-c")
+        .arg(concat!(
+            "print('timing_total_ms=1000'); ",
+            "print('timing_guest_stage_tree_commit_root_count=1'); ",
+            "print('timing_guest_stage_tree_commit_root_materialization_groups=1'); ",
+            "print('timing_guest_stage_tree_commit_root_materialization_max_group_size=1'); ",
+            "print('timing_finish_witness_opening_row_dedup_input_rows=0'); ",
+            "print('timing_finish_witness_opening_row_dedup_unique_rows=0'); ",
+            "print('timing_finish_witness_opening_row_dedup_elided_rows=0')"
+        ))
+        .output()
+        .expect("proof profile should run proof-only timing summaries");
+    let success = output.status.success();
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    let summary_path = profile_dir.join("proof-summary-only.proof-timing-summary.csv");
+    let summary_text = std::fs::read_to_string(&summary_path).unwrap_or_default();
+    let json_path = profile_dir.join("proof-summary-only.profile.json");
+    let json_text = std::fs::read_to_string(&json_path).unwrap_or_default();
+    let sqlite_exists = profile_dir.join("proof-summary-only.sqlite").exists();
+    let _ = std::fs::remove_dir_all(&output_dir);
+
+    assert!(
+        success,
+        "proof-only timing summary should pass: stdout={stdout} stderr={stderr}"
+    );
+    assert!(
+        stdout.contains("proof_timing_summary=temp/proof-profile-proof-summary-only-"),
+        "profile stdout should report the proof timing summary path: {stdout}"
+    );
+    assert!(
+        summary_text.starts_with("profile,") && summary_text.contains(",1000,"),
+        "proof timing summary should be written from profile output: {summary_text}"
+    );
+    assert!(
+        json_text.contains("\"status\": \"ok\"")
+            && json_text.contains("\"proof_timing_summary\": true")
+            && json_text.contains("\"require_proof_timing_summary\": true")
+            && json_text.contains("\"proof_timing_summary_written\": true"),
+        "profile JSON should record the proof-only summary mode: {json_text}"
+    );
+    assert!(
+        !sqlite_exists,
+        "skip-export proof-only summary should not require an exported SQLite file"
     );
 }
 
