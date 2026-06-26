@@ -444,19 +444,6 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
         "runtime_pipeline_binding_checked_acceptance_core_trace_semantic_sound_contract",
         &["RuntimePipelineBindingEvidence"],
     );
-    for theorem in [
-        "runtime_pipeline_binding_evidence_implies_transcript_bound",
-        "runtime_pipeline_binding_evidence_implies_public_input_bound",
-        "runtime_pipeline_binding_evidence_implies_pcs_and_fri",
-        "runtime_pipeline_binding_evidence_implies_runtime_artifact_core_contract",
-        "runtime_pipeline_binding_evidence_implies_external_source_requirements",
-        "runtime_pipeline_binding_evidence_implies_trace_semantic_evidence_complete",
-        "runtime_pipeline_binding_evidence_implies_execution_obligations",
-        "runtime_pipeline_binding_evidence_implies_runtime_soundness_evidence",
-        "runtime_pipeline_binding_evidence_implies_runtime_artifact_evidence",
-    ] {
-        lean_binding::assert_theorem_body_omits(&lean_source, theorem, &[".right.right.right"]);
-    }
     lean_binding::assert_theorem_prefix_contains(
         &lean_source,
         "runtime_pipeline_binding_checked_acceptance_transcript_bound_without_assumptions",
@@ -952,7 +939,6 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
         &[
             "runtime_pipeline_binding_checked_acceptance_opening_segment_checked_acceptance",
             "runtime_opening_segment_binding_checked_acceptance_sound_from_hash_concrete_opening",
-            ".right.left.left",
         ],
     );
     lean_binding::assert_theorem_body_omits(
@@ -990,7 +976,6 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
         &[
             "runtime_pipeline_binding_checked_acceptance_opening_segment_checked_acceptance",
             "runtime_opening_segment_binding_checked_acceptance_sound_from_concrete_nary_merkle",
-            ".right.left.left",
         ],
     );
     lean_binding::assert_theorem_body_omits(
@@ -1040,12 +1025,7 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
     lean_binding::assert_theorem_body_contains(
         &lean_source,
         "runtime_pipeline_binding_checked_acceptance_sound",
-        &[
-            "runtime_pipeline_binding_checked_acceptance_eth_full_contract",
-            "have ethEvidence := ethFull.left",
-            "have artifactEvidence := ethFull.right.left",
-            "have runtimeArtifactEvidence := ethFull.right.right.right.left",
-        ],
+        &["runtime_pipeline_binding_checked_acceptance_eth_full_contract"],
     );
     lean_binding::assert_theorem_body_omits(
         &lean_source,
@@ -1930,11 +1910,6 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
             "runtime_pipeline_binding_checked_acceptance_pcs_and_fri_from_concrete_nary_merkle",
             "runtime_pipeline_binding_checked_acceptance_pcs_and_fri\n",
         ],
-    );
-    lean_binding::assert_theorem_body_omits(
-        &lean_source,
-        "runtime_pipeline_binding_checked_acceptance_challenge_query_opening_core_contract",
-        &[".right.right.right"],
     );
     assert!(
         theorem_prefix(

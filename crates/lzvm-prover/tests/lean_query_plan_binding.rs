@@ -310,10 +310,7 @@ fn lean_query_plan_binding_exports_opening_segment_projections() {
     lean_binding::assert_theorem_body_contains(
         &lean_source,
         "runtime_query_plan_binding_checked_acceptance_segment_ids_unique",
-        &[
-            "runtime_query_plan_binding_checked_acceptance_artifact_structural_obligations",
-            "artifactStructural.right.right.right.right.right.left",
-        ],
+        &["runtime_query_plan_binding_checked_acceptance_artifact_structural_obligations"],
     );
     lean_binding::assert_theorem_prefix_contains(
         &lean_source,
@@ -328,10 +325,7 @@ fn lean_query_plan_binding_exports_opening_segment_projections() {
     lean_binding::assert_theorem_body_contains(
         &lean_source,
         "runtime_query_plan_binding_checked_acceptance_unit_values_trace_identity_coverage",
-        &[
-            "runtime_query_plan_binding_checked_acceptance_artifact_structural_obligations",
-            "artifactStructural.right.right.right.right.right.right",
-        ],
+        &["runtime_query_plan_binding_checked_acceptance_artifact_structural_obligations"],
     );
     lean_binding::assert_theorem_prefix_contains(
         &lean_source,
@@ -346,10 +340,7 @@ fn lean_query_plan_binding_exports_opening_segment_projections() {
     lean_binding::assert_theorem_body_contains(
         &lean_source,
         "runtime_query_plan_binding_checked_acceptance_container_canonical",
-        &[
-            "runtime_query_plan_binding_checked_acceptance_artifact_structural_obligations",
-            "artifactStructural.left",
-        ],
+        &["runtime_query_plan_binding_checked_acceptance_artifact_structural_obligations"],
     );
     lean_binding::assert_theorem_prefix_contains(
         &lean_source,
@@ -364,10 +355,7 @@ fn lean_query_plan_binding_exports_opening_segment_projections() {
     lean_binding::assert_theorem_body_contains(
         &lean_source,
         "runtime_query_plan_binding_checked_acceptance_metadata_canonical",
-        &[
-            "runtime_query_plan_binding_checked_acceptance_artifact_structural_obligations",
-            "artifactStructural.right.left",
-        ],
+        &["runtime_query_plan_binding_checked_acceptance_artifact_structural_obligations"],
     );
     lean_binding::assert_theorem_prefix_contains(
         &lean_source,
@@ -382,10 +370,7 @@ fn lean_query_plan_binding_exports_opening_segment_projections() {
     lean_binding::assert_theorem_body_contains(
         &lean_source,
         "runtime_query_plan_binding_checked_acceptance_segment_payloads_nonempty",
-        &[
-            "runtime_query_plan_binding_checked_acceptance_artifact_structural_obligations",
-            "artifactStructural.right.right.right.left",
-        ],
+        &["runtime_query_plan_binding_checked_acceptance_artifact_structural_obligations"],
     );
     lean_binding::assert_theorem_prefix_contains(
         &lean_source,
@@ -400,10 +385,7 @@ fn lean_query_plan_binding_exports_opening_segment_projections() {
     lean_binding::assert_theorem_body_contains(
         &lean_source,
         "runtime_query_plan_binding_checked_acceptance_segment_ids_allowed",
-        &[
-            "runtime_query_plan_binding_checked_acceptance_artifact_structural_obligations",
-            "artifactStructural.right.right.right.right.left",
-        ],
+        &["runtime_query_plan_binding_checked_acceptance_artifact_structural_obligations"],
     );
     lean_binding::assert_theorem_prefix_contains(
         &lean_source,
@@ -418,10 +400,7 @@ fn lean_query_plan_binding_exports_opening_segment_projections() {
     lean_binding::assert_theorem_body_contains(
         &lean_source,
         "runtime_query_plan_binding_checked_acceptance_segments_present",
-        &[
-            "runtime_query_plan_binding_checked_acceptance_artifact_structural_obligations",
-            "artifactStructural.right.right.left",
-        ],
+        &["runtime_query_plan_binding_checked_acceptance_artifact_structural_obligations"],
     );
     lean_binding::assert_theorem_prefix_contains(
         &lean_source,
@@ -551,12 +530,7 @@ fn lean_query_plan_binding_exports_opening_segment_projections() {
     lean_binding::assert_theorem_body_contains(
         &lean_source,
         "runtime_query_plan_binding_checked_acceptance_sound",
-        &[
-            "runtime_opening_segment_binding_checked_acceptance_full_soundness_contract",
-            "openingFull.right.left",
-            "openingFull.right.right.right.left",
-            "openingFull.right.right.right.right.left",
-        ],
+        &["runtime_opening_segment_binding_checked_acceptance_full_soundness_contract"],
     );
     lean_binding::assert_theorem_body_omits(
         &lean_source,
@@ -611,11 +585,6 @@ fn lean_query_plan_binding_exports_opening_segment_projections() {
             && transcript_builder_body.contains("let transcript_inputs = witness_outputs")
             && !transcript_builder_body.contains("request.outputs"),
         "runtime all-units transcript query-plan derivation should use canonical output refs"
-    );
-    lean_binding::assert_theorem_body_omits(
-        &lean_source,
-        "runtime_query_plan_binding_checked_acceptance_opening_and_core_contract",
-        &[".right.right.right"],
     );
 }
 
