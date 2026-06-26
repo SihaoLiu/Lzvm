@@ -156,16 +156,6 @@ theorem runtime_pipeline_binding_required_external_source_contracts_audited_soun
                 /\ system.witnessMatchesTrace witness trace)
             /\ SoundWitness system publicInput proof := by
   intro artifact publicInput proof requiresExternalSource accepted required
-  have auditedSoundness :=
-    runtime_pipeline_binding_required_external_source_audited_soundness_proof_system_contract
-      assumptions
-      validation
-      artifact
-      publicInput
-      proof
-      requiresExternalSource
-      accepted
-      required
   have compactCore :=
     runtime_pipeline_binding_required_external_source_contracts_core_contract
       assumptions
@@ -176,8 +166,10 @@ theorem runtime_pipeline_binding_required_external_source_contracts_audited_soun
       requiresExternalSource
       accepted
       required
+  have auditedAssumptions :=
+    assumption_bundle_carries_required_evidence assumptions
   rcases compactCore with
-    ⟨auditedCrypto,
+    ⟨_auditedCrypto,
       proofSystemSound,
       verifierAccepts,
       traceExternalEvidence,
@@ -192,8 +184,8 @@ theorem runtime_pipeline_binding_required_external_source_contracts_audited_soun
       executionObligations,
       soundWitness⟩
   exact
-    ⟨auditedCrypto,
-      auditedSoundness.right.left,
+    ⟨auditedAssumptions.left,
+      auditedAssumptions.right,
       proofSystemSound,
       verifierAccepts,
       traceExternalEvidence,
