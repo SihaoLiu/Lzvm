@@ -79,6 +79,11 @@ pub(super) fn verify_preflight(
         Some(matched) => matched,
         None => return 1,
     };
+    let all_pipeline_input_bindings_matched = pipeline_input_bindings_matched(
+        eth_block_input_binding.as_ref(),
+        program_image_cache_matched,
+        framed_guest_input_matched,
+    );
     let report = match validate_proof_public_values_from_files(
         parsed.proof_bin,
         parsed.public_values_path,
@@ -159,6 +164,9 @@ pub(super) fn verify_preflight(
     }
     if framed_guest_input_matched {
         let _ = writeln!(stdout, "framed_guest_input_match=ok");
+    }
+    if all_pipeline_input_bindings_matched {
+        let _ = writeln!(stdout, "pipeline_input_bindings=ok");
     }
     0
 }

@@ -5,7 +5,8 @@ use lzvm_artifacts::challenge_values_segment::{
     encode_challenge_values_segment, ChallengeValuesSegment, CHALLENGE_VALUES_SEGMENT_ID,
 };
 use lzvm_artifacts::eth_block_input::{
-    build_eth_block_input, build_eth_block_input_with_receipts, eth_block_input_bytes_digest,
+    build_eth_block_input, build_eth_block_input_with_receipts, encode_eth_block_input,
+    eth_block_input_bytes_digest,
 };
 use lzvm_artifacts::eth_block_input_segment::{
     encode_eth_block_input_segment, ETH_BLOCK_INPUT_SEGMENT_ID,
@@ -16,7 +17,10 @@ use lzvm_artifacts::guest_input_segment::{
     encode_framed_guest_input_segment, framed_guest_input_segment_digest,
     FRAMED_GUEST_INPUT_SEGMENT_ID,
 };
-use lzvm_artifacts::program_image::{ProgramImageCommitmentCache, ProgramImageGpuMode};
+use lzvm_artifacts::pcs_query_segment::PCS_QUERY_PLAN_SEGMENT_ID;
+use lzvm_artifacts::program_image::{
+    encode_program_image_commitment_cache, ProgramImageCommitmentCache, ProgramImageGpuMode,
+};
 use lzvm_artifacts::program_image_segment::{
     encode_program_image_cache_segment, program_image_cache_segment_digest,
     PROGRAM_IMAGE_CACHE_SEGMENT_ID,
@@ -38,8 +42,6 @@ use lzvm_artifacts::witness_segment::{
 use lzvm_cli::run_cli;
 use lzvm_field::MODULUS;
 use lzvm_prover::proof_preflight::validate_proof_public_values_from_files;
-
-const SAMPLE_AUX_SEGMENT_ID: u32 = 20_000;
 
 fn sample_hash(byte: u8) -> [u8; 32] {
     [byte; 32]
@@ -109,7 +111,7 @@ fn sample_proof(public_values: &PublicValues) -> ProofArtifact {
         setup_hash: public_values.setup_hash,
         public_values_hash: public_values_digest(public_values).expect("digest should compute"),
         segments: vec![ProofSegment {
-            id: SAMPLE_AUX_SEGMENT_ID,
+            id: PCS_QUERY_PLAN_SEGMENT_ID,
             data: vec![1, 2, 3, 4],
         }],
     }
@@ -737,6 +739,82 @@ fn verifies_preflight_matches_framed_guest_input() {
         )
     );
     assert!(stderr.is_empty());
+}
+
+#[test]
+fn verifies_preflight_reports_pipeline_input_bindings() {
+    let block_rlp = sample_block_rlp_with_extra_fields();
+    let block_input = build_eth_block_input(&block_rlp).expect("block input should build");
+    let values = public_values_from_eth_block_input(sample_hash(0x44), &block_input);
+    let public_values_hash = public_values_digest(&values).expect("digest should compute");
+    let eth_segment_data =
+        encode_eth_block_input_segment(&block_input).expect("block segment should encode");
+    let cache = sample_program_image_cache();
+    let cache_segment_data = encode_program_image_cache_segment(&cache)
+        .expect("program image cache segment should encode");
+    let input_data = framed_stdin_chunk(&[7_u8, 8_u8]);
+    let framed_segment_data =
+        encode_framed_guest_input_segment(&input_data).expect("framed input should encode");
+    let proof = ProofArtifact {
+        setup_hash: values.setup_hash,
+        public_values_hash,
+        segments: vec![
+            ProofSegment {
+                id: ETH_BLOCK_INPUT_SEGMENT_ID,
+                data: eth_segment_data,
+            },
+            ProofSegment {
+                id: PROGRAM_IMAGE_CACHE_SEGMENT_ID,
+                data: cache_segment_data,
+            },
+            ProofSegment {
+                id: FRAMED_GUEST_INPUT_SEGMENT_ID,
+                data: framed_segment_data,
+            },
+        ],
+    };
+    let (dir, proof_path, public_path) =
+        write_fixture_pair("pipeline-input-bindings", &proof, &values);
+    let block_path = dir.join("block.input");
+    let cache_path = dir.join("program-image-cache.bin");
+    let input_path = dir.join("input.bin");
+    write_bytes(
+        &block_path,
+        encode_eth_block_input(&block_input).expect("block input should encode"),
+    );
+    write_bytes(
+        &cache_path,
+        encode_program_image_commitment_cache(&cache).expect("cache should encode"),
+    );
+    write_bytes(&input_path, &input_data);
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "verify",
+            "preflight",
+            "--eth-block-input",
+            block_path.to_str().expect("block path should be utf-8"),
+            "--program-image-cache",
+            cache_path.to_str().expect("cache path should be utf-8"),
+            "--input-data",
+            input_path.to_str().expect("input path should be utf-8"),
+            proof_path.to_str().expect("proof path should be utf-8"),
+            public_path.to_str().expect("public path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 0);
+    assert!(stderr.is_empty());
+    let stdout = String::from_utf8(stdout).expect("stdout should be utf-8");
+    assert!(stdout.contains("eth_block_input_match=ok\n"));
+    assert!(stdout.contains("program_image_cache_match=ok\n"));
+    assert!(stdout.contains("framed_guest_input_match=ok\n"));
+    assert!(stdout.contains("pipeline_input_bindings=ok\n"));
 }
 
 #[test]
