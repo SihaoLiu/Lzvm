@@ -110,6 +110,8 @@ fn lean_runtime_soundness_binding_exports_core_contract_projection() {
             "runtime_soundness_checked_acceptance_artifact_audited_soundness_contracts_core_contract",
             "runtime_soundness_required_external_source_contracts_core_contract",
             "runtime_soundness_required_external_source_contracts_audited_soundness_core_contract",
+            "runtime_soundness_required_external_source_artifact_contracts_core_contract",
+            "runtime_soundness_required_external_source_artifact_audited_soundness_core_contract",
         ],
     );
     assert!(theorem_prefix(
@@ -1394,6 +1396,100 @@ fn lean_runtime_soundness_binding_exports_core_contract_projection() {
         &[
             "runtime_soundness_required_external_source_audited_soundness_proof_system_contract",
             "RuntimeArtifactSoundnessObligations",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_soundness_required_external_source_artifact_contracts_core_contract",
+        &[
+            "RuntimeArtifactEvidence",
+            "validation.transcriptValidation.artifactBindingValidation.runtimeValidation",
+            "RequiredCryptographicAssumptionStatements assumptions.crypto",
+            "ProofSystemSound system",
+            "system.accepts publicInput proof",
+            "ExternalSourceOpeningEvidence",
+            "validation.sourceValidation",
+            "system.transcriptBound publicInput proof",
+            "system.publicInputBound publicInput proof",
+            "system.pcsOpeningsValid publicInput proof",
+            "system.friQueriesValid publicInput proof",
+            "RuntimeVerifierCoreContract system publicInput proof",
+            "system.traceConsistent publicInput proof trace",
+            "system.constraintsSatisfied constraints trace",
+            "system.witnessMatchesTrace witness trace",
+            "SoundWitness system publicInput proof",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_omits(
+        &lean_source,
+        "runtime_soundness_required_external_source_artifact_contracts_core_contract",
+        &[
+            "RequiredSemanticAssumptionStatements assumptions.semantic",
+            "RuntimeSoundnessEvidence",
+            "RuntimeArtifactSoundnessObligations",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_soundness_required_external_source_artifact_contracts_core_contract",
+        &[
+            "runtime_soundness_checked_acceptance_runtime_artifact_evidence",
+            "runtime_soundness_required_external_source_contracts_core_contract",
+        ],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &lean_source,
+        "runtime_soundness_required_external_source_artifact_contracts_core_contract",
+        &[
+            "runtime_soundness_required_external_source_full_soundness_contract",
+            "RuntimeSoundnessEvidence",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_soundness_required_external_source_artifact_audited_soundness_core_contract",
+        &[
+            "RuntimeArtifactEvidence",
+            "validation.transcriptValidation.artifactBindingValidation.runtimeValidation",
+            "RequiredCryptographicAssumptionStatements assumptions.crypto",
+            "RequiredSemanticAssumptionStatements assumptions.semantic",
+            "ProofSystemSound system",
+            "system.accepts publicInput proof",
+            "ExternalSourceOpeningEvidence",
+            "validation.sourceValidation",
+            "system.transcriptBound publicInput proof",
+            "system.publicInputBound publicInput proof",
+            "system.pcsOpeningsValid publicInput proof",
+            "system.friQueriesValid publicInput proof",
+            "RuntimeVerifierCoreContract system publicInput proof",
+            "system.traceConsistent publicInput proof trace",
+            "system.constraintsSatisfied constraints trace",
+            "system.witnessMatchesTrace witness trace",
+            "SoundWitness system publicInput proof",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_omits(
+        &lean_source,
+        "runtime_soundness_required_external_source_artifact_audited_soundness_core_contract",
+        &[
+            "RuntimeSoundnessEvidence",
+            "RuntimeArtifactSoundnessObligations",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_soundness_required_external_source_artifact_audited_soundness_core_contract",
+        &[
+            "runtime_soundness_required_external_source_artifact_contracts_core_contract",
+            "assumption_bundle_carries_required_evidence",
+        ],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &lean_source,
+        "runtime_soundness_required_external_source_artifact_audited_soundness_core_contract",
+        &[
+            "runtime_soundness_required_external_source_audited_soundness_proof_system_contract",
+            "RuntimeSoundnessEvidence",
         ],
     );
     assert!(
