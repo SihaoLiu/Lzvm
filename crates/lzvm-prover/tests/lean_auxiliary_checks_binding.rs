@@ -54,8 +54,22 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
     let auxiliary_projected_source = std::fs::read_to_string(&auxiliary_projected_path)
         .expect("Lean auxiliary projected checks should read");
     let proof_timing_path = crate_root.join("../../lean/Lzvm/AuxiliaryChecks/ProofTiming.lean");
-    let lean_proof_timing_source =
+    let proof_timing_aggregate_source =
         std::fs::read_to_string(&proof_timing_path).expect("Lean proof timing checks should read");
+    let proof_timing_core_path =
+        crate_root.join("../../lean/Lzvm/AuxiliaryChecks/ProofTiming/Core.lean");
+    let proof_timing_core_source = std::fs::read_to_string(&proof_timing_core_path)
+        .expect("Lean proof timing core checks should read");
+    let proof_timing_finish_path =
+        crate_root.join("../../lean/Lzvm/AuxiliaryChecks/ProofTiming/Finish.lean");
+    let proof_timing_finish_source = std::fs::read_to_string(&proof_timing_finish_path)
+        .expect("Lean proof timing finish checks should read");
+    let lean_proof_timing_source = [
+        proof_timing_aggregate_source.as_str(),
+        proof_timing_core_source.as_str(),
+        proof_timing_finish_source.as_str(),
+    ]
+    .join("\n");
     let proof_timing_projected_path =
         crate_root.join("../../lean/Lzvm/AuxiliaryChecks/ProofTimingProjected.lean");
     let proof_timing_projected_source = std::fs::read_to_string(&proof_timing_projected_path)

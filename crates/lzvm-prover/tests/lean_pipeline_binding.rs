@@ -12,12 +12,26 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
     let core_path = crate_root.join("../../lean/Lzvm/PipelineBinding/Core.lean");
     let core_source =
         std::fs::read_to_string(&core_path).expect("Lean pipeline core binding source should read");
+    let core_base_path = crate_root.join("../../lean/Lzvm/PipelineBinding/Core/Base.lean");
+    let core_base_source = std::fs::read_to_string(&core_base_path)
+        .expect("Lean pipeline core base binding source should read");
+    let core_derived_path = crate_root.join("../../lean/Lzvm/PipelineBinding/Core/Derived.lean");
+    let core_derived_source = std::fs::read_to_string(&core_derived_path)
+        .expect("Lean pipeline core derived binding source should read");
     let accepts_path = crate_root.join("../../lean/Lzvm/PipelineBinding/Accepts.lean");
     let accepts_source = std::fs::read_to_string(&accepts_path)
         .expect("Lean pipeline accepts binding source should read");
     let contracts_path = crate_root.join("../../lean/Lzvm/PipelineBinding/Contracts.lean");
     let contracts_source = std::fs::read_to_string(&contracts_path)
         .expect("Lean pipeline binding contracts source should read");
+    let contracts_core_path =
+        crate_root.join("../../lean/Lzvm/PipelineBinding/Contracts/Core.lean");
+    let contracts_core_source = std::fs::read_to_string(&contracts_core_path)
+        .expect("Lean pipeline binding core contracts source should read");
+    let contracts_external_source_path =
+        crate_root.join("../../lean/Lzvm/PipelineBinding/Contracts/ExternalSource.lean");
+    let contracts_external_source = std::fs::read_to_string(&contracts_external_source_path)
+        .expect("Lean pipeline binding external-source contracts source should read");
     let external_contracts_path =
         crate_root.join("../../lean/Lzvm/PipelineBinding/ExternalSourceContracts.lean");
     let external_contracts_source = std::fs::read_to_string(&external_contracts_path)
@@ -32,7 +46,7 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
     let audited_source =
         std::fs::read_to_string(&audited_path).expect("Lean pipeline audited source should read");
     let lean_source = format!(
-        "{core_source}\n{pipeline_source}\n{obligations_source}\n{audited_source}\n{accepts_source}\n{contracts_source}\n{external_contracts_source}\n{segment_ids_source}"
+        "{core_source}\n{core_base_source}\n{core_derived_source}\n{pipeline_source}\n{obligations_source}\n{audited_source}\n{accepts_source}\n{contracts_source}\n{contracts_core_source}\n{contracts_external_source}\n{external_contracts_source}\n{segment_ids_source}"
     );
     let top_level_path = crate_root.join("../../lean/Lzvm.lean");
     let top_level_source =
