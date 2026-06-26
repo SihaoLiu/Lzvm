@@ -172,8 +172,19 @@ pub fn parse_trace_constraint_segment(
     if unit_count == 0 {
         return Err(TraceConstraintSegmentError::EmptyUnits);
     }
-    if unit_count > reader.remaining_len() / UNIT_BYTES {
-        return Err(TraceConstraintSegmentError::LengthOverflow);
+    let expected_len = reader
+        .offset
+        .checked_add(
+            unit_count
+                .checked_mul(UNIT_BYTES)
+                .ok_or(TraceConstraintSegmentError::LengthOverflow)?,
+        )
+        .ok_or(TraceConstraintSegmentError::LengthOverflow)?;
+    if expected_len > bytes.len() {
+        return Err(TraceConstraintSegmentError::UnexpectedEof {
+            needed: expected_len,
+            available: bytes.len(),
+        });
     }
 
     let mut units = Vec::with_capacity(unit_count);
@@ -362,6 +373,21 @@ mod tests {
         let segment = sample_segment();
         let encoded = encode_trace_constraint_segment(&segment).expect("segment should encode");
         assert_eq!(parse_trace_constraint_segment(&encoded), Ok(segment));
+    }
+
+    #[test]
+    fn trace_constraint_segment_rejects_truncated_unit() {
+        let mut encoded =
+            encode_trace_constraint_segment(&sample_segment()).expect("segment should encode");
+        encoded.truncate(encoded.len() - 1);
+
+        assert_eq!(
+            parse_trace_constraint_segment(&encoded),
+            Err(TraceConstraintSegmentError::UnexpectedEof {
+                needed: HEADER_BYTES + UNIT_BYTES,
+                available: HEADER_BYTES + UNIT_BYTES - 1,
+            })
+        );
     }
 
     #[test]

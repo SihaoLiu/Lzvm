@@ -296,8 +296,8 @@ fn write_input_summary(
     let (legacy_transactions, typed_transactions) = eth_block_input_transaction_kind_counts(input)?;
     let receipt_kind_counts = eth_block_input_receipt_kind_counts(input)?;
     let withdrawal_count = eth_block_input_withdrawal_count(input)?;
-    let withdrawals_root = match (&input.withdrawals, input.withdrawals_root) {
-        (Some(_), Some(root)) => Some(root),
+    let withdrawals = match (&input.withdrawals, input.withdrawals_root) {
+        (Some(withdrawals), Some(root)) => Some((withdrawals, root)),
         (Some(_), None) => return Err(EthBlockInputError::MissingWithdrawalsRoot.into()),
         (None, _) => None,
     };
@@ -390,12 +390,10 @@ fn write_input_summary(
             "absent"
         }
     );
-    if let Some(withdrawals) = &input.withdrawals {
+    if let Some((withdrawals, withdrawals_root)) = withdrawals {
         if let Some(withdrawal_count) = withdrawal_count {
             let _ = writeln!(&mut output, "withdrawal_count={withdrawal_count}");
         }
-        let withdrawals_root =
-            withdrawals_root.ok_or(EthBlockInputError::MissingWithdrawalsRoot)?;
         let _ = writeln!(
             &mut output,
             "withdrawals_root={}",
