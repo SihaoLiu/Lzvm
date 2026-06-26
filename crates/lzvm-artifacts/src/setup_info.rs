@@ -801,9 +801,7 @@ fn read_bounded_count(
     record_min_bytes: usize,
 ) -> Result<usize, SetupInfoError> {
     let count = u32_to_usize(reader.read_u32()?)?;
-    if count > reader.remaining_len() / record_min_bytes {
-        return Err(SetupInfoError::LengthOverflow);
-    }
+    reader.require_items(count, record_min_bytes)?;
     Ok(count)
 }
 
@@ -889,10 +887,6 @@ impl<'a> Reader<'a> {
         self.offset
     }
 
-    fn remaining_len(&self) -> usize {
-        self.bytes.len() - self.offset
-    }
-
     fn read_exact(&mut self, count: usize) -> Result<&'a [u8], SetupInfoError> {
         let end = self
             .offset
@@ -908,6 +902,24 @@ impl<'a> Reader<'a> {
         let out = &self.bytes[self.offset..end];
         self.offset = end;
         Ok(out)
+    }
+
+    fn require_items(&self, count: usize, item_bytes: usize) -> Result<(), SetupInfoError> {
+        let needed = count
+            .checked_mul(item_bytes)
+            .ok_or(SetupInfoError::LengthOverflow)?;
+        let end = self
+            .offset
+            .checked_add(needed)
+            .ok_or(SetupInfoError::LengthOverflow)?;
+        if end > self.bytes.len() {
+            return Err(SetupInfoError::UnexpectedEof {
+                offset: self.offset,
+                needed,
+                available: self.bytes.len().saturating_sub(self.offset),
+            });
+        }
+        Ok(())
     }
 
     fn read_u8(&mut self) -> Result<u8, SetupInfoError> {

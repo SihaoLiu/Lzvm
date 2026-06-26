@@ -440,7 +440,7 @@ fn rejects_opening_point_count_that_exceeds_remaining_points() {
 
     assert!(matches!(
         parse_unit_setup_info(&bytes),
-        Err(SetupInfoError::LengthOverflow)
+        Err(SetupInfoError::UnexpectedEof { .. })
     ));
 }
 
@@ -454,7 +454,7 @@ fn rejects_constant_column_count_that_exceeds_remaining_records() {
 
     assert!(matches!(
         parse_unit_setup_info(&bytes),
-        Err(SetupInfoError::LengthOverflow)
+        Err(SetupInfoError::UnexpectedEof { .. })
     ));
 }
 
@@ -474,7 +474,7 @@ fn rejects_constant_column_length_count_that_exceeds_remaining_lengths() {
 
     assert!(matches!(
         parse_unit_setup_info(&bytes),
-        Err(SetupInfoError::LengthOverflow)
+        Err(SetupInfoError::UnexpectedEof { .. })
     ));
 }
 
@@ -489,7 +489,7 @@ fn rejects_boundary_count_that_exceeds_remaining_boundary_records() {
 
     assert!(matches!(
         parse_unit_setup_info(&bytes),
-        Err(SetupInfoError::LengthOverflow)
+        Err(SetupInfoError::UnexpectedEof { .. })
     ));
 }
 
@@ -504,7 +504,7 @@ fn rejects_fri_step_count_that_exceeds_remaining_steps() {
 
     assert!(matches!(
         parse_unit_setup_info(&bytes),
-        Err(SetupInfoError::LengthOverflow)
+        Err(SetupInfoError::UnexpectedEof { .. })
     ));
 }
 
@@ -516,7 +516,7 @@ fn rejects_commitment_column_count_that_exceeds_remaining_records() {
 
     assert!(matches!(
         parse_unit_setup_info(&bytes),
-        Err(SetupInfoError::LengthOverflow)
+        Err(SetupInfoError::UnexpectedEof { .. })
     ));
 }
 
@@ -536,7 +536,7 @@ fn rejects_commitment_column_length_count_that_exceeds_remaining_lengths() {
 
     assert!(matches!(
         parse_unit_setup_info(&bytes),
-        Err(SetupInfoError::LengthOverflow)
+        Err(SetupInfoError::UnexpectedEof { .. })
     ));
 }
 
@@ -549,7 +549,7 @@ fn rejects_unit_value_count_that_exceeds_remaining_records() {
 
     assert!(matches!(
         parse_unit_setup_info(&bytes),
-        Err(SetupInfoError::LengthOverflow)
+        Err(SetupInfoError::UnexpectedEof { .. })
     ));
 }
 
@@ -565,7 +565,7 @@ fn rejects_stage_value_length_count_that_exceeds_remaining_lengths() {
 
     assert!(matches!(
         parse_unit_setup_info(&bytes),
-        Err(SetupInfoError::LengthOverflow)
+        Err(SetupInfoError::UnexpectedEof { .. })
     ));
 }
 
@@ -579,7 +579,7 @@ fn rejects_group_value_count_that_exceeds_remaining_records() {
 
     assert!(matches!(
         parse_unit_setup_info(&bytes),
-        Err(SetupInfoError::LengthOverflow)
+        Err(SetupInfoError::UnexpectedEof { .. })
     ));
 }
 
@@ -594,6 +594,6 @@ fn rejects_evaluation_map_count_that_exceeds_remaining_records() {
 
     assert!(matches!(
         parse_unit_setup_info(&bytes),
-        Err(SetupInfoError::LengthOverflow)
+        Err(SetupInfoError::UnexpectedEof { .. })
     ));
 }
