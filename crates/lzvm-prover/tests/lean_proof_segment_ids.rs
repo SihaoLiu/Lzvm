@@ -39,6 +39,7 @@ fn lean_proof_segment_ids_track_runtime_allowlist() {
         lean_source.contains("def IsAllowedProofSegmentId")
             && lean_source.contains("def isFixedProofSegmentIdBool")
             && lean_source.contains("theorem witness_commitment_base_id_allowed")
+            && lean_source.contains("theorem first_unknown_fixed_proof_segment_id_not_allowed")
             && lean_source.contains("theorem unknown_fixed_proof_segment_id_not_allowed"),
         "Lean should expose concrete allowed and rejected proof segment ID facts"
     );
@@ -65,6 +66,32 @@ fn lean_proof_segment_ids_track_runtime_allowlist() {
             expected.rust_name
         );
     }
+
+    let mut actual_fixed_lean_names = lean_fixed_proof_segment_ids(&lean_source);
+    actual_fixed_lean_names.sort_unstable();
+    let mut expected_fixed_lean_names = EXPECTED_SEGMENT_IDS
+        .iter()
+        .skip(1)
+        .map(|expected| expected.lean_name)
+        .collect::<Vec<_>>();
+    expected_fixed_lean_names.sort_unstable();
+    assert_eq!(
+        actual_fixed_lean_names, expected_fixed_lean_names,
+        "Lean fixed proof segment ID list should exactly match runtime fixed segment IDs"
+    );
+}
+
+fn lean_fixed_proof_segment_ids(source: &str) -> Vec<&str> {
+    let (_, after_def) = source
+        .split_once("def fixedProofSegmentIds : List Nat :=")
+        .expect("Lean source should define fixedProofSegmentIds");
+    let (body, _) = after_def
+        .split_once("\ndef IsWitnessCommitmentSegmentId")
+        .expect("fixedProofSegmentIds should precede witness segment ID predicate");
+
+    body.split(|ch: char| ch == '[' || ch == ']' || ch == ',' || ch.is_whitespace())
+        .filter(|part| !part.is_empty())
+        .collect()
 }
 
 struct ExpectedSegmentId {

@@ -174,4 +174,8 @@ theorem unknown_fixed_proof_segment_id_not_allowed :
     Not (IsAllowedProofSegmentId 20000) := by
   decide
 
+theorem first_unknown_fixed_proof_segment_id_not_allowed :
+    Not (IsAllowedProofSegmentId 10016) := by
+  decide
+
 end Lzvm

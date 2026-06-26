@@ -96,6 +96,9 @@ mod tests {
         assert!(!is_allowed_proof_segment_id(
             WITNESS_COMMITMENT_SEGMENT_BASE_ID - 1
         ));
+        assert!(!is_allowed_proof_segment_id(
+            FRAMED_GUEST_INPUT_SEGMENT_ID + 1
+        ));
         assert!(!is_allowed_proof_segment_id(20_000));
     }
 
