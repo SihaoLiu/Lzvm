@@ -8383,6 +8383,11 @@ fn lean_pipeline_binding_tracks_runtime_preflight_and_artifact_checks() {
     assert!(
         lean_source.contains("RuntimeEthBlockPublicInputBindingValidation")
             && lean_source.contains("RuntimeEthBlockPublicInputBindingEvidence")
+            && lean_source.contains("RuntimePipelineFramedGuestInputBindingBridge")
+            && lean_source.contains("RuntimeFramedGuestInputBindingValidation")
+            && lean_source.contains(
+                "runtime_pipeline_binding_checked_acceptance_framed_guest_input_full_contract"
+            )
             && lean_source.contains("RuntimeTraceConstraintArtifactBindingValidation")
             && lean_source.contains("RuntimeTraceConstraintPreflightBindingEvidence")
             && lean_source.contains("RuntimeQueryPlanBindingValidation")

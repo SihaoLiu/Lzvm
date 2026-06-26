@@ -6,6 +6,7 @@ Authors: Sihao Liu
 
 import Lzvm.AssumptionAudit
 import Lzvm.EthBlockPublicInputBinding
+import Lzvm.FramedGuestInputBinding
 import Lzvm.TraceConstraintArtifactBinding
 import Lzvm.QueryPlanBinding
 
@@ -537,6 +538,25 @@ def RuntimePipelineBindingCheckedAcceptance
     (proof : Proof) : Prop :=
   validation.pipelineBindingAccepted artifact publicInput proof
 
+structure RuntimePipelineFramedGuestInputBindingBridge
+    (system : VerifierModel)
+    (validation : RuntimePipelineBindingValidation system) where
+  framedGuestInputBindingValidation : RuntimeFramedGuestInputBindingValidation system
+  pipelineBindingAcceptedImpliesFramedGuestInputAccepted :
+    forall artifact publicInput proof,
+      RuntimePipelineBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeFramedGuestInputBindingCheckedAcceptance
+          system
+          framedGuestInputBindingValidation
+          artifact
+          publicInput
+          proof
+
 theorem runtime_pipeline_binding_checked_acceptance_eth
     {system : VerifierModel}
     (validation : RuntimePipelineBindingValidation system) :
@@ -556,6 +576,31 @@ theorem runtime_pipeline_binding_checked_acceptance_eth
   intro artifact publicInput proof accepted
   exact
     validation.pipelineBindingAcceptedImpliesEthBindingAccepted
+      artifact
+      publicInput
+      proof
+      accepted
+
+theorem runtime_pipeline_binding_checked_acceptance_framed_guest_input
+    {system : VerifierModel}
+    (validation : RuntimePipelineBindingValidation system)
+    (bridge : RuntimePipelineFramedGuestInputBindingBridge system validation) :
+    forall artifact publicInput proof,
+      RuntimePipelineBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeFramedGuestInputBindingCheckedAcceptance
+          system
+          bridge.framedGuestInputBindingValidation
+          artifact
+          publicInput
+          proof := by
+  intro artifact publicInput proof accepted
+  exact
+    bridge.pipelineBindingAcceptedImpliesFramedGuestInputAccepted
       artifact
       publicInput
       proof
@@ -977,6 +1022,86 @@ theorem runtime_pipeline_binding_checked_acceptance_eth_full_contract
       publicInput
       proof
       ethAccepted
+
+theorem runtime_pipeline_binding_checked_acceptance_framed_guest_input_soundness_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimePipelineBindingValidation system)
+    (bridge : RuntimePipelineFramedGuestInputBindingBridge system validation) :
+    forall artifact publicInput proof,
+      RuntimePipelineBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeFramedGuestInputBindingSoundnessContract
+          system
+          bridge.framedGuestInputBindingValidation
+          artifact
+          publicInput
+          proof := by
+  intro artifact publicInput proof accepted
+  have framedAccepted :=
+    runtime_pipeline_binding_checked_acceptance_framed_guest_input
+      validation
+      bridge
+      artifact
+      publicInput
+      proof
+      accepted
+  exact
+    runtime_framed_guest_input_binding_checked_acceptance_soundness_contract
+      assumptions
+      bridge.framedGuestInputBindingValidation
+      artifact
+      publicInput
+      proof
+      framedAccepted
+
+theorem runtime_pipeline_binding_checked_acceptance_framed_guest_input_full_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimePipelineBindingValidation system)
+    (bridge : RuntimePipelineFramedGuestInputBindingBridge system validation) :
+    forall artifact publicInput proof,
+      RuntimePipelineBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeFramedGuestInputBindingEvidence
+            system
+            bridge.framedGuestInputBindingValidation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeFramedGuestInputBindingStructuralObligations
+            system
+            bridge.framedGuestInputBindingValidation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro artifact publicInput proof accepted
+  have framedAccepted :=
+    runtime_pipeline_binding_checked_acceptance_framed_guest_input
+      validation
+      bridge
+      artifact
+      publicInput
+      proof
+      accepted
+  exact
+    runtime_framed_guest_input_binding_checked_acceptance_full_contract
+      assumptions
+      bridge.framedGuestInputBindingValidation
+      artifact
+      publicInput
+      proof
+      framedAccepted
 
 theorem runtime_pipeline_binding_checked_acceptance_opening_segment_checked_acceptance
     {system : VerifierModel}
