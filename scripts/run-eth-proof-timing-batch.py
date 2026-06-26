@@ -574,6 +574,8 @@ def next_command_parts(
         parts.extend(["--parallel-lower-job-queue", str(args.parallel_lower_job_queue)])
     if args.segment_commit_workers is not None:
         parts.extend(["--segment-commit-workers", str(args.segment_commit_workers)])
+    if args.gpu_preallocate:
+        parts.append("--gpu-preallocate")
     if args.commit is not None:
         parts.extend(["--commit", args.commit])
     return parts
@@ -625,6 +627,7 @@ def command_for_env(
     mode: str,
     verify_proof: bool,
     mode_env: dict[str, str] | None = None,
+    gpu_preallocate: bool = False,
 ) -> str:
     paths = configured_paths(config)
     bin_path = paths["bin"]
@@ -646,6 +649,7 @@ def command_for_env(
             "--guest-pc-trace",
             shell_arg(config.trace_limit()),
             "--timings",
+            *(["--gpu-preallocate"] if gpu_preallocate else []),
             "--eth-block-input",
             shell_arg(paths["block_input"]),
             "--program-image-cache",
@@ -959,6 +963,7 @@ def profile_command_for_env(
             mode,
             not args.skip_verify_proof,
             mode_env_for_args(args, mode),
+            args.gpu_preallocate,
         ),
         config.label,
         batch_dir,
@@ -1128,6 +1133,7 @@ def runner_command(args: argparse.Namespace, root: Path) -> list[str]:
                     mode,
                     not args.skip_verify_proof,
                     mode_env_for_args(args, mode),
+                    args.gpu_preallocate,
                 ),
             ]
         )
@@ -1146,6 +1152,7 @@ def dry_run_summary_lines(args: argparse.Namespace, root: Path) -> list[str]:
         f"parallel_lower_workers={args.parallel_lower_workers or ''}",
         f"parallel_lower_job_queue={args.parallel_lower_job_queue or ''}",
         f"segment_commit_workers={args.segment_commit_workers or ''}",
+        f"gpu_preallocate={str(args.gpu_preallocate).lower()}",
     ]
     for config, mode in selected:
         max_avg_s = target_max_avg_s(args, config.label)
@@ -1362,6 +1369,7 @@ def self_test() -> None:
         parallel_lower_job_queue=None,
         parallel_lower_workers=None,
         segment_commit_workers=None,
+        gpu_preallocate=False,
         print_env_template=False,
         check_profile_tools=False,
         check_gpu_memory=False,
@@ -1461,6 +1469,7 @@ def main() -> None:
     parser.add_argument("--parallel-lower-workers", type=positive_integer, default=None)
     parser.add_argument("--parallel-lower-job-queue", type=positive_integer, default=None)
     parser.add_argument("--segment-commit-workers", type=positive_integer, default=None)
+    parser.add_argument("--gpu-preallocate", action="store_true")
     parser.add_argument("--work-dir", default="temp/proof-timing-batch")
     parser.add_argument("--path", default="temp/improve-log.csv")
     parser.add_argument("--summary")

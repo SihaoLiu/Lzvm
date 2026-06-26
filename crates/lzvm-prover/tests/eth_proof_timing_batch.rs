@@ -344,6 +344,58 @@ fn eth_proof_timing_batch_dry_run_builds_small_command_from_env() {
 }
 
 #[test]
+fn eth_proof_timing_batch_dry_run_passes_gpu_preallocate_to_prove() {
+    let fixture = ProofFixture::new("eth proof timing batch dry run gpu preallocate");
+    let mut command = Command::new(script_path());
+    command
+        .arg("--suite")
+        .arg("small")
+        .arg("--dry-run")
+        .arg("--gpu-preallocate")
+        .arg("--work-dir")
+        .arg(fixture.dir.join("runs"))
+        .arg("--path")
+        .arg(fixture.dir.join("improve-log.csv"))
+        .arg("--summary")
+        .arg("dry run")
+        .env("CUDA_VISIBLE_DEVICES", "");
+    fixture.apply_env(&mut command, SMALL_PREFIX);
+
+    let output = command
+        .output()
+        .expect("ETH proof timing batch dry-run should run");
+    let success = output.status.success();
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    fixture.cleanup();
+
+    assert!(
+        success,
+        "dry-run should build a small command: stderr={stderr}"
+    );
+    assert!(
+        stdout.contains("gpu_preallocate=true\n"),
+        "dry-run summary should report GPU preallocation: {stdout}"
+    );
+    assert!(
+        stdout.contains("prove witness --guest-pc-trace 120000000 --timings --gpu-preallocate"),
+        "small command should pass GPU preallocation to proving: {stdout}"
+    );
+    let small_command = stdout
+        .lines()
+        .find(|line| line.starts_with("small_command="))
+        .expect("small command should be printed");
+    let verify_command = small_command
+        .split(" && ")
+        .nth(1)
+        .expect("small command should include verification");
+    assert!(
+        !verify_command.contains("--gpu-preallocate"),
+        "verify command should not receive proof-only GPU preallocation: {stdout}"
+    );
+}
+
+#[test]
 fn eth_proof_timing_batch_dry_run_applies_worker_overrides() {
     let fixture = ProofFixture::new("eth-proof-timing-batch-worker-overrides");
     let mut command = Command::new(script_path());
