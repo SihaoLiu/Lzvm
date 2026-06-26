@@ -49,3 +49,80 @@ pub(crate) fn unexpected_proof_segment_id(segments: &[ProofSegment]) -> Option<u
         .find(|segment| !is_allowed_proof_segment_id(segment.id))
         .map(|segment| segment.id)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn allows_witness_commitment_range_boundaries() {
+        assert!(is_allowed_proof_segment_id(
+            WITNESS_COMMITMENT_SEGMENT_BASE_ID
+        ));
+        assert!(is_allowed_proof_segment_id(
+            PCS_MATERIAL_MANIFEST_SEGMENT_ID - 1
+        ));
+        assert!(is_allowed_proof_segment_id(
+            PCS_MATERIAL_MANIFEST_SEGMENT_ID
+        ));
+    }
+
+    #[test]
+    fn allows_all_fixed_segment_ids() {
+        for id in [
+            PCS_MATERIAL_MANIFEST_SEGMENT_ID,
+            PCS_QUERY_PLAN_SEGMENT_ID,
+            WITNESS_OPENING_SEGMENT_ID,
+            CONSTANT_OPENING_SEGMENT_ID,
+            PCS_FRI_OPENING_SEGMENT_ID,
+            PCS_QUERY_NONCE_SEGMENT_ID,
+            PCS_EVALUATION_SEGMENT_ID,
+            PCS_PROOF_VALUES_SEGMENT_ID,
+            GROUP_VALUES_SEGMENT_ID,
+            CHALLENGE_VALUES_SEGMENT_ID,
+            UNIT_VALUES_SEGMENT_ID,
+            TRACE_CONSTRAINT_SEGMENT_ID,
+            PROGRAM_IMAGE_CACHE_SEGMENT_ID,
+            CONTRIBUTION_SEGMENT_ID,
+            ETH_BLOCK_INPUT_SEGMENT_ID,
+            FRAMED_GUEST_INPUT_SEGMENT_ID,
+        ] {
+            assert!(is_allowed_proof_segment_id(id), "{id} should be allowed");
+        }
+    }
+
+    #[test]
+    fn rejects_reserved_and_unknown_fixed_segment_ids() {
+        assert!(!is_allowed_proof_segment_id(
+            WITNESS_COMMITMENT_SEGMENT_BASE_ID - 1
+        ));
+        assert!(!is_allowed_proof_segment_id(20_000));
+    }
+
+    #[test]
+    fn reports_first_unexpected_segment_id() {
+        let segments = [
+            segment(PCS_MATERIAL_MANIFEST_SEGMENT_ID),
+            segment(20_000),
+            segment(20_001),
+        ];
+
+        assert_eq!(unexpected_proof_segment_id(&segments), Some(20_000));
+    }
+
+    #[test]
+    fn accepts_only_expected_segment_ids() {
+        let segments = [
+            segment(WITNESS_COMMITMENT_SEGMENT_BASE_ID),
+            segment(PCS_MATERIAL_MANIFEST_SEGMENT_ID - 1),
+            segment(PCS_MATERIAL_MANIFEST_SEGMENT_ID),
+            segment(FRAMED_GUEST_INPUT_SEGMENT_ID),
+        ];
+
+        assert_eq!(unexpected_proof_segment_id(&segments), None);
+    }
+
+    fn segment(id: u32) -> ProofSegment {
+        ProofSegment { id, data: vec![1] }
+    }
+}
