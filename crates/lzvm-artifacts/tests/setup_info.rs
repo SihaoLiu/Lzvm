@@ -433,6 +433,17 @@ fn rejects_invalid_binary_setup_info_magic() {
 }
 
 #[test]
+fn rejects_stage_count_overflow() {
+    let mut info = fixtures::sample_setup_info_fixture();
+    info.n_stages = u32::MAX;
+
+    assert!(matches!(
+        encode_unit_setup_info(&info),
+        Err(SetupInfoError::LengthOverflow)
+    ));
+}
+
+#[test]
 fn rejects_opening_point_count_that_exceeds_remaining_points() {
     let mut section = minimal_header_prefix();
     push_u32(&mut section, 1);

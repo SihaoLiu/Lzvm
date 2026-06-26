@@ -725,8 +725,12 @@ fn validate_constant_columns(
 }
 
 fn validate_commitment_columns(info: &UnitSetupInfo) -> Result<(), SetupInfoError> {
+    let max_stage = info
+        .n_stages
+        .checked_add(1)
+        .ok_or(SetupInfoError::LengthOverflow)?;
     for (index, column) in info.commitment_columns.iter().enumerate() {
-        if column.stage == 0 || column.stage > info.n_stages + 1 || column.dimension == 0 {
+        if column.stage == 0 || column.stage > max_stage || column.dimension == 0 {
             return Err(SetupInfoError::InvalidCommitmentColumn { index });
         }
         let name = format!("cm{}", column.stage);
@@ -784,7 +788,10 @@ fn validate_domains(stark: &StarkStruct) -> Result<(), SetupInfoError> {
 fn validate_unit_setup_info(info: &UnitSetupInfo) -> Result<(), SetupInfoError> {
     validate_constant_columns(info.n_constants, &info.constant_columns)?;
     validate_commitment_columns(info)?;
-    let max_stage = info.n_stages + 1;
+    let max_stage = info
+        .n_stages
+        .checked_add(1)
+        .ok_or(SetupInfoError::LengthOverflow)?;
     validate_stage_values("unit-value-map", &info.unit_value_map, max_stage)?;
     validate_stage_values("group-value-map", &info.group_value_map, max_stage)?;
     validate_domains(&info.stark)?;
