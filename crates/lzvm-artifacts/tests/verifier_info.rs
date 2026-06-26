@@ -10,6 +10,11 @@ use std::path::PathBuf;
 mod fixtures;
 
 const NON_CANONICAL_FIELD: u64 = 0xffff_ffff_0000_0001;
+const REFERENCE_BODY_BYTES: usize = 4 + 4;
+const OPERATION_COUNT_END: usize = 1 + 1 + 4 + 4 + 4;
+const OPERATION_MIN_BYTES: usize = 1 + REFERENCE_BODY_BYTES + 4;
+const SOURCE_COUNT_END: usize = OPERATION_COUNT_END + 1 + REFERENCE_BODY_BYTES + 4;
+const OPERAND_MIN_BYTES: usize = 1 + REFERENCE_BODY_BYTES;
 
 fn temp_file_path(name: &str) -> PathBuf {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -197,7 +202,11 @@ fn rejects_operation_count_that_exceeds_remaining_operation_records() {
 
     assert!(matches!(
         parse_verifier_info(&bytes),
-        Err(VerifierInfoError::UnexpectedEof { .. })
+        Err(VerifierInfoError::UnexpectedEof {
+            offset: OPERATION_COUNT_END,
+            needed: OPERATION_MIN_BYTES,
+            available: 0
+        })
     ));
 }
 
@@ -207,6 +216,10 @@ fn rejects_source_count_that_exceeds_remaining_source_operands() {
 
     assert!(matches!(
         parse_verifier_info(&bytes),
-        Err(VerifierInfoError::UnexpectedEof { .. })
+        Err(VerifierInfoError::UnexpectedEof {
+            offset: SOURCE_COUNT_END,
+            needed: OPERAND_MIN_BYTES,
+            available: 0
+        })
     ));
 }
