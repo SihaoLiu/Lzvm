@@ -37,7 +37,8 @@ use lzvm_artifacts::group_values_segment::{
 };
 use lzvm_artifacts::guest_image::parse_guest_image;
 use lzvm_artifacts::guest_input_segment::{
-    parse_framed_guest_input_segment, FRAMED_GUEST_INPUT_SEGMENT_ID,
+    encode_framed_guest_input_segment, parse_framed_guest_input_segment,
+    FRAMED_GUEST_INPUT_SEGMENT_ID,
 };
 use lzvm_artifacts::hint_program::{
     encode_global_hint_program, encode_regular_hint_program,
@@ -16463,6 +16464,9 @@ fn verifies_contribution_reports_bound_program_image_and_eth_block_input() {
     let block_segment_data =
         encode_eth_block_input_segment(&block_input).expect("block segment should encode");
     let block_segment_hash = eth_block_input_bytes_digest(&block_segment_data);
+    let input_data = framed_stdin_chunk(&[7_u8]);
+    let input_segment_data =
+        encode_framed_guest_input_segment(&input_data).expect("input segment should encode");
     let mut proof = ProofArtifact {
         setup_hash,
         public_values_hash: public_values_digest(&public_values).expect("digest should compute"),
@@ -16477,6 +16481,10 @@ fn verifies_contribution_reports_bound_program_image_and_eth_block_input() {
             ProofSegment {
                 id: ETH_BLOCK_INPUT_SEGMENT_ID,
                 data: block_segment_data,
+            },
+            ProofSegment {
+                id: FRAMED_GUEST_INPUT_SEGMENT_ID,
+                data: input_segment_data,
             },
         ],
     };
@@ -16497,6 +16505,7 @@ fn verifies_contribution_reports_bound_program_image_and_eth_block_input() {
     let challenge_values_path = dir.join("challenge_values.bin");
     let block_input_path = dir.join("block.input");
     let cache_path = dir.join("program_image.cache");
+    let input_data_path = dir.join("input.bin");
     write_bytes(
         &proof_path,
         encode_proof_artifact(&proof).expect("proof should encode"),
@@ -16513,6 +16522,7 @@ fn verifies_contribution_reports_bound_program_image_and_eth_block_input() {
         &cache_path,
         encode_program_image_commitment_cache(&cache).expect("cache should encode"),
     );
+    write_bytes(&input_data_path, &input_data);
 
     let mut stdout = Vec::new();
     let mut stderr = Vec::new();
@@ -16526,6 +16536,10 @@ fn verifies_contribution_reports_bound_program_image_and_eth_block_input() {
                 .expect("block path should be utf-8"),
             "--program-image-cache",
             cache_path.to_str().expect("cache path should be utf-8"),
+            "--input-data",
+            input_data_path
+                .to_str()
+                .expect("input path should be utf-8"),
             dir.to_str().expect("setup path should be utf-8"),
             proof_path.to_str().expect("proof path should be utf-8"),
             public_values_path
@@ -16542,6 +16556,16 @@ fn verifies_contribution_reports_bound_program_image_and_eth_block_input() {
         &[
             "prove",
             "write-contribution-challenges",
+            "--eth-block-input",
+            block_input_path
+                .to_str()
+                .expect("block path should be utf-8"),
+            "--program-image-cache",
+            cache_path.to_str().expect("cache path should be utf-8"),
+            "--input-data",
+            input_data_path
+                .to_str()
+                .expect("input path should be utf-8"),
             dir.to_str().expect("setup path should be utf-8"),
             public_values_path
                 .to_str()
@@ -16561,6 +16585,16 @@ fn verifies_contribution_reports_bound_program_image_and_eth_block_input() {
         &[
             "verify",
             "contribution-challenge",
+            "--eth-block-input",
+            block_input_path
+                .to_str()
+                .expect("block path should be utf-8"),
+            "--program-image-cache",
+            cache_path.to_str().expect("cache path should be utf-8"),
+            "--input-data",
+            input_data_path
+                .to_str()
+                .expect("input path should be utf-8"),
             dir.to_str().expect("setup path should be utf-8"),
             public_values_path
                 .to_str()
@@ -16621,6 +16655,7 @@ fn verifies_contribution_reports_bound_program_image_and_eth_block_input() {
     assert!(stdout_text.contains("program_image_cache_arity=4\n"));
     assert!(stdout_text.contains("program_image_cache_gpu_mode=cpu\n"));
     assert!(stdout_text.contains("program_image_cache_match=ok\n"));
+    assert!(stdout_text.contains("framed_guest_input_match=ok\n"));
     assert!(stdout_text.contains("eth_block_inputs=1\n"));
     assert!(stdout_text.contains(&format!(
         "eth_block_input_hash={}\n",
@@ -16678,6 +16713,8 @@ fn verifies_contribution_reports_bound_program_image_and_eth_block_input() {
             .data
             .len(),
     );
+    assert!(writer_stdout_text.contains("framed_guest_input_match=ok\n"));
+    assert!(challenge_stdout_text.contains("framed_guest_input_match=ok\n"));
     assert!(stdout_text.contains(&format!(
         "contribution_challenge={},{},{}\n",
         expected_challenge.c0.to_u64(),
@@ -17242,6 +17279,11 @@ fn verifies_contribution_set_with_external_program_image_and_eth_block_bindings(
         id: ETH_BLOCK_INPUT_SEGMENT_ID,
         data: encode_eth_block_input_segment(&block_input).expect("block segment should encode"),
     };
+    let input_data = framed_stdin_chunk(&[7_u8]);
+    let framed_segment = ProofSegment {
+        id: FRAMED_GUEST_INPUT_SEGMENT_ID,
+        data: encode_framed_guest_input_segment(&input_data).expect("input segment should encode"),
+    };
     let public_fields =
         public_values_as_fields(&public_values).expect("public values should flatten");
     let expected_challenge = derive_global_challenge_from_proof_segments(
@@ -17254,6 +17296,7 @@ fn verifies_contribution_set_with_external_program_image_and_eth_block_bindings(
                 .expect("contribution segment should exist"),
             cache_segment.clone(),
             block_segment.clone(),
+            framed_segment.clone(),
         ],
     )
     .expect("challenge should derive");
@@ -17267,6 +17310,7 @@ fn verifies_contribution_set_with_external_program_image_and_eth_block_bindings(
                 .expect("contribution segment should exist"),
             cache_segment.clone(),
             block_segment.clone(),
+            framed_segment.clone(),
             sample_challenge_values_segment(expected_challenge.to_u64s()),
         ],
     };
@@ -17279,6 +17323,7 @@ fn verifies_contribution_set_with_external_program_image_and_eth_block_bindings(
                 .expect("contribution segment should exist"),
             cache_segment.clone(),
             block_segment.clone(),
+            framed_segment,
             sample_challenge_values_segment(expected_challenge.to_u64s()),
         ],
     };
@@ -17287,6 +17332,7 @@ fn verifies_contribution_set_with_external_program_image_and_eth_block_bindings(
     let public_values_path = dir.join("public_values.bin");
     let block_input_path = dir.join("block.input");
     let cache_path = dir.join("program_image.cache");
+    let input_data_path = dir.join("input.bin");
     write_bytes(
         &proof_a_path,
         encode_proof_artifact(&proof_a).expect("proof should encode"),
@@ -17307,6 +17353,7 @@ fn verifies_contribution_set_with_external_program_image_and_eth_block_bindings(
         &cache_path,
         encode_program_image_commitment_cache(&cache).expect("cache should encode"),
     );
+    write_bytes(&input_data_path, &input_data);
 
     let mut stdout = Vec::new();
     let mut stderr = Vec::new();
@@ -17320,6 +17367,10 @@ fn verifies_contribution_set_with_external_program_image_and_eth_block_bindings(
                 .expect("block path should be utf-8"),
             "--program-image-cache",
             cache_path.to_str().expect("cache path should be utf-8"),
+            "--input-data",
+            input_data_path
+                .to_str()
+                .expect("input path should be utf-8"),
             dir.to_str().expect("setup path should be utf-8"),
             public_values_path
                 .to_str()
@@ -17338,6 +17389,7 @@ fn verifies_contribution_set_with_external_program_image_and_eth_block_bindings(
     assert!(stdout_text.contains("proofs=2\n"));
     assert!(stdout_text.contains("eth_block_input_match=ok\n"));
     assert!(stdout_text.contains("program_image_cache_match=ok\n"));
+    assert!(stdout_text.contains("framed_guest_input_match=ok\n"));
     assert!(stdout_text.contains(&format!(
         "contribution_challenge={},{},{}\n",
         expected_challenge.c0.to_u64(),
