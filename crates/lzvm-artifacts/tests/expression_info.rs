@@ -165,7 +165,7 @@ fn rejects_hint_count_that_exceeds_remaining_hint_records() {
 
     assert!(matches!(
         parse_expression_info(&bytes),
-        Err(ExpressionInfoError::LengthOverflow)
+        Err(ExpressionInfoError::UnexpectedEof { .. })
     ));
 }
 
@@ -179,7 +179,7 @@ fn rejects_hint_field_count_that_exceeds_remaining_field_records() {
 
     assert!(matches!(
         parse_expression_info(&bytes),
-        Err(ExpressionInfoError::LengthOverflow)
+        Err(ExpressionInfoError::UnexpectedEof { .. })
     ));
 }
 
@@ -195,7 +195,7 @@ fn rejects_hint_value_count_that_exceeds_remaining_value_records() {
 
     assert!(matches!(
         parse_expression_info(&bytes),
-        Err(ExpressionInfoError::LengthOverflow)
+        Err(ExpressionInfoError::UnexpectedEof { .. })
     ));
 }
 
@@ -214,7 +214,7 @@ fn rejects_hint_position_count_that_exceeds_remaining_positions() {
 
     assert!(matches!(
         parse_expression_info(&bytes),
-        Err(ExpressionInfoError::LengthOverflow)
+        Err(ExpressionInfoError::UnexpectedEof { .. })
     ));
 }
 
@@ -226,7 +226,7 @@ fn rejects_expression_count_that_exceeds_remaining_expression_records() {
 
     assert!(matches!(
         parse_expression_info(&bytes),
-        Err(ExpressionInfoError::LengthOverflow)
+        Err(ExpressionInfoError::UnexpectedEof { .. })
     ));
 }
 
@@ -238,7 +238,7 @@ fn rejects_constraint_count_that_exceeds_remaining_constraint_records() {
 
     assert!(matches!(
         parse_expression_info(&bytes),
-        Err(ExpressionInfoError::LengthOverflow)
+        Err(ExpressionInfoError::UnexpectedEof { .. })
     ));
 }
 
@@ -248,7 +248,7 @@ fn rejects_operation_count_that_exceeds_remaining_operation_records() {
 
     assert!(matches!(
         parse_expression_info(&bytes),
-        Err(ExpressionInfoError::LengthOverflow)
+        Err(ExpressionInfoError::UnexpectedEof { .. })
     ));
 }
 
@@ -258,6 +258,6 @@ fn rejects_source_count_that_exceeds_remaining_source_operands() {
 
     assert!(matches!(
         parse_expression_info(&bytes),
-        Err(ExpressionInfoError::LengthOverflow)
+        Err(ExpressionInfoError::UnexpectedEof { .. })
     ));
 }

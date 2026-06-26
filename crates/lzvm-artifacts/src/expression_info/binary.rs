@@ -603,9 +603,7 @@ fn read_bounded_count(
     record_min_bytes: usize,
 ) -> Result<usize, ExpressionInfoError> {
     let count = u32_to_usize(reader.read_u32()?)?;
-    if count > reader.remaining_len() / record_min_bytes {
-        return Err(ExpressionInfoError::LengthOverflow);
-    }
+    reader.require_items(count, record_min_bytes)?;
     Ok(count)
 }
 fn u32_to_usize(value: u32) -> Result<usize, ExpressionInfoError> {
@@ -632,10 +630,6 @@ impl<'a> Reader<'a> {
 
     fn position(&self) -> usize {
         self.offset
-    }
-
-    fn remaining_len(&self) -> usize {
-        self.bytes.len() - self.offset
     }
 
     fn read_optional_expression_destination(
@@ -960,6 +954,24 @@ impl<'a> Reader<'a> {
         Ok(i64::from_le_bytes(
             bytes.try_into().expect("slice length checked"),
         ))
+    }
+
+    fn require_items(&self, count: usize, item_bytes: usize) -> Result<(), ExpressionInfoError> {
+        let needed = count
+            .checked_mul(item_bytes)
+            .ok_or(ExpressionInfoError::LengthOverflow)?;
+        let end = self
+            .offset
+            .checked_add(needed)
+            .ok_or(ExpressionInfoError::LengthOverflow)?;
+        if end > self.bytes.len() {
+            return Err(ExpressionInfoError::UnexpectedEof {
+                offset: self.offset,
+                needed,
+                available: self.bytes.len().saturating_sub(self.offset),
+            });
+        }
+        Ok(())
     }
 
     fn read_exact(&mut self, count: usize) -> Result<&'a [u8], ExpressionInfoError> {
