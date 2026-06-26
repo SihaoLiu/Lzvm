@@ -23,6 +23,7 @@ fn lean_program_image_cache_binding_exports_core_contract_projection() {
             && lean_source.contains("RuntimeProgramImageCacheBindingStructuralObligations")
             && lean_source.contains("RuntimeProofArtifactBindingEvidence")
             && lean_source.contains("RuntimeProofArtifactBindingStructuralObligations")
+            && lean_source.contains("RuntimeProofArtifactFinalized")
             && lean_source.contains("RuntimeArtifactEvidence")
             && lean_source.contains("proofSegmentIdsUnique")
             && lean_source.contains("proofUnitValuesTraceIdentityCoverage")
@@ -35,6 +36,7 @@ fn lean_program_image_cache_binding_exports_core_contract_projection() {
         &[
             "runtime_program_image_cache_binding_checked_acceptance_evidence",
             "runtime_program_image_cache_binding_checked_acceptance_artifact_binding",
+            "runtime_program_image_cache_binding_checked_acceptance_artifact_finalized",
             "runtime_program_image_cache_binding_checked_acceptance_artifact_evidence_contract",
             "runtime_program_image_cache_binding_checked_acceptance_artifact_wellformed_contract",
             "runtime_program_image_cache_binding_checked_acceptance_sound",
@@ -58,8 +60,16 @@ fn lean_program_image_cache_binding_exports_core_contract_projection() {
         "runtime_program_image_cache_binding_checked_acceptance_structural_obligations",
         &[
             "runtime_program_image_cache_binding_checked_acceptance_evidence",
+            "runtime_program_image_cache_binding_checked_acceptance_artifact_finalized",
+            "runtime_proof_artifact_finalized_structural_obligations",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_program_image_cache_binding_checked_acceptance_artifact_finalized",
+        &[
             "runtime_program_image_cache_binding_checked_acceptance_artifact_binding",
-            "runtime_proof_artifact_binding_checked_acceptance_structural_obligations",
+            "runtime_proof_artifact_finalized_from_checked_acceptance",
         ],
     );
     lean_binding::assert_theorem_prefix_contains(
@@ -109,7 +119,10 @@ fn lean_program_image_cache_binding_exports_core_contract_projection() {
     lean_binding::assert_theorem_body_contains(
         &lean_source,
         "runtime_program_image_cache_binding_checked_acceptance_verifier_core_contract",
-        &["runtime_proof_artifact_binding_checked_acceptance_verifier_core_contract"],
+        &[
+            "runtime_program_image_cache_binding_checked_acceptance_artifact_finalized",
+            "runtime_proof_artifact_finalized_verifier_core_contract",
+        ],
     );
     lean_binding::assert_theorem_body_contains(
         &lean_source,
@@ -130,11 +143,20 @@ fn lean_program_image_cache_binding_exports_core_contract_projection() {
             "SoundWitness system publicInput proof",
         ],
     );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_program_image_cache_binding_checked_acceptance_sound",
+        &[
+            "runtime_program_image_cache_binding_checked_acceptance_artifact_finalized",
+            "runtime_proof_artifact_finalized_full_contract",
+        ],
+    );
     lean_binding::assert_theorem_body_omits(
         &lean_source,
         "runtime_program_image_cache_binding_checked_acceptance_verifier_core_contract",
         &[
             "runtime_program_image_cache_binding_checked_acceptance_sound",
+            "runtime_proof_artifact_binding_checked_acceptance_verifier_core_contract",
             "sound_witness_implies_verifier_core_contract",
         ],
     );

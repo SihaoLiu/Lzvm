@@ -197,6 +197,38 @@ theorem runtime_program_image_cache_binding_checked_acceptance_artifact_binding
       proof
       accepted
 
+theorem runtime_program_image_cache_binding_checked_acceptance_artifact_finalized
+    {system : VerifierModel}
+    (validation : RuntimeProgramImageCacheBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeProgramImageCacheBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeProofArtifactFinalized
+          system
+          validation.proofArtifactBindingValidation
+          artifact
+          publicInput
+          proof := by
+  intro artifact publicInput proof accepted
+  have artifactAccepted :=
+    runtime_program_image_cache_binding_checked_acceptance_artifact_binding
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  exact
+    runtime_proof_artifact_finalized_from_checked_acceptance
+      validation.proofArtifactBindingValidation
+      artifact
+      publicInput
+      proof
+      artifactAccepted
+
 theorem runtime_program_image_cache_binding_checked_acceptance_artifact_evidence_contract
     {system : VerifierModel}
     (validation : RuntimeProgramImageCacheBindingValidation system) :
@@ -383,20 +415,20 @@ theorem runtime_program_image_cache_binding_checked_acceptance_structural_obliga
       publicInput
       proof
       accepted
-  have artifactAccepted :=
-    runtime_program_image_cache_binding_checked_acceptance_artifact_binding
+  have artifactFinalized :=
+    runtime_program_image_cache_binding_checked_acceptance_artifact_finalized
       validation
       artifact
       publicInput
       proof
       accepted
   have artifactStructural :=
-    runtime_proof_artifact_binding_checked_acceptance_structural_obligations
+    runtime_proof_artifact_finalized_structural_obligations
       validation.proofArtifactBindingValidation
       artifact
       publicInput
       proof
-      artifactAccepted
+      artifactFinalized
   exact
     And.intro cacheEvidence artifactStructural
 
@@ -468,25 +500,25 @@ theorem runtime_program_image_cache_binding_checked_acceptance_sound
       publicInput
       proof
       accepted
-  have artifactAccepted :=
-    runtime_program_image_cache_binding_checked_acceptance_artifact_binding
+  have artifactFinalized :=
+    runtime_program_image_cache_binding_checked_acceptance_artifact_finalized
       validation
       artifact
       publicInput
       proof
       accepted
   have artifactSound :=
-    runtime_proof_artifact_binding_checked_acceptance_sound
+    runtime_proof_artifact_finalized_full_contract
       assumptions
       validation.proofArtifactBindingValidation
       artifact
       publicInput
       proof
-      artifactAccepted
+      artifactFinalized
   exact
     And.intro evidenceContract.left
-      (And.intro evidenceContract.right.left
-        (And.intro evidenceContract.right.right artifactSound.right.right))
+      (And.intro artifactSound.left
+        (And.intro artifactSound.right.right.left artifactSound.right.right.right))
 
 theorem runtime_program_image_cache_binding_checked_acceptance_verifier_core_contract
     {system : VerifierModel}
@@ -501,21 +533,21 @@ theorem runtime_program_image_cache_binding_checked_acceptance_verifier_core_con
           proof ->
         RuntimeVerifierCoreContract system publicInput proof := by
   intro artifact publicInput proof accepted
-  have artifactAccepted :=
-    runtime_program_image_cache_binding_checked_acceptance_artifact_binding
+  have artifactFinalized :=
+    runtime_program_image_cache_binding_checked_acceptance_artifact_finalized
       validation
       artifact
       publicInput
       proof
       accepted
   exact
-    runtime_proof_artifact_binding_checked_acceptance_verifier_core_contract
+    runtime_proof_artifact_finalized_verifier_core_contract
       assumptions
       validation.proofArtifactBindingValidation
       artifact
       publicInput
       proof
-      artifactAccepted
+      artifactFinalized
 
 theorem runtime_program_image_cache_binding_checked_acceptance_soundness_contract
     {system : VerifierModel}
