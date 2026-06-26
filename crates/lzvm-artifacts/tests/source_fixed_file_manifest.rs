@@ -173,3 +173,25 @@ fn rejects_source_fixed_file_manifest_entry_counts_larger_than_payload() {
         Err(SourceFixedFileManifestError::LengthOverflow)
     ));
 }
+
+#[test]
+fn rejects_truncated_source_fixed_file_manifest_payload() {
+    let bytes = encode_sectioned_file(&SectionedFile {
+        kind: *b"sffm",
+        version: 1,
+        sections: vec![SectionedSection {
+            id: 1,
+            data: vec![1],
+        }],
+    })
+    .expect("sectioned file should encode");
+
+    assert!(matches!(
+        parse_source_fixed_file_manifest(&bytes),
+        Err(SourceFixedFileManifestError::UnexpectedPayloadEof {
+            offset: 0,
+            needed: 8,
+            available: 1
+        })
+    ));
+}

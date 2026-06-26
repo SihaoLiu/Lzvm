@@ -373,7 +373,9 @@ impl<'a> Reader<'a> {
 
     fn read_array<const N: usize>(&mut self) -> Result<[u8; N], SourceProgramArchiveError> {
         let bytes = self.read_exact(N)?;
-        Ok(bytes.try_into().expect("slice length checked"))
+        let mut out = [0_u8; N];
+        out.copy_from_slice(bytes);
+        Ok(out)
     }
 
     fn read_u8(&mut self) -> Result<u8, SourceProgramArchiveError> {

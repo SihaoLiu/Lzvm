@@ -81,3 +81,51 @@ fn rejects_source_program_archive_counts_larger_than_payload() {
         Err(SourceProgramArchiveError::LengthOverflow)
     ));
 }
+
+#[test]
+fn rejects_short_source_program_archive_magic() {
+    assert!(matches!(
+        parse_source_program_archive(b"s"),
+        Err(SourceProgramArchiveError::UnexpectedEof {
+            offset: 0,
+            needed: 4,
+            available: 1
+        })
+    ));
+}
+
+#[test]
+fn rejects_short_source_program_archive_version() {
+    assert!(matches!(
+        parse_source_program_archive(b"spg0\x01\0"),
+        Err(SourceProgramArchiveError::UnexpectedEof {
+            offset: 4,
+            needed: 4,
+            available: 2
+        })
+    ));
+}
+
+#[test]
+fn rejects_short_source_program_archive_source_count() {
+    assert!(matches!(
+        parse_source_program_archive(b"spg0\x01\0\0\0"),
+        Err(SourceProgramArchiveError::UnexpectedEof {
+            offset: 8,
+            needed: 4,
+            available: 0
+        })
+    ));
+}
+
+#[test]
+fn rejects_short_source_program_archive_edge_count() {
+    assert!(matches!(
+        parse_source_program_archive(b"spg0\x01\0\0\0\x01\0\0\0"),
+        Err(SourceProgramArchiveError::UnexpectedEof {
+            offset: 12,
+            needed: 4,
+            available: 0
+        })
+    ));
+}
