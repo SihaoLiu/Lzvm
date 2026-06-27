@@ -14,6 +14,7 @@ fn lean_framed_guest_input_binding_exports_soundness_structural_contract() {
         &lean_source,
         &[
             "runtime_framed_guest_input_binding_checked_acceptance_concrete_segment_ids_allowed",
+            "runtime_framed_guest_input_binding_checked_acceptance_runtime_shape_contract",
             "runtime_framed_guest_input_binding_checked_acceptance_soundness_and_structural_contract",
         ],
     );
@@ -37,6 +38,28 @@ fn lean_framed_guest_input_binding_exports_soundness_structural_contract() {
     lean_binding::assert_theorem_prefix_omits(
         &lean_source,
         "runtime_framed_guest_input_binding_checked_acceptance_concrete_segment_ids_allowed",
+        &["AssumptionBundle"],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_framed_guest_input_binding_checked_acceptance_runtime_shape_contract",
+        &[
+            "RuntimeFramedGuestInputBindingCheckedAcceptance",
+            "RuntimeFramedGuestInputBindingStructuralObligations",
+            "RuntimeProofArtifactConcreteSegmentIdsAllowed proof",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_framed_guest_input_binding_checked_acceptance_runtime_shape_contract",
+        &[
+            "runtime_framed_guest_input_binding_checked_acceptance_structural_obligations",
+            "runtime_framed_guest_input_binding_checked_acceptance_concrete_segment_ids_allowed",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_omits(
+        &lean_source,
+        "runtime_framed_guest_input_binding_checked_acceptance_runtime_shape_contract",
         &["AssumptionBundle"],
     );
     lean_binding::assert_theorem_prefix_contains(

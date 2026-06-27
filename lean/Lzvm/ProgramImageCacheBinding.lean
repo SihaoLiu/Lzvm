@@ -411,6 +411,43 @@ theorem runtime_program_image_cache_binding_checked_acceptance_structural_obliga
   exact
     And.intro cacheEvidence artifactStructural
 
+theorem runtime_program_image_cache_binding_checked_acceptance_runtime_shape_contract
+    {system : VerifierModel}
+    (validation : RuntimeProgramImageCacheBindingValidation system)
+    (binding :
+      RuntimeProofArtifactConcreteSegmentIdBinding
+        validation.proofArtifactBindingValidation) :
+    forall artifact publicInput proof,
+      RuntimeProgramImageCacheBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeProgramImageCacheBindingStructuralObligations
+            system
+            validation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeProofArtifactConcreteSegmentIdsAllowed proof := by
+  intro artifact publicInput proof accepted
+  exact
+    And.intro
+      (runtime_program_image_cache_binding_checked_acceptance_structural_obligations
+        validation
+        artifact
+        publicInput
+        proof
+        accepted)
+      (runtime_program_image_cache_binding_checked_acceptance_concrete_segment_ids_allowed
+        validation
+        binding
+        artifact
+        publicInput
+        proof
+        accepted)
+
 theorem runtime_program_image_cache_binding_checked_acceptance_unit_values_trace_identity_coverage
     {system : VerifierModel}
     (validation : RuntimeProgramImageCacheBindingValidation system) :

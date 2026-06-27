@@ -447,6 +447,43 @@ theorem runtime_framed_guest_input_binding_checked_acceptance_structural_obligat
   exact
     ⟨evidence, ethStructural, cacheStructural⟩
 
+theorem runtime_framed_guest_input_binding_checked_acceptance_runtime_shape_contract
+    {system : VerifierModel}
+    (validation : RuntimeFramedGuestInputBindingValidation system)
+    (binding :
+      RuntimeProofArtifactConcreteSegmentIdBinding
+        validation.ethBlockValidation.proofArtifactBindingValidation) :
+    forall artifact publicInput proof,
+      RuntimeFramedGuestInputBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeFramedGuestInputBindingStructuralObligations
+            system
+            validation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeProofArtifactConcreteSegmentIdsAllowed proof := by
+  intro artifact publicInput proof accepted
+  exact
+    And.intro
+      (runtime_framed_guest_input_binding_checked_acceptance_structural_obligations
+        validation
+        artifact
+        publicInput
+        proof
+        accepted)
+      (runtime_framed_guest_input_binding_checked_acceptance_concrete_segment_ids_allowed
+        validation
+        binding
+        artifact
+        publicInput
+        proof
+        accepted)
+
 theorem runtime_framed_guest_input_binding_checked_acceptance_sound
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
