@@ -228,7 +228,7 @@ pub fn assert_no_uncontrolled_lean_placeholders(root: &Path) {
     collect_uncontrolled_lean_placeholders(root, &mut violations);
     assert!(
         violations.is_empty(),
-        "Lean sources must not use uncontrolled proof placeholders: {violations:?}"
+        "Lean sources must not use uncontrolled proof placeholders or unsafe declarations: {violations:?}"
     );
 }
 
@@ -279,7 +279,7 @@ fn collect_uncontrolled_lean_placeholders(path: &Path, violations: &mut Vec<Stri
         let source = std::fs::read_to_string(&path).expect("Lean source should read");
         let visible = strip_string_literals(&visible_source(&source));
         for (line_index, line) in visible.lines().enumerate() {
-            for token in ["sorry", "admit", "axiom", "opaque"] {
+            for token in ["sorry", "admit", "axiom", "opaque", "unsafe"] {
                 if contains_identifier_token(line, token) {
                     violations.push(format!("{}:{}:{token}", path.display(), line_index + 1));
                 }
@@ -484,16 +484,23 @@ mod tests {
             "opaque"
         ));
         assert!(contains_identifier_token("  admit", "admit"));
+        assert!(contains_identifier_token(
+            "unsafe def uncheckedProof := True",
+            "unsafe"
+        ));
         assert!(!contains_identifier_token("opaqueName", "opaque"));
         assert!(!contains_identifier_token("admittedLemma", "admit"));
+        assert!(!contains_identifier_token("unsafeLemma", "unsafe"));
     }
 
     #[test]
     fn placeholder_scan_ignores_comments_and_string_literals() {
         let source = r#"
 -- opaque line comment
+-- unsafe line comment
 /- opaque block comment -/
-def label := "opaque string"
+/- unsafe block comment -/
+def label := "opaque unsafe string"
 "#;
 
         let visible = strip_string_literals(&visible_source(source));
