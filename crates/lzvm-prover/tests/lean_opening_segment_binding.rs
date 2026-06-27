@@ -45,8 +45,9 @@ fn lean_opening_segment_binding_exports_core_contract_projection() {
             && fri_parse_body.contains("reader.require_items(value_count, EXTENSION_BYTES)?")
             && fri_parse_body.contains("reader.require_items(level_count, LEVEL_HEADER_BYTES)?")
             && fri_parse_body.contains("reader.require_items(sibling_count, ROOT_BYTES)?")
+            && fri_parse_body.contains("reader.finish()?")
             && fri_parse_body.contains("validate_pcs_fri_opening_segment(&out)?"),
-        "Rust FRI opening parser should validate supported version, walk counted payloads, and re-run semantic validation"
+        "Rust FRI opening parser should validate supported version, consume the complete counted payload, and re-run semantic validation"
     );
     assert!(
         fri_validate_body.matches("Felt::from_canonical(word).map_err").count() == 5

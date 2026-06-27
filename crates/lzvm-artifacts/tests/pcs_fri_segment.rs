@@ -109,6 +109,18 @@ fn parses_legacy_pcs_fri_opening_units_as_base_trace_instances() {
 }
 
 #[test]
+fn rejects_trailing_pcs_fri_opening_segment_bytes() {
+    let mut encoded =
+        encode_pcs_fri_opening_segment(&sample_segment()).expect("FRI segment should encode");
+    encoded.extend_from_slice(&[0xaa, 0xbb, 0xcc]);
+
+    assert_eq!(
+        parse_pcs_fri_opening_segment(&encoded),
+        Err(PcsFriOpeningSegmentError::TrailingBytes { trailing: 3 })
+    );
+}
+
+#[test]
 fn rejects_duplicate_trace_instance_pcs_fri_opening_units() {
     let mut segment = sample_segment();
     segment.units[0].trace_instance_index = 1;
