@@ -795,6 +795,45 @@ theorem runtime_pipeline_binding_checked_acceptance_challenge_transcript_payload
       proof
       challengeAccepted
 
+theorem runtime_pipeline_binding_checked_acceptance_challenge_payload_reuse_contract
+    {system : VerifierModel}
+    (validation : RuntimePipelineBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimePipelineBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeChallengeSegmentPayloadReuseContract
+          system
+          validation.queryPlanBindingValidation.challengeValidation
+          artifact
+          publicInput
+          proof := by
+  intro artifact publicInput proof accepted
+  have queryAccepted :=
+    runtime_pipeline_binding_checked_acceptance_query_plan
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have challengeAccepted :=
+    runtime_query_plan_binding_checked_acceptance_challenge
+      validation.queryPlanBindingValidation
+      artifact
+      publicInput
+      proof
+      queryAccepted
+  exact
+    runtime_challenge_segment_binding_checked_acceptance_payload_reuse_contract
+      validation.queryPlanBindingValidation.challengeValidation
+      artifact
+      publicInput
+      proof
+      challengeAccepted
+
 theorem runtime_pipeline_binding_checked_acceptance_challenge_query_opening_contract
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)

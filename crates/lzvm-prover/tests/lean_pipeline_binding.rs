@@ -154,6 +154,7 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
             "runtime_pipeline_binding_checked_acceptance_seed_binds_witness_tree_digests",
             "runtime_pipeline_binding_checked_acceptance_seeded_fri_opening_requirements_checked",
             "runtime_pipeline_binding_checked_acceptance_challenge_transcript_payload_contract",
+            "runtime_pipeline_binding_checked_acceptance_challenge_payload_reuse_contract",
             "runtime_pipeline_binding_checked_acceptance_opening_segment_checked_acceptance",
             "runtime_pipeline_binding_checked_acceptance_opening_segment_evidence",
             "runtime_pipeline_binding_checked_acceptance_fri_parser_contract",
@@ -2057,6 +2058,28 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
         &lean_source,
         "runtime_pipeline_binding_checked_acceptance_challenge_transcript_payload_contract",
         &["abstract_verifier_sound"],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_pipeline_binding_checked_acceptance_challenge_payload_reuse_contract",
+        &[
+            "RuntimePipelineBindingCheckedAcceptance",
+            "RuntimeChallengeSegmentPayloadReuseContract",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_omits(
+        &lean_source,
+        "runtime_pipeline_binding_checked_acceptance_challenge_payload_reuse_contract",
+        &["AssumptionBundle"],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_pipeline_binding_checked_acceptance_challenge_payload_reuse_contract",
+        &[
+            "runtime_pipeline_binding_checked_acceptance_query_plan",
+            "runtime_query_plan_binding_checked_acceptance_challenge",
+            "runtime_challenge_segment_binding_checked_acceptance_payload_reuse_contract",
+        ],
     );
     assert!(
         theorem_prefix(

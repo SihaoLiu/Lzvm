@@ -20,6 +20,7 @@ fn lean_challenge_segment_binding_exports_core_contract_projection() {
     assert!(
         lean_source.contains("RuntimeChallengeSegmentBindingValidation")
             && lean_source.contains("RuntimeChallengeSegmentBindingEvidence")
+            && lean_source.contains("RuntimeChallengeSegmentPayloadReuseContract")
             && lean_source.contains("RuntimeTranscriptBindingEvidence")
             && lean_source.contains("RuntimeProofArtifactFinalized")
             && lean_source.contains("RuntimeProofArtifactBindingStructuralObligations")
@@ -41,6 +42,7 @@ fn lean_challenge_segment_binding_exports_core_contract_projection() {
             "runtime_challenge_segment_binding_checked_acceptance_challenge_segment_bound",
             "runtime_challenge_segment_binding_checked_acceptance_segment_ids_unique",
             "runtime_challenge_segment_binding_checked_acceptance_unit_values_trace_identity_coverage",
+            "runtime_challenge_segment_binding_checked_acceptance_payload_reuse_contract",
             "runtime_challenge_segment_binding_checked_acceptance_container_canonical",
             "runtime_challenge_segment_binding_checked_acceptance_metadata_canonical",
             "runtime_challenge_segment_binding_checked_acceptance_segment_payloads_nonempty",
@@ -123,6 +125,23 @@ fn lean_challenge_segment_binding_exports_core_contract_projection() {
         &lean_source,
         "runtime_challenge_segment_binding_checked_acceptance_segment_ids_unique",
         &["runtime_challenge_segment_binding_checked_acceptance_artifact_structural_obligations"],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_challenge_segment_binding_checked_acceptance_payload_reuse_contract",
+        &[
+            "RuntimeChallengeSegmentBindingCheckedAcceptance",
+            "RuntimeChallengeSegmentPayloadReuseContract",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_challenge_segment_binding_checked_acceptance_payload_reuse_contract",
+        &[
+            "runtime_challenge_segment_binding_checked_acceptance_evidence",
+            "runtime_challenge_segment_binding_checked_acceptance_segment_ids_unique",
+            "runtime_challenge_segment_binding_checked_acceptance_unit_values_trace_identity_coverage",
+        ],
     );
     lean_binding::assert_theorem_prefix_contains(
         &lean_source,
