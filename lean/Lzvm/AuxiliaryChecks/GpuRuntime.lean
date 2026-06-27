@@ -1312,8 +1312,8 @@ theorem guest_pc_trace_commit_mode_effective_worker_positive
   intro decision
   rcases decision with
     ⟨_workerMatch, workerPositive, _asyncMatch, _traceDecision,
-      _traceSelected, _rootDecision, _rootSelected, _windowPositive,
-      _windowMatch⟩
+      _traceSelected, _rootDecision, _rootSelected, _descriptorDecision,
+      _descriptorSelected, _windowPositive, _windowMatch⟩
   exact workerPositive
 
 theorem guest_pc_trace_commit_mode_async_requires_single_worker
@@ -1324,8 +1324,8 @@ theorem guest_pc_trace_commit_mode_async_requires_single_worker
   intro decision asyncSelected
   rcases decision with
     ⟨_workerMatch, _workerPositive, asyncMatches, _traceDecision,
-      _traceSelected, _rootDecision, _rootSelected, _windowPositive,
-      _windowMatch⟩
+      _traceSelected, _rootDecision, _rootSelected, _descriptorDecision,
+      _descriptorSelected, _windowPositive, _windowMatch⟩
   by_cases singleWorker : config.effectiveWorkerCount = 1
   · exact singleWorker
   · have notSelected :
@@ -1341,6 +1341,28 @@ theorem guest_pc_trace_commit_mode_async_requires_single_worker
       contradiction
     exact False.elim impossible
 
+theorem guest_pc_trace_descriptor_buffer_retention_default_disabled_for_parallel_lower
+    (config : GuestPcTraceDescriptorBufferRetentionConfig) :
+    config.configuredDescriptorBufferRetention = none ->
+      config.parallelLowerEnabledForDescriptorRetention = true ->
+        GuestPcTraceDescriptorBufferRetentionDecisionMatches config ->
+          config.effectiveDescriptorBufferRetention = false := by
+  intro configuredNone parallelEnabled decision
+  rcases decision with ⟨_limitPositive, retentionMatches⟩
+  simpa [configuredNone, parallelEnabled] using retentionMatches
+
+theorem guest_pc_trace_commit_mode_descriptor_retention_matches
+    (config : GuestPcTraceSegmentCommitModeConfig) :
+    GuestPcTraceSegmentCommitModeDecisionMatches config ->
+      config.selectedDescriptorBufferRetention =
+        config.descriptorBufferRetentionConfig.effectiveDescriptorBufferRetention := by
+  intro decision
+  rcases decision with
+    ⟨_workerMatch, _workerPositive, _asyncMatches, _traceDecision,
+      _traceSelected, _rootDecision, _rootSelected, _descriptorDecision,
+      descriptorSelected, _windowPositive, _windowMatch⟩
+  exact descriptorSelected
+
 theorem guest_pc_trace_commit_mode_disabled_root_window_is_one
     (config : GuestPcTraceSegmentCommitModeConfig) :
     config.selectedCrossSegmentRootMaterialization = false ->
@@ -1349,8 +1371,8 @@ theorem guest_pc_trace_commit_mode_disabled_root_window_is_one
   intro disabled decision
   rcases decision with
     ⟨_workerMatch, _workerPositive, _asyncMatches, _traceDecision,
-      _traceSelected, _rootDecision, _rootSelected, _windowPositive,
-      windowMatches⟩
+      _traceSelected, _rootDecision, _rootSelected, _descriptorDecision,
+      _descriptorSelected, _windowPositive, windowMatches⟩
   cases hConfigured : config.configuredPendingRootMaterializationWindow with
   | none =>
       have reduced :
@@ -1391,6 +1413,30 @@ theorem guest_pc_trace_commit_mode_checked_acceptance_projects_disabled_root_win
     guest_pc_trace_commit_mode_disabled_root_window_is_one
       config
       disabled
+      (guest_pc_trace_commit_mode_checked_acceptance_projects_decision
+        validation
+        config
+        publicInput
+        proof
+        checked)
+
+theorem guest_pc_trace_commit_mode_checked_acceptance_projects_descriptor_retention
+    {system : VerifierModel}
+    (validation : GuestPcTraceSegmentCommitModeValidation)
+    (config : GuestPcTraceSegmentCommitModeConfig) :
+    forall publicInput proof,
+      GuestPcTraceSegmentCommitModeCheckedAcceptance
+          system
+          validation
+          config
+          publicInput
+          proof ->
+        config.selectedDescriptorBufferRetention =
+          config.descriptorBufferRetentionConfig.effectiveDescriptorBufferRetention := by
+  intro publicInput proof checked
+  exact
+    guest_pc_trace_commit_mode_descriptor_retention_matches
+      config
       (guest_pc_trace_commit_mode_checked_acceptance_projects_decision
         validation
         config

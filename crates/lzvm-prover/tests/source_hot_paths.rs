@@ -6284,6 +6284,23 @@ fn guest_pc_descriptor_buffer_retention_defaults_to_small_inputs_only() {
             ),
         "descriptor buffer retention should default to the small-input policy while allowing an explicit env override"
     );
+    assert!(
+        execution_source.contains(
+            "descriptor_buffer_retention: Option<bool>"
+        ) && execution_source.contains("selected_guest_pc_descriptor_buffer_retention("),
+        "trace observers should accept a cached descriptor retention decision with a selector fallback"
+    );
+
+    let mode_body = function_body(
+        &execution_source,
+        "struct GuestPcTraceSegmentCommitMode",
+        "type GuestPcTraceSegmentCommitWorkerHandle",
+    );
+    assert!(
+        mode_body.contains("descriptor_buffer_retention: bool")
+            && mode_body.contains("guest_pc_descriptor_buffer_retention_enabled(input_byte_count)"),
+        "segment commit mode should cache the descriptor retention decision once per attempt"
+    );
 
     let pending_commit_body = function_body(
         &execution_source,
@@ -6292,9 +6309,9 @@ fn guest_pc_descriptor_buffer_retention_defaults_to_small_inputs_only() {
     );
     assert!(
         pending_commit_body
-            .contains("guest_pc_descriptor_buffer_retention_enabled(input_byte_count)")
+            .contains("descriptor_buffer_retention: Some(descriptor_buffer_retention)")
             && pending_commit_body.contains("retained_guest_pc_device_descriptor_buffer"),
-        "pending trace commitments should use the descriptor retention gate"
+        "pending trace commitments should use the cached descriptor retention gate"
     );
 
     let direct_commit_body = function_body(
@@ -6303,10 +6320,12 @@ fn guest_pc_descriptor_buffer_retention_defaults_to_small_inputs_only() {
         "fn retain_fri_stage_source_devices",
     );
     assert!(
-        direct_commit_body
-            .contains("guest_pc_descriptor_buffer_retention_enabled(input_byte_count)")
+        compact_source_contains(
+            direct_commit_body,
+            "selected_guest_pc_descriptor_buffer_retention(input_byte_count, descriptor_buffer_retention,)"
+        )
             && direct_commit_body.contains("retained_guest_pc_device_descriptor_buffer"),
-        "direct trace commitments should use the descriptor retention gate"
+        "direct trace commitments should use the descriptor retention selector"
     );
 }
 

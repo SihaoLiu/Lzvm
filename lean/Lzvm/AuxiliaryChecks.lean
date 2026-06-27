@@ -789,6 +789,25 @@ structure GuestPcTraceCrossSegmentRootMaterializationValidation where
       crossSegmentRootMaterializationConfigAccepted config publicInput proof ->
         GuestPcTraceCrossSegmentRootMaterializationDecisionMatches config
 
+structure GuestPcTraceDescriptorBufferRetentionConfig where
+  configuredDescriptorBufferRetention : Option Bool
+  parallelLowerEnabledForDescriptorRetention : Bool
+  inputByteCount : Nat
+  supportedInputByteLimit : Nat
+  effectiveDescriptorBufferRetention : Bool
+deriving DecidableEq, Repr
+
+def GuestPcTraceDescriptorBufferRetentionDecisionMatches
+    (config : GuestPcTraceDescriptorBufferRetentionConfig) : Prop :=
+  0 < config.supportedInputByteLimit
+    /\ match config.configuredDescriptorBufferRetention with
+      | some configured =>
+          config.effectiveDescriptorBufferRetention = configured
+      | none =>
+          config.effectiveDescriptorBufferRetention =
+            decide (config.parallelLowerEnabledForDescriptorRetention = false
+              /\ config.inputByteCount < config.supportedInputByteLimit)
+
 structure GuestPcTraceSegmentCommitModeConfig where
   defaultWorkerCount : Nat
   configuredWorkerCount : Option Nat
@@ -801,6 +820,9 @@ structure GuestPcTraceSegmentCommitModeConfig where
   crossSegmentRootMaterializationConfig :
     GuestPcTraceCrossSegmentRootMaterializationConfig
   selectedCrossSegmentRootMaterialization : Bool
+  descriptorBufferRetentionConfig :
+    GuestPcTraceDescriptorBufferRetentionConfig
+  selectedDescriptorBufferRetention : Bool
   defaultPendingRootMaterializationWindow : Nat
   configuredPendingRootMaterializationWindow : Option Nat
   effectivePendingRootMaterializationWindow : Nat
@@ -825,6 +847,10 @@ def GuestPcTraceSegmentCommitModeDecisionMatches
       config.crossSegmentRootMaterializationConfig
     /\ config.selectedCrossSegmentRootMaterialization =
       config.crossSegmentRootMaterializationConfig.effectiveCrossSegmentRootMaterialization
+    /\ GuestPcTraceDescriptorBufferRetentionDecisionMatches
+      config.descriptorBufferRetentionConfig
+    /\ config.selectedDescriptorBufferRetention =
+      config.descriptorBufferRetentionConfig.effectiveDescriptorBufferRetention
     /\ 0 < config.defaultPendingRootMaterializationWindow
     /\ match config.configuredPendingRootMaterializationWindow with
       | some configured =>

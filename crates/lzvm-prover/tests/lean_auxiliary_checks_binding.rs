@@ -1265,16 +1265,22 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             && lean_source.contains("effectiveAsyncSingleWorker")
             && lean_source.contains("tracelessCommitmentInputConfig")
             && lean_source.contains("crossSegmentRootMaterializationConfig")
+            && lean_source.contains("descriptorBufferRetentionConfig")
+            && lean_source.contains("selectedDescriptorBufferRetention")
             && lean_source.contains("effectivePendingRootMaterializationWindow")
             && lean_source.contains("GuestPcTraceSegmentCommitModeDecisionMatches")
             && lean_source.contains("segmentCommitModeConfigAccepted")
             && lean_source.contains("segmentCommitModeConfigImpliesDecisionMatches")
             && lean_source.contains("GuestPcTraceSegmentCommitModeCheckedAcceptance")
+            && lean_source.contains("GuestPcTraceDescriptorBufferRetentionDecisionMatches")
             && gpu_runtime_source.contains("guest_pc_trace_commit_mode_checked_acceptance_sound")
             && gpu_runtime_source
                 .contains("guest_pc_trace_commit_mode_checked_acceptance_verifier_core_contract")
             && gpu_runtime_source
                 .contains("guest_pc_trace_commit_mode_async_requires_single_worker")
+            && gpu_runtime_source.contains(
+                "guest_pc_trace_commit_mode_checked_acceptance_projects_descriptor_retention"
+            )
             && gpu_runtime_source.contains(
                 "guest_pc_trace_commit_mode_checked_acceptance_projects_disabled_root_window"
             )
@@ -1288,6 +1294,10 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
                 .contains("guest_pc_trace_traceless_commitment_input_selected")
             && witness_execution_source
                 .contains("guest_pc_cross_segment_root_materialization_selected")
+            && witness_execution_source
+                .contains("guest_pc_descriptor_buffer_retention_enabled(input_byte_count)")
+            && witness_execution_source
+                .contains("descriptor_buffer_retention: Some(descriptor_buffer_retention)")
             && witness_execution_source.contains(
                 "let pending_root_materialization_window = if cross_segment_root_materialization"
             )
