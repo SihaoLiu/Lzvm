@@ -119,6 +119,7 @@ fn lean_opening_segment_binding_exports_core_contract_projection() {
             "runtime_opening_segment_binding_evidence_implies_bound_contract",
             "runtime_opening_segment_binding_evidence_implies_query_plan_bound",
             "runtime_opening_segment_binding_evidence_implies_fri_opening_checks",
+            "runtime_opening_segment_binding_evidence_implies_exact_identity_contract",
             "runtime_opening_segment_binding_evidence_implies_fri_fold_trace_identity_contract",
             "runtime_opening_segment_binding_checked_acceptance_trace_identity_coverage_exact",
             "runtime_opening_segment_binding_checked_acceptance_exact_identity_contract",
@@ -215,7 +216,7 @@ fn lean_opening_segment_binding_exports_core_contract_projection() {
         &lean_source,
         "runtime_opening_segment_binding_evidence_implies_fri_fold_trace_identity_contract",
         &[
-            "rcases evidence with",
+            "rcases evidence.left with",
             "queryPlanBound",
             "traceIdentitiesMatch",
             "friFoldsValid",
@@ -243,6 +244,14 @@ fn lean_opening_segment_binding_exports_core_contract_projection() {
         &lean_source,
         "runtime_opening_segment_binding_checked_acceptance_trace_identity_coverage_exact",
         &["validation.openingSegmentBindingAcceptedImpliesTraceIdentityCoverageExact"],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_opening_segment_binding_evidence_implies_exact_identity_contract",
+        &[
+            "RuntimeOpeningSegmentBindingEvidence",
+            "RuntimeOpeningSegmentExactIdentityContract",
+        ],
     );
     lean_binding::assert_theorem_prefix_contains(
         &lean_source,

@@ -121,6 +121,12 @@ def RuntimeOpeningSegmentBindingEvidence
     artifact
     publicInput
     proof
+    /\ RuntimeOpeningSegmentExactIdentityContract
+      _system
+      validation
+      artifact
+      publicInput
+      proof
 
 def RuntimeFriFoldTraceIdentityContract
     (_system : VerifierModel)
@@ -334,7 +340,8 @@ theorem runtime_opening_segment_binding_checked_acceptance_evidence
       friFolds
       verifierQueries
       traceIdentities
-  exact
+  have boundContract :
+      RuntimeOpeningSegmentBindingBoundContract system validation artifact publicInput proof :=
     And.intro queryPlanBound
       (And.intro traceIdentities
         (And.intro constantSegments
@@ -344,6 +351,12 @@ theorem runtime_opening_segment_binding_checked_acceptance_evidence
                 (And.intro verifierQueries
                   (And.intro constantBound
                     (And.intro witnessBound friOpeningBound))))))))
+  exact
+    And.intro boundContract
+      (And.intro queryPlanBound
+        (And.intro traceIdentities
+          (validation.openingSegmentBindingAcceptedImpliesTraceIdentityCoverageExact
+            _ _ _ accepted)))
 
 theorem runtime_opening_segment_binding_evidence_implies_bound_contract
     {system : VerifierModel}
@@ -362,7 +375,7 @@ theorem runtime_opening_segment_binding_evidence_implies_bound_contract
           publicInput
           proof := by
   intro artifact publicInput proof evidence
-  exact evidence
+  exact evidence.left
 
 theorem runtime_opening_segment_binding_evidence_implies_query_plan_bound
     {system : VerifierModel}
@@ -376,7 +389,7 @@ theorem runtime_opening_segment_binding_evidence_implies_query_plan_bound
           proof ->
         validation.queryPlanBound artifact publicInput proof := by
   intro artifact publicInput proof evidence
-  exact evidence.left
+  exact evidence.left.left
 
 theorem runtime_opening_segment_binding_evidence_implies_trace_identities_match
     {system : VerifierModel}
@@ -390,7 +403,21 @@ theorem runtime_opening_segment_binding_evidence_implies_trace_identities_match
           proof ->
         validation.openingUnitTraceIdentitiesMatch artifact publicInput proof := by
   intro artifact publicInput proof evidence
-  exact evidence.right.left
+  exact evidence.left.right.left
+
+theorem runtime_opening_segment_binding_evidence_implies_exact_identity_contract
+    {system : VerifierModel}
+    (validation : RuntimeOpeningSegmentBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeOpeningSegmentBindingEvidence system validation artifact publicInput proof ->
+        RuntimeOpeningSegmentExactIdentityContract
+          system
+          validation
+          artifact
+          publicInput
+          proof := by
+  intro _artifact _publicInput _proof evidence
+  exact evidence.right
 
 theorem runtime_opening_segment_binding_checked_acceptance_trace_identity_coverage_exact
     {system : VerifierModel}
@@ -468,7 +495,7 @@ theorem runtime_opening_segment_binding_evidence_implies_fri_fold_trace_identity
           publicInput
           proof := by
   intro artifact publicInput proof evidence
-  rcases evidence with
+  rcases evidence.left with
     ⟨queryPlanBound, traceIdentitiesMatch, _, _, _, friFoldsValid, _, _, _, _⟩
   exact
     And.intro queryPlanBound
@@ -489,7 +516,7 @@ theorem runtime_opening_segment_binding_evidence_implies_fri_opening_checks
           /\ validation.verifierQueryOutputsValid artifact publicInput proof
           /\ validation.openingValidation.friOpeningBound artifact publicInput proof := by
   intro artifact publicInput proof evidence
-  rcases evidence with
+  rcases evidence.left with
     ⟨_queryPlanBound,
       _traceIdentities,
       _constantSegments,
@@ -518,7 +545,7 @@ theorem runtime_opening_segment_binding_evidence_implies_pcs_and_fri
         system.pcsOpeningsValid publicInput proof
           /\ system.friQueriesValid publicInput proof := by
   intro artifact publicInput proof evidence
-  rcases evidence with
+  rcases evidence.left with
     ⟨_queryPlanBound,
       _traceIdentities,
       _constantSegments,
@@ -562,7 +589,7 @@ theorem runtime_opening_segment_binding_evidence_implies_opening_bound_contract
           publicInput
           proof := by
   intro artifact publicInput proof evidence
-  rcases evidence with
+  rcases evidence.left with
     ⟨_queryPlanBound,
       _traceIdentities,
       _constantSegments,

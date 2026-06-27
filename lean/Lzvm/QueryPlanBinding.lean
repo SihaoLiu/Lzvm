@@ -1029,17 +1029,15 @@ theorem runtime_query_plan_binding_checked_acceptance_sound
       challengeAccepted
   have openingFull :=
     runtime_opening_segment_binding_checked_acceptance_full_soundness_contract
-      assumptions
-      validation.openingValidation
-      artifact
-      publicInput
-      proof
-      requiresExternalSource
+      assumptions validation.openingValidation artifact publicInput proof requiresExternalSource
       openingAccepted
+  have openingSegmentEvidence :=
+    runtime_opening_segment_binding_checked_acceptance_evidence
+      validation.openingValidation artifact publicInput proof openingAccepted
   exact
     And.intro queryPlanEvidence
       (And.intro challengeSound.left
-        (And.intro openingFull.left
+        (And.intro openingSegmentEvidence
           (And.intro openingFull.right.left
             (And.intro challengeSound.right.right.left
               (And.intro openingFull.right.right.right.left
