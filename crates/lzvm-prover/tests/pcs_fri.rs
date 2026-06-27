@@ -20,8 +20,8 @@ use lzvm_prover::pcs_fri::{
     validate_pcs_fri_opening_segments, verify_fri_fold, verify_fri_last_level_root,
     verify_fri_opening_folds, verify_fri_query_path, LoadPcsFriOpeningSegmentError,
     LoadPcsFriOpeningUnitError, PcsFriFoldError, PcsFriMerkleError, PcsFriOpeningBuildRequest,
-    PcsFriOpeningBuildTiming, PcsFriOpeningFoldRequest, PcsFriTranscriptCommitmentRequest,
-    ValidateOptionalPcsFriOpeningProofSegmentsError,
+    PcsFriOpeningBuildTiming, PcsFriOpeningFoldError, PcsFriOpeningFoldRequest,
+    PcsFriTranscriptCommitmentRequest, ValidateOptionalPcsFriOpeningProofSegmentsError,
     ValidateOptionalPcsFriOpeningProofSegmentsRequest, ValidatePcsFriOpeningFoldUnitsError,
     ValidatePcsFriOpeningSegmentsError,
 };
@@ -263,6 +263,61 @@ fn verifies_fri_opening_fold_chain_to_final_polynomial() {
     .expect("fold chain should evaluate mismatches");
 
     assert!(!invalid);
+}
+
+#[test]
+fn rejects_noncanonical_in_memory_fri_opening_fold_values() {
+    let schedule = sample_validation_unit();
+    let query_rows = [1_u64, 6_u64];
+    let polynomial = (0_u64..8)
+        .map(|index| Ext3::from_u64s([index + 1, index + 11, index + 21]))
+        .collect::<Vec<_>>();
+    let challenges = sample_fold_challenges().challenges;
+    let fri = build_pcs_fri_opening_unit(
+        &schedule,
+        PcsFriOpeningBuildRequest {
+            unit_index: 0,
+            trace_instance_index: 0,
+            query_rows: &query_rows,
+            challenges: &challenges,
+            polynomial: &polynomial,
+        },
+    )
+    .expect("FRI opening should build");
+
+    let mut query_value = fri.clone();
+    query_value.layers[0].queries[0].values[0][0] = MODULUS;
+    let error = verify_fri_opening_folds(
+        &schedule,
+        PcsFriOpeningFoldRequest {
+            unit_index: 0,
+            query_rows: &query_rows,
+            challenges: &challenges,
+            fri: &query_value,
+        },
+    )
+    .expect_err("direct FRI fold verification should reject noncanonical query values");
+    assert_eq!(
+        error,
+        PcsFriOpeningFoldError::NonCanonicalField { value: MODULUS }
+    );
+
+    let mut final_value = fri;
+    final_value.final_polynomial[0][0] = MODULUS;
+    let error = verify_fri_opening_folds(
+        &schedule,
+        PcsFriOpeningFoldRequest {
+            unit_index: 0,
+            query_rows: &query_rows,
+            challenges: &challenges,
+            fri: &final_value,
+        },
+    )
+    .expect_err("direct FRI fold verification should reject noncanonical final values");
+    assert_eq!(
+        error,
+        PcsFriOpeningFoldError::NonCanonicalField { value: MODULUS }
+    );
 }
 
 #[test]
