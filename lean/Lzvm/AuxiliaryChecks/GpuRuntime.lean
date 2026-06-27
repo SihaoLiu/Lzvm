@@ -1132,6 +1132,159 @@ theorem guest_pc_trace_traceless_segment_output_checked_acceptance_verifier_core
       proof
       checked
 
+theorem guest_pc_trace_cross_root_materialization_checked_acceptance_projects_decision
+    {system : VerifierModel}
+    (validation : GuestPcTraceCrossSegmentRootMaterializationValidation)
+    (config : GuestPcTraceCrossSegmentRootMaterializationConfig) :
+    forall publicInput proof,
+      GuestPcTraceCrossSegmentRootMaterializationCheckedAcceptance
+          system
+          validation
+          config
+          publicInput
+          proof ->
+        GuestPcTraceCrossSegmentRootMaterializationDecisionMatches config := by
+  intro publicInput proof checked
+  exact
+    validation.crossSegmentRootMaterializationConfigImpliesDecisionMatches
+      config
+      publicInput
+      proof
+      checked.right
+
+theorem guest_pc_trace_cross_root_materialization_decision_default_enabled_when_supported
+    (config : GuestPcTraceCrossSegmentRootMaterializationConfig) :
+    config.configuredCrossSegmentRootMaterialization = none ->
+      config.inputByteCount < config.supportedInputByteLimit ->
+        GuestPcTraceCrossSegmentRootMaterializationDecisionMatches config ->
+          config.effectiveCrossSegmentRootMaterialization = true := by
+  intro noConfig supported decision
+  rcases decision with ⟨_limitMatches, decisionMatches⟩
+  simpa [GuestPcTraceCrossSegmentRootMaterializationDecisionMatches, noConfig, supported]
+    using decisionMatches
+
+theorem guest_pc_trace_cross_root_materialization_decision_disabled_when_unsupported
+    (config : GuestPcTraceCrossSegmentRootMaterializationConfig) :
+    config.supportedInputByteLimit <= config.inputByteCount ->
+      GuestPcTraceCrossSegmentRootMaterializationDecisionMatches config ->
+        config.effectiveCrossSegmentRootMaterialization = false := by
+  intro unsupported decision
+  rcases decision with ⟨_limitMatches, decisionMatches⟩
+  have notSupported : ¬ config.inputByteCount < config.supportedInputByteLimit :=
+    Nat.not_lt.mpr unsupported
+  cases hConfigured : config.configuredCrossSegmentRootMaterialization with
+  | none =>
+      simpa [
+        GuestPcTraceCrossSegmentRootMaterializationDecisionMatches,
+        hConfigured,
+        notSupported,
+      ] using decisionMatches
+  | some configured =>
+      cases configured <;>
+        simpa [
+          GuestPcTraceCrossSegmentRootMaterializationDecisionMatches,
+          hConfigured,
+          notSupported,
+        ] using decisionMatches
+
+theorem guest_pc_trace_cross_root_materialization_checked_acceptance_projects_default_enabled
+    {system : VerifierModel}
+    (validation : GuestPcTraceCrossSegmentRootMaterializationValidation)
+    (config : GuestPcTraceCrossSegmentRootMaterializationConfig) :
+    config.configuredCrossSegmentRootMaterialization = none ->
+      config.inputByteCount < config.supportedInputByteLimit ->
+        forall publicInput proof,
+          GuestPcTraceCrossSegmentRootMaterializationCheckedAcceptance
+              system
+              validation
+              config
+              publicInput
+              proof ->
+            config.effectiveCrossSegmentRootMaterialization = true := by
+  intro noConfig supported publicInput proof checked
+  exact
+    guest_pc_trace_cross_root_materialization_decision_default_enabled_when_supported
+      config
+      noConfig
+      supported
+      (guest_pc_trace_cross_root_materialization_checked_acceptance_projects_decision
+        validation
+        config
+        publicInput
+        proof
+        checked)
+
+theorem guest_pc_trace_cross_root_materialization_checked_acceptance_projects_disabled
+    {system : VerifierModel}
+    (validation : GuestPcTraceCrossSegmentRootMaterializationValidation)
+    (config : GuestPcTraceCrossSegmentRootMaterializationConfig) :
+    config.supportedInputByteLimit <= config.inputByteCount ->
+      forall publicInput proof,
+        GuestPcTraceCrossSegmentRootMaterializationCheckedAcceptance
+            system
+            validation
+            config
+            publicInput
+            proof ->
+          config.effectiveCrossSegmentRootMaterialization = false := by
+  intro unsupported publicInput proof checked
+  exact
+    guest_pc_trace_cross_root_materialization_decision_disabled_when_unsupported
+      config
+      unsupported
+      (guest_pc_trace_cross_root_materialization_checked_acceptance_projects_decision
+        validation
+        config
+        publicInput
+        proof
+        checked)
+
+theorem guest_pc_trace_cross_root_materialization_checked_acceptance_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : GuestPcTraceCrossSegmentRootMaterializationValidation)
+    (config : GuestPcTraceCrossSegmentRootMaterializationConfig) :
+    forall publicInput proof,
+      GuestPcTraceCrossSegmentRootMaterializationCheckedAcceptance
+          system
+          validation
+          config
+          publicInput
+          proof ->
+        GuestPcTraceCrossSegmentRootMaterializationDecisionMatches config
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof checked
+  exact
+    And.intro
+      (guest_pc_trace_cross_root_materialization_checked_acceptance_projects_decision
+        validation
+        config
+        publicInput
+        proof
+        checked)
+      (checked_acceptance_sound_witness assumptions publicInput proof checked)
+
+theorem guest_pc_trace_cross_root_materialization_checked_acceptance_verifier_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : GuestPcTraceCrossSegmentRootMaterializationValidation)
+    (config : GuestPcTraceCrossSegmentRootMaterializationConfig) :
+    forall publicInput proof,
+      GuestPcTraceCrossSegmentRootMaterializationCheckedAcceptance
+          system
+          validation
+          config
+          publicInput
+          proof ->
+        RuntimeVerifierCoreContract system publicInput proof := by
+  intro publicInput proof checked
+  exact
+    checked_acceptance_verifier_core_contract
+      assumptions
+      publicInput
+      proof
+      checked
+
 theorem guest_pc_trace_device_trace_source_checked_acceptance_projects_decision
     {system : VerifierModel}
     (validation : GuestPcTraceDeviceTraceSourceValidation)

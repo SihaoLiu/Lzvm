@@ -762,6 +762,33 @@ structure GuestPcTraceTracelessSegmentOutputValidation where
       tracelessSegmentOutputConfigAccepted config publicInput proof ->
         GuestPcTraceTracelessSegmentOutputDecisionMatches config
 
+structure GuestPcTraceCrossSegmentRootMaterializationConfig where
+  configuredCrossSegmentRootMaterialization : Option Bool
+  effectiveCrossSegmentRootMaterialization : Bool
+  inputByteCount : Nat
+  supportedInputByteLimit : Nat
+deriving DecidableEq, Repr
+
+def GuestPcTraceCrossSegmentRootMaterializationDecisionMatches
+    (config : GuestPcTraceCrossSegmentRootMaterializationConfig) : Prop :=
+  config.supportedInputByteLimit = 8 * 1024 * 1024
+    /\ match config.configuredCrossSegmentRootMaterialization with
+      | some configured =>
+          config.effectiveCrossSegmentRootMaterialization =
+            decide (configured = true
+              /\ config.inputByteCount < config.supportedInputByteLimit)
+      | none =>
+          config.effectiveCrossSegmentRootMaterialization =
+            decide (config.inputByteCount < config.supportedInputByteLimit)
+
+structure GuestPcTraceCrossSegmentRootMaterializationValidation where
+  crossSegmentRootMaterializationConfigAccepted :
+    GuestPcTraceCrossSegmentRootMaterializationConfig -> PublicInput -> Proof -> Prop
+  crossSegmentRootMaterializationConfigImpliesDecisionMatches :
+    forall config publicInput proof,
+      crossSegmentRootMaterializationConfigAccepted config publicInput proof ->
+        GuestPcTraceCrossSegmentRootMaterializationDecisionMatches config
+
 structure GuestPcTraceDeviceTraceSourceConfig where
   configuredDeviceTraceSourceEnabled : Option Bool
   effectiveDeviceTraceSourceEnabled : Bool
@@ -1040,6 +1067,18 @@ def GuestPcTraceTracelessSegmentOutputCheckedAcceptance
     (proof : Proof) : Prop :=
   system.accepts publicInput proof
     /\ validation.tracelessSegmentOutputConfigAccepted
+      config
+      publicInput
+      proof
+
+def GuestPcTraceCrossSegmentRootMaterializationCheckedAcceptance
+    (system : VerifierModel)
+    (validation : GuestPcTraceCrossSegmentRootMaterializationValidation)
+    (config : GuestPcTraceCrossSegmentRootMaterializationConfig)
+    (publicInput : PublicInput)
+    (proof : Proof) : Prop :=
+  system.accepts publicInput proof
+    /\ validation.crossSegmentRootMaterializationConfigAccepted
       config
       publicInput
       proof

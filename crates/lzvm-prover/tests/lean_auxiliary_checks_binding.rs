@@ -869,6 +869,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         "guest_pc_trace_large_gpu_gate_checked_acceptance_sound",
         "guest_pc_trace_traceless_commitment_input_checked_acceptance_sound",
         "guest_pc_trace_traceless_segment_output_checked_acceptance_sound",
+        "guest_pc_trace_cross_root_materialization_checked_acceptance_sound",
         "guest_pc_trace_device_trace_source_checked_acceptance_sound",
         "guest_pc_trace_sparse_source_checked_acceptance_sound",
         "guest_pc_trace_terminal_sparse_source_checked_acceptance_sound",
@@ -1221,6 +1222,40 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         ),
         "Lean auxiliary checks should bind traceless guest trace segment output selection to the Rust runtime guard"
     );
+    assert!(
+        lean_source.contains("GuestPcTraceCrossSegmentRootMaterializationConfig")
+            && lean_source.contains("configuredCrossSegmentRootMaterialization")
+            && lean_source.contains("effectiveCrossSegmentRootMaterialization")
+            && lean_source.contains("supportedInputByteLimit")
+            && lean_source.contains("GuestPcTraceCrossSegmentRootMaterializationDecisionMatches")
+            && lean_source.contains("crossSegmentRootMaterializationConfigAccepted")
+            && lean_source.contains(
+                "crossSegmentRootMaterializationConfigImpliesDecisionMatches"
+            )
+            && lean_source
+                .contains("GuestPcTraceCrossSegmentRootMaterializationCheckedAcceptance")
+            && lean_source.contains(
+                "GuestPcTraceCrossSegmentRootMaterializationDecisionMatches config"
+            )
+            && gpu_runtime_source.contains(
+                "guest_pc_trace_cross_root_materialization_checked_acceptance_sound"
+            )
+            && gpu_runtime_source.contains(
+                "guest_pc_trace_cross_root_materialization_checked_acceptance_verifier_core_contract"
+            )
+            && witness_execution_source
+                .contains("fn guest_pc_cross_segment_root_materialization_enabled")
+            && witness_execution_source.contains("LZVM_CUDA_GUEST_PC_CROSS_SEGMENT_ROOTS")
+            && witness_execution_source
+                .contains("fn guest_pc_cross_segment_root_materialization_selected")
+            && witness_execution_source.contains(
+                "guest_pc_cross_segment_root_materialization_supported_for_input(input_byte_count)"
+            )
+            && witness_execution_source.contains(
+                "const SUPPORTED_INPUT_BYTE_LIMIT: usize = 8 * 1024 * 1024"
+            ),
+        "Lean auxiliary checks should bind cross-segment root materialization to the Rust runtime guard and input-size limit"
+    );
     for (theorem_name, projector) in [
         (
             "guest_pc_trace_traceless_commitment_input_checked_acceptance_projects_default_enabled",
@@ -1229,6 +1264,20 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         (
             "guest_pc_trace_traceless_segment_output_checked_acceptance_projects_default_enabled",
             "guest_pc_trace_traceless_segment_output_checked_acceptance_projects_decision",
+        ),
+        (
+            concat!(
+                "guest_pc_trace_cross_root_materialization_checked_acceptance_",
+                "projects_default_enabled"
+            ),
+            "guest_pc_trace_cross_root_materialization_checked_acceptance_projects_decision",
+        ),
+        (
+            concat!(
+                "guest_pc_trace_cross_root_materialization_checked_acceptance_",
+                "projects_disabled"
+            ),
+            "guest_pc_trace_cross_root_materialization_checked_acceptance_projects_decision",
         ),
     ] {
         lean_binding::assert_theorem_body_contains(&gpu_runtime_source, theorem_name, &[projector]);
@@ -3206,6 +3255,28 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "guest_pc_trace_segment_queue_checked_acceptance_projects_decision",
             "guest_pc_trace_segment_queue_checked_acceptance_sound",
             "guest_pc_trace_segment_queue_checked_acceptance_verifier_core_contract",
+            "guest_pc_trace_cross_root_materialization_checked_acceptance_projects_decision",
+            concat!(
+                "guest_pc_trace_cross_root_materialization_decision_",
+                "default_enabled_when_supported"
+            ),
+            concat!(
+                "guest_pc_trace_cross_root_materialization_decision_",
+                "disabled_when_unsupported"
+            ),
+            concat!(
+                "guest_pc_trace_cross_root_materialization_checked_acceptance_",
+                "projects_default_enabled"
+            ),
+            concat!(
+                "guest_pc_trace_cross_root_materialization_checked_acceptance_",
+                "projects_disabled"
+            ),
+            "guest_pc_trace_cross_root_materialization_checked_acceptance_sound",
+            concat!(
+                "guest_pc_trace_cross_root_materialization_checked_acceptance_",
+                "verifier_core_contract"
+            ),
             "gpu_retained_leaf_digest_limit_checked_acceptance_projects_decision",
             "gpu_retained_leaf_digest_limit_checked_acceptance_sound",
             "gpu_retained_leaf_digest_limit_checked_acceptance_verifier_core_contract",
