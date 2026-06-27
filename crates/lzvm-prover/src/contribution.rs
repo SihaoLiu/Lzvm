@@ -87,11 +87,6 @@ pub enum ProveContributionSegmentError {
 pub enum LoadContributionSegmentError {
     MissingSegment,
     DuplicateSegment,
-    NonCanonicalValue {
-        entry_index: usize,
-        index: usize,
-        source: FieldError,
-    },
     Segment(ContributionSegmentError),
 }
 
@@ -196,14 +191,6 @@ impl fmt::Display for LoadContributionSegmentError {
         match self {
             Self::MissingSegment => write!(f, "missing contribution segment"),
             Self::DuplicateSegment => write!(f, "duplicate contribution segment"),
-            Self::NonCanonicalValue {
-                entry_index,
-                index,
-                source,
-            } => write!(
-                f,
-                "invalid contribution segment entry {entry_index} value {index}: {source}"
-            ),
             Self::Segment(error) => write!(f, "invalid contribution segment: {error}"),
         }
     }
@@ -212,7 +199,6 @@ impl fmt::Display for LoadContributionSegmentError {
 impl std::error::Error for LoadContributionSegmentError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
-            Self::NonCanonicalValue { source, .. } => Some(source),
             Self::Segment(error) => Some(error),
             Self::MissingSegment | Self::DuplicateSegment => None,
         }
@@ -483,12 +469,12 @@ pub fn load_contribution_segment_from_segments(
     let parsed =
         parse_contribution_segment(&segment.data).map_err(LoadContributionSegmentError::Segment)?;
 
-    parsed
+    Ok(parsed
         .entries
         .into_iter()
         .enumerate()
         .map(raw_contribution_entry)
-        .collect()
+        .collect())
 }
 
 pub fn aggregate_contribution_values(
@@ -1257,30 +1243,13 @@ fn validate_contribution_entries(
     Ok(())
 }
 
-fn raw_contribution_entry(
-    (entry_index, entry): (usize, ContributionEntry),
-) -> Result<ProveContributionEntry, LoadContributionSegmentError> {
-    let values = entry
-        .values
-        .into_iter()
-        .enumerate()
-        .map(|(index, value)| {
-            Felt::from_canonical(value).map_err(|source| {
-                LoadContributionSegmentError::NonCanonicalValue {
-                    entry_index,
-                    index,
-                    source,
-                }
-            })
-        })
-        .collect::<Result<Vec<_>, _>>()?;
-
-    Ok(ProveContributionEntry {
+fn raw_contribution_entry((_, entry): (usize, ContributionEntry)) -> ProveContributionEntry {
+    ProveContributionEntry {
         worker_index: entry.worker_index,
         group_id: entry.group_id,
         aggregated: entry.aggregated,
-        values,
-    })
+        values: entry.values.into_iter().map(Felt::from_u64).collect(),
+    }
 }
 
 #[cfg(test)]

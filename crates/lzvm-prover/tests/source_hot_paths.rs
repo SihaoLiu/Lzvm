@@ -2681,7 +2681,7 @@ fn lean_challenge_segment_binding_tracks_runtime_transcript_checks() {
 }
 
 #[test]
-fn proof_and_group_value_loaders_reuse_segment_canonicality() {
+fn value_segment_loaders_reuse_segment_canonicality() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let proof_values_path = crate_root.join("src/proof_values.rs");
     let proof_values_source =
@@ -2699,6 +2699,19 @@ fn proof_and_group_value_loaders_reuse_segment_canonicality() {
         "pub fn load_group_values_from_segments",
         "fn expected_group_value_count",
     );
+    let contribution_path = crate_root.join("src/contribution.rs");
+    let contribution_source =
+        std::fs::read_to_string(&contribution_path).expect("contribution source should read");
+    let contribution_loader = function_body(
+        &contribution_source,
+        "pub fn load_contribution_segment_from_segments",
+        "pub fn aggregate_contribution_values",
+    );
+    let raw_contribution_entry = function_body(
+        &contribution_source,
+        "fn raw_contribution_entry",
+        "#[cfg(test)]",
+    );
 
     assert!(
         proof_values_loader.contains("parse_pcs_proof_values_segment(&segment.data)")
@@ -2713,6 +2726,13 @@ fn proof_and_group_value_loaders_reuse_segment_canonicality() {
             && !group_values_loader.contains("Felt::from_canonical")
             && !group_values_source.contains("NonCanonicalValue"),
         "group values loader should rely on canonical segment parsing"
+    );
+    assert!(
+        contribution_loader.contains("parse_contribution_segment(&segment.data)")
+            && raw_contribution_entry.contains("Felt::from_u64")
+            && !raw_contribution_entry.contains("Felt::from_canonical")
+            && !contribution_source.contains("LoadContributionSegmentError::NonCanonicalValue"),
+        "contribution entry loader should rely on canonical segment parsing"
     );
 }
 
