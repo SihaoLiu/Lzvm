@@ -39,12 +39,7 @@ def require_workspace_temp_path(path: Path, root: Path, label: str) -> Path:
     return path
 
 
-def reject_symlinked_output_path(path: Path, label: str) -> None:
-    if path.is_symlink():
-        raise SystemExit(f"{label} must not be a symlink: {path}")
-
-
-def open_append_text_no_follow(path: Path, mode: int = 0o600):
+def open_append_text_no_follow(path: Path, label: str, mode: int = 0o600):
     flags = os.O_WRONLY | os.O_CREAT | os.O_APPEND
     if hasattr(os, "O_NOFOLLOW"):
         flags |= os.O_NOFOLLOW
@@ -52,9 +47,22 @@ def open_append_text_no_follow(path: Path, mode: int = 0o600):
         descriptor = os.open(path, flags, mode)
     except OSError as error:
         if path.is_symlink():
-            raise SystemExit(f"output path must not be a symlink: {path}") from error
+            raise SystemExit(f"{label} must not be a symlink: {path}") from error
         raise
     return os.fdopen(descriptor, "a", encoding="utf-8", newline="")
+
+
+def open_read_text_no_follow(path: Path, label: str):
+    flags = os.O_RDONLY
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    try:
+        descriptor = os.open(path, flags)
+    except OSError as error:
+        if path.is_symlink():
+            raise SystemExit(f"{label} must not be a symlink: {path}") from error
+        raise
+    return os.fdopen(descriptor, "r", encoding="utf-8", newline="")
 
 
 def current_commit() -> str:
@@ -101,12 +109,16 @@ def validate_timing_log_field(field: str, path: Path, line_number: int, column: 
         timing_field_average_seconds(field, f"{path}:{line_number}: {column}")
 
 
-def validate_improve_log(path: Path, require_existing: bool = False) -> None:
+def validate_improve_log(
+    path: Path,
+    require_existing: bool = False,
+    label: str = "improve log path",
+) -> None:
     if not path.exists():
         if require_existing:
             raise SystemExit(f"{path}: improve log path does not exist")
         return
-    with path.open(newline="") as source:
+    with open_read_text_no_follow(path, label) as source:
         lines = source.readlines()
         if not lines:
             raise SystemExit(f"{path}: empty improve log")
@@ -281,7 +293,7 @@ def append_row(
     summary: str,
 ) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    with open_append_text_no_follow(path) as output:
+    with open_append_text_no_follow(path, "--path") as output:
         needs_header = os.fstat(output.fileno()).st_size == 0
         writer = csv.writer(output, quoting=csv.QUOTE_ALL, lineterminator="\n")
         if needs_header:
@@ -325,8 +337,7 @@ def main() -> None:
         root,
         "--path",
     )
-    reject_symlinked_output_path(path, "--path")
-    validate_improve_log(path, require_existing=args.check)
+    validate_improve_log(path, require_existing=args.check, label="--path")
     if not args.check:
         if args.summary is not None and args.summary_flag is not None:
             parser.error("summary must be provided either positionally or with --summary")
@@ -370,7 +381,7 @@ def main() -> None:
             large_proof_time_s,
             summary,
         )
-        validate_improve_log(path, require_existing=True)
+        validate_improve_log(path, require_existing=True, label="--path")
 
 
 if __name__ == "__main__":
