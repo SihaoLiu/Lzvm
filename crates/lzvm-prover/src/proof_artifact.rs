@@ -1140,24 +1140,12 @@ fn build_program_image_cache_proof_segment(
     let Some(cache) = cache else {
         return Ok(None);
     };
-    validate_program_image_cache_tree_root(cache)?;
     let data = encode_program_image_cache_segment(cache)
         .map_err(|error| format!("build program image cache segment failed: {error}"))?;
     Ok(Some(ProofSegment {
         id: PROGRAM_IMAGE_CACHE_SEGMENT_ID,
         data,
     }))
-}
-
-fn validate_program_image_cache_tree_root(
-    cache: &ProgramImageCommitmentCache,
-) -> Result<(), String> {
-    for (word_index, word) in cache.tree_root.iter().copied().enumerate() {
-        Felt::from_canonical(word).map_err(|source| {
-            format!("program image cache tree root word {word_index} is non-canonical: {source}")
-        })?;
-    }
-    Ok(())
 }
 
 fn build_eth_block_input_proof_segment(
@@ -2305,7 +2293,7 @@ mod tests {
 
         assert_eq!(
             error,
-            "program image cache tree root word 0 is non-canonical: non-canonical field element: 18446744069414584321"
+            "build program image cache segment failed: invalid program image cache segment payload: program-image commitment cache tree root word 0 is non-canonical: non-canonical field element: 18446744069414584321"
         );
     }
 

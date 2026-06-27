@@ -2176,6 +2176,11 @@ fn lean_eth_block_public_input_binding_tracks_runtime_checks() {
     let artifact_path = crate_root.join("src/proof_artifact.rs");
     let artifact_source =
         std::fs::read_to_string(&artifact_path).expect("proof artifact source should read");
+    let program_image_cache_segment_body = function_body(
+        &artifact_source,
+        "fn build_program_image_cache_proof_segment",
+        "fn build_eth_block_input_proof_segment",
+    );
 
     assert!(
         lean_root_source.contains("import Lzvm.EthBlockPublicInputBinding"),
@@ -2191,6 +2196,12 @@ fn lean_eth_block_public_input_binding_tracks_runtime_checks() {
             && artifact_source.contains("public_values_hash")
             && artifact_source.contains("validate_proof_bindings"),
         "Rust proof artifact construction should keep runtime public-input binding checks"
+    );
+    assert!(
+        program_image_cache_segment_body.contains("encode_program_image_cache_segment(cache)")
+            && !program_image_cache_segment_body
+                .contains("validate_program_image_cache_tree_root"),
+        "program image cache binding segment construction should rely on the canonical segment encoder validation"
     );
 }
 
