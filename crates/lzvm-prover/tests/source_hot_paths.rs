@@ -2212,6 +2212,9 @@ fn lean_framed_guest_input_binding_tracks_runtime_checks() {
     let verify_bindings_path = crate_root.join("../lzvm-cli/src/verify_commands/bindings.rs");
     let verify_bindings_source = std::fs::read_to_string(&verify_bindings_path)
         .expect("CLI verify bindings source should read");
+    let contribution_challenge_path = crate_root.join("../lzvm-cli/src/contribution_challenge.rs");
+    let contribution_challenge_source = std::fs::read_to_string(&contribution_challenge_path)
+        .expect("CLI contribution challenge source should read");
     let proof_artifact_path = crate_root.join("src/proof_artifact.rs");
     let proof_artifact_source =
         std::fs::read_to_string(&proof_artifact_path).expect("proof artifact source should read");
@@ -2304,6 +2307,18 @@ fn lean_framed_guest_input_binding_tracks_runtime_checks() {
         query_plan_source.contains("FRAMED_GUEST_INPUT_SEGMENT_ID")
             && contribution_source.contains("FRAMED_GUEST_INPUT_SEGMENT_ID"),
         "framed guest stdin segments should remain query-plan and contribution bound"
+    );
+    assert!(
+        contribution_challenge_source.contains("verify_commands::verify_requested_contribution_bindings")
+            && contribution_challenge_source.contains("role: \"prove contribution challenges write\"")
+            && contribution_challenge_source.contains("role: \"verify contribution-challenge\"")
+            && cli_test_source.contains(
+                "rejects_writing_contribution_challenge_when_later_proof_mismatches_framed_guest_input_binding",
+            )
+            && cli_test_source.contains(
+                "rejects_verifying_contribution_challenge_when_later_proof_mismatches_framed_guest_input_binding",
+            ),
+        "contribution challenge commands should verify framed guest stdin binding across every proof"
     );
     assert!(
         cli_test_source
