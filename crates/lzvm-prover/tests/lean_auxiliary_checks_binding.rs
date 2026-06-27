@@ -7,6 +7,14 @@ fn quoted_name(raw: &str) -> Option<&str> {
     raw.strip_prefix('"')?.strip_suffix('"')
 }
 
+fn compact_source(source: &str) -> String {
+    source.chars().filter(|c| !c.is_whitespace()).collect()
+}
+
+fn compact_source_contains(source: &str, needle: &str) -> bool {
+    compact_source(source).contains(&compact_source(needle))
+}
+
 fn guest_pc_timing_source_contains(source: &str, line_name: &str, accessor: &str) -> bool {
     let accessor_name = accessor.strip_suffix("()").unwrap_or(accessor);
     if source.contains(line_name) && (source.contains(accessor) || source.contains(accessor_name)) {
@@ -1448,6 +1456,14 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             && witness_execution_source.contains("fn retain_fri_stage_source_devices")
             && witness_execution_source.contains("LZVM_CUDA_RETAIN_FRI_STAGE_SOURCES")
             && witness_execution_source.contains("Ok(\"0\") | Ok(\"false\") | Ok(\"no\")")
+            && witness_execution_source.contains("stage_source_retention: bool")
+            && witness_execution_source
+                .contains("let stage_source_retention = retain_fri_stage_source_devices();")
+            && witness_execution_source.contains("selected_fri_stage_source_retention")
+            && compact_source_contains(
+                &witness_execution_source,
+                "stage_source_retention: Some(stage_source_retention)",
+            )
             && witness_execution_source.contains("let retained_stage_source_devices = if retain_stage_sources")
             && witness_execution_source.contains("stage_source_device_cache.retained_descriptors")
             && witness_execution_source.contains("Vec::new()"),

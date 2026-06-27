@@ -2716,6 +2716,8 @@ struct ProveWitnessTraceRunObservers<'a> {
     #[cfg(feature = "cuda")]
     leaf_workspace_cache: Option<&'a mut WitnessStageLeafWorkspaceCache>,
     #[cfg(feature = "cuda")]
+    stage_source_retention: Option<bool>,
+    #[cfg(feature = "cuda")]
     descriptor_buffer_retention: Option<bool>,
     timing: Option<&'a mut ProveWitnessTraceTimingAccumulator>,
 }
@@ -4136,6 +4138,8 @@ fn run_prove_witness_commitments_with_trace_backend_inner<B: WitnessBackend + ?S
             #[cfg(feature = "cuda")]
             leaf_workspace_cache: None,
             #[cfg(feature = "cuda")]
+            stage_source_retention: None,
+            #[cfg(feature = "cuda")]
             descriptor_buffer_retention: None,
             timing: None,
         },
@@ -4357,6 +4361,8 @@ fn run_prove_witness_commitments_with_guest_pc_trace_segments_inner(
                 #[cfg(feature = "cuda")]
                 leaf_workspace_cache: Some(&mut leaf_workspace_cache),
                 #[cfg(feature = "cuda")]
+                stage_source_retention: None,
+                #[cfg(feature = "cuda")]
                 descriptor_buffer_retention: None,
                 timing: None,
             },
@@ -4504,6 +4510,8 @@ struct GuestPcTraceSegmentCommitWorkerState {
     traceless_commitment_input: bool,
     cross_segment_root_materialization: bool,
     #[cfg(feature = "cuda")]
+    stage_source_retention: bool,
+    #[cfg(feature = "cuda")]
     descriptor_buffer_retention: bool,
 }
 
@@ -4515,6 +4523,8 @@ impl GuestPcTraceSegmentCommitWorkerState {
             cross_segment_root_materialization,
             #[cfg(feature = "cuda")]
             false,
+            #[cfg(feature = "cuda")]
+            false,
         )
     }
 
@@ -4523,6 +4533,8 @@ impl GuestPcTraceSegmentCommitWorkerState {
             mode.traceless_commitment_input,
             mode.cross_segment_root_materialization,
             #[cfg(feature = "cuda")]
+            mode.stage_source_retention,
+            #[cfg(feature = "cuda")]
             mode.descriptor_buffer_retention,
         )
     }
@@ -4530,12 +4542,15 @@ impl GuestPcTraceSegmentCommitWorkerState {
     fn from_parts(
         traceless_commitment_input: bool,
         cross_segment_root_materialization: bool,
+        #[cfg(feature = "cuda")] stage_source_retention: bool,
         #[cfg(feature = "cuda")] descriptor_buffer_retention: bool,
     ) -> Self {
         Self {
             scratch: GuestPcTraceSegmentCommitScratch::new(),
             traceless_commitment_input,
             cross_segment_root_materialization,
+            #[cfg(feature = "cuda")]
+            stage_source_retention,
             #[cfg(feature = "cuda")]
             descriptor_buffer_retention,
         }
@@ -4558,6 +4573,8 @@ impl GuestPcTraceSegmentCommitWorkerState {
             self.traceless_commitment_input,
             self.cross_segment_root_materialization,
             #[cfg(feature = "cuda")]
+            self.stage_source_retention,
+            #[cfg(feature = "cuda")]
             self.descriptor_buffer_retention,
             &mut self.scratch,
         )
@@ -4570,6 +4587,8 @@ struct GuestPcTraceSegmentCommitMode {
     async_single_worker: bool,
     traceless_commitment_input: bool,
     cross_segment_root_materialization: bool,
+    #[cfg(feature = "cuda")]
+    stage_source_retention: bool,
     #[cfg(feature = "cuda")]
     descriptor_buffer_retention: bool,
     #[cfg(feature = "cuda")]
@@ -4591,6 +4610,8 @@ impl GuestPcTraceSegmentCommitMode {
             1
         };
         #[cfg(feature = "cuda")]
+        let stage_source_retention = retain_fri_stage_source_devices();
+        #[cfg(feature = "cuda")]
         let descriptor_buffer_retention =
             guest_pc_descriptor_buffer_retention_enabled(input_byte_count);
         Self {
@@ -4599,6 +4620,8 @@ impl GuestPcTraceSegmentCommitMode {
                 && guest_pc_trace_segment_commit_async_single_worker_enabled(),
             traceless_commitment_input: guest_pc_trace_traceless_commitment_input_selected(),
             cross_segment_root_materialization,
+            #[cfg(feature = "cuda")]
+            stage_source_retention,
             #[cfg(feature = "cuda")]
             descriptor_buffer_retention,
             #[cfg(feature = "cuda")]
@@ -4676,11 +4699,15 @@ impl<'scope, 'env> GuestPcTraceSegmentCommitWorkerPool<'scope, 'env> {
         let cross_segment_root_materialization =
             self.worker_state.cross_segment_root_materialization;
         #[cfg(feature = "cuda")]
+        let stage_source_retention = self.worker_state.stage_source_retention;
+        #[cfg(feature = "cuda")]
         let descriptor_buffer_retention = self.worker_state.descriptor_buffer_retention;
         self.pending_workers.push_back(self.scope.spawn(move || {
             let mut worker_state = GuestPcTraceSegmentCommitWorkerState::from_parts(
                 traceless_commitment_input,
                 cross_segment_root_materialization,
+                #[cfg(feature = "cuda")]
+                stage_source_retention,
                 #[cfg(feature = "cuda")]
                 descriptor_buffer_retention,
             );
@@ -5230,6 +5257,11 @@ fn selected_guest_pc_descriptor_buffer_retention(
 }
 
 #[cfg(feature = "cuda")]
+fn selected_fri_stage_source_retention(cached_stage_source_retention: Option<bool>) -> bool {
+    cached_stage_source_retention.unwrap_or_else(retain_fri_stage_source_devices)
+}
+
+#[cfg(feature = "cuda")]
 fn guest_pc_parallel_lower_enabled_for_descriptor_retention() -> bool {
     env_flag_present_and_enabled("LZVM_GUEST_PC_TRACE_PARALLEL_LOWER")
 }
@@ -5247,6 +5279,7 @@ fn commit_guest_pc_trace_segment_with_scratch(
     collect_timing: bool,
     traceless_commitment_input: bool,
     cross_segment_root_materialization: bool,
+    #[cfg(feature = "cuda")] stage_source_retention: bool,
     #[cfg(feature = "cuda")] descriptor_buffer_retention: bool,
     scratch: &mut GuestPcTraceSegmentCommitScratch,
 ) -> Result<GuestPcTraceSegmentCommitResult, ProveWitnessCommitmentError> {
@@ -5267,6 +5300,8 @@ fn commit_guest_pc_trace_segment_with_scratch(
         scratch,
         traceless_commitment_input,
         cross_segment_root_materialization,
+        #[cfg(feature = "cuda")]
+        stage_source_retention,
         #[cfg(feature = "cuda")]
         descriptor_buffer_retention,
         timing: trace_timing.as_mut(),
@@ -5290,6 +5325,8 @@ struct GuestPcTraceSegmentCommitRequest<'a, 'b> {
     traceless_commitment_input: bool,
     cross_segment_root_materialization: bool,
     #[cfg(feature = "cuda")]
+    stage_source_retention: bool,
+    #[cfg(feature = "cuda")]
     descriptor_buffer_retention: bool,
     timing: Option<&'b mut ProveWitnessTraceTimingAccumulator>,
 }
@@ -5305,6 +5342,8 @@ fn commit_guest_pc_trace_segment_output(
         scratch,
         traceless_commitment_input,
         cross_segment_root_materialization,
+        #[cfg(feature = "cuda")]
+        stage_source_retention,
         #[cfg(feature = "cuda")]
         descriptor_buffer_retention,
         timing,
@@ -5383,6 +5422,7 @@ fn commit_guest_pc_trace_segment_output(
                 fixed_columns_cache: Some(&mut scratch.fixed_columns_cache),
                 stage_commitment_reuse_cache: Some(&mut scratch.stage_commitment_reuse_cache),
                 leaf_workspace_cache: Some(&mut scratch.leaf_workspace_cache),
+                stage_source_retention: Some(stage_source_retention),
                 descriptor_buffer_retention: Some(descriptor_buffer_retention),
                 timing,
             },
@@ -5412,6 +5452,8 @@ fn commit_guest_pc_trace_segment_output(
             stage_commitment_reuse_cache: Some(&mut scratch.stage_commitment_reuse_cache),
             #[cfg(feature = "cuda")]
             leaf_workspace_cache: Some(&mut scratch.leaf_workspace_cache),
+            #[cfg(feature = "cuda")]
+            stage_source_retention: Some(stage_source_retention),
             #[cfg(feature = "cuda")]
             descriptor_buffer_retention: Some(descriptor_buffer_retention),
             timing,
@@ -5845,6 +5887,8 @@ fn run_prove_witness_commitments_with_trace_bytes_inner(
             #[cfg(feature = "cuda")]
             leaf_workspace_cache: None,
             #[cfg(feature = "cuda")]
+            stage_source_retention: None,
+            #[cfg(feature = "cuda")]
             descriptor_buffer_retention: None,
             timing: None,
         },
@@ -5861,6 +5905,7 @@ fn run_prove_witness_commitments_from_trace_pending_inner(
     regular_hint_mode: WitnessRegularHintMode<'_>,
     mut observers: ProveWitnessTraceRunObservers<'_>,
 ) -> Result<ProveWitnessTracePendingCommitments, ProveWitnessCommitmentError> {
+    let stage_source_retention = observers.stage_source_retention;
     let descriptor_buffer_retention = observers.descriptor_buffer_retention;
     let timing = observers
         .timing
@@ -5970,7 +6015,7 @@ fn run_prove_witness_commitments_from_trace_pending_inner(
     )?;
     let stage_commit_duration_before_root_materialization = stage_commit_started.elapsed();
 
-    let retain_stage_sources = retain_fri_stage_source_devices();
+    let retain_stage_sources = selected_fri_stage_source_retention(stage_source_retention);
     let retained_stage_source_devices = if retain_stage_sources {
         stage_source_device_cache.retained_descriptors(Some(&mut *timing))
     } else {
@@ -6020,6 +6065,8 @@ fn run_prove_witness_commitments_from_trace_inner(
     regular_hint_mode: WitnessRegularHintMode<'_>,
     mut observers: ProveWitnessTraceRunObservers<'_>,
 ) -> Result<ProveWitnessTraceCommitments, ProveWitnessCommitmentError> {
+    #[cfg(feature = "cuda")]
+    let stage_source_retention = observers.stage_source_retention;
     #[cfg(feature = "cuda")]
     let descriptor_buffer_retention = observers.descriptor_buffer_retention;
     let mut timing = observers.timing;
@@ -6334,7 +6381,7 @@ fn run_prove_witness_commitments_from_trace_inner(
     };
 
     #[cfg(feature = "cuda")]
-    let retain_stage_sources = retain_fri_stage_source_devices();
+    let retain_stage_sources = selected_fri_stage_source_retention(stage_source_retention);
     #[cfg(feature = "cuda")]
     let retained_stage_source_devices = if retain_stage_sources {
         stage_source_device_cache.retained_descriptors(timing.as_deref_mut())
@@ -7980,6 +8027,28 @@ mod tests {
 
     #[cfg(feature = "cuda")]
     #[test]
+    fn guest_pc_segment_commit_mode_caches_stage_source_retention() {
+        let env = TestEnvVarGuard::new("LZVM_CUDA_RETAIN_FRI_STAGE_SOURCES");
+        env.unset();
+
+        let default_mode = GuestPcTraceSegmentCommitMode::from_input(1024, None);
+        assert!(default_mode.stage_source_retention);
+
+        env.set("0");
+        assert!(default_mode.stage_source_retention);
+        assert!(selected_fri_stage_source_retention(Some(true)));
+
+        let disabled_mode = GuestPcTraceSegmentCommitMode::from_input(1024, None);
+        assert!(!disabled_mode.stage_source_retention);
+
+        env.set("yes");
+        let enabled_mode = GuestPcTraceSegmentCommitMode::from_input(1024, None);
+        assert!(enabled_mode.stage_source_retention);
+        assert!(!selected_fri_stage_source_retention(Some(false)));
+    }
+
+    #[cfg(feature = "cuda")]
+    #[test]
     fn guest_pc_segment_commit_mode_caches_descriptor_buffer_retention() {
         let descriptor_env = TestEnvVarGuard::new("LZVM_CUDA_RETAINED_DESCRIPTOR_BYTES");
         let parallel_env = TestEnvVarUnlockedGuard::new("LZVM_GUEST_PC_TRACE_PARALLEL_LOWER");
@@ -8341,6 +8410,8 @@ mod tests {
                 stage_commitment_reuse_cache: None,
                 #[cfg(feature = "cuda")]
                 leaf_workspace_cache: None,
+                #[cfg(feature = "cuda")]
+                stage_source_retention: None,
                 #[cfg(feature = "cuda")]
                 descriptor_buffer_retention: None,
                 timing: None,
