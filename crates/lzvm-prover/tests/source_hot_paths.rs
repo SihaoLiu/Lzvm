@@ -6329,6 +6329,7 @@ fn guest_pc_descriptor_buffer_retention_defaults_to_small_inputs_only() {
     );
     assert!(
         mode_body.contains("stage_source_retention: bool")
+            && mode_body.contains("stage_source_retention_debug: bool")
             && mode_body.contains("retain_fri_stage_source_devices()"),
         "segment commit mode should cache the stage source retention decision once per attempt"
     );
@@ -6406,6 +6407,11 @@ fn guest_pc_trace_retains_stage_sources_before_descriptor_buffers() {
         commit_body.contains("selected_fri_stage_source_retention(stage_source_retention)"),
         "trace commitments should use a cached stage source retention selector"
     );
+    assert!(
+        commit_body.contains("selected_fri_stage_source_retention_debug")
+            && commit_body.contains("stage_source_retention_debug"),
+        "trace commitments should use a cached stage source retention debug selector"
+    );
     let retained_position = commit_body
         .find("let retained_stage_source_devices = if retain_stage_sources")
         .expect("trace output should retain stage source views explicitly");
@@ -6429,7 +6435,9 @@ fn guest_pc_trace_retains_stage_sources_before_descriptor_buffers() {
         "struct GuestPcTraceSegmentCommitRunOptions",
     );
     assert!(
-        segment_helper_body.contains("stage_source_retention: Some(stage_source_retention)"),
+        segment_helper_body.contains("stage_source_retention: Some(stage_source_retention)")
+            && segment_helper_body
+                .contains("stage_source_retention_debug: Some(stage_source_retention_debug)"),
         "segment commitments should pass cached stage source retention into trace observers"
     );
 }

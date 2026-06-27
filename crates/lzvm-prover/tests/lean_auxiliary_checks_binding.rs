@@ -1476,9 +1476,15 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             && witness_execution_source
                 .contains("let stage_source_retention = retain_fri_stage_source_devices();")
             && witness_execution_source.contains("selected_fri_stage_source_retention")
+            && witness_execution_source.contains("stage_source_retention_debug: bool")
+            && witness_execution_source.contains("selected_fri_stage_source_retention_debug")
             && compact_source_contains(
                 &witness_execution_source,
                 "stage_source_retention: Some(stage_source_retention)",
+            )
+            && compact_source_contains(
+                &witness_execution_source,
+                "stage_source_retention_debug: Some(stage_source_retention_debug)",
             )
             && witness_execution_source.contains("let retained_stage_source_devices = if retain_stage_sources")
             && witness_execution_source.contains("stage_source_device_cache.retained_descriptors")

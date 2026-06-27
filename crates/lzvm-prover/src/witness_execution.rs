@@ -2720,6 +2720,8 @@ struct ProveWitnessTraceRunObservers<'a> {
     #[cfg(feature = "cuda")]
     stage_source_retention: Option<bool>,
     #[cfg(feature = "cuda")]
+    stage_source_retention_debug: Option<bool>,
+    #[cfg(feature = "cuda")]
     descriptor_buffer_retention: Option<bool>,
     timing: Option<&'a mut ProveWitnessTraceTimingAccumulator>,
 }
@@ -3123,6 +3125,7 @@ impl WitnessStageSourceDeviceCache {
     fn retained_descriptors(
         &self,
         timing: Option<&mut ProveWitnessTraceTimingAccumulator>,
+        debug_retention: bool,
     ) -> Vec<WitnessStageRetainedSourceDevice> {
         let retention_limit = retained_source_device_limit();
         let mut attempt_count = 0usize;
@@ -3161,7 +3164,7 @@ impl WitnessStageSourceDeviceCache {
                 limit_byte_count: retention_limit,
             });
         }
-        if debug_fri_stage_source_devices() {
+        if debug_retention {
             eprintln!(
                 "lzvm_cuda_fri_stage_source_retained={} attempts={attempt_count} retained_bytes={retained_byte_count} max_retained_bytes={max_retained_byte_count} rejected={rejected_count} rejected_bytes={rejected_byte_count} max_rejected_bytes={max_rejected_byte_count} limit_bytes={retention_limit}",
                 retained.len(),
@@ -4175,6 +4178,8 @@ fn run_prove_witness_commitments_with_trace_backend_inner<B: WitnessBackend + ?S
             #[cfg(feature = "cuda")]
             stage_source_retention: None,
             #[cfg(feature = "cuda")]
+            stage_source_retention_debug: None,
+            #[cfg(feature = "cuda")]
             descriptor_buffer_retention: None,
             timing: None,
         },
@@ -4402,6 +4407,8 @@ fn run_prove_witness_commitments_with_guest_pc_trace_segments_inner(
                 #[cfg(feature = "cuda")]
                 stage_source_retention: None,
                 #[cfg(feature = "cuda")]
+                stage_source_retention_debug: None,
+                #[cfg(feature = "cuda")]
                 descriptor_buffer_retention: None,
                 timing: None,
             },
@@ -4553,6 +4560,8 @@ struct GuestPcTraceSegmentCommitWorkerState {
     #[cfg(feature = "cuda")]
     stage_source_retention: bool,
     #[cfg(feature = "cuda")]
+    stage_source_retention_debug: bool,
+    #[cfg(feature = "cuda")]
     descriptor_buffer_retention: bool,
 }
 
@@ -4564,6 +4573,8 @@ impl GuestPcTraceSegmentCommitWorkerState {
             cross_segment_root_materialization,
             #[cfg(feature = "cuda")]
             WitnessStageSourceUploadConfig::from_env(),
+            #[cfg(feature = "cuda")]
+            false,
             #[cfg(feature = "cuda")]
             false,
             #[cfg(feature = "cuda")]
@@ -4580,6 +4591,8 @@ impl GuestPcTraceSegmentCommitWorkerState {
             #[cfg(feature = "cuda")]
             mode.stage_source_retention,
             #[cfg(feature = "cuda")]
+            mode.stage_source_retention_debug,
+            #[cfg(feature = "cuda")]
             mode.descriptor_buffer_retention,
         )
     }
@@ -4589,6 +4602,7 @@ impl GuestPcTraceSegmentCommitWorkerState {
         cross_segment_root_materialization: bool,
         #[cfg(feature = "cuda")] stage_source_upload_config: WitnessStageSourceUploadConfig,
         #[cfg(feature = "cuda")] stage_source_retention: bool,
+        #[cfg(feature = "cuda")] stage_source_retention_debug: bool,
         #[cfg(feature = "cuda")] descriptor_buffer_retention: bool,
     ) -> Self {
         Self {
@@ -4599,6 +4613,8 @@ impl GuestPcTraceSegmentCommitWorkerState {
             stage_source_upload_config,
             #[cfg(feature = "cuda")]
             stage_source_retention,
+            #[cfg(feature = "cuda")]
+            stage_source_retention_debug,
             #[cfg(feature = "cuda")]
             descriptor_buffer_retention,
         }
@@ -4625,6 +4641,8 @@ impl GuestPcTraceSegmentCommitWorkerState {
             #[cfg(feature = "cuda")]
             self.stage_source_retention,
             #[cfg(feature = "cuda")]
+            self.stage_source_retention_debug,
+            #[cfg(feature = "cuda")]
             self.descriptor_buffer_retention,
             &mut self.scratch,
         )
@@ -4641,6 +4659,8 @@ struct GuestPcTraceSegmentCommitMode {
     stage_source_upload_config: WitnessStageSourceUploadConfig,
     #[cfg(feature = "cuda")]
     stage_source_retention: bool,
+    #[cfg(feature = "cuda")]
+    stage_source_retention_debug: bool,
     #[cfg(feature = "cuda")]
     descriptor_buffer_retention: bool,
     #[cfg(feature = "cuda")]
@@ -4666,6 +4686,9 @@ impl GuestPcTraceSegmentCommitMode {
         #[cfg(feature = "cuda")]
         let stage_source_retention = retain_fri_stage_source_devices();
         #[cfg(feature = "cuda")]
+        let stage_source_retention_debug =
+            stage_source_retention && debug_fri_stage_source_devices();
+        #[cfg(feature = "cuda")]
         let descriptor_buffer_retention =
             guest_pc_descriptor_buffer_retention_enabled(input_byte_count);
         Self {
@@ -4678,6 +4701,8 @@ impl GuestPcTraceSegmentCommitMode {
             stage_source_upload_config,
             #[cfg(feature = "cuda")]
             stage_source_retention,
+            #[cfg(feature = "cuda")]
+            stage_source_retention_debug,
             #[cfg(feature = "cuda")]
             descriptor_buffer_retention,
             #[cfg(feature = "cuda")]
@@ -4759,6 +4784,8 @@ impl<'scope, 'env> GuestPcTraceSegmentCommitWorkerPool<'scope, 'env> {
         #[cfg(feature = "cuda")]
         let stage_source_retention = self.worker_state.stage_source_retention;
         #[cfg(feature = "cuda")]
+        let stage_source_retention_debug = self.worker_state.stage_source_retention_debug;
+        #[cfg(feature = "cuda")]
         let descriptor_buffer_retention = self.worker_state.descriptor_buffer_retention;
         self.pending_workers.push_back(self.scope.spawn(move || {
             let mut worker_state = GuestPcTraceSegmentCommitWorkerState::from_parts(
@@ -4768,6 +4795,8 @@ impl<'scope, 'env> GuestPcTraceSegmentCommitWorkerPool<'scope, 'env> {
                 stage_source_upload_config,
                 #[cfg(feature = "cuda")]
                 stage_source_retention,
+                #[cfg(feature = "cuda")]
+                stage_source_retention_debug,
                 #[cfg(feature = "cuda")]
                 descriptor_buffer_retention,
             );
@@ -5322,6 +5351,13 @@ fn selected_fri_stage_source_retention(cached_stage_source_retention: Option<boo
 }
 
 #[cfg(feature = "cuda")]
+fn selected_fri_stage_source_retention_debug(
+    cached_stage_source_retention_debug: Option<bool>,
+) -> bool {
+    cached_stage_source_retention_debug.unwrap_or_else(debug_fri_stage_source_devices)
+}
+
+#[cfg(feature = "cuda")]
 fn guest_pc_parallel_lower_enabled_for_descriptor_retention() -> bool {
     env_flag_present_and_enabled("LZVM_GUEST_PC_TRACE_PARALLEL_LOWER")
 }
@@ -5341,6 +5377,7 @@ fn commit_guest_pc_trace_segment_with_scratch(
     cross_segment_root_materialization: bool,
     #[cfg(feature = "cuda")] stage_source_upload_config: WitnessStageSourceUploadConfig,
     #[cfg(feature = "cuda")] stage_source_retention: bool,
+    #[cfg(feature = "cuda")] stage_source_retention_debug: bool,
     #[cfg(feature = "cuda")] descriptor_buffer_retention: bool,
     scratch: &mut GuestPcTraceSegmentCommitScratch,
 ) -> Result<GuestPcTraceSegmentCommitResult, ProveWitnessCommitmentError> {
@@ -5365,6 +5402,8 @@ fn commit_guest_pc_trace_segment_with_scratch(
         stage_source_upload_config,
         #[cfg(feature = "cuda")]
         stage_source_retention,
+        #[cfg(feature = "cuda")]
+        stage_source_retention_debug,
         #[cfg(feature = "cuda")]
         descriptor_buffer_retention,
         timing: trace_timing.as_mut(),
@@ -5392,6 +5431,8 @@ struct GuestPcTraceSegmentCommitRequest<'a, 'b> {
     #[cfg(feature = "cuda")]
     stage_source_retention: bool,
     #[cfg(feature = "cuda")]
+    stage_source_retention_debug: bool,
+    #[cfg(feature = "cuda")]
     descriptor_buffer_retention: bool,
     timing: Option<&'b mut ProveWitnessTraceTimingAccumulator>,
 }
@@ -5411,6 +5452,8 @@ fn commit_guest_pc_trace_segment_output(
         stage_source_upload_config,
         #[cfg(feature = "cuda")]
         stage_source_retention,
+        #[cfg(feature = "cuda")]
+        stage_source_retention_debug,
         #[cfg(feature = "cuda")]
         descriptor_buffer_retention,
         timing,
@@ -5491,6 +5534,7 @@ fn commit_guest_pc_trace_segment_output(
                 leaf_workspace_cache: Some(&mut scratch.leaf_workspace_cache),
                 stage_source_upload_config: Some(stage_source_upload_config),
                 stage_source_retention: Some(stage_source_retention),
+                stage_source_retention_debug: Some(stage_source_retention_debug),
                 descriptor_buffer_retention: Some(descriptor_buffer_retention),
                 timing,
             },
@@ -5524,6 +5568,8 @@ fn commit_guest_pc_trace_segment_output(
             stage_source_upload_config: Some(stage_source_upload_config),
             #[cfg(feature = "cuda")]
             stage_source_retention: Some(stage_source_retention),
+            #[cfg(feature = "cuda")]
+            stage_source_retention_debug: Some(stage_source_retention_debug),
             #[cfg(feature = "cuda")]
             descriptor_buffer_retention: Some(descriptor_buffer_retention),
             timing,
@@ -5961,6 +6007,8 @@ fn run_prove_witness_commitments_with_trace_bytes_inner(
             #[cfg(feature = "cuda")]
             stage_source_retention: None,
             #[cfg(feature = "cuda")]
+            stage_source_retention_debug: None,
+            #[cfg(feature = "cuda")]
             descriptor_buffer_retention: None,
             timing: None,
         },
@@ -5979,6 +6027,7 @@ fn run_prove_witness_commitments_from_trace_pending_inner(
 ) -> Result<ProveWitnessTracePendingCommitments, ProveWitnessCommitmentError> {
     let stage_source_upload_config = observers.stage_source_upload_config;
     let stage_source_retention = observers.stage_source_retention;
+    let stage_source_retention_debug = observers.stage_source_retention_debug;
     let descriptor_buffer_retention = observers.descriptor_buffer_retention;
     let timing = observers
         .timing
@@ -6091,7 +6140,9 @@ fn run_prove_witness_commitments_from_trace_pending_inner(
 
     let retain_stage_sources = selected_fri_stage_source_retention(stage_source_retention);
     let retained_stage_source_devices = if retain_stage_sources {
-        stage_source_device_cache.retained_descriptors(Some(&mut *timing))
+        let debug_retention =
+            selected_fri_stage_source_retention_debug(stage_source_retention_debug);
+        stage_source_device_cache.retained_descriptors(Some(&mut *timing), debug_retention)
     } else {
         Vec::new()
     };
@@ -6143,6 +6194,8 @@ fn run_prove_witness_commitments_from_trace_inner(
     let stage_source_upload_config = observers.stage_source_upload_config;
     #[cfg(feature = "cuda")]
     let stage_source_retention = observers.stage_source_retention;
+    #[cfg(feature = "cuda")]
+    let stage_source_retention_debug = observers.stage_source_retention_debug;
     #[cfg(feature = "cuda")]
     let descriptor_buffer_retention = observers.descriptor_buffer_retention;
     let mut timing = observers.timing;
@@ -6461,7 +6514,9 @@ fn run_prove_witness_commitments_from_trace_inner(
     let retain_stage_sources = selected_fri_stage_source_retention(stage_source_retention);
     #[cfg(feature = "cuda")]
     let retained_stage_source_devices = if retain_stage_sources {
-        stage_source_device_cache.retained_descriptors(timing.as_deref_mut())
+        let debug_retention =
+            selected_fri_stage_source_retention_debug(stage_source_retention_debug);
+        stage_source_device_cache.retained_descriptors(timing.as_deref_mut(), debug_retention)
     } else {
         Vec::new()
     };
@@ -8106,10 +8161,13 @@ mod tests {
     #[test]
     fn guest_pc_segment_commit_mode_caches_stage_source_retention() {
         let env = TestEnvVarGuard::new("LZVM_CUDA_RETAIN_FRI_STAGE_SOURCES");
+        let debug_env = TestEnvVarUnlockedGuard::new("LZVM_CUDA_FRI_STAGE_SOURCE_DEBUG");
         env.unset();
+        debug_env.unset();
 
         let default_mode = GuestPcTraceSegmentCommitMode::from_input(1024, None);
         assert!(default_mode.stage_source_retention);
+        assert!(!default_mode.stage_source_retention_debug);
 
         env.set("0");
         assert!(default_mode.stage_source_retention);
@@ -8117,11 +8175,20 @@ mod tests {
 
         let disabled_mode = GuestPcTraceSegmentCommitMode::from_input(1024, None);
         assert!(!disabled_mode.stage_source_retention);
+        assert!(!disabled_mode.stage_source_retention_debug);
 
         env.set("yes");
+        debug_env.set("yes");
         let enabled_mode = GuestPcTraceSegmentCommitMode::from_input(1024, None);
         assert!(enabled_mode.stage_source_retention);
+        assert!(enabled_mode.stage_source_retention_debug);
+        debug_env.set("0");
+        assert!(enabled_mode.stage_source_retention_debug);
+        let debug_disabled_mode = GuestPcTraceSegmentCommitMode::from_input(1024, None);
+        assert!(!debug_disabled_mode.stage_source_retention_debug);
         assert!(!selected_fri_stage_source_retention(Some(false)));
+        assert!(selected_fri_stage_source_retention_debug(Some(true)));
+        assert!(!selected_fri_stage_source_retention_debug(Some(false)));
     }
 
     #[cfg(feature = "cuda")]
@@ -8548,6 +8615,8 @@ mod tests {
                 stage_source_upload_config: None,
                 #[cfg(feature = "cuda")]
                 stage_source_retention: None,
+                #[cfg(feature = "cuda")]
+                stage_source_retention_debug: None,
                 #[cfg(feature = "cuda")]
                 descriptor_buffer_retention: None,
                 timing: None,
