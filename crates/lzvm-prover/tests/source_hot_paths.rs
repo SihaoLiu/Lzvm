@@ -6586,6 +6586,19 @@ fn guest_pc_trace_parallel_lowerer_stays_seeded_and_opt_in() {
             && !parallel_job_body.contains("guest_pc_trace_less_segment_output_enabled()"),
         "parallel guest PC trace worker jobs should use cached lower mode flags"
     );
+    let owned_streaming_body = function_body(
+        &backend_source,
+        "fn lower_guest_pc_trace_owned_streaming_pending_segment",
+        "#[cfg(test)]\nfn lower_guest_pc_trace_seeded_pending_segments_with_workers",
+    );
+    assert!(
+        owned_streaming_body.contains("traceless_segment_output: bool")
+            && owned_streaming_body
+                .contains("lower_guest_pc_trace_seeded_pending_segment_with_output_mode")
+            && owned_streaming_body.contains("traceless_segment_output,")
+            && !owned_streaming_body.contains("guest_pc_trace_traceless_segment_output_selected()"),
+        "owned-streaming lower fallback should use the cached trace-output mode"
+    );
     let pending_lower_body = function_body(
         &backend_source,
         "fn lower_guest_pc_trace_pending_segments",

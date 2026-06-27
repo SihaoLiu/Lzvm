@@ -5732,24 +5732,6 @@ struct GuestPcTraceSeededLoweredSegment {
     lowered: GuestPcTraceLoweredSegment,
 }
 
-#[allow(dead_code)]
-fn lower_guest_pc_trace_seeded_pending_segment(
-    layout: &WitnessTraceLayout,
-    pending: &GuestPcTracePendingSegmentSlice,
-    seed: &ZiskMainSegmentSeed,
-    expected_proof_values: Option<&[WitnessTraceProofValue]>,
-    timing: Option<&mut GuestPcTraceStreamTiming>,
-) -> Result<GuestPcTraceLoweredSegment, GuestPcTraceBackendError> {
-    lower_guest_pc_trace_seeded_pending_segment_with_output_mode(
-        layout,
-        pending,
-        seed,
-        expected_proof_values,
-        guest_pc_trace_traceless_segment_output_selected(),
-        timing,
-    )
-}
-
 fn lower_guest_pc_trace_seeded_pending_segment_with_output_mode(
     layout: &WitnessTraceLayout,
     pending: &GuestPcTracePendingSegmentSlice,
@@ -5801,6 +5783,7 @@ fn lower_guest_pc_trace_owned_streaming_pending_segment(
     mut pending: GuestPcTracePendingSegmentSlice,
     seed: &ZiskMainSegmentSeed,
     expected_proof_values: Option<&[WitnessTraceProofValue]>,
+    traceless_segment_output: bool,
     mut timing: Option<&mut GuestPcTraceStreamTiming>,
 ) -> Result<GuestPcTraceLoweredSegment, GuestPcTraceBackendError> {
     if pending.reports.len() > layout.row_count() {
@@ -5818,11 +5801,12 @@ fn lower_guest_pc_trace_owned_streaming_pending_segment(
     let Some(mut builder) =
         ZiskMainStreamingDeviceSegmentBuilder::new(layout, &seed.initial_state, segment)?
     else {
-        return lower_guest_pc_trace_seeded_pending_segment(
+        return lower_guest_pc_trace_seeded_pending_segment_with_output_mode(
             layout,
             &pending,
             seed,
             expected_proof_values,
+            traceless_segment_output,
             timing,
         );
     };
@@ -5920,6 +5904,7 @@ fn lower_guest_pc_trace_parallel_work_unit_job(
                 pending,
                 &seed,
                 expected_proof_values,
+                lower_mode.traceless_segment_output,
                 Some(timing),
             )?,
         });
@@ -5969,6 +5954,7 @@ fn lower_guest_pc_trace_replayable_pending_job(
                 pending,
                 &seed,
                 expected_proof_values,
+                traceless_segment_output,
                 Some(timing),
             )?,
         });
@@ -7194,6 +7180,7 @@ fn lower_guest_pc_trace_pending_segments(
                 pending,
                 &segment_seed,
                 expected_proof_values,
+                traceless_segment_output,
                 Some(timing),
             )?
         } else {
@@ -7430,6 +7417,7 @@ fn lower_guest_pc_trace_parallel_pending_job_with_mode(
                 pending,
                 &seed,
                 expected_proof_values,
+                lower_mode.traceless_segment_output,
                 Some(timing),
             )?,
         });
