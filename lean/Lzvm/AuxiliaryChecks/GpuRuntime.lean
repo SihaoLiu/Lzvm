@@ -1285,6 +1285,165 @@ theorem guest_pc_trace_cross_root_materialization_checked_acceptance_verifier_co
       proof
       checked
 
+theorem guest_pc_trace_commit_mode_checked_acceptance_projects_decision
+    {system : VerifierModel}
+    (validation : GuestPcTraceSegmentCommitModeValidation)
+    (config : GuestPcTraceSegmentCommitModeConfig) :
+    forall publicInput proof,
+      GuestPcTraceSegmentCommitModeCheckedAcceptance
+          system
+          validation
+          config
+          publicInput
+          proof ->
+        GuestPcTraceSegmentCommitModeDecisionMatches config := by
+  intro publicInput proof checked
+  exact
+    validation.segmentCommitModeConfigImpliesDecisionMatches
+      config
+      publicInput
+      proof
+      checked.right
+
+theorem guest_pc_trace_commit_mode_effective_worker_positive
+    (config : GuestPcTraceSegmentCommitModeConfig) :
+    GuestPcTraceSegmentCommitModeDecisionMatches config ->
+      0 < config.effectiveWorkerCount := by
+  intro decision
+  rcases decision with
+    ⟨_workerMatch, workerPositive, _asyncMatch, _traceDecision,
+      _traceSelected, _rootDecision, _rootSelected, _windowPositive,
+      _windowMatch⟩
+  exact workerPositive
+
+theorem guest_pc_trace_commit_mode_async_requires_single_worker
+    (config : GuestPcTraceSegmentCommitModeConfig) :
+    GuestPcTraceSegmentCommitModeDecisionMatches config ->
+      config.effectiveAsyncSingleWorker = true ->
+        config.effectiveWorkerCount = 1 := by
+  intro decision asyncSelected
+  rcases decision with
+    ⟨_workerMatch, _workerPositive, asyncMatches, _traceDecision,
+      _traceSelected, _rootDecision, _rootSelected, _windowPositive,
+      _windowMatch⟩
+  by_cases singleWorker : config.effectiveWorkerCount = 1
+  · exact singleWorker
+  · have notSelected :
+        ¬ (config.effectiveWorkerCount = 1
+          /\ config.configuredAsyncSingleWorker = true) := by
+      intro selected
+      exact singleWorker selected.left
+    have asyncFalse :
+        config.effectiveAsyncSingleWorker = false := by
+      simpa [notSelected] using asyncMatches
+    have impossible : False := by
+      rw [asyncFalse] at asyncSelected
+      contradiction
+    exact False.elim impossible
+
+theorem guest_pc_trace_commit_mode_disabled_root_window_is_one
+    (config : GuestPcTraceSegmentCommitModeConfig) :
+    config.selectedCrossSegmentRootMaterialization = false ->
+      GuestPcTraceSegmentCommitModeDecisionMatches config ->
+        config.effectivePendingRootMaterializationWindow = 1 := by
+  intro disabled decision
+  rcases decision with
+    ⟨_workerMatch, _workerPositive, _asyncMatches, _traceDecision,
+      _traceSelected, _rootDecision, _rootSelected, _windowPositive,
+      windowMatches⟩
+  cases hConfigured : config.configuredPendingRootMaterializationWindow with
+  | none =>
+      have reduced :
+          config.effectivePendingRootMaterializationWindow =
+            if config.selectedCrossSegmentRootMaterialization then
+              config.defaultPendingRootMaterializationWindow
+            else
+              1 := by
+        simpa [hConfigured] using windowMatches
+      simpa [disabled] using reduced
+  | some configured =>
+      have reduced :
+          0 < configured
+            /\ config.effectivePendingRootMaterializationWindow =
+              if config.selectedCrossSegmentRootMaterialization then
+                configured
+              else
+                1 := by
+        simpa [hConfigured] using windowMatches
+      rcases reduced with ⟨_configuredPositive, reduced⟩
+      simpa [disabled] using reduced
+
+theorem guest_pc_trace_commit_mode_checked_acceptance_projects_disabled_root_window
+    {system : VerifierModel}
+    (validation : GuestPcTraceSegmentCommitModeValidation)
+    (config : GuestPcTraceSegmentCommitModeConfig) :
+    config.selectedCrossSegmentRootMaterialization = false ->
+      forall publicInput proof,
+        GuestPcTraceSegmentCommitModeCheckedAcceptance
+            system
+            validation
+            config
+            publicInput
+            proof ->
+          config.effectivePendingRootMaterializationWindow = 1 := by
+  intro disabled publicInput proof checked
+  exact
+    guest_pc_trace_commit_mode_disabled_root_window_is_one
+      config
+      disabled
+      (guest_pc_trace_commit_mode_checked_acceptance_projects_decision
+        validation
+        config
+        publicInput
+        proof
+        checked)
+
+theorem guest_pc_trace_commit_mode_checked_acceptance_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : GuestPcTraceSegmentCommitModeValidation)
+    (config : GuestPcTraceSegmentCommitModeConfig) :
+    forall publicInput proof,
+      GuestPcTraceSegmentCommitModeCheckedAcceptance
+          system
+          validation
+          config
+          publicInput
+          proof ->
+        GuestPcTraceSegmentCommitModeDecisionMatches config
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof checked
+  exact
+    And.intro
+      (guest_pc_trace_commit_mode_checked_acceptance_projects_decision
+        validation
+        config
+        publicInput
+        proof
+        checked)
+      (checked_acceptance_sound_witness assumptions publicInput proof checked)
+
+theorem guest_pc_trace_commit_mode_checked_acceptance_verifier_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : GuestPcTraceSegmentCommitModeValidation)
+    (config : GuestPcTraceSegmentCommitModeConfig) :
+    forall publicInput proof,
+      GuestPcTraceSegmentCommitModeCheckedAcceptance
+          system
+          validation
+          config
+          publicInput
+          proof ->
+        RuntimeVerifierCoreContract system publicInput proof := by
+  intro publicInput proof checked
+  exact
+    checked_acceptance_verifier_core_contract
+      assumptions
+      publicInput
+      proof
+      checked
+
 theorem guest_pc_trace_device_trace_source_checked_acceptance_projects_decision
     {system : VerifierModel}
     (validation : GuestPcTraceDeviceTraceSourceValidation)

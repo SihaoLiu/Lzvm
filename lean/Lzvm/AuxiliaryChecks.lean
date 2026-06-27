@@ -789,6 +789,66 @@ structure GuestPcTraceCrossSegmentRootMaterializationValidation where
       crossSegmentRootMaterializationConfigAccepted config publicInput proof ->
         GuestPcTraceCrossSegmentRootMaterializationDecisionMatches config
 
+structure GuestPcTraceSegmentCommitModeConfig where
+  defaultWorkerCount : Nat
+  configuredWorkerCount : Option Nat
+  effectiveWorkerCount : Nat
+  configuredAsyncSingleWorker : Bool
+  effectiveAsyncSingleWorker : Bool
+  tracelessCommitmentInputConfig :
+    GuestPcTraceTracelessCommitmentInputConfig
+  selectedTracelessCommitmentInput : Bool
+  crossSegmentRootMaterializationConfig :
+    GuestPcTraceCrossSegmentRootMaterializationConfig
+  selectedCrossSegmentRootMaterialization : Bool
+  defaultPendingRootMaterializationWindow : Nat
+  configuredPendingRootMaterializationWindow : Option Nat
+  effectivePendingRootMaterializationWindow : Nat
+deriving DecidableEq, Repr
+
+def GuestPcTraceSegmentCommitModeDecisionMatches
+    (config : GuestPcTraceSegmentCommitModeConfig) : Prop :=
+  (match config.configuredWorkerCount with
+    | some configured =>
+        0 < configured /\ config.effectiveWorkerCount = configured
+    | none =>
+        config.effectiveWorkerCount = config.defaultWorkerCount)
+    /\ 0 < config.effectiveWorkerCount
+    /\ config.effectiveAsyncSingleWorker =
+      decide (config.effectiveWorkerCount = 1
+        /\ config.configuredAsyncSingleWorker = true)
+    /\ GuestPcTraceTracelessCommitmentInputDecisionMatches
+      config.tracelessCommitmentInputConfig
+    /\ config.selectedTracelessCommitmentInput =
+      config.tracelessCommitmentInputConfig.effectiveTracelessCommitmentInput
+    /\ GuestPcTraceCrossSegmentRootMaterializationDecisionMatches
+      config.crossSegmentRootMaterializationConfig
+    /\ config.selectedCrossSegmentRootMaterialization =
+      config.crossSegmentRootMaterializationConfig.effectiveCrossSegmentRootMaterialization
+    /\ 0 < config.defaultPendingRootMaterializationWindow
+    /\ match config.configuredPendingRootMaterializationWindow with
+      | some configured =>
+          0 < configured
+            /\ config.effectivePendingRootMaterializationWindow =
+              if config.selectedCrossSegmentRootMaterialization then
+                configured
+              else
+                1
+      | none =>
+          config.effectivePendingRootMaterializationWindow =
+            if config.selectedCrossSegmentRootMaterialization then
+              config.defaultPendingRootMaterializationWindow
+            else
+              1
+
+structure GuestPcTraceSegmentCommitModeValidation where
+  segmentCommitModeConfigAccepted :
+    GuestPcTraceSegmentCommitModeConfig -> PublicInput -> Proof -> Prop
+  segmentCommitModeConfigImpliesDecisionMatches :
+    forall config publicInput proof,
+      segmentCommitModeConfigAccepted config publicInput proof ->
+        GuestPcTraceSegmentCommitModeDecisionMatches config
+
 structure GuestPcTraceDeviceTraceSourceConfig where
   configuredDeviceTraceSourceEnabled : Option Bool
   effectiveDeviceTraceSourceEnabled : Bool
@@ -1082,6 +1142,15 @@ def GuestPcTraceCrossSegmentRootMaterializationCheckedAcceptance
       config
       publicInput
       proof
+
+def GuestPcTraceSegmentCommitModeCheckedAcceptance
+    (system : VerifierModel)
+    (validation : GuestPcTraceSegmentCommitModeValidation)
+    (config : GuestPcTraceSegmentCommitModeConfig)
+    (publicInput : PublicInput)
+    (proof : Proof) : Prop :=
+  system.accepts publicInput proof
+    /\ validation.segmentCommitModeConfigAccepted config publicInput proof
 
 def GuestPcTraceDeviceTraceSourceCheckedAcceptance
     (system : VerifierModel)

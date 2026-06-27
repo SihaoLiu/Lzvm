@@ -870,6 +870,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         "guest_pc_trace_traceless_commitment_input_checked_acceptance_sound",
         "guest_pc_trace_traceless_segment_output_checked_acceptance_sound",
         "guest_pc_trace_cross_root_materialization_checked_acceptance_sound",
+        "guest_pc_trace_commit_mode_checked_acceptance_sound",
         "guest_pc_trace_device_trace_source_checked_acceptance_sound",
         "guest_pc_trace_sparse_source_checked_acceptance_sound",
         "guest_pc_trace_terminal_sparse_source_checked_acceptance_sound",
@@ -1256,6 +1257,44 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             ),
         "Lean auxiliary checks should bind cross-segment root materialization to the Rust runtime guard and input-size limit"
     );
+    assert!(
+        lean_source.contains("GuestPcTraceSegmentCommitModeConfig")
+            && lean_source.contains("configuredWorkerCount")
+            && lean_source.contains("effectiveWorkerCount")
+            && lean_source.contains("configuredAsyncSingleWorker")
+            && lean_source.contains("effectiveAsyncSingleWorker")
+            && lean_source.contains("tracelessCommitmentInputConfig")
+            && lean_source.contains("crossSegmentRootMaterializationConfig")
+            && lean_source.contains("effectivePendingRootMaterializationWindow")
+            && lean_source.contains("GuestPcTraceSegmentCommitModeDecisionMatches")
+            && lean_source.contains("segmentCommitModeConfigAccepted")
+            && lean_source.contains("segmentCommitModeConfigImpliesDecisionMatches")
+            && lean_source.contains("GuestPcTraceSegmentCommitModeCheckedAcceptance")
+            && gpu_runtime_source.contains("guest_pc_trace_commit_mode_checked_acceptance_sound")
+            && gpu_runtime_source
+                .contains("guest_pc_trace_commit_mode_checked_acceptance_verifier_core_contract")
+            && gpu_runtime_source
+                .contains("guest_pc_trace_commit_mode_async_requires_single_worker")
+            && gpu_runtime_source.contains(
+                "guest_pc_trace_commit_mode_checked_acceptance_projects_disabled_root_window"
+            )
+            && witness_execution_source.contains("struct GuestPcTraceSegmentCommitMode")
+            && witness_execution_source.contains("fn from_input(")
+            && witness_execution_source
+                .contains("guest_pc_trace_segment_commit_worker_count_for_input_with_override")
+            && witness_execution_source
+                .contains("guest_pc_trace_segment_commit_async_single_worker_enabled")
+            && witness_execution_source
+                .contains("guest_pc_trace_traceless_commitment_input_selected")
+            && witness_execution_source
+                .contains("guest_pc_cross_segment_root_materialization_selected")
+            && witness_execution_source.contains(
+                "let pending_root_materialization_window = if cross_segment_root_materialization"
+            )
+            && witness_execution_source
+                .contains("GuestPcTraceSegmentCommitWorkerPool::new(scope, segment_commit_mode)"),
+        "Lean auxiliary checks should bind cached segment commit mode to the Rust runtime snapshot"
+    );
     for (theorem_name, projector) in [
         (
             "guest_pc_trace_traceless_commitment_input_checked_acceptance_projects_default_enabled",
@@ -1278,6 +1317,23 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
                 "projects_disabled"
             ),
             "guest_pc_trace_cross_root_materialization_checked_acceptance_projects_decision",
+        ),
+    ] {
+        lean_binding::assert_theorem_body_contains(&gpu_runtime_source, theorem_name, &[projector]);
+        lean_binding::assert_theorem_body_omits(
+            &gpu_runtime_source,
+            theorem_name,
+            &["checked_acceptance_sound_witness"],
+        );
+    }
+    for (theorem_name, projector) in [
+        (
+            "guest_pc_trace_commit_mode_async_requires_single_worker",
+            "rw [asyncFalse] at asyncSelected",
+        ),
+        (
+            "guest_pc_trace_commit_mode_checked_acceptance_projects_disabled_root_window",
+            "guest_pc_trace_commit_mode_checked_acceptance_projects_decision",
         ),
     ] {
         lean_binding::assert_theorem_body_contains(&gpu_runtime_source, theorem_name, &[projector]);
@@ -3277,6 +3333,16 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
                 "guest_pc_trace_cross_root_materialization_checked_acceptance_",
                 "verifier_core_contract"
             ),
+            "guest_pc_trace_commit_mode_checked_acceptance_projects_decision",
+            "guest_pc_trace_commit_mode_effective_worker_positive",
+            "guest_pc_trace_commit_mode_async_requires_single_worker",
+            "guest_pc_trace_commit_mode_disabled_root_window_is_one",
+            concat!(
+                "guest_pc_trace_commit_mode_checked_acceptance_",
+                "projects_disabled_root_window"
+            ),
+            "guest_pc_trace_commit_mode_checked_acceptance_sound",
+            "guest_pc_trace_commit_mode_checked_acceptance_verifier_core_contract",
             "gpu_retained_leaf_digest_limit_checked_acceptance_projects_decision",
             "gpu_retained_leaf_digest_limit_checked_acceptance_sound",
             "gpu_retained_leaf_digest_limit_checked_acceptance_verifier_core_contract",
