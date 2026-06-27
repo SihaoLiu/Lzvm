@@ -2227,6 +2227,16 @@ fn lean_framed_guest_input_binding_tracks_runtime_checks() {
     let contribution_path = crate_root.join("src/contribution.rs");
     let contribution_source =
         std::fs::read_to_string(&contribution_path).expect("contribution source should read");
+    let write_challenge_body = function_body(
+        &contribution_challenge_source,
+        "fn run_parsed",
+        "struct ParsedVerifyArgs",
+    );
+    let verify_challenge_body = function_body(
+        &contribution_challenge_source,
+        "fn verify_parsed",
+        "fn verify_inner",
+    );
 
     assert!(
         lean_root_source.contains("import Lzvm.FramedGuestInputBinding"),
@@ -2309,9 +2319,13 @@ fn lean_framed_guest_input_binding_tracks_runtime_checks() {
         "framed guest stdin segments should remain query-plan and contribution bound"
     );
     assert!(
-        contribution_challenge_source.contains("verify_commands::verify_requested_contribution_bindings")
-            && contribution_challenge_source.contains("role: \"prove contribution challenges write\"")
-            && contribution_challenge_source.contains("role: \"verify contribution-challenge\"")
+        write_challenge_body.contains("verify_commands::verify_requested_contribution_bindings")
+            && write_challenge_body.contains("role: \"prove contribution challenges write\"")
+            && write_challenge_body.contains("input_data: parsed.input_data")
+            && verify_challenge_body
+                .contains("verify_commands::verify_requested_contribution_bindings")
+            && verify_challenge_body.contains("role: \"verify contribution-challenge\"")
+            && verify_challenge_body.contains("input_data: parsed.input_data")
             && cli_test_source.contains(
                 "rejects_writing_contribution_challenge_when_later_proof_mismatches_framed_guest_input_binding",
             )
