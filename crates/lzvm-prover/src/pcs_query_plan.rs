@@ -1,4 +1,4 @@
-use std::fmt;
+use std::{collections::BTreeMap, fmt};
 
 mod build;
 mod errors;
@@ -16,9 +16,10 @@ use lzvm_artifacts::challenge_values_segment::CHALLENGE_VALUES_SEGMENT_ID;
 use lzvm_artifacts::eth_block_input_segment::ETH_BLOCK_INPUT_SEGMENT_ID;
 use lzvm_artifacts::guest_input_segment::FRAMED_GUEST_INPUT_SEGMENT_ID;
 use lzvm_artifacts::pcs_evaluation_segment::PCS_EVALUATION_SEGMENT_ID;
+use lzvm_artifacts::pcs_fri_segment::PcsFriOpeningUnitSegment;
 use lzvm_artifacts::pcs_material_segment::{
     parse_pcs_material_manifest_segment, PcsMaterialManifestSegment,
-    PcsMaterialManifestSegmentError, PCS_MATERIAL_MANIFEST_SEGMENT_ID,
+    PcsMaterialManifestSegmentError, PcsMaterialManifestUnit, PCS_MATERIAL_MANIFEST_SEGMENT_ID,
 };
 use lzvm_artifacts::pcs_nonce_segment::{
     parse_pcs_query_nonce_segment, PCS_QUERY_NONCE_SEGMENT_ID,
@@ -280,6 +281,9 @@ fn validate_transcript_query_plan_unit_inputs(
         .map_err(|error| ValidatePcsQueryPlanSegmentsError::Fri(error.into()))?;
     let unit_values_segment = load_unit_values_segment_from_segments(segments)
         .map_err(ValidatePcsQueryPlanSegmentsError::UnitValues)?;
+    let material_units = material_units_by_index(&material.units);
+    let witness_segments_by_identity = witness_segments_by_identity(witness_segments);
+    let fri_units = fri_units_by_identity(&fri_segment.units);
     let mut final_query_challenges = Vec::with_capacity(query_units.len());
     for query_unit in query_units {
         let unit_index_u32 = query_unit.unit_index;
@@ -289,17 +293,14 @@ fn validate_transcript_query_plan_unit_inputs(
             .units
             .get(unit_index)
             .ok_or(ValidatePcsQueryPlanSegmentsError::UnitMismatch { unit_index })?;
-        let material_unit = material
-            .units
-            .iter()
-            .find(|unit| unit.unit_index == unit_index_u32)
+        let material_unit = material_units
+            .get(&unit_index_u32)
+            .copied()
             .ok_or(ValidatePcsQueryPlanSegmentsError::UnitMismatch { unit_index })?;
-        let witness_segment = witness_segments
-            .iter()
-            .find(|segment| {
-                segment.identity.unit_index == unit_index_u32
-                    && segment.identity.trace_instance_index == query_unit.trace_instance_index
-            })
+        let identity = (unit_index_u32, query_unit.trace_instance_index);
+        let witness_segment = witness_segments_by_identity
+            .get(&identity)
+            .copied()
             .ok_or(ValidatePcsQueryPlanSegmentsError::UnitMismatch { unit_index })?;
         let evaluation_unit = load_pcs_evaluation_unit_for_identity_from_parsed_segment(
             unit_index,
@@ -308,13 +309,9 @@ fn validate_transcript_query_plan_unit_inputs(
             &evaluation_segment,
         )
         .map_err(ValidatePcsQueryPlanSegmentsError::Evaluation)?;
-        let fri_unit = fri_segment
-            .units
-            .iter()
-            .find(|unit| {
-                unit.unit_index == query_unit.unit_index
-                    && unit.trace_instance_index == query_unit.trace_instance_index
-            })
+        let fri_unit = fri_units
+            .get(&identity)
+            .copied()
             .ok_or(ValidatePcsQueryPlanSegmentsError::UnitMismatch { unit_index })?;
         let unit_values = load_unit_values_for_identity_from_parsed_segment(
             unit_index,
@@ -350,6 +347,43 @@ fn validate_transcript_query_plan_unit_inputs(
     )
     .map_err(ValidatePcsQueryPlanSegmentsError::UnitValues)?;
     Ok(final_query_challenges)
+}
+
+fn material_units_by_index(
+    units: &[PcsMaterialManifestUnit],
+) -> BTreeMap<u32, &PcsMaterialManifestUnit> {
+    let mut units_by_index = BTreeMap::new();
+    for unit in units {
+        units_by_index.entry(unit.unit_index).or_insert(unit);
+    }
+    units_by_index
+}
+
+fn witness_segments_by_identity<'loaded, 'segment>(
+    witness_segments: &'loaded [LoadedWitnessCommitmentSegmentRef<'segment>],
+) -> BTreeMap<(u32, u32), &'loaded LoadedWitnessCommitmentSegmentRef<'segment>> {
+    let mut segments_by_identity = BTreeMap::new();
+    for segment in witness_segments {
+        segments_by_identity
+            .entry((
+                segment.identity.unit_index,
+                segment.identity.trace_instance_index,
+            ))
+            .or_insert(segment);
+    }
+    segments_by_identity
+}
+
+fn fri_units_by_identity(
+    units: &[PcsFriOpeningUnitSegment],
+) -> BTreeMap<(u32, u32), &PcsFriOpeningUnitSegment> {
+    let mut units_by_identity = BTreeMap::new();
+    for unit in units {
+        units_by_identity
+            .entry((unit.unit_index, unit.trace_instance_index))
+            .or_insert(unit);
+    }
+    units_by_identity
 }
 
 pub(crate) fn proof_binding_segments(segments: &[ProofSegment]) -> Vec<ProofSegment> {

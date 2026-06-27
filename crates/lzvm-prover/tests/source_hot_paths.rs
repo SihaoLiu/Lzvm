@@ -8822,6 +8822,16 @@ fn lean_query_plan_binding_tracks_runtime_transcript_opening_checks() {
             && query_plan_source.contains("load_unit_values_segment_from_segments")
             && query_plan_source.contains("load_pcs_evaluation_unit_for_identity_from_parsed_segment")
             && query_plan_source.contains("load_unit_values_for_identity_from_parsed_segment")
+            && query_plan_source.contains("material_units_by_index(&material.units)")
+            && query_plan_source.contains("witness_segments_by_identity(witness_segments)")
+            && query_plan_source.contains("fri_units_by_identity(&fri_segment.units)")
+            && query_plan_source
+                .contains("let identity = (unit_index_u32, query_unit.trace_instance_index)")
+            && compact_source_contains(
+                &query_plan_source,
+                "witness_segments_by_identity.get(&identity)"
+            )
+            && compact_source_contains(&query_plan_source, "fri_units.get(&identity)")
             && !query_plan_source.contains("load_pcs_evaluation_unit_for_identity_from_segments")
             && !query_plan_source.contains("load_unit_values_for_identity_from_segments"),
         "query plan validation should parse transcript payload segments once and reuse parsed units"

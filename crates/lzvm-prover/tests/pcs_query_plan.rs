@@ -44,10 +44,11 @@ use lzvm_prover::pcs_query_plan::{
     ProvePcsQueryPlanSegmentError, ValidatePcsQueryPlanSegmentsError,
 };
 use lzvm_prover::pcs_transcript::{
-    derive_pcs_final_query_challenge_from_segments, PcsTranscriptSegmentInputs,
+    aggregate_pcs_final_query_challenges, derive_pcs_final_query_challenge_from_segments,
+    PcsTranscriptSegmentInputs,
 };
 use lzvm_prover::{
-    build_pcs_query_nonce_segment_from_transcript_segments,
+    build_pcs_query_nonce_segment, build_pcs_query_nonce_segment_from_transcript_segments,
     build_pcs_query_nonce_segment_with_streams, build_pcs_query_plan_segment,
     build_pcs_query_plan_segment_from_challenge,
     build_pcs_query_plan_segment_from_transcript_segments,
@@ -548,6 +549,118 @@ fn validates_transcript_pcs_query_plan_segments() {
 
     validate_transcript_pcs_query_plan_segments(&schedule, &[], &segments)
         .expect("query plan should validate");
+}
+
+#[test]
+fn validates_transcript_pcs_query_plan_segments_by_trace_identity() {
+    let mut schedule = sample_schedule();
+    schedule.units[0].evaluation_value_count = 1;
+    schedule.units[0].transcript_evaluation_challenge_draws = 1;
+    schedule.total_query_count = 4;
+    let material = material_unit(0);
+    let base_witness = witness_commitment(0);
+    let trace_witness = witness_commitment_with_root(0, [25, 26, 27, 28]);
+    let base_witness_segment = witness_segment(0);
+    let trace_witness_segment =
+        witness_segment_with_trace_instance_and_root(0, 1, schedule.units.len(), [25, 26, 27, 28]);
+    let base_evaluations = PcsEvaluationUnitSegment {
+        unit_index: 0,
+        trace_instance_index: 0,
+        values: vec![[9, 10, 11]],
+    };
+    let trace_evaluations = PcsEvaluationUnitSegment {
+        unit_index: 0,
+        trace_instance_index: 1,
+        values: vec![[29, 30, 31]],
+    };
+    let base_fri = PcsFriOpeningUnitSegment {
+        unit_index: 0,
+        trace_instance_index: 0,
+        layers: Vec::new(),
+        final_polynomial: vec![[12, 13, 14]],
+    };
+    let trace_fri = PcsFriOpeningUnitSegment {
+        unit_index: 0,
+        trace_instance_index: 1,
+        layers: Vec::new(),
+        final_polynomial: vec![[32, 33, 34]],
+    };
+    let base_input = PcsTranscriptSegmentInputs {
+        unit_index: 0,
+        unit: &schedule.units[0],
+        material: &material,
+        public_values: &[],
+        unit_values: &[],
+        witness: &base_witness,
+        evaluations: &base_evaluations,
+        fri: &base_fri,
+        root_challenge_draws: &schedule.units[0].transcript_root_challenge_draws,
+        evaluation_challenge_draws: schedule.units[0].transcript_evaluation_challenge_draws,
+        binding_segments: &[],
+    };
+    let trace_input = PcsTranscriptSegmentInputs {
+        unit_index: 0,
+        unit: &schedule.units[0],
+        material: &material,
+        public_values: &[],
+        unit_values: &[],
+        witness: &trace_witness,
+        evaluations: &trace_evaluations,
+        fri: &trace_fri,
+        root_challenge_draws: &schedule.units[0].transcript_root_challenge_draws,
+        evaluation_challenge_draws: schedule.units[0].transcript_evaluation_challenge_draws,
+        binding_segments: &[],
+    };
+    let base_challenge = derive_pcs_final_query_challenge_from_segments(base_input)
+        .expect("base challenge should derive");
+    let trace_challenge = derive_pcs_final_query_challenge_from_segments(trace_input)
+        .expect("trace challenge should derive");
+    let challenge = aggregate_pcs_final_query_challenges(&[base_challenge, trace_challenge])
+        .expect("aggregate challenge should derive");
+    let nonce_segment =
+        build_pcs_query_nonce_segment(&schedule, challenge).expect("query nonce should build");
+    let nonce = Felt::from_u64(
+        parse_pcs_query_nonce_segment(&nonce_segment.data)
+            .expect("nonce segment should parse")
+            .nonce,
+    );
+    let query_segment = build_pcs_query_plan_segment_from_challenge(
+        &schedule,
+        &[base_witness_segment.clone(), trace_witness_segment.clone()],
+        challenge,
+        nonce,
+    )
+    .expect("query plan should build");
+    let segments = vec![
+        ProofSegment {
+            id: PCS_MATERIAL_MANIFEST_SEGMENT_ID,
+            data: encode_pcs_material_manifest_segment(&PcsMaterialManifestSegment {
+                units: vec![material],
+            })
+            .expect("material segment should encode"),
+        },
+        base_witness_segment,
+        trace_witness_segment,
+        ProofSegment {
+            id: PCS_EVALUATION_SEGMENT_ID,
+            data: encode_pcs_evaluation_segment(&PcsEvaluationSegment {
+                units: vec![base_evaluations, trace_evaluations],
+            })
+            .expect("evaluation segment should encode"),
+        },
+        ProofSegment {
+            id: PCS_FRI_OPENING_SEGMENT_ID,
+            data: encode_pcs_fri_opening_segment(&PcsFriOpeningSegment {
+                units: vec![base_fri, trace_fri],
+            })
+            .expect("FRI opening segment should encode"),
+        },
+        nonce_segment,
+        query_segment,
+    ];
+
+    validate_transcript_pcs_query_plan_segments(&schedule, &[], &segments)
+        .expect("query plan should match both trace identities");
 }
 
 #[test]
@@ -1516,8 +1629,22 @@ fn witness_segment_with_trace_instance(
     trace_instance_index: u32,
     unit_count: usize,
 ) -> ProofSegment {
+    witness_segment_with_trace_instance_and_root(
+        unit_index,
+        trace_instance_index,
+        unit_count,
+        [5, 6, 7, 8],
+    )
+}
+
+fn witness_segment_with_trace_instance_and_root(
+    unit_index: u32,
+    trace_instance_index: u32,
+    unit_count: usize,
+    root: [u64; 4],
+) -> ProofSegment {
     let unit_count = u32::try_from(unit_count).expect("unit count should fit u32");
-    let witness = witness_commitment(unit_index);
+    let witness = witness_commitment_with_root(unit_index, root);
     ProofSegment {
         id: witness_commitment_segment_id(
             unit_count,
@@ -1532,6 +1659,10 @@ fn witness_segment_with_trace_instance(
 }
 
 fn witness_commitment(unit_index: u32) -> WitnessCommitmentSegment {
+    witness_commitment_with_root(unit_index, [5, 6, 7, 8])
+}
+
+fn witness_commitment_with_root(unit_index: u32, root: [u64; 4]) -> WitnessCommitmentSegment {
     WitnessCommitmentSegment {
         unit_index,
         input_byte_count: 0,
@@ -1540,7 +1671,7 @@ fn witness_commitment(unit_index: u32) -> WitnessCommitmentSegment {
         stages: vec![WitnessCommitmentStageSegment {
             stage_index: 1,
             arity: 2,
-            root: [5, 6, 7, 8],
+            root,
             tree_byte_count: 64,
             tree_digest: [0; 32],
         }],
