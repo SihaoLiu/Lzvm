@@ -9068,10 +9068,15 @@ impl ZiskMainTraceLowerTimingConfig {
     fn from_env() -> Self {
         let detail_timing = guest_pc_trace_lower_detail_timing_enabled();
         let shape_timing = guest_pc_trace_shape_timing_enabled();
+        let detail_sample_stride = if detail_timing {
+            guest_pc_trace_detail_timing_sample_stride()
+        } else {
+            1
+        };
         Self {
             detail_timing,
             shape_timing,
-            detail_sample_stride: guest_pc_trace_detail_timing_sample_stride(),
+            detail_sample_stride,
             row_timing_enabled: detail_timing || shape_timing,
         }
     }

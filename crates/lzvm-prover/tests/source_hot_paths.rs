@@ -7790,9 +7790,8 @@ fn guest_pc_trace_lower_records_aggregate_report_timing_alongside_detail_timers(
         ("device material", device_material_combined.as_str()),
         ("host segment", host_segment_body),
     ] {
-        let has_sample_stride = body
-            .contains("let detail_sample_stride = guest_pc_trace_detail_timing_sample_stride();")
-            || body.contains("detail_sample_stride: guest_pc_trace_detail_timing_sample_stride(),");
+        let has_sample_stride = body.contains("guest_pc_trace_detail_timing_sample_stride()")
+            && body.contains("detail_sample_stride");
         let has_report_detail_gate = body.contains(
             "let report_detail_timing = detail_timing && report_index % detail_sample_stride == 0;",
         ) || body
