@@ -171,6 +171,7 @@ def clear_env_file_controlled_names() -> None:
 
 def load_env_file(path: Path, root: Path) -> None:
     path = require_workspace_temp_path(path, root, "--env-file")
+    reject_symlinked_output_path(path, "--env-file")
     if not path.exists():
         command = shell_join(
             [
@@ -182,7 +183,6 @@ def load_env_file(path: Path, root: Path) -> None:
         raise SystemExit(
             f"--env-file path does not exist: {path}; create a template with: {command}"
         )
-    reject_symlinked_output_path(path, "--env-file")
     if not path.is_file():
         raise SystemExit(f"--env-file must be a file: {path}")
     clear_env_file_controlled_names()

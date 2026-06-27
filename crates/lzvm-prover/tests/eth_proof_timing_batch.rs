@@ -2126,6 +2126,48 @@ fn eth_proof_timing_batch_rejects_symlinked_env_file() {
     );
 }
 
+#[cfg(unix)]
+#[test]
+fn eth_proof_timing_batch_rejects_dangling_symlinked_env_file() {
+    use std::os::unix::fs::symlink;
+
+    let fixture = ProofFixture::new("eth-proof-timing-batch-env-file-dangling-symlink");
+    let env_path = fixture.dir.join("linked.env");
+    symlink(fixture.dir.join("missing.env"), &env_path)
+        .expect("dangling env-file symlink fixture should be created");
+    let mut command = Command::new(script_path());
+    command
+        .arg("--suite")
+        .arg("small")
+        .arg("--check-env")
+        .arg("--env-file")
+        .arg(&env_path);
+    clear_env(&mut command, SMALL_PREFIX);
+    clear_env(&mut command, LARGE_PREFIX);
+
+    let output = command
+        .output()
+        .expect("ETH proof timing batch dangling env-file symlink check should run");
+    let success = output.status.success();
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    fixture.cleanup();
+
+    assert!(!success, "dangling env-file symlink should be rejected");
+    assert!(
+        stdout.is_empty(),
+        "dangling env-file symlink rejection should happen before partial diagnostics: {stdout}"
+    );
+    assert!(
+        stderr.contains("--env-file must not be a symlink"),
+        "dangling env-file symlink rejection should explain the path constraint: stderr={stderr}"
+    );
+    assert!(
+        !stderr.contains("--env-file path does not exist"),
+        "dangling env-file symlink should not be treated as a missing file: stderr={stderr}"
+    );
+}
+
 #[test]
 fn eth_proof_timing_batch_env_template_preserves_env_profiler_commands() {
     let fixture = ProofFixture::new("eth-proof-timing-batch-write-env-profile-env");
