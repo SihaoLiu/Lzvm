@@ -7,6 +7,13 @@ use lzvm_artifacts::eth_block_input_segment::{
 };
 use lzvm_artifacts::eth_block_public_values::public_values_from_eth_block_input;
 use lzvm_artifacts::eth_public_input::parse_eth_public_block_prefix;
+use lzvm_artifacts::guest_input_segment::FRAMED_GUEST_INPUT_SEGMENT_ID;
+use lzvm_artifacts::program_image::{
+    encode_program_image_commitment_cache, ProgramImageCommitmentCache, ProgramImageGpuMode,
+};
+use lzvm_artifacts::program_image_segment::{
+    encode_program_image_cache_segment, PROGRAM_IMAGE_CACHE_SEGMENT_ID,
+};
 use lzvm_artifacts::proof::{encode_proof_artifact, ProofArtifact, ProofSegment};
 use lzvm_artifacts::public_values::{encode_public_values, public_values_digest};
 use lzvm_artifacts::sectioned::{encode_sectioned_file, parse_sectioned_file};
@@ -27,6 +34,20 @@ fn framed_input_bytes(payload: &[u8]) -> Vec<u8> {
     bytes.extend_from_slice(payload);
     bytes.resize(bytes.len().next_multiple_of(8), 0);
     bytes
+}
+
+fn sample_program_image_cache() -> ProgramImageCommitmentCache {
+    ProgramImageCommitmentCache {
+        program_digest: [0x11; 32],
+        source_image_digest: [0x22; 32],
+        constraint_system_digest: [0x33; 32],
+        tree_root: [1, 2, 3, 4],
+        trace_row_count: 1024,
+        trace_column_count: 17,
+        blowup_factor: 8,
+        merkle_tree_arity: 4,
+        gpu_mode: ProgramImageGpuMode::Cuda,
+    }
 }
 
 #[test]
@@ -633,6 +654,105 @@ fn rejects_block_input_binding_when_proof_has_unexpected_segment_id() {
         Err(message)
             if message.ends_with(&format!("unexpected proof segment id: {unexpected_segment_id}"))
     ));
+}
+
+#[test]
+fn rejects_program_image_cache_binding_when_proof_has_unexpected_segment_id() {
+    let dir = test_fixture_dir("program-image-cache-unexpected-segment");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let cache_path = dir.join("cache.bin");
+    let proof_path = dir.join("proof.bin");
+    let cache = sample_program_image_cache();
+    std::fs::write(
+        &cache_path,
+        encode_program_image_commitment_cache(&cache).expect("cache should encode"),
+    )
+    .expect("cache should write");
+    let unexpected_segment_id = 20_000;
+    let proof = ProofArtifact {
+        setup_hash: [7; 32],
+        public_values_hash: [8; 32],
+        segments: vec![
+            ProofSegment {
+                id: PROGRAM_IMAGE_CACHE_SEGMENT_ID,
+                data: encode_program_image_cache_segment(&cache)
+                    .expect("program image cache segment should encode"),
+            },
+            ProofSegment {
+                id: unexpected_segment_id,
+                data: vec![1],
+            },
+        ],
+    };
+    std::fs::write(
+        &proof_path,
+        encode_proof_artifact(&proof).expect("proof should encode"),
+    )
+    .expect("proof should write");
+
+    let mut stderr = Vec::new();
+    let result = verify_requested_program_image_cache_binding(
+        "verify preflight",
+        proof_path.to_str().expect("proof path should be utf-8"),
+        Some(cache_path.to_str().expect("cache path should be utf-8")),
+        &mut stderr,
+    );
+    std::fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(result, None);
+    assert!(String::from_utf8(stderr)
+        .expect("stderr should be utf-8")
+        .contains(&format!(
+            "unexpected proof segment id: {unexpected_segment_id}"
+        )));
+}
+
+#[test]
+fn rejects_framed_guest_input_binding_when_proof_has_unexpected_segment_id() {
+    let dir = test_fixture_dir("framed-input-unexpected-segment");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let input_path = dir.join("input.bin");
+    let proof_path = dir.join("proof.bin");
+    let input_data = framed_input_bytes(&[3, 5, 8, 13]);
+    std::fs::write(&input_path, &input_data).expect("input data should write");
+    let unexpected_segment_id = 20_000;
+    let proof = ProofArtifact {
+        setup_hash: [7; 32],
+        public_values_hash: [8; 32],
+        segments: vec![
+            ProofSegment {
+                id: FRAMED_GUEST_INPUT_SEGMENT_ID,
+                data: input_data,
+            },
+            ProofSegment {
+                id: unexpected_segment_id,
+                data: vec![1],
+            },
+        ],
+    };
+    std::fs::write(
+        &proof_path,
+        encode_proof_artifact(&proof).expect("proof should encode"),
+    )
+    .expect("proof should write");
+
+    let mut stderr = Vec::new();
+    let result = verify_requested_framed_guest_input_binding(
+        "verify preflight",
+        proof_path.to_str().expect("proof path should be utf-8"),
+        Some(input_path.to_str().expect("input path should be utf-8")),
+        &mut stderr,
+    );
+    std::fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(result, None);
+    assert!(String::from_utf8(stderr)
+        .expect("stderr should be utf-8")
+        .contains(&format!(
+            "unexpected proof segment id: {unexpected_segment_id}"
+        )));
 }
 
 #[test]

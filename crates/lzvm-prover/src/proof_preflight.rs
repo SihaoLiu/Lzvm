@@ -393,23 +393,23 @@ pub fn validate_proof_public_values(
     proof: &ProofArtifact,
     public_values: &PublicValues,
 ) -> Result<ProofPreflightReport, ProofPreflightError> {
-    Ok(validate_proof_public_values_inner(proof, public_values, true)?.report)
+    validate_proof_artifact_runtime_shape(proof)?;
+    Ok(validate_proof_public_values_shape_checked(proof, public_values, true)?.report)
 }
 
 pub(crate) fn validate_proof_public_values_for_setup_preflight_with_fields(
     proof: &ProofArtifact,
     public_values: &PublicValues,
 ) -> Result<ProofPreflightValidation, ProofPreflightError> {
-    validate_proof_public_values_inner(proof, public_values, false)
+    validate_proof_artifact_runtime_shape(proof)?;
+    validate_proof_public_values_shape_checked(proof, public_values, false)
 }
 
-fn validate_proof_public_values_inner(
+fn validate_proof_public_values_shape_checked(
     proof: &ProofArtifact,
     public_values: &PublicValues,
     require_trace_constraint_evidence: bool,
 ) -> Result<ProofPreflightValidation, ProofPreflightError> {
-    validate_proof_artifact_runtime_shape(proof)?;
-
     if proof.setup_hash != public_values.setup_hash {
         return Err(ProofPreflightError::SetupHashMismatch);
     }
@@ -963,7 +963,7 @@ pub fn validate_proof_public_values_from_files(
 ) -> Result<ProofPreflightReport, ProofPreflightFileError> {
     let proof = read_checked_proof_artifact_file(proof_path)?;
     let public_values = read_public_values_file(public_values_path)?;
-    validate_proof_public_values(&proof, &public_values).map_err(Into::into)
+    Ok(validate_proof_public_values_shape_checked(&proof, &public_values, true)?.report)
 }
 
 pub fn public_values_as_fields(

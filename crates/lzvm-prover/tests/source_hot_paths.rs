@@ -2608,7 +2608,7 @@ fn lean_challenge_segment_binding_tracks_runtime_transcript_checks() {
         std::fs::read_to_string(&proof_preflight_path).expect("proof preflight source should read");
     let proof_preflight_body = function_body(
         &proof_preflight_source,
-        "fn validate_proof_public_values_inner",
+        "fn validate_proof_public_values_shape_checked",
         "fn validate_program_image_cache_tree_root_canonical",
     );
     let setup_preflight_path = crate_root.join("src/setup_preflight.rs");

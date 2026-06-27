@@ -925,6 +925,29 @@ fn rejects_setup_preflight_hashes_with_malformed_proof_artifacts() {
 }
 
 #[test]
+fn rejects_setup_preflight_hashes_with_runtime_unknown_proof_segments() {
+    let catalog = sample_catalog();
+    let setup_hash = key_directory_catalog_digest(&catalog).expect("catalog digest should compute");
+    let public_values = sample_public_values(setup_hash);
+    let unknown_segment_id = 20_000;
+    let mut proof = sample_proof(&public_values);
+    proof.segments.push(ProofSegment {
+        id: unknown_segment_id,
+        data: vec![1],
+    });
+
+    let error = validate_setup_preflight_hashes(&catalog, &proof, &public_values)
+        .expect_err("setup preflight should reject runtime-unknown proof segments");
+
+    assert_eq!(
+        error,
+        SetupPreflightError::Proof(ProofPreflightError::UnexpectedProofSegment {
+            id: unknown_segment_id
+        })
+    );
+}
+
+#[test]
 fn rejects_setup_preflight_catalog_hash_mismatches() {
     let catalog = sample_catalog();
     let mut wrong_setup_hash =

@@ -372,9 +372,6 @@ fn verify_framed_guest_input_binding(proof_bin: &str, input_data_path: &str) -> 
     let segment = segments
         .next()
         .ok_or_else(|| "missing framed guest input proof segment".to_owned())?;
-    if segments.next().is_some() {
-        return Err("duplicate framed guest input proof segment".to_owned());
-    }
     validate_framed_guest_input_segment(&segment.data)
         .map_err(|error| format!("framed guest input proof segment is invalid: {error}"))?;
     if !input_data_file_matches_segment(input, input_data_path, &segment.data)? {
