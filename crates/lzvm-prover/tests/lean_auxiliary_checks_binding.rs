@@ -1497,13 +1497,26 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         "Lean auxiliary checks should bind retained stage source selection to the Rust runtime guard"
     );
     assert!(
-        lean_source.contains("GuestPcTraceCudaRunConfig")
+        lean_source.contains("GuestPcTraceSparseSourceDebugConfig")
+            && lean_source.contains("configuredSparseSourceDebug")
+            && lean_source.contains("effectiveSparseSourceDebug")
+            && lean_source.contains("GuestPcTraceSparseSourceDebugDecisionMatches")
+            && lean_source.contains("FriRetainedStageSourceDebugConfig")
+            && lean_source.contains("configuredRetainedStageSourceDebug")
+            && lean_source.contains("selectedRetainedStageSource")
+            && lean_source.contains("effectiveRetainedStageSourceDebug")
+            && lean_source.contains("FriRetainedStageSourceDebugDecisionMatches")
+            && lean_source.contains("GuestPcTraceCudaRunConfig")
             && lean_source.contains("sparseSourceConfig")
             && lean_source.contains("selectedSparseSource")
+            && lean_source.contains("sparseSourceDebugConfig")
+            && lean_source.contains("selectedSparseSourceDebug")
             && lean_source.contains("terminalSparseSourceConfig")
             && lean_source.contains("selectedTerminalSparseSource")
             && lean_source.contains("retainedStageSourceConfig")
             && lean_source.contains("selectedRetainedStageSource")
+            && lean_source.contains("retainedStageSourceDebugConfig")
+            && lean_source.contains("selectedRetainedStageSourceDebug")
             && lean_source.contains("descriptorBufferRetentionConfig")
             && lean_source.contains("selectedDescriptorBufferRetention")
             && lean_source.contains("GuestPcTraceCudaRunDecisionMatches")
@@ -1511,17 +1524,38 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             && lean_source.contains("traceCudaRunConfigImpliesDecisionMatches")
             && lean_source.contains("GuestPcTraceCudaRunCheckedAcceptance")
             && lean_source.contains("guest_pc_trace_cuda_run_sparse_source_matches")
+            && lean_source.contains("guest_pc_trace_cuda_run_sparse_source_debug_matches")
             && lean_source.contains("guest_pc_trace_cuda_run_terminal_sparse_source_matches")
             && lean_source.contains("guest_pc_trace_cuda_run_retained_stage_source_matches")
+            && lean_source.contains(
+                "guest_pc_trace_cuda_run_retained_stage_source_debug_uses_selected_source",
+            )
+            && lean_source.contains(
+                "guest_pc_trace_cuda_run_retained_stage_source_debug_decision_matches",
+            )
+            && lean_source.contains("guest_pc_trace_cuda_run_retained_stage_source_debug_matches")
+            && lean_source.contains("fri_retained_stage_source_debug_requires_retention")
+            && lean_source.contains(
+                "guest_pc_trace_cuda_run_retained_stage_source_debug_requires_retention",
+            )
             && lean_source.contains("guest_pc_trace_cuda_run_descriptor_retention_matches")
             && lean_source.contains(
                 "guest_pc_trace_cuda_run_checked_acceptance_projects_sparse_source",
+            )
+            && lean_source.contains(
+                "guest_pc_trace_cuda_run_checked_acceptance_projects_sparse_source_debug",
             )
             && lean_source.contains(
                 "guest_pc_trace_cuda_run_checked_acceptance_projects_terminal_sparse_source",
             )
             && lean_source.contains(
                 "guest_pc_trace_cuda_run_checked_acceptance_projects_retained_stage_source",
+            )
+            && lean_source.contains(
+                "guest_pc_trace_cuda_run_checked_acceptance_projects_retained_source_debug",
+            )
+            && lean_source.contains(
+                "guest_pc_trace_cuda_run_checked_acceptance_projects_retained_debug_requires_retention",
             )
             && lean_source.contains(
                 "guest_pc_trace_cuda_run_checked_acceptance_projects_descriptor_retention",
@@ -1540,8 +1574,21 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             )
             && witness_execution_source
                 .contains("stage_source_upload: WitnessStageSourceUploadConfig")
+            && witness_execution_source.contains("debug_sparse_trace_source: bool")
+            && witness_execution_source.contains("fn debug_sparse_trace_source_enabled")
+            && witness_execution_source.contains("LZVM_CUDA_SPARSE_TRACE_SOURCE_DEBUG")
+            && compact_source_contains(
+                &witness_execution_source,
+                "debug_sparse_trace_source: debug_sparse_trace_source_enabled()",
+            )
             && witness_execution_source.contains("stage_source_retention: bool")
             && witness_execution_source.contains("stage_source_retention_debug: bool")
+            && witness_execution_source.contains("fn debug_fri_stage_source_devices")
+            && witness_execution_source.contains("LZVM_CUDA_FRI_STAGE_SOURCE_DEBUG")
+            && compact_source_contains(
+                &witness_execution_source,
+                "stage_source_retention_debug: stage_source_retention && debug_fri_stage_source_devices()",
+            )
             && witness_execution_source.contains("descriptor_buffer_retention: bool"),
         "Lean auxiliary checks should bind the grouped CUDA trace runtime config to the Rust runtime guard"
     );
@@ -1551,12 +1598,20 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "guest_pc_trace_cuda_run_sparse_source_matches",
         ),
         (
+            "guest_pc_trace_cuda_run_checked_acceptance_projects_sparse_source_debug",
+            "guest_pc_trace_cuda_run_sparse_source_debug_matches",
+        ),
+        (
             "guest_pc_trace_cuda_run_checked_acceptance_projects_terminal_sparse_source",
             "guest_pc_trace_cuda_run_terminal_sparse_source_matches",
         ),
         (
             "guest_pc_trace_cuda_run_checked_acceptance_projects_retained_stage_source",
             "guest_pc_trace_cuda_run_retained_stage_source_matches",
+        ),
+        (
+            "guest_pc_trace_cuda_run_checked_acceptance_projects_retained_source_debug",
+            "guest_pc_trace_cuda_run_retained_stage_source_debug_matches",
         ),
         (
             "guest_pc_trace_cuda_run_checked_acceptance_projects_descriptor_retention",
@@ -1572,6 +1627,24 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             ],
         );
     }
+    lean_binding::assert_theorem_body_contains(
+        &gpu_runtime_source,
+        "guest_pc_trace_cuda_run_retained_stage_source_debug_requires_retention",
+        &[
+            "fri_retained_stage_source_debug_requires_retention",
+            "guest_pc_trace_cuda_run_retained_stage_source_debug_decision_matches",
+            "guest_pc_trace_cuda_run_retained_stage_source_debug_matches",
+            "guest_pc_trace_cuda_run_retained_stage_source_debug_uses_selected_source",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &gpu_runtime_source,
+        "guest_pc_trace_cuda_run_checked_acceptance_projects_retained_debug_requires_retention",
+        &[
+            "guest_pc_trace_cuda_run_retained_stage_source_debug_requires_retention",
+            "guest_pc_trace_cuda_run_checked_acceptance_projects_decision",
+        ],
+    );
     assert!(
         lean_source.contains("GpuRetainedDeviceCacheBudget")
             && lean_source.contains("sourceBytes")
@@ -3483,10 +3556,29 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "guest_pc_trace_commit_mode_checked_acceptance_verifier_core_contract",
             "guest_pc_trace_cuda_run_checked_acceptance_projects_decision",
             "guest_pc_trace_cuda_run_sparse_source_matches",
+            "guest_pc_trace_cuda_run_sparse_source_debug_matches",
             "guest_pc_trace_cuda_run_terminal_sparse_source_matches",
             "guest_pc_trace_cuda_run_retained_stage_source_matches",
+            concat!(
+                "guest_pc_trace_cuda_run_retained_stage_source_debug_",
+                "uses_selected_source"
+            ),
+            concat!(
+                "guest_pc_trace_cuda_run_retained_stage_source_debug_",
+                "decision_matches"
+            ),
+            "guest_pc_trace_cuda_run_retained_stage_source_debug_matches",
+            "fri_retained_stage_source_debug_requires_retention",
+            concat!(
+                "guest_pc_trace_cuda_run_retained_stage_source_debug_",
+                "requires_retention"
+            ),
             "guest_pc_trace_cuda_run_descriptor_retention_matches",
             "guest_pc_trace_cuda_run_checked_acceptance_projects_sparse_source",
+            concat!(
+                "guest_pc_trace_cuda_run_checked_acceptance_",
+                "projects_sparse_source_debug"
+            ),
             concat!(
                 "guest_pc_trace_cuda_run_checked_acceptance_",
                 "projects_terminal_sparse_source"
@@ -3494,6 +3586,14 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             concat!(
                 "guest_pc_trace_cuda_run_checked_acceptance_",
                 "projects_retained_stage_source"
+            ),
+            concat!(
+                "guest_pc_trace_cuda_run_checked_acceptance_",
+                "projects_retained_source_debug"
+            ),
+            concat!(
+                "guest_pc_trace_cuda_run_checked_acceptance_",
+                "projects_retained_debug_requires_retention"
             ),
             concat!(
                 "guest_pc_trace_cuda_run_checked_acceptance_",

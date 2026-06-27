@@ -953,6 +953,19 @@ structure GuestPcTraceSparseSourceValidation where
       sparseSourceConfigAccepted config publicInput proof ->
         GuestPcTraceSparseSourceDecisionMatches config
 
+structure GuestPcTraceSparseSourceDebugConfig where
+  configuredSparseSourceDebug : Option Bool
+  effectiveSparseSourceDebug : Bool
+deriving DecidableEq, Repr
+
+def GuestPcTraceSparseSourceDebugDecisionMatches
+    (config : GuestPcTraceSparseSourceDebugConfig) : Prop :=
+  match config.configuredSparseSourceDebug with
+  | some configured =>
+      config.effectiveSparseSourceDebug = configured
+  | none =>
+      config.effectiveSparseSourceDebug = false
+
 structure GuestPcTraceTerminalSparseSourceConfig where
   configuredTerminalSparseSourceEnabled : Option Bool
   effectiveTerminalSparseSourceSelected : Bool
@@ -1003,13 +1016,32 @@ structure FriRetainedStageSourceValidation where
       retainedStageSourceConfigAccepted config publicInput proof ->
         FriRetainedStageSourceDecisionMatches config
 
+structure FriRetainedStageSourceDebugConfig where
+  configuredRetainedStageSourceDebug : Option Bool
+  selectedRetainedStageSource : Bool
+  effectiveRetainedStageSourceDebug : Bool
+deriving DecidableEq, Repr
+
+def FriRetainedStageSourceDebugDecisionMatches
+    (config : FriRetainedStageSourceDebugConfig) : Prop :=
+  match config.configuredRetainedStageSourceDebug with
+  | some configured =>
+      config.effectiveRetainedStageSourceDebug =
+        (config.selectedRetainedStageSource && configured)
+  | none =>
+      config.effectiveRetainedStageSourceDebug = false
+
 structure GuestPcTraceCudaRunConfig where
   sparseSourceConfig : GuestPcTraceSparseSourceConfig
   selectedSparseSource : Bool
+  sparseSourceDebugConfig : GuestPcTraceSparseSourceDebugConfig
+  selectedSparseSourceDebug : Bool
   terminalSparseSourceConfig : GuestPcTraceTerminalSparseSourceConfig
   selectedTerminalSparseSource : Bool
   retainedStageSourceConfig : FriRetainedStageSourceConfig
   selectedRetainedStageSource : Bool
+  retainedStageSourceDebugConfig : FriRetainedStageSourceDebugConfig
+  selectedRetainedStageSourceDebug : Bool
   descriptorBufferRetentionConfig :
     GuestPcTraceDescriptorBufferRetentionConfig
   selectedDescriptorBufferRetention : Bool
@@ -1020,6 +1052,10 @@ def GuestPcTraceCudaRunDecisionMatches
   GuestPcTraceSparseSourceDecisionMatches config.sparseSourceConfig
     /\ config.selectedSparseSource =
       config.sparseSourceConfig.effectiveSparseSourceSelected
+    /\ GuestPcTraceSparseSourceDebugDecisionMatches
+      config.sparseSourceDebugConfig
+    /\ config.selectedSparseSourceDebug =
+      config.sparseSourceDebugConfig.effectiveSparseSourceDebug
     /\ GuestPcTraceTerminalSparseSourceDecisionMatches
       config.terminalSparseSourceConfig
     /\ config.selectedTerminalSparseSource =
@@ -1028,6 +1064,12 @@ def GuestPcTraceCudaRunDecisionMatches
       config.retainedStageSourceConfig
     /\ config.selectedRetainedStageSource =
       config.retainedStageSourceConfig.effectiveRetainedStageSourceEnabled
+    /\ config.retainedStageSourceDebugConfig.selectedRetainedStageSource =
+      config.selectedRetainedStageSource
+    /\ FriRetainedStageSourceDebugDecisionMatches
+      config.retainedStageSourceDebugConfig
+    /\ config.selectedRetainedStageSourceDebug =
+      config.retainedStageSourceDebugConfig.effectiveRetainedStageSourceDebug
     /\ GuestPcTraceDescriptorBufferRetentionDecisionMatches
       config.descriptorBufferRetentionConfig
     /\ config.selectedDescriptorBufferRetention =
