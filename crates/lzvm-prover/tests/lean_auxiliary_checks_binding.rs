@@ -1415,6 +1415,17 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             && witness_execution_source.contains("fn sparse_trace_source_max_percent")
             && witness_execution_source.contains("LZVM_CUDA_SPARSE_TRACE_SOURCE_MAX_PERCENT")
             && witness_execution_source.contains("unwrap_or(45)")
+            && witness_execution_source.contains("struct WitnessStageSourceUploadConfig")
+            && witness_execution_source.contains("selected_stage_source_upload_config")
+            && compact_source_contains(
+                &witness_execution_source,
+                "sparse_trace_source: sparse_trace_source_enabled()",
+            )
+            && compact_source_contains(
+                &witness_execution_source,
+                "sparse_trace_source_max_percent: sparse_trace_source_max_percent()",
+            )
+            && witness_execution_source.contains("upload_config.sparse_trace_source")
             && witness_execution_source
                 .contains("trace_words.len().saturating_mul(max_percent) / 100")
             && witness_execution_source.contains("nonzero_count > max_nonzero_words"),
@@ -1438,6 +1449,11 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             && witness_execution_source.contains("LZVM_CUDA_TERMINAL_SPARSE_TRACE_SOURCE")
             && witness_execution_source.contains("unwrap_or(false)")
             && witness_execution_source.contains("terminal_sparse_trace_source_enabled()")
+            && compact_source_contains(
+                &witness_execution_source,
+                "terminal_sparse_trace_source: terminal_sparse_trace_source_enabled()",
+            )
+            && witness_execution_source.contains("upload_config.terminal_sparse_trace_source")
             && witness_execution_source.contains("if prefix_rows < layout.row_count()")
             && witness_execution_source
                 .contains("upload_from_trace_prefix_and_terminal_fill_if_empty"),

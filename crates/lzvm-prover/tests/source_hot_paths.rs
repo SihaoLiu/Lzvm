@@ -1703,6 +1703,20 @@ fn guest_pc_trace_segments_pass_terminal_prefix_rows_to_cuda_source_upload() {
         execution_source.contains("upload_from_trace_prefix_and_terminal_fill_if_empty"),
         "CUDA source upload should be able to avoid H2D for terminal padding rows"
     );
+    let upload_body = function_body(
+        &execution_source,
+        "impl WitnessStageSourceDeviceCache",
+        "fn validate_trace_shape",
+    );
+    assert!(
+        upload_body.contains("upload_config: Option<WitnessStageSourceUploadConfig>")
+            && upload_body.contains("selected_stage_source_upload_config(upload_config)")
+            && upload_body.contains("upload_config.terminal_sparse_trace_source")
+            && upload_body.contains("upload_config.sparse_trace_source")
+            && upload_body.contains("upload_config.sparse_trace_source_max_percent")
+            && upload_body.contains("upload_config.debug_sparse_trace_source"),
+        "CUDA source upload should consume cached terminal and sparse upload settings"
+    );
 }
 
 #[test]
@@ -4272,11 +4286,13 @@ fn guest_pc_trace_segment_commit_uses_worker_state() {
             && mode_body.contains("async_single_worker: bool")
             && mode_body.contains("traceless_commitment_input: bool")
             && mode_body.contains("cross_segment_root_materialization: bool")
+            && mode_body.contains("stage_source_upload_config: WitnessStageSourceUploadConfig")
             && mode_body.contains("pending_root_materialization_window: usize")
             && mode_body.contains(
                 "guest_pc_trace_segment_commit_worker_count_for_input_with_override"
             )
             && mode_body.contains("guest_pc_cross_segment_root_materialization_selected")
+            && mode_body.contains("WitnessStageSourceUploadConfig::from_env()")
             && compact_source_contains(
                 mode_body,
                 "let pending_root_materialization_window = if cross_segment_root_materialization"
