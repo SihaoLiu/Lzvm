@@ -186,11 +186,18 @@ def load_env_file(path: Path, root: Path) -> None:
     if not path.is_file():
         raise SystemExit(f"--env-file must be a file: {path}")
     clear_env_file_controlled_names()
+    seen_names: dict[str, int] = {}
     with path.open(encoding="utf-8") as source:
         for line_number, line in enumerate(source, start=1):
             assignment = parse_env_file_assignment(line, path, line_number)
             if assignment is not None:
                 name, value = assignment
+                if name in seen_names:
+                    raise SystemExit(
+                        f"{path}:{line_number}: duplicate env name in --env-file: "
+                        f"{name} first set on line {seen_names[name]}"
+                    )
+                seen_names[name] = line_number
                 os.environ[name] = value
 
 

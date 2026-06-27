@@ -2008,6 +2008,44 @@ fn eth_proof_timing_batch_env_file_rejects_unapproved_env_names() {
 }
 
 #[test]
+fn eth_proof_timing_batch_env_file_rejects_duplicate_names() {
+    let fixture = ProofFixture::new("eth-proof-timing-batch-env-file-duplicate");
+    let env_path = fixture.dir.join("duplicate.env");
+    std::fs::write(
+        &env_path,
+        format!("export {SMALL_PREFIX}_TRACE_LIMIT=42\nexport {SMALL_PREFIX}_TRACE_LIMIT=43\n"),
+    )
+    .expect("env file should write");
+    let mut command = Command::new(script_path());
+    command
+        .arg("--check-profile-tools")
+        .arg("--env-file")
+        .arg(&env_path);
+    clear_env(&mut command, SMALL_PREFIX);
+    clear_env(&mut command, LARGE_PREFIX);
+
+    let output = command
+        .output()
+        .expect("ETH proof timing batch env-file duplicate rejection should run");
+    let success = output.status.success();
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    fixture.cleanup();
+
+    assert!(!success, "duplicate env name should be rejected");
+    assert!(
+        stdout.is_empty(),
+        "duplicate env-file rejection should happen before partial diagnostics: {stdout}"
+    );
+    assert!(
+        stderr.contains(&format!(
+            "duplicate env name in --env-file: {SMALL_PREFIX}_TRACE_LIMIT first set on line 1"
+        )),
+        "duplicate env-file rejection should identify the repeated name: stderr={stderr}"
+    );
+}
+
+#[test]
 fn eth_proof_timing_batch_rejects_env_file_outside_temp() {
     let env_path = workspace_root().join(format!(
         "target/eth-proof-timing-batch-env-file-outside-{}.env",
