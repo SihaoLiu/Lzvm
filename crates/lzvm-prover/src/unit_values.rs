@@ -409,3 +409,45 @@ fn stage_value_dimension(value: &StageValue) -> Result<usize, ProveUnitValuesSeg
             .ok_or(ProveUnitValuesSegmentError::LengthOverflow)
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use lzvm_field::MODULUS;
+
+    fn stage_value(name: &str, stage: u32) -> StageValue {
+        StageValue {
+            name: name.to_owned(),
+            stage,
+            lengths: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn parsed_unit_values_loader_rejects_noncanonical_in_memory_values() {
+        let parsed = UnitValuesSegment {
+            units: vec![UnitValuesUnitSegment {
+                unit_index: 0,
+                trace_instance_index: 0,
+                values: vec![MODULUS],
+            }],
+        };
+
+        let error = load_unit_values_for_identity_from_parsed_segment(
+            0,
+            0,
+            &[stage_value("unit.alpha", 1)],
+            Some(&parsed),
+        )
+        .expect_err("parsed in-memory unit value should still be canonical");
+
+        assert_eq!(
+            error,
+            LoadUnitValuesSegmentError::NonCanonicalValue {
+                unit_index: 0,
+                index: 0,
+                source: FieldError::NonCanonical { value: MODULUS },
+            }
+        );
+    }
+}

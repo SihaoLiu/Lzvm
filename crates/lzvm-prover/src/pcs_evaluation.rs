@@ -292,3 +292,84 @@ pub fn build_pcs_evaluation_segment(
         data: encode_pcs_evaluation_segment(&segment)?,
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use lzvm_artifacts::key_directory::KeyUnitKind;
+    use lzvm_field::MODULUS;
+
+    #[test]
+    fn parsed_pcs_evaluation_loader_rejects_noncanonical_in_memory_values() {
+        let parsed = PcsEvaluationSegment {
+            units: vec![PcsEvaluationUnitSegment {
+                unit_index: 0,
+                trace_instance_index: 0,
+                values: vec![[MODULUS, 1, 2]],
+            }],
+        };
+
+        let error = load_pcs_evaluation_unit_for_identity_from_parsed_segment(
+            0,
+            0,
+            &sample_unit(1),
+            &parsed,
+        )
+        .expect_err("parsed in-memory PCS evaluation value should still be canonical");
+
+        assert_eq!(
+            error,
+            LoadPcsEvaluationUnitError::ValueNonCanonical {
+                unit_index: 0,
+                value_index: 0,
+                word_index: 0,
+                source: FieldError::NonCanonical { value: MODULUS },
+            }
+        );
+    }
+
+    fn sample_unit(evaluation_value_count: usize) -> ProveUnitSchedule {
+        ProveUnitSchedule {
+            kind: KeyUnitKind::Basic,
+            group_id: None,
+            unit_id: None,
+            group_name: None,
+            unit_name: None,
+            base_domain_bits: 0,
+            extended_domain_bits: 0,
+            base_domain_size: 0,
+            extended_domain_size: 0,
+            blowup_factor: 0,
+            query_count: 0,
+            proof_of_work_bits: 0,
+            merkle_tree_arity: 0,
+            last_level_verification: 0,
+            transcript_arity: None,
+            hash_commits: false,
+            transcript_root_challenge_draws: Vec::new(),
+            challenge_count: 0,
+            evaluation_value_count,
+            evaluation_map: Vec::new(),
+            transcript_evaluation_challenge_draws: 0,
+            constant_width: 0,
+            stage_commit_widths: Vec::new(),
+            commitment_columns: Vec::new(),
+            unit_value_map: Vec::new(),
+            group_value_map: Vec::new(),
+            opening_points: Vec::new(),
+            fri_layers: Vec::new(),
+            final_layer_bits: 0,
+            fixed_bytes: 0,
+            constant_tree_root: None,
+            pcs_material_bytes: None,
+            pcs_material_plan_digest: None,
+            pcs_material_fixed_column_digest: None,
+            pcs_material_constant_tree_digest: None,
+            pcs_material_constant_tree_root: None,
+            pcs_material_fixed_byte_count: None,
+            pcs_material_constant_tree_byte_count: None,
+            pcs_material_leaf_byte_count: None,
+            pcs_material_node_byte_count: None,
+        }
+    }
+}
