@@ -70,10 +70,6 @@ fn validate_pcs_fri_opening_units(
         {
             return Err(ValidatePcsFriOpeningSegmentsError::UnitMismatch { unit_index });
         }
-        for value in &opening_unit.final_polynomial {
-            field_extension_from_words(*value)?;
-        }
-
         for (layer_offset, (layer, expected_layer)) in opening_unit
             .layers
             .iter()
@@ -132,8 +128,9 @@ fn validate_pcs_fri_opening_units(
                 let values = query
                     .values
                     .iter()
-                    .map(|value| field_extension_from_words(*value))
-                    .collect::<Result<Vec<_>, _>>()?;
+                    .copied()
+                    .map(field_extension_from_words)
+                    .collect::<Vec<_>>();
                 let siblings = query
                     .siblings
                     .iter()
@@ -432,12 +429,12 @@ fn checked_pow_validation(base: usize, power: u32) -> Option<usize> {
     Some(out)
 }
 
-fn field_extension_from_words(words: [u64; 3]) -> Result<Ext3, ValidatePcsFriOpeningSegmentsError> {
-    Ok(Ext3::new(
-        Felt::from_canonical(words[0]).map_err(ValidatePcsFriOpeningSegmentsError::FieldValue)?,
-        Felt::from_canonical(words[1]).map_err(ValidatePcsFriOpeningSegmentsError::FieldValue)?,
-        Felt::from_canonical(words[2]).map_err(ValidatePcsFriOpeningSegmentsError::FieldValue)?,
-    ))
+fn field_extension_from_words(words: [u64; 3]) -> Ext3 {
+    Ext3::new(
+        Felt::from_u64(words[0]),
+        Felt::from_u64(words[1]),
+        Felt::from_u64(words[2]),
+    )
 }
 
 fn field_digest_from_words(

@@ -47,7 +47,6 @@ pub enum ValidatePcsFriOpeningSegmentsError {
     LastLevelCountOverflow,
     LevelCountOverflow,
     InvalidTreeShape,
-    FieldValue(FieldError),
     FieldDigest(FieldError),
 }
 
@@ -162,9 +161,6 @@ impl fmt::Display for ValidatePcsFriOpeningSegmentsError {
             }
             Self::LevelCountOverflow => write!(f, "PCS FRI opening segment level count overflow"),
             Self::InvalidTreeShape => write!(f, "PCS FRI opening segment invalid tree shape"),
-            Self::FieldValue(error) => {
-                write!(f, "invalid PCS FRI opening segment value: {error}")
-            }
             Self::FieldDigest(error) => {
                 write!(f, "invalid PCS FRI opening segment digest: {error}")
             }
@@ -178,7 +174,7 @@ impl std::error::Error for ValidatePcsFriOpeningSegmentsError {
             Self::QueryPlan(error) => Some(error),
             Self::Opening(error) => Some(error),
             Self::Merkle { source, .. } => Some(source),
-            Self::FieldValue(error) | Self::FieldDigest(error) => Some(error),
+            Self::FieldDigest(error) => Some(error),
             Self::UnitCountMismatch
             | Self::UnitMismatch { .. }
             | Self::UnitIndexOverflow

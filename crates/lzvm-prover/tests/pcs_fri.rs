@@ -2,15 +2,16 @@ use lzvm_artifacts::global_info::{CurveKind, GlobalInfo};
 use lzvm_artifacts::key_directory::KeyUnitKind;
 use lzvm_artifacts::pcs_evaluation_segment::PCS_EVALUATION_SEGMENT_ID;
 use lzvm_artifacts::pcs_fri_segment::{
-    encode_pcs_fri_opening_segment, PcsFriOpeningLayerSegment, PcsFriOpeningQuerySegment,
-    PcsFriOpeningSegment, PcsFriOpeningUnitSegment, PCS_FRI_OPENING_SEGMENT_ID,
+    encode_pcs_fri_opening_segment, parse_pcs_fri_opening_segment, PcsFriOpeningLayerSegment,
+    PcsFriOpeningQuerySegment, PcsFriOpeningSegment, PcsFriOpeningSegmentError,
+    PcsFriOpeningUnitSegment, PCS_FRI_OPENING_SEGMENT_ID,
 };
 use lzvm_artifacts::pcs_plan::PcsFriLayer;
 use lzvm_artifacts::pcs_query_segment::{
     encode_pcs_query_plan_segment, PcsQueryPlanSegment, PcsQueryPlanUnit, PCS_QUERY_PLAN_SEGMENT_ID,
 };
 use lzvm_artifacts::proof::ProofSegment;
-use lzvm_field::{poseidon2_hash_8, Ext3, Felt, SHIFT};
+use lzvm_field::{poseidon2_hash_8, Ext3, Felt, FieldError, MODULUS, SHIFT};
 use lzvm_prover::pcs_fri::{
     build_pcs_fri_opening_unit, build_pcs_fri_opening_unit_with_timing,
     build_pcs_fri_transcript_commitments, load_pcs_fri_opening_segment_from_segments,
@@ -525,6 +526,50 @@ fn rejects_invalid_pcs_fri_opening_segment() {
 }
 
 #[test]
+fn rejects_noncanonical_pcs_fri_final_polynomial_values_while_parsing() {
+    let mut unit = sample_fri_opening_unit(0);
+    unit.final_polynomial[0][0] = 2_000_003;
+    let mut segment = pcs_fri_opening_proof_segment(vec![unit]);
+    replace_unique_u64_word(&mut segment.data, 2_000_003, MODULUS);
+
+    let error =
+        parse_pcs_fri_opening_segment(&segment.data).expect_err("final value should be canonical");
+
+    assert_eq!(
+        error,
+        PcsFriOpeningSegmentError::FinalPolynomialValueNonCanonical {
+            unit_index: 0,
+            value_index: 0,
+            word_index: 0,
+            source: FieldError::NonCanonical { value: MODULUS },
+        }
+    );
+}
+
+#[test]
+fn rejects_noncanonical_pcs_fri_query_values_while_parsing() {
+    let mut unit = sample_fri_opening_unit(0);
+    unit.layers[0].queries[0].values[0][0] = 1_000_003;
+    let mut segment = pcs_fri_opening_proof_segment(vec![unit]);
+    replace_unique_u64_word(&mut segment.data, 1_000_003, MODULUS);
+
+    let error =
+        parse_pcs_fri_opening_segment(&segment.data).expect_err("query value should be canonical");
+
+    assert_eq!(
+        error,
+        PcsFriOpeningSegmentError::QueryValueNonCanonical {
+            unit_index: 0,
+            layer_index: 0,
+            row_index: 0,
+            value_index: 0,
+            word_index: 0,
+            source: FieldError::NonCanonical { value: MODULUS },
+        }
+    );
+}
+
+#[test]
 fn rejects_duplicate_pcs_fri_opening_segments() {
     let segment = pcs_fri_opening_proof_segment(vec![sample_fri_opening_unit(0)]);
 
@@ -1017,6 +1062,22 @@ fn pcs_fri_opening_proof_segment(units: Vec<PcsFriOpeningUnitSegment>) -> ProofS
         data: encode_pcs_fri_opening_segment(&PcsFriOpeningSegment { units })
             .expect("segment should encode"),
     }
+}
+
+fn replace_unique_u64_word(data: &mut [u8], original: u64, replacement: u64) {
+    let original_bytes = original.to_le_bytes();
+    let matches = data
+        .windows(original_bytes.len())
+        .enumerate()
+        .filter_map(|(offset, window)| (window == original_bytes).then_some(offset))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        matches.len(),
+        1,
+        "word should occur exactly once in encoded segment"
+    );
+    let offset = matches[0];
+    data[offset..offset + original_bytes.len()].copy_from_slice(&replacement.to_le_bytes());
 }
 
 fn valid_pcs_fri_opening_segments() -> (ProveUnitSchedule, Vec<ProofSegment>) {
