@@ -273,6 +273,7 @@ structure GuestPcTraceTimingSummary where
   guestTraceParallelLowerReceivedCount : Nat
   guestTraceParallelLowerEmittedCount : Nat
   guestTraceParallelLowerMaxReorderCount : Nat
+  guestTraceOwnedStreamingLowerSegmentCount : Nat
   guestTraceParallelLowerStreamStartDispatchWaitMilliseconds : Nat
   guestTraceParallelLowerStreamChunkDispatchWaitMilliseconds : Nat
   guestTraceParallelLowerStreamSegmentDispatchWaitMilliseconds : Nat

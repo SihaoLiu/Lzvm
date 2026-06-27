@@ -332,6 +332,7 @@ theorem guest_pc_trace_emit_descriptor_wait_timing_acceptance_sound
       pendingReceiveWaitMilliseconds segmentSendWaitMilliseconds
       segmentReceiveWaitMilliseconds parallelWorkerCount parallelDispatchedCount
       parallelReceivedCount parallelEmittedCount parallelMaxReorderCount
+      ownedStreamingLowerSegmentCount
       parallelStreamStartDispatchWaitMilliseconds
       parallelStreamChunkDispatchWaitMilliseconds
       parallelStreamSegmentDispatchWaitMilliseconds
@@ -353,6 +354,7 @@ theorem guest_pc_trace_emit_descriptor_wait_timing_acceptance_sound
             guestTraceParallelLowerReceivedCount := parallelReceivedCount
             guestTraceParallelLowerEmittedCount := parallelEmittedCount
             guestTraceParallelLowerMaxReorderCount := parallelMaxReorderCount
+            guestTraceOwnedStreamingLowerSegmentCount := ownedStreamingLowerSegmentCount
             guestTraceParallelLowerStreamStartDispatchWaitMilliseconds :=
               parallelStreamStartDispatchWaitMilliseconds
             guestTraceParallelLowerStreamChunkDispatchWaitMilliseconds :=
@@ -382,6 +384,7 @@ theorem guest_pc_trace_emit_descriptor_wait_timing_acceptance_sound
           guestTraceParallelLowerReceivedCount := parallelReceivedCount
           guestTraceParallelLowerEmittedCount := parallelEmittedCount
           guestTraceParallelLowerMaxReorderCount := parallelMaxReorderCount
+          guestTraceOwnedStreamingLowerSegmentCount := ownedStreamingLowerSegmentCount
           guestTraceParallelLowerStreamStartDispatchWaitMilliseconds :=
             parallelStreamStartDispatchWaitMilliseconds
           guestTraceParallelLowerStreamChunkDispatchWaitMilliseconds :=
@@ -402,6 +405,7 @@ theorem guest_pc_trace_emit_descriptor_wait_timing_acceptance_verifier_core_cont
       pendingReceiveWaitMilliseconds segmentSendWaitMilliseconds
       segmentReceiveWaitMilliseconds parallelWorkerCount parallelDispatchedCount
       parallelReceivedCount parallelEmittedCount parallelMaxReorderCount
+      ownedStreamingLowerSegmentCount
       parallelStreamStartDispatchWaitMilliseconds
       parallelStreamChunkDispatchWaitMilliseconds
       parallelStreamSegmentDispatchWaitMilliseconds
@@ -423,6 +427,7 @@ theorem guest_pc_trace_emit_descriptor_wait_timing_acceptance_verifier_core_cont
             guestTraceParallelLowerReceivedCount := parallelReceivedCount
             guestTraceParallelLowerEmittedCount := parallelEmittedCount
             guestTraceParallelLowerMaxReorderCount := parallelMaxReorderCount
+            guestTraceOwnedStreamingLowerSegmentCount := ownedStreamingLowerSegmentCount
             guestTraceParallelLowerStreamStartDispatchWaitMilliseconds :=
               parallelStreamStartDispatchWaitMilliseconds
             guestTraceParallelLowerStreamChunkDispatchWaitMilliseconds :=
@@ -451,6 +456,7 @@ theorem guest_pc_trace_emit_descriptor_wait_timing_acceptance_verifier_core_cont
             guestTraceParallelLowerReceivedCount := parallelReceivedCount
             guestTraceParallelLowerEmittedCount := parallelEmittedCount
             guestTraceParallelLowerMaxReorderCount := parallelMaxReorderCount
+            guestTraceOwnedStreamingLowerSegmentCount := ownedStreamingLowerSegmentCount
             guestTraceParallelLowerStreamStartDispatchWaitMilliseconds :=
               parallelStreamStartDispatchWaitMilliseconds
             guestTraceParallelLowerStreamChunkDispatchWaitMilliseconds :=

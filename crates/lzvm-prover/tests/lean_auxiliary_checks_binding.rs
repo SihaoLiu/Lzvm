@@ -1052,6 +1052,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             && lean_source.contains("guestTraceParallelLowerReceivedCount")
             && lean_source.contains("guestTraceParallelLowerEmittedCount")
             && lean_source.contains("guestTraceParallelLowerMaxReorderCount")
+            && lean_source.contains("guestTraceOwnedStreamingLowerSegmentCount")
             && lean_source.contains("guestTraceParallelLowerStreamStartDispatchWaitMilliseconds")
             && lean_source.contains("guestTraceParallelLowerStreamChunkDispatchWaitMilliseconds")
             && lean_source.contains("guestTraceParallelLowerStreamSegmentDispatchWaitMilliseconds")
@@ -1465,6 +1466,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         "guestTraceParallelLowerReceivedCount",
         "guestTraceParallelLowerEmittedCount",
         "guestTraceParallelLowerMaxReorderCount",
+        "guestTraceOwnedStreamingLowerSegmentCount",
         "guestTraceParallelLowerStreamStartDispatchWaitMilliseconds",
         "guestTraceParallelLowerStreamChunkDispatchWaitMilliseconds",
         "guestTraceParallelLowerStreamSegmentDispatchWaitMilliseconds",
@@ -1799,6 +1801,10 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         (
             "\"guest_trace_parallel_lower_report_elided_count\"",
             "guest_trace_parallel_lower_report_elided_count()",
+        ),
+        (
+            "\"guest_trace_owned_streaming_lower_segments\"",
+            "guest_trace_owned_streaming_lower_segment_count()",
         ),
         (
             "\"guest_trace_parallel_lower_dispatch_wait\"",
