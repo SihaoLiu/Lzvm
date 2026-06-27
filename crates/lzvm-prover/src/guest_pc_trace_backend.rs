@@ -1175,6 +1175,12 @@ impl GuestPcTraceStreamTiming {
     }
 }
 
+#[cfg(feature = "cuda")]
+fn record_owned_streaming_lower_segment(timing: &mut GuestPcTraceStreamTiming) {
+    timing.owned_streaming_lower_segment_count =
+        timing.owned_streaming_lower_segment_count.saturating_add(1);
+}
+
 struct DurationTimer<'a> {
     target: Option<&'a mut Duration>,
     started: Option<Instant>,
@@ -5779,8 +5785,7 @@ fn lower_guest_pc_trace_owned_streaming_pending_segment(
     } = builder.finish(pending.terminal_pc, timing.as_deref_mut())?;
     if let Some(timing) = timing {
         timing.trace_lower_duration += lower_started.elapsed();
-        timing.owned_streaming_lower_segment_count =
-            timing.owned_streaming_lower_segment_count.saturating_add(1);
+        record_owned_streaming_lower_segment(timing);
     }
     let next_seed = ZiskMainSegmentSeed {
         initial_state: continuation_state,
@@ -6879,6 +6884,7 @@ impl GuestPcTraceActiveChunkedSegment {
         } = self
             .builder
             .finish(self.pending.terminal_pc, Some(timing))?;
+        record_owned_streaming_lower_segment(timing);
         let next_seed = ZiskMainSegmentSeed {
             initial_state: continuation_state.clone(),
             previous_c: final_state.last_c,
@@ -7530,6 +7536,7 @@ impl GuestPcTraceParallelStreamedSegment {
         };
         timing.parallel_lower_stream_segment_count =
             timing.parallel_lower_stream_segment_count.saturating_add(1);
+        record_owned_streaming_lower_segment(timing);
         Ok(GuestPcTraceSeededLoweredSegment {
             seed: self.seed,
             lowered: GuestPcTraceLoweredSegment {

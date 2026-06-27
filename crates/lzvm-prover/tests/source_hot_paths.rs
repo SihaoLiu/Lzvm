@@ -6548,6 +6548,10 @@ fn guest_pc_trace_owned_streaming_lower_remains_cuda_opt_in() {
         stream_timing_fields.contains("owned_streaming_lower_segment_count"),
         "owned streaming guest PC trace lowering should report successful device lowers"
     );
+    assert!(
+        backend_source.contains("fn record_owned_streaming_lower_segment"),
+        "owned streaming guest PC trace lowering should use a shared activation counter"
+    );
 
     let owned_lower_body = function_body(
         &backend_source,
@@ -6555,8 +6559,28 @@ fn guest_pc_trace_owned_streaming_lower_remains_cuda_opt_in() {
         "#[cfg(test)]\nfn lower_guest_pc_trace_seeded_pending_segments_with_workers",
     );
     assert!(
-        owned_lower_body.contains("owned_streaming_lower_segment_count.saturating_add(1)"),
+        owned_lower_body.contains("record_owned_streaming_lower_segment(timing)"),
         "owned streaming guest PC trace lowering should count only completed device lowers"
+    );
+
+    let active_chunked_body = function_body(
+        &backend_source,
+        "impl GuestPcTraceActiveChunkedSegment",
+        "fn finish_guest_pc_trace_chunked_pending_segment",
+    );
+    assert!(
+        active_chunked_body.contains("record_owned_streaming_lower_segment(timing)"),
+        "active chunked guest PC trace lowering should count completed device lowers"
+    );
+
+    let parallel_streamed_body = function_body(
+        &backend_source,
+        "impl GuestPcTraceParallelStreamedSegment",
+        "fn dispatch_guest_pc_trace_parallel_lower_job",
+    );
+    assert!(
+        parallel_streamed_body.contains("record_owned_streaming_lower_segment(timing)"),
+        "parallel streamed guest PC trace lowering should count completed device lowers"
     );
 
     let proof_timing_fields = function_body(

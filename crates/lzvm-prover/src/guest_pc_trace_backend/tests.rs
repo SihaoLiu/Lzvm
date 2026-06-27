@@ -2796,6 +2796,10 @@ fn live_report_chunk_parallel_lower_streams_chunks_to_workers() {
         "worker streaming should use replay snapshots for terminal fallback without retaining every streamed report"
     );
     assert!(produced.timing.parallel_lower_stream_segment_count() > 0);
+    assert_eq!(
+        produced.timing.owned_streaming_lower_segment_count(),
+        produced.timing.parallel_lower_stream_segment_count()
+    );
     for (emitted, expected) in emitted.iter().zip(expected.iter()) {
         assert_eq!(emitted.trace_instance_index, expected.trace_instance_index);
         assert_eq!(
@@ -3275,11 +3279,18 @@ fn seeded_pending_segment_owned_streaming_lower_matches_borrowed_output() {
     let borrowed =
         lower_guest_pc_trace_seeded_pending_segment(&layout, &segment, &seed, None, None)
             .expect("borrowed seeded segment should lower");
-    let owned =
-        lower_guest_pc_trace_owned_streaming_pending_segment(&layout, segment, &seed, None, None)
-            .expect("owned streaming seeded segment should lower");
+    let mut owned_timing = GuestPcTraceStreamTiming::default();
+    let owned = lower_guest_pc_trace_owned_streaming_pending_segment(
+        &layout,
+        segment,
+        &seed,
+        None,
+        Some(&mut owned_timing),
+    )
+    .expect("owned streaming seeded segment should lower");
 
     assert_eq!(owned.next_seed, borrowed.next_seed);
+    assert_eq!(owned_timing.owned_streaming_lower_segment_count(), 1);
     assert_eq!(
         owned.segment.trace_instance_index,
         borrowed.segment.trace_instance_index
