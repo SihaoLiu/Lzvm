@@ -6501,6 +6501,41 @@ fn guest_pc_trace_parallel_lowerer_stays_seeded_and_opt_in() {
             && parallel_body.contains("GuestPcTraceParallelLowerJob::WorkUnit"),
         "work-unit guest PC trace lowering should dispatch retained-report work units through the explicit worker job"
     );
+    assert!(
+        parallel_body.contains("let lower_mode = GuestPcTraceParallelLowerMode::from_env();")
+            && parallel_body.contains("lower_mode.work_units")
+            && parallel_body.contains("lower_mode.stream_chunks")
+            && parallel_body.contains("lower_guest_pc_trace_parallel_pending_job_with_mode")
+            && !parallel_body.contains("guest_pc_trace_parallel_lower_work_units_enabled()")
+            && !parallel_body.contains("guest_pc_trace_parallel_stream_chunks_enabled()"),
+        "parallel guest PC trace lowering should cache mode flags before worker and dispatcher loops"
+    );
+    let parallel_job_body = function_body(
+        &backend_source,
+        "fn lower_guest_pc_trace_parallel_pending_job_with_mode",
+        "#[cfg(feature = \"cuda\")]\nstruct GuestPcTraceParallelStreamedSegment",
+    );
+    assert!(
+        parallel_job_body.contains("if lower_mode.replay_snapshot")
+            && parallel_job_body.contains("if lower_mode.owned_streaming_lower")
+            && !parallel_job_body
+                .contains("guest_pc_trace_parallel_lower_replay_snapshot_enabled()")
+            && !parallel_job_body.contains("guest_pc_trace_owned_streaming_lower_enabled()"),
+        "parallel guest PC trace worker jobs should use cached lower mode flags"
+    );
+    let pending_lower_body = function_body(
+        &backend_source,
+        "fn lower_guest_pc_trace_pending_segments",
+        "fn validate_guest_pc_trace_pending_segment_seed",
+    );
+    assert!(
+        pending_lower_body
+            .matches("guest_pc_trace_owned_streaming_lower_enabled()")
+            .count()
+            == 1
+            && pending_lower_body.contains("if owned_streaming_lower"),
+        "single-worker guest PC trace lowering should cache the owned device lower gate outside the segment loop"
+    );
 
     let helper_body = function_body(
         &backend_source,

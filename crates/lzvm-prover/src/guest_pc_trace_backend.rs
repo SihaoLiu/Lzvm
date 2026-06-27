@@ -4322,6 +4322,29 @@ impl GuestPcTraceRunnerSeedMode {
     }
 }
 
+#[derive(Clone, Copy)]
+struct GuestPcTraceParallelLowerMode {
+    replay_snapshot: bool,
+    work_units: bool,
+    #[cfg(feature = "cuda")]
+    owned_streaming_lower: bool,
+    #[cfg(feature = "cuda")]
+    stream_chunks: bool,
+}
+
+impl GuestPcTraceParallelLowerMode {
+    fn from_env() -> Self {
+        Self {
+            replay_snapshot: guest_pc_trace_parallel_lower_replay_snapshot_enabled(),
+            work_units: guest_pc_trace_parallel_lower_work_units_enabled(),
+            #[cfg(feature = "cuda")]
+            owned_streaming_lower: guest_pc_trace_owned_streaming_lower_enabled(),
+            #[cfg(feature = "cuda")]
+            stream_chunks: guest_pc_trace_parallel_stream_chunks_enabled(),
+        }
+    }
+}
+
 fn spawn_guest_pc_trace_thread<'scope, 'env, F, T>(
     scope: &'scope thread::Scope<'scope, 'env>,
     name: &'static str,
@@ -5859,12 +5882,15 @@ fn lower_guest_pc_trace_parallel_work_unit_job(
     layout: &WitnessTraceLayout,
     work_unit: GuestPcTraceParallelLowerWorkUnit,
     expected_proof_values: Option<&[WitnessTraceProofValue]>,
+    lower_mode: GuestPcTraceParallelLowerMode,
     timing: &mut GuestPcTraceStreamTiming,
 ) -> Result<GuestPcTraceSeededLoweredSegment, GuestPcTraceBackendError> {
+    #[cfg(not(feature = "cuda"))]
+    let _ = lower_mode;
     let seed = (*work_unit.seed).clone();
     let pending = GuestPcTracePendingSegmentSlice::from(work_unit);
     #[cfg(feature = "cuda")]
-    if guest_pc_trace_owned_streaming_lower_enabled() {
+    if lower_mode.owned_streaming_lower {
         return Ok(GuestPcTraceSeededLoweredSegment {
             seed: seed.clone(),
             lowered: lower_guest_pc_trace_owned_streaming_pending_segment(
@@ -6990,6 +7016,8 @@ fn lower_guest_pc_trace_pending_segments(
     let mut pending_chunked_segments = BTreeMap::new();
     #[cfg(feature = "cuda")]
     let mut active_chunked_segment: Option<GuestPcTraceActiveChunkedSegment> = None;
+    #[cfg(feature = "cuda")]
+    let owned_streaming_lower = guest_pc_trace_owned_streaming_lower_enabled();
     loop {
         let receive_started = Instant::now();
         let message = match pending_receiver.recv() {
@@ -7127,7 +7155,7 @@ fn lower_guest_pc_trace_pending_segments(
         )?;
         let segment_seed = pending.seed.as_deref().unwrap_or(&current_seed);
         #[cfg(feature = "cuda")]
-        let lowered = if guest_pc_trace_owned_streaming_lower_enabled() {
+        let lowered = if owned_streaming_lower {
             let segment_seed = segment_seed.clone();
             lower_guest_pc_trace_owned_streaming_pending_segment(
                 layout,
@@ -7322,13 +7350,30 @@ fn replay_guest_pc_trace_pending_segment_reports(
     Ok(())
 }
 
+#[allow(dead_code)]
 fn lower_guest_pc_trace_parallel_pending_job(
     layout: &WitnessTraceLayout,
-    mut pending: GuestPcTracePendingSegmentSlice,
+    pending: GuestPcTracePendingSegmentSlice,
     expected_proof_values: Option<&[WitnessTraceProofValue]>,
     timing: &mut GuestPcTraceStreamTiming,
 ) -> Result<GuestPcTraceSeededLoweredSegment, GuestPcTraceBackendError> {
-    if guest_pc_trace_parallel_lower_replay_snapshot_enabled() {
+    lower_guest_pc_trace_parallel_pending_job_with_mode(
+        layout,
+        pending,
+        expected_proof_values,
+        GuestPcTraceParallelLowerMode::from_env(),
+        timing,
+    )
+}
+
+fn lower_guest_pc_trace_parallel_pending_job_with_mode(
+    layout: &WitnessTraceLayout,
+    mut pending: GuestPcTracePendingSegmentSlice,
+    expected_proof_values: Option<&[WitnessTraceProofValue]>,
+    lower_mode: GuestPcTraceParallelLowerMode,
+    timing: &mut GuestPcTraceStreamTiming,
+) -> Result<GuestPcTraceSeededLoweredSegment, GuestPcTraceBackendError> {
+    if lower_mode.replay_snapshot {
         replay_guest_pc_trace_pending_segment_reports(layout, &mut pending, timing)?;
     }
     let trace_instance_index = pending.trace_instance_index;
@@ -7342,7 +7387,7 @@ fn lower_guest_pc_trace_parallel_pending_job(
             ),
             })?;
     #[cfg(feature = "cuda")]
-    if guest_pc_trace_owned_streaming_lower_enabled() {
+    if lower_mode.owned_streaming_lower {
         let seed = seed.clone();
         return Ok(GuestPcTraceSeededLoweredSegment {
             seed: seed.clone(),
@@ -7479,6 +7524,7 @@ impl GuestPcTraceParallelStreamedSegment {
         layout: &WitnessTraceLayout,
         finish: GuestPcTracePendingSegmentFinish,
         expected_proof_values: Option<&[WitnessTraceProofValue]>,
+        lower_mode: GuestPcTraceParallelLowerMode,
         timing: &mut GuestPcTraceStreamTiming,
     ) -> Result<GuestPcTraceSeededLoweredSegment, GuestPcTraceBackendError> {
         if finish.trace_instance_index != self.trace_instance_index {
@@ -7525,10 +7571,11 @@ impl GuestPcTraceParallelStreamedSegment {
                 pending.reports_elided = true;
                 replay_guest_pc_trace_pending_segment_reports(layout, &mut pending, timing)?;
             }
-            return lower_guest_pc_trace_parallel_pending_job(
+            return lower_guest_pc_trace_parallel_pending_job_with_mode(
                 layout,
                 pending,
                 expected_proof_values,
+                lower_mode,
                 timing,
             );
         }
@@ -7662,6 +7709,7 @@ fn lower_guest_pc_trace_pending_segments_parallel(
 ) -> Result<GuestPcTraceStreamResult, GuestPcTraceBackendError> {
     thread::scope(|scope| {
         let worker_count = worker_count.max(2);
+        let lower_mode = GuestPcTraceParallelLowerMode::from_env();
         timing.parallel_lower_worker_count = timing.parallel_lower_worker_count.max(worker_count);
         let (result_sender, result_receiver) = mpsc::sync_channel(
             guest_pc_trace_parallel_lower_result_queue_capacity(worker_count),
@@ -7697,10 +7745,11 @@ fn lower_guest_pc_trace_pending_segments_parallel(
                                     job_receive_elapsed;
                                 let pending = *pending;
                                 let trace_instance_index = pending.trace_instance_index;
-                                let result = lower_guest_pc_trace_parallel_pending_job(
+                                let result = lower_guest_pc_trace_parallel_pending_job_with_mode(
                                     layout,
                                     pending,
                                     expected_proof_values,
+                                    lower_mode,
                                     &mut worker_timing,
                                 );
                                 (trace_instance_index, Some(result))
@@ -7714,6 +7763,7 @@ fn lower_guest_pc_trace_pending_segments_parallel(
                                     layout,
                                     work_unit,
                                     expected_proof_values,
+                                    lower_mode,
                                     &mut worker_timing,
                                 );
                                 (trace_instance_index, Some(result))
@@ -7832,6 +7882,7 @@ fn lower_guest_pc_trace_pending_segments_parallel(
                                             layout,
                                             *finish,
                                             expected_proof_values,
+                                            lower_mode,
                                             &mut active_stream_timing,
                                         )
                                     });
@@ -7889,7 +7940,7 @@ fn lower_guest_pc_trace_pending_segments_parallel(
                         dispatcher_timing.trace_report_buffer_excess_capacity += pending
                             .report_capacity
                             .saturating_sub(pending.reports.len());
-                        let job = if guest_pc_trace_parallel_lower_work_units_enabled() {
+                        let job = if lower_mode.work_units {
                             match GuestPcTraceParallelLowerWorkUnit::try_from(pending) {
                                 Ok(work_unit) => {
                                     GuestPcTraceParallelLowerJob::WorkUnit(Box::new(work_unit))
@@ -7931,7 +7982,7 @@ fn lower_guest_pc_trace_pending_segments_parallel(
                     }
                     GuestPcTracePendingSegmentMessage::SegmentStreamStarted(start) => {
                         #[cfg(feature = "cuda")]
-                        if guest_pc_trace_parallel_stream_chunks_enabled() {
+                        if lower_mode.stream_chunks {
                             let trace_instance_index = start.trace_instance_index;
                             if pending_stream_segments.contains_key(&trace_instance_index) {
                                 let _ = dispatcher_sender.send(
