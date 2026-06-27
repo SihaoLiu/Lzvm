@@ -509,6 +509,14 @@ OPENING_ROW_VALUE_SOURCE_EXTEND_MS_KEY = (
 OPENING_ROW_DEDUP_INPUT_ROWS_KEY = "timing_finish_witness_opening_row_dedup_input_rows"
 OPENING_ROW_DEDUP_UNIQUE_ROWS_KEY = "timing_finish_witness_opening_row_dedup_unique_rows"
 OPENING_ROW_DEDUP_ELIDED_ROWS_KEY = "timing_finish_witness_opening_row_dedup_elided_rows"
+FRI_OPENING_MS_KEY = "timing_finish_fri_opening_ms"
+FRI_OPENING_UNIT_BUILD_MS_KEY = "timing_finish_fri_opening_unit_build_ms"
+FRI_OPENING_LAYER_TREE_MS_KEY = "timing_finish_fri_opening_layer_tree_ms"
+FRI_OPENING_QUERY_MS_KEY = "timing_finish_fri_opening_query_ms"
+FRI_OPENING_FOLD_MS_KEY = "timing_finish_fri_opening_fold_ms"
+FRI_OPENING_UNIT_COUNT_KEY = "timing_finish_fri_opening_unit_count"
+FRI_OPENING_LAYER_COUNT_KEY = "timing_finish_fri_opening_layer_count"
+FRI_OPENING_QUERY_COUNT_KEY = "timing_finish_fri_opening_query_count"
 OPENING_RETAINED_LEAF_COUNT_KEY = (
     "timing_finish_witness_opening_retained_leaf_digest_openings"
 )
@@ -789,6 +797,10 @@ HEADER = (
     "seed_snapshot_runtime_hint,"
     "finish_opening_ms,opening_query_units,opening_single_query_units,"
     "opening_queries,opening_max_queries_per_unit,opening_stage_count,"
+    "fri_opening_ms,fri_opening_unit_build_ms,fri_opening_layer_tree_ms,"
+    "fri_opening_query_ms,fri_opening_fold_ms,"
+    "fri_opening_units,fri_opening_layers,fri_opening_queries,"
+    "fri_layers_per_unit,fri_queries_per_unit,"
     "opening_source_shape_hint,"
     "source_retention_attempts,source_retention_retained,"
     "source_retention_rejected,source_retention_retained_bytes,"
@@ -1211,6 +1223,14 @@ TIMING_KEYS = {
     OPENING_ROW_DEDUP_INPUT_ROWS_KEY,
     OPENING_ROW_DEDUP_UNIQUE_ROWS_KEY,
     OPENING_ROW_DEDUP_ELIDED_ROWS_KEY,
+    FRI_OPENING_MS_KEY,
+    FRI_OPENING_UNIT_BUILD_MS_KEY,
+    FRI_OPENING_LAYER_TREE_MS_KEY,
+    FRI_OPENING_QUERY_MS_KEY,
+    FRI_OPENING_FOLD_MS_KEY,
+    FRI_OPENING_UNIT_COUNT_KEY,
+    FRI_OPENING_LAYER_COUNT_KEY,
+    FRI_OPENING_QUERY_COUNT_KEY,
     OPENING_RETAINED_LEAF_COUNT_KEY,
     OPENING_RETAINED_LEAF_ROWS_KEY,
     OPENING_RETAINED_LEAF_ALL_SINGLE_ROW_KEY,
@@ -4622,6 +4642,20 @@ def summarize_profile_values(
     opening_single_query_units = values.get(OPENING_SINGLE_QUERY_UNITS_KEY, 0)
     opening_max_queries_per_unit = values.get(OPENING_MAX_QUERIES_PER_UNIT_KEY, 0)
     opening_stage_count = values.get(OPENING_STAGE_COUNT_KEY, 0)
+    fri_opening_ms = values.get(FRI_OPENING_MS_KEY, 0)
+    fri_opening_unit_build_ms = values.get(FRI_OPENING_UNIT_BUILD_MS_KEY, 0)
+    fri_opening_layer_tree_ms = values.get(FRI_OPENING_LAYER_TREE_MS_KEY, 0)
+    fri_opening_query_ms = values.get(FRI_OPENING_QUERY_MS_KEY, 0)
+    fri_opening_fold_ms = values.get(FRI_OPENING_FOLD_MS_KEY, 0)
+    fri_opening_units = values.get(FRI_OPENING_UNIT_COUNT_KEY, 0)
+    fri_opening_layers = values.get(FRI_OPENING_LAYER_COUNT_KEY, 0)
+    fri_opening_queries = values.get(FRI_OPENING_QUERY_COUNT_KEY, 0)
+    fri_layers_per_unit = (
+        fri_opening_layers / fri_opening_units if fri_opening_units else 0.0
+    )
+    fri_queries_per_unit = (
+        fri_opening_queries / fri_opening_units if fri_opening_units else 0.0
+    )
     opening_retained_source_count = values.get(OPENING_RETAINED_SOURCE_COUNT_KEY, 0)
     opening_external_source_count = values.get(OPENING_EXTERNAL_SOURCE_COUNT_KEY, 0)
     opening_embedded_source_count = values.get(OPENING_EMBEDDED_SOURCE_COUNT_KEY, 0)
@@ -5205,6 +5239,10 @@ def summarize_profile_values(
         f"{seed_snapshot_runtime},"
         f"{finish_opening_ms},{opening_query_units},{opening_single_query_units},"
         f"{opening_queries},{opening_max_queries_per_unit},{opening_stage_count},"
+        f"{fri_opening_ms},{fri_opening_unit_build_ms},{fri_opening_layer_tree_ms},"
+        f"{fri_opening_query_ms},{fri_opening_fold_ms},"
+        f"{fri_opening_units},{fri_opening_layers},{fri_opening_queries},"
+        f"{fri_layers_per_unit:.3f},{fri_queries_per_unit:.3f},"
         f"{opening_source_hint},"
         f"{source_retention_attempts},{source_retention_retained},"
         f"{source_retention_rejected},{source_retention_retained_bytes},"

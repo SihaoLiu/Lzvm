@@ -566,6 +566,9 @@ fn prove_timing_root_summary_reports_root_grouping_shape() {
         "trace_report_source_value_record_lowerer_share_ms",
         "trace_report_exact_hotspot",
         "trace_report_exact_action_hint",
+        "fri_opening_ms",
+        "fri_opening_queries",
+        "fri_queries_per_unit",
     ] {
         assert!(
             source.contains(required),
@@ -4295,6 +4298,14 @@ fn prove_timing_root_summary_reports_opening_query_unit_scope() {
         "timing_finish_witness_opening_single_query_unit_count=120",
         "timing_finish_witness_opening_max_queries_per_unit=1",
         "timing_finish_witness_opening_stage_count=240",
+        "timing_finish_fri_opening_ms=41",
+        "timing_finish_fri_opening_unit_build_ms=5",
+        "timing_finish_fri_opening_layer_tree_ms=7",
+        "timing_finish_fri_opening_query_ms=11",
+        "timing_finish_fri_opening_fold_ms=13",
+        "timing_finish_fri_opening_unit_count=3",
+        "timing_finish_fri_opening_layer_count=12",
+        "timing_finish_fri_opening_query_count=30",
         "timing_finish_witness_opening_retained_source_count=77",
         "timing_finish_witness_opening_external_source_count=79",
         "timing_finish_witness_opening_embedded_source_count=84",
@@ -4356,6 +4367,16 @@ fn prove_timing_root_summary_reports_opening_query_unit_scope() {
     assert_eq!(value("opening_queries"), "120");
     assert_eq!(value("opening_max_queries_per_unit"), "1");
     assert_eq!(value("opening_stage_count"), "240");
+    assert_eq!(value("fri_opening_ms"), "41");
+    assert_eq!(value("fri_opening_unit_build_ms"), "5");
+    assert_eq!(value("fri_opening_layer_tree_ms"), "7");
+    assert_eq!(value("fri_opening_query_ms"), "11");
+    assert_eq!(value("fri_opening_fold_ms"), "13");
+    assert_eq!(value("fri_opening_units"), "3");
+    assert_eq!(value("fri_opening_layers"), "12");
+    assert_eq!(value("fri_opening_queries"), "30");
+    assert_eq!(value("fri_layers_per_unit"), "4.000");
+    assert_eq!(value("fri_queries_per_unit"), "10.000");
     assert_eq!(
         value("opening_source_shape_hint"),
         "single_query_cross_root_with_mixed_sources"
