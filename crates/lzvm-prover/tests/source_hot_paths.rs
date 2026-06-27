@@ -2289,6 +2289,14 @@ fn lean_framed_guest_input_binding_tracks_runtime_checks() {
         "CLI verification should compare framed guest stdin binding bytes without a whole-file input read"
     );
     assert!(
+        verify_bindings_source.contains("fn verify_program_image_cache_binding")
+            && verify_bindings_source.contains("read_program_image_commitment_cache_file")
+            && verify_bindings_source.contains("encode_program_image_cache_segment(&cache)")
+            && verify_bindings_source.contains("PROGRAM_IMAGE_CACHE_SEGMENT_ID")
+            && verify_bindings_source.contains("program image cache proof segment mismatch"),
+        "CLI verification should compare the requested program image cache with the proof binding segment"
+    );
+    assert!(
         guest_input_segment_source.contains("FramedStdinError::EmptyInput"),
         "framed guest stdin segment encoding should reject an empty proof binding payload"
     );
@@ -2301,6 +2309,7 @@ fn lean_framed_guest_input_binding_tracks_runtime_checks() {
         cli_test_source
             .contains("guest_pc_trace_proves_and_verifies_eth_block_input_with_program_image_cache")
             && cli_test_source.contains("framed_stdin_chunk(&[7_u8])")
+            && cli_test_source.contains("program_image_cache_match=ok")
             && cli_test_source.contains("framed_guest_input_match=ok")
             && cli_test_source.contains("pipeline_input_bindings=ok"),
         "CLI proof coverage should bind framed guest stdin with ETH block input and the program image cache"
