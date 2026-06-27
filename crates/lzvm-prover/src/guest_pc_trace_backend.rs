@@ -4304,6 +4304,24 @@ fn guest_pc_trace_report_chunk_capacity() -> usize {
         .unwrap_or(DEFAULT_GUEST_PC_TRACE_REPORT_CHUNK_CAPACITY)
 }
 
+#[derive(Clone, Copy)]
+struct GuestPcTraceRunnerSeedMode {
+    snapshot: bool,
+    trusted: bool,
+    validate: bool,
+}
+
+impl GuestPcTraceRunnerSeedMode {
+    fn from_env() -> Self {
+        let snapshot = guest_pc_trace_runner_seed_snapshot_enabled();
+        Self {
+            snapshot,
+            trusted: snapshot && guest_pc_trace_runner_seed_snapshot_trusted_enabled(),
+            validate: snapshot && guest_pc_trace_runner_seed_snapshot_validation_enabled(),
+        }
+    }
+}
+
 fn spawn_guest_pc_trace_thread<'scope, 'env, F, T>(
     scope: &'scope thread::Scope<'scope, 'env>,
     name: &'static str,
@@ -4888,7 +4906,9 @@ fn guest_pc_trace_live_stream_start_enabled() -> bool {
     env_flag_enabled("LZVM_GUEST_PC_TRACE_LIVE_STREAM_START", false)
 }
 
-fn validate_guest_pc_trace_live_report_chunk_mode() -> Result<(), GuestPcTraceBackendError> {
+fn validate_guest_pc_trace_live_report_chunk_mode(
+    seed_mode: GuestPcTraceRunnerSeedMode,
+) -> Result<(), GuestPcTraceBackendError> {
     if guest_pc_trace_segment_replay_enabled()
         || guest_pc_trace_segment_replay_snapshot_enabled()
         || guest_pc_trace_parallel_lower_report_elision_enabled()
@@ -4904,9 +4924,7 @@ fn validate_guest_pc_trace_live_report_chunk_mode() -> Result<(), GuestPcTraceBa
                 .to_owned(),
         });
     }
-    if guest_pc_trace_runner_seed_snapshot_enabled()
-        && !guest_pc_trace_runner_seed_snapshot_trusted_enabled()
-    {
+    if seed_mode.snapshot && !seed_mode.trusted {
         return Err(GuestPcTraceBackendError::InvalidPcTraceLayout {
             message: "live guest PC report chunks require trusted runner seed snapshots".to_owned(),
         });
@@ -4924,7 +4942,8 @@ fn produce_guest_pc_trace_live_pending_messages(
         GuestPcTracePendingSegmentMessage,
     ) -> Result<(), GuestPcTraceBackendError>,
 ) -> Result<GuestPcTracePendingSliceProduction, GuestPcTraceBackendError> {
-    validate_guest_pc_trace_live_report_chunk_mode()?;
+    let seed_mode = GuestPcTraceRunnerSeedMode::from_env();
+    validate_guest_pc_trace_live_report_chunk_mode(seed_mode)?;
     let layout = context
         .trace_layout
         .ok_or(GuestPcTraceBackendError::UnmappedTraceLayout)?;
@@ -4932,12 +4951,10 @@ fn produce_guest_pc_trace_live_pending_messages(
     let mut executed_instructions = 0_u64;
     let mut trace_instance_count = 0_usize;
     let mut timing = GuestPcTraceStreamTiming::default();
-    let runner_seed_snapshot = guest_pc_trace_runner_seed_snapshot_enabled();
-    let runner_seed_snapshot_trusted =
-        runner_seed_snapshot && guest_pc_trace_runner_seed_snapshot_trusted_enabled();
+    let runner_seed_snapshot = seed_mode.snapshot;
+    let runner_seed_snapshot_trusted = seed_mode.trusted;
     let emit_stream_start_before_chunks = guest_pc_trace_live_stream_start_enabled();
-    let validate_runner_seed_snapshot =
-        runner_seed_snapshot && guest_pc_trace_runner_seed_snapshot_validation_enabled();
+    let validate_runner_seed_snapshot = seed_mode.validate;
     let mut seed_mirror = runner_seed_snapshot.then(ZiskMainSegmentSeed::new);
     loop {
         let remaining_limit = instruction_limit.saturating_sub(executed_instructions);
@@ -5200,7 +5217,10 @@ fn produce_guest_pc_trace_pending_slices(
     let mut executed_instructions = 0_u64;
     let mut trace_instance_count = 0_usize;
     let mut timing = GuestPcTraceStreamTiming::default();
-    let runner_seed_snapshot = guest_pc_trace_runner_seed_snapshot_enabled();
+    let seed_mode = GuestPcTraceRunnerSeedMode::from_env();
+    let runner_seed_snapshot = seed_mode.snapshot;
+    let runner_seed_snapshot_trusted = seed_mode.trusted;
+    let validate_runner_seed_snapshot = seed_mode.validate;
     let segment_replay = guest_pc_trace_segment_replay_enabled();
     let report_elision = guest_pc_trace_parallel_lower_report_elision_enabled()
         && guest_pc_trace_parallel_lower_worker_count().is_some_and(|count| count > 1);
@@ -5327,10 +5347,6 @@ fn produce_guest_pc_trace_pending_slices(
                 .unwrap_or_default(),
         };
         let seed = seed_mirror.clone();
-        let runner_seed_snapshot_trusted =
-            runner_seed_snapshot && guest_pc_trace_runner_seed_snapshot_trusted_enabled();
-        let validate_runner_seed_snapshot =
-            runner_seed_snapshot && guest_pc_trace_runner_seed_snapshot_validation_enabled();
         let runner_direct_next_seed = match (runner_seed_snapshot, segment.is_last_segment) {
             (true, false) => {
                 let current_seed = seed.as_ref().ok_or_else(|| {

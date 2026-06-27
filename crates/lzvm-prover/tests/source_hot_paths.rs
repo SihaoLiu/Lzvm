@@ -6448,6 +6448,40 @@ fn guest_pc_trace_parallel_lowerer_stays_seeded_and_opt_in() {
         trusted_snapshot_body.contains("guest_pc_trace_parallel_lower_enabled()"),
         "parallel guest PC trace lowering should enable trusted seed lifting"
     );
+    let live_pending_body = function_body(
+        &backend_source,
+        "fn produce_guest_pc_trace_live_pending_messages",
+        "fn produce_guest_pc_trace_pending_slices",
+    );
+    assert!(
+        live_pending_body
+            .matches("GuestPcTraceRunnerSeedMode::from_env()")
+            .count()
+            == 1
+            && live_pending_body
+                .contains("validate_guest_pc_trace_live_report_chunk_mode(seed_mode)")
+            && live_pending_body.contains("let runner_seed_snapshot = seed_mode.snapshot;")
+            && live_pending_body.contains("let runner_seed_snapshot_trusted = seed_mode.trusted;")
+            && live_pending_body
+                .contains("let validate_runner_seed_snapshot = seed_mode.validate;"),
+        "live guest PC trace chunking should cache runner seed mode flags once per producer"
+    );
+    let pending_slices_body = function_body(
+        &backend_source,
+        "fn produce_guest_pc_trace_pending_slices",
+        "#[allow(dead_code)]\nfn discover_guest_pc_trace_segment_seeds",
+    );
+    assert!(
+        pending_slices_body.contains("let seed_mode = GuestPcTraceRunnerSeedMode::from_env();")
+            && pending_slices_body.contains("let runner_seed_snapshot = seed_mode.snapshot;")
+            && pending_slices_body.contains("let runner_seed_snapshot_trusted = seed_mode.trusted;")
+            && pending_slices_body.contains("let validate_runner_seed_snapshot = seed_mode.validate;")
+            && !pending_slices_body
+                .contains("guest_pc_trace_runner_seed_snapshot_trusted_enabled()")
+            && !pending_slices_body
+                .contains("guest_pc_trace_runner_seed_snapshot_validation_enabled()"),
+        "guest PC trace pending segment production should not reread runner seed mode flags per segment"
+    );
     let pipeline_gate_body = function_body(
         &backend_source,
         "fn guest_pc_trace_parallel_lower_enabled",
