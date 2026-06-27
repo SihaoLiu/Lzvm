@@ -34,6 +34,11 @@ fn lean_query_plan_binding_exports_opening_segment_projections() {
     );
     let material_manifest_unit_body =
         source_from(&material_manifest_source, "fn validate_manifest_unit");
+    let query_plan_evidence_body = function_body(
+        &lean_source,
+        "def RuntimeQueryPlanBindingEvidence",
+        "def RuntimeQueryPlanBindingCheckedAcceptance",
+    );
 
     assert!(
         lean_source
@@ -80,13 +85,9 @@ fn lean_query_plan_binding_exports_opening_segment_projections() {
         "Lean query plan binding should expose seeded query-plan witness digest and FRI-opening checks"
     );
     assert!(
-        function_body(
-            &lean_source,
-            "def RuntimeQueryPlanBindingEvidence",
-            "def RuntimeQueryPlanBindingCheckedAcceptance",
-        )
-        .contains("RuntimeQueryPlanBindingSeededContract"),
-        "Lean query plan evidence should retain seeded witness-digest and FRI-opening obligations"
+        query_plan_evidence_body.contains("RuntimeQueryPlanBindingSeededContract")
+            && query_plan_evidence_body.contains("RuntimeQueryPlanMaterialManifestContract"),
+        "Lean query plan evidence should retain material manifest, witness-digest, and FRI-opening obligations"
     );
     lean_binding::assert_theorem_declarations(
         &lean_source,
@@ -96,6 +97,7 @@ fn lean_query_plan_binding_exports_opening_segment_projections() {
             "runtime_query_plan_binding_evidence_implies_opening_query_plan_bound",
             "runtime_query_plan_binding_evidence_implies_transcript_inputs_canonical",
             "runtime_query_plan_binding_evidence_implies_seeded_contract",
+            "runtime_query_plan_binding_evidence_implies_material_manifest_contract",
             "runtime_query_plan_binding_seeded_contract_implies_seed_binds_witness_tree_digests",
             "runtime_query_plan_binding_seeded_contract_implies_seeded_fri_opening_requirements_checked",
             "runtime_query_plan_binding_checked_acceptance_bound_contract",
@@ -203,6 +205,14 @@ fn lean_query_plan_binding_exports_opening_segment_projections() {
         &lean_source,
         "runtime_query_plan_binding_checked_acceptance_transcript_inputs_canonical",
         &["validation.queryPlanBindingAcceptedImpliesTranscriptInputsCanonical"],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_query_plan_binding_evidence_implies_material_manifest_contract",
+        &[
+            "RuntimeQueryPlanBindingEvidence",
+            "RuntimeQueryPlanMaterialManifestContract",
+        ],
     );
     lean_binding::assert_theorem_prefix_contains(
         &lean_source,

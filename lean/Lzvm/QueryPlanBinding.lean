@@ -101,24 +101,12 @@ def RuntimeQueryPlanMaterialManifestContract (_system : VerifierModel)
   validation.queryPlanSegmentCanonical artifact publicInput proof /\
     validation.queryPlanMaterialManifestMatchesSchedule artifact publicInput proof
 
-def RuntimeQueryPlanBindingEvidence
-    (_system : VerifierModel)
-    (validation : RuntimeQueryPlanBindingValidation _system)
-    (artifact : RuntimeArtifact)
-    (publicInput : PublicInput)
-    (proof : Proof) : Prop :=
-  RuntimeQueryPlanBindingBoundContract
-    _system
-    validation
-    artifact
-    publicInput
-    proof
-    /\ RuntimeQueryPlanBindingSeededContract
-      _system
-      validation
-      artifact
-      publicInput
-      proof
+def RuntimeQueryPlanBindingEvidence (_system : VerifierModel)
+    (validation : RuntimeQueryPlanBindingValidation _system) (artifact : RuntimeArtifact)
+    (publicInput : PublicInput) (proof : Proof) : Prop :=
+  RuntimeQueryPlanBindingBoundContract _system validation artifact publicInput proof
+    /\ RuntimeQueryPlanMaterialManifestContract _system validation artifact publicInput proof
+    /\ RuntimeQueryPlanBindingSeededContract _system validation artifact publicInput proof
 
 def RuntimeQueryPlanBindingCheckedAcceptance
     (_system : VerifierModel)
@@ -213,7 +201,11 @@ theorem runtime_query_plan_binding_checked_acceptance_evidence
           (And.intro derivedFromTranscript
             (And.intro matchesOpenedArtifacts
               (And.intro transcriptQueryPlanBound openingQueryPlanBound)))))
-      seededContract
+      (And.intro
+        (And.intro segmentCanonical
+          (validation.queryPlanBindingAcceptedImpliesMaterialManifestMatchesSchedule
+            _ _ _ accepted))
+        seededContract)
 
 theorem runtime_query_plan_binding_evidence_implies_bound_contract
     {system : VerifierModel}
@@ -317,7 +309,15 @@ theorem runtime_query_plan_binding_evidence_implies_seeded_contract
           publicInput
           proof := by
   intro artifact publicInput proof evidence
-  exact evidence.right
+  exact evidence.right.right
+
+theorem runtime_query_plan_binding_evidence_implies_material_manifest_contract
+    {system : VerifierModel} (validation : RuntimeQueryPlanBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeQueryPlanBindingEvidence system validation artifact publicInput proof ->
+        RuntimeQueryPlanMaterialManifestContract system validation artifact publicInput proof := by
+  intro _artifact _publicInput _proof evidence
+  exact evidence.right.left
 
 theorem runtime_query_plan_binding_seeded_contract_implies_seed_binds_witness_tree_digests
     {system : VerifierModel}
