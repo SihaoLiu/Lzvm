@@ -1175,22 +1175,31 @@ fn build_eth_block_input_proof_segment(
 }
 
 fn build_framed_guest_input_proof_segment(
-    input: Option<&[u8]>,
-) -> Result<Option<ProofSegment>, String> {
+    input: Option<ValidatedFramedGuestInput<'_>>,
+) -> Option<ProofSegment> {
     let Some(input) = input else {
-        return Ok(None);
+        return None;
     };
-    Ok(Some(ProofSegment {
+    Some(ProofSegment {
         id: FRAMED_GUEST_INPUT_SEGMENT_ID,
-        data: input.to_vec(),
-    }))
+        data: input.as_bytes().to_vec(),
+    })
+}
+
+#[derive(Clone, Copy)]
+struct ValidatedFramedGuestInput<'a>(&'a [u8]);
+
+impl<'a> ValidatedFramedGuestInput<'a> {
+    fn as_bytes(self) -> &'a [u8] {
+        self.0
+    }
 }
 
 #[derive(Clone, Copy, Default)]
 struct ValidatedProofBindings<'a> {
     program_image_cache: Option<&'a ProgramImageCommitmentCache>,
     eth_block_input: Option<&'a EthBlockInput>,
-    framed_guest_input: Option<&'a [u8]>,
+    framed_guest_input: Option<ValidatedFramedGuestInput<'a>>,
 }
 
 fn validate_proof_bindings<'a>(
@@ -1201,7 +1210,7 @@ fn validate_proof_bindings<'a>(
 ) -> Result<ValidatedProofBindings<'a>, String> {
     validate_program_image_cache_binding(public_values, program_image_cache)?;
     validate_eth_block_binding(public_values, eth_block_input)?;
-    validate_framed_guest_input_binding(framed_guest_input)?;
+    let framed_guest_input = validate_framed_guest_input_binding(framed_guest_input)?;
     Ok(ValidatedProofBindings {
         program_image_cache,
         eth_block_input,
@@ -1235,12 +1244,15 @@ fn validate_eth_block_binding(
     Ok(())
 }
 
-fn validate_framed_guest_input_binding(input: Option<&[u8]>) -> Result<(), String> {
+fn validate_framed_guest_input_binding<'a>(
+    input: Option<&'a [u8]>,
+) -> Result<Option<ValidatedFramedGuestInput<'a>>, String> {
     if let Some(input) = input {
         validate_framed_guest_input_segment(input)
             .map_err(|error| format!("framed guest input is invalid: {error}"))?;
+        return Ok(Some(ValidatedFramedGuestInput(input)));
     }
-    Ok(())
+    Ok(None)
 }
 
 fn validate_contribution_proof_output(
@@ -1363,7 +1375,7 @@ fn build_proof_binding_segments(
     if let Some(segment) = build_eth_block_input_proof_segment(bindings.eth_block_input)? {
         segments.push(segment);
     }
-    if let Some(segment) = build_framed_guest_input_proof_segment(bindings.framed_guest_input)? {
+    if let Some(segment) = build_framed_guest_input_proof_segment(bindings.framed_guest_input) {
         segments.push(segment);
     }
     if let Some(segment) = challenge_values_segment {

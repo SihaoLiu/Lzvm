@@ -2265,6 +2265,11 @@ fn lean_framed_guest_input_binding_tracks_runtime_checks() {
         "fn framed_guest_input_bytes_for_plan",
         "fn selected_single_unit_index",
     );
+    let verify_program_image_cache_binding_body = function_body(
+        &verify_bindings_source,
+        "fn verify_program_image_cache_binding",
+        "fn verify_framed_guest_input_binding",
+    );
     let verify_framed_guest_input_binding_body = function_body(
         &verify_bindings_source,
         "fn verify_framed_guest_input_binding",
@@ -2289,6 +2294,26 @@ fn lean_framed_guest_input_binding_tracks_runtime_checks() {
         &guest_input_segment_source,
         "pub fn parse_framed_guest_input_segment",
         "pub fn framed_guest_input_segment_digest",
+    );
+    let query_plan_binding_segments_body = function_body(
+        &query_plan_source,
+        "pub(crate) fn proof_binding_segments",
+        "pub(crate) fn duplicate_proof_binding_segment_id",
+    );
+    let query_plan_binding_id_body = function_body(
+        &query_plan_source,
+        "fn is_proof_binding_id",
+        "fn single_material_manifest_segment",
+    );
+    let contribution_bound_segments_body = function_body(
+        &contribution_source,
+        "fn contribution_bound_segments",
+        "fn hash_bound_segment",
+    );
+    let contribution_proof_segment_id_body = function_body(
+        &contribution_source,
+        "fn is_contribution_proof_segment_id",
+        "fn load_optional_contribution_challenge_values",
     );
 
     assert!(
@@ -2344,12 +2369,18 @@ fn lean_framed_guest_input_binding_tracks_runtime_checks() {
     );
     assert!(
         build_framed_guest_input_segment_body.contains("FRAMED_GUEST_INPUT_SEGMENT_ID")
-            && build_framed_guest_input_segment_body.contains("data: input.to_vec()")
+            && build_framed_guest_input_segment_body
+                .contains("input: Option<ValidatedFramedGuestInput<'_>>")
+            && build_framed_guest_input_segment_body.contains("input.as_bytes().to_vec()")
             && !build_framed_guest_input_segment_body
                 .contains("encode_framed_guest_input_segment")
             && validate_proof_bindings_body
-                .contains("validate_framed_guest_input_binding(framed_guest_input)")
+                .contains("let framed_guest_input = validate_framed_guest_input_binding")
             && validate_proof_bindings_body.contains("Ok(ValidatedProofBindings")
+            && validate_framed_guest_input_binding_body
+                .contains("Result<Option<ValidatedFramedGuestInput<'a>>, String>")
+            && validate_framed_guest_input_binding_body
+                .contains("Ok(Some(ValidatedFramedGuestInput(input)))")
             && build_proof_binding_segments_body.contains("bindings: ValidatedProofBindings<'_>")
             && build_proof_binding_segments_body
                 .contains("build_framed_guest_input_proof_segment(bindings.framed_guest_input)")
@@ -2373,11 +2404,12 @@ fn lean_framed_guest_input_binding_tracks_runtime_checks() {
         "CLI verification should validate and compare framed guest stdin binding bytes without payload-copy parsing or a whole-file input read"
     );
     assert!(
-        verify_bindings_source.contains("fn verify_program_image_cache_binding")
-            && verify_bindings_source.contains("read_program_image_commitment_cache_file")
-            && verify_bindings_source.contains("encode_program_image_cache_segment(&cache)")
-            && verify_bindings_source.contains("PROGRAM_IMAGE_CACHE_SEGMENT_ID")
-            && verify_bindings_source.contains("program image cache proof segment mismatch"),
+        verify_program_image_cache_binding_body.contains("read_program_image_commitment_cache_file")
+            && verify_program_image_cache_binding_body
+                .contains("encode_program_image_cache_segment(&cache)")
+            && verify_program_image_cache_binding_body.contains("PROGRAM_IMAGE_CACHE_SEGMENT_ID")
+            && verify_program_image_cache_binding_body
+                .contains("program image cache proof segment mismatch"),
         "CLI verification should compare the requested program image cache with the proof binding segment"
     );
     assert!(
@@ -2392,8 +2424,10 @@ fn lean_framed_guest_input_binding_tracks_runtime_checks() {
         "framed guest stdin segment helpers should keep validation explicit without materializing chunks or double-scanning parser callers"
     );
     assert!(
-        query_plan_source.contains("FRAMED_GUEST_INPUT_SEGMENT_ID")
-            && contribution_source.contains("FRAMED_GUEST_INPUT_SEGMENT_ID"),
+        query_plan_binding_segments_body.contains("FRAMED_GUEST_INPUT_SEGMENT_ID")
+            && query_plan_binding_id_body.contains("FRAMED_GUEST_INPUT_SEGMENT_ID")
+            && contribution_bound_segments_body.contains("FRAMED_GUEST_INPUT_SEGMENT_ID")
+            && contribution_proof_segment_id_body.contains("FRAMED_GUEST_INPUT_SEGMENT_ID"),
         "framed guest stdin segments should remain query-plan and contribution bound"
     );
     assert!(
