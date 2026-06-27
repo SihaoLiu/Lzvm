@@ -92,6 +92,62 @@ def RuntimeOpeningCheckedAcceptance
     (proof : Proof) : Prop :=
   validation.openingAccepted artifact publicInput proof
 
+structure RuntimeFriOpeningParserBoundary
+    (system : VerifierModel)
+    (validation : RuntimeOpeningValidation system) where
+  parserAccepted : RuntimeArtifact -> PublicInput -> Proof -> Prop
+  openingValuesCanonical : RuntimeArtifact -> PublicInput -> Proof -> Prop
+  digestRootsCanonical : RuntimeArtifact -> PublicInput -> Proof -> Prop
+  openingAcceptedImpliesParserAccepted :
+    forall artifact publicInput proof,
+      RuntimeOpeningCheckedAcceptance system validation artifact publicInput proof ->
+        parserAccepted artifact publicInput proof
+  parserAcceptedImpliesOpeningValuesCanonical :
+    forall artifact publicInput proof,
+      parserAccepted artifact publicInput proof ->
+        openingValuesCanonical artifact publicInput proof
+  parserAcceptedImpliesDigestRootsCanonical :
+    forall artifact publicInput proof,
+      parserAccepted artifact publicInput proof ->
+        digestRootsCanonical artifact publicInput proof
+
+def RuntimeFriOpeningParserBoundaryContract
+    {system : VerifierModel}
+    {validation : RuntimeOpeningValidation system}
+    (boundary : RuntimeFriOpeningParserBoundary system validation)
+    (artifact : RuntimeArtifact)
+    (publicInput : PublicInput)
+    (proof : Proof) : Prop :=
+  boundary.openingValuesCanonical artifact publicInput proof
+    /\ boundary.digestRootsCanonical artifact publicInput proof
+
+theorem runtime_fri_opening_checked_acceptance_parser_boundary_contract
+    {system : VerifierModel}
+    {validation : RuntimeOpeningValidation system}
+    (boundary : RuntimeFriOpeningParserBoundary system validation) :
+    forall artifact publicInput proof,
+      RuntimeOpeningCheckedAcceptance system validation artifact publicInput proof ->
+        RuntimeFriOpeningParserBoundaryContract boundary artifact publicInput proof := by
+  intro artifact publicInput proof accepted
+  have parsed :=
+    boundary.openingAcceptedImpliesParserAccepted
+      artifact
+      publicInput
+      proof
+      accepted
+  exact
+    And.intro
+      (boundary.parserAcceptedImpliesOpeningValuesCanonical
+        artifact
+        publicInput
+        proof
+        parsed)
+      (boundary.parserAcceptedImpliesDigestRootsCanonical
+        artifact
+        publicInput
+        proof
+        parsed)
+
 theorem runtime_opening_checked_acceptance_evidence
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)

@@ -15,6 +15,12 @@ fn lean_opening_validation_binding_exports_core_contract_projection() {
     let witness_tree_path = crate_root.join("src/witness_commitment/tree.rs");
     let witness_tree_source =
         std::fs::read_to_string(&witness_tree_path).expect("witness tree source should read");
+    let fri_validation_path = crate_root.join("src/pcs_fri/validation.rs");
+    let fri_validation_source =
+        std::fs::read_to_string(&fri_validation_path).expect("FRI validation source should read");
+    let fri_segment_path = crate_root.join("../lzvm-artifacts/src/pcs_fri_segment.rs");
+    let fri_segment_source =
+        std::fs::read_to_string(&fri_segment_path).expect("FRI segment source should read");
 
     assert!(
         lean_binding::contains_import(&top_level_source, "Lzvm.OpeningValidation"),
@@ -41,6 +47,7 @@ fn lean_opening_validation_binding_exports_core_contract_projection() {
         &[
             "runtime_opening_evidence_implies_bound_contract",
             "runtime_opening_checked_acceptance_bound_contract",
+            "runtime_fri_opening_checked_acceptance_parser_boundary_contract",
             "runtime_opening_evidence_implies_external_source_requirement",
             "runtime_opening_checked_acceptance_pcs_and_fri_without_assumptions",
             "runtime_opening_checked_acceptance_bound_pcs_fri_contract",
@@ -77,6 +84,33 @@ fn lean_opening_validation_binding_exports_core_contract_projection() {
     assert!(
         lean_source.contains("structure RuntimeConstantOpeningNAryConcreteBinding"),
         "Lean opening validation should model concrete runtime constant openings separately from abstract constantOpeningsBound fields"
+    );
+    assert!(
+        lean_source.contains("structure RuntimeFriOpeningParserBoundary")
+            && lean_source.contains("RuntimeFriOpeningParserBoundaryContract")
+            && fri_segment_source.contains("FinalPolynomialValueNonCanonical")
+            && fri_segment_source.contains("QueryValueNonCanonical")
+            && fri_validation_source.contains("Felt::from_u64(words[0])")
+            && fri_validation_source.contains("ValidatePcsFriOpeningSegmentsError::FieldDigest"),
+        "Lean opening validation should expose the parser boundary used by runtime FRI opening value validation while digest roots remain separately checked"
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_fri_opening_checked_acceptance_parser_boundary_contract",
+        &[
+            "RuntimeFriOpeningParserBoundary system validation",
+            "RuntimeOpeningCheckedAcceptance system validation artifact publicInput proof",
+            "RuntimeFriOpeningParserBoundaryContract boundary artifact publicInput proof",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_fri_opening_checked_acceptance_parser_boundary_contract",
+        &[
+            "boundary.openingAcceptedImpliesParserAccepted",
+            "boundary.parserAcceptedImpliesOpeningValuesCanonical",
+            "boundary.parserAcceptedImpliesDigestRootsCanonical",
+        ],
     );
     lean_binding::assert_theorem_prefix_contains(
         &lean_source,
