@@ -15,6 +15,16 @@ fn lean_opening_segment_binding_exports_core_contract_projection() {
     let fri_segment_path = crate_root.join("../lzvm-artifacts/src/pcs_fri_segment.rs");
     let fri_segment_source =
         std::fs::read_to_string(&fri_segment_path).expect("FRI segment source should read");
+    let fri_parse_body = function_body(
+        &fri_segment_source,
+        "pub fn parse_pcs_fri_opening_segment",
+        "fn pcs_fri_opening_version",
+    );
+    let fri_validate_body = function_body(
+        &fri_segment_source,
+        "fn validate_pcs_fri_opening_segment",
+        "fn encoded_len",
+    );
 
     assert!(
         lean_binding::contains_import(&top_level_source, "Lzvm.OpeningSegmentBinding"),
@@ -31,15 +41,27 @@ fn lean_opening_segment_binding_exports_core_contract_projection() {
         "Lean opening segment binding should expose checked soundness and verifier core projection"
     );
     assert!(
-        fri_segment_source.contains("UnsupportedVersion { version }")
-            && fri_segment_source.contains("PCS_FRI_OPENING_V1_VERSION")
-            && fri_segment_source.contains("PCS_FRI_OPENING_V2_VERSION")
-            && fri_segment_source.contains("reader.require_items(last_level_count, ROOT_BYTES)?")
-            && fri_segment_source.contains("FinalPolynomialValueNonCanonical")
-            && fri_segment_source.contains("LayerRootNonCanonical")
-            && fri_segment_source.contains("LastLevelRootNonCanonical")
-            && fri_segment_source.contains("QueryValueNonCanonical")
-            && fri_segment_source.contains("SiblingRootNonCanonical"),
+        fri_parse_body.contains("PCS_FRI_OPENING_V1_VERSION | PCS_FRI_OPENING_V2_VERSION")
+            && fri_parse_body.contains("PcsFriOpeningSegmentError::UnsupportedVersion { version }")
+            && fri_parse_body.contains("reader.require_items(final_count, EXTENSION_BYTES)?")
+            && fri_parse_body.contains("reader.require_items(last_level_count, ROOT_BYTES)?")
+            && fri_parse_body.contains("reader.require_items(value_count, EXTENSION_BYTES)?")
+            && fri_parse_body.contains("reader.require_items(sibling_count, ROOT_BYTES)?")
+            && fri_parse_body.contains("validate_pcs_fri_opening_segment(&out)?"),
+        "Rust FRI opening parser should validate supported version, walk counted payloads, and re-run semantic validation"
+    );
+    assert!(
+        fri_validate_body.matches("Felt::from_canonical(word).map_err").count() == 5
+            && fri_validate_body.contains("unit.final_polynomial.iter().enumerate()")
+            && fri_validate_body.contains("PcsFriOpeningSegmentError::FinalPolynomialValueNonCanonical")
+            && fri_validate_body.contains("layer.root.iter().copied().enumerate()")
+            && fri_validate_body.contains("PcsFriOpeningSegmentError::LayerRootNonCanonical")
+            && fri_validate_body.contains("layer.last_level.iter().enumerate()")
+            && fri_validate_body.contains("PcsFriOpeningSegmentError::LastLevelRootNonCanonical")
+            && fri_validate_body.contains("query.values.iter().enumerate()")
+            && fri_validate_body.contains("PcsFriOpeningSegmentError::QueryValueNonCanonical")
+            && fri_validate_body.contains("level.siblings.iter().enumerate()")
+            && fri_validate_body.contains("PcsFriOpeningSegmentError::SiblingRootNonCanonical"),
         "Rust FRI opening parser should keep version, root, last-level, and field-canonicality checks represented by Lean"
     );
     lean_binding::assert_theorem_declarations(
@@ -452,4 +474,15 @@ fn lean_opening_segment_binding_exports_core_contract_projection() {
             "runtime_opening_checked_acceptance_sound",
         ],
     );
+}
+
+fn function_body<'a>(source: &'a str, start: &str, end: &str) -> &'a str {
+    let start_index = source
+        .find(start)
+        .unwrap_or_else(|| panic!("source should contain {start}"));
+    let end_index = source[start_index..]
+        .find(end)
+        .map(|offset| start_index + offset)
+        .unwrap_or_else(|| panic!("source should contain {end} after {start}"));
+    &source[start_index..end_index]
 }
