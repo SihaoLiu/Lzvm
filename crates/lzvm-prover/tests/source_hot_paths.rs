@@ -8648,8 +8648,11 @@ fn lean_opening_segment_binding_tracks_runtime_opening_checks() {
         "pub fn validate_pcs_fri_opening_folds_from_units",
     );
     assert!(
-        constant_opening_validation
-            .contains("unit.trace_instance_index == query_unit.trace_instance_index")
+        constant_opening_validation.contains("constant_opening_units_by_identity")
+            && constant_opening_validation.contains(
+                "let identity = (query_unit.unit_index, query_unit.trace_instance_index)"
+            )
+            && constant_opening_validation.contains(".get(&identity)")
             && witness_opening_validation.contains("opening_units_by_identity")
             && witness_opening_validation.contains("witness_segments_by_identity")
             && witness_opening_validation.contains(

@@ -356,19 +356,17 @@ pub fn validate_constant_opening_segments(
         return Err(ValidateConstantOpeningSegmentsError::UnitCountMismatch);
     }
 
+    let opening_units_by_identity = constant_opening_units_by_identity(&opening);
     for query_unit in &query_plan.units {
         let unit_index = usize::try_from(query_unit.unit_index)
             .map_err(|_| ValidateConstantOpeningSegmentsError::UnitIndexOverflow)?;
         let unit = units
             .get(unit_index)
             .ok_or(ValidateConstantOpeningSegmentsError::UnitMismatch { unit_index })?;
-        let opening_unit = opening
-            .units
-            .iter()
-            .find(|unit| {
-                unit.unit_index == query_unit.unit_index
-                    && unit.trace_instance_index == query_unit.trace_instance_index
-            })
+        let identity = (query_unit.unit_index, query_unit.trace_instance_index);
+        let opening_unit = opening_units_by_identity
+            .get(&identity)
+            .copied()
             .ok_or(ValidateConstantOpeningSegmentsError::UnitMismatch { unit_index })?;
         if opening_unit.queries.len() != query_unit.queries.len() {
             return Err(ValidateConstantOpeningSegmentsError::UnitMismatch { unit_index });
@@ -429,6 +427,16 @@ pub fn validate_constant_opening_segments(
         }
     }
     Ok(())
+}
+
+fn constant_opening_units_by_identity(
+    opening: &ConstantOpeningSegment,
+) -> std::collections::BTreeMap<(u32, u32), &ConstantOpeningUnitSegment> {
+    opening
+        .units
+        .iter()
+        .map(|unit| ((unit.unit_index, unit.trace_instance_index), unit))
+        .collect()
 }
 
 pub fn build_constant_opening_segment(
