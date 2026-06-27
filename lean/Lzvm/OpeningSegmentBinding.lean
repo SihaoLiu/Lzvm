@@ -115,6 +115,91 @@ def RuntimeOpeningSegmentBindingCheckedAcceptance
     (proof : Proof) : Prop :=
   validation.openingSegmentBindingAccepted artifact publicInput proof
 
+structure RuntimeFriOpeningSegmentParserBoundary
+    (_system : VerifierModel)
+    (validation : RuntimeOpeningSegmentBindingValidation _system) where
+  supportedEncodingVersion : RuntimeArtifact -> PublicInput -> Proof -> Prop
+  finalPolynomialValuesCanonical : RuntimeArtifact -> PublicInput -> Proof -> Prop
+  queryValuesCanonical : RuntimeArtifact -> PublicInput -> Proof -> Prop
+  lastLevelDigestRootsCanonical : RuntimeArtifact -> PublicInput -> Proof -> Prop
+  segmentLayoutWalked : RuntimeArtifact -> PublicInput -> Proof -> Prop
+  friOpeningSegmentsValidImpliesSupportedEncodingVersion :
+    forall artifact publicInput proof,
+      validation.friOpeningSegmentsValid artifact publicInput proof ->
+        supportedEncodingVersion artifact publicInput proof
+  friOpeningSegmentsValidImpliesFinalPolynomialValuesCanonical :
+    forall artifact publicInput proof,
+      validation.friOpeningSegmentsValid artifact publicInput proof ->
+        finalPolynomialValuesCanonical artifact publicInput proof
+  friOpeningSegmentsValidImpliesQueryValuesCanonical :
+    forall artifact publicInput proof,
+      validation.friOpeningSegmentsValid artifact publicInput proof ->
+        queryValuesCanonical artifact publicInput proof
+  friOpeningSegmentsValidImpliesLastLevelDigestRootsCanonical :
+    forall artifact publicInput proof,
+      validation.friOpeningSegmentsValid artifact publicInput proof ->
+        lastLevelDigestRootsCanonical artifact publicInput proof
+  friOpeningSegmentsValidImpliesSegmentLayoutWalked :
+    forall artifact publicInput proof,
+      validation.friOpeningSegmentsValid artifact publicInput proof ->
+        segmentLayoutWalked artifact publicInput proof
+
+def RuntimeFriOpeningSegmentParserContract
+    {system : VerifierModel}
+    {validation : RuntimeOpeningSegmentBindingValidation system}
+    (boundary : RuntimeFriOpeningSegmentParserBoundary system validation)
+    (artifact : RuntimeArtifact)
+    (publicInput : PublicInput)
+    (proof : Proof) : Prop :=
+  boundary.supportedEncodingVersion artifact publicInput proof
+    /\ boundary.finalPolynomialValuesCanonical artifact publicInput proof
+    /\ boundary.queryValuesCanonical artifact publicInput proof
+    /\ boundary.lastLevelDigestRootsCanonical artifact publicInput proof
+    /\ boundary.segmentLayoutWalked artifact publicInput proof
+
+theorem runtime_opening_segment_binding_fri_segments_valid_parser_contract
+    {system : VerifierModel}
+    {validation : RuntimeOpeningSegmentBindingValidation system}
+    (boundary : RuntimeFriOpeningSegmentParserBoundary system validation) :
+    forall artifact publicInput proof,
+      validation.friOpeningSegmentsValid artifact publicInput proof ->
+        RuntimeFriOpeningSegmentParserContract
+          boundary
+          artifact
+          publicInput
+          proof := by
+  intro artifact publicInput proof friSegments
+  exact
+    And.intro
+      (boundary.friOpeningSegmentsValidImpliesSupportedEncodingVersion
+        artifact
+        publicInput
+        proof
+        friSegments)
+      (And.intro
+        (boundary.friOpeningSegmentsValidImpliesFinalPolynomialValuesCanonical
+          artifact
+          publicInput
+          proof
+          friSegments)
+        (And.intro
+          (boundary.friOpeningSegmentsValidImpliesQueryValuesCanonical
+            artifact
+            publicInput
+            proof
+            friSegments)
+          (And.intro
+            (boundary.friOpeningSegmentsValidImpliesLastLevelDigestRootsCanonical
+              artifact
+              publicInput
+              proof
+              friSegments)
+            (boundary.friOpeningSegmentsValidImpliesSegmentLayoutWalked
+              artifact
+              publicInput
+              proof
+              friSegments))))
+
 theorem runtime_opening_segment_binding_checked_acceptance_evidence
     {system : VerifierModel}
     (validation : RuntimeOpeningSegmentBindingValidation system) :
@@ -495,6 +580,37 @@ theorem runtime_opening_segment_binding_checked_acceptance_fri_opening_checks
       publicInput
       proof
       evidence
+
+theorem runtime_opening_segment_binding_checked_acceptance_fri_parser_contract
+    {system : VerifierModel}
+    (validation : RuntimeOpeningSegmentBindingValidation system)
+    (boundary : RuntimeFriOpeningSegmentParserBoundary system validation) :
+    forall artifact publicInput proof,
+      RuntimeOpeningSegmentBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeFriOpeningSegmentParserContract
+          boundary
+          artifact
+          publicInput
+          proof := by
+  intro artifact publicInput proof accepted
+  have friSegments :=
+    validation.openingSegmentBindingAcceptedImpliesFriOpeningSegmentsValid
+      artifact
+      publicInput
+      proof
+      accepted
+  exact
+    runtime_opening_segment_binding_fri_segments_valid_parser_contract
+      boundary
+      artifact
+      publicInput
+      proof
+      friSegments
 
 theorem runtime_opening_segment_binding_checked_acceptance_pcs_and_fri_without_assumptions
     {system : VerifierModel}

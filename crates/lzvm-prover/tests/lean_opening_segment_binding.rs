@@ -12,6 +12,9 @@ fn lean_opening_segment_binding_exports_core_contract_projection() {
     let top_level_path = crate_root.join("../../lean/Lzvm.lean");
     let top_level_source =
         std::fs::read_to_string(&top_level_path).expect("Lean top-level source should read");
+    let fri_segment_path = crate_root.join("../lzvm-artifacts/src/pcs_fri_segment.rs");
+    let fri_segment_source =
+        std::fs::read_to_string(&fri_segment_path).expect("FRI segment source should read");
 
     assert!(
         lean_binding::contains_import(&top_level_source, "Lzvm.OpeningSegmentBinding"),
@@ -21,13 +24,26 @@ fn lean_opening_segment_binding_exports_core_contract_projection() {
         lean_source.contains("RuntimeOpeningSegmentBindingValidation")
             && lean_source.contains("RuntimeOpeningSegmentBindingBoundContract")
             && lean_source.contains("RuntimeOpeningEvidence")
+            && lean_source.contains("RuntimeFriOpeningSegmentParserBoundary")
+            && lean_source.contains("RuntimeFriOpeningSegmentParserContract")
             && lean_source.contains("RuntimeVerifierCoreContract system publicInput proof")
             && lean_source.contains("SoundWitness system publicInput proof"),
         "Lean opening segment binding should expose checked soundness and verifier core projection"
     );
+    assert!(
+        fri_segment_source.contains("UnsupportedVersion { version }")
+            && fri_segment_source.contains("PCS_FRI_OPENING_V1_VERSION")
+            && fri_segment_source.contains("PCS_FRI_OPENING_V2_VERSION")
+            && fri_segment_source.contains("reader.require_items(last_level_count, ROOT_BYTES)?")
+            && fri_segment_source.contains("FinalPolynomialValueNonCanonical")
+            && fri_segment_source.contains("LastLevelRootNonCanonical")
+            && fri_segment_source.contains("QueryValueNonCanonical"),
+        "Rust FRI opening parser should keep version, last-level, and field-canonicality checks represented by Lean"
+    );
     lean_binding::assert_theorem_declarations(
         &lean_source,
         &[
+            "runtime_opening_segment_binding_fri_segments_valid_parser_contract",
             "runtime_opening_segment_binding_evidence_implies_bound_contract",
             "runtime_opening_segment_binding_evidence_implies_query_plan_bound",
             "runtime_opening_segment_binding_evidence_implies_fri_opening_checks",
@@ -35,6 +51,7 @@ fn lean_opening_segment_binding_exports_core_contract_projection() {
             "runtime_opening_segment_binding_checked_acceptance_query_plan_bound",
             "runtime_opening_segment_binding_checked_acceptance_bound_contract",
             "runtime_opening_segment_binding_checked_acceptance_fri_opening_checks",
+            "runtime_opening_segment_binding_checked_acceptance_fri_parser_contract",
             "runtime_opening_segment_binding_checked_acceptance_pcs_and_fri_without_assumptions",
             "runtime_opening_segment_binding_checked_acceptance_pcs_and_fri",
             "runtime_opening_segment_binding_evidence_implies_opening_bound_contract",
@@ -89,6 +106,26 @@ fn lean_opening_segment_binding_exports_core_contract_projection() {
     );
     lean_binding::assert_theorem_prefix_contains(
         &lean_source,
+        "runtime_opening_segment_binding_fri_segments_valid_parser_contract",
+        &[
+            "RuntimeFriOpeningSegmentParserBoundary system validation",
+            "validation.friOpeningSegmentsValid artifact publicInput proof",
+            "RuntimeFriOpeningSegmentParserContract",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_opening_segment_binding_fri_segments_valid_parser_contract",
+        &[
+            "boundary.friOpeningSegmentsValidImpliesSupportedEncodingVersion",
+            "boundary.friOpeningSegmentsValidImpliesFinalPolynomialValuesCanonical",
+            "boundary.friOpeningSegmentsValidImpliesQueryValuesCanonical",
+            "boundary.friOpeningSegmentsValidImpliesLastLevelDigestRootsCanonical",
+            "boundary.friOpeningSegmentsValidImpliesSegmentLayoutWalked",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
         "runtime_opening_segment_binding_checked_acceptance_fri_opening_checks",
         &[
             "RuntimeOpeningSegmentBindingCheckedAcceptance",
@@ -96,6 +133,28 @@ fn lean_opening_segment_binding_exports_core_contract_projection() {
             "validation.friFoldsValid artifact publicInput proof",
             "validation.verifierQueryOutputsValid artifact publicInput proof",
             "validation.openingValidation.friOpeningBound artifact publicInput proof",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_opening_segment_binding_checked_acceptance_fri_parser_contract",
+        &[
+            "RuntimeOpeningSegmentBindingCheckedAcceptance",
+            "RuntimeFriOpeningSegmentParserBoundary system validation",
+            "RuntimeFriOpeningSegmentParserContract",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_omits(
+        &lean_source,
+        "runtime_opening_segment_binding_checked_acceptance_fri_parser_contract",
+        &["AssumptionBundle"],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_opening_segment_binding_checked_acceptance_fri_parser_contract",
+        &[
+            "validation.openingSegmentBindingAcceptedImpliesFriOpeningSegmentsValid",
+            "runtime_opening_segment_binding_fri_segments_valid_parser_contract",
         ],
     );
     lean_binding::assert_theorem_prefix_contains(
