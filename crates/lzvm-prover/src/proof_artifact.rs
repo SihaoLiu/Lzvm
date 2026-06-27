@@ -9,12 +9,7 @@ use lzvm_artifacts::eth_block_input::EthBlockInput;
 use lzvm_artifacts::eth_block_input_segment::{
     encode_eth_block_input_segment, ETH_BLOCK_INPUT_SEGMENT_ID,
 };
-use lzvm_artifacts::eth_block_public_values::{
-    validate_eth_block_public_values, validate_program_image_cache_public_values,
-};
-use lzvm_artifacts::guest_input_segment::{
-    validate_framed_guest_input_segment, FRAMED_GUEST_INPUT_SEGMENT_ID,
-};
+use lzvm_artifacts::guest_input_segment::FRAMED_GUEST_INPUT_SEGMENT_ID;
 use lzvm_artifacts::key_directory::KeyDirectoryCatalog;
 use lzvm_artifacts::pcs_evaluation_segment::parse_pcs_evaluation_segment;
 use lzvm_artifacts::pcs_nonce_segment::parse_pcs_query_nonce_segment;
@@ -41,8 +36,14 @@ use crate::contribution::{
 use crate::group_values::build_group_values_segment;
 use crate::pcs_transcript::aggregate_pcs_final_query_challenges_iter;
 use crate::proof_artifact_timing::WitnessProofArtifactTiming;
-use crate::proof_preflight::{contains_named_eth_block_public_values, public_values_as_fields};
+use crate::proof_preflight::public_values_as_fields;
 use crate::proof_segment_ids::unexpected_proof_segment_id;
+
+use self::proof_binding_validation::{
+    validate_eth_block_binding, validate_framed_guest_input_binding,
+    validate_program_image_cache_binding, ValidatedEthBlockInput, ValidatedFramedGuestInput,
+    ValidatedProgramImageCache,
+};
 use crate::proof_values::{
     build_pcs_proof_values_segment_from_packed_values, flatten_pcs_proof_values,
     load_pcs_proof_values_from_segments,
@@ -1148,15 +1149,6 @@ fn build_program_image_cache_proof_segment(
     }))
 }
 
-#[derive(Clone, Copy, Debug)]
-struct ValidatedProgramImageCache<'a>(&'a ProgramImageCommitmentCache);
-
-impl<'a> ValidatedProgramImageCache<'a> {
-    fn as_cache(self) -> &'a ProgramImageCommitmentCache {
-        self.0
-    }
-}
-
 fn build_eth_block_input_proof_segment(
     input: Option<ValidatedEthBlockInput<'_>>,
 ) -> Result<Option<ProofSegment>, String> {
@@ -1171,15 +1163,6 @@ fn build_eth_block_input_proof_segment(
     }))
 }
 
-#[derive(Clone, Copy, Debug)]
-struct ValidatedEthBlockInput<'a>(&'a EthBlockInput);
-
-impl<'a> ValidatedEthBlockInput<'a> {
-    fn as_input(self) -> &'a EthBlockInput {
-        self.0
-    }
-}
-
 fn build_framed_guest_input_proof_segment(
     input: Option<ValidatedFramedGuestInput<'_>>,
 ) -> Option<ProofSegment> {
@@ -1190,15 +1173,6 @@ fn build_framed_guest_input_proof_segment(
         id: FRAMED_GUEST_INPUT_SEGMENT_ID,
         data: input.as_bytes().to_vec(),
     })
-}
-
-#[derive(Clone, Copy)]
-struct ValidatedFramedGuestInput<'a>(&'a [u8]);
-
-impl<'a> ValidatedFramedGuestInput<'a> {
-    fn as_bytes(self) -> &'a [u8] {
-        self.0
-    }
 }
 
 #[derive(Clone, Copy, Default)]
@@ -1225,42 +1199,81 @@ fn validate_proof_bindings<'a>(
     })
 }
 
-fn validate_program_image_cache_binding<'a>(
-    public_values: &PublicValues,
-    cache: Option<&'a ProgramImageCommitmentCache>,
-) -> Result<Option<ValidatedProgramImageCache<'a>>, String> {
-    if let Some(cache) = cache {
-        if cache.constraint_system_digest != public_values.setup_hash {
-            return Err("program image cache setup hash mismatch".to_owned());
+mod proof_binding_validation {
+    use lzvm_artifacts::eth_block_input::EthBlockInput;
+    use lzvm_artifacts::eth_block_public_values::{
+        validate_eth_block_public_values, validate_program_image_cache_public_values,
+    };
+    use lzvm_artifacts::guest_input_segment::validate_framed_guest_input_segment;
+    use lzvm_artifacts::program_image::ProgramImageCommitmentCache;
+    use lzvm_artifacts::public_values::PublicValues;
+
+    use crate::proof_preflight::contains_named_eth_block_public_values;
+
+    #[derive(Clone, Copy, Debug)]
+    pub(super) struct ValidatedProgramImageCache<'a>(&'a ProgramImageCommitmentCache);
+
+    impl<'a> ValidatedProgramImageCache<'a> {
+        pub(super) fn as_cache(self) -> &'a ProgramImageCommitmentCache {
+            self.0
         }
     }
-    validate_program_image_cache_public_values(public_values, cache)
-        .map_err(|error| error.to_string())?;
-    Ok(cache.map(ValidatedProgramImageCache))
-}
 
-fn validate_eth_block_binding<'a>(
-    public_values: &PublicValues,
-    input: Option<&'a EthBlockInput>,
-) -> Result<Option<ValidatedEthBlockInput<'a>>, String> {
-    if let Some(input) = input {
-        validate_eth_block_public_values(input, public_values)
+    #[derive(Clone, Copy, Debug)]
+    pub(super) struct ValidatedEthBlockInput<'a>(&'a EthBlockInput);
+
+    impl<'a> ValidatedEthBlockInput<'a> {
+        pub(super) fn as_input(self) -> &'a EthBlockInput {
+            self.0
+        }
+    }
+
+    #[derive(Clone, Copy)]
+    pub(super) struct ValidatedFramedGuestInput<'a>(&'a [u8]);
+
+    impl<'a> ValidatedFramedGuestInput<'a> {
+        pub(super) fn as_bytes(self) -> &'a [u8] {
+            self.0
+        }
+    }
+
+    pub(super) fn validate_program_image_cache_binding<'a>(
+        public_values: &PublicValues,
+        cache: Option<&'a ProgramImageCommitmentCache>,
+    ) -> Result<Option<ValidatedProgramImageCache<'a>>, String> {
+        if let Some(cache) = cache {
+            if cache.constraint_system_digest != public_values.setup_hash {
+                return Err("program image cache setup hash mismatch".to_owned());
+            }
+        }
+        validate_program_image_cache_public_values(public_values, cache)
             .map_err(|error| error.to_string())?;
-    } else if contains_named_eth_block_public_values(public_values) {
-        return Err("missing ETH block input proof segment".to_owned());
+        Ok(cache.map(ValidatedProgramImageCache))
     }
-    Ok(input.map(ValidatedEthBlockInput))
-}
 
-fn validate_framed_guest_input_binding<'a>(
-    input: Option<&'a [u8]>,
-) -> Result<Option<ValidatedFramedGuestInput<'a>>, String> {
-    if let Some(input) = input {
-        validate_framed_guest_input_segment(input)
-            .map_err(|error| format!("framed guest input is invalid: {error}"))?;
-        return Ok(Some(ValidatedFramedGuestInput(input)));
+    pub(super) fn validate_eth_block_binding<'a>(
+        public_values: &PublicValues,
+        input: Option<&'a EthBlockInput>,
+    ) -> Result<Option<ValidatedEthBlockInput<'a>>, String> {
+        if let Some(input) = input {
+            validate_eth_block_public_values(input, public_values)
+                .map_err(|error| error.to_string())?;
+        } else if contains_named_eth_block_public_values(public_values) {
+            return Err("missing ETH block input proof segment".to_owned());
+        }
+        Ok(input.map(ValidatedEthBlockInput))
     }
-    Ok(None)
+
+    pub(super) fn validate_framed_guest_input_binding<'a>(
+        input: Option<&'a [u8]>,
+    ) -> Result<Option<ValidatedFramedGuestInput<'a>>, String> {
+        if let Some(input) = input {
+            validate_framed_guest_input_segment(input)
+                .map_err(|error| format!("framed guest input is invalid: {error}"))?;
+            return Ok(Some(ValidatedFramedGuestInput(input)));
+        }
+        Ok(None)
+    }
 }
 
 fn validate_contribution_proof_output(

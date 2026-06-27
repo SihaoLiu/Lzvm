@@ -11,13 +11,6 @@ fn compact_source_contains(source: &str, needle: &str) -> bool {
     compact_source(source).contains(&compact_source(needle))
 }
 
-fn source_contains_wrapper_constructor(source: &str, wrapper: &str) -> bool {
-    let compact = compact_source(source);
-    compact.contains(&format!("{wrapper}("))
-        || compact.contains(&format!("{wrapper}::<"))
-        || compact.contains(&format!("{wrapper}{{"))
-}
-
 fn unquoted_timing_name(timing_name: &str) -> &str {
     timing_name
         .strip_prefix('"')
@@ -2202,6 +2195,11 @@ fn lean_eth_block_public_input_binding_tracks_runtime_checks() {
         "fn validate_eth_block_binding",
         "fn validate_framed_guest_input_binding",
     );
+    let proof_binding_validation_body = source_between(
+        &artifact_source,
+        "mod proof_binding_validation {",
+        "\nfn validate_contribution_proof_output",
+    );
 
     assert!(
         lean_root_source.contains("import Lzvm.EthBlockPublicInputBinding"),
@@ -2214,6 +2212,9 @@ fn lean_eth_block_public_input_binding_tracks_runtime_checks() {
     );
     assert!(
         artifact_source.contains("fn validate_eth_block_binding")
+            && artifact_source.contains("use self::proof_binding_validation")
+            && proof_binding_validation_body
+                .contains("pub(super) struct ValidatedEthBlockInput<'a>(&'a EthBlockInput);")
             && artifact_source.contains("struct ValidatedEthBlockInput")
             && artifact_source.contains("eth_block_input: Option<ValidatedEthBlockInput<'a>>")
             && compact_source_contains(
@@ -2232,7 +2233,6 @@ fn lean_eth_block_public_input_binding_tracks_runtime_checks() {
                 .matches("map(ValidatedEthBlockInput)")
                 .count()
                 == 1
-            && !source_contains_wrapper_constructor(&artifact_source, "ValidatedEthBlockInput")
             && compact_source_contains(
                 eth_block_input_segment_body,
                 "input: Option<ValidatedEthBlockInput<'_>>"
@@ -2325,6 +2325,11 @@ fn lean_framed_guest_input_binding_tracks_runtime_checks() {
         &proof_artifact_source,
         "fn validate_eth_block_binding",
         "fn validate_framed_guest_input_binding",
+    );
+    let proof_binding_validation_body = source_between(
+        &proof_artifact_source,
+        "mod proof_binding_validation {",
+        "\nfn validate_contribution_proof_output",
     );
     let build_proof_binding_segments_body = function_body(
         &proof_artifact_source,
@@ -2462,6 +2467,12 @@ fn lean_framed_guest_input_binding_tracks_runtime_checks() {
                 "let eth_block_input = validate_eth_block_binding(public_values, eth_block_input)?"
             )
             && validate_proof_bindings_body.contains("Ok(ValidatedProofBindings")
+            && proof_artifact_source.contains("use self::proof_binding_validation")
+            && proof_binding_validation_body.contains(
+                "pub(super) struct ValidatedProgramImageCache<'a>(&'a ProgramImageCommitmentCache);"
+            )
+            && proof_binding_validation_body
+                .contains("pub(super) struct ValidatedEthBlockInput<'a>(&'a EthBlockInput);")
             && proof_artifact_source.contains("struct ValidatedProgramImageCache")
             && proof_artifact_source
                 .contains("program_image_cache: Option<ValidatedProgramImageCache<'a>>")
@@ -2479,10 +2490,6 @@ fn lean_framed_guest_input_binding_tracks_runtime_checks() {
                 .matches("map(ValidatedProgramImageCache)")
                 .count()
                 == 1
-            && !source_contains_wrapper_constructor(
-                &proof_artifact_source,
-                "ValidatedProgramImageCache"
-            )
             && compact_source_contains(
                 validate_eth_block_binding_body,
                 "Result<Option<ValidatedEthBlockInput<'a>>, String>"
@@ -2492,7 +2499,6 @@ fn lean_framed_guest_input_binding_tracks_runtime_checks() {
                 "Ok(input.map(ValidatedEthBlockInput))"
             )
             && proof_artifact_source.matches("map(ValidatedEthBlockInput)").count() == 1
-            && !source_contains_wrapper_constructor(&proof_artifact_source, "ValidatedEthBlockInput")
             && validate_framed_guest_input_binding_body
                 .contains("Result<Option<ValidatedFramedGuestInput<'a>>, String>")
             && validate_framed_guest_input_binding_body
