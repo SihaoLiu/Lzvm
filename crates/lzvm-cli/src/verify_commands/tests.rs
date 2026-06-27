@@ -580,6 +580,62 @@ fn rejects_block_input_binding_when_proof_public_values_hash_differs() {
 }
 
 #[test]
+fn rejects_block_input_binding_when_proof_has_unexpected_segment_id() {
+    let dir = test_fixture_dir("proof-eth-block-unexpected-segment");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let input_path = dir.join("block.input");
+    let proof_path = dir.join("proof.bin");
+    let public_values_path = dir.join("public-values.bin");
+    let public_input = sample_public_block_bytes_with_matching_roots();
+    let block_input = block_input_from_public_bytes(&public_input);
+    let block_input_bytes = encode_eth_block_input(&block_input).expect("input should encode");
+    std::fs::write(&input_path, &block_input_bytes).expect("block input should write");
+    let setup_hash = [7; 32];
+    let public_values = public_values_from_eth_block_input(setup_hash, &block_input);
+    std::fs::write(
+        &public_values_path,
+        encode_public_values(&public_values).expect("public values should encode"),
+    )
+    .expect("public values should write");
+    let unexpected_segment_id = 20_000;
+    let proof = ProofArtifact {
+        setup_hash,
+        public_values_hash: public_values_digest(&public_values).expect("digest should compute"),
+        segments: vec![
+            ProofSegment {
+                id: ETH_BLOCK_INPUT_SEGMENT_ID,
+                data: block_input_bytes,
+            },
+            ProofSegment {
+                id: unexpected_segment_id,
+                data: vec![1],
+            },
+        ],
+    };
+    std::fs::write(
+        &proof_path,
+        encode_proof_artifact(&proof).expect("proof should encode"),
+    )
+    .expect("proof should write");
+
+    let result = eth_block_input::verify_eth_block_input_binding(
+        proof_path.to_str().expect("proof path should be utf-8"),
+        public_values_path
+            .to_str()
+            .expect("public values path should be utf-8"),
+        input_path.to_str().expect("input path should be utf-8"),
+    );
+    std::fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert!(matches!(
+        result,
+        Err(message)
+            if message.ends_with(&format!("unexpected proof segment id: {unexpected_segment_id}"))
+    ));
+}
+
+#[test]
 fn rejects_public_input_binding_when_proof_public_values_hash_differs() {
     let dir = test_fixture_dir("proof-eth-public-hash");
     let _ = std::fs::remove_dir_all(&dir);

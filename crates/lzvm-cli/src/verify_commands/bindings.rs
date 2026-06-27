@@ -8,7 +8,7 @@ use lzvm_artifacts::program_image::read_program_image_commitment_cache_file;
 use lzvm_artifacts::program_image_segment::{
     encode_program_image_cache_segment, PROGRAM_IMAGE_CACHE_SEGMENT_ID,
 };
-use lzvm_artifacts::proof::read_proof_artifact_file;
+use lzvm_prover::proof_preflight::read_checked_proof_artifact_file;
 
 use super::eth_block_input::{
     verify_eth_block_input_binding, verify_eth_public_input_binding_with_mode, EthBlockInputBinding,
@@ -343,7 +343,7 @@ fn verify_requested_framed_guest_input_bindings(
 }
 
 fn verify_program_image_cache_binding(proof_bin: &str, cache_path: &str) -> Result<(), String> {
-    let proof = read_proof_artifact_file(proof_bin)
+    let proof = read_checked_proof_artifact_file(proof_bin)
         .map_err(|error| format!("read proof artifact failed: {proof_bin}: {error}"))?;
     let cache = read_program_image_commitment_cache_file(cache_path)
         .map_err(|error| format!("read program-image cache failed: {cache_path}: {error}"))?;
@@ -361,7 +361,7 @@ fn verify_program_image_cache_binding(proof_bin: &str, cache_path: &str) -> Resu
 }
 
 fn verify_framed_guest_input_binding(proof_bin: &str, input_data_path: &str) -> Result<(), String> {
-    let proof = read_proof_artifact_file(proof_bin)
+    let proof = read_checked_proof_artifact_file(proof_bin)
         .map_err(|error| format!("read proof artifact failed: {proof_bin}: {error}"))?;
     let input = fs::File::open(input_data_path)
         .map_err(|error| format!("read input data failed: {input_data_path}: {error}"))?;

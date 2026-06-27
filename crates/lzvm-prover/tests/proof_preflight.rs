@@ -21,7 +21,7 @@ use lzvm_artifacts::program_image_segment::{
     encode_program_image_cache_segment, program_image_cache_segment_digest,
     ProgramImageCacheSegmentError, PROGRAM_IMAGE_CACHE_SEGMENT_ID,
 };
-use lzvm_artifacts::proof::{ProofArtifact, ProofSegment};
+use lzvm_artifacts::proof::{encode_proof_artifact, ProofArtifact, ProofSegment};
 use lzvm_artifacts::public_values::{
     public_values_digest, PublicValueEntry, PublicValues, PublicValuesError,
 };
@@ -37,8 +37,8 @@ use lzvm_artifacts::witness_segment::{
 };
 use lzvm_field::{Felt, FieldError, MAX_ROOT_OF_UNITY_BITS, MODULUS};
 use lzvm_prover::proof_preflight::{
-    public_values_as_fields, validate_proof_public_values, ProofPreflightError,
-    ProofPreflightReport, PublicValueFieldError, TraceConstraintPreflightUnit,
+    public_values_as_fields, read_checked_proof_artifact_file, validate_proof_public_values,
+    ProofPreflightError, ProofPreflightReport, PublicValueFieldError, TraceConstraintPreflightUnit,
 };
 
 const SAMPLE_AUX_SEGMENT_ID: u32 = PCS_MATERIAL_MANIFEST_SEGMENT_ID;
@@ -74,6 +74,18 @@ fn sample_proof(public_values: &PublicValues) -> ProofArtifact {
             data: vec![1, 2, 3, 4],
         }],
     }
+}
+
+fn temp_file_path(name: &str) -> std::path::PathBuf {
+    std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .and_then(std::path::Path::parent)
+        .expect("workspace root should resolve")
+        .join("temp")
+        .join(format!(
+            "lzvm-proof-preflight-{}-{name}",
+            std::process::id()
+        ))
 }
 
 fn sample_program_image_cache() -> ProgramImageCommitmentCache {
@@ -318,6 +330,34 @@ fn rejects_unknown_fixed_proof_segments_in_memory() {
         ProofPreflightError::UnexpectedProofSegment {
             id: unknown_segment_id
         }
+    );
+}
+
+#[test]
+fn checked_proof_reader_rejects_unknown_fixed_proof_segments() {
+    let public_values = sample_public_values();
+    let mut proof = sample_proof(&public_values);
+    let unknown_segment_id = 20_000;
+    proof.segments.push(ProofSegment {
+        id: unknown_segment_id,
+        data: vec![5, 6, 7, 8],
+    });
+    let path = temp_file_path("unknown-segment-proof.bin");
+    std::fs::create_dir_all(path.parent().expect("temp file should have parent"))
+        .expect("fixture directory should be created");
+    std::fs::write(
+        &path,
+        encode_proof_artifact(&proof).expect("artifact should encode structurally valid proof"),
+    )
+    .expect("proof fixture should write");
+
+    let error = read_checked_proof_artifact_file(&path)
+        .expect_err("checked proof reader should reject unknown proof segments");
+    std::fs::remove_file(&path).expect("proof fixture should be removed");
+
+    assert_eq!(
+        error.to_string(),
+        format!("unexpected proof segment id: {unknown_segment_id}")
     );
 }
 

@@ -2526,7 +2526,9 @@ fn lean_framed_guest_input_binding_tracks_runtime_checks() {
     );
     assert!(
         verify_framed_guest_input_binding_body
-            .contains("validate_framed_guest_input_segment(&segment.data)")
+            .contains("read_checked_proof_artifact_file")
+            && verify_framed_guest_input_binding_body
+                .contains("validate_framed_guest_input_segment(&segment.data)")
             && !verify_framed_guest_input_binding_body
                 .contains("parse_framed_guest_input_segment(&segment.data)")
             && input_data_file_matches_segment_body.contains("read_exact")
@@ -2534,7 +2536,9 @@ fn lean_framed_guest_input_binding_tracks_runtime_checks() {
         "CLI verification should validate and compare framed guest stdin binding bytes without payload-copy parsing or a whole-file input read"
     );
     assert!(
-        verify_program_image_cache_binding_body.contains("read_program_image_commitment_cache_file")
+        verify_program_image_cache_binding_body.contains("read_checked_proof_artifact_file")
+            && verify_program_image_cache_binding_body
+                .contains("read_program_image_commitment_cache_file")
             && verify_program_image_cache_binding_body
                 .contains("encode_program_image_cache_segment(&cache)")
             && verify_program_image_cache_binding_body.contains("PROGRAM_IMAGE_CACHE_SEGMENT_ID")

@@ -7,8 +7,8 @@ use lzvm_artifacts::eth_block_input_segment::{
     parse_eth_block_input_segment, ETH_BLOCK_INPUT_SEGMENT_ID,
 };
 use lzvm_artifacts::eth_block_public_values::validate_eth_block_public_values;
-use lzvm_artifacts::proof::read_proof_artifact_file;
 use lzvm_artifacts::public_values::{public_values_digest, read_public_values_file};
+use lzvm_prover::proof_preflight::read_checked_proof_artifact_file;
 
 use crate::eth_block_prove_input::{parse_eth_public_block_for_mode, EthPublicInputMode};
 
@@ -80,7 +80,7 @@ fn verify_eth_block_input_binding_from_input(
     public_values_path: &str,
     input: EthBlockInput,
 ) -> Result<EthBlockInputBinding, String> {
-    let proof = read_proof_artifact_file(proof_bin)
+    let proof = read_checked_proof_artifact_file(proof_bin)
         .map_err(|error| format!("read proof artifact failed: {proof_bin}: {error}"))?;
     let segment = proof
         .segments

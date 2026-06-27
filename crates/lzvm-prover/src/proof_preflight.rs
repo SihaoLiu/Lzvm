@@ -371,6 +371,24 @@ impl From<ProofPreflightError> for ProofPreflightFileError {
     }
 }
 
+pub fn validate_proof_artifact_runtime_shape(
+    proof: &ProofArtifact,
+) -> Result<(), ProofPreflightError> {
+    validate_proof_artifact(proof).map_err(ProofPreflightError::ProofArtifact)?;
+    if let Some(id) = unexpected_proof_segment_id(&proof.segments) {
+        return Err(ProofPreflightError::UnexpectedProofSegment { id });
+    }
+    Ok(())
+}
+
+pub fn read_checked_proof_artifact_file(
+    proof_path: impl AsRef<Path>,
+) -> Result<ProofArtifact, ProofPreflightFileError> {
+    let proof = read_proof_artifact_file(proof_path)?;
+    validate_proof_artifact_runtime_shape(&proof)?;
+    Ok(proof)
+}
+
 pub fn validate_proof_public_values(
     proof: &ProofArtifact,
     public_values: &PublicValues,
@@ -390,10 +408,7 @@ fn validate_proof_public_values_inner(
     public_values: &PublicValues,
     require_trace_constraint_evidence: bool,
 ) -> Result<ProofPreflightValidation, ProofPreflightError> {
-    validate_proof_artifact(proof).map_err(ProofPreflightError::ProofArtifact)?;
-    if let Some(id) = unexpected_proof_segment_id(&proof.segments) {
-        return Err(ProofPreflightError::UnexpectedProofSegment { id });
-    }
+    validate_proof_artifact_runtime_shape(proof)?;
 
     if proof.setup_hash != public_values.setup_hash {
         return Err(ProofPreflightError::SetupHashMismatch);
@@ -946,7 +961,7 @@ pub fn validate_proof_public_values_from_files(
     proof_path: impl AsRef<Path>,
     public_values_path: impl AsRef<Path>,
 ) -> Result<ProofPreflightReport, ProofPreflightFileError> {
-    let proof = read_proof_artifact_file(proof_path)?;
+    let proof = read_checked_proof_artifact_file(proof_path)?;
     let public_values = read_public_values_file(public_values_path)?;
     validate_proof_public_values(&proof, &public_values).map_err(Into::into)
 }
