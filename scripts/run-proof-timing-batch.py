@@ -113,6 +113,19 @@ def open_text_no_follow(path: Path, mode: int = 0o600):
     return os.fdopen(descriptor, "w", encoding="utf-8")
 
 
+def open_readwrite_text_no_follow(path: Path, mode: int = 0o600):
+    flags = os.O_RDWR | os.O_CREAT | os.O_TRUNC
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    try:
+        descriptor = os.open(path, flags, mode)
+    except OSError as error:
+        if path.is_symlink():
+            raise SystemExit(f"output path must not be a symlink: {path}") from error
+        raise
+    return os.fdopen(descriptor, "w+", encoding="utf-8")
+
+
 def write_text_no_follow(path: Path, text: str) -> None:
     with open_text_no_follow(path) as output:
         output.write(text)
@@ -415,8 +428,8 @@ def run_once(
 
     start = time.monotonic()
     timed_out = False
-    with open_text_no_follow(stdout_path) as stdout_file:
-        with open_text_no_follow(stderr_path) as stderr_file:
+    with open_readwrite_text_no_follow(stdout_path) as stdout_file:
+        with open_readwrite_text_no_follow(stderr_path) as stderr_file:
             process = subprocess.Popen(
                 command,
                 cwd=cwd,
@@ -433,9 +446,13 @@ def run_once(
                 timed_out = True
                 stop_process_group(process)
                 exit_code = process.wait()
+            stdout_file.flush()
+            stderr_file.flush()
+            stdout_file.seek(0)
+            stderr_file.seek(0)
+            stdout = stdout_file.read()
+            stderr = stderr_file.read()
     elapsed_s = time.monotonic() - start
-    stdout = read_text(stdout_path)
-    stderr = read_text(stderr_path)
     write_combined_log(combined_path, stdout, stderr)
 
     status_lines.extend(

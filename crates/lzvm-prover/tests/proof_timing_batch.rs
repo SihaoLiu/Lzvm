@@ -1281,6 +1281,82 @@ fn proof_timing_batch_rejects_preexisting_run_tmpdir_symlink() {
     );
 }
 
+#[cfg(unix)]
+#[test]
+fn proof_timing_batch_validates_open_stdout_capture() {
+    let script_path = batch_script_path();
+    let dir = test_dir("proof-timing-batch-stdout-replaced");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("fixture dir should be created");
+    let log_path = dir.join("improve-log.csv");
+    let redirected = dir.join("redirected.stdout");
+    std::fs::write(&redirected, "timing_total_ms=1000\n").expect("redirect target should write");
+    let command = format!(
+        concat!(
+            "rm -f {{batch_dir}}/small-{{run_padded}}.stdout; ",
+            "ln -s '{}' {{batch_dir}}/small-{{run_padded}}.stdout; ",
+            "printf 'captured stdout without timing\\n'"
+        ),
+        redirected.display()
+    );
+
+    let output = Command::new(&script_path)
+        .arg("--work-dir")
+        .arg(&dir)
+        .arg("--path")
+        .arg(&log_path)
+        .arg("--commit")
+        .arg("test")
+        .arg("--runs")
+        .arg("3")
+        .arg("--small-command")
+        .arg(command)
+        .arg("--summary")
+        .arg("stdout capture guard")
+        .output()
+        .expect("proof timing batch should run");
+    let success = output.status.success();
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    let batch_dir = single_batch_dir(&dir);
+    let combined_log =
+        std::fs::read_to_string(batch_dir.join("small-001.log")).expect("log should read");
+    let status =
+        std::fs::read_to_string(batch_dir.join("small-001.status")).expect("status should read");
+    let stdout_path = batch_dir.join("small-001.stdout");
+    let stdout_is_symlink = std::fs::symlink_metadata(&stdout_path)
+        .expect("stdout path should remain inspectable")
+        .file_type()
+        .is_symlink();
+    let improve_log_created = log_path.exists();
+    let _ = std::fs::remove_dir_all(&dir);
+
+    assert!(
+        !success,
+        "proof timing batch should validate the opened stdout capture"
+    );
+    assert!(
+        stderr.contains("expected exactly one timing_total_ms"),
+        "stdout replacement should not spoof timing validation: stderr={stderr}"
+    );
+    assert!(
+        stdout_is_symlink,
+        "fixture should replace the stdout path with a symlink"
+    );
+    assert!(
+        combined_log.contains("captured stdout without timing")
+            && !combined_log.contains("timing_total_ms=1000"),
+        "combined log should come from the opened capture file: {combined_log}"
+    );
+    assert!(
+        status.contains("validation_error=") && status.contains("expected exactly one"),
+        "status should record validation from the opened capture: {status}"
+    );
+    assert!(
+        !improve_log_created,
+        "rejected stdout replacement should not append improve log"
+    );
+}
+
 #[test]
 fn proof_timing_batch_rejects_missing_required_output_text() {
     let script_path = batch_script_path();
