@@ -9,6 +9,7 @@ use lzvm_artifacts::proof::ProofSegment;
 use lzvm_artifacts::witness_segment::WitnessCommitmentSegmentError;
 use lzvm_field::{Ext3, Felt};
 
+use crate::indexing::index_first_by_key;
 use crate::pcs_evaluation::{
     load_pcs_evaluation_segment_from_segments,
     load_pcs_evaluation_unit_for_identity_from_parsed_segment,
@@ -346,36 +347,22 @@ pub fn derive_pcs_transcript_unit_challenges_from_loaded_witness_segments<'a>(
 fn material_units_by_index(
     units: &[PcsMaterialManifestUnit],
 ) -> BTreeMap<u32, &PcsMaterialManifestUnit> {
-    let mut units_by_index = BTreeMap::new();
-    for unit in units {
-        units_by_index.entry(unit.unit_index).or_insert(unit);
-    }
-    units_by_index
+    index_first_by_key(units, |unit| unit.unit_index)
 }
 
 fn witness_segments_by_identity<'loaded, 'segment>(
     witness_segments: &'loaded [LoadedWitnessCommitmentSegmentRef<'segment>],
 ) -> BTreeMap<(u32, u32), &'loaded LoadedWitnessCommitmentSegmentRef<'segment>> {
-    let mut segments_by_identity = BTreeMap::new();
-    for segment in witness_segments {
-        segments_by_identity
-            .entry((
-                segment.identity.unit_index,
-                segment.identity.trace_instance_index,
-            ))
-            .or_insert(segment);
-    }
-    segments_by_identity
+    index_first_by_key(witness_segments, |segment| {
+        (
+            segment.identity.unit_index,
+            segment.identity.trace_instance_index,
+        )
+    })
 }
 
 fn fri_units_by_identity(
     units: &[PcsFriOpeningUnitSegment],
 ) -> BTreeMap<(u32, u32), &PcsFriOpeningUnitSegment> {
-    let mut units_by_identity = BTreeMap::new();
-    for unit in units {
-        units_by_identity
-            .entry((unit.unit_index, unit.trace_instance_index))
-            .or_insert(unit);
-    }
-    units_by_identity
+    index_first_by_key(units, |unit| (unit.unit_index, unit.trace_instance_index))
 }

@@ -55,6 +55,7 @@ pub mod guest_machine;
 pub mod guest_memory;
 pub mod guest_pc_trace_backend;
 pub mod hint_eval;
+mod indexing;
 mod merkle_hash;
 pub mod pcs_challenge;
 pub mod pcs_evaluation;

@@ -15,6 +15,7 @@ use crate::constant_opening::{
     validate_constant_opening_units_match_query_units_from_segment,
     LoadConstantOpeningSegmentError, LoadConstantOpeningUnitError,
 };
+use crate::indexing::index_first_by_key;
 use crate::pcs_evaluation::{
     load_pcs_evaluation_segment_from_segments,
     load_pcs_evaluation_unit_for_identity_from_parsed_segment, LoadPcsEvaluationUnitError,
@@ -804,49 +805,25 @@ fn validate_verifier_query_outputs_from_segments_inner(
 fn fri_opening_units_by_identity(
     units: &[PcsFriOpeningUnitSegment],
 ) -> BTreeMap<(u32, u32), &PcsFriOpeningUnitSegment> {
-    let mut units_by_identity = BTreeMap::new();
-    for unit in units {
-        units_by_identity
-            .entry((unit.unit_index, unit.trace_instance_index))
-            .or_insert(unit);
-    }
-    units_by_identity
+    index_first_by_key(units, |unit| (unit.unit_index, unit.trace_instance_index))
 }
 
 fn constant_opening_units_by_identity(
     units: &[ConstantOpeningUnitSegment],
 ) -> BTreeMap<(u32, u32), &ConstantOpeningUnitSegment> {
-    let mut units_by_identity = BTreeMap::new();
-    for unit in units {
-        units_by_identity
-            .entry((unit.unit_index, unit.trace_instance_index))
-            .or_insert(unit);
-    }
-    units_by_identity
+    index_first_by_key(units, |unit| (unit.unit_index, unit.trace_instance_index))
 }
 
 fn witness_opening_units_by_identity(
     units: &[WitnessOpeningUnitSegment],
 ) -> BTreeMap<(u32, u32), &WitnessOpeningUnitSegment> {
-    let mut units_by_identity = BTreeMap::new();
-    for unit in units {
-        units_by_identity
-            .entry((unit.unit_index, unit.trace_instance_index))
-            .or_insert(unit);
-    }
-    units_by_identity
+    index_first_by_key(units, |unit| (unit.unit_index, unit.trace_instance_index))
 }
 
 fn transcript_challenges_by_identity(
     units: &[PcsTranscriptUnitChallenges],
 ) -> BTreeMap<(u32, u32), &PcsTranscriptUnitChallenges> {
-    let mut units_by_identity = BTreeMap::new();
-    for unit in units {
-        units_by_identity
-            .entry((unit.unit_index, unit.trace_instance_index))
-            .or_insert(unit);
-    }
-    units_by_identity
+    index_first_by_key(units, |unit| (unit.unit_index, unit.trace_instance_index))
 }
 
 fn verifier_code_with_proof_value_offsets(

@@ -8706,6 +8706,8 @@ fn lean_opening_segment_binding_tracks_runtime_opening_checks() {
                 .contains("validate_constant_opening_units_match_query_units_from_segment")
             && verifier_query_validation
                 .contains("validate_witness_opening_units_match_query_units_from_segment")
+            && verifier_query_source.contains("use crate::indexing::index_first_by_key")
+            && verifier_query_source.matches("index_first_by_key(").count() == 4
             && verifier_query_validation
                 .contains("fri_opening_units_by_identity(request.opening_units)")
             && verifier_query_validation
@@ -8767,6 +8769,9 @@ fn lean_query_plan_binding_tracks_runtime_transcript_opening_checks() {
     let proof_segment_ids_path = crate_root.join("src/proof_segment_ids.rs");
     let proof_segment_ids_source = std::fs::read_to_string(&proof_segment_ids_path)
         .expect("proof segment ID source should read");
+    let indexing_path = crate_root.join("src/indexing.rs");
+    let indexing_source =
+        std::fs::read_to_string(&indexing_path).expect("indexing helper source should read");
     let query_plan_path = crate_root.join("src/pcs_query_plan.rs");
     let query_plan_source =
         std::fs::read_to_string(&query_plan_path).expect("PCS query plan source should read");
@@ -8805,6 +8810,13 @@ fn lean_query_plan_binding_tracks_runtime_transcript_opening_checks() {
         "setup preflight should validate query plan before opening-dependent checks"
     );
     assert!(
+        indexing_source.contains("fn index_first_by_key")
+            && indexing_source.contains("BTreeMap")
+            && indexing_source.contains(".or_insert(item)")
+            && !indexing_source.contains("collect::<BTreeMap"),
+        "shared indexing helper should preserve first matching unit semantics"
+    );
+    assert!(
         query_plan_source.contains("validate_transcript_pcs_query_plan_segments")
             && query_plan_source.contains("validate_seeded_pcs_query_plan_segments")
             && query_plan_source.contains("derive_pcs_final_query_challenge_from_segments")
@@ -8822,6 +8834,8 @@ fn lean_query_plan_binding_tracks_runtime_transcript_opening_checks() {
             && query_plan_source.contains("load_unit_values_segment_from_segments")
             && query_plan_source.contains("load_pcs_evaluation_unit_for_identity_from_parsed_segment")
             && query_plan_source.contains("load_unit_values_for_identity_from_parsed_segment")
+            && query_plan_source.contains("use crate::indexing::index_first_by_key")
+            && query_plan_source.matches("index_first_by_key(").count() == 3
             && query_plan_source.contains("material_units_by_index(&material.units)")
             && query_plan_source.contains("witness_segments_by_identity(witness_segments)")
             && query_plan_source.contains("fri_units_by_identity(&fri_segment.units)")
@@ -8877,6 +8891,11 @@ fn lean_query_plan_binding_tracks_runtime_transcript_opening_checks() {
                 .contains("load_pcs_evaluation_unit_for_identity_from_parsed_segment")
             && transcript_segments_source
                 .contains("load_unit_values_for_identity_from_parsed_segment")
+            && transcript_segments_source.contains("use crate::indexing::index_first_by_key")
+            && transcript_segments_source
+                .matches("index_first_by_key(")
+                .count()
+                == 3
             && transcript_segments_source
                 .matches("material_units_by_index(&material.units)")
                 .count()
