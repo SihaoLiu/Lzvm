@@ -3600,7 +3600,7 @@ fn run_guest_pc_trace_segment_slice_with_streaming_device_material(
         return Ok(None);
     };
 
-    let timing_config = ZiskMainTraceLowerTimingConfig::from_env();
+    let timing_config = ZiskMainTraceLowerTimingConfig::disabled();
     let mut reports = Vec::new();
     let mut pending_report = None;
     let mut last_report_shape = None;
@@ -5765,7 +5765,7 @@ fn lower_guest_pc_trace_owned_streaming_pending_segment(
     };
 
     let lower_started = Instant::now();
-    let timing_config = ZiskMainTraceLowerTimingConfig::from_env();
+    let timing_config = ZiskMainTraceLowerTimingConfig::from_env_if_enabled(timing.is_some());
     let mut feeder = ZiskMainOwnedStreamingDeviceReportFeeder::new(timing_config);
     let aggregate_report_started = timing.as_ref().map(|_| Instant::now());
     for report in std::mem::take(&mut pending.reports) {
@@ -6818,7 +6818,7 @@ impl GuestPcTraceActiveChunkedSegment {
             seed,
             builder,
             feeder: ZiskMainOwnedStreamingDeviceReportFeeder::new(
-                ZiskMainTraceLowerTimingConfig::from_env(),
+                ZiskMainTraceLowerTimingConfig::from_env_if_enabled(timing_enabled),
             ),
             aggregate_report_started: timing_enabled.then(Instant::now),
         }))
@@ -7392,7 +7392,7 @@ impl GuestPcTraceParallelStreamedSegment {
             seed,
             builder,
             feeder: ZiskMainOwnedStreamingDeviceReportFeeder::new(
-                ZiskMainTraceLowerTimingConfig::from_env(),
+                ZiskMainTraceLowerTimingConfig::from_env_if_enabled(timing_enabled),
             ),
             pending: None,
             reports: retain_reports.then(Vec::new),
@@ -8989,6 +8989,15 @@ struct ZiskMainTraceLowerTimingConfig {
 
 #[cfg(feature = "cuda")]
 impl ZiskMainTraceLowerTimingConfig {
+    fn disabled() -> Self {
+        Self {
+            detail_timing: false,
+            shape_timing: false,
+            detail_sample_stride: 1,
+            row_timing_enabled: false,
+        }
+    }
+
     fn from_env() -> Self {
         let detail_timing = guest_pc_trace_lower_detail_timing_enabled();
         let shape_timing = guest_pc_trace_shape_timing_enabled();
@@ -8997,6 +9006,14 @@ impl ZiskMainTraceLowerTimingConfig {
             shape_timing,
             detail_sample_stride: guest_pc_trace_detail_timing_sample_stride(),
             row_timing_enabled: detail_timing || shape_timing,
+        }
+    }
+
+    fn from_env_if_enabled(enabled: bool) -> Self {
+        if enabled {
+            Self::from_env()
+        } else {
+            Self::disabled()
         }
     }
 }
@@ -10908,7 +10925,7 @@ fn build_layout_zisk_main_trace_segment_device_material(
         return Ok(None);
     };
 
-    let timing_config = ZiskMainTraceLowerTimingConfig::from_env();
+    let timing_config = ZiskMainTraceLowerTimingConfig::from_env_if_enabled(timing.is_some());
     let mut feeder = ZiskMainStreamingDeviceReportFeeder::new(timing_config);
     let aggregate_report_started = timing.as_ref().map(|_| Instant::now());
     for report in reports {
@@ -11350,9 +11367,14 @@ fn build_layout_zisk_main_trace_segment(
         main_device_trace_descriptors(layout, &columns, terminal_pc, segment);
     let mut state = initial_state.clone();
     let mut output_row = 0_usize;
-    let detail_timing = guest_pc_trace_lower_detail_timing_enabled();
-    let shape_timing = guest_pc_trace_shape_timing_enabled();
-    let detail_sample_stride = guest_pc_trace_detail_timing_sample_stride();
+    let timing_enabled = timing.is_some();
+    let detail_timing = timing_enabled && guest_pc_trace_lower_detail_timing_enabled();
+    let shape_timing = timing_enabled && guest_pc_trace_shape_timing_enabled();
+    let detail_sample_stride = if detail_timing {
+        guest_pc_trace_detail_timing_sample_stride()
+    } else {
+        1
+    };
     let aggregate_report_started = timing.as_ref().map(|_| Instant::now());
     for (report_index, report) in reports.iter().enumerate() {
         let report_detail_timing = detail_timing && report_index % detail_sample_stride == 0;

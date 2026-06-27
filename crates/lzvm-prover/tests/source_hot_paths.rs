@@ -7348,6 +7348,11 @@ fn guest_pc_trace_lower_reports_internal_work_timing() {
         "guest PC lower detail timing should compute the gate once per segment"
     );
     assert!(
+        timing_config_body.contains("fn disabled() -> Self")
+            && timing_config_body.contains("fn from_env_if_enabled(enabled: bool) -> Self"),
+        "guest PC device material lowerer should avoid diagnostic env reads when timing is absent"
+    );
+    assert!(
         timing_config_body.contains("guest_pc_trace_shape_timing_enabled()"),
         "guest PC lower shape timing should be explicitly gated"
     );
@@ -7356,8 +7361,10 @@ fn guest_pc_trace_lower_reports_internal_work_timing() {
         "guest PC device material lowerer should skip per-row timing plumbing unless row timing is enabled"
     );
     assert!(
-        device_material_body
-            .contains("let timing_config = ZiskMainTraceLowerTimingConfig::from_env();")
+        compact_source_contains(
+            &device_material_body,
+            "let timing_config = ZiskMainTraceLowerTimingConfig::from_env_if_enabled(timing.is_some());"
+        )
             && push_report_body.contains("if timing_config.row_timing_enabled")
             && push_report_body.contains("timing.as_deref_mut()")
             && push_report_body.contains("} else {\n                None\n            },"),
@@ -7396,6 +7403,18 @@ fn guest_pc_trace_lower_reports_internal_work_timing() {
     assert!(
         host_segment_body.contains("guest_report_next_instruction"),
         "guest PC host lowerer should use lazy next-instruction lookup"
+    );
+    assert!(
+        host_segment_body.contains("let timing_enabled = timing.is_some();")
+            && compact_source_contains(
+                &host_segment_body,
+                "let detail_timing = timing_enabled && guest_pc_trace_lower_detail_timing_enabled();"
+            )
+            && compact_source_contains(
+                &host_segment_body,
+                "let shape_timing = timing_enabled && guest_pc_trace_shape_timing_enabled();"
+            ),
+        "guest PC host lowerer should skip diagnostic timing env reads when timing is absent"
     );
     assert!(
         !host_segment_body.contains("let next_instruction = reports"),
