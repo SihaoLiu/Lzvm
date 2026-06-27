@@ -1,4 +1,7 @@
-use std::{collections::BTreeMap, fmt};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    fmt,
+};
 
 use lzvm_artifacts::constant_opening_segment::ConstantOpeningUnitSegment;
 use lzvm_artifacts::global_info::{GlobalInfo, NamedStageValue};
@@ -718,6 +721,12 @@ fn validate_verifier_query_outputs_from_segments_inner(
         &witness_opening,
     )
     .map_err(VerifierFriQueryOutputSegmentsError::WitnessOpeningUnit)?;
+    let query_identities = verifier_query_unit_identities(request.query_units)?;
+    validate_verifier_query_unit_identities_match_query_units(
+        &query_identities,
+        request.opening_units,
+        request.transcript_challenges,
+    )?;
 
     let fri_opening_units = fri_opening_units_by_identity(request.opening_units);
     let constant_opening_units = constant_opening_units_by_identity(&constant_opening.units);
@@ -799,6 +808,42 @@ fn validate_verifier_query_outputs_from_segments_inner(
         }
     }
 
+    Ok(())
+}
+
+fn verifier_query_unit_identities(
+    units: &[PcsQueryPlanUnit],
+) -> Result<BTreeSet<(u32, u32)>, VerifierFriQueryOutputSegmentsError> {
+    let mut identities = BTreeSet::new();
+    for unit in units {
+        usize::try_from(unit.unit_index)
+            .map_err(|_| VerifierFriQueryOutputSegmentsError::UnitIndexOverflow)?;
+        identities.insert((unit.unit_index, unit.trace_instance_index));
+    }
+    Ok(identities)
+}
+
+fn validate_verifier_query_unit_identities_match_query_units(
+    query_identities: &BTreeSet<(u32, u32)>,
+    opening_units: &[PcsFriOpeningUnitSegment],
+    transcript_challenges: &[PcsTranscriptUnitChallenges],
+) -> Result<(), VerifierFriQueryOutputSegmentsError> {
+    for unit in opening_units {
+        let identity = (unit.unit_index, unit.trace_instance_index);
+        if !query_identities.contains(&identity) {
+            let unit_index = usize::try_from(unit.unit_index)
+                .map_err(|_| VerifierFriQueryOutputSegmentsError::UnitIndexOverflow)?;
+            return Err(VerifierFriQueryOutputSegmentsError::UnitMismatch { unit_index });
+        }
+    }
+    for unit in transcript_challenges {
+        let identity = (unit.unit_index, unit.trace_instance_index);
+        if !query_identities.contains(&identity) {
+            let unit_index = usize::try_from(unit.unit_index)
+                .map_err(|_| VerifierFriQueryOutputSegmentsError::UnitIndexOverflow)?;
+            return Err(VerifierFriQueryOutputSegmentsError::UnitMismatch { unit_index });
+        }
+    }
     Ok(())
 }
 

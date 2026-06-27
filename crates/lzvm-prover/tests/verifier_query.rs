@@ -933,6 +933,55 @@ fn rejects_verifier_query_outputs_extra_witness_opening_units() {
     );
 }
 
+#[test]
+fn rejects_verifier_query_outputs_unqueried_fri_or_challenge_units() {
+    let (unit, code, query_unit, fri, challenges, segments) =
+        verifier_query_output_segments_fixture(false);
+    let mut extra_fri = fri.clone();
+    extra_fri.trace_instance_index = 1;
+    let mut extra_challenges = challenges.clone();
+    extra_challenges.trace_instance_index = 1;
+    let code_refs = [&code];
+
+    let opening_units = [fri.clone(), extra_fri];
+    let opening_error =
+        validate_verifier_query_outputs_from_segments(VerifierFriQueryOutputSegmentsRequest {
+            units: std::slice::from_ref(&unit),
+            verifier_codes: &code_refs,
+            global_info: &global_info_without_proof_values(),
+            public_values: &[],
+            query_units: std::slice::from_ref(&query_unit),
+            opening_units: &opening_units,
+            transcript_challenges: std::slice::from_ref(&challenges),
+            segments: &segments,
+        })
+        .expect_err("unqueried FRI opening unit should be rejected");
+
+    assert_eq!(
+        opening_error,
+        VerifierFriQueryOutputSegmentsError::UnitMismatch { unit_index: 0 }
+    );
+
+    let transcript_challenges = [challenges, extra_challenges];
+    let challenge_error =
+        validate_verifier_query_outputs_from_segments(VerifierFriQueryOutputSegmentsRequest {
+            units: std::slice::from_ref(&unit),
+            verifier_codes: &code_refs,
+            global_info: &global_info_without_proof_values(),
+            public_values: &[],
+            query_units: std::slice::from_ref(&query_unit),
+            opening_units: std::slice::from_ref(&fri),
+            transcript_challenges: &transcript_challenges,
+            segments: &segments,
+        })
+        .expect_err("unqueried transcript challenge unit should be rejected");
+
+    assert_eq!(
+        challenge_error,
+        VerifierFriQueryOutputSegmentsError::UnitMismatch { unit_index: 0 }
+    );
+}
+
 fn verifier_query_output_segments_fixture(
     mismatch: bool,
 ) -> (
