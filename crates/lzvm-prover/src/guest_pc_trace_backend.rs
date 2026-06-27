@@ -257,6 +257,7 @@ pub(crate) struct GuestPcTraceStreamTiming {
     parallel_lower_stream_chunk_count: usize,
     parallel_lower_stream_fallback_count: usize,
     parallel_lower_stream_retained_report_count: usize,
+    owned_streaming_lower_segment_count: usize,
     parallel_lower_stream_chunk_process_duration: Duration,
     parallel_lower_job_receive_wait_duration: Duration,
     parallel_lower_result_send_wait_duration: Duration,
@@ -419,6 +420,7 @@ impl GuestPcTraceStreamTiming {
         self.parallel_lower_stream_fallback_count += other.parallel_lower_stream_fallback_count;
         self.parallel_lower_stream_retained_report_count +=
             other.parallel_lower_stream_retained_report_count;
+        self.owned_streaming_lower_segment_count += other.owned_streaming_lower_segment_count;
         self.parallel_lower_stream_chunk_process_duration +=
             other.parallel_lower_stream_chunk_process_duration;
         self.parallel_lower_job_receive_wait_duration +=
@@ -799,6 +801,10 @@ impl GuestPcTraceStreamTiming {
 
     pub fn parallel_lower_stream_retained_report_count(&self) -> usize {
         self.parallel_lower_stream_retained_report_count
+    }
+
+    pub fn owned_streaming_lower_segment_count(&self) -> usize {
+        self.owned_streaming_lower_segment_count
     }
 
     pub fn parallel_lower_stream_chunk_process_duration(&self) -> Duration {
@@ -5773,6 +5779,8 @@ fn lower_guest_pc_trace_owned_streaming_pending_segment(
     } = builder.finish(pending.terminal_pc, timing.as_deref_mut())?;
     if let Some(timing) = timing {
         timing.trace_lower_duration += lower_started.elapsed();
+        timing.owned_streaming_lower_segment_count =
+            timing.owned_streaming_lower_segment_count.saturating_add(1);
     }
     let next_seed = ZiskMainSegmentSeed {
         initial_state: continuation_state,

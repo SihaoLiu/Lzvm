@@ -167,6 +167,7 @@ fn prove_timing_root_summary_reports_stream_chunk_process_time() {
         "timing_guest_trace_parallel_lower_stream_chunks=512",
         "timing_guest_trace_parallel_lower_stream_fallbacks=1",
         "timing_guest_trace_parallel_lower_stream_retained_reports=7",
+        "timing_guest_trace_owned_streaming_lower_segments=3",
         "timing_guest_trace_parallel_lower_stream_chunk_process_ms=123",
         "timing_guest_trace_parallel_lower_job_receive_wait_ms=456",
         "timing_guest_trace_parallel_lower_result_send_wait_ms=789",
@@ -270,6 +271,15 @@ fn prove_timing_root_summary_reports_stream_chunk_process_time() {
         row.get(stream_retained_index).copied(),
         Some("7"),
         "stream retained report count should be surfaced in root summary"
+    );
+    let owned_lower_index = headers
+        .iter()
+        .position(|header| *header == "owned_streaming_lower_segments")
+        .unwrap_or_else(|| panic!("missing owned lower segment count header: {headers:?}"));
+    assert_eq!(
+        row.get(owned_lower_index).copied(),
+        Some("3"),
+        "owned streaming lower segment count should be surfaced in root summary"
     );
     let receive_wait_index = headers
         .iter()
@@ -377,6 +387,7 @@ fn prove_timing_root_summary_reports_root_grouping_shape() {
         "timing_guest_trace_parallel_lower_stream_chunks",
         "timing_guest_trace_parallel_lower_stream_fallbacks",
         "timing_guest_trace_parallel_lower_stream_retained_reports",
+        "timing_guest_trace_owned_streaming_lower_segments",
         "parallel_lower_stream_chunks_per_segment",
         "parallel_lower_stream_reports_per_chunk",
         "parallel_lower_stream_shape_hint",

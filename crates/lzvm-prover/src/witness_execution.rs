@@ -494,6 +494,7 @@ pub struct ProveWitnessGuestPcTraceTiming {
     guest_trace_parallel_lower_stream_chunk_count: usize,
     guest_trace_parallel_lower_stream_fallback_count: usize,
     guest_trace_parallel_lower_stream_retained_report_count: usize,
+    guest_trace_owned_streaming_lower_segment_count: usize,
     guest_trace_parallel_lower_stream_chunk_process_duration: Duration,
     guest_trace_parallel_lower_job_receive_wait_duration: Duration,
     guest_trace_parallel_lower_result_send_wait_duration: Duration,
@@ -843,6 +844,8 @@ impl ProveWitnessGuestPcTraceTiming {
                 .parallel_lower_stream_fallback_count(),
             guest_trace_parallel_lower_stream_retained_report_count: stream_timing
                 .parallel_lower_stream_retained_report_count(),
+            guest_trace_owned_streaming_lower_segment_count: stream_timing
+                .owned_streaming_lower_segment_count(),
             guest_trace_parallel_lower_stream_chunk_process_duration: stream_timing
                 .parallel_lower_stream_chunk_process_duration(),
             guest_trace_parallel_lower_job_receive_wait_duration: stream_timing
@@ -1450,6 +1453,10 @@ impl ProveWitnessGuestPcTraceTiming {
 
     pub fn guest_trace_parallel_lower_stream_retained_report_count(&self) -> usize {
         self.guest_trace_parallel_lower_stream_retained_report_count
+    }
+
+    pub fn guest_trace_owned_streaming_lower_segment_count(&self) -> usize {
+        self.guest_trace_owned_streaming_lower_segment_count
     }
 
     pub fn guest_trace_parallel_lower_stream_chunk_process_duration(&self) -> Duration {

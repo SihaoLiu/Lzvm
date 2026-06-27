@@ -94,6 +94,9 @@ PARALLEL_LOWER_STREAM_FALLBACKS_KEY = (
 PARALLEL_LOWER_STREAM_RETAINED_REPORTS_KEY = (
     "timing_guest_trace_parallel_lower_stream_retained_reports"
 )
+OWNED_STREAMING_LOWER_SEGMENTS_KEY = (
+    "timing_guest_trace_owned_streaming_lower_segments"
+)
 PARALLEL_LOWER_DISPATCH_WAIT_MS_KEY = (
     "timing_guest_trace_parallel_lower_dispatch_wait_ms"
 )
@@ -736,6 +739,7 @@ HEADER = (
     "parallel_lower_report_elided_count,"
     "parallel_lower_stream_segments,parallel_lower_stream_chunks,"
     "parallel_lower_stream_fallbacks,parallel_lower_stream_retained_reports,"
+    "owned_streaming_lower_segments,"
     "parallel_lower_stream_chunks_per_segment,"
     "parallel_lower_stream_reports_per_chunk,parallel_lower_stream_shape_hint,"
     "parallel_lower_dispatch_wait_ms,"
@@ -1049,6 +1053,7 @@ TIMING_KEYS = {
     PARALLEL_LOWER_STREAM_CHUNKS_KEY,
     PARALLEL_LOWER_STREAM_FALLBACKS_KEY,
     PARALLEL_LOWER_STREAM_RETAINED_REPORTS_KEY,
+    OWNED_STREAMING_LOWER_SEGMENTS_KEY,
     PARALLEL_LOWER_DISPATCH_WAIT_MS_KEY,
     PARALLEL_LOWER_STREAM_START_DISPATCH_WAIT_MS_KEY,
     PARALLEL_LOWER_STREAM_CHUNK_DISPATCH_WAIT_MS_KEY,
@@ -3988,6 +3993,9 @@ def summarize_profile_values(
     parallel_lower_stream_retained_reports = values.get(
         PARALLEL_LOWER_STREAM_RETAINED_REPORTS_KEY, 0
     )
+    owned_streaming_lower_segments = values.get(
+        OWNED_STREAMING_LOWER_SEGMENTS_KEY, 0
+    )
     parallel_lower_dispatch_wait_ms = values.get(PARALLEL_LOWER_DISPATCH_WAIT_MS_KEY, 0)
     parallel_lower_stream_start_dispatch_wait_ms = values.get(
         PARALLEL_LOWER_STREAM_START_DISPATCH_WAIT_MS_KEY, 0
@@ -5265,6 +5273,7 @@ def summarize_profile_values(
         f"{parallel_lower_report_elided},"
         f"{parallel_lower_stream_segments},{parallel_lower_stream_chunks},"
         f"{parallel_lower_stream_fallbacks},{parallel_lower_stream_retained_reports},"
+        f"{owned_streaming_lower_segments},"
         f"{parallel_lower_stream_chunks_per_segment:.3f},"
         f"{parallel_lower_stream_reports_per_chunk:.3f},"
         f"{parallel_lower_stream_shape},"

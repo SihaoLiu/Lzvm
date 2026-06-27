@@ -6518,6 +6518,12 @@ fn guest_pc_trace_owned_streaming_lower_remains_cuda_opt_in() {
     let backend_path = crate_root.join("src/guest_pc_trace_backend.rs");
     let backend_source =
         std::fs::read_to_string(&backend_path).expect("guest PC trace backend source should read");
+    let execution_path = crate_root.join("src/witness_execution.rs");
+    let execution_source =
+        std::fs::read_to_string(&execution_path).expect("witness execution source should read");
+    let cli_path = crate_root.join("../lzvm-cli/src/prove_witness/guest_pc_trace.rs");
+    let cli_source =
+        std::fs::read_to_string(&cli_path).expect("guest PC CLI timing source should read");
 
     assert!(
         backend_source.contains("LZVM_CUDA_GUEST_PC_OWNED_STREAMING_LOWER"),
@@ -6531,6 +6537,44 @@ fn guest_pc_trace_owned_streaming_lower_remains_cuda_opt_in() {
     assert!(
         backend_source.contains("fn lower_guest_pc_trace_owned_streaming_pending_segment"),
         "owned streaming guest PC trace lowering should have a dedicated seeded pending helper"
+    );
+
+    let stream_timing_fields = function_body(
+        &backend_source,
+        "struct GuestPcTraceStreamTiming",
+        "impl GuestPcTraceStreamTiming",
+    );
+    assert!(
+        stream_timing_fields.contains("owned_streaming_lower_segment_count"),
+        "owned streaming guest PC trace lowering should report successful device lowers"
+    );
+
+    let owned_lower_body = function_body(
+        &backend_source,
+        "fn lower_guest_pc_trace_owned_streaming_pending_segment",
+        "#[cfg(test)]\nfn lower_guest_pc_trace_seeded_pending_segments_with_workers",
+    );
+    assert!(
+        owned_lower_body.contains("owned_streaming_lower_segment_count.saturating_add(1)"),
+        "owned streaming guest PC trace lowering should count only completed device lowers"
+    );
+
+    let proof_timing_fields = function_body(
+        &execution_source,
+        "pub struct ProveWitnessGuestPcTraceTiming",
+        "impl ProveWitnessGuestPcTraceTiming",
+    );
+    assert!(
+        proof_timing_fields.contains("guest_trace_owned_streaming_lower_segment_count"),
+        "proof guest PC timing should retain owned streaming lower segment counts"
+    );
+    assert!(
+        cli_source_records_timing_accessor(
+            &cli_source,
+            "\"guest_trace_owned_streaming_lower_segments\"",
+            "guest_trace_owned_streaming_lower_segment_count()",
+        ),
+        "CLI timing output should include owned streaming lower segment counts"
     );
 }
 
