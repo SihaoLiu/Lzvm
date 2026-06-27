@@ -858,6 +858,29 @@ fn validates_pcs_fri_opening_folds_from_units() {
 }
 
 #[test]
+fn validates_pcs_fri_opening_folds_by_trace_identity() {
+    let (unit, segments) = valid_pcs_fri_opening_segments();
+    let base_query_plan =
+        load_pcs_query_plan_from_segments(&segments).expect("query plan should load");
+    let base_opening =
+        load_pcs_fri_opening_segment_from_segments(&segments).expect("FRI opening should load");
+    let mut trace_query = base_query_plan.units[0].clone();
+    trace_query.trace_instance_index = 1;
+    let mut trace_opening = base_opening.units[0].clone();
+    trace_opening.trace_instance_index = 1;
+    let base_challenges = sample_fold_challenges();
+    let mut trace_challenges = sample_fold_challenges();
+    trace_challenges.trace_instance_index = 1;
+
+    let query_units = [trace_query, base_query_plan.units[0].clone()];
+    let opening_units = [base_opening.units[0].clone(), trace_opening];
+    let challenges = [base_challenges, trace_challenges];
+
+    validate_pcs_fri_opening_folds_from_units(&[unit], &query_units, &opening_units, &challenges)
+        .expect("FRI opening folds should match by trace identity");
+}
+
+#[test]
 fn rejects_pcs_fri_opening_fold_mismatches_from_units() {
     let (unit, segments) = valid_pcs_fri_opening_segments();
     let query_plan = load_pcs_query_plan_from_segments(&segments).expect("query plan should load");

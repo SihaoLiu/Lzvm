@@ -8647,6 +8647,11 @@ fn lean_opening_segment_binding_tracks_runtime_opening_checks() {
         "fn validate_pcs_fri_opening_units",
         "pub fn validate_pcs_fri_opening_folds_from_units",
     );
+    let fri_opening_fold_validation = function_body(
+        &fri_opening_source,
+        "pub fn validate_pcs_fri_opening_folds_from_units",
+        "fn fri_opening_units_by_identity",
+    );
     assert!(
         constant_opening_validation.contains("constant_opening_units_by_identity")
             && constant_opening_validation.contains(
@@ -8659,8 +8664,31 @@ fn lean_opening_segment_binding_tracks_runtime_opening_checks() {
                 "let identity = (query_unit.unit_index, query_unit.trace_instance_index)"
             )
             && witness_opening_validation.contains(".get(&identity)")
+            && fri_opening_source.contains("use crate::indexing::index_first_by_key")
+            && fri_opening_source.matches("index_first_by_key(").count() == 2
             && fri_opening_units_validation
-                .contains("unit.trace_instance_index == query_unit.trace_instance_index"),
+                .contains("fri_opening_units_by_identity(opening_units)")
+            && fri_opening_units_validation.contains(
+                "let identity = (query_unit.unit_index, query_unit.trace_instance_index)"
+            )
+            && compact_source_contains(
+                fri_opening_units_validation,
+                "opening_units_by_identity.get(&identity)"
+            )
+            && fri_opening_fold_validation.contains("fri_opening_units_by_identity(opening_units)")
+            && fri_opening_fold_validation
+                .contains("transcript_challenges_by_identity(transcript_challenges)")
+            && fri_opening_fold_validation.contains(
+                "let identity = (query_unit.unit_index, query_unit.trace_instance_index)"
+            )
+            && compact_source_contains(
+                fri_opening_fold_validation,
+                "opening_units_by_identity.get(&identity)"
+            )
+            && compact_source_contains(
+                fri_opening_fold_validation,
+                "transcript_challenges_by_identity.get(&identity)"
+            ),
         "opening validators should match opened units by query-plan trace identity"
     );
     let optional_fri_validation = function_body(

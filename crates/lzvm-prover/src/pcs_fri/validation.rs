@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use lzvm_artifacts::pcs_fri_segment::{PcsFriOpeningUnitSegment, PCS_FRI_OPENING_SEGMENT_ID};
 use lzvm_artifacts::pcs_material_segment::PCS_MATERIAL_MANIFEST_SEGMENT_ID;
 use lzvm_artifacts::pcs_query_segment::PcsQueryPlanUnit;
@@ -15,6 +17,7 @@ use super::{
     load_pcs_fri_opening_segment_from_segments, verify_fri_last_level_root,
     verify_fri_opening_folds, verify_fri_query_path,
 };
+use crate::indexing::index_first_by_key;
 use crate::pcs_query_plan::{
     load_pcs_query_plan_from_segments, uses_transcript_pcs_query_plan_inputs,
 };
@@ -50,18 +53,17 @@ fn validate_pcs_fri_opening_units(
         return Err(ValidatePcsFriOpeningSegmentsError::UnitCountMismatch);
     }
 
+    let opening_units_by_identity = fri_opening_units_by_identity(opening_units);
     for query_unit in query_units {
         let unit_index = usize::try_from(query_unit.unit_index)
             .map_err(|_| ValidatePcsFriOpeningSegmentsError::UnitIndexOverflow)?;
         let unit = units
             .get(unit_index)
             .ok_or(ValidatePcsFriOpeningSegmentsError::UnitMismatch { unit_index })?;
-        let opening_unit = opening_units
-            .iter()
-            .find(|unit| {
-                unit.unit_index == query_unit.unit_index
-                    && unit.trace_instance_index == query_unit.trace_instance_index
-            })
+        let identity = (query_unit.unit_index, query_unit.trace_instance_index);
+        let opening_unit = opening_units_by_identity
+            .get(&identity)
+            .copied()
             .ok_or(ValidatePcsFriOpeningSegmentsError::UnitMismatch { unit_index })?;
         let final_len = checked_power_of_two_validation(unit.final_layer_bits)
             .ok_or(ValidatePcsFriOpeningSegmentsError::FinalLayerSizeOverflow)?;
@@ -174,25 +176,23 @@ pub fn validate_pcs_fri_opening_folds_from_units(
     opening_units: &[PcsFriOpeningUnitSegment],
     transcript_challenges: &[PcsTranscriptUnitChallenges],
 ) -> Result<(), ValidatePcsFriOpeningFoldUnitsError> {
+    let opening_units_by_identity = fri_opening_units_by_identity(opening_units);
+    let transcript_challenges_by_identity =
+        transcript_challenges_by_identity(transcript_challenges);
     for query_unit in query_units {
         let unit_index = usize::try_from(query_unit.unit_index)
             .map_err(|_| ValidatePcsFriOpeningFoldUnitsError::UnitIndexOverflow)?;
         let unit = units
             .get(unit_index)
             .ok_or(ValidatePcsFriOpeningFoldUnitsError::UnitMismatch { unit_index })?;
-        let opening_unit = opening_units
-            .iter()
-            .find(|unit| {
-                unit.unit_index == query_unit.unit_index
-                    && unit.trace_instance_index == query_unit.trace_instance_index
-            })
+        let identity = (query_unit.unit_index, query_unit.trace_instance_index);
+        let opening_unit = opening_units_by_identity
+            .get(&identity)
+            .copied()
             .ok_or(ValidatePcsFriOpeningFoldUnitsError::UnitMismatch { unit_index })?;
-        let challenges = transcript_challenges
-            .iter()
-            .find(|unit| {
-                unit.unit_index == query_unit.unit_index
-                    && unit.trace_instance_index == query_unit.trace_instance_index
-            })
+        let challenges = transcript_challenges_by_identity
+            .get(&identity)
+            .copied()
             .ok_or(ValidatePcsFriOpeningFoldUnitsError::UnitMismatch { unit_index })?;
         let valid = verify_fri_opening_folds(
             unit,
@@ -209,6 +209,18 @@ pub fn validate_pcs_fri_opening_folds_from_units(
         }
     }
     Ok(())
+}
+
+fn fri_opening_units_by_identity(
+    units: &[PcsFriOpeningUnitSegment],
+) -> BTreeMap<(u32, u32), &PcsFriOpeningUnitSegment> {
+    index_first_by_key(units, |unit| (unit.unit_index, unit.trace_instance_index))
+}
+
+fn transcript_challenges_by_identity(
+    units: &[PcsTranscriptUnitChallenges],
+) -> BTreeMap<(u32, u32), &PcsTranscriptUnitChallenges> {
+    index_first_by_key(units, |unit| (unit.unit_index, unit.trace_instance_index))
 }
 
 pub fn validate_optional_pcs_fri_opening_proof_segments(
