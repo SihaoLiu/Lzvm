@@ -1531,6 +1531,20 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             && lean_source.contains("selectedRetainedStageSourceDebug")
             && lean_source.contains("descriptorBufferRetentionConfig")
             && lean_source.contains("selectedDescriptorBufferRetention")
+            && lean_source.contains("GuestPcTraceCudaRunDecisionEvidence")
+            && lean_source.contains("sparseSourceDecision")
+            && lean_source.contains("sparseSourceSelected")
+            && lean_source.contains("sparseSourceDebugDecision")
+            && lean_source.contains("sparseSourceDebugSelected")
+            && lean_source.contains("terminalSparseSourceDecision")
+            && lean_source.contains("terminalSparseSourceSelected")
+            && lean_source.contains("retainedStageSourceDecision")
+            && lean_source.contains("retainedStageSourceSelected")
+            && lean_source.contains("retainedStageSourceDebugUsesSelectedSource")
+            && lean_source.contains("retainedStageSourceDebugDecision")
+            && lean_source.contains("retainedStageSourceDebugSelected")
+            && lean_source.contains("descriptorBufferRetentionDecision")
+            && lean_source.contains("descriptorBufferRetentionSelected")
             && lean_source.contains("GuestPcTraceCudaRunDecisionMatches")
             && lean_source.contains("traceCudaRunConfigAccepted")
             && lean_source.contains("traceCudaRunConfigImpliesDecisionMatches")
@@ -1637,6 +1651,47 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
                 projector,
                 "guest_pc_trace_cuda_run_checked_acceptance_projects_decision",
             ],
+        );
+    }
+    for (theorem_name, field) in [
+        (
+            "guest_pc_trace_cuda_run_sparse_source_matches",
+            "decision.sparseSourceSelected",
+        ),
+        (
+            "guest_pc_trace_cuda_run_sparse_source_debug_matches",
+            "decision.sparseSourceDebugSelected",
+        ),
+        (
+            "guest_pc_trace_cuda_run_terminal_sparse_source_matches",
+            "decision.terminalSparseSourceSelected",
+        ),
+        (
+            "guest_pc_trace_cuda_run_retained_stage_source_matches",
+            "decision.retainedStageSourceSelected",
+        ),
+        (
+            "guest_pc_trace_cuda_run_retained_stage_source_debug_uses_selected_source",
+            "decision.retainedStageSourceDebugUsesSelectedSource",
+        ),
+        (
+            "guest_pc_trace_cuda_run_retained_stage_source_debug_decision_matches",
+            "decision.retainedStageSourceDebugDecision",
+        ),
+        (
+            "guest_pc_trace_cuda_run_retained_stage_source_debug_matches",
+            "decision.retainedStageSourceDebugSelected",
+        ),
+        (
+            "guest_pc_trace_cuda_run_descriptor_retention_matches",
+            "decision.descriptorBufferRetentionSelected",
+        ),
+    ] {
+        lean_binding::assert_theorem_body_contains(&gpu_runtime_source, theorem_name, &[field]);
+        lean_binding::assert_theorem_body_omits(
+            &gpu_runtime_source,
+            theorem_name,
+            &["rcases decision"],
         );
     }
     lean_binding::assert_theorem_body_contains(

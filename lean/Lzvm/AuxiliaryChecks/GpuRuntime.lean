@@ -1780,13 +1780,7 @@ theorem guest_pc_trace_cuda_run_sparse_source_matches
       config.selectedSparseSource =
         config.sparseSourceConfig.effectiveSparseSourceSelected := by
   intro decision
-  rcases decision with
-    ⟨_sparseDecision, sparseSelected, _sparseDebugDecision,
-      _sparseDebugSelected, _terminalDecision, _terminalSelected,
-      _retainedDecision, _retainedSelected, _retainedDebugSource,
-      _retainedDebugDecision, _retainedDebugSelected, _descriptorDecision,
-      _descriptorSelected⟩
-  exact sparseSelected
+  exact decision.sparseSourceSelected
 
 theorem guest_pc_trace_cuda_run_sparse_source_debug_matches
     (config : GuestPcTraceCudaRunConfig) :
@@ -1794,13 +1788,7 @@ theorem guest_pc_trace_cuda_run_sparse_source_debug_matches
       config.selectedSparseSourceDebug =
         config.sparseSourceDebugConfig.effectiveSparseSourceDebug := by
   intro decision
-  rcases decision with
-    ⟨_sparseDecision, _sparseSelected, _sparseDebugDecision,
-      sparseDebugSelected, _terminalDecision, _terminalSelected,
-      _retainedDecision, _retainedSelected, _retainedDebugSource,
-      _retainedDebugDecision, _retainedDebugSelected, _descriptorDecision,
-      _descriptorSelected⟩
-  exact sparseDebugSelected
+  exact decision.sparseSourceDebugSelected
 
 theorem guest_pc_trace_cuda_run_terminal_sparse_source_matches
     (config : GuestPcTraceCudaRunConfig) :
@@ -1808,13 +1796,7 @@ theorem guest_pc_trace_cuda_run_terminal_sparse_source_matches
       config.selectedTerminalSparseSource =
         config.terminalSparseSourceConfig.effectiveTerminalSparseSourceSelected := by
   intro decision
-  rcases decision with
-    ⟨_sparseDecision, _sparseSelected, _sparseDebugDecision,
-      _sparseDebugSelected, _terminalDecision, terminalSelected,
-      _retainedDecision, _retainedSelected, _retainedDebugSource,
-      _retainedDebugDecision, _retainedDebugSelected, _descriptorDecision,
-      _descriptorSelected⟩
-  exact terminalSelected
+  exact decision.terminalSparseSourceSelected
 
 theorem guest_pc_trace_cuda_run_retained_stage_source_matches
     (config : GuestPcTraceCudaRunConfig) :
@@ -1822,13 +1804,7 @@ theorem guest_pc_trace_cuda_run_retained_stage_source_matches
       config.selectedRetainedStageSource =
         config.retainedStageSourceConfig.effectiveRetainedStageSourceEnabled := by
   intro decision
-  rcases decision with
-    ⟨_sparseDecision, _sparseSelected, _sparseDebugDecision,
-      _sparseDebugSelected, _terminalDecision, _terminalSelected,
-      _retainedDecision, retainedSelected, _retainedDebugSource,
-      _retainedDebugDecision, _retainedDebugSelected, _descriptorDecision,
-      _descriptorSelected⟩
-  exact retainedSelected
+  exact decision.retainedStageSourceSelected
 
 theorem guest_pc_trace_cuda_run_retained_stage_source_debug_uses_selected_source
     (config : GuestPcTraceCudaRunConfig) :
@@ -1836,13 +1812,7 @@ theorem guest_pc_trace_cuda_run_retained_stage_source_debug_uses_selected_source
       config.retainedStageSourceDebugConfig.selectedRetainedStageSource =
         config.selectedRetainedStageSource := by
   intro decision
-  rcases decision with
-    ⟨_sparseDecision, _sparseSelected, _sparseDebugDecision,
-      _sparseDebugSelected, _terminalDecision, _terminalSelected,
-      _retainedDecision, _retainedSelected, retainedDebugSource,
-      _retainedDebugDecision, _retainedDebugSelected, _descriptorDecision,
-      _descriptorSelected⟩
-  exact retainedDebugSource
+  exact decision.retainedStageSourceDebugUsesSelectedSource
 
 theorem guest_pc_trace_cuda_run_retained_stage_source_debug_decision_matches
     (config : GuestPcTraceCudaRunConfig) :
@@ -1850,13 +1820,7 @@ theorem guest_pc_trace_cuda_run_retained_stage_source_debug_decision_matches
       FriRetainedStageSourceDebugDecisionMatches
         config.retainedStageSourceDebugConfig := by
   intro decision
-  rcases decision with
-    ⟨_sparseDecision, _sparseSelected, _sparseDebugDecision,
-      _sparseDebugSelected, _terminalDecision, _terminalSelected,
-      _retainedDecision, _retainedSelected, _retainedDebugSource,
-      retainedDebugDecision, _retainedDebugSelected, _descriptorDecision,
-      _descriptorSelected⟩
-  exact retainedDebugDecision
+  exact decision.retainedStageSourceDebugDecision
 
 theorem guest_pc_trace_cuda_run_retained_stage_source_debug_matches
     (config : GuestPcTraceCudaRunConfig) :
@@ -1864,13 +1828,7 @@ theorem guest_pc_trace_cuda_run_retained_stage_source_debug_matches
       config.selectedRetainedStageSourceDebug =
         config.retainedStageSourceDebugConfig.effectiveRetainedStageSourceDebug := by
   intro decision
-  rcases decision with
-    ⟨_sparseDecision, _sparseSelected, _sparseDebugDecision,
-      _sparseDebugSelected, _terminalDecision, _terminalSelected,
-      _retainedDecision, _retainedSelected, _retainedDebugSource,
-      _retainedDebugDecision, retainedDebugSelected, _descriptorDecision,
-      _descriptorSelected⟩
-  exact retainedDebugSelected
+  exact decision.retainedStageSourceDebugSelected
 
 theorem guest_pc_trace_cuda_run_descriptor_retention_matches
     (config : GuestPcTraceCudaRunConfig) :
@@ -1878,13 +1836,7 @@ theorem guest_pc_trace_cuda_run_descriptor_retention_matches
       config.selectedDescriptorBufferRetention =
         config.descriptorBufferRetentionConfig.effectiveDescriptorBufferRetention := by
   intro decision
-  rcases decision with
-    ⟨_sparseDecision, _sparseSelected, _sparseDebugDecision,
-      _sparseDebugSelected, _terminalDecision, _terminalSelected,
-      _retainedDecision, _retainedSelected, _retainedDebugSource,
-      _retainedDebugDecision, _retainedDebugSelected, _descriptorDecision,
-      descriptorSelected⟩
-  exact descriptorSelected
+  exact decision.descriptorBufferRetentionSelected
 
 theorem fri_retained_stage_source_debug_requires_retention
     (config : FriRetainedStageSourceDebugConfig) :

@@ -1047,33 +1047,48 @@ structure GuestPcTraceCudaRunConfig where
   selectedDescriptorBufferRetention : Bool
 deriving DecidableEq, Repr
 
-def GuestPcTraceCudaRunDecisionMatches
-    (config : GuestPcTraceCudaRunConfig) : Prop :=
-  GuestPcTraceSparseSourceDecisionMatches config.sparseSourceConfig
-    /\ config.selectedSparseSource =
+structure GuestPcTraceCudaRunDecisionEvidence
+    (config : GuestPcTraceCudaRunConfig) : Prop where
+  sparseSourceDecision :
+    GuestPcTraceSparseSourceDecisionMatches config.sparseSourceConfig
+  sparseSourceSelected :
+    config.selectedSparseSource =
       config.sparseSourceConfig.effectiveSparseSourceSelected
-    /\ GuestPcTraceSparseSourceDebugDecisionMatches
-      config.sparseSourceDebugConfig
-    /\ config.selectedSparseSourceDebug =
+  sparseSourceDebugDecision :
+    GuestPcTraceSparseSourceDebugDecisionMatches config.sparseSourceDebugConfig
+  sparseSourceDebugSelected :
+    config.selectedSparseSourceDebug =
       config.sparseSourceDebugConfig.effectiveSparseSourceDebug
-    /\ GuestPcTraceTerminalSparseSourceDecisionMatches
+  terminalSparseSourceDecision :
+    GuestPcTraceTerminalSparseSourceDecisionMatches
       config.terminalSparseSourceConfig
-    /\ config.selectedTerminalSparseSource =
+  terminalSparseSourceSelected :
+    config.selectedTerminalSparseSource =
       config.terminalSparseSourceConfig.effectiveTerminalSparseSourceSelected
-    /\ FriRetainedStageSourceDecisionMatches
-      config.retainedStageSourceConfig
-    /\ config.selectedRetainedStageSource =
+  retainedStageSourceDecision :
+    FriRetainedStageSourceDecisionMatches config.retainedStageSourceConfig
+  retainedStageSourceSelected :
+    config.selectedRetainedStageSource =
       config.retainedStageSourceConfig.effectiveRetainedStageSourceEnabled
-    /\ config.retainedStageSourceDebugConfig.selectedRetainedStageSource =
+  retainedStageSourceDebugUsesSelectedSource :
+    config.retainedStageSourceDebugConfig.selectedRetainedStageSource =
       config.selectedRetainedStageSource
-    /\ FriRetainedStageSourceDebugDecisionMatches
+  retainedStageSourceDebugDecision :
+    FriRetainedStageSourceDebugDecisionMatches
       config.retainedStageSourceDebugConfig
-    /\ config.selectedRetainedStageSourceDebug =
+  retainedStageSourceDebugSelected :
+    config.selectedRetainedStageSourceDebug =
       config.retainedStageSourceDebugConfig.effectiveRetainedStageSourceDebug
-    /\ GuestPcTraceDescriptorBufferRetentionDecisionMatches
+  descriptorBufferRetentionDecision :
+    GuestPcTraceDescriptorBufferRetentionDecisionMatches
       config.descriptorBufferRetentionConfig
-    /\ config.selectedDescriptorBufferRetention =
+  descriptorBufferRetentionSelected :
+    config.selectedDescriptorBufferRetention =
       config.descriptorBufferRetentionConfig.effectiveDescriptorBufferRetention
+
+abbrev GuestPcTraceCudaRunDecisionMatches
+    (config : GuestPcTraceCudaRunConfig) : Prop :=
+  GuestPcTraceCudaRunDecisionEvidence config
 
 structure GuestPcTraceCudaRunValidation where
   traceCudaRunConfigAccepted :
