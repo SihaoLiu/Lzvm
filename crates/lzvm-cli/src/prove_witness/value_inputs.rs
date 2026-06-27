@@ -42,33 +42,7 @@ pub(super) fn read_challenge_values_segment_input(path: &Path) -> Result<Vec<Ext
     })?;
     let segment = parse_challenge_values_segment(&bytes)
         .map_err(|error| format!("parse challenge values segment failed: {error}"))?;
-    segment
-        .values
-        .into_iter()
-        .enumerate()
-        .map(|(index, words)| {
-            Ok(Ext3::new(
-                Felt::from_canonical(words[0]).map_err(|error| {
-                    format!(
-                        "parse challenge values segment failed: {}: value {index} word 0 is invalid: {error}",
-                        path.display()
-                    )
-                })?,
-                Felt::from_canonical(words[1]).map_err(|error| {
-                    format!(
-                        "parse challenge values segment failed: {}: value {index} word 1 is invalid: {error}",
-                        path.display()
-                    )
-                })?,
-                Felt::from_canonical(words[2]).map_err(|error| {
-                    format!(
-                        "parse challenge values segment failed: {}: value {index} word 2 is invalid: {error}",
-                        path.display()
-                    )
-                })?,
-            ))
-        })
-        .collect()
+    Ok(segment.values.into_iter().map(Ext3::from_u64s).collect())
 }
 
 pub(super) fn read_challenge_values_proof_segment_input(
@@ -155,15 +129,8 @@ pub(super) fn load_batch_unit_values_inputs(
             let packed_values = unit
                 .values
                 .into_iter()
-                .enumerate()
-                .map(|(index, value)| {
-                    Felt::from_canonical(value).map_err(|error| {
-                        format!(
-                            "unit values segment unit {unit_index} field word {index} is invalid: {error}"
-                        )
-                    })
-                })
-                .collect::<Result<Vec<_>, _>>()?;
+                .map(Felt::from_u64)
+                .collect::<Vec<_>>();
             values.push(ProveUnitValues {
                 unit_index,
                 trace_instance_index: unit.trace_instance_index,

@@ -141,11 +141,6 @@ pub enum ProofPreflightError {
         name: String,
     },
     ChallengeValues(ChallengeValuesSegmentError),
-    ChallengeValueNonCanonical {
-        value_index: usize,
-        word_index: usize,
-        source: FieldError,
-    },
     MissingTraceConstraintEvidence,
     TraceConstraint(TraceConstraintSegmentError),
     TraceConstraintWitness(WitnessCommitmentSegmentError),
@@ -234,14 +229,6 @@ impl fmt::Display for ProofPreflightError {
                 )
             }
             Self::ChallengeValues(error) => write!(f, "{error}"),
-            Self::ChallengeValueNonCanonical {
-                value_index,
-                word_index,
-                source,
-            } => write!(
-                f,
-                "invalid challenge values segment value {value_index} word {word_index}: {source}"
-            ),
             Self::MissingTraceConstraintEvidence => {
                 write!(f, "missing trace constraint evidence segment")
             }
@@ -323,7 +310,6 @@ impl std::error::Error for ProofPreflightError {
             Self::ProgramImageCache(error) => Some(error),
             Self::ProgramImageCacheTreeRootNonCanonical { source, .. } => Some(source),
             Self::ChallengeValues(error) => Some(error),
-            Self::ChallengeValueNonCanonical { source, .. } => Some(source),
             Self::TraceConstraint(error) => Some(error),
             Self::TraceConstraintWitness(error) => Some(error),
             Self::EthBlockInput(error) => Some(error),
@@ -447,7 +433,6 @@ fn validate_proof_public_values_inner(
     {
         let challenge_values = parse_challenge_values_segment(&segment.data)
             .map_err(ProofPreflightError::ChallengeValues)?;
-        validate_challenge_values_canonical(&challenge_values.values)?;
         challenge_values_segment_byte_counts.push(segment.data.len());
         challenge_values_value_counts.push(challenge_values.values.len());
     }
@@ -887,21 +872,6 @@ pub(crate) fn contains_named_eth_block_public_values(public_values: &PublicValue
         .values
         .iter()
         .any(|entry| is_eth_block_public_value_name(&entry.name))
-}
-
-fn validate_challenge_values_canonical(values: &[[u64; 3]]) -> Result<(), ProofPreflightError> {
-    for (value_index, words) in values.iter().enumerate() {
-        for (word_index, word) in words.iter().copied().enumerate() {
-            Felt::from_canonical(word).map_err(|source| {
-                ProofPreflightError::ChallengeValueNonCanonical {
-                    value_index,
-                    word_index,
-                    source,
-                }
-            })?;
-        }
-    }
-    Ok(())
 }
 
 fn validate_program_image_cache_tree_root_canonical(

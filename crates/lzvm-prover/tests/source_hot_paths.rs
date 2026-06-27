@@ -2599,6 +2599,35 @@ fn lean_challenge_segment_binding_tracks_runtime_transcript_checks() {
     let artifact_path = crate_root.join("src/proof_artifact.rs");
     let artifact_source =
         std::fs::read_to_string(&artifact_path).expect("proof artifact source should read");
+    let proof_preflight_path = crate_root.join("src/proof_preflight.rs");
+    let proof_preflight_source =
+        std::fs::read_to_string(&proof_preflight_path).expect("proof preflight source should read");
+    let proof_preflight_body = function_body(
+        &proof_preflight_source,
+        "fn validate_proof_public_values_inner",
+        "fn validate_program_image_cache_tree_root_canonical",
+    );
+    let setup_preflight_path = crate_root.join("src/setup_preflight.rs");
+    let setup_preflight_source =
+        std::fs::read_to_string(&setup_preflight_path).expect("setup preflight source should read");
+    let setup_challenge_values_body = function_body(
+        &setup_preflight_source,
+        "fn validate_optional_challenge_values_segment",
+        "fn validate_optional_contribution_challenge_values",
+    );
+    let value_inputs_path = crate_root.join("../lzvm-cli/src/prove_witness/value_inputs.rs");
+    let value_inputs_source = std::fs::read_to_string(&value_inputs_path)
+        .expect("prove witness value input source should read");
+    let read_challenge_values_segment_input_body = function_body(
+        &value_inputs_source,
+        "fn read_challenge_values_segment_input",
+        "fn read_challenge_values_proof_segment_input",
+    );
+    let read_batch_unit_values_inputs_body = function_body(
+        &value_inputs_source,
+        "fn load_batch_unit_values_inputs",
+        "fn read_packed_unit_values_segment_for_unit",
+    );
 
     assert!(
         lean_root_source.contains("import Lzvm.ChallengeSegmentBinding"),
@@ -2627,6 +2656,27 @@ fn lean_challenge_segment_binding_tracks_runtime_transcript_checks() {
             && artifact_source.contains("CHALLENGE_VALUES_SEGMENT_ID")
             && artifact_source.contains("parse_challenge_values_segment"),
         "Rust proof artifact validation should recompute and check challenge segment bindings"
+    );
+    assert!(
+        proof_preflight_body.contains("parse_challenge_values_segment(&segment.data)")
+            && !proof_preflight_body.contains("validate_challenge_values_canonical")
+            && !proof_preflight_body.contains("Felt::from_canonical")
+            && setup_challenge_values_body.contains("parse_challenge_values_segment(&segment.data)")
+            && !setup_challenge_values_body.contains("validate_challenge_values_canonical")
+            && !setup_challenge_values_body.contains("Felt::from_canonical"),
+        "proof and setup preflight should rely on canonical challenge segment parsing instead of scanning validated words again"
+    );
+    assert!(
+        read_challenge_values_segment_input_body.contains("parse_challenge_values_segment(&bytes)")
+            && read_challenge_values_segment_input_body.contains("Ext3::from_u64s")
+            && !read_challenge_values_segment_input_body.contains("Felt::from_canonical"),
+        "CLI challenge segment input should rely on canonical segment parsing instead of scanning validated words again"
+    );
+    assert!(
+        read_batch_unit_values_inputs_body.contains("parse_unit_values_segment(&bytes)")
+            && read_batch_unit_values_inputs_body.contains(".map(Felt::from_u64)")
+            && !read_batch_unit_values_inputs_body.contains("Felt::from_canonical"),
+        "CLI unit segment input should rely on canonical segment parsing instead of scanning validated words again"
     );
 }
 

@@ -22,7 +22,7 @@ use lzvm_artifacts::setup_manifest::{
 };
 use lzvm_artifacts::trace_constraint_segment::TraceConstraintSegmentError;
 use lzvm_artifacts::unit_values_segment::UNIT_VALUES_SEGMENT_ID;
-use lzvm_field::{Ext3, Felt, FieldError};
+use lzvm_field::{Ext3, Felt};
 
 use crate::constant_opening::{
     validate_constant_opening_segments, ValidateConstantOpeningSegmentsError,
@@ -266,11 +266,6 @@ pub enum SetupPreflightError {
     PcsFri(ValidateOptionalPcsFriOpeningProofSegmentsError),
     Contribution(ContributionChallengeError),
     ChallengeValues(ChallengeValuesSegmentError),
-    ChallengeValueNonCanonical {
-        value_index: usize,
-        word_index: usize,
-        source: FieldError,
-    },
     DuplicateChallengeValuesSegment,
     ProofValues(LoadPcsProofValuesSegmentError),
     ProofValuePacking(ProvePcsProofValuesSegmentError),
@@ -338,14 +333,6 @@ impl fmt::Display for SetupPreflightError {
             Self::PcsFri(error) => write!(f, "{error}"),
             Self::Contribution(error) => write!(f, "{error}"),
             Self::ChallengeValues(error) => write!(f, "{error}"),
-            Self::ChallengeValueNonCanonical {
-                value_index,
-                word_index,
-                source,
-            } => write!(
-                f,
-                "invalid challenge values segment value {value_index} word {word_index}: {source}"
-            ),
             Self::DuplicateChallengeValuesSegment => {
                 write!(f, "duplicate challenge values segment")
             }
@@ -423,7 +410,6 @@ impl std::error::Error for SetupPreflightError {
             Self::PcsFri(error) => Some(error),
             Self::Contribution(error) => Some(error),
             Self::ChallengeValues(error) => Some(error),
-            Self::ChallengeValueNonCanonical { source, .. } => Some(source),
             Self::ProofValues(error) => Some(error),
             Self::ProofValuePacking(error) => Some(error),
             Self::GroupValues(error) => Some(error),
@@ -1036,23 +1022,7 @@ fn validate_optional_challenge_values_segment(
     }
     let segment = parse_challenge_values_segment(&segment.data)
         .map_err(SetupPreflightError::ChallengeValues)?;
-    validate_challenge_values_canonical(&segment.values)?;
     Ok(Some(segment.values))
-}
-
-fn validate_challenge_values_canonical(values: &[[u64; 3]]) -> Result<(), SetupPreflightError> {
-    for (value_index, words) in values.iter().enumerate() {
-        for (word_index, word) in words.iter().copied().enumerate() {
-            Felt::from_canonical(word).map_err(|source| {
-                SetupPreflightError::ChallengeValueNonCanonical {
-                    value_index,
-                    word_index,
-                    source,
-                }
-            })?;
-        }
-    }
-    Ok(())
 }
 
 fn validate_optional_contribution_challenge_values(
