@@ -31,8 +31,10 @@ use lzvm_field::{Ext3, Felt};
 use lzvm_prover::pcs_transcript::{derive_pcs_transcript_challenges, PcsTranscriptInputs};
 use lzvm_prover::pcs_transcript_segments::{
     derive_pcs_transcript_challenges_from_proof_segments,
+    derive_pcs_transcript_unit_challenges_from_loaded_witness_segments,
     derive_pcs_transcript_unit_challenges_from_proof_segments, PcsTranscriptProofSegmentsError,
 };
+use lzvm_prover::witness_commitment::load_witness_commitment_segment_refs_with_shapes;
 use lzvm_prover::{ProveSchedule, ProveUnitSchedule};
 
 #[test]
@@ -127,6 +129,52 @@ fn derives_trace_instance_transcript_challenge_queries() {
 
     assert_eq!(actual[0].unit_index, 0);
     assert_eq!(actual[0].trace_instance_index, 1);
+}
+
+#[test]
+fn derives_loaded_witness_transcript_challenge_by_trace_identity() {
+    let schedule = sample_schedule();
+    let mut segments = transcript_segments(0);
+    replace_query_plan_trace_instance(&mut segments, 1);
+    replace_evaluation_trace_instance(&mut segments, 1);
+    replace_fri_opening_trace_instance(&mut segments, 1);
+    segments.push(ProofSegment {
+        id: WITNESS_COMMITMENT_SEGMENT_BASE_ID + 1,
+        data: encode_witness_commitment_segment(&witness_unit_with_root(0, 77))
+            .expect("trace witness segment should encode"),
+    });
+    let witness_segments =
+        load_witness_commitment_segment_refs_with_shapes(&schedule.units, &segments)
+            .expect("witness segments should load");
+
+    let actual = derive_pcs_transcript_unit_challenges_from_loaded_witness_segments(
+        &schedule,
+        &[],
+        &segments,
+        &witness_segments,
+    )
+    .expect("loaded witness trace challenges should derive");
+    let expected = derive_pcs_transcript_challenges(PcsTranscriptInputs {
+        arity: 4,
+        hash_values: false,
+        constant_root: root(1),
+        public_values: &[],
+        witness_roots: &[root(77)],
+        root_challenge_draws: &[2],
+        unit_value_map: &[],
+        unit_values: &[],
+        evaluation_values: &[ext(20)],
+        evaluation_challenge_draws: 1,
+        fri_roots: &[],
+        final_polynomial: &[ext(40)],
+        binding_segments: &[],
+    })
+    .expect("expected trace challenges should derive");
+
+    assert_eq!(actual.len(), 1);
+    assert_eq!(actual[0].unit_index, 0);
+    assert_eq!(actual[0].trace_instance_index, 1);
+    assert_eq!(actual[0].challenges, expected);
 }
 
 #[test]
@@ -407,6 +455,10 @@ fn material_unit(unit_index: u32) -> PcsMaterialManifestUnit {
 }
 
 fn witness_unit(unit_index: u32) -> WitnessCommitmentSegment {
+    witness_unit_with_root(unit_index, 10)
+}
+
+fn witness_unit_with_root(unit_index: u32, root_seed: u64) -> WitnessCommitmentSegment {
     WitnessCommitmentSegment {
         unit_index,
         input_byte_count: 0,
@@ -415,7 +467,7 @@ fn witness_unit(unit_index: u32) -> WitnessCommitmentSegment {
         stages: vec![WitnessCommitmentStageSegment {
             stage_index: 1,
             arity: 4,
-            root: root_words(10),
+            root: root_words(root_seed),
             tree_byte_count: 64,
             tree_digest: [0; 32],
         }],

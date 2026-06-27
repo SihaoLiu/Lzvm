@@ -8867,6 +8867,27 @@ fn lean_query_plan_binding_tracks_runtime_transcript_opening_checks() {
                 .contains("load_pcs_evaluation_unit_for_identity_from_parsed_segment")
             && transcript_segments_source
                 .contains("load_unit_values_for_identity_from_parsed_segment")
+            && transcript_segments_source
+                .matches("material_units_by_index(&material.units)")
+                .count()
+                == 2
+            && transcript_segments_source
+                .contains("witness_segments_by_identity(&witness_segments)")
+            && transcript_segments_source
+                .contains("witness_segments_by_identity(witness_segments)")
+            && transcript_segments_source
+                .matches("fri_units_by_identity(&fri.units)")
+                .count()
+                == 2
+            && transcript_segments_source
+                .matches("let identity = (query_unit.unit_index, query_unit.trace_instance_index)")
+                .count()
+                == 2
+            && compact_source_contains(
+                &transcript_segments_source,
+                "witness_segments_by_identity.get(&identity)"
+            )
+            && compact_source_contains(&transcript_segments_source, "fri_units.get(&identity)")
             && !transcript_segments_source
                 .contains("load_pcs_evaluation_unit_for_identity_from_segments")
             && !transcript_segments_source.contains("load_unit_values_for_identity_from_segments")
