@@ -5,15 +5,15 @@ use lzvm_artifacts::pcs_query_segment::{
 };
 use lzvm_artifacts::proof::ProofSegment;
 use lzvm_artifacts::witness_opening_segment::{
-    encode_witness_opening_segment, WitnessOpeningLevelSegment, WitnessOpeningQuerySegment,
-    WitnessOpeningSegment, WitnessOpeningStageSegment, WitnessOpeningUnitSegment,
-    WITNESS_OPENING_SEGMENT_ID,
+    encode_witness_opening_segment, parse_witness_opening_segment, WitnessOpeningLevelSegment,
+    WitnessOpeningQuerySegment, WitnessOpeningSegment, WitnessOpeningSegmentError,
+    WitnessOpeningStageSegment, WitnessOpeningUnitSegment, WITNESS_OPENING_SEGMENT_ID,
 };
 use lzvm_artifacts::witness_segment::{
     encode_witness_commitment_segment, WitnessCommitmentSegment, WitnessCommitmentStageSegment,
     WITNESS_COMMITMENT_SEGMENT_BASE_ID,
 };
-use lzvm_field::Felt;
+use lzvm_field::{Felt, FieldError, MODULUS};
 use lzvm_prover::witness_commitment::{
     commit_witness_stage_leaves, extend_witness_stage_leaves, open_witness_stage_commitment,
     WitnessStageOpening,
@@ -27,6 +27,8 @@ use lzvm_prover::witness_opening::{
 };
 use lzvm_prover::witness_trace::parse_witness_trace;
 use lzvm_prover::ProveUnitSchedule;
+
+const FIRST_WITNESS_OPENING_VALUE_OFFSET: usize = 12 + 8 + 12 + 12;
 
 #[test]
 fn loads_witness_opening_segment_from_segments() {
@@ -92,6 +94,27 @@ fn rejects_invalid_witness_opening_segment() {
     .expect_err("segment should parse");
 
     assert!(matches!(error, LoadWitnessOpeningSegmentError::Segment(_)));
+}
+
+#[test]
+fn rejects_noncanonical_witness_opening_values_while_parsing() {
+    let mut segment = witness_opening_proof_segment(vec![witness_opening_unit(0)]);
+    segment.data[FIRST_WITNESS_OPENING_VALUE_OFFSET..FIRST_WITNESS_OPENING_VALUE_OFFSET + 8]
+        .copy_from_slice(&MODULUS.to_le_bytes());
+
+    let error = parse_witness_opening_segment(&segment.data)
+        .expect_err("witness opening values should be canonical");
+
+    assert_eq!(
+        error,
+        WitnessOpeningSegmentError::ValueNonCanonical {
+            unit_index: 0,
+            row_index: 3,
+            stage_index: 1,
+            value_index: 0,
+            source: FieldError::NonCanonical { value: MODULUS },
+        }
+    );
 }
 
 #[test]

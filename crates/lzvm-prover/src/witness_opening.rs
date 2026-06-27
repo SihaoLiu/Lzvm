@@ -217,7 +217,6 @@ pub enum ValidateWitnessOpeningSegmentsError {
     ArityOverflow,
     InvalidTreeShape,
     LevelCountOverflow,
-    FieldValue(FieldError),
     FieldDigest(FieldError),
 }
 
@@ -304,7 +303,6 @@ impl fmt::Display for ValidateWitnessOpeningSegmentsError {
             Self::ArityOverflow => write!(f, "witness opening segment arity overflow"),
             Self::InvalidTreeShape => write!(f, "witness opening segment invalid tree shape"),
             Self::LevelCountOverflow => write!(f, "witness opening segment level count overflow"),
-            Self::FieldValue(error) => write!(f, "invalid witness opening segment value: {error}"),
             Self::FieldDigest(error) => {
                 write!(f, "invalid witness opening segment digest: {error}")
             }
@@ -320,7 +318,7 @@ impl std::error::Error for ValidateWitnessOpeningSegmentsError {
             Self::Commitments(error) => Some(error),
             Self::CommitmentSegment { source, .. } => Some(source),
             Self::StageOpening { source, .. } => Some(source),
-            Self::FieldValue(error) | Self::FieldDigest(error) => Some(error),
+            Self::FieldDigest(error) => Some(error),
             Self::UnitCountMismatch
             | Self::UnitMismatch { .. }
             | Self::UnitIndexOverflow
@@ -463,9 +461,9 @@ pub fn validate_witness_opening_segments(
                 let values = stage
                     .values
                     .iter()
-                    .map(|value| Felt::from_canonical(*value))
-                    .collect::<Result<Vec<_>, _>>()
-                    .map_err(ValidateWitnessOpeningSegmentsError::FieldValue)?;
+                    .copied()
+                    .map(Felt::from_u64)
+                    .collect::<Vec<_>>();
                 let siblings = stage
                     .siblings
                     .iter()
