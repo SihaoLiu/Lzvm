@@ -6,7 +6,7 @@ use lzvm_artifacts::pcs_proof_values_segment::{
     PcsProofValuesSegmentError, PCS_PROOF_VALUES_SEGMENT_ID,
 };
 use lzvm_artifacts::proof::ProofSegment;
-use lzvm_field::{Ext3, Felt, FieldError};
+use lzvm_field::{Ext3, Felt};
 
 const EXTENSION_WORDS: usize = 3;
 
@@ -62,7 +62,6 @@ pub enum LoadPcsProofValuesSegmentError {
     UnexpectedSegment,
     ValueCountMismatch { expected: usize, found: usize },
     StageOneExtensionComponents { index: usize },
-    NonCanonicalValue { index: usize, source: FieldError },
     Segment(PcsProofValuesSegmentError),
     LengthOverflow,
 }
@@ -81,12 +80,6 @@ impl fmt::Display for LoadPcsProofValuesSegmentError {
                 f,
                 "PCS proof values segment stage-1 value {index} must have zero extension components"
             ),
-            Self::NonCanonicalValue { index, source } => {
-                write!(
-                    f,
-                    "invalid PCS proof values segment value {index}: {source}"
-                )
-            }
             Self::Segment(error) => write!(f, "invalid PCS proof values segment: {error}"),
             Self::LengthOverflow => write!(f, "PCS proof values segment length overflow"),
         }
@@ -96,7 +89,6 @@ impl fmt::Display for LoadPcsProofValuesSegmentError {
 impl std::error::Error for LoadPcsProofValuesSegmentError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
-            Self::NonCanonicalValue { source, .. } => Some(source),
             Self::Segment(error) => Some(error),
             Self::MissingSegment
             | Self::DuplicateSegment
@@ -246,28 +238,11 @@ pub fn load_pcs_proof_values_from_segments(
                     },
                 );
             }
-            values.push(proof_value_extension_from_words(value_index, words)?);
+            values.push(Ext3::from_u64s(words));
             value_index += 1;
         }
     }
     Ok(values)
-}
-
-fn proof_value_extension_from_words(
-    index: usize,
-    words: [u64; 3],
-) -> Result<Ext3, LoadPcsProofValuesSegmentError> {
-    Ok(Ext3::new(
-        Felt::from_canonical(words[0]).map_err(|source| {
-            LoadPcsProofValuesSegmentError::NonCanonicalValue { index, source }
-        })?,
-        Felt::from_canonical(words[1]).map_err(|source| {
-            LoadPcsProofValuesSegmentError::NonCanonicalValue { index, source }
-        })?,
-        Felt::from_canonical(words[2]).map_err(|source| {
-            LoadPcsProofValuesSegmentError::NonCanonicalValue { index, source }
-        })?,
-    ))
 }
 
 fn expected_packed_proof_value_count(

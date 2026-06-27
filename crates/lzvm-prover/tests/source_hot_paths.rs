@@ -2681,6 +2681,42 @@ fn lean_challenge_segment_binding_tracks_runtime_transcript_checks() {
 }
 
 #[test]
+fn proof_and_group_value_loaders_reuse_segment_canonicality() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let proof_values_path = crate_root.join("src/proof_values.rs");
+    let proof_values_source =
+        std::fs::read_to_string(&proof_values_path).expect("proof values source should read");
+    let proof_values_loader = function_body(
+        &proof_values_source,
+        "pub fn load_pcs_proof_values_from_segments",
+        "fn expected_packed_proof_value_count",
+    );
+    let group_values_path = crate_root.join("src/group_values.rs");
+    let group_values_source =
+        std::fs::read_to_string(&group_values_path).expect("group values source should read");
+    let group_values_loader = function_body(
+        &group_values_source,
+        "pub fn load_group_values_from_segments",
+        "fn expected_group_value_count",
+    );
+
+    assert!(
+        proof_values_loader.contains("parse_pcs_proof_values_segment(&segment.data)")
+            && proof_values_loader.contains("Ext3::from_u64s(words)")
+            && !proof_values_loader.contains("Felt::from_canonical")
+            && !proof_values_source.contains("NonCanonicalValue"),
+        "PCS proof values loader should rely on canonical segment parsing and keep stage shape checks local"
+    );
+    assert!(
+        group_values_loader.contains("parse_group_values_segment(&segment.data)")
+            && group_values_loader.contains("Ext3::from_u64s")
+            && !group_values_loader.contains("Felt::from_canonical")
+            && !group_values_source.contains("NonCanonicalValue"),
+        "group values loader should rely on canonical segment parsing"
+    );
+}
+
+#[test]
 fn external_source_device_commitments_do_not_retain_full_trace_sources() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let trace_path = crate_root.join("src/witness_commitment/trace.rs");

@@ -6,7 +6,7 @@ use lzvm_artifacts::group_values_segment::{
     GroupValuesSegmentError, GROUP_VALUES_SEGMENT_ID,
 };
 use lzvm_artifacts::proof::ProofSegment;
-use lzvm_field::{Ext3, Felt, FieldError};
+use lzvm_field::Ext3;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ProveGroupValuesSegmentError {
@@ -54,7 +54,6 @@ pub enum LoadGroupValuesSegmentError {
     DuplicateSegment,
     UnexpectedSegment,
     ValueCountMismatch { expected: usize, found: usize },
-    NonCanonicalValue { index: usize, source: FieldError },
     Segment(GroupValuesSegmentError),
     LengthOverflow,
 }
@@ -69,9 +68,6 @@ impl fmt::Display for LoadGroupValuesSegmentError {
                 f,
                 "group values segment count mismatch: expected {expected}, found {found}"
             ),
-            Self::NonCanonicalValue { index, source } => {
-                write!(f, "invalid group values segment value {index}: {source}")
-            }
             Self::Segment(error) => write!(f, "invalid group values segment: {error}"),
             Self::LengthOverflow => write!(f, "group values segment length overflow"),
         }
@@ -81,7 +77,6 @@ impl fmt::Display for LoadGroupValuesSegmentError {
 impl std::error::Error for LoadGroupValuesSegmentError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
-            Self::NonCanonicalValue { source, .. } => Some(source),
             Self::Segment(error) => Some(error),
             Self::MissingSegment
             | Self::DuplicateSegment
@@ -151,27 +146,7 @@ pub fn load_group_values_from_segments(
         });
     }
 
-    parsed
-        .values
-        .iter()
-        .copied()
-        .enumerate()
-        .map(|(index, words)| group_value_extension_from_words(index, words))
-        .collect()
-}
-
-fn group_value_extension_from_words(
-    index: usize,
-    words: [u64; 3],
-) -> Result<Ext3, LoadGroupValuesSegmentError> {
-    Ok(Ext3::new(
-        Felt::from_canonical(words[0])
-            .map_err(|source| LoadGroupValuesSegmentError::NonCanonicalValue { index, source })?,
-        Felt::from_canonical(words[1])
-            .map_err(|source| LoadGroupValuesSegmentError::NonCanonicalValue { index, source })?,
-        Felt::from_canonical(words[2])
-            .map_err(|source| LoadGroupValuesSegmentError::NonCanonicalValue { index, source })?,
-    ))
+    Ok(parsed.values.into_iter().map(Ext3::from_u64s).collect())
 }
 
 fn expected_group_value_count(
