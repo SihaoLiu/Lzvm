@@ -1650,5 +1650,76 @@ theorem runtime_pipeline_binding_checked_acceptance_full_soundness_contract
       executionObligations,
       sound.right⟩
 
+set_option linter.style.longLine false in
+theorem runtime_pipeline_binding_checked_acceptance_full_soundness_with_fri_parser_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimePipelineBindingValidation system)
+    (boundary :
+      RuntimeFriOpeningSegmentParserBoundary
+        system
+        validation.queryPlanBindingValidation.openingValidation) :
+    forall artifact publicInput proof requiresExternalSource,
+      RuntimePipelineBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimePipelineBindingEvidence
+            system
+            validation
+            artifact
+            publicInput
+            proof
+            requiresExternalSource
+          /\ RuntimeArtifactSoundnessObligations
+            system
+            validation.ethBindingValidation.proofArtifactBindingValidation.runtimeValidation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ (exists witness trace constraints,
+            system.traceConsistent publicInput proof trace
+              /\ system.constraintsSatisfied constraints trace
+              /\ system.witnessMatchesTrace witness trace)
+          /\ SoundWitness system publicInput proof
+          /\ RuntimeFriOpeningSegmentParserContract
+            boundary
+            artifact
+            publicInput
+            proof := by
+  intro artifact publicInput proof requiresExternalSource accepted
+  have fullContract :=
+    runtime_pipeline_binding_checked_acceptance_full_soundness_contract
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      accepted
+  have parserContract :=
+    runtime_pipeline_binding_checked_acceptance_fri_parser_contract
+      validation
+      boundary
+      artifact
+      publicInput
+      proof
+      accepted
+  rcases fullContract with
+    ⟨pipelineEvidence,
+      artifactObligations,
+      coreContract,
+      executionObligations,
+      soundWitness⟩
+  exact
+    And.intro pipelineEvidence
+      (And.intro artifactObligations
+        (And.intro coreContract
+          (And.intro executionObligations
+            (And.intro soundWitness parserContract))))
+
 
 end Lzvm

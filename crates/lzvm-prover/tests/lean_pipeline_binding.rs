@@ -168,6 +168,7 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
             "runtime_pipeline_binding_checked_acceptance_challenge_query_opening_contract",
             "runtime_pipeline_binding_checked_acceptance_challenge_query_opening_core_contract",
             "runtime_pipeline_binding_checked_acceptance_full_soundness_contract",
+            "runtime_pipeline_binding_checked_acceptance_full_soundness_with_fri_parser_contract",
             "runtime_pipeline_binding_checked_acceptance_trace_conformance_contract",
             "runtime_pipeline_binding_checked_acceptance_trace_semantic_evidence_complete",
             "runtime_pipeline_compact_digest_merkle_observation_eq_full_state",
@@ -2095,6 +2096,40 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
         "runtime_pipeline_binding_checked_acceptance_fri_parser_contract",
         &[
             "runtime_pipeline_binding_checked_acceptance_opening_segment_checked_acceptance",
+            "runtime_opening_segment_binding_checked_acceptance_fri_parser_contract",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_pipeline_binding_checked_acceptance_full_soundness_with_fri_parser_contract",
+        &[
+            "AssumptionBundle system",
+            "RuntimeFriOpeningSegmentParserBoundary",
+            "validation.queryPlanBindingValidation.openingValidation",
+            "RuntimePipelineBindingCheckedAcceptance",
+            "RuntimePipelineBindingEvidence",
+            "RuntimeArtifactSoundnessObligations",
+            "RuntimeVerifierCoreContract system publicInput proof",
+            "system.traceConsistent publicInput proof trace",
+            "system.constraintsSatisfied constraints trace",
+            "system.witnessMatchesTrace witness trace",
+            "SoundWitness system publicInput proof",
+            "RuntimeFriOpeningSegmentParserContract",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_pipeline_binding_checked_acceptance_full_soundness_with_fri_parser_contract",
+        &[
+            "runtime_pipeline_binding_checked_acceptance_full_soundness_contract",
+            "runtime_pipeline_binding_checked_acceptance_fri_parser_contract",
+        ],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &lean_source,
+        "runtime_pipeline_binding_checked_acceptance_full_soundness_with_fri_parser_contract",
+        &[
+            "runtime_pipeline_binding_checked_acceptance_sound",
             "runtime_opening_segment_binding_checked_acceptance_fri_parser_contract",
         ],
     );
