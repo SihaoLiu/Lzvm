@@ -1158,17 +1158,26 @@ impl<'a> ValidatedProgramImageCache<'a> {
 }
 
 fn build_eth_block_input_proof_segment(
-    input: Option<&EthBlockInput>,
+    input: Option<ValidatedEthBlockInput<'_>>,
 ) -> Result<Option<ProofSegment>, String> {
     let Some(input) = input else {
         return Ok(None);
     };
-    let data = encode_eth_block_input_segment(input)
+    let data = encode_eth_block_input_segment(input.as_input())
         .map_err(|error| format!("build ETH block input segment failed: {error}"))?;
     Ok(Some(ProofSegment {
         id: ETH_BLOCK_INPUT_SEGMENT_ID,
         data,
     }))
+}
+
+#[derive(Clone, Copy, Debug)]
+struct ValidatedEthBlockInput<'a>(&'a EthBlockInput);
+
+impl<'a> ValidatedEthBlockInput<'a> {
+    fn as_input(self) -> &'a EthBlockInput {
+        self.0
+    }
 }
 
 fn build_framed_guest_input_proof_segment(
@@ -1195,7 +1204,7 @@ impl<'a> ValidatedFramedGuestInput<'a> {
 #[derive(Clone, Copy, Default)]
 struct ValidatedProofBindings<'a> {
     program_image_cache: Option<ValidatedProgramImageCache<'a>>,
-    eth_block_input: Option<&'a EthBlockInput>,
+    eth_block_input: Option<ValidatedEthBlockInput<'a>>,
     framed_guest_input: Option<ValidatedFramedGuestInput<'a>>,
 }
 
@@ -1207,7 +1216,7 @@ fn validate_proof_bindings<'a>(
 ) -> Result<ValidatedProofBindings<'a>, String> {
     let program_image_cache =
         validate_program_image_cache_binding(public_values, program_image_cache)?;
-    validate_eth_block_binding(public_values, eth_block_input)?;
+    let eth_block_input = validate_eth_block_binding(public_values, eth_block_input)?;
     let framed_guest_input = validate_framed_guest_input_binding(framed_guest_input)?;
     Ok(ValidatedProofBindings {
         program_image_cache,
@@ -1230,17 +1239,17 @@ fn validate_program_image_cache_binding<'a>(
     Ok(cache.map(ValidatedProgramImageCache))
 }
 
-fn validate_eth_block_binding(
+fn validate_eth_block_binding<'a>(
     public_values: &PublicValues,
-    input: Option<&EthBlockInput>,
-) -> Result<(), String> {
+    input: Option<&'a EthBlockInput>,
+) -> Result<Option<ValidatedEthBlockInput<'a>>, String> {
     if let Some(input) = input {
         validate_eth_block_public_values(input, public_values)
             .map_err(|error| error.to_string())?;
     } else if contains_named_eth_block_public_values(public_values) {
         return Err("missing ETH block input proof segment".to_owned());
     }
-    Ok(())
+    Ok(input.map(ValidatedEthBlockInput))
 }
 
 fn validate_framed_guest_input_binding<'a>(

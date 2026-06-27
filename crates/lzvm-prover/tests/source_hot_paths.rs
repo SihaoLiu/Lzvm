@@ -2181,6 +2181,16 @@ fn lean_eth_block_public_input_binding_tracks_runtime_checks() {
         "fn build_program_image_cache_proof_segment",
         "fn build_eth_block_input_proof_segment",
     );
+    let eth_block_input_segment_body = function_body(
+        &artifact_source,
+        "fn build_eth_block_input_proof_segment",
+        "fn build_framed_guest_input_proof_segment",
+    );
+    let validate_eth_block_binding_body = function_body(
+        &artifact_source,
+        "fn validate_eth_block_binding",
+        "fn validate_framed_guest_input_binding",
+    );
 
     assert!(
         lean_root_source.contains("import Lzvm.EthBlockPublicInputBinding"),
@@ -2193,6 +2203,17 @@ fn lean_eth_block_public_input_binding_tracks_runtime_checks() {
     );
     assert!(
         artifact_source.contains("fn validate_eth_block_binding")
+            && artifact_source.contains("struct ValidatedEthBlockInput")
+            && artifact_source.contains("eth_block_input: Option<ValidatedEthBlockInput<'a>>")
+            && artifact_source.contains(
+                "let eth_block_input = validate_eth_block_binding(public_values, eth_block_input)?"
+            )
+            && validate_eth_block_binding_body
+                .contains("Result<Option<ValidatedEthBlockInput<'a>>, String>")
+            && validate_eth_block_binding_body.contains("Ok(input.map(ValidatedEthBlockInput))")
+            && eth_block_input_segment_body.contains("input: Option<ValidatedEthBlockInput<'_>>")
+            && eth_block_input_segment_body
+                .contains("encode_eth_block_input_segment(input.as_input())")
             && artifact_source.contains("public_values_hash")
             && artifact_source.contains("validate_proof_bindings"),
         "Rust proof artifact construction should keep runtime public-input binding checks"
@@ -2267,6 +2288,11 @@ fn lean_framed_guest_input_binding_tracks_runtime_checks() {
         &proof_artifact_source,
         "fn validate_program_image_cache_binding",
         "fn validate_eth_block_binding",
+    );
+    let validate_eth_block_binding_body = function_body(
+        &proof_artifact_source,
+        "fn validate_eth_block_binding",
+        "fn validate_framed_guest_input_binding",
     );
     let build_proof_binding_segments_body = function_body(
         &proof_artifact_source,
@@ -2397,14 +2423,21 @@ fn lean_framed_guest_input_binding_tracks_runtime_checks() {
             && validate_proof_bindings_body.contains("let program_image_cache =")
             && validate_proof_bindings_body
                 .contains("validate_program_image_cache_binding(public_values, program_image_cache)?")
+            && validate_proof_bindings_body
+                .contains("let eth_block_input = validate_eth_block_binding")
             && validate_proof_bindings_body.contains("Ok(ValidatedProofBindings")
             && proof_artifact_source.contains("struct ValidatedProgramImageCache")
             && proof_artifact_source
                 .contains("program_image_cache: Option<ValidatedProgramImageCache<'a>>")
+            && proof_artifact_source.contains("struct ValidatedEthBlockInput")
+            && proof_artifact_source.contains("eth_block_input: Option<ValidatedEthBlockInput<'a>>")
             && validate_program_image_cache_binding_body
                 .contains("Result<Option<ValidatedProgramImageCache<'a>>, String>")
             && validate_program_image_cache_binding_body
                 .contains("Ok(cache.map(ValidatedProgramImageCache))")
+            && validate_eth_block_binding_body
+                .contains("Result<Option<ValidatedEthBlockInput<'a>>, String>")
+            && validate_eth_block_binding_body.contains("Ok(input.map(ValidatedEthBlockInput))")
             && validate_framed_guest_input_binding_body
                 .contains("Result<Option<ValidatedFramedGuestInput<'a>>, String>")
             && validate_framed_guest_input_binding_body
@@ -2412,6 +2445,8 @@ fn lean_framed_guest_input_binding_tracks_runtime_checks() {
             && build_proof_binding_segments_body.contains("bindings: ValidatedProofBindings<'_>")
             && build_proof_binding_segments_body
                 .contains("build_program_image_cache_proof_segment(bindings.program_image_cache)")
+            && build_proof_binding_segments_body
+                .contains("build_eth_block_input_proof_segment(bindings.eth_block_input)")
             && build_proof_binding_segments_body
                 .contains("build_framed_guest_input_proof_segment(bindings.framed_guest_input)")
             && validate_framed_guest_input_binding_body
