@@ -21,6 +21,14 @@ fn test_fixture_dir(name: &str) -> std::path::PathBuf {
         .join(format!("lzvm-verify-{name}-{}", std::process::id()))
 }
 
+fn framed_input_bytes(payload: &[u8]) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(&(payload.len() as u64).to_le_bytes());
+    bytes.extend_from_slice(payload);
+    bytes.resize(bytes.len().next_multiple_of(8), 0);
+    bytes
+}
+
 #[test]
 fn parses_eth_public_input_option_for_verify_proof_args() {
     let result = parse_verify_proof_args(&[
@@ -205,6 +213,74 @@ fn rejects_missing_input_data_value_for_verify_preflight_args() {
         result,
         Err(SetupValidationArgError::Invalid(message)) if message == "missing --input-data value"
     ));
+}
+
+#[test]
+fn input_data_file_matches_framed_guest_segment_bytes() {
+    let dir = test_fixture_dir("framed-input-match");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let input_path = dir.join("input.bin");
+    let input_data = framed_input_bytes(&[3, 5, 8, 13]);
+    std::fs::write(&input_path, &input_data).expect("input data should write");
+
+    let matched = input_data_file_matches_segment(
+        std::fs::File::open(&input_path).expect("input data should open"),
+        input_path.to_str().expect("input path should be utf-8"),
+        &input_data,
+    )
+    .expect("input data comparison should succeed");
+    std::fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert!(matched, "matching framed input bytes should compare equal");
+}
+
+#[test]
+fn input_data_file_mismatch_detects_framed_guest_segment_payload_change() {
+    let dir = test_fixture_dir("framed-input-payload-mismatch");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let input_path = dir.join("input.bin");
+    let input_data = framed_input_bytes(&[3, 5, 8, 13]);
+    let segment_data = framed_input_bytes(&[3, 5, 8, 21]);
+    std::fs::write(&input_path, &input_data).expect("input data should write");
+
+    let matched = input_data_file_matches_segment(
+        std::fs::File::open(&input_path).expect("input data should open"),
+        input_path.to_str().expect("input path should be utf-8"),
+        &segment_data,
+    )
+    .expect("input data comparison should succeed");
+    std::fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert!(
+        !matched,
+        "framed input payload changes should be reported as a mismatch"
+    );
+}
+
+#[test]
+fn input_data_file_mismatch_detects_framed_guest_segment_length_change() {
+    let dir = test_fixture_dir("framed-input-length-mismatch");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let input_path = dir.join("input.bin");
+    let input_data = framed_input_bytes(&[3, 5, 8, 13]);
+    let segment_data = framed_input_bytes(&[3, 5, 8, 13, 21, 34, 55, 89, 144]);
+    std::fs::write(&input_path, &input_data).expect("input data should write");
+
+    let matched = input_data_file_matches_segment(
+        std::fs::File::open(&input_path).expect("input data should open"),
+        input_path.to_str().expect("input path should be utf-8"),
+        &segment_data,
+    )
+    .expect("input data comparison should succeed");
+    std::fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert!(
+        !matched,
+        "framed input length changes should be reported as a mismatch"
+    );
 }
 
 #[test]

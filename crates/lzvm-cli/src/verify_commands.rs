@@ -1,9 +1,9 @@
 use std::fs;
-use std::io::Write;
+use std::io::{Read, Write};
 use std::path::PathBuf;
 
 use lzvm_artifacts::guest_input_segment::{
-    encode_framed_guest_input_segment, FRAMED_GUEST_INPUT_SEGMENT_ID,
+    parse_framed_guest_input_segment, FRAMED_GUEST_INPUT_SEGMENT_ID,
 };
 use lzvm_artifacts::program_image::read_program_image_commitment_cache_file;
 use lzvm_artifacts::program_image_segment::{
@@ -1222,10 +1222,8 @@ fn verify_program_image_cache_binding(proof_bin: &str, cache_path: &str) -> Resu
 fn verify_framed_guest_input_binding(proof_bin: &str, input_data_path: &str) -> Result<(), String> {
     let proof = read_proof_artifact_file(proof_bin)
         .map_err(|error| format!("read proof artifact failed: {proof_bin}: {error}"))?;
-    let input = fs::read(input_data_path)
+    let input = fs::File::open(input_data_path)
         .map_err(|error| format!("read input data failed: {input_data_path}: {error}"))?;
-    let expected = encode_framed_guest_input_segment(&input)
-        .map_err(|error| format!("encode framed guest input segment failed: {error}"))?;
     let mut segments = proof
         .segments
         .iter()
@@ -1236,10 +1234,42 @@ fn verify_framed_guest_input_binding(proof_bin: &str, input_data_path: &str) -> 
     if segments.next().is_some() {
         return Err("duplicate framed guest input proof segment".to_owned());
     }
-    if segment.data != expected {
+    parse_framed_guest_input_segment(&segment.data)
+        .map_err(|error| format!("framed guest input proof segment is invalid: {error}"))?;
+    if !input_data_file_matches_segment(input, input_data_path, &segment.data)? {
         return Err("framed guest input proof segment mismatch".to_owned());
     }
     Ok(())
+}
+
+fn input_data_file_matches_segment(
+    mut input: fs::File,
+    input_data_path: &str,
+    segment_data: &[u8],
+) -> Result<bool, String> {
+    let input_len = input
+        .metadata()
+        .map_err(|error| format!("read input data failed: {input_data_path}: {error}"))?
+        .len();
+    let segment_len = u64::try_from(segment_data.len())
+        .map_err(|_| "framed guest input proof segment is too large".to_owned())?;
+    if input_len != segment_len {
+        return Ok(false);
+    }
+
+    let mut offset = 0;
+    let mut buffer = [0_u8; 8192];
+    while offset < segment_data.len() {
+        let chunk_len = buffer.len().min(segment_data.len() - offset);
+        input
+            .read_exact(&mut buffer[..chunk_len])
+            .map_err(|error| format!("read input data failed: {input_data_path}: {error}"))?;
+        if buffer[..chunk_len] != segment_data[offset..offset + chunk_len] {
+            return Ok(false);
+        }
+        offset += chunk_len;
+    }
+    Ok(true)
 }
 
 fn pipeline_input_bindings_matched(
