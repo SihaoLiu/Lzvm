@@ -155,6 +155,7 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
             "runtime_pipeline_binding_checked_acceptance_challenge_transcript_payload_contract",
             "runtime_pipeline_binding_checked_acceptance_opening_segment_checked_acceptance",
             "runtime_pipeline_binding_checked_acceptance_opening_segment_evidence",
+            "runtime_pipeline_binding_checked_acceptance_fri_parser_contract",
             "runtime_pipeline_binding_checked_acceptance_opening_segment_bound_contract",
             "runtime_pipeline_binding_checked_acceptance_opening_bound_contract",
             "runtime_pipeline_binding_checked_acceptance_constant_opening_bound_from_concrete_nary_merkle",
@@ -2072,6 +2073,29 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
         &[
             "runtime_opening_segment_binding_checked_acceptance_opening_bound_contract",
             "runtime_pipeline_binding_checked_acceptance_opening_segment_checked_acceptance",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_pipeline_binding_checked_acceptance_fri_parser_contract",
+        &[
+            "RuntimePipelineBindingCheckedAcceptance",
+            "RuntimeFriOpeningSegmentParserBoundary",
+            "validation.queryPlanBindingValidation.openingValidation",
+            "RuntimeFriOpeningSegmentParserContract",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_omits(
+        &lean_source,
+        "runtime_pipeline_binding_checked_acceptance_fri_parser_contract",
+        &["AssumptionBundle"],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_pipeline_binding_checked_acceptance_fri_parser_contract",
+        &[
+            "runtime_pipeline_binding_checked_acceptance_opening_segment_checked_acceptance",
+            "runtime_opening_segment_binding_checked_acceptance_fri_parser_contract",
         ],
     );
     lean_binding::assert_theorem_prefix_contains(
