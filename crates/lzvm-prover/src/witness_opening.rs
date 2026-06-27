@@ -1,5 +1,5 @@
-use std::fmt;
 use std::time::Instant;
+use std::{collections::BTreeSet, fmt};
 
 use lzvm_artifacts::pcs_query_segment::{
     parse_pcs_query_plan_segment, PcsQueryPlanSegment, PcsQueryPlanSegmentError, PcsQueryPlanUnit,
@@ -374,14 +374,25 @@ pub(crate) fn validate_witness_opening_units_match_query_units_from_segment(
     query_units: &[PcsQueryPlanUnit],
     opening: &WitnessOpeningSegment,
 ) -> Result<(), LoadWitnessOpeningUnitError> {
+    let query_identities = query_units
+        .iter()
+        .map(|unit| (unit.unit_index, unit.trace_instance_index))
+        .collect::<BTreeSet<_>>();
+    let mut opening_identities = BTreeSet::new();
     for unit in &opening.units {
-        if !query_units.iter().any(|query_unit| {
-            query_unit.unit_index == unit.unit_index
-                && query_unit.trace_instance_index == unit.trace_instance_index
-        }) {
-            let unit_index = usize::try_from(unit.unit_index)
-                .map_err(|_| LoadWitnessOpeningUnitError::UnitIndexOverflow)?;
+        let identity = (unit.unit_index, unit.trace_instance_index);
+        let unit_index = usize::try_from(unit.unit_index)
+            .map_err(|_| LoadWitnessOpeningUnitError::UnitIndexOverflow)?;
+        if !query_identities.contains(&identity) || !opening_identities.insert(identity) {
             return Err(LoadWitnessOpeningUnitError::UnexpectedUnit { unit_index });
+        }
+    }
+    for query_unit in query_units {
+        let identity = (query_unit.unit_index, query_unit.trace_instance_index);
+        if !opening_identities.contains(&identity) {
+            let unit_index = usize::try_from(query_unit.unit_index)
+                .map_err(|_| LoadWitnessOpeningUnitError::UnitIndexOverflow)?;
+            return Err(LoadWitnessOpeningUnitError::MissingUnit { unit_index });
         }
     }
     Ok(())
@@ -1482,4 +1493,42 @@ fn field_digest_from_words(
             .map_err(ValidateWitnessOpeningSegmentsError::FieldDigest)?;
     }
     Ok(out)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn opening_units_match_query_units_rejects_duplicate_in_memory_identity() {
+        let query_units = vec![query_unit(0, 1)];
+        let opening = WitnessOpeningSegment {
+            units: vec![opening_unit(0, 1), opening_unit(0, 1)],
+        };
+
+        let error =
+            validate_witness_opening_units_match_query_units_from_segment(&query_units, &opening)
+                .expect_err("duplicate witness opening identity should reject");
+
+        assert_eq!(
+            error,
+            LoadWitnessOpeningUnitError::UnexpectedUnit { unit_index: 0 }
+        );
+    }
+
+    fn query_unit(unit_index: u32, trace_instance_index: u32) -> PcsQueryPlanUnit {
+        PcsQueryPlanUnit {
+            unit_index,
+            trace_instance_index,
+            queries: vec![0],
+        }
+    }
+
+    fn opening_unit(unit_index: u32, trace_instance_index: u32) -> WitnessOpeningUnitSegment {
+        WitnessOpeningUnitSegment {
+            unit_index,
+            trace_instance_index,
+            queries: Vec::new(),
+        }
+    }
 }

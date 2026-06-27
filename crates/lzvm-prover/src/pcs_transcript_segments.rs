@@ -19,6 +19,10 @@ use crate::pcs_fri::{
     load_pcs_fri_opening_segment_from_segments,
     validate_pcs_fri_opening_units_match_query_units_from_segment, LoadPcsFriOpeningUnitError,
 };
+use crate::pcs_material_manifest::{
+    validate_parsed_pcs_material_manifest_matches_schedule,
+    ValidatePcsMaterialManifestSegmentsError,
+};
 use crate::pcs_query_plan::checked_proof_binding_segments;
 use crate::pcs_query_plan::{load_pcs_query_plan_from_segments, LoadPcsQueryPlanSegmentError};
 use crate::pcs_transcript::{
@@ -356,41 +360,32 @@ fn validate_material_manifest_matches_schedule(
     schedule: &ProveSchedule,
     material: &PcsMaterialManifestSegment,
 ) -> Result<(), PcsTranscriptProofSegmentsError> {
-    for unit in &material.units {
-        let unit_index = usize::try_from(unit.unit_index)
-            .map_err(|_| PcsTranscriptProofSegmentsError::UnitIndexOverflow)?;
-        if unit_index >= schedule.units.len() {
-            return Err(PcsTranscriptProofSegmentsError::UnitMismatch { unit_index });
+    let fallback_unit_index = material.units.len().min(schedule.units.len());
+    validate_parsed_pcs_material_manifest_matches_schedule(schedule, material)
+        .map_err(|error| map_material_manifest_schedule_error(error, fallback_unit_index))
+}
+
+fn map_material_manifest_schedule_error(
+    error: ValidatePcsMaterialManifestSegmentsError,
+    fallback_unit_index: usize,
+) -> PcsTranscriptProofSegmentsError {
+    match error {
+        ValidatePcsMaterialManifestSegmentsError::UnitIndexOverflow => {
+            PcsTranscriptProofSegmentsError::UnitIndexOverflow
+        }
+        ValidatePcsMaterialManifestSegmentsError::MissingUnitMaterial { unit_index }
+        | ValidatePcsMaterialManifestSegmentsError::UnitMismatch { unit_index } => {
+            PcsTranscriptProofSegmentsError::UnitMismatch { unit_index }
+        }
+        ValidatePcsMaterialManifestSegmentsError::UnitCountMismatch
+        | ValidatePcsMaterialManifestSegmentsError::MissingSegment
+        | ValidatePcsMaterialManifestSegmentsError::DuplicateSegment
+        | ValidatePcsMaterialManifestSegmentsError::Segment(_) => {
+            PcsTranscriptProofSegmentsError::UnitMismatch {
+                unit_index: fallback_unit_index,
+            }
         }
     }
-    if material.units.len() != schedule.units.len() {
-        return Err(PcsTranscriptProofSegmentsError::UnitMismatch {
-            unit_index: material.units.len().min(schedule.units.len()),
-        });
-    }
-    for (unit_index, (material_unit, schedule_unit)) in
-        material.units.iter().zip(schedule.units.iter()).enumerate()
-    {
-        let expected_unit_index = u32::try_from(unit_index)
-            .map_err(|_| PcsTranscriptProofSegmentsError::UnitIndexOverflow)?;
-        if material_unit.unit_index != expected_unit_index
-            || Some(material_unit.plan_digest) != schedule_unit.pcs_material_plan_digest
-            || Some(material_unit.fixed_column_digest)
-                != schedule_unit.pcs_material_fixed_column_digest
-            || Some(material_unit.constant_tree_digest)
-                != schedule_unit.pcs_material_constant_tree_digest
-            || Some(material_unit.constant_tree_root)
-                != schedule_unit.pcs_material_constant_tree_root
-            || Some(material_unit.fixed_byte_count) != schedule_unit.pcs_material_fixed_byte_count
-            || Some(material_unit.constant_tree_byte_count)
-                != schedule_unit.pcs_material_constant_tree_byte_count
-            || Some(material_unit.leaf_byte_count) != schedule_unit.pcs_material_leaf_byte_count
-            || Some(material_unit.node_byte_count) != schedule_unit.pcs_material_node_byte_count
-        {
-            return Err(PcsTranscriptProofSegmentsError::UnitMismatch { unit_index });
-        }
-    }
-    Ok(())
 }
 
 fn witness_segments_by_identity<'loaded, 'segment>(

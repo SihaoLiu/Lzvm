@@ -116,10 +116,23 @@ pub fn validate_pcs_material_manifest_segments(
     }
     let manifest = parse_pcs_material_manifest_segment(&segment.data)
         .map_err(ValidatePcsMaterialManifestSegmentsError::Segment)?;
+    validate_parsed_pcs_material_manifest_matches_schedule(schedule, &manifest)
+}
+
+pub(crate) fn validate_parsed_pcs_material_manifest_matches_schedule(
+    schedule: &ProveSchedule,
+    manifest: &PcsMaterialManifestSegment,
+) -> Result<(), ValidatePcsMaterialManifestSegmentsError> {
+    for manifest_unit in &manifest.units {
+        let unit_index = usize::try_from(manifest_unit.unit_index)
+            .map_err(|_| ValidatePcsMaterialManifestSegmentsError::UnitIndexOverflow)?;
+        if unit_index >= schedule.units.len() {
+            return Err(ValidatePcsMaterialManifestSegmentsError::UnitMismatch { unit_index });
+        }
+    }
     if manifest.units.len() != schedule.units.len() {
         return Err(ValidatePcsMaterialManifestSegmentsError::UnitCountMismatch);
     }
-
     for (index, (manifest_unit, schedule_unit)) in
         manifest.units.iter().zip(schedule.units.iter()).enumerate()
     {

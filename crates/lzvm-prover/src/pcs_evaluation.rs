@@ -1,4 +1,4 @@
-use std::fmt;
+use std::{collections::BTreeSet, fmt};
 
 use lzvm_artifacts::pcs_evaluation_segment::{
     encode_pcs_evaluation_segment, parse_pcs_evaluation_segment, PcsEvaluationSegment,
@@ -241,14 +241,25 @@ pub(crate) fn validate_pcs_evaluation_units_match_query_units_from_segment(
     query_units: &[PcsQueryPlanUnit],
     evaluations: &PcsEvaluationSegment,
 ) -> Result<(), LoadPcsEvaluationUnitError> {
+    let query_identities = query_units
+        .iter()
+        .map(|unit| (unit.unit_index, unit.trace_instance_index))
+        .collect::<BTreeSet<_>>();
+    let mut evaluation_identities = BTreeSet::new();
     for unit in &evaluations.units {
-        if !query_units.iter().any(|query_unit| {
-            query_unit.unit_index == unit.unit_index
-                && query_unit.trace_instance_index == unit.trace_instance_index
-        }) {
-            let unit_index = usize::try_from(unit.unit_index)
-                .map_err(|_| LoadPcsEvaluationUnitError::UnitIndexOverflow)?;
+        let identity = (unit.unit_index, unit.trace_instance_index);
+        let unit_index = usize::try_from(unit.unit_index)
+            .map_err(|_| LoadPcsEvaluationUnitError::UnitIndexOverflow)?;
+        if !query_identities.contains(&identity) || !evaluation_identities.insert(identity) {
             return Err(LoadPcsEvaluationUnitError::UnexpectedUnit { unit_index });
+        }
+    }
+    for query_unit in query_units {
+        let identity = (query_unit.unit_index, query_unit.trace_instance_index);
+        if !evaluation_identities.contains(&identity) {
+            let unit_index = usize::try_from(query_unit.unit_index)
+                .map_err(|_| LoadPcsEvaluationUnitError::UnitIndexOverflow)?;
+            return Err(LoadPcsEvaluationUnitError::MissingUnit { unit_index });
         }
     }
     Ok(())
@@ -326,6 +337,41 @@ mod tests {
                 source: FieldError::NonCanonical { value: MODULUS },
             }
         );
+    }
+
+    #[test]
+    fn evaluation_units_match_query_units_rejects_duplicate_in_memory_identity() {
+        let query_units = vec![query_unit(0, 1)];
+        let evaluations = PcsEvaluationSegment {
+            units: vec![evaluation_unit(0, 1), evaluation_unit(0, 1)],
+        };
+
+        let error = validate_pcs_evaluation_units_match_query_units_from_segment(
+            &query_units,
+            &evaluations,
+        )
+        .expect_err("duplicate PCS evaluation identity should reject");
+
+        assert_eq!(
+            error,
+            LoadPcsEvaluationUnitError::UnexpectedUnit { unit_index: 0 }
+        );
+    }
+
+    fn query_unit(unit_index: u32, trace_instance_index: u32) -> PcsQueryPlanUnit {
+        PcsQueryPlanUnit {
+            unit_index,
+            trace_instance_index,
+            queries: vec![0],
+        }
+    }
+
+    fn evaluation_unit(unit_index: u32, trace_instance_index: u32) -> PcsEvaluationUnitSegment {
+        PcsEvaluationUnitSegment {
+            unit_index,
+            trace_instance_index,
+            values: Vec::new(),
+        }
     }
 
     fn sample_unit(evaluation_value_count: usize) -> ProveUnitSchedule {
