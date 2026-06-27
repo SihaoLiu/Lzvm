@@ -336,7 +336,8 @@ def print_ncu_outputs(outputs: dict[str, Path], root: Path) -> None:
 
 def profile_env(outputs: dict[str, Path]) -> dict[str, str]:
     tmp_dir = outputs["tmp_dir"]
-    tmp_dir.mkdir(parents=True, exist_ok=True)
+    if tmp_dir.is_symlink() or not tmp_dir.is_dir():
+        raise SystemExit(f"tmp_dir output path is not a prepared directory: {tmp_dir}")
     env = os.environ.copy()
     env["TMPDIR"] = str(tmp_dir)
     return env
@@ -383,11 +384,17 @@ def write_text_no_follow(path: Path, text: str) -> None:
         output.write(text)
 
 
+def prepare_managed_tmp_dir(path: Path, key: str) -> None:
+    if path.exists() or path.is_symlink():
+        raise SystemExit(f"{key} output path must not already exist: {path}")
+    path.mkdir(mode=0o700)
+
+
 def prepare_output_dirs(output_dir: Path, outputs: dict[str, Path]) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
     reject_symlinked_output_paths(outputs)
-    outputs["tmp_dir"].mkdir(parents=True, exist_ok=True)
-    outputs["target_tmp_dir"].mkdir(parents=True, exist_ok=True)
+    prepare_managed_tmp_dir(outputs["tmp_dir"], "tmp_dir")
+    prepare_managed_tmp_dir(outputs["target_tmp_dir"], "target_tmp_dir")
     reject_symlinked_output_paths(outputs)
 
 

@@ -1240,6 +1240,87 @@ fn proof_profile_rejects_symlinked_output_path() {
 
 #[cfg(unix)]
 #[test]
+fn proof_profile_rejects_preexisting_target_tmpdir() {
+    let output_dir = workspace_root().join(format!(
+        "temp/proof-profile-target-tmpdir-{}",
+        std::process::id()
+    ));
+    let profiler_path = output_dir.join("fake-nsys");
+    let profile_dir = output_dir.join("profiles");
+    let target_tmp_dir = profile_dir.join("preexisting-profile.target.tmp");
+    let profiler_marker = output_dir.join("profiler-ran");
+    let target_marker = target_tmp_dir.join("target-marker");
+    let _ = std::fs::remove_dir_all(&output_dir);
+    std::fs::create_dir_all(&target_tmp_dir).expect("target tmp fixture should be created");
+    write_executable_script(
+        &profiler_path,
+        &format!(
+            concat!(
+                "#!/usr/bin/env python3\n",
+                "import pathlib, subprocess, sys\n",
+                "pathlib.Path({:?}).write_text('ran\\n', encoding='utf-8')\n",
+                "args = sys.argv[1:]\n",
+                "if 'profile' in args and '--output' in args:\n",
+                "    prefix = pathlib.Path(args[args.index('--output') + 1])\n",
+                "    pathlib.Path(str(prefix) + '.nsys-rep').write_text('report\\n', encoding='utf-8')\n",
+                "if '--' in args:\n",
+                "    command = args[args.index('--') + 1:]\n",
+                "    if command:\n",
+                "        raise SystemExit(subprocess.run(command).returncode)\n",
+            ),
+            profiler_marker.to_string_lossy()
+        ),
+    );
+
+    let output = Command::new(script_path())
+        .arg("--tool")
+        .arg("nsys")
+        .arg("--nsys-command")
+        .arg(&profiler_path)
+        .arg("--skip-nsys-export")
+        .arg("--output-dir")
+        .arg(&profile_dir)
+        .arg("--name")
+        .arg("preexisting-profile")
+        .arg("--")
+        .arg("python3")
+        .arg("-c")
+        .arg("import os, pathlib; pathlib.Path(os.environ['TMPDIR'], 'target-marker').write_text('target\\n', encoding='utf-8'); print('timing_total_ms=1000')")
+        .output()
+        .expect("proof profile should reject preexisting target tmpdir");
+    let success = output.status.success();
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    let profiler_ran = profiler_marker.exists();
+    let target_marker_created = target_marker.exists();
+    let profile_json_created = profile_dir
+        .join("preexisting-profile.profile.json")
+        .exists();
+    let _ = std::fs::remove_dir_all(&output_dir);
+
+    assert!(
+        !success,
+        "proof profile should reject preexisting managed target TMPDIR paths"
+    );
+    assert!(
+        stderr.contains("target_tmp_dir output path must not already exist"),
+        "target tmpdir rejection should explain the path constraint: stderr={stderr}"
+    );
+    assert!(
+        !profiler_ran,
+        "rejected profile should not invoke the profiler"
+    );
+    assert!(
+        !target_marker_created,
+        "rejected profile should not write into the preexisting target tmpdir"
+    );
+    assert!(
+        !profile_json_created,
+        "rejected profile should fail before writing profile JSON"
+    );
+}
+
+#[cfg(unix)]
+#[test]
 fn proof_profile_rejects_output_path_replaced_with_symlink() {
     let output_dir = workspace_root().join(format!(
         "temp/proof-profile-symlink-race-{}",
