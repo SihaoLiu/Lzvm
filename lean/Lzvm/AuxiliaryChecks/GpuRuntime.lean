@@ -1774,6 +1774,150 @@ theorem guest_pc_trace_cuda_run_checked_acceptance_projects_decision
       proof
       checked.right
 
+theorem guest_pc_trace_cuda_run_sparse_source_matches
+    (config : GuestPcTraceCudaRunConfig) :
+    GuestPcTraceCudaRunDecisionMatches config ->
+      config.selectedSparseSource =
+        config.sparseSourceConfig.effectiveSparseSourceSelected := by
+  intro decision
+  rcases decision with
+    ⟨_sparseDecision, sparseSelected, _terminalDecision,
+      _terminalSelected, _retainedDecision, _retainedSelected,
+      _descriptorDecision, _descriptorSelected⟩
+  exact sparseSelected
+
+theorem guest_pc_trace_cuda_run_terminal_sparse_source_matches
+    (config : GuestPcTraceCudaRunConfig) :
+    GuestPcTraceCudaRunDecisionMatches config ->
+      config.selectedTerminalSparseSource =
+        config.terminalSparseSourceConfig.effectiveTerminalSparseSourceSelected := by
+  intro decision
+  rcases decision with
+    ⟨_sparseDecision, _sparseSelected, _terminalDecision,
+      terminalSelected, _retainedDecision, _retainedSelected,
+      _descriptorDecision, _descriptorSelected⟩
+  exact terminalSelected
+
+theorem guest_pc_trace_cuda_run_retained_stage_source_matches
+    (config : GuestPcTraceCudaRunConfig) :
+    GuestPcTraceCudaRunDecisionMatches config ->
+      config.selectedRetainedStageSource =
+        config.retainedStageSourceConfig.effectiveRetainedStageSourceEnabled := by
+  intro decision
+  rcases decision with
+    ⟨_sparseDecision, _sparseSelected, _terminalDecision,
+      _terminalSelected, _retainedDecision, retainedSelected,
+      _descriptorDecision, _descriptorSelected⟩
+  exact retainedSelected
+
+theorem guest_pc_trace_cuda_run_descriptor_retention_matches
+    (config : GuestPcTraceCudaRunConfig) :
+    GuestPcTraceCudaRunDecisionMatches config ->
+      config.selectedDescriptorBufferRetention =
+        config.descriptorBufferRetentionConfig.effectiveDescriptorBufferRetention := by
+  intro decision
+  rcases decision with
+    ⟨_sparseDecision, _sparseSelected, _terminalDecision,
+      _terminalSelected, _retainedDecision, _retainedSelected,
+      _descriptorDecision, descriptorSelected⟩
+  exact descriptorSelected
+
+theorem guest_pc_trace_cuda_run_checked_acceptance_projects_sparse_source
+    {system : VerifierModel}
+    (validation : GuestPcTraceCudaRunValidation)
+    (config : GuestPcTraceCudaRunConfig) :
+    forall publicInput proof,
+      GuestPcTraceCudaRunCheckedAcceptance
+          system
+          validation
+          config
+          publicInput
+          proof ->
+        config.selectedSparseSource =
+          config.sparseSourceConfig.effectiveSparseSourceSelected := by
+  intro publicInput proof checked
+  exact
+    guest_pc_trace_cuda_run_sparse_source_matches
+      config
+      (guest_pc_trace_cuda_run_checked_acceptance_projects_decision
+        validation
+        config
+        publicInput
+        proof
+        checked)
+
+theorem guest_pc_trace_cuda_run_checked_acceptance_projects_terminal_sparse_source
+    {system : VerifierModel}
+    (validation : GuestPcTraceCudaRunValidation)
+    (config : GuestPcTraceCudaRunConfig) :
+    forall publicInput proof,
+      GuestPcTraceCudaRunCheckedAcceptance
+          system
+          validation
+          config
+          publicInput
+          proof ->
+        config.selectedTerminalSparseSource =
+          config.terminalSparseSourceConfig.effectiveTerminalSparseSourceSelected := by
+  intro publicInput proof checked
+  exact
+    guest_pc_trace_cuda_run_terminal_sparse_source_matches
+      config
+      (guest_pc_trace_cuda_run_checked_acceptance_projects_decision
+        validation
+        config
+        publicInput
+        proof
+        checked)
+
+theorem guest_pc_trace_cuda_run_checked_acceptance_projects_retained_stage_source
+    {system : VerifierModel}
+    (validation : GuestPcTraceCudaRunValidation)
+    (config : GuestPcTraceCudaRunConfig) :
+    forall publicInput proof,
+      GuestPcTraceCudaRunCheckedAcceptance
+          system
+          validation
+          config
+          publicInput
+          proof ->
+        config.selectedRetainedStageSource =
+          config.retainedStageSourceConfig.effectiveRetainedStageSourceEnabled := by
+  intro publicInput proof checked
+  exact
+    guest_pc_trace_cuda_run_retained_stage_source_matches
+      config
+      (guest_pc_trace_cuda_run_checked_acceptance_projects_decision
+        validation
+        config
+        publicInput
+        proof
+        checked)
+
+theorem guest_pc_trace_cuda_run_checked_acceptance_projects_descriptor_retention
+    {system : VerifierModel}
+    (validation : GuestPcTraceCudaRunValidation)
+    (config : GuestPcTraceCudaRunConfig) :
+    forall publicInput proof,
+      GuestPcTraceCudaRunCheckedAcceptance
+          system
+          validation
+          config
+          publicInput
+          proof ->
+        config.selectedDescriptorBufferRetention =
+          config.descriptorBufferRetentionConfig.effectiveDescriptorBufferRetention := by
+  intro publicInput proof checked
+  exact
+    guest_pc_trace_cuda_run_descriptor_retention_matches
+      config
+      (guest_pc_trace_cuda_run_checked_acceptance_projects_decision
+        validation
+        config
+        publicInput
+        proof
+        checked)
+
 theorem guest_pc_trace_cuda_run_checked_acceptance_sound
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)

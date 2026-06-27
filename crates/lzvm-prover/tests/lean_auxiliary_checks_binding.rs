@@ -1510,6 +1510,22 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             && lean_source.contains("traceCudaRunConfigAccepted")
             && lean_source.contains("traceCudaRunConfigImpliesDecisionMatches")
             && lean_source.contains("GuestPcTraceCudaRunCheckedAcceptance")
+            && lean_source.contains("guest_pc_trace_cuda_run_sparse_source_matches")
+            && lean_source.contains("guest_pc_trace_cuda_run_terminal_sparse_source_matches")
+            && lean_source.contains("guest_pc_trace_cuda_run_retained_stage_source_matches")
+            && lean_source.contains("guest_pc_trace_cuda_run_descriptor_retention_matches")
+            && lean_source.contains(
+                "guest_pc_trace_cuda_run_checked_acceptance_projects_sparse_source",
+            )
+            && lean_source.contains(
+                "guest_pc_trace_cuda_run_checked_acceptance_projects_terminal_sparse_source",
+            )
+            && lean_source.contains(
+                "guest_pc_trace_cuda_run_checked_acceptance_projects_retained_stage_source",
+            )
+            && lean_source.contains(
+                "guest_pc_trace_cuda_run_checked_acceptance_projects_descriptor_retention",
+            )
             && lean_source.contains("guest_pc_trace_cuda_run_checked_acceptance_sound")
             && lean_source
                 .contains("guest_pc_trace_cuda_run_checked_acceptance_verifier_core_contract")
@@ -1529,6 +1545,33 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             && witness_execution_source.contains("descriptor_buffer_retention: bool"),
         "Lean auxiliary checks should bind the grouped CUDA trace runtime config to the Rust runtime guard"
     );
+    for (theorem_name, projector) in [
+        (
+            "guest_pc_trace_cuda_run_checked_acceptance_projects_sparse_source",
+            "guest_pc_trace_cuda_run_sparse_source_matches",
+        ),
+        (
+            "guest_pc_trace_cuda_run_checked_acceptance_projects_terminal_sparse_source",
+            "guest_pc_trace_cuda_run_terminal_sparse_source_matches",
+        ),
+        (
+            "guest_pc_trace_cuda_run_checked_acceptance_projects_retained_stage_source",
+            "guest_pc_trace_cuda_run_retained_stage_source_matches",
+        ),
+        (
+            "guest_pc_trace_cuda_run_checked_acceptance_projects_descriptor_retention",
+            "guest_pc_trace_cuda_run_descriptor_retention_matches",
+        ),
+    ] {
+        lean_binding::assert_theorem_body_contains(
+            &gpu_runtime_source,
+            theorem_name,
+            &[
+                projector,
+                "guest_pc_trace_cuda_run_checked_acceptance_projects_decision",
+            ],
+        );
+    }
     assert!(
         lean_source.contains("GpuRetainedDeviceCacheBudget")
             && lean_source.contains("sourceBytes")
@@ -3439,6 +3482,23 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "guest_pc_trace_commit_mode_checked_acceptance_sound",
             "guest_pc_trace_commit_mode_checked_acceptance_verifier_core_contract",
             "guest_pc_trace_cuda_run_checked_acceptance_projects_decision",
+            "guest_pc_trace_cuda_run_sparse_source_matches",
+            "guest_pc_trace_cuda_run_terminal_sparse_source_matches",
+            "guest_pc_trace_cuda_run_retained_stage_source_matches",
+            "guest_pc_trace_cuda_run_descriptor_retention_matches",
+            "guest_pc_trace_cuda_run_checked_acceptance_projects_sparse_source",
+            concat!(
+                "guest_pc_trace_cuda_run_checked_acceptance_",
+                "projects_terminal_sparse_source"
+            ),
+            concat!(
+                "guest_pc_trace_cuda_run_checked_acceptance_",
+                "projects_retained_stage_source"
+            ),
+            concat!(
+                "guest_pc_trace_cuda_run_checked_acceptance_",
+                "projects_descriptor_retention"
+            ),
             "guest_pc_trace_cuda_run_checked_acceptance_sound",
             "guest_pc_trace_cuda_run_checked_acceptance_verifier_core_contract",
             "gpu_retained_leaf_digest_limit_checked_acceptance_projects_decision",
