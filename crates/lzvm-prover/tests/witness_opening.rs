@@ -189,6 +189,57 @@ fn validates_trace_instance_witness_opening_queries() {
 }
 
 #[test]
+fn validates_witness_opening_segments_for_same_unit_across_trace_instances() {
+    let (unit, segments) = valid_witness_opening_segments(2);
+    let base_commitment_segment = segments
+        .iter()
+        .find(|segment| segment.id == WITNESS_COMMITMENT_SEGMENT_BASE_ID)
+        .expect("witness commitment segment should exist");
+    let base_opening_segment = segments
+        .iter()
+        .find(|segment| segment.id == WITNESS_OPENING_SEGMENT_ID)
+        .expect("opening segment should exist");
+    let base_opening = parse_witness_opening_segment(&base_opening_segment.data)
+        .expect("opening segment should parse");
+    let mut trace_one_opening = base_opening.units[0].clone();
+    trace_one_opening.trace_instance_index = 1;
+    let mut trace_two_opening = trace_one_opening.clone();
+    trace_two_opening.trace_instance_index = 2;
+    let mut trace_one_commitment = base_commitment_segment.clone();
+    trace_one_commitment.id = WITNESS_COMMITMENT_SEGMENT_BASE_ID + 1;
+    let mut trace_two_commitment = base_commitment_segment.clone();
+    trace_two_commitment.id = WITNESS_COMMITMENT_SEGMENT_BASE_ID + 2;
+    let query_segment = ProofSegment {
+        id: lzvm_artifacts::pcs_query_segment::PCS_QUERY_PLAN_SEGMENT_ID,
+        data: encode_pcs_query_plan_segment(&PcsQueryPlanSegment {
+            units: vec![
+                PcsQueryPlanUnit {
+                    unit_index: 0,
+                    trace_instance_index: 1,
+                    queries: vec![2],
+                },
+                PcsQueryPlanUnit {
+                    unit_index: 0,
+                    trace_instance_index: 2,
+                    queries: vec![2],
+                },
+            ],
+        })
+        .expect("query plan should encode"),
+    };
+    let opening_segment = witness_opening_proof_segment(vec![trace_one_opening, trace_two_opening]);
+    let segments = vec![
+        query_segment,
+        trace_one_commitment,
+        trace_two_commitment,
+        opening_segment,
+    ];
+
+    validate_witness_opening_segments(&[unit], &segments)
+        .expect("same unit should validate across trace identities");
+}
+
+#[test]
 fn rejects_witness_opening_unit_trace_instance_mismatch() {
     let (unit, mut segments) = valid_witness_opening_segments(2);
     replace_opening_trace_instance(&mut segments, 1);

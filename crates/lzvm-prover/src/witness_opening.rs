@@ -25,8 +25,8 @@ use crate::proof_artifact_timing::WitnessOpeningSourceKind;
 use crate::proof_artifact_timing::WitnessProofArtifactTiming;
 use crate::witness_commitment::{
     load_witness_commitment_segment_refs_with_shapes, open_witness_stage_commitments,
-    verify_witness_stage_opening_root, LoadWitnessCommitmentSegmentsError, WitnessStageOpening,
-    WitnessStageOpeningError,
+    verify_witness_stage_opening_root, LoadWitnessCommitmentSegmentsError,
+    LoadedWitnessCommitmentSegmentRef, WitnessStageOpening, WitnessStageOpeningError,
 };
 #[cfg(feature = "cuda")]
 use crate::witness_commitment::{
@@ -401,23 +401,8 @@ pub fn validate_witness_opening_segments(
 
     let witness_segments = load_witness_commitment_segment_refs_with_shapes(units, segments)
         .map_err(ValidateWitnessOpeningSegmentsError::Commitments)?;
-    let opening_units_by_identity = opening
-        .units
-        .iter()
-        .map(|unit| ((unit.unit_index, unit.trace_instance_index), unit))
-        .collect::<std::collections::BTreeMap<_, _>>();
-    let witness_segments_by_identity = witness_segments
-        .iter()
-        .map(|segment| {
-            (
-                (
-                    segment.identity.unit_index,
-                    segment.identity.trace_instance_index,
-                ),
-                segment,
-            )
-        })
-        .collect::<std::collections::BTreeMap<_, _>>();
+    let opening_units_by_identity = witness_opening_units_by_identity(&opening);
+    let witness_segments_by_identity = witness_commitment_segments_by_identity(&witness_segments);
     for query_unit in &query_plan.units {
         let unit_index = usize::try_from(query_unit.unit_index)
             .map_err(|_| ValidateWitnessOpeningSegmentsError::UnitIndexOverflow)?;
@@ -512,6 +497,33 @@ pub fn validate_witness_opening_segments(
         }
     }
     Ok(())
+}
+
+fn witness_opening_units_by_identity(
+    opening: &WitnessOpeningSegment,
+) -> std::collections::BTreeMap<(u32, u32), &WitnessOpeningUnitSegment> {
+    opening
+        .units
+        .iter()
+        .map(|unit| ((unit.unit_index, unit.trace_instance_index), unit))
+        .collect()
+}
+
+fn witness_commitment_segments_by_identity<'loaded, 'segment>(
+    witness_segments: &'loaded [LoadedWitnessCommitmentSegmentRef<'segment>],
+) -> std::collections::BTreeMap<(u32, u32), &'loaded LoadedWitnessCommitmentSegmentRef<'segment>> {
+    witness_segments
+        .iter()
+        .map(|segment| {
+            (
+                (
+                    segment.identity.unit_index,
+                    segment.identity.trace_instance_index,
+                ),
+                segment,
+            )
+        })
+        .collect()
 }
 
 pub fn build_witness_opening_segment(
