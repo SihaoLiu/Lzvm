@@ -56,6 +56,12 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
     let proof_timing_path = crate_root.join("../../lean/Lzvm/AuxiliaryChecks/ProofTiming.lean");
     let proof_timing_aggregate_source =
         std::fs::read_to_string(&proof_timing_path).expect("Lean proof timing checks should read");
+    assert!(
+        proof_timing_aggregate_source.contains("import Lzvm.AuxiliaryChecks.ProofTiming.Core")
+            && proof_timing_aggregate_source
+                .contains("import Lzvm.AuxiliaryChecks.ProofTiming.Finish"),
+        "Lean proof timing wrapper should re-export split proof timing modules"
+    );
     let proof_timing_core_path =
         crate_root.join("../../lean/Lzvm/AuxiliaryChecks/ProofTiming/Core.lean");
     let proof_timing_core_source = std::fs::read_to_string(&proof_timing_core_path)

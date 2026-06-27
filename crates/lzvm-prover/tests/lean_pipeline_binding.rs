@@ -12,6 +12,11 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
     let core_path = crate_root.join("../../lean/Lzvm/PipelineBinding/Core.lean");
     let core_source =
         std::fs::read_to_string(&core_path).expect("Lean pipeline core binding source should read");
+    assert!(
+        core_source.contains("import Lzvm.PipelineBinding.Core.Base")
+            && core_source.contains("import Lzvm.PipelineBinding.Core.Derived"),
+        "Lean pipeline core wrapper should re-export split core modules"
+    );
     let core_base_path = crate_root.join("../../lean/Lzvm/PipelineBinding/Core/Base.lean");
     let core_base_source = std::fs::read_to_string(&core_base_path)
         .expect("Lean pipeline core base binding source should read");
@@ -24,6 +29,11 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
     let contracts_path = crate_root.join("../../lean/Lzvm/PipelineBinding/Contracts.lean");
     let contracts_source = std::fs::read_to_string(&contracts_path)
         .expect("Lean pipeline binding contracts source should read");
+    assert!(
+        contracts_source.contains("import Lzvm.PipelineBinding.Contracts.Core")
+            && contracts_source.contains("import Lzvm.PipelineBinding.Contracts.ExternalSource"),
+        "Lean pipeline contracts wrapper should re-export split contract modules"
+    );
     let contracts_core_path =
         crate_root.join("../../lean/Lzvm/PipelineBinding/Contracts/Core.lean");
     let contracts_core_source = std::fs::read_to_string(&contracts_core_path)
