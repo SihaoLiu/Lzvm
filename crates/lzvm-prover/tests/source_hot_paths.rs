@@ -3297,9 +3297,15 @@ fn guest_pc_segment_commitment_input_can_be_trace_less_with_preloaded_device_sou
     assert!(
         pool_body.contains(
             "let traceless_commitment_input = guest_pc_trace_traceless_commitment_input_selected();"
-        ) && pool_body.contains(
-            "GuestPcTraceSegmentCommitWorkerState::new(traceless_commitment_input)"
-        ) && !pool_body.contains("guest_pc_trace_less_commitment_input_enabled()"),
+        ) && compact_source_contains(
+            pool_body,
+                "let cross_segment_root_materialization = guest_pc_cross_segment_root_materialization_selected(input_byte_count);"
+            )
+            && compact_source_contains(
+                pool_body,
+                "GuestPcTraceSegmentCommitWorkerState::new(traceless_commitment_input, cross_segment_root_materialization,)"
+            )
+            && !pool_body.contains("guest_pc_trace_less_commitment_input_enabled()"),
         "streamed guest PC segment commitment input should cache trace-less mode before dispatch"
     );
 }
@@ -3795,13 +3801,16 @@ fn guest_pc_segment_commit_can_gate_cross_segment_pending_roots() {
         "struct GuestPcTraceSegmentCommitRunOptions",
     );
     assert!(
-        commit_helper_body.contains("guest_pc_cross_segment_root_materialization_enabled()")
-            && commit_helper_body
+        commit_helper_body.contains("cross_segment_root_materialization,")
+            && commit_helper_body.contains("if cross_segment_root_materialization")
+            && !commit_helper_body
+                .contains("guest_pc_cross_segment_root_materialization_enabled()")
+            && !commit_helper_body
                 .contains("guest_pc_cross_segment_root_materialization_supported_for_input")
-            && commit_helper_body.contains("shared_inputs.input.len()")
-            && commit_helper_body.contains("run_prove_witness_commitments_from_trace_pending_inner")
+            && commit_helper_body
+                .contains("run_prove_witness_commitments_from_trace_pending_inner")
             && commit_helper_body.contains("GuestPcTraceSegmentCommitOutput::Pending"),
-        "the gated segment helper should return pending roots instead of materializing each segment immediately"
+        "the segment helper should use cached root batching mode before returning pending roots"
     );
 
     let driver_body = function_body(
@@ -3811,10 +3820,14 @@ fn guest_pc_segment_commit_can_gate_cross_segment_pending_roots() {
     );
     assert!(
         driver_body.contains("materialize_pending_guest_pc_segment_commitments")
-            && driver_body.contains("guest_pc_cross_segment_root_materialization_window")
+            && compact_source_contains(
+                driver_body,
+                "let pending_root_materialization_window = guest_pc_cross_segment_root_materialization_window();"
+            )
+            && driver_body.contains("self.pending_root_materialization_window")
             && driver_body.contains("self.pending_segment_results.len()")
             && driver_body.contains("PendingWitnessTraceStageCommitments::materialize_all"),
-        "driver should batch materialize pending segment roots without letting the queue grow without bound"
+        "driver should cache the pending-root window while keeping the queue bounded"
     );
 }
 
@@ -4223,7 +4236,11 @@ fn guest_pc_trace_segment_commit_uses_worker_state() {
     assert!(
         worker_body.contains("scratch: GuestPcTraceSegmentCommitScratch")
             && worker_body.contains("traceless_commitment_input: bool")
-            && worker_body.contains("fn new(traceless_commitment_input: bool) -> Self")
+            && worker_body.contains("cross_segment_root_materialization: bool")
+            && compact_source_contains(
+                worker_body,
+                "fn new(traceless_commitment_input: bool, cross_segment_root_materialization: bool) -> Self"
+            )
             && worker_body.contains("fn commit_segment(")
             && worker_body.contains("commit_guest_pc_trace_segment_with_scratch"),
         "worker state should own worker-local scratch and run one segment commit work item"
@@ -4321,8 +4338,10 @@ fn guest_pc_trace_segment_commit_pool_uses_scoped_bounded_workers() {
             && pool_region.contains("join_guest_pc_trace_segment_commit_worker")
             && pool_region.contains("let _ = self.finish()")
             && pool_region.contains("self.scope.spawn(move ||")
-            && pool_region
-                .contains("GuestPcTraceSegmentCommitWorkerState::new(traceless_commitment_input)"),
+            && compact_source_contains(
+                pool_region,
+                "GuestPcTraceSegmentCommitWorkerState::new(traceless_commitment_input, cross_segment_root_materialization,)"
+            ),
         "submit_segment should join the oldest saturated worker, drain pending workers on error, and spawn segment work on the scope"
     );
     assert!(
