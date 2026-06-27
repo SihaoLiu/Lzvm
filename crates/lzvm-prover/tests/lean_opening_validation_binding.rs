@@ -34,6 +34,26 @@ fn lean_opening_validation_binding_exports_core_contract_projection() {
     let fri_segment_path = crate_root.join("../lzvm-artifacts/src/pcs_fri_segment.rs");
     let fri_segment_source =
         std::fs::read_to_string(&fri_segment_path).expect("FRI segment source should read");
+    let constant_opening_validation_body = function_body(
+        &constant_opening_source,
+        "pub fn validate_constant_opening_segments",
+        "pub fn build_constant_opening_segment",
+    );
+    let witness_opening_validation_body = function_body(
+        &witness_opening_source,
+        "pub fn validate_witness_opening_segments",
+        "pub fn build_witness_opening_segment",
+    );
+    let fri_opening_validation_body = function_body(
+        &fri_validation_source,
+        "fn validate_pcs_fri_opening_units",
+        "pub fn validate_pcs_fri_opening_folds_from_units",
+    );
+    let fri_extension_helper_body = function_body(
+        &fri_validation_source,
+        "fn field_extension_from_words",
+        "fn field_digest_from_words",
+    );
 
     assert!(
         lean_binding::contains_import(&top_level_source, "Lzvm.OpeningValidation"),
@@ -109,16 +129,22 @@ fn lean_opening_validation_binding_exports_core_contract_projection() {
             && lean_source.contains("RuntimeFriOpeningParserBoundaryContract")
             && constant_segment_source.contains("ValueNonCanonical")
             && constant_segment_source.contains("SiblingRootNonCanonical")
-            && constant_opening_source.contains("Felt::from_u64")
-            && constant_opening_source.contains("ValidateConstantOpeningSegmentsError::FieldDigest")
+            && constant_opening_validation_body.contains(".map(Felt::from_u64)")
+            && constant_opening_validation_body
+                .contains("field_digest_from_words(*digest)")
+            && !constant_opening_validation_body.contains("Felt::from_canonical(*value)")
             && witness_segment_source.contains("ValueNonCanonical")
             && witness_segment_source.contains("SiblingRootNonCanonical")
-            && witness_opening_source.contains("Felt::from_u64")
-            && witness_opening_source.contains("ValidateWitnessOpeningSegmentsError::FieldDigest")
+            && witness_opening_validation_body.contains(".map(Felt::from_u64)")
+            && witness_opening_validation_body.contains("field_digest_from_words(*digest)")
+            && !witness_opening_validation_body.contains("Felt::from_canonical(*value)")
             && fri_segment_source.contains("FinalPolynomialValueNonCanonical")
             && fri_segment_source.contains("QueryValueNonCanonical")
-            && fri_validation_source.contains("Felt::from_u64(words[0])")
-            && fri_validation_source.contains("ValidatePcsFriOpeningSegmentsError::FieldDigest"),
+            && fri_opening_validation_body.contains(".map(field_extension_from_words)")
+            && fri_opening_validation_body.contains("field_digest_from_words(*digest)")
+            && !fri_opening_validation_body.contains("Felt::from_canonical(words")
+            && fri_extension_helper_body.contains("Felt::from_u64(words[0])")
+            && !fri_extension_helper_body.contains("Felt::from_canonical"),
         "Lean opening validation should expose parser boundaries used by runtime opening value validation while digest roots remain separately checked"
     );
     lean_binding::assert_theorem_prefix_contains(
@@ -816,4 +842,15 @@ fn theorem_prefix(source: &str, name: &str) -> String {
         .find(" := by")
         .unwrap_or_else(|| panic!("Lean theorem {name} should have a proof body"));
     source[theorem_start..theorem_start + proof_start].to_owned()
+}
+
+fn function_body(source: &str, start: &str, end: &str) -> String {
+    let start_index = source
+        .find(start)
+        .unwrap_or_else(|| panic!("source should contain {start}"));
+    let rest = &source[start_index..];
+    let end_index = rest
+        .find(end)
+        .unwrap_or_else(|| panic!("source should contain {end} after {start}"));
+    rest[..end_index].to_owned()
 }
