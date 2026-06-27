@@ -314,8 +314,10 @@ fn lean_soundness_sources_stay_modular() {
 #[test]
 fn lean_soundness_sources_do_not_use_uncontrolled_placeholders() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let lean_entrypoint = crate_root.join("../../lean/Lzvm.lean");
     let lean_root = crate_root.join("../../lean/Lzvm");
 
+    lean_binding::assert_no_uncontrolled_lean_placeholders(&lean_entrypoint);
     lean_binding::assert_no_uncontrolled_lean_placeholders(&lean_root);
 }
 

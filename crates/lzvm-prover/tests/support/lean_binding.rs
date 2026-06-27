@@ -266,6 +266,10 @@ pub fn assert_all_lean_modules_reachable_from_entrypoint(entrypoint: &Path, root
 
 #[allow(dead_code)]
 fn collect_uncontrolled_lean_placeholders(path: &Path, violations: &mut Vec<String>) {
+    if path.is_file() {
+        collect_uncontrolled_lean_placeholders_from_file(path, violations);
+        return;
+    }
     for entry in std::fs::read_dir(path).expect("Lean source directory should read") {
         let entry = entry.expect("Lean source entry should read");
         let path = entry.path();
@@ -273,20 +277,25 @@ fn collect_uncontrolled_lean_placeholders(path: &Path, violations: &mut Vec<Stri
             collect_uncontrolled_lean_placeholders(&path, violations);
             continue;
         }
-        if path.extension().and_then(|extension| extension.to_str()) != Some("lean") {
-            continue;
+        collect_uncontrolled_lean_placeholders_from_file(&path, violations);
+    }
+}
+
+#[allow(dead_code)]
+fn collect_uncontrolled_lean_placeholders_from_file(path: &Path, violations: &mut Vec<String>) {
+    if path.extension().and_then(|extension| extension.to_str()) != Some("lean") {
+        return;
+    }
+    let source = std::fs::read_to_string(path).expect("Lean source should read");
+    let visible = strip_string_literals(&visible_source(&source));
+    for (line_index, line) in visible.lines().enumerate() {
+        for token in ["sorry", "admit", "axiom", "opaque", "unsafe"] {
+            if contains_identifier_token(line, token) {
+                violations.push(format!("{}:{}:{token}", path.display(), line_index + 1));
+            }
         }
-        let source = std::fs::read_to_string(&path).expect("Lean source should read");
-        let visible = strip_string_literals(&visible_source(&source));
-        for (line_index, line) in visible.lines().enumerate() {
-            for token in ["sorry", "admit", "axiom", "opaque", "unsafe"] {
-                if contains_identifier_token(line, token) {
-                    violations.push(format!("{}:{}:{token}", path.display(), line_index + 1));
-                }
-            }
-            if line.contains(".evidence") {
-                violations.push(format!("{}:{}:.evidence", path.display(), line_index + 1));
-            }
+        if line.contains(".evidence") {
+            violations.push(format!("{}:{}:.evidence", path.display(), line_index + 1));
         }
     }
 }
