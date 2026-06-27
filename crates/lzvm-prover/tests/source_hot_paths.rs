@@ -2212,6 +2212,9 @@ fn lean_framed_guest_input_binding_tracks_runtime_checks() {
     let verify_bindings_path = crate_root.join("../lzvm-cli/src/verify_commands/bindings.rs");
     let verify_bindings_source = std::fs::read_to_string(&verify_bindings_path)
         .expect("CLI verify bindings source should read");
+    let prove_witness_path = crate_root.join("../lzvm-cli/src/prove_witness.rs");
+    let prove_witness_source =
+        std::fs::read_to_string(&prove_witness_path).expect("CLI prove witness source should read");
     let contribution_challenge_path = crate_root.join("../lzvm-cli/src/contribution_challenge.rs");
     let contribution_challenge_source = std::fs::read_to_string(&contribution_challenge_path)
         .expect("CLI contribution challenge source should read");
@@ -2295,6 +2298,12 @@ fn lean_framed_guest_input_binding_tracks_runtime_checks() {
             && proof_artifact_source.contains("validate_framed_guest_input_segment(input)")
             && proof_artifact_source.contains("FRAMED_GUEST_INPUT_SEGMENT_ID"),
         "proof artifact construction should embed framed guest stdin as a proof binding segment without reparsing payload copies"
+    );
+    assert!(
+        prove_witness_source.contains("fn framed_guest_input_bytes_for_plan")
+            && prove_witness_source.contains("validate_framed_guest_input_segment(&bytes)")
+            && !prove_witness_source.contains("encode_framed_guest_input_segment(&bytes)"),
+        "CLI proof construction should validate framed guest stdin without cloning it through the segment encoder"
     );
     assert!(
         verify_bindings_source.contains("fn input_data_file_matches_segment")

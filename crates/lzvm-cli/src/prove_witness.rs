@@ -7,7 +7,7 @@ use lzvm_artifacts::constant_tree::ConstantTreeFileSummary;
 use lzvm_artifacts::eth_block_input::EthBlockInput;
 use lzvm_artifacts::eth_block_public_values::validate_eth_block_public_values_with_program_image_cache;
 use lzvm_artifacts::global_info::GlobalInfo;
-use lzvm_artifacts::guest_input_segment::encode_framed_guest_input_segment;
+use lzvm_artifacts::guest_input_segment::validate_framed_guest_input_segment;
 use lzvm_artifacts::key_directory::KeyDirectoryCatalog;
 use lzvm_artifacts::program_image::ProgramImageCommitmentCache;
 use lzvm_artifacts::proof::{encode_proof_artifact, ProofArtifact, ProofSegment};
@@ -751,7 +751,7 @@ fn framed_guest_input_bytes_for_plan(
             input_path.display()
         )
     })?;
-    encode_framed_guest_input_segment(&bytes)
+    validate_framed_guest_input_segment(&bytes)
         .map_err(|error| format!("framed guest input is invalid: {error}"))?;
     Ok(Some(bytes))
 }
