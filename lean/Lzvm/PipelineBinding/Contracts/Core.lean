@@ -784,7 +784,9 @@ theorem runtime_pipeline_binding_checked_acceptance_proof_system_full_soundness_
                   /\ system.constraintsSatisfied constraints trace
                   /\ system.witnessMatchesTrace witness trace)
               /\ SoundWitness system publicInput proof
-              /\ RuntimeFriFoldTraceIdentityContract system validation.queryPlanBindingValidation.openingValidation artifact publicInput proof := by
+              /\ RuntimeFriFoldTraceIdentityContract system
+                validation.queryPlanBindingValidation.openingValidation
+                artifact publicInput proof := by
   intro artifact publicInput proof requiresExternalSource accepted
   have proofSystemSound := abstract_verifier_sound assumptions
   have acceptsFullContract :=
@@ -797,7 +799,6 @@ theorem runtime_pipeline_binding_checked_acceptance_proof_system_full_soundness_
       requiresExternalSource
       accepted
   exact And.intro proofSystemSound acceptsFullContract
-
 theorem runtime_pipeline_binding_checked_acceptance_audited_proof_system_contract
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
@@ -831,7 +832,9 @@ theorem runtime_pipeline_binding_checked_acceptance_audited_proof_system_contrac
                   /\ system.constraintsSatisfied constraints trace
                   /\ system.witnessMatchesTrace witness trace)
               /\ SoundWitness system publicInput proof
-              /\ RuntimeFriFoldTraceIdentityContract system validation.queryPlanBindingValidation.openingValidation artifact publicInput proof := by
+              /\ RuntimeFriFoldTraceIdentityContract system
+                validation.queryPlanBindingValidation.openingValidation
+                artifact publicInput proof := by
   intro artifact publicInput proof requiresExternalSource accepted
   have auditedAssumptions :=
     assumption_bundle_carries_required_crypto_evidence assumptions
@@ -845,7 +848,6 @@ theorem runtime_pipeline_binding_checked_acceptance_audited_proof_system_contrac
       requiresExternalSource
       accepted
   exact And.intro auditedAssumptions fullContract
-
 theorem runtime_pipeline_binding_checked_acceptance_audited_assumption_full_contract
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
@@ -880,7 +882,9 @@ theorem runtime_pipeline_binding_checked_acceptance_audited_assumption_full_cont
                   /\ system.constraintsSatisfied constraints trace
                   /\ system.witnessMatchesTrace witness trace)
               /\ SoundWitness system publicInput proof
-              /\ RuntimeFriFoldTraceIdentityContract system validation.queryPlanBindingValidation.openingValidation artifact publicInput proof := by
+              /\ RuntimeFriFoldTraceIdentityContract system
+                validation.queryPlanBindingValidation.openingValidation
+                artifact publicInput proof := by
   intro artifact publicInput proof requiresExternalSource accepted
   have auditedContract :=
     runtime_pipeline_binding_checked_acceptance_audited_proof_system_contract
@@ -896,7 +900,6 @@ theorem runtime_pipeline_binding_checked_acceptance_audited_assumption_full_cont
   exact
     And.intro auditedAssumptions.left
       (And.intro auditedAssumptions.right auditedContract.right)
-
 theorem runtime_pipeline_binding_checked_acceptance_audited_framed_guest_input_full_contract
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
@@ -944,7 +947,9 @@ theorem runtime_pipeline_binding_checked_acceptance_audited_framed_guest_input_f
                   /\ system.constraintsSatisfied constraints trace
                   /\ system.witnessMatchesTrace witness trace)
               /\ SoundWitness system publicInput proof
-              /\ RuntimeFriFoldTraceIdentityContract system validation.queryPlanBindingValidation.openingValidation artifact publicInput proof := by
+              /\ RuntimeFriFoldTraceIdentityContract system
+                validation.queryPlanBindingValidation.openingValidation
+                artifact publicInput proof := by
   intro artifact publicInput proof requiresExternalSource accepted
   have auditedContract :=
     runtime_pipeline_binding_checked_acceptance_audited_assumption_full_contract
@@ -993,7 +998,6 @@ theorem runtime_pipeline_binding_checked_acceptance_audited_framed_guest_input_f
         executionObligations,
         soundWitness,
         foldTraceIdentityContract⟩
-
 theorem runtime_pipeline_binding_evidence_audited_core_contract
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
@@ -1032,7 +1036,6 @@ theorem runtime_pipeline_binding_evidence_audited_core_contract
         (And.intro publicInputBound
           (And.intro pcsAndFri.left
             (And.intro pcsAndFri.right coreContract))))
-
 theorem runtime_pipeline_binding_checked_acceptance_audited_binding_pcs_fri_core_witness_contract
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
@@ -1129,7 +1132,6 @@ theorem runtime_pipeline_binding_checked_acceptance_audited_binding_pcs_fri_core
                     (And.intro seededFriOpeningChecked
                       (And.intro coreContract.right
                         compactContract.right.right.right)))))))))
-
 theorem runtime_pipeline_binding_checked_acceptance_audited_concrete_opening_contract
     {Digest : Type uDigest}
     {system : VerifierModel}
@@ -1260,7 +1262,6 @@ theorem runtime_pipeline_binding_checked_acceptance_audited_concrete_opening_con
                     (And.intro seededFriOpeningChecked
                       (And.intro coreContract.right
                         pipelineSound.right)))))))))
-
 theorem runtime_pipeline_checked_acceptance_audited_concrete_opening_core_contract
     {Digest : Type uDigest}
     {system : VerifierModel}
@@ -1352,7 +1353,6 @@ theorem runtime_pipeline_checked_acceptance_audited_concrete_opening_core_contra
                     (And.intro seededFriOpeningChecked
                       (And.intro verifierCore
                         (And.intro executionObligations soundWitness))))))))))
-
 set_option linter.style.longLine false in
 theorem runtime_pipeline_binding_checked_acceptance_hash_concrete_opening_core_contract
     {Digest : Type uDigest}
