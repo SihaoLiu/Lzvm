@@ -799,6 +799,10 @@ HEADER = (
     "opening_queries,opening_max_queries_per_unit,opening_stage_count,"
     "fri_opening_ms,fri_opening_unit_build_ms,fri_opening_layer_tree_ms,"
     "fri_opening_query_ms,fri_opening_fold_ms,"
+    "fri_opening_unit_build_pct,fri_opening_layer_tree_pct,"
+    "fri_opening_query_pct,fri_opening_fold_pct,"
+    "fri_opening_unattributed_ms,fri_opening_unattributed_pct,"
+    "fri_opening_phase_hint,"
     "fri_opening_units,fri_opening_layers,fri_opening_queries,"
     "fri_layers_per_unit,fri_queries_per_unit,"
     "opening_source_shape_hint,"
@@ -2938,6 +2942,37 @@ def opening_source_shape_hint(
     return f"{query_shape}_with_{source_shape}"
 
 
+def fri_opening_phase_action_hint(
+    total_ms: int,
+    unit_build_ms: int,
+    layer_tree_ms: int,
+    query_ms: int,
+    fold_ms: int,
+) -> str:
+    if total_ms <= 0:
+        return "none"
+    unattributed_ms = max(
+        total_ms - unit_build_ms - layer_tree_ms - query_ms - fold_ms,
+        0,
+    )
+    phase, phase_ms = max(
+        [
+            ("unit_build", unit_build_ms),
+            ("layer_tree", layer_tree_ms),
+            ("query", query_ms),
+            ("fold", fold_ms),
+            ("unattributed", unattributed_ms),
+        ],
+        key=lambda item: item[1],
+    )
+    if phase_ms <= 0:
+        return "none"
+    phase_pct = phase_ms * 100.0 / total_ms
+    if phase_pct < 30.0:
+        return "fri_opening_balanced"
+    return f"profile_fri_opening_{phase}"
+
+
 def opening_source_rebuild_hint(
     external_source_count: int,
     retained_source_count: int,
@@ -4656,6 +4691,42 @@ def summarize_profile_values(
     fri_queries_per_unit = (
         fri_opening_queries / fri_opening_units if fri_opening_units else 0.0
     )
+    fri_opening_unit_build_pct = (
+        fri_opening_unit_build_ms * 100.0 / fri_opening_ms
+        if fri_opening_ms
+        else 0.0
+    )
+    fri_opening_layer_tree_pct = (
+        fri_opening_layer_tree_ms * 100.0 / fri_opening_ms
+        if fri_opening_ms
+        else 0.0
+    )
+    fri_opening_query_pct = (
+        fri_opening_query_ms * 100.0 / fri_opening_ms if fri_opening_ms else 0.0
+    )
+    fri_opening_fold_pct = (
+        fri_opening_fold_ms * 100.0 / fri_opening_ms if fri_opening_ms else 0.0
+    )
+    fri_opening_unattributed_ms = max(
+        fri_opening_ms
+        - fri_opening_unit_build_ms
+        - fri_opening_layer_tree_ms
+        - fri_opening_query_ms
+        - fri_opening_fold_ms,
+        0,
+    )
+    fri_opening_unattributed_pct = (
+        fri_opening_unattributed_ms * 100.0 / fri_opening_ms
+        if fri_opening_ms
+        else 0.0
+    )
+    fri_opening_phase_hint = fri_opening_phase_action_hint(
+        fri_opening_ms,
+        fri_opening_unit_build_ms,
+        fri_opening_layer_tree_ms,
+        fri_opening_query_ms,
+        fri_opening_fold_ms,
+    )
     opening_retained_source_count = values.get(OPENING_RETAINED_SOURCE_COUNT_KEY, 0)
     opening_external_source_count = values.get(OPENING_EXTERNAL_SOURCE_COUNT_KEY, 0)
     opening_embedded_source_count = values.get(OPENING_EMBEDDED_SOURCE_COUNT_KEY, 0)
@@ -5241,6 +5312,10 @@ def summarize_profile_values(
         f"{opening_queries},{opening_max_queries_per_unit},{opening_stage_count},"
         f"{fri_opening_ms},{fri_opening_unit_build_ms},{fri_opening_layer_tree_ms},"
         f"{fri_opening_query_ms},{fri_opening_fold_ms},"
+        f"{fri_opening_unit_build_pct:.3f},{fri_opening_layer_tree_pct:.3f},"
+        f"{fri_opening_query_pct:.3f},{fri_opening_fold_pct:.3f},"
+        f"{fri_opening_unattributed_ms},{fri_opening_unattributed_pct:.3f},"
+        f"{fri_opening_phase_hint},"
         f"{fri_opening_units},{fri_opening_layers},{fri_opening_queries},"
         f"{fri_layers_per_unit:.3f},{fri_queries_per_unit:.3f},"
         f"{opening_source_hint},"
