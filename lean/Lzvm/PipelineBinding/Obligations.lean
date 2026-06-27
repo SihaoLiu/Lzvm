@@ -1608,7 +1608,13 @@ theorem runtime_pipeline_binding_checked_acceptance_full_soundness_contract
             system.traceConsistent publicInput proof trace
               /\ system.constraintsSatisfied constraints trace
               /\ system.witnessMatchesTrace witness trace)
-          /\ SoundWitness system publicInput proof := by
+          /\ SoundWitness system publicInput proof
+          /\ RuntimeFriFoldTraceIdentityContract
+            system
+            validation.queryPlanBindingValidation.openingValidation
+            artifact
+            publicInput
+            proof := by
   intro artifact publicInput proof requiresExternalSource accepted
   have sound :=
     runtime_pipeline_binding_checked_acceptance_sound
@@ -1643,12 +1649,20 @@ theorem runtime_pipeline_binding_checked_acceptance_full_soundness_contract
       publicInput
       proof
       accepted
+  have foldTraceIdentityContract :=
+    runtime_pipeline_binding_checked_acceptance_fri_fold_trace_identity_contract
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
   exact
     ⟨sound.left,
       artifactObligations,
       coreObligations,
       executionObligations,
-      sound.right⟩
+      sound.right,
+      foldTraceIdentityContract⟩
 
 set_option linter.style.longLine false in
 theorem runtime_pipeline_binding_checked_acceptance_full_soundness_with_fri_parser_contract
@@ -1714,19 +1728,13 @@ theorem runtime_pipeline_binding_checked_acceptance_full_soundness_with_fri_pars
       publicInput
       proof
       accepted
-  have foldTraceIdentityContract :=
-    runtime_pipeline_binding_checked_acceptance_fri_fold_trace_identity_contract
-      validation
-      artifact
-      publicInput
-      proof
-      accepted
   rcases fullContract with
     ⟨pipelineEvidence,
       artifactObligations,
       coreContract,
       executionObligations,
-      soundWitness⟩
+      soundWitness,
+      foldTraceIdentityContract⟩
   exact
     And.intro pipelineEvidence
       (And.intro artifactObligations

@@ -87,11 +87,22 @@ theorem runtime_pipeline_binding_required_external_source_full_soundness_contrac
       openingExternalEvidence,
       _pcsOpenings,
       _soundWitness⟩
+  rcases fullContract with
+    ⟨pipelineEvidence,
+      artifactObligations,
+      coreContract,
+      executionObligations,
+      soundWitness,
+      _foldTraceIdentityContract⟩
   exact
     ⟨verifierAccepts,
       traceExternalEvidence,
       openingExternalEvidence,
-      fullContract⟩
+      pipelineEvidence,
+      artifactObligations,
+      coreContract,
+      executionObligations,
+      soundWitness⟩
 
 theorem runtime_pipeline_binding_required_external_source_proof_system_full_soundness_contract
     {system : VerifierModel}

@@ -2124,6 +2124,32 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
     );
     lean_binding::assert_theorem_prefix_contains(
         &lean_source,
+        "runtime_pipeline_binding_checked_acceptance_full_soundness_contract",
+        &[
+            "RuntimePipelineBindingCheckedAcceptance",
+            "RuntimePipelineBindingEvidence",
+            "RuntimeArtifactSoundnessObligations",
+            "RuntimeVerifierCoreContract system publicInput proof",
+            "system.traceConsistent publicInput proof trace",
+            "system.constraintsSatisfied constraints trace",
+            "system.witnessMatchesTrace witness trace",
+            "SoundWitness system publicInput proof",
+            "RuntimeFriFoldTraceIdentityContract",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_pipeline_binding_checked_acceptance_full_soundness_contract",
+        &[
+            "runtime_pipeline_binding_checked_acceptance_sound",
+            "runtime_pipeline_binding_checked_acceptance_soundness_obligations",
+            "runtime_pipeline_binding_checked_acceptance_core_obligations",
+            "runtime_pipeline_binding_checked_acceptance_execution_obligations",
+            "runtime_pipeline_binding_checked_acceptance_fri_fold_trace_identity_contract",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
         "runtime_pipeline_binding_checked_acceptance_full_soundness_with_fri_parser_contract",
         &[
             "AssumptionBundle system",
@@ -2147,7 +2173,7 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
         &[
             "runtime_pipeline_binding_checked_acceptance_full_soundness_contract",
             "runtime_pipeline_binding_checked_acceptance_fri_parser_contract",
-            "runtime_pipeline_binding_checked_acceptance_fri_fold_trace_identity_contract",
+            "foldTraceIdentityContract",
         ],
     );
     lean_binding::assert_theorem_body_omits(

@@ -60,7 +60,19 @@ theorem runtime_pipeline_binding_checked_acceptance_accepts_full_soundness_contr
       proof
       requiresExternalSource
       accepted
-  exact And.intro verifierAccepts fullContract
+  rcases fullContract with
+    ⟨pipelineEvidence,
+      artifactObligations,
+      coreContract,
+      executionObligations,
+      soundWitness,
+      _foldTraceIdentityContract⟩
+  exact
+    And.intro verifierAccepts
+      (And.intro pipelineEvidence
+        (And.intro artifactObligations
+          (And.intro coreContract
+            (And.intro executionObligations soundWitness))))
 
 theorem runtime_pipeline_binding_checked_acceptance_proof_system_sound
     {system : VerifierModel}
