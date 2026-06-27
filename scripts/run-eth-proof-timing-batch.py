@@ -1051,8 +1051,9 @@ def print_profile_commands(args: argparse.Namespace, root: Path) -> None:
 
 
 def env_template_command_for_missing_config(args: argparse.Namespace, root: Path) -> str:
+    template_value = args.env_file if args.env_file is not None else DEFAULT_ENV_TEMPLATE_PATH
     template_path = require_workspace_temp_path(
-        resolve_workspace_path(DEFAULT_ENV_TEMPLATE_PATH, root),
+        resolve_workspace_path(template_value, root),
         root,
         "--write-env-template",
     )

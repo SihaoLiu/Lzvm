@@ -2846,6 +2846,57 @@ fn eth_proof_timing_batch_check_env_rejects_missing_config() {
 }
 
 #[test]
+fn eth_proof_timing_batch_incomplete_env_file_suggests_same_template_path() {
+    let fixture = ProofFixture::new("eth-proof-timing-batch-incomplete-env-file");
+    let env_path = fixture.dir.join("real-proof.env.next");
+    std::fs::write(
+        &env_path,
+        format!(
+            "export {SMALL_PREFIX}_SETUP=\nexport {SMALL_PREFIX}_BLOCK_INPUT=\nexport {SMALL_PREFIX}_PROGRAM_IMAGE_CACHE=\nexport {SMALL_PREFIX}_INPUT_DATA=\nexport {SMALL_PREFIX}_GUEST_IMAGE=\n"
+        ),
+    )
+    .expect("incomplete env file should write");
+    let env_rel = env_path
+        .strip_prefix(workspace_root())
+        .expect("env path should be under workspace")
+        .display()
+        .to_string();
+    let mut command = Command::new(script_path());
+    command
+        .arg("--suite")
+        .arg("small")
+        .arg("--check-env")
+        .arg("--env-file")
+        .arg(&env_path);
+    clear_env(&mut command, SMALL_PREFIX);
+    clear_env(&mut command, LARGE_PREFIX);
+
+    let output = command
+        .output()
+        .expect("ETH proof timing batch incomplete env-file check should run");
+    let success = output.status.success();
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    fixture.cleanup();
+
+    assert!(!success, "incomplete env file should fail");
+    assert!(
+        !stdout.contains("status=ok"),
+        "failed env-file check should not report ok: {stdout}"
+    );
+    assert!(
+        stderr.contains("proof environment is incomplete"),
+        "env-file check should explain missing configuration: stderr={stderr}"
+    );
+    assert!(
+        stderr.contains(&format!("--env-file {env_rel}"))
+            && stderr.contains(&format!("--write-env-template {env_rel}"))
+            && !stderr.contains("--write-env-template temp/real-proof.env"),
+        "env-file check should suggest refreshing the checked env file: stderr={stderr}"
+    );
+}
+
+#[test]
 fn eth_proof_timing_batch_check_env_reports_template_command_when_no_env_is_available() {
     let fixture = ProofFixture::new("eth-proof-timing-batch-check-env-no-env");
     let profile_dir = fixture.dir.join("profiles");
