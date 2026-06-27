@@ -8650,11 +8650,12 @@ fn lean_opening_segment_binding_tracks_runtime_opening_checks() {
     assert!(
         constant_opening_validation
             .contains("unit.trace_instance_index == query_unit.trace_instance_index")
-            && witness_opening_validation
-                .contains("unit.trace_instance_index == query_unit.trace_instance_index")
+            && witness_opening_validation.contains("opening_units_by_identity")
+            && witness_opening_validation.contains("witness_segments_by_identity")
             && witness_opening_validation.contains(
-                "segment.identity.trace_instance_index == query_unit.trace_instance_index"
+                "let identity = (query_unit.unit_index, query_unit.trace_instance_index)"
             )
+            && witness_opening_validation.contains(".get(&identity)")
             && fri_opening_units_validation
                 .contains("unit.trace_instance_index == query_unit.trace_instance_index"),
         "opening validators should match opened units by query-plan trace identity"

@@ -401,30 +401,41 @@ pub fn validate_witness_opening_segments(
 
     let witness_segments = load_witness_commitment_segment_refs_with_shapes(units, segments)
         .map_err(ValidateWitnessOpeningSegmentsError::Commitments)?;
+    let opening_units_by_identity = opening
+        .units
+        .iter()
+        .map(|unit| ((unit.unit_index, unit.trace_instance_index), unit))
+        .collect::<std::collections::BTreeMap<_, _>>();
+    let witness_segments_by_identity = witness_segments
+        .iter()
+        .map(|segment| {
+            (
+                (
+                    segment.identity.unit_index,
+                    segment.identity.trace_instance_index,
+                ),
+                segment,
+            )
+        })
+        .collect::<std::collections::BTreeMap<_, _>>();
     for query_unit in &query_plan.units {
         let unit_index = usize::try_from(query_unit.unit_index)
             .map_err(|_| ValidateWitnessOpeningSegmentsError::UnitIndexOverflow)?;
         let unit = units
             .get(unit_index)
             .ok_or(ValidateWitnessOpeningSegmentsError::UnitMismatch { unit_index })?;
-        let opening_unit = opening
-            .units
-            .iter()
-            .find(|unit| {
-                unit.unit_index == query_unit.unit_index
-                    && unit.trace_instance_index == query_unit.trace_instance_index
-            })
+        let identity = (query_unit.unit_index, query_unit.trace_instance_index);
+        let opening_unit = opening_units_by_identity
+            .get(&identity)
+            .copied()
             .ok_or(ValidateWitnessOpeningSegmentsError::UnitMismatch { unit_index })?;
         if opening_unit.queries.len() != query_unit.queries.len() {
             return Err(ValidateWitnessOpeningSegmentsError::UnitMismatch { unit_index });
         }
 
-        let witness_segment = witness_segments
-            .iter()
-            .find(|segment| {
-                segment.identity.unit_index == query_unit.unit_index
-                    && segment.identity.trace_instance_index == query_unit.trace_instance_index
-            })
+        let witness_segment = witness_segments_by_identity
+            .get(&identity)
+            .copied()
             .ok_or(ValidateWitnessOpeningSegmentsError::UnitMismatch { unit_index })?;
         let arity = usize::try_from(unit.merkle_tree_arity)
             .map_err(|_| ValidateWitnessOpeningSegmentsError::ArityOverflow)?;
