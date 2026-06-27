@@ -2226,6 +2226,7 @@ fn lean_eth_block_public_input_binding_tracks_runtime_checks() {
                 .count()
                 == 1
             && artifact_source.matches("ValidatedEthBlockInput(").count() == 0
+            && !compact_source_contains(&artifact_source, "ValidatedEthBlockInput {")
             && compact_source_contains(
                 eth_block_input_segment_body,
                 "input: Option<ValidatedEthBlockInput<'_>>"
@@ -2473,6 +2474,7 @@ fn lean_framed_guest_input_binding_tracks_runtime_checks() {
                 .count()
                 == 1
             && proof_artifact_source.matches("ValidatedProgramImageCache(").count() == 0
+            && !compact_source_contains(&proof_artifact_source, "ValidatedProgramImageCache {")
             && compact_source_contains(
                 validate_eth_block_binding_body,
                 "Result<Option<ValidatedEthBlockInput<'a>>, String>"
@@ -2483,6 +2485,7 @@ fn lean_framed_guest_input_binding_tracks_runtime_checks() {
             )
             && proof_artifact_source.matches("map(ValidatedEthBlockInput)").count() == 1
             && proof_artifact_source.matches("ValidatedEthBlockInput(").count() == 0
+            && !compact_source_contains(&proof_artifact_source, "ValidatedEthBlockInput {")
             && validate_framed_guest_input_binding_body
                 .contains("Result<Option<ValidatedFramedGuestInput<'a>>, String>")
             && validate_framed_guest_input_binding_body
