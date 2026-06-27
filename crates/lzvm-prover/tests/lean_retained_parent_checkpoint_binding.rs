@@ -586,16 +586,24 @@ fn lean_retained_parent_checkpoint_binding_tracks_runtime_opening_contract() {
         &[".right.right.right"],
     );
     assert!(
-        top_level_source.contains("import Lzvm.RetainedParentCheckpointOpening"),
+        lean_binding::contains_import(&top_level_source, "Lzvm.RetainedParentCheckpointOpening"),
         "top-level Lean module should import retained parent checkpoint opening binding"
     );
     assert!(
-        opening_source.contains("import Lzvm.RetainedParentCheckpointOpening.Contracts"),
+        lean_binding::contains_import(
+            &opening_source,
+            "Lzvm.RetainedParentCheckpointOpening.Contracts"
+        ),
         "retained parent checkpoint opening module should aggregate the contracts module"
     );
     assert!(
-        opening_source.contains("import Lzvm.RetainedParentCheckpointOpening.Arity")
-            && top_level_source.contains("import Lzvm.RetainedParentCheckpointOpening.Arity"),
+        lean_binding::contains_import(
+            &opening_source,
+            "Lzvm.RetainedParentCheckpointOpening.Arity"
+        ) && lean_binding::contains_import(
+            &top_level_source,
+            "Lzvm.RetainedParentCheckpointOpening.Arity"
+        ),
         "top-level Lean modules should import retained parent checkpoint arity binding"
     );
     assert!(

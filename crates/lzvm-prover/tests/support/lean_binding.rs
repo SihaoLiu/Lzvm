@@ -235,8 +235,28 @@ pub fn assert_no_uncontrolled_lean_placeholders(root: &Path) {
 #[allow(dead_code)]
 pub fn assert_all_lean_modules_reachable_from_entrypoint(entrypoint: &Path, root: &Path) {
     let modules = collect_lean_modules(entrypoint, root);
-    let entrypoint_module =
-        lean_module_name(entrypoint, root).expect("Lean entrypoint should be inside Lean root");
+    let lean_workspace = root
+        .parent()
+        .expect("Lean source root should have a workspace parent");
+    assert_module_reachability(entrypoint, lean_workspace, &modules);
+}
+
+#[allow(dead_code)]
+pub fn assert_all_workspace_lean_modules_reachable_from_entrypoint(
+    entrypoint: &Path,
+    workspace_root: &Path,
+) {
+    let modules = collect_workspace_lean_modules(entrypoint, workspace_root);
+    assert_module_reachability(entrypoint, workspace_root, &modules);
+}
+
+fn assert_module_reachability(
+    entrypoint: &Path,
+    lean_workspace: &Path,
+    modules: &BTreeMap<String, PathBuf>,
+) {
+    let entrypoint_module = lean_module_name_from_root(entrypoint, lean_workspace)
+        .expect("Lean entrypoint should be inside Lean root");
     let mut reachable = BTreeSet::new();
     let mut pending = vec![entrypoint_module];
     while let Some(module) = pending.pop() {
@@ -265,6 +285,24 @@ pub fn assert_all_lean_modules_reachable_from_entrypoint(entrypoint: &Path, root
 }
 
 #[allow(dead_code)]
+pub fn contains_import(source: impl AsRef<str>, module: &str) -> bool {
+    lean_imports_from_source(source.as_ref())
+        .iter()
+        .any(|imported| imported == module)
+}
+
+#[allow(dead_code)]
+pub fn assert_imports(source: impl AsRef<str>, modules: &[&str]) {
+    let source = source.as_ref();
+    for module in modules {
+        assert!(
+            contains_import(source, module),
+            "Lean source should import {module}"
+        );
+    }
+}
+
+#[allow(dead_code)]
 fn collect_uncontrolled_lean_placeholders(path: &Path, violations: &mut Vec<String>) {
     if path.is_file() {
         collect_uncontrolled_lean_placeholders_from_file(path, violations);
@@ -274,6 +312,9 @@ fn collect_uncontrolled_lean_placeholders(path: &Path, violations: &mut Vec<Stri
         let entry = entry.expect("Lean source entry should read");
         let path = entry.path();
         if path.is_dir() {
+            if should_skip_lean_workspace_dir(&path) {
+                continue;
+            }
             collect_uncontrolled_lean_placeholders(&path, violations);
             continue;
         }
@@ -314,9 +355,27 @@ fn collect_lean_modules(entrypoint: &Path, root: &Path) -> BTreeMap<String, Path
     let lean_workspace = root
         .parent()
         .expect("Lean source root should have a workspace parent");
+    collect_lean_modules_with_module_root(entrypoint, root, lean_workspace)
+}
+
+#[allow(dead_code)]
+fn collect_workspace_lean_modules(
+    entrypoint: &Path,
+    workspace_root: &Path,
+) -> BTreeMap<String, PathBuf> {
+    collect_lean_modules_with_module_root(entrypoint, workspace_root, workspace_root)
+}
+
+#[allow(dead_code)]
+fn collect_lean_modules_with_module_root(
+    entrypoint: &Path,
+    root: &Path,
+    lean_workspace: &Path,
+) -> BTreeMap<String, PathBuf> {
     let mut modules = BTreeMap::new();
     modules.insert(
-        lean_module_name(entrypoint, root).expect("Lean entrypoint should be inside Lean root"),
+        lean_module_name_from_root(entrypoint, lean_workspace)
+            .expect("Lean entrypoint should be inside Lean root"),
         entrypoint.to_path_buf(),
     );
     collect_lean_modules_from_dir(root, lean_workspace, &mut modules);
@@ -333,6 +392,9 @@ fn collect_lean_modules_from_dir(
         let entry = entry.expect("Lean source entry should read");
         let path = entry.path();
         if path.is_dir() {
+            if should_skip_lean_workspace_dir(&path) {
+                continue;
+            }
             collect_lean_modules_from_dir(&path, lean_workspace, modules);
             continue;
         }
@@ -354,6 +416,11 @@ fn collect_lean_modules_from_dir(
 #[allow(dead_code)]
 fn lean_module_name(path: &Path, root: &Path) -> Option<String> {
     let lean_workspace = root.parent()?;
+    lean_module_name_from_root(path, lean_workspace)
+}
+
+#[allow(dead_code)]
+fn lean_module_name_from_root(path: &Path, lean_workspace: &Path) -> Option<String> {
     let relative = path.strip_prefix(lean_workspace).ok()?.with_extension("");
     Some(
         relative
@@ -367,16 +434,34 @@ fn lean_module_name(path: &Path, root: &Path) -> Option<String> {
 #[allow(dead_code)]
 fn lean_imports(path: &Path) -> Vec<String> {
     let source = std::fs::read_to_string(path).expect("Lean source should read");
-    visible_source(&source)
+    lean_imports_from_source(&source)
+}
+
+#[allow(dead_code)]
+fn lean_imports_from_source(source: &str) -> Vec<String> {
+    strip_string_literals(&visible_source(source))
         .lines()
-        .filter_map(|line| {
+        .flat_map(|line| {
             let line = line.trim();
             line.strip_prefix("import ")
                 .map(str::trim)
                 .filter(|module| !module.is_empty())
-                .map(ToOwned::to_owned)
+                .map(|modules| {
+                    modules
+                        .split_whitespace()
+                        .map(ToOwned::to_owned)
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default()
         })
         .collect()
+}
+
+fn should_skip_lean_workspace_dir(path: &Path) -> bool {
+    path.file_name()
+        .and_then(|name| name.to_str())
+        .map(|name| name.starts_with('.'))
+        .unwrap_or(false)
 }
 
 #[allow(dead_code)]
@@ -484,7 +569,10 @@ fn strip_lean_comments(source: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{contains_identifier_token, strip_string_literals, theorem_body, visible_source};
+    use super::{
+        contains_identifier_token, contains_import, strip_string_literals, theorem_body,
+        visible_source,
+    };
 
     #[test]
     fn placeholder_tokens_match_lean_identifier_boundaries() {
@@ -520,6 +608,28 @@ def label := "opaque unsafe string"
                 .any(|line| contains_identifier_token(line, "opaque")),
             "Lean placeholder scan should ignore comments and string literals: {visible}"
         );
+    }
+
+    #[test]
+    fn import_matching_ignores_comments_strings_and_longer_modules() {
+        let source = r#"
+-- import Lzvm.Commented
+/- import Lzvm.BlockCommented -/
+def label := "import Lzvm.StringLiteral"
+def multiline := "
+import Lzvm.MultilineString
+"
+import Lzvm.Real
+import Lzvm.Real.Extra
+"#;
+
+        assert!(contains_import(source, "Lzvm.Real"));
+        assert!(contains_import(source, "Lzvm.Real.Extra"));
+        assert!(!contains_import(source, "Lzvm.Commented"));
+        assert!(!contains_import(source, "Lzvm.BlockCommented"));
+        assert!(!contains_import(source, "Lzvm.StringLiteral"));
+        assert!(!contains_import(source, "Lzvm.MultilineString"));
+        assert!(!contains_import(source, "Lzvm.Re"));
     }
 
     #[test]

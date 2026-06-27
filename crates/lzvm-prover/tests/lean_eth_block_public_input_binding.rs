@@ -14,7 +14,7 @@ fn lean_eth_block_public_input_binding_exports_core_contract_projection() {
         std::fs::read_to_string(&top_level_path).expect("Lean top-level source should read");
 
     assert!(
-        top_level_source.contains("import Lzvm.EthBlockPublicInputBinding"),
+        lean_binding::contains_import(&top_level_source, "Lzvm.EthBlockPublicInputBinding"),
         "top-level Lean module should import ETH block public-input binding"
     );
     assert!(

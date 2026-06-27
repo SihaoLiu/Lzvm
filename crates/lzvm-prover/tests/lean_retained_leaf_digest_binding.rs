@@ -568,14 +568,23 @@ fn lean_retained_leaf_digest_binding_tracks_runtime_opening_contract() {
         &["retainedLeafDigestOpeningAcceptedImpliesPathBound"],
     );
     assert!(
-        top_level_source.contains("import Lzvm.RetainedLeafDigestOpening")
-            && top_level_source.contains("import Lzvm.RetainedLeafDigestOpening.Arity")
-            && top_level_source.contains("import Lzvm.RetainedLeafDigestOpening.Contracts"),
+        lean_binding::contains_import(&top_level_source, "Lzvm.RetainedLeafDigestOpening")
+            && lean_binding::contains_import(
+                &top_level_source,
+                "Lzvm.RetainedLeafDigestOpening.Arity"
+            )
+            && lean_binding::contains_import(
+                &top_level_source,
+                "Lzvm.RetainedLeafDigestOpening.Contracts"
+            ),
         "top-level Lean module should import retained leaf digest opening binding"
     );
     assert!(
-        wrapper_source.contains("import Lzvm.RetainedLeafDigestOpening.Arity")
-            && wrapper_source.contains("import Lzvm.RetainedLeafDigestOpening.Contracts"),
+        lean_binding::contains_import(&wrapper_source, "Lzvm.RetainedLeafDigestOpening.Arity")
+            && lean_binding::contains_import(
+                &wrapper_source,
+                "Lzvm.RetainedLeafDigestOpening.Contracts"
+            ),
         "retained leaf digest opening wrapper should aggregate arity and contracts modules"
     );
     lean_binding::assert_theorem_body_contains(

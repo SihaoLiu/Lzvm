@@ -12,7 +12,7 @@ fn lean_merkle_path_soundness_binds_central_hash_assumption() {
         std::fs::read_to_string(&top_level_path).expect("Lean top-level source should read");
 
     assert!(
-        top_level_source.contains("import Lzvm.MerklePathSoundness"),
+        lean_binding::contains_import(&top_level_source, "Lzvm.MerklePathSoundness"),
         "top-level Lean module should import Merkle path soundness"
     );
     assert!(

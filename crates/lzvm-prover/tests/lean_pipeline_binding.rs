@@ -13,8 +13,8 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
     let core_source =
         std::fs::read_to_string(&core_path).expect("Lean pipeline core binding source should read");
     assert!(
-        core_source.contains("import Lzvm.PipelineBinding.Core.Base")
-            && core_source.contains("import Lzvm.PipelineBinding.Core.Derived"),
+        lean_binding::contains_import(&core_source, "Lzvm.PipelineBinding.Core.Base")
+            && lean_binding::contains_import(&core_source, "Lzvm.PipelineBinding.Core.Derived"),
         "Lean pipeline core wrapper should re-export split core modules"
     );
     let core_base_path = crate_root.join("../../lean/Lzvm/PipelineBinding/Core/Base.lean");
@@ -30,8 +30,11 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
     let contracts_source = std::fs::read_to_string(&contracts_path)
         .expect("Lean pipeline binding contracts source should read");
     assert!(
-        contracts_source.contains("import Lzvm.PipelineBinding.Contracts.Core")
-            && contracts_source.contains("import Lzvm.PipelineBinding.Contracts.ExternalSource"),
+        lean_binding::contains_import(&contracts_source, "Lzvm.PipelineBinding.Contracts.Core")
+            && lean_binding::contains_import(
+                &contracts_source,
+                "Lzvm.PipelineBinding.Contracts.ExternalSource"
+            ),
         "Lean pipeline contracts wrapper should re-export split contract modules"
     );
     let contracts_core_path =
@@ -231,28 +234,31 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
         );
     }
     assert!(
-        pipeline_source.contains("import Lzvm.PipelineBinding.Core"),
+        lean_binding::contains_import(&pipeline_source, "Lzvm.PipelineBinding.Core"),
         "Lean pipeline binding module should import the core pipeline binding module"
     );
     assert!(
-        pipeline_source.contains("import Lzvm.PipelineBinding.Obligations")
-            && pipeline_source.contains("import Lzvm.PipelineBinding.Audited"),
+        lean_binding::contains_import(&pipeline_source, "Lzvm.PipelineBinding.Obligations")
+            && lean_binding::contains_import(&pipeline_source, "Lzvm.PipelineBinding.Audited"),
         "Lean pipeline binding module should re-export split obligation and audited contracts"
     );
     assert!(
-        top_level_source.contains("import Lzvm.PipelineBinding.Contracts"),
+        lean_binding::contains_import(&top_level_source, "Lzvm.PipelineBinding.Contracts"),
         "top-level Lean module should import pipeline binding contracts"
     );
     assert!(
-        top_level_source.contains("import Lzvm.PipelineBinding.ExternalSourceContracts"),
+        lean_binding::contains_import(
+            &top_level_source,
+            "Lzvm.PipelineBinding.ExternalSourceContracts"
+        ),
         "top-level Lean module should import pipeline external-source contracts"
     );
     assert!(
-        top_level_source.contains("import Lzvm.PipelineBinding.Accepts"),
+        lean_binding::contains_import(&top_level_source, "Lzvm.PipelineBinding.Accepts"),
         "top-level Lean module should import pipeline binding accepts contracts"
     );
     assert!(
-        top_level_source.contains("import Lzvm.PipelineBinding.SegmentIds"),
+        lean_binding::contains_import(&top_level_source, "Lzvm.PipelineBinding.SegmentIds"),
         "top-level Lean module should import pipeline segment ID contracts"
     );
     assert!(

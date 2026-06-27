@@ -13,7 +13,7 @@ fn lean_model_exports_verifier_core_contract() {
         std::fs::read_to_string(&top_level_path).expect("Lean top-level source should read");
 
     assert!(
-        top_level_source.contains("import Lzvm.Model"),
+        lean_binding::contains_import(&top_level_source, "Lzvm.Model"),
         "top-level Lean module should import the verifier model"
     );
     assert!(

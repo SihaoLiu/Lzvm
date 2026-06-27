@@ -17,7 +17,7 @@ fn lean_assumptions_exports_centralized_soundness_obligations() {
         std::fs::read_to_string(&top_level_path).expect("Lean top-level source should read");
 
     assert!(
-        top_level_source.contains("import Lzvm.Assumptions"),
+        lean_binding::contains_import(&top_level_source, "Lzvm.Assumptions"),
         "top-level Lean module should import centralized assumptions"
     );
     assert!(

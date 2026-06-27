@@ -17,11 +17,11 @@ fn lean_opening_validation_binding_exports_core_contract_projection() {
         std::fs::read_to_string(&witness_tree_path).expect("witness tree source should read");
 
     assert!(
-        top_level_source.contains("import Lzvm.OpeningValidation"),
+        lean_binding::contains_import(&top_level_source, "Lzvm.OpeningValidation"),
         "top-level Lean module should import opening validation"
     );
     assert!(
-        lean_source.contains("import Lzvm.MerklePathSoundness")
+        lean_binding::contains_import(&lean_source, "Lzvm.MerklePathSoundness")
             && witness_tree_source.contains("validate_witness_commitment_arity(arity)?")
             && witness_tree_source.contains("matches!(arity, 2 | 4)")
             && witness_tree_source.contains("row_index % arity_u64")

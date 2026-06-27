@@ -26,15 +26,15 @@ fn lean_assumption_audit_exports_runtime_soundness_coverage() {
         std::fs::read_to_string(&soundness_path).expect("Lean soundness source should read");
 
     assert!(
-        runtime_source.contains("import Lzvm.AssumptionAudit"),
+        lean_binding::contains_import(&runtime_source, "Lzvm.AssumptionAudit"),
         "runtime soundness should import the centralized assumption audit"
     );
     assert!(
-        audit_source.contains("import Lzvm.MerklePathSoundness.Binary"),
+        lean_binding::contains_import(&audit_source, "Lzvm.MerklePathSoundness.Binary"),
         "assumption audit should connect centralized hash assumptions to concrete Merkle path collision resistance"
     );
     assert!(
-        audit_source.contains("import Lzvm.MerklePathSoundness.NAry"),
+        lean_binding::contains_import(&audit_source, "Lzvm.MerklePathSoundness.NAry"),
         "assumption audit should also connect centralized hash assumptions to concrete N-ary Merkle path collision resistance"
     );
     assert!(
@@ -356,7 +356,7 @@ fn lean_assumption_audit_exports_runtime_soundness_coverage() {
         ],
     );
     assert!(
-        soundness_source.contains("import Lzvm.AssumptionAudit"),
+        lean_binding::contains_import(&soundness_source, "Lzvm.AssumptionAudit"),
         "abstract soundness should import the centralized assumption audit"
     );
     assert!(

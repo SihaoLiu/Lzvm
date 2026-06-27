@@ -314,20 +314,21 @@ fn lean_soundness_sources_stay_modular() {
 #[test]
 fn lean_soundness_sources_do_not_use_uncontrolled_placeholders() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let lean_entrypoint = crate_root.join("../../lean/Lzvm.lean");
-    let lean_root = crate_root.join("../../lean/Lzvm");
+    let lean_workspace = crate_root.join("../../lean");
 
-    lean_binding::assert_no_uncontrolled_lean_placeholders(&lean_entrypoint);
-    lean_binding::assert_no_uncontrolled_lean_placeholders(&lean_root);
+    lean_binding::assert_no_uncontrolled_lean_placeholders(&lean_workspace);
 }
 
 #[test]
 fn top_level_lean_module_reaches_all_soundness_sources() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let lean_entrypoint = crate_root.join("../../lean/Lzvm.lean");
-    let lean_root = crate_root.join("../../lean/Lzvm");
+    let lean_workspace = crate_root.join("../../lean");
 
-    lean_binding::assert_all_lean_modules_reachable_from_entrypoint(&lean_entrypoint, &lean_root);
+    lean_binding::assert_all_workspace_lean_modules_reachable_from_entrypoint(
+        &lean_entrypoint,
+        &lean_workspace,
+    );
 }
 
 #[test]

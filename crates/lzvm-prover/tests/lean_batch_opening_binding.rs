@@ -107,7 +107,7 @@ fn lean_batch_opening_binding_tracks_runtime_batch_helpers() {
         ],
     );
     assert!(
-        top_level_source.contains("import Lzvm.BatchOpeningBinding"),
+        lean_binding::contains_import(&top_level_source, "Lzvm.BatchOpeningBinding"),
         "top-level Lean module should import batch opening binding"
     );
     assert!(

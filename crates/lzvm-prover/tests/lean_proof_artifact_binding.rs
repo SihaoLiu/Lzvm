@@ -17,11 +17,11 @@ fn lean_proof_artifact_binding_exports_core_contract_projection() {
         std::fs::read_to_string(&proof_artifact_path).expect("proof artifact source should read");
 
     assert!(
-        top_level_source.contains("import Lzvm.ProofArtifactBinding"),
+        lean_binding::contains_import(&top_level_source, "Lzvm.ProofArtifactBinding"),
         "top-level Lean module should import proof artifact binding"
     );
     assert!(
-        lean_source.contains("import Lzvm.ProofSegmentIds"),
+        lean_binding::contains_import(&lean_source, "Lzvm.ProofSegmentIds"),
         "proof artifact binding should import the concrete proof segment ID allowlist"
     );
     assert!(

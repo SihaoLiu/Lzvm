@@ -57,9 +57,13 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
     let proof_timing_aggregate_source =
         std::fs::read_to_string(&proof_timing_path).expect("Lean proof timing checks should read");
     assert!(
-        proof_timing_aggregate_source.contains("import Lzvm.AuxiliaryChecks.ProofTiming.Core")
-            && proof_timing_aggregate_source
-                .contains("import Lzvm.AuxiliaryChecks.ProofTiming.Finish"),
+        lean_binding::contains_import(
+            &proof_timing_aggregate_source,
+            "Lzvm.AuxiliaryChecks.ProofTiming.Core",
+        ) && lean_binding::contains_import(
+            &proof_timing_aggregate_source,
+            "Lzvm.AuxiliaryChecks.ProofTiming.Finish",
+        ),
         "Lean proof timing wrapper should re-export split proof timing modules"
     );
     let proof_timing_core_path =
@@ -159,45 +163,39 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         std::fs::read_to_string(&guest_backend_path).expect("guest backend source should read");
 
     assert!(
-        top_level_source
-            .lines()
-            .any(|line| line.trim() == "import Lzvm.AuxiliaryChecks.All"),
+        lean_binding::contains_import(&top_level_source, "Lzvm.AuxiliaryChecks.All"),
         "top-level Lean module should import the auxiliary checks aggregate"
     );
     for obsolete_import in [
-        "import Lzvm.AuxiliaryChecks",
-        "import Lzvm.AuxiliaryChecks.GpuRuntime",
-        "import Lzvm.AuxiliaryChecks.TimingCore",
-        "import Lzvm.AuxiliaryChecks.Timing",
-        "import Lzvm.AuxiliaryChecks.TimingProjected",
-        "import Lzvm.AuxiliaryChecks.Projected",
-        "import Lzvm.AuxiliaryChecks.ProofTiming",
-        "import Lzvm.AuxiliaryChecks.ProofTimingProjected",
-        "import Lzvm.AuxiliaryChecks.ProofTimingVerifier",
-        "import Lzvm.AuxiliaryChecks.RuntimePerformance",
+        "Lzvm.AuxiliaryChecks",
+        "Lzvm.AuxiliaryChecks.GpuRuntime",
+        "Lzvm.AuxiliaryChecks.TimingCore",
+        "Lzvm.AuxiliaryChecks.Timing",
+        "Lzvm.AuxiliaryChecks.TimingProjected",
+        "Lzvm.AuxiliaryChecks.Projected",
+        "Lzvm.AuxiliaryChecks.ProofTiming",
+        "Lzvm.AuxiliaryChecks.ProofTimingProjected",
+        "Lzvm.AuxiliaryChecks.ProofTimingVerifier",
+        "Lzvm.AuxiliaryChecks.RuntimePerformance",
     ] {
         assert!(
-            !top_level_source
-                .lines()
-                .any(|line| line.trim() == obsolete_import),
+            !lean_binding::contains_import(&top_level_source, obsolete_import),
             "top-level Lean module should rely on the auxiliary checks aggregate"
         );
     }
     for required_import in [
-        "import Lzvm.AuxiliaryChecks",
-        "import Lzvm.AuxiliaryChecks.GpuRuntime",
-        "import Lzvm.AuxiliaryChecks.Timing",
-        "import Lzvm.AuxiliaryChecks.TimingProjected",
-        "import Lzvm.AuxiliaryChecks.Projected",
-        "import Lzvm.AuxiliaryChecks.ProofTiming",
-        "import Lzvm.AuxiliaryChecks.ProofTimingProjected",
-        "import Lzvm.AuxiliaryChecks.ProofTimingVerifier",
-        "import Lzvm.AuxiliaryChecks.RuntimePerformance",
+        "Lzvm.AuxiliaryChecks",
+        "Lzvm.AuxiliaryChecks.GpuRuntime",
+        "Lzvm.AuxiliaryChecks.Timing",
+        "Lzvm.AuxiliaryChecks.TimingProjected",
+        "Lzvm.AuxiliaryChecks.Projected",
+        "Lzvm.AuxiliaryChecks.ProofTiming",
+        "Lzvm.AuxiliaryChecks.ProofTimingProjected",
+        "Lzvm.AuxiliaryChecks.ProofTimingVerifier",
+        "Lzvm.AuxiliaryChecks.RuntimePerformance",
     ] {
         assert!(
-            auxiliary_all_source
-                .lines()
-                .any(|line| line.trim() == required_import),
+            lean_binding::contains_import(&auxiliary_all_source, required_import),
             "auxiliary checks aggregate should import every auxiliary checks module"
         );
     }

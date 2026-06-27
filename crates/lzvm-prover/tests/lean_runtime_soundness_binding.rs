@@ -31,15 +31,15 @@ fn lean_runtime_soundness_binding_exports_core_contract_projection() {
         std::fs::read_to_string(&top_level_path).expect("Lean top-level source should read");
 
     assert!(
-        top_level_source.contains("import Lzvm.RuntimeSoundness"),
+        lean_binding::contains_import(&top_level_source, "Lzvm.RuntimeSoundness"),
         "top-level Lean module should import runtime soundness"
     );
     assert!(
-        top_level_source.contains("import Lzvm.RuntimeSoundness.Contracts"),
+        lean_binding::contains_import(&top_level_source, "Lzvm.RuntimeSoundness.Contracts"),
         "top-level Lean module should import runtime soundness contracts"
     );
     assert!(
-        top_level_source.contains("import Lzvm.RuntimeSoundness.SegmentIds"),
+        lean_binding::contains_import(&top_level_source, "Lzvm.RuntimeSoundness.SegmentIds"),
         "top-level Lean module should import runtime soundness segment-id projections"
     );
     assert!(

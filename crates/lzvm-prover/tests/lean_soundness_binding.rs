@@ -14,7 +14,7 @@ fn lean_soundness_binding_exports_abstract_soundness_theorems() {
         std::fs::read_to_string(&top_level_path).expect("Lean top-level source should read");
 
     assert!(
-        top_level_source.contains("import Lzvm.Soundness"),
+        lean_binding::contains_import(&top_level_source, "Lzvm.Soundness"),
         "top-level Lean module should import abstract soundness"
     );
     assert!(

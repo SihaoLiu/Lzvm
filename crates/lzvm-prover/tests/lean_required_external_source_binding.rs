@@ -14,7 +14,7 @@ fn lean_required_external_source_binding_exports_core_contract_projection() {
         std::fs::read_to_string(&top_level_path).expect("Lean top-level source should read");
 
     assert!(
-        top_level_source.contains("import Lzvm.RequiredExternalSource"),
+        lean_binding::contains_import(&top_level_source, "Lzvm.RequiredExternalSource"),
         "top-level Lean module should import required external source"
     );
     assert!(

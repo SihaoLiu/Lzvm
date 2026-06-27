@@ -18,6 +18,9 @@ use lzvm_artifacts::unit_values_segment::UNIT_VALUES_SEGMENT_ID;
 use lzvm_artifacts::witness_opening_segment::WITNESS_OPENING_SEGMENT_ID;
 use lzvm_artifacts::witness_segment::WITNESS_COMMITMENT_SEGMENT_BASE_ID;
 
+#[path = "support/lean_binding.rs"]
+mod lean_binding;
+
 #[test]
 fn lean_proof_segment_ids_track_runtime_allowlist() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
@@ -32,7 +35,7 @@ fn lean_proof_segment_ids_track_runtime_allowlist() {
         std::fs::read_to_string(&rust_path).expect("Rust proof segment ID source should read");
 
     assert!(
-        lean_root_source.contains("import Lzvm.ProofSegmentIds"),
+        lean_binding::contains_import(&lean_root_source, "Lzvm.ProofSegmentIds"),
         "top-level Lean module should import concrete proof segment ID allowlist"
     );
     assert!(
