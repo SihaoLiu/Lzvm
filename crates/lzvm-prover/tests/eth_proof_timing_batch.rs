@@ -1839,6 +1839,67 @@ fn eth_proof_timing_batch_env_file_configures_dry_run() {
 }
 
 #[test]
+fn eth_proof_timing_batch_env_file_clears_ambient_proof_env() {
+    let fixture = ProofFixture::new("eth-proof-timing-batch-env-file-clears-ambient");
+    let env_path = fixture.dir.join("large-only.env");
+    std::fs::write(
+        &env_path,
+        format!(
+            concat!(
+                "export {prefix}_BIN='{bin}'\n",
+                "export {prefix}_SETUP='{setup}'\n",
+                "export {prefix}_BLOCK_INPUT='{block_input}'\n",
+                "export {prefix}_PROGRAM_IMAGE_CACHE='{cache}'\n",
+                "export {prefix}_INPUT_DATA='{input_data}'\n",
+                "export {prefix}_GUEST_IMAGE='{guest}'\n",
+            ),
+            prefix = LARGE_PREFIX,
+            bin = fixture.fake_bin.display(),
+            setup = fixture.setup.display(),
+            block_input = fixture.block_input.display(),
+            cache = fixture.cache.display(),
+            input_data = fixture.input_data.display(),
+            guest = fixture.guest.display(),
+        ),
+    )
+    .expect("env file should write");
+    let mut command = Command::new(script_path());
+    command
+        .arg("--suite")
+        .arg("available")
+        .arg("--dry-run")
+        .arg("--env-file")
+        .arg(&env_path)
+        .arg("--summary")
+        .arg("env file");
+    fixture.apply_env(&mut command, SMALL_PREFIX);
+    clear_env(&mut command, LARGE_PREFIX);
+
+    let output = command
+        .output()
+        .expect("ETH proof timing batch env-file dry-run should run");
+    let success = output.status.success();
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    fixture.cleanup();
+
+    assert!(
+        success,
+        "large-only env file should build an available command: stderr={stderr}"
+    );
+    assert!(
+        stdout.contains("selected=large\n") && stdout.contains("large_command="),
+        "env file should select the configured large workload: {stdout}"
+    );
+    assert!(
+        !stdout.contains("selected=small")
+            && !stdout.contains("small_command=")
+            && !stdout.contains("--small-command"),
+        "env file should not inherit ambient small workload settings: {stdout}"
+    );
+}
+
+#[test]
 fn eth_proof_timing_batch_env_file_configures_profile_and_gpu_tools() {
     let fixture = ProofFixture::new("eth-proof-timing-batch-env-file-tools");
     let env_path = fixture.dir.join("tools.env");

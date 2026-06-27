@@ -164,6 +164,11 @@ def parse_env_file_assignment(line: str, path: Path, line_number: int) -> tuple[
     return (name, value)
 
 
+def clear_env_file_controlled_names() -> None:
+    for name in ALLOWED_ENV_FILE_NAMES:
+        os.environ.pop(name, None)
+
+
 def load_env_file(path: Path, root: Path) -> None:
     path = require_workspace_temp_path(path, root, "--env-file")
     if not path.exists():
@@ -180,6 +185,7 @@ def load_env_file(path: Path, root: Path) -> None:
     reject_symlinked_output_path(path, "--env-file")
     if not path.is_file():
         raise SystemExit(f"--env-file must be a file: {path}")
+    clear_env_file_controlled_names()
     with path.open(encoding="utf-8") as source:
         for line_number, line in enumerate(source, start=1):
             assignment = parse_env_file_assignment(line, path, line_number)
