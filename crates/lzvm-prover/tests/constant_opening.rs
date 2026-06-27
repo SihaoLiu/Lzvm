@@ -1,6 +1,7 @@
 use lzvm_artifacts::constant_opening_segment::{
-    encode_constant_opening_segment, ConstantOpeningLevelSegment, ConstantOpeningQuerySegment,
-    ConstantOpeningSegment, ConstantOpeningUnitSegment, CONSTANT_OPENING_SEGMENT_ID,
+    encode_constant_opening_segment, parse_constant_opening_segment, ConstantOpeningLevelSegment,
+    ConstantOpeningQuerySegment, ConstantOpeningSegment, ConstantOpeningSegmentError,
+    ConstantOpeningUnitSegment, CONSTANT_OPENING_SEGMENT_ID,
 };
 use lzvm_artifacts::constant_tree::{ConstantTree, ConstantTreeHashKind};
 use lzvm_artifacts::key_directory::KeyUnitKind;
@@ -9,7 +10,7 @@ use lzvm_artifacts::pcs_query_segment::{
     encode_pcs_query_plan_segment, PcsQueryPlanSegment, PcsQueryPlanUnit,
 };
 use lzvm_artifacts::proof::ProofSegment;
-use lzvm_field::{poseidon2_hash_16, Felt};
+use lzvm_field::{poseidon2_hash_16, Felt, FieldError, MODULUS};
 use lzvm_prover::constant_opening::{
     load_constant_opening_segment_from_segments,
     load_constant_opening_unit_for_identity_from_segments,
@@ -19,6 +20,8 @@ use lzvm_prover::constant_opening::{
 };
 use lzvm_prover::constant_tree_opening::{open_constant_tree_row, ConstantTreeOpening};
 use lzvm_prover::ProveUnitSchedule;
+
+const FIRST_CONSTANT_OPENING_VALUE_OFFSET: usize = 12 + 8 + 16;
 
 #[test]
 fn loads_constant_opening_segment_from_segments() {
@@ -84,6 +87,26 @@ fn rejects_invalid_constant_opening_segment() {
     .expect_err("segment should parse");
 
     assert!(matches!(error, LoadConstantOpeningSegmentError::Segment(_)));
+}
+
+#[test]
+fn rejects_noncanonical_constant_opening_values_while_parsing() {
+    let mut segment = constant_opening_proof_segment(vec![constant_opening_unit(0)]);
+    segment.data[FIRST_CONSTANT_OPENING_VALUE_OFFSET..FIRST_CONSTANT_OPENING_VALUE_OFFSET + 8]
+        .copy_from_slice(&MODULUS.to_le_bytes());
+
+    let error = parse_constant_opening_segment(&segment.data)
+        .expect_err("constant opening values should be canonical");
+
+    assert_eq!(
+        error,
+        ConstantOpeningSegmentError::ValueNonCanonical {
+            unit_index: 0,
+            row_index: 3,
+            value_index: 0,
+            source: FieldError::NonCanonical { value: MODULUS },
+        }
+    );
 }
 
 #[test]

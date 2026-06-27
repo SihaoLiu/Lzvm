@@ -95,7 +95,6 @@ pub enum ValidateConstantOpeningSegmentsError {
     UnitIndexOverflow,
     ArityOverflow,
     WidthOverflow,
-    FieldValue(FieldError),
     FieldDigest(FieldError),
 }
 
@@ -266,7 +265,6 @@ impl fmt::Display for ValidateConstantOpeningSegmentsError {
             Self::UnitIndexOverflow => write!(f, "constant opening segment unit index overflow"),
             Self::ArityOverflow => write!(f, "constant opening segment arity overflow"),
             Self::WidthOverflow => write!(f, "constant opening segment width overflow"),
-            Self::FieldValue(error) => write!(f, "invalid constant opening segment value: {error}"),
             Self::FieldDigest(error) => {
                 write!(f, "invalid constant opening segment digest: {error}")
             }
@@ -280,7 +278,7 @@ impl std::error::Error for ValidateConstantOpeningSegmentsError {
             Self::QueryPlan(error) => Some(error),
             Self::Opening(error) => Some(error),
             Self::TreeOpening { source, .. } | Self::TreeShape(source) => Some(source),
-            Self::FieldValue(error) | Self::FieldDigest(error) => Some(error),
+            Self::FieldDigest(error) => Some(error),
             Self::UnitCountMismatch
             | Self::UnitMismatch { .. }
             | Self::UnitIndexOverflow
@@ -398,9 +396,9 @@ pub fn validate_constant_opening_segments(
             let values = query
                 .values
                 .iter()
-                .map(|value| Felt::from_canonical(*value))
-                .collect::<Result<Vec<_>, _>>()
-                .map_err(ValidateConstantOpeningSegmentsError::FieldValue)?;
+                .copied()
+                .map(Felt::from_u64)
+                .collect::<Vec<_>>();
             let siblings = query
                 .siblings
                 .iter()
