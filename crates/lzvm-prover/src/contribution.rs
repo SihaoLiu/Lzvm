@@ -723,8 +723,8 @@ pub fn derive_global_challenge_from_files(
     validate_setup_directory_manifest_if_present(setup_dir, &catalog)?;
     let proof = read_proof_artifact_file(proof_path)?;
     let public_values = read_public_values_file(public_values_path)?;
-    let public_report = validate_setup_preflight_hashes(&catalog, &proof, &public_values)?;
     validate_contribution_proof_segment_ids(&proof.segments)?;
+    let public_report = validate_setup_preflight_hashes(&catalog, &proof, &public_values)?;
     let public_fields = public_values_as_fields(&public_values)?;
     let proof_values =
         load_pcs_proof_values_from_segments(&catalog.layout.global_info, &proof.segments)?;
@@ -835,8 +835,8 @@ fn derive_global_challenge_from_contribution_proofs_with_requirement(
 
     for (proof_index, proof_path) in proof_paths.iter().enumerate() {
         let proof = read_proof_artifact_file(proof_path)?;
-        let public_report = validate_setup_preflight_hashes(&catalog, &proof, &public_values)?;
         validate_contribution_proof_segment_ids(&proof.segments)?;
+        let public_report = validate_setup_preflight_hashes(&catalog, &proof, &public_values)?;
         segment_count = segment_count
             .checked_add(public_report.segment_count)
             .ok_or(ContributionChallengeError::LengthOverflow)?;

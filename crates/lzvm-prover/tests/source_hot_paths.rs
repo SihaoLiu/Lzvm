@@ -2209,9 +2209,9 @@ fn lean_framed_guest_input_binding_tracks_runtime_checks() {
     let cli_test_path = crate_root.join("../lzvm-cli/tests/setup_validate.rs");
     let cli_test_source = std::fs::read_to_string(&cli_test_path)
         .expect("CLI setup validation test source should read");
-    let verify_commands_path = crate_root.join("../lzvm-cli/src/verify_commands.rs");
-    let verify_commands_source = std::fs::read_to_string(&verify_commands_path)
-        .expect("CLI verify command source should read");
+    let verify_bindings_path = crate_root.join("../lzvm-cli/src/verify_commands/bindings.rs");
+    let verify_bindings_source = std::fs::read_to_string(&verify_bindings_path)
+        .expect("CLI verify bindings source should read");
     let proof_artifact_path = crate_root.join("src/proof_artifact.rs");
     let proof_artifact_source =
         std::fs::read_to_string(&proof_artifact_path).expect("proof artifact source should read");
@@ -2283,9 +2283,9 @@ fn lean_framed_guest_input_binding_tracks_runtime_checks() {
         "proof artifact construction should embed framed guest stdin as a proof binding segment"
     );
     assert!(
-        verify_commands_source.contains("fn input_data_file_matches_segment")
-            && verify_commands_source.contains("read_exact")
-            && !verify_commands_source.contains("fs::read(input_data_path)"),
+        verify_bindings_source.contains("fn input_data_file_matches_segment")
+            && verify_bindings_source.contains("read_exact")
+            && !verify_bindings_source.contains("fs::read(input_data_path)"),
         "CLI verification should compare framed guest stdin binding bytes without a whole-file input read"
     );
     assert!(
