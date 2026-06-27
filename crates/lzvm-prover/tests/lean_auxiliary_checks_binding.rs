@@ -1302,10 +1302,14 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
                 .contains("guest_pc_trace_traceless_commitment_input_selected")
             && witness_execution_source
                 .contains("guest_pc_cross_segment_root_materialization_selected")
+            && compact_source_contains(
+                &witness_execution_source,
+                "guest_pc_descriptor_buffer_retention_enabled(input_byte_count,)",
+            )
             && witness_execution_source
-                .contains("guest_pc_descriptor_buffer_retention_enabled(input_byte_count)")
+                .contains("WitnessTraceCudaRunConfig::from_input(input_byte_count)")
             && witness_execution_source
-                .contains("descriptor_buffer_retention: Some(descriptor_buffer_retention)")
+                .contains("trace_cuda_run_config: Some(trace_cuda_run_config)")
             && witness_execution_source.contains(
                 "let pending_root_materialization_window = if cross_segment_root_materialization"
             )
@@ -1416,7 +1420,8 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             && witness_execution_source.contains("LZVM_CUDA_SPARSE_TRACE_SOURCE_MAX_PERCENT")
             && witness_execution_source.contains("unwrap_or(45)")
             && witness_execution_source.contains("struct WitnessStageSourceUploadConfig")
-            && witness_execution_source.contains("selected_stage_source_upload_config")
+            && witness_execution_source.contains("struct WitnessTraceCudaRunConfig")
+            && witness_execution_source.contains("selected_trace_cuda_run_config")
             && compact_source_contains(
                 &witness_execution_source,
                 "sparse_trace_source: sparse_trace_source_enabled()",
@@ -1475,16 +1480,15 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             && witness_execution_source.contains("stage_source_retention: bool")
             && witness_execution_source
                 .contains("let stage_source_retention = retain_fri_stage_source_devices();")
-            && witness_execution_source.contains("selected_fri_stage_source_retention")
+            && witness_execution_source.contains("selected_trace_cuda_run_config")
             && witness_execution_source.contains("stage_source_retention_debug: bool")
-            && witness_execution_source.contains("selected_fri_stage_source_retention_debug")
             && compact_source_contains(
                 &witness_execution_source,
-                "stage_source_retention: Some(stage_source_retention)",
+                "trace_cuda_run_config: Some(trace_cuda_run_config)",
             )
             && compact_source_contains(
                 &witness_execution_source,
-                "stage_source_retention_debug: Some(stage_source_retention_debug)",
+                "trace_cuda_run_config.stage_source_retention_debug",
             )
             && witness_execution_source.contains("let retained_stage_source_devices = if retain_stage_sources")
             && witness_execution_source.contains("stage_source_device_cache.retained_descriptors")

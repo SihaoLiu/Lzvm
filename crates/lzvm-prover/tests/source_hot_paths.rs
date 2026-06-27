@@ -1709,8 +1709,8 @@ fn guest_pc_trace_segments_pass_terminal_prefix_rows_to_cuda_source_upload() {
         "fn validate_trace_shape",
     );
     assert!(
-        upload_body.contains("upload_config: Option<WitnessStageSourceUploadConfig>")
-            && upload_body.contains("selected_stage_source_upload_config(upload_config)")
+        upload_body.contains("trace_cuda_run_config: Option<WitnessTraceCudaRunConfig>")
+            && upload_body.contains(".map(|config| config.stage_source_upload)")
             && upload_body.contains("upload_config.terminal_sparse_trace_source")
             && upload_body.contains("upload_config.sparse_trace_source")
             && upload_body.contains("upload_config.sparse_trace_source_max_percent")
@@ -3299,15 +3299,9 @@ fn guest_pc_segment_commitment_input_can_be_trace_less_with_preloaded_device_sou
     assert!(
         direct_segment_body.contains(
             "let traceless_commitment_input = guest_pc_trace_traceless_commitment_input_selected();"
-        ) && direct_segment_body.contains("let stage_source_retention = retain_fri_stage_source_devices();")
-            && direct_segment_body.contains("let stage_source_retention_debug =")
-            && direct_segment_body.contains("stage_source_retention: Some(stage_source_retention)")
-            && direct_segment_body.contains(
-                "stage_source_retention_debug: Some(stage_source_retention_debug)"
-            )
-            && direct_segment_body.contains(
-                "descriptor_buffer_retention: Some(descriptor_buffer_retention)"
-            )
+        ) && direct_segment_body.contains(
+            "let trace_cuda_run_config = WitnessTraceCudaRunConfig::from_input"
+        ) && direct_segment_body.contains("trace_cuda_run_config: Some(trace_cuda_run_config)")
             && !direct_segment_body.contains("guest_pc_trace_less_commitment_input_enabled()"),
         "direct guest PC segment commitment input should cache trace and retention modes outside the segment loop"
     );
@@ -4295,13 +4289,13 @@ fn guest_pc_trace_segment_commit_uses_worker_state() {
             && mode_body.contains("async_single_worker: bool")
             && mode_body.contains("traceless_commitment_input: bool")
             && mode_body.contains("cross_segment_root_materialization: bool")
-            && mode_body.contains("stage_source_upload_config: WitnessStageSourceUploadConfig")
+            && mode_body.contains("trace_cuda_run_config: WitnessTraceCudaRunConfig")
             && mode_body.contains("pending_root_materialization_window: usize")
             && mode_body.contains(
                 "guest_pc_trace_segment_commit_worker_count_for_input_with_override"
             )
             && mode_body.contains("guest_pc_cross_segment_root_materialization_selected")
-            && mode_body.contains("WitnessStageSourceUploadConfig::from_env()")
+            && mode_body.contains("WitnessTraceCudaRunConfig::from_input(input_byte_count)")
             && compact_source_contains(
                 mode_body,
                 "let pending_root_materialization_window = if cross_segment_root_materialization"
@@ -6320,10 +6314,9 @@ fn guest_pc_descriptor_buffer_retention_defaults_to_small_inputs_only() {
         "descriptor buffer retention should default to the small-input policy while allowing an explicit env override"
     );
     assert!(
-        execution_source.contains(
-            "descriptor_buffer_retention: Option<bool>"
-        ) && execution_source.contains("selected_guest_pc_descriptor_buffer_retention("),
-        "trace observers should accept a cached descriptor retention decision with a selector fallback"
+        execution_source.contains("trace_cuda_run_config: Option<WitnessTraceCudaRunConfig>")
+            && execution_source.contains("selected_trace_cuda_run_config("),
+        "trace observers should accept cached CUDA trace decisions with a selector fallback"
     );
 
     let mode_body = function_body(
@@ -6332,15 +6325,9 @@ fn guest_pc_descriptor_buffer_retention_defaults_to_small_inputs_only() {
         "type GuestPcTraceSegmentCommitWorkerHandle",
     );
     assert!(
-        mode_body.contains("descriptor_buffer_retention: bool")
-            && mode_body.contains("guest_pc_descriptor_buffer_retention_enabled(input_byte_count)"),
-        "segment commit mode should cache the descriptor retention decision once per attempt"
-    );
-    assert!(
-        mode_body.contains("stage_source_retention: bool")
-            && mode_body.contains("stage_source_retention_debug: bool")
-            && mode_body.contains("retain_fri_stage_source_devices()"),
-        "segment commit mode should cache the stage source retention decision once per attempt"
+        mode_body.contains("trace_cuda_run_config: WitnessTraceCudaRunConfig")
+            && mode_body.contains("WitnessTraceCudaRunConfig::from_input(input_byte_count)"),
+        "segment commit mode should cache trace CUDA decisions once per attempt"
     );
 
     let pending_commit_body = function_body(
@@ -6349,8 +6336,7 @@ fn guest_pc_descriptor_buffer_retention_defaults_to_small_inputs_only() {
         "fn run_prove_witness_commitments_from_trace_inner",
     );
     assert!(
-        pending_commit_body
-            .contains("descriptor_buffer_retention: Some(descriptor_buffer_retention)")
+        pending_commit_body.contains("trace_cuda_run_config: Some(trace_cuda_run_config)")
             && pending_commit_body.contains("retained_guest_pc_device_descriptor_buffer"),
         "pending trace commitments should use the cached descriptor retention gate"
     );
@@ -6363,9 +6349,8 @@ fn guest_pc_descriptor_buffer_retention_defaults_to_small_inputs_only() {
     assert!(
         compact_source_contains(
             direct_commit_body,
-            "selected_guest_pc_descriptor_buffer_retention(input_byte_count, descriptor_buffer_retention,)"
-        )
-            && direct_commit_body.contains("retained_guest_pc_device_descriptor_buffer"),
+            "selected_trace_cuda_run_config(cached_trace_cuda_run_config, input_byte_count)"
+        ) && direct_commit_body.contains("retained_guest_pc_device_descriptor_buffer"),
         "direct trace commitments should use the descriptor retention selector"
     );
 }
@@ -6413,12 +6398,11 @@ fn guest_pc_trace_retains_stage_sources_before_descriptor_buffers() {
         "fn retain_fri_stage_source_devices",
     );
     assert!(
-        commit_body.contains("selected_fri_stage_source_retention(stage_source_retention)"),
+        commit_body.contains("trace_cuda_run_config.stage_source_retention"),
         "trace commitments should use a cached stage source retention selector"
     );
     assert!(
-        commit_body.contains("selected_fri_stage_source_retention_debug")
-            && commit_body.contains("stage_source_retention_debug"),
+        commit_body.contains("trace_cuda_run_config.stage_source_retention_debug"),
         "trace commitments should use a cached stage source retention debug selector"
     );
     let retained_position = commit_body
@@ -6444,9 +6428,7 @@ fn guest_pc_trace_retains_stage_sources_before_descriptor_buffers() {
         "struct GuestPcTraceSegmentCommitRunOptions",
     );
     assert!(
-        segment_helper_body.contains("stage_source_retention: Some(stage_source_retention)")
-            && segment_helper_body
-                .contains("stage_source_retention_debug: Some(stage_source_retention_debug)"),
+        segment_helper_body.contains("trace_cuda_run_config: Some(trace_cuda_run_config)"),
         "segment commitments should pass cached stage source retention into trace observers"
     );
 }
