@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use lzvm_artifacts::pcs_fri_segment::{PcsFriOpeningUnitSegment, PCS_FRI_OPENING_SEGMENT_ID};
 use lzvm_artifacts::pcs_material_segment::PCS_MATERIAL_MANIFEST_SEGMENT_ID;
@@ -176,6 +176,12 @@ pub fn validate_pcs_fri_opening_folds_from_units(
     opening_units: &[PcsFriOpeningUnitSegment],
     transcript_challenges: &[PcsTranscriptUnitChallenges],
 ) -> Result<(), ValidatePcsFriOpeningFoldUnitsError> {
+    let query_identities = pcs_query_unit_identities(query_units)?;
+    validate_fold_unit_identities_match_query_units(
+        &query_identities,
+        opening_units,
+        transcript_challenges,
+    )?;
     let opening_units_by_identity = fri_opening_units_by_identity(opening_units);
     let transcript_challenges_by_identity =
         transcript_challenges_by_identity(transcript_challenges);
@@ -205,6 +211,42 @@ pub fn validate_pcs_fri_opening_folds_from_units(
         )
         .map_err(|source| ValidatePcsFriOpeningFoldUnitsError::Fold { unit_index, source })?;
         if !valid {
+            return Err(ValidatePcsFriOpeningFoldUnitsError::UnitMismatch { unit_index });
+        }
+    }
+    Ok(())
+}
+
+fn pcs_query_unit_identities(
+    units: &[PcsQueryPlanUnit],
+) -> Result<BTreeSet<(u32, u32)>, ValidatePcsFriOpeningFoldUnitsError> {
+    let mut identities = BTreeSet::new();
+    for unit in units {
+        usize::try_from(unit.unit_index)
+            .map_err(|_| ValidatePcsFriOpeningFoldUnitsError::UnitIndexOverflow)?;
+        identities.insert((unit.unit_index, unit.trace_instance_index));
+    }
+    Ok(identities)
+}
+
+fn validate_fold_unit_identities_match_query_units(
+    query_identities: &BTreeSet<(u32, u32)>,
+    opening_units: &[PcsFriOpeningUnitSegment],
+    transcript_challenges: &[PcsTranscriptUnitChallenges],
+) -> Result<(), ValidatePcsFriOpeningFoldUnitsError> {
+    for unit in opening_units {
+        let identity = (unit.unit_index, unit.trace_instance_index);
+        if !query_identities.contains(&identity) {
+            let unit_index = usize::try_from(unit.unit_index)
+                .map_err(|_| ValidatePcsFriOpeningFoldUnitsError::UnitIndexOverflow)?;
+            return Err(ValidatePcsFriOpeningFoldUnitsError::UnitMismatch { unit_index });
+        }
+    }
+    for unit in transcript_challenges {
+        let identity = (unit.unit_index, unit.trace_instance_index);
+        if !query_identities.contains(&identity) {
+            let unit_index = usize::try_from(unit.unit_index)
+                .map_err(|_| ValidatePcsFriOpeningFoldUnitsError::UnitIndexOverflow)?;
             return Err(ValidatePcsFriOpeningFoldUnitsError::UnitMismatch { unit_index });
         }
     }
