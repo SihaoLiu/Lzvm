@@ -269,39 +269,47 @@ def positive_integer_env(raw: str, name: str) -> str:
 
 
 def validate_framed_input_data(path: Path, name: str) -> None:
-    data = path.read_bytes()
-    if not data:
+    total_size = path.stat().st_size
+    if total_size == 0:
         raise SystemExit(f"{name} framed input is invalid: empty input")
-    offset = 0
-    while offset < len(data):
-        remaining = len(data) - offset
-        if remaining < 8:
-            raise SystemExit(
-                f"{name} framed input is invalid: truncated chunk length at offset "
-                f"{offset}: expected 8 bytes, found {remaining}"
-            )
-        payload_len = int.from_bytes(data[offset : offset + 8], "little")
-        payload_offset = offset + 8
-        payload_end = payload_offset + payload_len
-        if payload_end > len(data):
-            raise SystemExit(
-                f"{name} framed input is invalid: truncated chunk at offset {offset}: "
-                f"expected {payload_len} bytes, found {len(data) - payload_offset}"
-            )
-        next_offset = (payload_end + 7) // 8 * 8
-        if next_offset > len(data):
-            raise SystemExit(
-                f"{name} framed input is invalid: truncated chunk padding at offset "
-                f"{payload_end}: expected {next_offset - payload_end} bytes, "
-                f"found {len(data) - payload_end}"
-            )
-        padding = data[payload_end:next_offset]
-        if any(padding):
-            raise SystemExit(
-                f"{name} framed input is invalid: nonzero chunk padding at offset "
-                f"{payload_end}"
-            )
-        offset = next_offset
+    with path.open("rb") as source:
+        offset = 0
+        while offset < total_size:
+            header = source.read(8)
+            if len(header) < 8:
+                raise SystemExit(
+                    f"{name} framed input is invalid: truncated chunk length at offset "
+                    f"{offset}: expected 8 bytes, found {len(header)}"
+                )
+            payload_len = int.from_bytes(header, "little")
+            payload_offset = offset + 8
+            payload_end = payload_offset + payload_len
+            if payload_end > total_size:
+                raise SystemExit(
+                    f"{name} framed input is invalid: truncated chunk at offset {offset}: "
+                    f"expected {payload_len} bytes, found {total_size - payload_offset}"
+                )
+            source.seek(payload_len, os.SEEK_CUR)
+            next_offset = (payload_end + 7) // 8 * 8
+            if next_offset > total_size:
+                raise SystemExit(
+                    f"{name} framed input is invalid: truncated chunk padding at offset "
+                    f"{payload_end}: expected {next_offset - payload_end} bytes, "
+                    f"found {total_size - payload_end}"
+                )
+            padding = source.read(next_offset - payload_end)
+            if len(padding) < next_offset - payload_end:
+                raise SystemExit(
+                    f"{name} framed input is invalid: truncated chunk padding at offset "
+                    f"{payload_end}: expected {next_offset - payload_end} bytes, "
+                    f"found {len(padding)}"
+                )
+            if any(padding):
+                raise SystemExit(
+                    f"{name} framed input is invalid: nonzero chunk padding at offset "
+                    f"{payload_end}"
+                )
+            offset = next_offset
 
 
 def framed_input_data(payload: bytes) -> bytes:

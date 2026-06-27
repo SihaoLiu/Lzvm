@@ -1,4 +1,8 @@
-use std::{path::PathBuf, process::Command};
+use std::{
+    io::{Seek, SeekFrom, Write},
+    path::PathBuf,
+    process::Command,
+};
 
 const SMALL_PREFIX: &str = "LZVM_REAL_SMALL_PARITY";
 const LARGE_PREFIX: &str = "LZVM_REAL_LARGE_PARITY";
@@ -3194,6 +3198,41 @@ fn eth_proof_timing_batch_check_env_rejects_empty_input_data() {
 }
 
 #[test]
+fn eth_proof_timing_batch_check_env_accepts_sparse_large_input_data() {
+    let fixture = ProofFixture::new("eth-proof-timing-batch-sparse-large-input-data");
+    let sparse_input = write_sparse_framed_fixture(&fixture.dir, "large-input-data.bin", 1 << 32);
+    let mut command = Command::new(script_path());
+    command.arg("--suite").arg("small").arg("--check-env");
+    fixture.apply_env(&mut command, SMALL_PREFIX);
+    command.env(format!("{SMALL_PREFIX}_INPUT_DATA"), &sparse_input);
+
+    let output = command
+        .output()
+        .expect("ETH proof timing batch env check should run");
+    let success = output.status.success();
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    let input_len = std::fs::metadata(&sparse_input)
+        .expect("sparse input metadata should read")
+        .len();
+    fixture.cleanup();
+
+    assert!(
+        success,
+        "env check should validate sparse large framed input without reading the payload: stderr={stderr}"
+    );
+    assert!(
+        stdout.contains("status=ok\n"),
+        "env check should report ready status: {stdout}"
+    );
+    assert!(stderr.is_empty(), "env check should not warn: {stderr}");
+    assert!(
+        input_len > u32::MAX as u64,
+        "sparse fixture should cover payloads larger than a 32-bit byte count"
+    );
+}
+
+#[test]
 fn eth_proof_timing_batch_ignores_legacy_tmp_dir_env() {
     let fixture = ProofFixture::new("eth-proof-timing-batch-legacy-tmp-env");
     let legacy_tmp = workspace_root().join(format!(
@@ -3306,6 +3345,30 @@ fn write_framed_fixture(dir: &std::path::Path, name: &str, payload: &[u8]) -> st
     bytes.extend_from_slice(payload);
     bytes.resize(bytes.len().next_multiple_of(8), 0);
     std::fs::write(&path, bytes).expect("framed fixture should write");
+    path
+}
+
+fn write_sparse_framed_fixture(
+    dir: &std::path::Path,
+    name: &str,
+    payload_len: u64,
+) -> std::path::PathBuf {
+    let path = dir.join(name);
+    let payload_offset = 8_u64;
+    let payload_end = payload_offset
+        .checked_add(payload_len)
+        .expect("sparse fixture length should fit");
+    let padding_len = (8 - (payload_end % 8)) % 8;
+    let file_len = payload_end
+        .checked_add(padding_len)
+        .expect("sparse fixture padded length should fit");
+    let mut file = std::fs::File::create(&path).expect("sparse framed fixture should create");
+    file.write_all(&payload_len.to_le_bytes())
+        .expect("sparse framed fixture header should write");
+    file.seek(SeekFrom::Start(file_len - 1))
+        .expect("sparse framed fixture should seek to final byte");
+    file.write_all(&[0])
+        .expect("sparse framed fixture final byte should write");
     path
 }
 
