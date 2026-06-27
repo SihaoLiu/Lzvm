@@ -146,6 +146,12 @@ def write_status(path: Path, lines: list[str]) -> None:
     write_text_no_follow(path, "\n".join(lines) + "\n")
 
 
+def prepare_run_tmp_dir(path: Path) -> None:
+    if path.exists() or path.is_symlink():
+        raise SystemExit(f"run tmp dir must not already exist: {path}")
+    path.mkdir(mode=0o700)
+
+
 def line_key_present(text: str, key: str) -> bool:
     return any(line.startswith(f"{key}=") for line in text.splitlines())
 
@@ -369,7 +375,6 @@ def run_once(
 ) -> Path:
     stem = f"{label}-{run_index:03d}"
     tmp_dir = batch_dir / f"{stem}.tmp"
-    tmp_dir.mkdir(parents=True, exist_ok=True)
     command = expand_command_template(
         command_template,
         label,
@@ -385,6 +390,22 @@ def run_once(
     combined_path = batch_dir / f"{stem}.log"
     timing_summary_path = batch_dir / f"{stem}.proof-timing-summary.csv"
     status_path = batch_dir / f"{stem}.status"
+    status_lines = [
+        f"label={label}",
+        f"run={run_index}",
+        f"command={command}",
+        f"cwd={cwd}",
+        f"tmp_dir={tmp_dir}",
+        f"timeout_s={timeout:.3f}",
+    ]
+
+    try:
+        prepare_run_tmp_dir(tmp_dir)
+    except SystemExit as error:
+        status_lines.append(f"validation_error={error}")
+        write_status(status_path, status_lines)
+        raise
+
     env = os.environ.copy()
     env["LZVM_TIMING_BATCH_LABEL"] = label
     env["LZVM_TIMING_BATCH_RUN"] = str(run_index)
@@ -417,18 +438,14 @@ def run_once(
     stderr = read_text(stderr_path)
     write_combined_log(combined_path, stdout, stderr)
 
-    status_lines = [
-        f"label={label}",
-        f"run={run_index}",
-        f"command={command}",
-        f"cwd={cwd}",
-        f"tmp_dir={tmp_dir}",
-        f"elapsed_s={elapsed_s:.3f}",
-        f"timeout_s={timeout:.3f}",
-        f"exit_code={exit_code}",
-        f"timed_out={str(timed_out).lower()}",
-        f"combined_log={combined_path}",
-    ]
+    status_lines.extend(
+        [
+            f"elapsed_s={elapsed_s:.3f}",
+            f"exit_code={exit_code}",
+            f"timed_out={str(timed_out).lower()}",
+            f"combined_log={combined_path}",
+        ]
+    )
     if timed_out:
         write_status(status_path, status_lines)
         raise SystemExit(

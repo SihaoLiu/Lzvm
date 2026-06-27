@@ -1214,6 +1214,73 @@ fn proof_timing_batch_rejects_status_path_replaced_with_symlink() {
     );
 }
 
+#[cfg(unix)]
+#[test]
+fn proof_timing_batch_rejects_preexisting_run_tmpdir_symlink() {
+    let script_path = batch_script_path();
+    let dir = test_dir("proof-timing-batch-tmpdir-symlink");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("fixture dir should be created");
+    let work_dir = dir.join("runs");
+    let log_path = dir.join("improve-log.csv");
+    let redirected = dir.join("redirected-tmp");
+    std::fs::create_dir_all(&redirected).expect("redirect tmp fixture should be created");
+    let command = format!(
+        concat!(
+            "if [ \"{{run}}\" = \"1\" ]; then ln -s '{}' {{batch_dir}}/small-002.tmp; fi; ",
+            "if [ \"{{run}}\" = \"2\" ]; then printf marker > \"$TMPDIR/marker\"; fi; ",
+            "printf 'timing_total_ms=1000\\n'"
+        ),
+        redirected.display()
+    );
+
+    let output = Command::new(&script_path)
+        .arg("--work-dir")
+        .arg(&work_dir)
+        .arg("--path")
+        .arg(&log_path)
+        .arg("--commit")
+        .arg("test")
+        .arg("--runs")
+        .arg("3")
+        .arg("--small-command")
+        .arg(command)
+        .arg("--summary")
+        .arg("tmpdir link guard")
+        .output()
+        .expect("proof timing batch should run");
+    let success = output.status.success();
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    let redirected_marker = redirected.join("marker").exists();
+    let batch_dir = single_batch_dir(&work_dir);
+    let status =
+        std::fs::read_to_string(batch_dir.join("small-002.status")).expect("status should read");
+    let batch_json =
+        std::fs::read_to_string(batch_dir.join("batch.json")).expect("batch json should read");
+    let _ = std::fs::remove_dir_all(&dir);
+
+    assert!(
+        !success,
+        "proof timing batch should reject preexisting managed TMPDIR paths"
+    );
+    assert!(
+        stderr.contains("run tmp dir must not already exist"),
+        "tmpdir symlink rejection should explain the path constraint: stderr={stderr}"
+    );
+    assert!(
+        !redirected_marker,
+        "rejected run should not write through the tmpdir symlink"
+    );
+    assert!(
+        status.contains("validation_error=run tmp dir must not already exist"),
+        "tmpdir validation failure should be recorded in status: {status}"
+    );
+    assert!(
+        batch_json.contains("\"appended\": false") && batch_json.contains("small-002.status"),
+        "tmpdir validation failure should leave status in batch json: {batch_json}"
+    );
+}
+
 #[test]
 fn proof_timing_batch_rejects_missing_required_output_text() {
     let script_path = batch_script_path();
