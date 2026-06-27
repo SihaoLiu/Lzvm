@@ -121,7 +121,9 @@ structure RuntimeFriOpeningSegmentParserBoundary
   supportedEncodingVersion : RuntimeArtifact -> PublicInput -> Proof -> Prop
   finalPolynomialValuesCanonical : RuntimeArtifact -> PublicInput -> Proof -> Prop
   queryValuesCanonical : RuntimeArtifact -> PublicInput -> Proof -> Prop
+  layerDigestRootsCanonical : RuntimeArtifact -> PublicInput -> Proof -> Prop
   lastLevelDigestRootsCanonical : RuntimeArtifact -> PublicInput -> Proof -> Prop
+  siblingDigestRootsCanonical : RuntimeArtifact -> PublicInput -> Proof -> Prop
   segmentLayoutWalked : RuntimeArtifact -> PublicInput -> Proof -> Prop
   friOpeningSegmentsValidImpliesSupportedEncodingVersion :
     forall artifact publicInput proof,
@@ -135,10 +137,18 @@ structure RuntimeFriOpeningSegmentParserBoundary
     forall artifact publicInput proof,
       validation.friOpeningSegmentsValid artifact publicInput proof ->
         queryValuesCanonical artifact publicInput proof
+  friOpeningSegmentsValidImpliesLayerDigestRootsCanonical :
+    forall artifact publicInput proof,
+      validation.friOpeningSegmentsValid artifact publicInput proof ->
+        layerDigestRootsCanonical artifact publicInput proof
   friOpeningSegmentsValidImpliesLastLevelDigestRootsCanonical :
     forall artifact publicInput proof,
       validation.friOpeningSegmentsValid artifact publicInput proof ->
         lastLevelDigestRootsCanonical artifact publicInput proof
+  friOpeningSegmentsValidImpliesSiblingDigestRootsCanonical :
+    forall artifact publicInput proof,
+      validation.friOpeningSegmentsValid artifact publicInput proof ->
+        siblingDigestRootsCanonical artifact publicInput proof
   friOpeningSegmentsValidImpliesSegmentLayoutWalked :
     forall artifact publicInput proof,
       validation.friOpeningSegmentsValid artifact publicInput proof ->
@@ -154,7 +164,9 @@ def RuntimeFriOpeningSegmentParserContract
   boundary.supportedEncodingVersion artifact publicInput proof
     /\ boundary.finalPolynomialValuesCanonical artifact publicInput proof
     /\ boundary.queryValuesCanonical artifact publicInput proof
+    /\ boundary.layerDigestRootsCanonical artifact publicInput proof
     /\ boundary.lastLevelDigestRootsCanonical artifact publicInput proof
+    /\ boundary.siblingDigestRootsCanonical artifact publicInput proof
     /\ boundary.segmentLayoutWalked artifact publicInput proof
 
 theorem runtime_opening_segment_binding_fri_segments_valid_parser_contract
@@ -189,16 +201,28 @@ theorem runtime_opening_segment_binding_fri_segments_valid_parser_contract
             proof
             friSegments)
           (And.intro
-            (boundary.friOpeningSegmentsValidImpliesLastLevelDigestRootsCanonical
+            (boundary.friOpeningSegmentsValidImpliesLayerDigestRootsCanonical
               artifact
               publicInput
               proof
               friSegments)
-            (boundary.friOpeningSegmentsValidImpliesSegmentLayoutWalked
-              artifact
-              publicInput
-              proof
-              friSegments))))
+            (And.intro
+              (boundary.friOpeningSegmentsValidImpliesLastLevelDigestRootsCanonical
+                artifact
+                publicInput
+                proof
+                friSegments)
+              (And.intro
+                (boundary.friOpeningSegmentsValidImpliesSiblingDigestRootsCanonical
+                  artifact
+                  publicInput
+                  proof
+                  friSegments)
+                (boundary.friOpeningSegmentsValidImpliesSegmentLayoutWalked
+                  artifact
+                  publicInput
+                  proof
+                  friSegments))))))
 
 theorem runtime_opening_segment_binding_checked_acceptance_evidence
     {system : VerifierModel}

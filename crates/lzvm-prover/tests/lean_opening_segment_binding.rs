@@ -36,9 +36,11 @@ fn lean_opening_segment_binding_exports_core_contract_projection() {
             && fri_segment_source.contains("PCS_FRI_OPENING_V2_VERSION")
             && fri_segment_source.contains("reader.require_items(last_level_count, ROOT_BYTES)?")
             && fri_segment_source.contains("FinalPolynomialValueNonCanonical")
+            && fri_segment_source.contains("LayerRootNonCanonical")
             && fri_segment_source.contains("LastLevelRootNonCanonical")
-            && fri_segment_source.contains("QueryValueNonCanonical"),
-        "Rust FRI opening parser should keep version, last-level, and field-canonicality checks represented by Lean"
+            && fri_segment_source.contains("QueryValueNonCanonical")
+            && fri_segment_source.contains("SiblingRootNonCanonical"),
+        "Rust FRI opening parser should keep version, root, last-level, and field-canonicality checks represented by Lean"
     );
     lean_binding::assert_theorem_declarations(
         &lean_source,
@@ -120,7 +122,9 @@ fn lean_opening_segment_binding_exports_core_contract_projection() {
             "boundary.friOpeningSegmentsValidImpliesSupportedEncodingVersion",
             "boundary.friOpeningSegmentsValidImpliesFinalPolynomialValuesCanonical",
             "boundary.friOpeningSegmentsValidImpliesQueryValuesCanonical",
+            "boundary.friOpeningSegmentsValidImpliesLayerDigestRootsCanonical",
             "boundary.friOpeningSegmentsValidImpliesLastLevelDigestRootsCanonical",
+            "boundary.friOpeningSegmentsValidImpliesSiblingDigestRootsCanonical",
             "boundary.friOpeningSegmentsValidImpliesSegmentLayoutWalked",
         ],
     );
