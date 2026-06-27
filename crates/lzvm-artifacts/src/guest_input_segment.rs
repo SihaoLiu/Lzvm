@@ -1,20 +1,27 @@
 use sha2::{Digest, Sha256};
 
-use crate::framed_stdin::{parse_framed_stdin_chunks, FramedStdinChunk, FramedStdinError};
+use crate::framed_stdin::{
+    parse_framed_stdin_chunks, validate_framed_stdin, FramedStdinChunk, FramedStdinError,
+};
 
 pub const FRAMED_GUEST_INPUT_SEGMENT_ID: u32 = 10_015;
 
 pub fn encode_framed_guest_input_segment(bytes: &[u8]) -> Result<Vec<u8>, FramedStdinError> {
-    parse_framed_guest_input_segment(bytes)?;
+    validate_framed_guest_input_segment(bytes)?;
     Ok(bytes.to_vec())
+}
+
+pub fn validate_framed_guest_input_segment(bytes: &[u8]) -> Result<(), FramedStdinError> {
+    if bytes.is_empty() {
+        return Err(FramedStdinError::EmptyInput);
+    }
+    validate_framed_stdin(bytes)
 }
 
 pub fn parse_framed_guest_input_segment(
     bytes: &[u8],
 ) -> Result<Vec<FramedStdinChunk>, FramedStdinError> {
-    if bytes.is_empty() {
-        return Err(FramedStdinError::EmptyInput);
-    }
+    validate_framed_guest_input_segment(bytes)?;
     parse_framed_stdin_chunks(bytes)
 }
 

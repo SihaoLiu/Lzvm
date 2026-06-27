@@ -2,7 +2,7 @@ use std::fs;
 use std::io::{Read, Write};
 
 use lzvm_artifacts::guest_input_segment::{
-    parse_framed_guest_input_segment, FRAMED_GUEST_INPUT_SEGMENT_ID,
+    validate_framed_guest_input_segment, FRAMED_GUEST_INPUT_SEGMENT_ID,
 };
 use lzvm_artifacts::program_image::read_program_image_commitment_cache_file;
 use lzvm_artifacts::program_image_segment::{
@@ -375,7 +375,7 @@ fn verify_framed_guest_input_binding(proof_bin: &str, input_data_path: &str) -> 
     if segments.next().is_some() {
         return Err("duplicate framed guest input proof segment".to_owned());
     }
-    parse_framed_guest_input_segment(&segment.data)
+    validate_framed_guest_input_segment(&segment.data)
         .map_err(|error| format!("framed guest input proof segment is invalid: {error}"))?;
     if !input_data_file_matches_segment(input, input_data_path, &segment.data)? {
         return Err("framed guest input proof segment mismatch".to_owned());

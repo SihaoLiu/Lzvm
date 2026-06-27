@@ -2292,14 +2292,17 @@ fn lean_framed_guest_input_binding_tracks_runtime_checks() {
     assert!(
         proof_artifact_source.contains("fn build_framed_guest_input_proof_segment")
             && proof_artifact_source.contains("validate_framed_guest_input_binding")
+            && proof_artifact_source.contains("validate_framed_guest_input_segment(input)")
             && proof_artifact_source.contains("FRAMED_GUEST_INPUT_SEGMENT_ID"),
-        "proof artifact construction should embed framed guest stdin as a proof binding segment"
+        "proof artifact construction should embed framed guest stdin as a proof binding segment without reparsing payload copies"
     );
     assert!(
         verify_bindings_source.contains("fn input_data_file_matches_segment")
+            && verify_bindings_source.contains("validate_framed_guest_input_segment(&segment.data)")
+            && !verify_bindings_source.contains("parse_framed_guest_input_segment(&segment.data)")
             && verify_bindings_source.contains("read_exact")
             && !verify_bindings_source.contains("fs::read(input_data_path)"),
-        "CLI verification should compare framed guest stdin binding bytes without a whole-file input read"
+        "CLI verification should validate and compare framed guest stdin binding bytes without payload-copy parsing or a whole-file input read"
     );
     assert!(
         verify_bindings_source.contains("fn verify_program_image_cache_binding")
@@ -2310,8 +2313,10 @@ fn lean_framed_guest_input_binding_tracks_runtime_checks() {
         "CLI verification should compare the requested program image cache with the proof binding segment"
     );
     assert!(
-        guest_input_segment_source.contains("FramedStdinError::EmptyInput"),
-        "framed guest stdin segment encoding should reject an empty proof binding payload"
+        guest_input_segment_source.contains("FramedStdinError::EmptyInput")
+            && guest_input_segment_source.contains("validate_framed_stdin(bytes)")
+            && guest_input_segment_source.contains("validate_framed_guest_input_segment(bytes)?"),
+        "framed guest stdin segment encoding should reject empty payloads and validate framing without materializing chunks"
     );
     assert!(
         query_plan_source.contains("FRAMED_GUEST_INPUT_SEGMENT_ID")

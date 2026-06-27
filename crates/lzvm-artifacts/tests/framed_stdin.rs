@@ -1,4 +1,6 @@
-use lzvm_artifacts::framed_stdin::{parse_framed_stdin_chunks, FramedStdinChunk, FramedStdinError};
+use lzvm_artifacts::framed_stdin::{
+    parse_framed_stdin_chunks, validate_framed_stdin, FramedStdinChunk, FramedStdinError,
+};
 
 fn framed_chunk(data: &[u8]) -> Vec<u8> {
     let mut encoded = Vec::new();
@@ -14,6 +16,7 @@ fn parses_aligned_chunks() {
     let mut encoded = framed_chunk(b"abc");
     encoded.extend_from_slice(&framed_chunk(b"12345678"));
 
+    validate_framed_stdin(&encoded).expect("framed input should validate");
     let chunks = parse_framed_stdin_chunks(&encoded).expect("chunks should parse");
 
     assert_eq!(
@@ -42,6 +45,14 @@ fn rejects_truncated_payloads() {
     let encoded = [5_u8, 0, 0, 0, 0, 0, 0, 0, b'a', b'b'];
 
     assert_eq!(
+        validate_framed_stdin(&encoded).expect_err("truncated payload should reject"),
+        FramedStdinError::TruncatedChunk {
+            chunk_index: 0,
+            expected: 16,
+            remaining: 10,
+        }
+    );
+    assert_eq!(
         parse_framed_stdin_chunks(&encoded).expect_err("truncated payload should reject"),
         FramedStdinError::TruncatedChunk {
             chunk_index: 0,
@@ -56,6 +67,13 @@ fn rejects_nonzero_padding() {
     let mut encoded = framed_chunk(b"abc");
     *encoded.last_mut().expect("padding byte should exist") = 1;
 
+    assert_eq!(
+        validate_framed_stdin(&encoded).expect_err("nonzero padding should reject"),
+        FramedStdinError::NonZeroPadding {
+            chunk_index: 0,
+            offset: 15,
+        }
+    );
     assert_eq!(
         parse_framed_stdin_chunks(&encoded).expect_err("nonzero padding should reject"),
         FramedStdinError::NonZeroPadding {

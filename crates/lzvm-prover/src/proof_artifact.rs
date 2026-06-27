@@ -13,7 +13,7 @@ use lzvm_artifacts::eth_block_public_values::{
     validate_eth_block_public_values, validate_program_image_cache_public_values,
 };
 use lzvm_artifacts::guest_input_segment::{
-    encode_framed_guest_input_segment, parse_framed_guest_input_segment,
+    encode_framed_guest_input_segment, validate_framed_guest_input_segment,
     FRAMED_GUEST_INPUT_SEGMENT_ID,
 };
 use lzvm_artifacts::key_directory::KeyDirectoryCatalog;
@@ -1244,7 +1244,7 @@ fn validate_eth_block_binding(
 
 fn validate_framed_guest_input_binding(input: Option<&[u8]>) -> Result<(), String> {
     if let Some(input) = input {
-        parse_framed_guest_input_segment(input)
+        validate_framed_guest_input_segment(input)
             .map_err(|error| format!("framed guest input is invalid: {error}"))?;
     }
     Ok(())

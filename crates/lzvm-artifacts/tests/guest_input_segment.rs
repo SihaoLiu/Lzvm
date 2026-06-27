@@ -1,6 +1,7 @@
 use lzvm_artifacts::framed_stdin::FramedStdinError;
 use lzvm_artifacts::guest_input_segment::{
     encode_framed_guest_input_segment, parse_framed_guest_input_segment,
+    validate_framed_guest_input_segment,
 };
 
 fn framed_chunk(data: &[u8]) -> Vec<u8> {
@@ -17,6 +18,7 @@ fn encodes_nonempty_framed_guest_input_exactly() {
     let input = framed_chunk(b"abc");
 
     let segment = encode_framed_guest_input_segment(&input).expect("segment should encode");
+    validate_framed_guest_input_segment(&segment).expect("segment should validate");
     let chunks = parse_framed_guest_input_segment(&segment).expect("segment should parse");
 
     assert_eq!(segment, input);
@@ -26,6 +28,10 @@ fn encodes_nonempty_framed_guest_input_exactly() {
 
 #[test]
 fn rejects_empty_framed_guest_input_segment() {
+    assert_eq!(
+        validate_framed_guest_input_segment(&[]).expect_err("empty segment should reject"),
+        FramedStdinError::EmptyInput
+    );
     assert_eq!(
         encode_framed_guest_input_segment(&[]).expect_err("empty segment should reject"),
         FramedStdinError::EmptyInput

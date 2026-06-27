@@ -34,11 +34,35 @@ pub enum FramedStdinError {
     },
 }
 
+pub fn validate_framed_stdin(bytes: &[u8]) -> Result<(), FramedStdinError> {
+    walk_framed_stdin_chunks(bytes, |_, _, _, _, _| Ok(()))
+}
+
 pub fn parse_framed_stdin_chunks(bytes: &[u8]) -> Result<Vec<FramedStdinChunk>, FramedStdinError> {
     let mut chunks = Vec::new();
+    walk_framed_stdin_chunks(
+        bytes,
+        |offset, payload_offset, payload_len, padding_len, payload_end| {
+            chunks.push(FramedStdinChunk {
+                offset,
+                payload_offset,
+                payload_len,
+                padding_len,
+                data: bytes[payload_offset..payload_end].to_vec(),
+            });
+            Ok(())
+        },
+    )?;
+    Ok(chunks)
+}
+
+fn walk_framed_stdin_chunks(
+    bytes: &[u8],
+    mut visit: impl FnMut(usize, usize, usize, usize, usize) -> Result<(), FramedStdinError>,
+) -> Result<(), FramedStdinError> {
     let mut cursor = 0_usize;
+    let mut chunk_index = 0_usize;
     while cursor < bytes.len() {
-        let chunk_index = chunks.len();
         let remaining = bytes.len() - cursor;
         if remaining < 8 {
             return Err(FramedStdinError::TruncatedLength {
@@ -89,17 +113,18 @@ pub fn parse_framed_stdin_chunks(bytes: &[u8]) -> Result<Vec<FramedStdinChunk>, 
             }
         }
 
-        chunks.push(FramedStdinChunk {
-            offset: cursor,
+        visit(
+            cursor,
             payload_offset,
             payload_len,
             padding_len,
-            data: bytes[payload_offset..payload_end].to_vec(),
-        });
+            payload_end,
+        )?;
         cursor = chunk_end;
+        chunk_index += 1;
     }
 
-    Ok(chunks)
+    Ok(())
 }
 
 impl fmt::Display for FramedStdinError {
