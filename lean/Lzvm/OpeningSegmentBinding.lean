@@ -107,6 +107,16 @@ def RuntimeOpeningSegmentBindingEvidence
     publicInput
     proof
 
+def RuntimeFriFoldTraceIdentityContract
+    (_system : VerifierModel)
+    (validation : RuntimeOpeningSegmentBindingValidation _system)
+    (artifact : RuntimeArtifact)
+    (publicInput : PublicInput)
+    (proof : Proof) : Prop :=
+  validation.queryPlanBound artifact publicInput proof
+    /\ validation.openingUnitTraceIdentitiesMatch artifact publicInput proof
+    /\ validation.friFoldsValid artifact publicInput proof
+
 def RuntimeOpeningSegmentBindingCheckedAcceptance
     (_system : VerifierModel)
     (validation : RuntimeOpeningSegmentBindingValidation _system)
@@ -367,6 +377,27 @@ theorem runtime_opening_segment_binding_evidence_implies_trace_identities_match
   intro artifact publicInput proof evidence
   exact evidence.right.left
 
+theorem runtime_opening_segment_binding_evidence_implies_fri_fold_trace_identity_contract
+    {system : VerifierModel}
+    (validation : RuntimeOpeningSegmentBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeOpeningSegmentBindingEvidence
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeFriFoldTraceIdentityContract
+          system
+          validation
+          artifact
+          publicInput
+          proof := by
+  intro artifact publicInput proof evidence
+  exact
+    And.intro evidence.left
+      (And.intro evidence.right.left evidence.right.right.right.right.right.left)
+
 theorem runtime_opening_segment_binding_evidence_implies_fri_opening_checks
     {system : VerifierModel}
     (validation : RuntimeOpeningSegmentBindingValidation system) :
@@ -599,6 +630,38 @@ theorem runtime_opening_segment_binding_checked_acceptance_fri_opening_checks
       accepted
   exact
     runtime_opening_segment_binding_evidence_implies_fri_opening_checks
+      validation
+      artifact
+      publicInput
+      proof
+      evidence
+
+theorem runtime_opening_segment_binding_checked_acceptance_fri_fold_trace_identity_contract
+    {system : VerifierModel}
+    (validation : RuntimeOpeningSegmentBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeOpeningSegmentBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeFriFoldTraceIdentityContract
+          system
+          validation
+          artifact
+          publicInput
+          proof := by
+  intro artifact publicInput proof accepted
+  have evidence :=
+    runtime_opening_segment_binding_checked_acceptance_evidence
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  exact
+    runtime_opening_segment_binding_evidence_implies_fri_fold_trace_identity_contract
       validation
       artifact
       publicInput

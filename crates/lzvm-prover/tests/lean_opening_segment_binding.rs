@@ -30,6 +30,7 @@ fn lean_opening_segment_binding_exports_core_contract_projection() {
             && lean_source.contains("RuntimeOpeningEvidence")
             && lean_source.contains("RuntimeFriOpeningSegmentParserBoundary")
             && lean_source.contains("RuntimeFriOpeningSegmentParserContract")
+            && lean_source.contains("RuntimeFriFoldTraceIdentityContract")
             && lean_source.contains("RuntimeVerifierCoreContract system publicInput proof")
             && lean_source.contains("SoundWitness system publicInput proof"),
         "Lean opening segment binding should expose checked soundness and verifier core projection"
@@ -70,10 +71,12 @@ fn lean_opening_segment_binding_exports_core_contract_projection() {
             "runtime_opening_segment_binding_evidence_implies_bound_contract",
             "runtime_opening_segment_binding_evidence_implies_query_plan_bound",
             "runtime_opening_segment_binding_evidence_implies_fri_opening_checks",
+            "runtime_opening_segment_binding_evidence_implies_fri_fold_trace_identity_contract",
             "runtime_opening_segment_binding_evidence_implies_pcs_and_fri",
             "runtime_opening_segment_binding_checked_acceptance_query_plan_bound",
             "runtime_opening_segment_binding_checked_acceptance_bound_contract",
             "runtime_opening_segment_binding_checked_acceptance_fri_opening_checks",
+            "runtime_opening_segment_binding_checked_acceptance_fri_fold_trace_identity_contract",
             "runtime_opening_segment_binding_checked_acceptance_fri_parser_contract",
             "runtime_opening_segment_binding_checked_acceptance_pcs_and_fri_without_assumptions",
             "runtime_opening_segment_binding_checked_acceptance_pcs_and_fri",
@@ -152,6 +155,23 @@ fn lean_opening_segment_binding_exports_core_contract_projection() {
     );
     lean_binding::assert_theorem_prefix_contains(
         &lean_source,
+        "runtime_opening_segment_binding_evidence_implies_fri_fold_trace_identity_contract",
+        &[
+            "RuntimeOpeningSegmentBindingEvidence",
+            "RuntimeFriFoldTraceIdentityContract",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_opening_segment_binding_evidence_implies_fri_fold_trace_identity_contract",
+        &[
+            "evidence.left",
+            "evidence.right.left",
+            "evidence.right.right.right.right.right.left",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
         "runtime_opening_segment_binding_checked_acceptance_fri_opening_checks",
         &[
             "RuntimeOpeningSegmentBindingCheckedAcceptance",
@@ -159,6 +179,27 @@ fn lean_opening_segment_binding_exports_core_contract_projection() {
             "validation.friFoldsValid artifact publicInput proof",
             "validation.verifierQueryOutputsValid artifact publicInput proof",
             "validation.openingValidation.friOpeningBound artifact publicInput proof",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_opening_segment_binding_checked_acceptance_fri_fold_trace_identity_contract",
+        &[
+            "RuntimeOpeningSegmentBindingCheckedAcceptance",
+            "RuntimeFriFoldTraceIdentityContract",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_omits(
+        &lean_source,
+        "runtime_opening_segment_binding_checked_acceptance_fri_fold_trace_identity_contract",
+        &["AssumptionBundle"],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_opening_segment_binding_checked_acceptance_fri_fold_trace_identity_contract",
+        &[
+            "runtime_opening_segment_binding_checked_acceptance_evidence",
+            "runtime_opening_segment_binding_evidence_implies_fri_fold_trace_identity_contract",
         ],
     );
     lean_binding::assert_theorem_prefix_contains(
