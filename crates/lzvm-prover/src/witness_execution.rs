@@ -5239,10 +5239,8 @@ fn guest_pc_parallel_lower_enabled_for_descriptor_retention() -> bool {
 }
 
 fn env_flag_present_and_enabled(name: &str) -> bool {
-    !matches!(
-        std::env::var(name).as_deref(),
-        Ok("0" | "false" | "no" | "off" | "")
-    ) && std::env::var_os(name).is_some()
+    std::env::var_os(name)
+        .is_some_and(|value| !matches!(value.to_str(), Some("0" | "false" | "no" | "off" | "")))
 }
 
 fn commit_guest_pc_trace_segment_with_scratch(
@@ -7911,6 +7909,29 @@ mod tests {
             guest_pc_trace_segment_commit_worker_count_for_input(8 * 1024 * 1024),
             3
         );
+    }
+
+    #[test]
+    fn env_flag_present_and_enabled_uses_present_non_disabled_values() {
+        let env = TestEnvVarGuard::new("LZVM_TEST_PRESENT_FLAG");
+        env.unset();
+        assert!(!env_flag_present_and_enabled("LZVM_TEST_PRESENT_FLAG"));
+
+        for disabled in ["", "0", "false", "no", "off"] {
+            env.set(disabled);
+            assert!(
+                !env_flag_present_and_enabled("LZVM_TEST_PRESENT_FLAG"),
+                "{disabled:?} should disable a present flag"
+            );
+        }
+
+        for enabled in ["1", "true", "yes", "on", "FALSE", "enabled"] {
+            env.set(enabled);
+            assert!(
+                env_flag_present_and_enabled("LZVM_TEST_PRESENT_FLAG"),
+                "{enabled:?} should enable a present flag"
+            );
+        }
     }
 
     #[test]

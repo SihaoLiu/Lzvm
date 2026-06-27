@@ -6330,6 +6330,26 @@ fn guest_pc_descriptor_buffer_retention_defaults_to_small_inputs_only() {
 }
 
 #[test]
+fn guest_pc_env_flag_helper_uses_one_lookup() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let execution_path = crate_root.join("src/witness_execution.rs");
+    let execution_source =
+        std::fs::read_to_string(&execution_path).expect("witness execution source should read");
+
+    let helper_body = function_body(
+        &execution_source,
+        "fn env_flag_present_and_enabled",
+        "fn commit_guest_pc_trace_segment_with_scratch",
+    );
+    assert!(
+        compact_source_contains(helper_body, "std::env::var_os(name).is_some_and")
+            && helper_body.contains("Some(\"0\" | \"false\" | \"no\" | \"off\" | \"\")")
+            && !helper_body.contains("std::env::var(name)"),
+        "present-flag helper should preserve disabled-token semantics with one environment lookup"
+    );
+}
+
+#[test]
 fn guest_pc_trace_retains_stage_sources_before_descriptor_buffers() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let execution_path = crate_root.join("src/witness_execution.rs");
