@@ -582,10 +582,8 @@ fn rejects_invalid_pcs_fri_opening_segment() {
 
 #[test]
 fn rejects_noncanonical_pcs_fri_final_polynomial_values_while_parsing() {
-    let mut unit = sample_fri_opening_unit(0);
-    unit.final_polynomial[0][0] = 2_000_003;
-    let mut segment = pcs_fri_opening_proof_segment(vec![unit]);
-    replace_unique_u64_word(&mut segment.data, 2_000_003, MODULUS);
+    let mut segment = pcs_fri_opening_proof_segment(vec![sample_fri_opening_unit(0)]);
+    replace_first_fri_final_polynomial_word(&mut segment.data, MODULUS);
 
     let error =
         parse_pcs_fri_opening_segment(&segment.data).expect_err("final value should be canonical");
@@ -603,10 +601,8 @@ fn rejects_noncanonical_pcs_fri_final_polynomial_values_while_parsing() {
 
 #[test]
 fn rejects_noncanonical_pcs_fri_query_values_while_parsing() {
-    let mut unit = sample_fri_opening_unit(0);
-    unit.layers[0].queries[0].values[0][0] = 1_000_003;
-    let mut segment = pcs_fri_opening_proof_segment(vec![unit]);
-    replace_unique_u64_word(&mut segment.data, 1_000_003, MODULUS);
+    let mut segment = pcs_fri_opening_proof_segment(vec![sample_fri_opening_unit(0)]);
+    replace_first_fri_query_value_word(&mut segment.data, MODULUS);
 
     let error =
         parse_pcs_fri_opening_segment(&segment.data).expect_err("query value should be canonical");
@@ -1119,20 +1115,116 @@ fn pcs_fri_opening_proof_segment(units: Vec<PcsFriOpeningUnitSegment>) -> ProofS
     }
 }
 
-fn replace_unique_u64_word(data: &mut [u8], original: u64, replacement: u64) {
-    let original_bytes = original.to_le_bytes();
-    let matches = data
-        .windows(original_bytes.len())
-        .enumerate()
-        .filter_map(|(offset, window)| (window == original_bytes).then_some(offset))
-        .collect::<Vec<_>>();
+fn replace_first_fri_final_polynomial_word(data: &mut [u8], replacement: u64) {
+    let mut cursor = PcsFriSegmentCursor::new(data);
+    cursor.expect_magic();
+    let version = cursor.read_u32("version");
+    let unit_count = cursor.read_u32("unit count");
+    assert_eq!(unit_count, 1, "test segment should contain one unit");
+    cursor.read_u32("unit index");
+    if version == 2 {
+        cursor.read_u32("trace instance index");
+    }
+    cursor.read_u32("layer count");
+    let final_count = cursor.read_u32("final polynomial count");
+    assert_ne!(final_count, 0, "test segment should contain final values");
+    cursor.replace_u64(replacement, "first final polynomial word");
+}
+
+fn replace_first_fri_query_value_word(data: &mut [u8], replacement: u64) {
+    let mut cursor = PcsFriSegmentCursor::new(data);
+    cursor.expect_magic();
+    let version = cursor.read_u32("version");
+    let unit_count = cursor.read_u32("unit count");
+    assert_eq!(unit_count, 1, "test segment should contain one unit");
+    cursor.read_u32("unit index");
+    if version == 2 {
+        cursor.read_u32("trace instance index");
+    }
+    let layer_count = cursor.read_u32("layer count");
+    let final_count = cursor.read_u32("final polynomial count");
+    assert_ne!(layer_count, 0, "test segment should contain a layer");
+    cursor.skip_extension_values(final_count, "final polynomial");
+    cursor.read_u32("layer index");
+    cursor.skip_digest("layer root");
+    let last_level_count = cursor.read_u32("last level count");
+    let query_count = cursor.read_u32("query count");
     assert_eq!(
-        matches.len(),
-        1,
-        "word should occur exactly once in encoded segment"
+        last_level_count, 0,
+        "test segment should not include last level"
     );
-    let offset = matches[0];
-    data[offset..offset + original_bytes.len()].copy_from_slice(&replacement.to_le_bytes());
+    assert_ne!(query_count, 0, "test segment should contain a query");
+    cursor.read_u64("query row");
+    let value_count = cursor.read_u32("query value count");
+    cursor.read_u32("query sibling level count");
+    assert_ne!(value_count, 0, "test query should contain values");
+    cursor.replace_u64(replacement, "first query value word");
+}
+
+struct PcsFriSegmentCursor<'a> {
+    data: &'a mut [u8],
+    offset: usize,
+}
+
+impl<'a> PcsFriSegmentCursor<'a> {
+    fn new(data: &'a mut [u8]) -> Self {
+        Self { data, offset: 0 }
+    }
+
+    fn expect_magic(&mut self) {
+        let magic = self.read_array::<4>("magic");
+        assert_eq!(&magic, b"fos0", "FRI opening segment magic mismatch");
+    }
+
+    fn read_u32(&mut self, label: &str) -> u32 {
+        u32::from_le_bytes(self.read_array::<4>(label))
+    }
+
+    fn read_u64(&mut self, label: &str) -> u64 {
+        u64::from_le_bytes(self.read_array::<8>(label))
+    }
+
+    fn replace_u64(&mut self, replacement: u64, label: &str) {
+        let end = self.checked_end(8, label);
+        self.data[self.offset..end].copy_from_slice(&replacement.to_le_bytes());
+        self.offset = end;
+    }
+
+    fn skip_digest(&mut self, label: &str) {
+        self.skip_words(4, label);
+    }
+
+    fn skip_extension_values(&mut self, count: u32, label: &str) {
+        self.skip_words(count as usize * 3, label);
+    }
+
+    fn skip_words(&mut self, count: usize, label: &str) {
+        let byte_count = count
+            .checked_mul(8)
+            .unwrap_or_else(|| panic!("{label} byte count overflow"));
+        let end = self.checked_end(byte_count, label);
+        self.offset = end;
+    }
+
+    fn read_array<const N: usize>(&mut self, label: &str) -> [u8; N] {
+        let end = self.checked_end(N, label);
+        let mut out = [0_u8; N];
+        out.copy_from_slice(&self.data[self.offset..end]);
+        self.offset = end;
+        out
+    }
+
+    fn checked_end(&self, byte_count: usize, label: &str) -> usize {
+        let end = self
+            .offset
+            .checked_add(byte_count)
+            .unwrap_or_else(|| panic!("{label} offset overflow"));
+        assert!(
+            end <= self.data.len(),
+            "{label} exceeds encoded segment length"
+        );
+        end
+    }
 }
 
 fn valid_pcs_fri_opening_segments() -> (ProveUnitSchedule, Vec<ProofSegment>) {
