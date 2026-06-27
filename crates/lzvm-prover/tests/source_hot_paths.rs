@@ -4712,12 +4712,17 @@ fn trace_less_guest_pc_segment_output_can_skip_host_trace_build() {
     let helper_body = function_body(
         &backend_source,
         "fn build_layout_zisk_main_trace_segment_for_segment_output",
-        "fn build_layout_zisk_main_trace_segment",
+        "fn advance_",
     );
     assert!(
-        helper_body.contains("guest_pc_trace_less_segment_output_enabled()")
+        !helper_body.contains("guest_pc_trace_less_segment_output_enabled()")
             && helper_body.contains("build_layout_zisk_main_trace_segment_from_device_material"),
         "segmented guest PC output should prefer device material without building a host trace when gated"
+    );
+    assert!(
+        helper_body.contains("traceless_segment_output: bool")
+            && helper_body.contains("if traceless_segment_output"),
+        "segmented guest PC output should use the cached output mode in the lower helper"
     );
     assert!(
         helper_body.contains("build_layout_zisk_main_trace_segment("),
@@ -6421,6 +6426,12 @@ fn guest_pc_trace_parallel_lowerer_stays_seeded_and_opt_in() {
         "work-unit guest PC trace lowering should use a dedicated worker job"
     );
     assert!(
+        backend_source.contains(
+            "traceless_segment_output: guest_pc_trace_traceless_segment_output_selected()"
+        ),
+        "parallel guest PC trace lower mode should cache trace-output mode with the other flags"
+    );
+    assert!(
         backend_source
             .contains("|| guest_pc_trace_parallel_lower_enabled()"),
         "parallel guest PC trace lowering should enable runner seed snapshots for its pending segments"
@@ -6518,9 +6529,11 @@ fn guest_pc_trace_parallel_lowerer_stays_seeded_and_opt_in() {
     assert!(
         parallel_job_body.contains("if lower_mode.replay_snapshot")
             && parallel_job_body.contains("if lower_mode.owned_streaming_lower")
+            && parallel_job_body.contains("lower_mode.traceless_segment_output")
             && !parallel_job_body
                 .contains("guest_pc_trace_parallel_lower_replay_snapshot_enabled()")
-            && !parallel_job_body.contains("guest_pc_trace_owned_streaming_lower_enabled()"),
+            && !parallel_job_body.contains("guest_pc_trace_owned_streaming_lower_enabled()")
+            && !parallel_job_body.contains("guest_pc_trace_less_segment_output_enabled()"),
         "parallel guest PC trace worker jobs should use cached lower mode flags"
     );
     let pending_lower_body = function_body(
@@ -6535,6 +6548,13 @@ fn guest_pc_trace_parallel_lowerer_stays_seeded_and_opt_in() {
             == 1
             && pending_lower_body.contains("if owned_streaming_lower"),
         "single-worker guest PC trace lowering should cache the owned device lower gate outside the segment loop"
+    );
+    assert!(
+        pending_lower_body
+            .contains("let traceless_segment_output = guest_pc_trace_traceless_segment_output_selected();")
+            && pending_lower_body.contains("if traceless_segment_output")
+            && !pending_lower_body.contains("guest_pc_trace_less_segment_output_enabled()"),
+        "single-worker guest PC trace lowering should cache trace-output mode outside the segment loop"
     );
 
     let helper_body = function_body(
@@ -6553,6 +6573,13 @@ fn guest_pc_trace_parallel_lowerer_stays_seeded_and_opt_in() {
     assert!(
         helper_body.contains("thread::scope"),
         "parallel guest PC trace lowering should lower seeded chunks on worker threads"
+    );
+    assert!(
+        helper_body.contains(
+            "let traceless_segment_output = guest_pc_trace_traceless_segment_output_selected();"
+        ) && helper_body.contains("traceless_segment_output,")
+            && !helper_body.contains("guest_pc_trace_less_segment_output_enabled()"),
+        "seeded guest PC trace lowering should reuse cached trace-output mode across worker chunks"
     );
 }
 

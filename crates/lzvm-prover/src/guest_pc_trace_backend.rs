@@ -4107,6 +4107,7 @@ fn compute_guest_pc_trace_segments(
     let mut previous_c = 0_u64;
     let mut executed_instructions = 0_u64;
     let mut outputs = Vec::new();
+    let traceless_segment_output = guest_pc_trace_traceless_segment_output_selected();
     loop {
         let remaining_limit = instruction_limit.saturating_sub(executed_instructions);
         let slice = run_guest_pc_trace_segment_slice(
@@ -4153,6 +4154,7 @@ fn compute_guest_pc_trace_segments(
                 is_last_segment,
                 previous_c,
             },
+            traceless_segment_output,
             None,
         )?
         .ok_or(GuestPcTraceBackendError::UnmappedTraceLayout)?;
@@ -4326,6 +4328,7 @@ impl GuestPcTraceRunnerSeedMode {
 struct GuestPcTraceParallelLowerMode {
     replay_snapshot: bool,
     work_units: bool,
+    traceless_segment_output: bool,
     #[cfg(feature = "cuda")]
     owned_streaming_lower: bool,
     #[cfg(feature = "cuda")]
@@ -4337,6 +4340,7 @@ impl GuestPcTraceParallelLowerMode {
         Self {
             replay_snapshot: guest_pc_trace_parallel_lower_replay_snapshot_enabled(),
             work_units: guest_pc_trace_parallel_lower_work_units_enabled(),
+            traceless_segment_output: guest_pc_trace_traceless_segment_output_selected(),
             #[cfg(feature = "cuda")]
             owned_streaming_lower: guest_pc_trace_owned_streaming_lower_enabled(),
             #[cfg(feature = "cuda")]
@@ -5728,11 +5732,30 @@ struct GuestPcTraceSeededLoweredSegment {
     lowered: GuestPcTraceLoweredSegment,
 }
 
+#[allow(dead_code)]
 fn lower_guest_pc_trace_seeded_pending_segment(
     layout: &WitnessTraceLayout,
     pending: &GuestPcTracePendingSegmentSlice,
     seed: &ZiskMainSegmentSeed,
     expected_proof_values: Option<&[WitnessTraceProofValue]>,
+    timing: Option<&mut GuestPcTraceStreamTiming>,
+) -> Result<GuestPcTraceLoweredSegment, GuestPcTraceBackendError> {
+    lower_guest_pc_trace_seeded_pending_segment_with_output_mode(
+        layout,
+        pending,
+        seed,
+        expected_proof_values,
+        guest_pc_trace_traceless_segment_output_selected(),
+        timing,
+    )
+}
+
+fn lower_guest_pc_trace_seeded_pending_segment_with_output_mode(
+    layout: &WitnessTraceLayout,
+    pending: &GuestPcTracePendingSegmentSlice,
+    seed: &ZiskMainSegmentSeed,
+    expected_proof_values: Option<&[WitnessTraceProofValue]>,
+    traceless_segment_output: bool,
     mut timing: Option<&mut GuestPcTraceStreamTiming>,
 ) -> Result<GuestPcTraceLoweredSegment, GuestPcTraceBackendError> {
     let lower_started = Instant::now();
@@ -5747,6 +5770,7 @@ fn lower_guest_pc_trace_seeded_pending_segment(
             is_last_segment: pending.is_last_segment,
             previous_c: seed.previous_c,
         },
+        traceless_segment_output,
         timing.as_deref_mut(),
     )?
     .ok_or(GuestPcTraceBackendError::UnmappedTraceLayout)?;
@@ -5885,8 +5909,6 @@ fn lower_guest_pc_trace_parallel_work_unit_job(
     lower_mode: GuestPcTraceParallelLowerMode,
     timing: &mut GuestPcTraceStreamTiming,
 ) -> Result<GuestPcTraceSeededLoweredSegment, GuestPcTraceBackendError> {
-    #[cfg(not(feature = "cuda"))]
-    let _ = lower_mode;
     let seed = (*work_unit.seed).clone();
     let pending = GuestPcTracePendingSegmentSlice::from(work_unit);
     #[cfg(feature = "cuda")]
@@ -5904,11 +5926,12 @@ fn lower_guest_pc_trace_parallel_work_unit_job(
     }
     Ok(GuestPcTraceSeededLoweredSegment {
         seed: seed.clone(),
-        lowered: lower_guest_pc_trace_seeded_pending_segment(
+        lowered: lower_guest_pc_trace_seeded_pending_segment_with_output_mode(
             layout,
             &pending,
             &seed,
             expected_proof_values,
+            lower_mode.traceless_segment_output,
             Some(timing),
         )?,
     })
@@ -5918,6 +5941,7 @@ fn lower_guest_pc_trace_replayable_pending_job(
     layout: &WitnessTraceLayout,
     mut pending: GuestPcTracePendingSegmentSlice,
     expected_proof_values: Option<&[WitnessTraceProofValue]>,
+    traceless_segment_output: bool,
     timing: &mut GuestPcTraceStreamTiming,
 ) -> Result<GuestPcTraceSeededLoweredSegment, GuestPcTraceBackendError> {
     if pending.reports_elided {
@@ -5951,11 +5975,12 @@ fn lower_guest_pc_trace_replayable_pending_job(
     }
     Ok(GuestPcTraceSeededLoweredSegment {
         seed: seed.clone(),
-        lowered: lower_guest_pc_trace_seeded_pending_segment(
+        lowered: lower_guest_pc_trace_seeded_pending_segment_with_output_mode(
             layout,
             &pending,
             seed,
             expected_proof_values,
+            traceless_segment_output,
             Some(timing),
         )?,
     })
@@ -6006,6 +6031,7 @@ fn lower_guest_pc_trace_replayable_pending_segments_emit_with_timing(
 
     let pending_len = pending.len();
     let worker_count = worker_count.max(1).min(pending.len());
+    let traceless_segment_output = guest_pc_trace_traceless_segment_output_selected();
     if let Some(timing) = &mut timing {
         timing.parallel_lower_worker_count = timing.parallel_lower_worker_count.max(worker_count);
         timing.parallel_lower_dispatched_count = timing
@@ -6020,6 +6046,7 @@ fn lower_guest_pc_trace_replayable_pending_segments_emit_with_timing(
                 layout,
                 pending,
                 expected_proof_values,
+                traceless_segment_output,
                 &mut job_timing,
             )?;
             if let Some(timing) = &mut timing {
@@ -6067,6 +6094,7 @@ fn lower_guest_pc_trace_replayable_pending_segments_emit_with_timing(
                         layout,
                         pending,
                         expected_proof_values,
+                        traceless_segment_output,
                         &mut job_timing,
                     );
                     let failed = result.is_err();
@@ -6725,6 +6753,7 @@ fn lower_guest_pc_trace_seeded_pending_segments_with_timing(
 
     let worker_count = worker_count.max(1).min(pending.len());
     let mut lowered = Vec::with_capacity(pending.len());
+    let traceless_segment_output = guest_pc_trace_traceless_segment_output_selected();
     if worker_count == 1 {
         for pending in &pending {
             let seed = pending.seed.as_deref().ok_or_else(|| {
@@ -6737,11 +6766,12 @@ fn lower_guest_pc_trace_seeded_pending_segments_with_timing(
             })?;
             lowered.push(GuestPcTraceSeededLoweredSegment {
                 seed: seed.clone(),
-                lowered: lower_guest_pc_trace_seeded_pending_segment(
+                lowered: lower_guest_pc_trace_seeded_pending_segment_with_output_mode(
                     layout,
                     pending,
                     seed,
                     expected_proof_values,
+                    traceless_segment_output,
                     timing.as_deref_mut(),
                 )?,
             });
@@ -6765,11 +6795,12 @@ fn lower_guest_pc_trace_seeded_pending_segments_with_timing(
                         })?;
                         chunk_out.push(GuestPcTraceSeededLoweredSegment {
                             seed: seed.clone(),
-                            lowered: lower_guest_pc_trace_seeded_pending_segment(
+                            lowered: lower_guest_pc_trace_seeded_pending_segment_with_output_mode(
                                 layout,
                                 pending,
                                 seed,
                                 expected_proof_values,
+                                traceless_segment_output,
                                 Some(&mut chunk_timing),
                             )?,
                         });
@@ -7014,6 +7045,7 @@ fn lower_guest_pc_trace_pending_segments(
     let mut current_seed = ZiskMainSegmentSeed::new();
     let mut pending_chunks = BTreeMap::new();
     let mut pending_chunked_segments = BTreeMap::new();
+    let traceless_segment_output = guest_pc_trace_traceless_segment_output_selected();
     #[cfg(feature = "cuda")]
     let mut active_chunked_segment: Option<GuestPcTraceActiveChunkedSegment> = None;
     #[cfg(feature = "cuda")]
@@ -7034,7 +7066,7 @@ fn lower_guest_pc_trace_pending_segments(
                 let pending = *pending;
                 #[cfg(feature = "cuda")]
                 let pending = {
-                    if guest_pc_trace_less_segment_output_enabled()
+                    if traceless_segment_output
                         && !pending_chunks.contains_key(&pending.trace_instance_index)
                     {
                         if active_chunked_segment.is_some() {
@@ -7165,20 +7197,22 @@ fn lower_guest_pc_trace_pending_segments(
                 Some(timing),
             )?
         } else {
-            lower_guest_pc_trace_seeded_pending_segment(
+            lower_guest_pc_trace_seeded_pending_segment_with_output_mode(
                 layout,
                 &pending,
                 segment_seed,
                 expected_proof_values,
+                traceless_segment_output,
                 Some(timing),
             )?
         };
         #[cfg(not(feature = "cuda"))]
-        let lowered = lower_guest_pc_trace_seeded_pending_segment(
+        let lowered = lower_guest_pc_trace_seeded_pending_segment_with_output_mode(
             layout,
             &pending,
             segment_seed,
             expected_proof_values,
+            traceless_segment_output,
             Some(timing),
         )?;
         current_seed = lowered.next_seed;
@@ -7402,11 +7436,12 @@ fn lower_guest_pc_trace_parallel_pending_job_with_mode(
     }
     Ok(GuestPcTraceSeededLoweredSegment {
         seed: seed.clone(),
-        lowered: lower_guest_pc_trace_seeded_pending_segment(
+        lowered: lower_guest_pc_trace_seeded_pending_segment_with_output_mode(
             layout,
             &pending,
             seed,
             expected_proof_values,
+            lower_mode.traceless_segment_output,
             Some(timing),
         )?,
     })
@@ -11055,14 +11090,17 @@ fn build_layout_zisk_main_trace_segment_for_segment_output(
     initial_state: &ZiskMainTraceState,
     lookahead_instruction: Option<RiscvInstruction>,
     segment: ZiskMainTraceSegmentInfo,
+    traceless_segment_output: bool,
     timing: Option<&mut GuestPcTraceStreamTiming>,
 ) -> Result<Option<ZiskMainTraceSegmentWrite>, GuestPcTraceBackendError> {
     #[cfg(feature = "cuda")]
     let mut timing = timing;
+    #[cfg(not(feature = "cuda"))]
+    let _ = traceless_segment_output;
 
     #[cfg(feature = "cuda")]
     {
-        if guest_pc_trace_less_segment_output_enabled() {
+        if traceless_segment_output {
             if let Some(written) = build_layout_zisk_main_trace_segment_from_device_material(
                 layout,
                 reports,
@@ -11394,6 +11432,17 @@ fn record_zisk_main_runner_scratch_update_from_shape(
 #[cfg(feature = "cuda")]
 fn guest_pc_trace_less_segment_output_enabled() -> bool {
     env_flag_enabled("LZVM_CUDA_GUEST_PC_TRACELESS_SEGMENT_OUTPUT", true)
+}
+
+fn guest_pc_trace_traceless_segment_output_selected() -> bool {
+    #[cfg(feature = "cuda")]
+    {
+        guest_pc_trace_less_segment_output_enabled()
+    }
+    #[cfg(not(feature = "cuda"))]
+    {
+        false
+    }
 }
 
 fn guest_pc_trace_lower_detail_timing_enabled() -> bool {
