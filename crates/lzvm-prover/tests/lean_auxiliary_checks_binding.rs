@@ -1501,11 +1501,23 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             && lean_source.contains("configuredSparseSourceDebug")
             && lean_source.contains("effectiveSparseSourceDebug")
             && lean_source.contains("GuestPcTraceSparseSourceDebugDecisionMatches")
+            && compact_source_contains(
+                &lean_source,
+                "config.effectiveSparseSourceDebug = false",
+            )
             && lean_source.contains("FriRetainedStageSourceDebugConfig")
             && lean_source.contains("configuredRetainedStageSourceDebug")
             && lean_source.contains("selectedRetainedStageSource")
             && lean_source.contains("effectiveRetainedStageSourceDebug")
             && lean_source.contains("FriRetainedStageSourceDebugDecisionMatches")
+            && compact_source_contains(
+                &lean_source,
+                "config.effectiveRetainedStageSourceDebug = (config.selectedRetainedStageSource && configured)",
+            )
+            && compact_source_contains(
+                &lean_source,
+                "config.effectiveRetainedStageSourceDebug = false",
+            )
             && lean_source.contains("GuestPcTraceCudaRunConfig")
             && lean_source.contains("sparseSourceConfig")
             && lean_source.contains("selectedSparseSource")

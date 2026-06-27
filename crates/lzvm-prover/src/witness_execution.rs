@@ -3255,6 +3255,12 @@ struct WitnessTraceCudaRunConfig {
 }
 
 #[cfg(feature = "cuda")]
+struct WitnessRetainedTraceCudaRunArtifacts {
+    stage_source_devices: Vec<WitnessStageRetainedSourceDevice>,
+    guest_pc_device_descriptor_buffer: Option<WitnessRetainedDeviceBuffer>,
+}
+
+#[cfg(feature = "cuda")]
 impl WitnessTraceCudaRunConfig {
     fn from_input(input_byte_count: usize) -> Self {
         let stage_source_retention = retain_fri_stage_source_devices();
@@ -3277,6 +3283,37 @@ fn selected_trace_cuda_run_config(
 ) -> WitnessTraceCudaRunConfig {
     cached_trace_cuda_run_config
         .unwrap_or_else(|| WitnessTraceCudaRunConfig::from_input(input_byte_count))
+}
+
+#[cfg(feature = "cuda")]
+fn retained_trace_cuda_run_artifacts(
+    stage_source_device_cache: &WitnessStageSourceDeviceCache,
+    trace_cuda_run_config: WitnessTraceCudaRunConfig,
+    mut timing: Option<&mut ProveWitnessTraceTimingAccumulator>,
+) -> WitnessRetainedTraceCudaRunArtifacts {
+    let retain_stage_sources = trace_cuda_run_config.stage_source_retention;
+    let retained_stage_source_devices = if retain_stage_sources {
+        stage_source_device_cache.retained_descriptors(
+            timing.as_deref_mut(),
+            trace_cuda_run_config.stage_source_retention_debug,
+        )
+    } else {
+        Vec::new()
+    };
+    let retain_guest_pc_device_descriptor_buffer =
+        trace_cuda_run_config.descriptor_buffer_retention;
+    let guest_pc_device_descriptor_buffer = if retain_stage_sources
+        && retain_guest_pc_device_descriptor_buffer
+        && retained_stage_source_devices.len() < stage_source_device_cache.stage_count()
+    {
+        stage_source_device_cache.retained_guest_pc_device_descriptor_buffer(timing)
+    } else {
+        None
+    };
+    WitnessRetainedTraceCudaRunArtifacts {
+        stage_source_devices: retained_stage_source_devices,
+        guest_pc_device_descriptor_buffer,
+    }
 }
 
 #[cfg(feature = "cuda")]
@@ -6031,25 +6068,11 @@ fn run_prove_witness_commitments_from_trace_pending_inner(
     )?;
     let stage_commit_duration_before_root_materialization = stage_commit_started.elapsed();
 
-    let retain_stage_sources = trace_cuda_run_config.stage_source_retention;
-    let retained_stage_source_devices = if retain_stage_sources {
-        stage_source_device_cache.retained_descriptors(
-            Some(&mut *timing),
-            trace_cuda_run_config.stage_source_retention_debug,
-        )
-    } else {
-        Vec::new()
-    };
-    let retain_guest_pc_device_descriptor_buffer =
-        trace_cuda_run_config.descriptor_buffer_retention;
-    let guest_pc_device_descriptor_buffer = if retain_stage_sources
-        && retain_guest_pc_device_descriptor_buffer
-        && retained_stage_source_devices.len() < stage_source_device_cache.stage_count()
-    {
-        stage_source_device_cache.retained_guest_pc_device_descriptor_buffer(Some(&mut *timing))
-    } else {
-        None
-    };
+    let retained_artifacts = retained_trace_cuda_run_artifacts(
+        &stage_source_device_cache,
+        trace_cuda_run_config,
+        Some(&mut *timing),
+    );
     Ok(ProveWitnessTracePendingCommitments {
         identity: ProveTraceIdentity::new(unit_index, 0),
         input_byte_count,
@@ -6064,8 +6087,8 @@ fn run_prove_witness_commitments_from_trace_pending_inner(
             witness_values_committed: true,
             constraint_checker_conformant: true,
         },
-        stage_source_devices: retained_stage_source_devices,
-        guest_pc_device_descriptor_buffer,
+        stage_source_devices: retained_artifacts.stage_source_devices,
+        guest_pc_device_descriptor_buffer: retained_artifacts.guest_pc_device_descriptor_buffer,
         guest_pc_device_segment_material,
         publics: shared_inputs.publics.clone(),
         auxiliary_inputs,
@@ -6400,28 +6423,11 @@ fn run_prove_witness_commitments_from_trace_inner(
     };
 
     #[cfg(feature = "cuda")]
-    let retain_stage_sources = trace_cuda_run_config.stage_source_retention;
-    #[cfg(feature = "cuda")]
-    let retained_stage_source_devices = if retain_stage_sources {
-        stage_source_device_cache.retained_descriptors(
-            timing.as_deref_mut(),
-            trace_cuda_run_config.stage_source_retention_debug,
-        )
-    } else {
-        Vec::new()
-    };
-    #[cfg(feature = "cuda")]
-    let retain_guest_pc_device_descriptor_buffer =
-        trace_cuda_run_config.descriptor_buffer_retention;
-    #[cfg(feature = "cuda")]
-    let guest_pc_device_descriptor_buffer = if retain_stage_sources
-        && retain_guest_pc_device_descriptor_buffer
-        && retained_stage_source_devices.len() < stage_source_device_cache.stage_count()
-    {
-        stage_source_device_cache.retained_guest_pc_device_descriptor_buffer(timing)
-    } else {
-        None
-    };
+    let retained_artifacts = retained_trace_cuda_run_artifacts(
+        &stage_source_device_cache,
+        trace_cuda_run_config,
+        timing,
+    );
     Ok(ProveWitnessTraceCommitments {
         commitments,
         trace,
@@ -6433,9 +6439,9 @@ fn run_prove_witness_commitments_from_trace_inner(
             constraint_checker_conformant: true,
         },
         #[cfg(feature = "cuda")]
-        stage_source_devices: retained_stage_source_devices,
+        stage_source_devices: retained_artifacts.stage_source_devices,
         #[cfg(feature = "cuda")]
-        guest_pc_device_descriptor_buffer,
+        guest_pc_device_descriptor_buffer: retained_artifacts.guest_pc_device_descriptor_buffer,
         #[cfg(feature = "cuda")]
         guest_pc_device_segment_material,
         publics: shared_inputs.publics.clone(),
@@ -8075,9 +8081,20 @@ mod tests {
                 .trace_cuda_run_config
                 .stage_source_retention_debug
         );
+        debug_env.set("yes");
+        let disabled_debug_mode = GuestPcTraceSegmentCommitMode::from_input(1024, None);
+        assert!(
+            !disabled_debug_mode
+                .trace_cuda_run_config
+                .stage_source_retention
+        );
+        assert!(
+            !disabled_debug_mode
+                .trace_cuda_run_config
+                .stage_source_retention_debug
+        );
 
         env.set("yes");
-        debug_env.set("yes");
         let enabled_mode = GuestPcTraceSegmentCommitMode::from_input(1024, None);
         assert!(enabled_mode.trace_cuda_run_config.stage_source_retention);
         assert!(

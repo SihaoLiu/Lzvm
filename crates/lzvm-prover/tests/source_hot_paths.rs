@@ -4399,7 +4399,7 @@ fn guest_pc_trace_segment_commit_pool_uses_scoped_bounded_workers() {
             && pool_region.contains("GuestPcTraceSegmentCommitWorkerState::from_parts")
             && pool_region.contains("traceless_commitment_input")
             && pool_region.contains("cross_segment_root_materialization")
-            && pool_region.contains("descriptor_buffer_retention")
+            && pool_region.contains("trace_cuda_run_config")
             && !pool_region.contains(".descriptor_buffer_retention ="),
         "submit_segment should join the oldest saturated worker, drain pending workers on error, and spawn segment work on the scope with cached mode parts"
     );
@@ -6337,7 +6337,7 @@ fn guest_pc_descriptor_buffer_retention_defaults_to_small_inputs_only() {
     );
     assert!(
         pending_commit_body.contains("trace_cuda_run_config: Some(trace_cuda_run_config)")
-            && pending_commit_body.contains("retained_guest_pc_device_descriptor_buffer"),
+            && pending_commit_body.contains("retained_trace_cuda_run_artifacts("),
         "pending trace commitments should use the cached descriptor retention gate"
     );
 
@@ -6350,7 +6350,7 @@ fn guest_pc_descriptor_buffer_retention_defaults_to_small_inputs_only() {
         compact_source_contains(
             direct_commit_body,
             "selected_trace_cuda_run_config(cached_trace_cuda_run_config, input_byte_count)"
-        ) && direct_commit_body.contains("retained_guest_pc_device_descriptor_buffer"),
+        ) && direct_commit_body.contains("retained_trace_cuda_run_artifacts("),
         "direct trace commitments should use the descriptor retention selector"
     );
 }
@@ -6392,23 +6392,39 @@ fn guest_pc_trace_retains_stage_sources_before_descriptor_buffers() {
         "source retention should know whether every stage view was retained"
     );
 
+    let pending_commit_body = function_body(
+        &execution_source,
+        "fn run_prove_witness_commitments_from_trace_pending_inner",
+        "fn run_prove_witness_commitments_from_trace_inner",
+    );
     let commit_body = function_body(
         &execution_source,
         "fn run_prove_witness_commitments_from_trace_inner",
         "fn retain_fri_stage_source_devices",
     );
     assert!(
-        commit_body.contains("trace_cuda_run_config.stage_source_retention"),
+        pending_commit_body.contains("retained_trace_cuda_run_artifacts(")
+            && commit_body.contains("retained_trace_cuda_run_artifacts("),
+        "trace commitment paths should share retained CUDA artifact selection"
+    );
+
+    let retention_helper_body = function_body(
+        &execution_source,
+        "fn retained_trace_cuda_run_artifacts",
+        "fn validate_trace_shape",
+    );
+    assert!(
+        retention_helper_body.contains("trace_cuda_run_config.stage_source_retention"),
         "trace commitments should use a cached stage source retention selector"
     );
     assert!(
-        commit_body.contains("trace_cuda_run_config.stage_source_retention_debug"),
+        retention_helper_body.contains("trace_cuda_run_config.stage_source_retention_debug"),
         "trace commitments should use a cached stage source retention debug selector"
     );
-    let retained_position = commit_body
+    let retained_position = retention_helper_body
         .find("let retained_stage_source_devices = if retain_stage_sources")
         .expect("trace output should retain stage source views explicitly");
-    let descriptor_position = commit_body
+    let descriptor_position = retention_helper_body
         .find("let guest_pc_device_descriptor_buffer = if retain_stage_sources")
         .expect("trace output should retain descriptor buffers explicitly");
     assert!(
@@ -6416,7 +6432,7 @@ fn guest_pc_trace_retains_stage_sources_before_descriptor_buffers() {
         "source views should claim retention budget before fallback descriptor buffers"
     );
     assert!(
-        commit_body.contains(
+        retention_helper_body.contains(
             "retained_stage_source_devices.len() < stage_source_device_cache.stage_count()"
         ),
         "descriptor buffers should only be retained when some stage source view is missing"
