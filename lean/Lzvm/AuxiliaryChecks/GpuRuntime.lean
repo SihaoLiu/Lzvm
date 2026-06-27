@@ -954,6 +954,39 @@ theorem guest_pc_trace_traceless_commitment_input_checked_acceptance_projects_de
       proof
       checked.right
 
+theorem guest_pc_trace_traceless_commitment_input_decision_default_enabled
+    (config : GuestPcTraceTracelessCommitmentInputConfig) :
+    config.configuredTracelessCommitmentInput = none ->
+      GuestPcTraceTracelessCommitmentInputDecisionMatches config ->
+        config.effectiveTracelessCommitmentInput = true := by
+  intro noConfig decision
+  simpa [GuestPcTraceTracelessCommitmentInputDecisionMatches, noConfig] using decision
+
+theorem guest_pc_trace_traceless_commitment_input_checked_acceptance_projects_default_enabled
+    {system : VerifierModel}
+    (validation : GuestPcTraceTracelessCommitmentInputValidation)
+    (config : GuestPcTraceTracelessCommitmentInputConfig) :
+    config.configuredTracelessCommitmentInput = none ->
+      forall publicInput proof,
+        GuestPcTraceTracelessCommitmentInputCheckedAcceptance
+            system
+            validation
+            config
+            publicInput
+            proof ->
+          config.effectiveTracelessCommitmentInput = true := by
+  intro noConfig publicInput proof checked
+  exact
+    guest_pc_trace_traceless_commitment_input_decision_default_enabled
+      config
+      noConfig
+      (guest_pc_trace_traceless_commitment_input_checked_acceptance_projects_decision
+        validation
+        config
+        publicInput
+        proof
+        checked)
+
 theorem guest_pc_trace_traceless_commitment_input_checked_acceptance_sound
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
@@ -1019,6 +1052,39 @@ theorem guest_pc_trace_traceless_segment_output_checked_acceptance_projects_deci
       publicInput
       proof
       checked.right
+
+theorem guest_pc_trace_traceless_segment_output_decision_default_enabled
+    (config : GuestPcTraceTracelessSegmentOutputConfig) :
+    config.configuredTracelessSegmentOutput = none ->
+      GuestPcTraceTracelessSegmentOutputDecisionMatches config ->
+        config.effectiveTracelessSegmentOutput = true := by
+  intro noConfig decision
+  simpa [GuestPcTraceTracelessSegmentOutputDecisionMatches, noConfig] using decision
+
+theorem guest_pc_trace_traceless_segment_output_checked_acceptance_projects_default_enabled
+    {system : VerifierModel}
+    (validation : GuestPcTraceTracelessSegmentOutputValidation)
+    (config : GuestPcTraceTracelessSegmentOutputConfig) :
+    config.configuredTracelessSegmentOutput = none ->
+      forall publicInput proof,
+        GuestPcTraceTracelessSegmentOutputCheckedAcceptance
+            system
+            validation
+            config
+            publicInput
+            proof ->
+          config.effectiveTracelessSegmentOutput = true := by
+  intro noConfig publicInput proof checked
+  exact
+    guest_pc_trace_traceless_segment_output_decision_default_enabled
+      config
+      noConfig
+      (guest_pc_trace_traceless_segment_output_checked_acceptance_projects_decision
+        validation
+        config
+        publicInput
+        proof
+        checked)
 
 theorem guest_pc_trace_traceless_segment_output_checked_acceptance_sound
     {system : VerifierModel}

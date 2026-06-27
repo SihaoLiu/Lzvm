@@ -1188,6 +1188,9 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             && lean_source
                 .contains("guest_pc_trace_traceless_commitment_input_checked_acceptance_sound")
             && lean_source.contains(
+                "guest_pc_trace_traceless_commitment_input_checked_acceptance_projects_default_enabled"
+            )
+            && lean_source.contains(
                 "guest_pc_trace_traceless_commitment_input_checked_acceptance_verifier_core_contract"
             )
             && witness_execution_source
@@ -1206,6 +1209,9 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             && lean_source.contains("tracelessSegmentOutputConfigImpliesDecisionMatches")
             && lean_source.contains("guest_pc_trace_traceless_segment_output_checked_acceptance_sound")
             && lean_source.contains(
+                "guest_pc_trace_traceless_segment_output_checked_acceptance_projects_default_enabled"
+            )
+            && lean_source.contains(
                 "guest_pc_trace_traceless_segment_output_checked_acceptance_verifier_core_contract"
             )
             && guest_backend_source.contains("fn guest_pc_trace_less_segment_output_enabled")
@@ -1215,6 +1221,23 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         ),
         "Lean auxiliary checks should bind traceless guest trace segment output selection to the Rust runtime guard"
     );
+    for (theorem_name, projector) in [
+        (
+            "guest_pc_trace_traceless_commitment_input_checked_acceptance_projects_default_enabled",
+            "guest_pc_trace_traceless_commitment_input_checked_acceptance_projects_decision",
+        ),
+        (
+            "guest_pc_trace_traceless_segment_output_checked_acceptance_projects_default_enabled",
+            "guest_pc_trace_traceless_segment_output_checked_acceptance_projects_decision",
+        ),
+    ] {
+        lean_binding::assert_theorem_body_contains(&gpu_runtime_source, theorem_name, &[projector]);
+        lean_binding::assert_theorem_body_omits(
+            &gpu_runtime_source,
+            theorem_name,
+            &["checked_acceptance_sound_witness"],
+        );
+    }
     assert!(
         lean_source.contains("GuestPcTraceDeviceTraceSourceConfig")
             && lean_source.contains("configuredDeviceTraceSourceEnabled")
