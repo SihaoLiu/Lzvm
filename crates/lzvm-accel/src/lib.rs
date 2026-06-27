@@ -68,6 +68,8 @@ pub enum AccelError {
     Cuda { code: i32 },
 }
 
+const CUDA_ERROR_OUT_OF_MEMORY: i32 = 2;
+
 impl fmt::Display for AccelError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -78,6 +80,9 @@ impl fmt::Display for AccelError {
                 write!(f, "invalid field domain: bits {bits}, len {len}")
             }
             Self::CudaUnavailable => write!(f, "cuda backend is not enabled"),
+            Self::Cuda { code } if *code == CUDA_ERROR_OUT_OF_MEMORY => {
+                write!(f, "cuda backend out of memory: error code {code}")
+            }
             Self::Cuda { code } if *code < 0 => write!(f, "invalid cuda input: {code}"),
             Self::Cuda { code } => write!(f, "cuda backend error: {code}"),
         }
@@ -4699,6 +4704,27 @@ pub fn cuda_keccak256_fixed(
     _message_len: usize,
 ) -> Result<Vec<[u8; 32]>, AccelError> {
     Err(AccelError::CudaUnavailable)
+}
+
+#[cfg(test)]
+mod error_tests {
+    use super::AccelError;
+
+    #[test]
+    fn cuda_error_code_two_reports_out_of_memory() {
+        assert_eq!(
+            AccelError::Cuda { code: 2 }.to_string(),
+            "cuda backend out of memory: error code 2"
+        );
+    }
+
+    #[test]
+    fn cuda_non_memory_error_keeps_raw_code() {
+        assert_eq!(
+            AccelError::Cuda { code: 700 }.to_string(),
+            "cuda backend error: 700"
+        );
+    }
 }
 
 #[cfg(all(test, feature = "cuda"))]
