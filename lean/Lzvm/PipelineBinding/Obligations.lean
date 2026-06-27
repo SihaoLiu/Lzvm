@@ -1689,6 +1689,12 @@ theorem runtime_pipeline_binding_checked_acceptance_full_soundness_with_fri_pars
             boundary
             artifact
             publicInput
+            proof
+          /\ RuntimeFriFoldTraceIdentityContract
+            system
+            validation.queryPlanBindingValidation.openingValidation
+            artifact
+            publicInput
             proof := by
   intro artifact publicInput proof requiresExternalSource accepted
   have fullContract :=
@@ -1708,6 +1714,13 @@ theorem runtime_pipeline_binding_checked_acceptance_full_soundness_with_fri_pars
       publicInput
       proof
       accepted
+  have foldTraceIdentityContract :=
+    runtime_pipeline_binding_checked_acceptance_fri_fold_trace_identity_contract
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
   rcases fullContract with
     ⟨pipelineEvidence,
       artifactObligations,
@@ -1719,7 +1732,8 @@ theorem runtime_pipeline_binding_checked_acceptance_full_soundness_with_fri_pars
       (And.intro artifactObligations
         (And.intro coreContract
           (And.intro executionObligations
-            (And.intro soundWitness parserContract))))
+            (And.intro soundWitness
+              (And.intro parserContract foldTraceIdentityContract)))))
 
 
 end Lzvm

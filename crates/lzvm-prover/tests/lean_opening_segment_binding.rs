@@ -530,6 +530,7 @@ fn lean_opening_segment_binding_exports_core_contract_projection() {
             "RuntimeVerifierCoreContract system publicInput proof",
             "SoundWitness system publicInput proof",
             "RuntimeFriOpeningSegmentParserContract",
+            "RuntimeFriFoldTraceIdentityContract",
         ],
     );
     lean_binding::assert_theorem_body_contains(
@@ -538,6 +539,7 @@ fn lean_opening_segment_binding_exports_core_contract_projection() {
         &[
             "runtime_opening_segment_binding_checked_acceptance_full_soundness_contract",
             "runtime_opening_segment_binding_checked_acceptance_fri_parser_contract",
+            "runtime_opening_segment_binding_checked_acceptance_fri_fold_trace_identity_contract",
         ],
     );
     lean_binding::assert_theorem_body_omits(

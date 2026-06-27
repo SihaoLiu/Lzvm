@@ -1447,6 +1447,38 @@ theorem runtime_pipeline_binding_checked_acceptance_fri_parser_contract
       proof
       openingSegmentAccepted
 
+theorem runtime_pipeline_binding_checked_acceptance_fri_fold_trace_identity_contract
+    {system : VerifierModel}
+    (validation : RuntimePipelineBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimePipelineBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeFriFoldTraceIdentityContract
+          system
+          validation.queryPlanBindingValidation.openingValidation
+          artifact
+          publicInput
+          proof := by
+  intro artifact publicInput proof accepted
+  have openingSegmentAccepted :=
+    runtime_pipeline_binding_checked_acceptance_opening_segment_checked_acceptance
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  exact
+    runtime_opening_segment_binding_checked_acceptance_fri_fold_trace_identity_contract
+      validation.queryPlanBindingValidation.openingValidation
+      artifact
+      publicInput
+      proof
+      openingSegmentAccepted
+
 theorem runtime_pipeline_binding_checked_acceptance_verifier_accepts
     {system : VerifierModel}
     (validation : RuntimePipelineBindingValidation system) :
