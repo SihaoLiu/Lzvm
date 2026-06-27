@@ -816,9 +816,11 @@ fn verifier_query_unit_identities(
 ) -> Result<BTreeSet<(u32, u32)>, VerifierFriQueryOutputSegmentsError> {
     let mut identities = BTreeSet::new();
     for unit in units {
-        usize::try_from(unit.unit_index)
+        let unit_index = usize::try_from(unit.unit_index)
             .map_err(|_| VerifierFriQueryOutputSegmentsError::UnitIndexOverflow)?;
-        identities.insert((unit.unit_index, unit.trace_instance_index));
+        if !identities.insert((unit.unit_index, unit.trace_instance_index)) {
+            return Err(VerifierFriQueryOutputSegmentsError::UnitMismatch { unit_index });
+        }
     }
     Ok(identities)
 }
@@ -828,23 +830,50 @@ fn validate_verifier_query_unit_identities_match_query_units(
     opening_units: &[PcsFriOpeningUnitSegment],
     transcript_challenges: &[PcsTranscriptUnitChallenges],
 ) -> Result<(), VerifierFriQueryOutputSegmentsError> {
+    let mut opening_identities = BTreeSet::new();
     for unit in opening_units {
         let identity = (unit.unit_index, unit.trace_instance_index);
-        if !query_identities.contains(&identity) {
-            let unit_index = usize::try_from(unit.unit_index)
-                .map_err(|_| VerifierFriQueryOutputSegmentsError::UnitIndexOverflow)?;
+        let unit_index = usize::try_from(unit.unit_index)
+            .map_err(|_| VerifierFriQueryOutputSegmentsError::UnitIndexOverflow)?;
+        if !query_identities.contains(&identity) || !opening_identities.insert(identity) {
             return Err(VerifierFriQueryOutputSegmentsError::UnitMismatch { unit_index });
         }
     }
+    if opening_identities.len() != query_identities.len() {
+        return Err(VerifierFriQueryOutputSegmentsError::UnitMismatch {
+            unit_index: missing_query_identity_index(query_identities, &opening_identities)?,
+        });
+    }
+
+    let mut challenge_identities = BTreeSet::new();
     for unit in transcript_challenges {
         let identity = (unit.unit_index, unit.trace_instance_index);
-        if !query_identities.contains(&identity) {
-            let unit_index = usize::try_from(unit.unit_index)
-                .map_err(|_| VerifierFriQueryOutputSegmentsError::UnitIndexOverflow)?;
+        let unit_index = usize::try_from(unit.unit_index)
+            .map_err(|_| VerifierFriQueryOutputSegmentsError::UnitIndexOverflow)?;
+        if !query_identities.contains(&identity) || !challenge_identities.insert(identity) {
             return Err(VerifierFriQueryOutputSegmentsError::UnitMismatch { unit_index });
         }
     }
+    if challenge_identities.len() != query_identities.len() {
+        return Err(VerifierFriQueryOutputSegmentsError::UnitMismatch {
+            unit_index: missing_query_identity_index(query_identities, &challenge_identities)?,
+        });
+    }
     Ok(())
+}
+
+fn missing_query_identity_index(
+    query_identities: &BTreeSet<(u32, u32)>,
+    supplied_identities: &BTreeSet<(u32, u32)>,
+) -> Result<usize, VerifierFriQueryOutputSegmentsError> {
+    query_identities
+        .iter()
+        .find(|identity| !supplied_identities.contains(identity))
+        .map(|(unit_index, _)| *unit_index)
+        .map(usize::try_from)
+        .transpose()
+        .map_err(|_| VerifierFriQueryOutputSegmentsError::UnitIndexOverflow)?
+        .ok_or(VerifierFriQueryOutputSegmentsError::UnitMismatch { unit_index: 0 })
 }
 
 fn fri_opening_units_by_identity(
