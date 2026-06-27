@@ -1003,6 +1003,44 @@ structure FriRetainedStageSourceValidation where
       retainedStageSourceConfigAccepted config publicInput proof ->
         FriRetainedStageSourceDecisionMatches config
 
+structure GuestPcTraceCudaRunConfig where
+  sparseSourceConfig : GuestPcTraceSparseSourceConfig
+  selectedSparseSource : Bool
+  terminalSparseSourceConfig : GuestPcTraceTerminalSparseSourceConfig
+  selectedTerminalSparseSource : Bool
+  retainedStageSourceConfig : FriRetainedStageSourceConfig
+  selectedRetainedStageSource : Bool
+  descriptorBufferRetentionConfig :
+    GuestPcTraceDescriptorBufferRetentionConfig
+  selectedDescriptorBufferRetention : Bool
+deriving DecidableEq, Repr
+
+def GuestPcTraceCudaRunDecisionMatches
+    (config : GuestPcTraceCudaRunConfig) : Prop :=
+  GuestPcTraceSparseSourceDecisionMatches config.sparseSourceConfig
+    /\ config.selectedSparseSource =
+      config.sparseSourceConfig.effectiveSparseSourceSelected
+    /\ GuestPcTraceTerminalSparseSourceDecisionMatches
+      config.terminalSparseSourceConfig
+    /\ config.selectedTerminalSparseSource =
+      config.terminalSparseSourceConfig.effectiveTerminalSparseSourceSelected
+    /\ FriRetainedStageSourceDecisionMatches
+      config.retainedStageSourceConfig
+    /\ config.selectedRetainedStageSource =
+      config.retainedStageSourceConfig.effectiveRetainedStageSourceEnabled
+    /\ GuestPcTraceDescriptorBufferRetentionDecisionMatches
+      config.descriptorBufferRetentionConfig
+    /\ config.selectedDescriptorBufferRetention =
+      config.descriptorBufferRetentionConfig.effectiveDescriptorBufferRetention
+
+structure GuestPcTraceCudaRunValidation where
+  traceCudaRunConfigAccepted :
+    GuestPcTraceCudaRunConfig -> PublicInput -> Proof -> Prop
+  traceCudaRunConfigImpliesDecisionMatches :
+    forall config publicInput proof,
+      traceCudaRunConfigAccepted config publicInput proof ->
+        GuestPcTraceCudaRunDecisionMatches config
+
 structure GpuRetainedLeafDigestLimitConfig where
   defaultLeafDigestLimitBytes : Nat
   configuredLeafDigestLimitBytes : Option Nat
@@ -1213,6 +1251,15 @@ def FriRetainedStageSourceCheckedAcceptance
     (proof : Proof) : Prop :=
   system.accepts publicInput proof
     /\ validation.retainedStageSourceConfigAccepted config publicInput proof
+
+def GuestPcTraceCudaRunCheckedAcceptance
+    (system : VerifierModel)
+    (validation : GuestPcTraceCudaRunValidation)
+    (config : GuestPcTraceCudaRunConfig)
+    (publicInput : PublicInput)
+    (proof : Proof) : Prop :=
+  system.accepts publicInput proof
+    /\ validation.traceCudaRunConfigAccepted config publicInput proof
 
 def GpuRetainedLeafDigestLimitCheckedAcceptance
     (system : VerifierModel)

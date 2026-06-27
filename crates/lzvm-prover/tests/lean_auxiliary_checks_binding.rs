@@ -883,6 +883,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         "guest_pc_trace_sparse_source_checked_acceptance_sound",
         "guest_pc_trace_terminal_sparse_source_checked_acceptance_sound",
         "fri_retained_stage_source_checked_acceptance_sound",
+        "guest_pc_trace_cuda_run_checked_acceptance_sound",
     ] {
         let theorem_body = lean_binding::theorem_body(&gpu_runtime_source, theorem_name);
         assert!(
@@ -1494,6 +1495,39 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             && witness_execution_source.contains("stage_source_device_cache.retained_descriptors")
             && witness_execution_source.contains("Vec::new()"),
         "Lean auxiliary checks should bind retained stage source selection to the Rust runtime guard"
+    );
+    assert!(
+        lean_source.contains("GuestPcTraceCudaRunConfig")
+            && lean_source.contains("sparseSourceConfig")
+            && lean_source.contains("selectedSparseSource")
+            && lean_source.contains("terminalSparseSourceConfig")
+            && lean_source.contains("selectedTerminalSparseSource")
+            && lean_source.contains("retainedStageSourceConfig")
+            && lean_source.contains("selectedRetainedStageSource")
+            && lean_source.contains("descriptorBufferRetentionConfig")
+            && lean_source.contains("selectedDescriptorBufferRetention")
+            && lean_source.contains("GuestPcTraceCudaRunDecisionMatches")
+            && lean_source.contains("traceCudaRunConfigAccepted")
+            && lean_source.contains("traceCudaRunConfigImpliesDecisionMatches")
+            && lean_source.contains("GuestPcTraceCudaRunCheckedAcceptance")
+            && lean_source.contains("guest_pc_trace_cuda_run_checked_acceptance_sound")
+            && lean_source
+                .contains("guest_pc_trace_cuda_run_checked_acceptance_verifier_core_contract")
+            && witness_execution_source.contains("struct WitnessTraceCudaRunConfig")
+            && witness_execution_source.contains("selected_trace_cuda_run_config")
+            && witness_execution_source.contains(
+                "trace_cuda_run_config: Option<WitnessTraceCudaRunConfig>",
+            )
+            && compact_source_contains(
+                &witness_execution_source,
+                "trace_cuda_run_config: Some(trace_cuda_run_config)",
+            )
+            && witness_execution_source
+                .contains("stage_source_upload: WitnessStageSourceUploadConfig")
+            && witness_execution_source.contains("stage_source_retention: bool")
+            && witness_execution_source.contains("stage_source_retention_debug: bool")
+            && witness_execution_source.contains("descriptor_buffer_retention: bool"),
+        "Lean auxiliary checks should bind the grouped CUDA trace runtime config to the Rust runtime guard"
     );
     assert!(
         lean_source.contains("GpuRetainedDeviceCacheBudget")
@@ -3404,6 +3438,9 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             ),
             "guest_pc_trace_commit_mode_checked_acceptance_sound",
             "guest_pc_trace_commit_mode_checked_acceptance_verifier_core_contract",
+            "guest_pc_trace_cuda_run_checked_acceptance_projects_decision",
+            "guest_pc_trace_cuda_run_checked_acceptance_sound",
+            "guest_pc_trace_cuda_run_checked_acceptance_verifier_core_contract",
             "gpu_retained_leaf_digest_limit_checked_acceptance_projects_decision",
             "gpu_retained_leaf_digest_limit_checked_acceptance_sound",
             "gpu_retained_leaf_digest_limit_checked_acceptance_verifier_core_contract",
@@ -3524,6 +3561,19 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         "guest_pc_trace_segment_queue_checked_acceptance_verifier_core_contract",
         &[
             "guest_pc_trace_segment_queue_checked_acceptance_sound",
+            "sound_witness_implies_verifier_core_contract",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &gpu_runtime_source,
+        "guest_pc_trace_cuda_run_checked_acceptance_verifier_core_contract",
+        &["checked_acceptance_verifier_core_contract"],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &gpu_runtime_source,
+        "guest_pc_trace_cuda_run_checked_acceptance_verifier_core_contract",
+        &[
+            "guest_pc_trace_cuda_run_checked_acceptance_sound",
             "sound_witness_implies_verifier_core_contract",
         ],
     );

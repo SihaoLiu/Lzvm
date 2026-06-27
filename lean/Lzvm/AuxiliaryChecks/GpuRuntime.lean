@@ -1754,6 +1754,72 @@ theorem fri_retained_stage_source_checked_acceptance_verifier_core_contract
       proof
       checked
 
+theorem guest_pc_trace_cuda_run_checked_acceptance_projects_decision
+    {system : VerifierModel}
+    (validation : GuestPcTraceCudaRunValidation)
+    (config : GuestPcTraceCudaRunConfig) :
+    forall publicInput proof,
+      GuestPcTraceCudaRunCheckedAcceptance
+          system
+          validation
+          config
+          publicInput
+          proof ->
+        GuestPcTraceCudaRunDecisionMatches config := by
+  intro publicInput proof checked
+  exact
+    validation.traceCudaRunConfigImpliesDecisionMatches
+      config
+      publicInput
+      proof
+      checked.right
+
+theorem guest_pc_trace_cuda_run_checked_acceptance_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : GuestPcTraceCudaRunValidation)
+    (config : GuestPcTraceCudaRunConfig) :
+    forall publicInput proof,
+      GuestPcTraceCudaRunCheckedAcceptance
+          system
+          validation
+          config
+          publicInput
+          proof ->
+        GuestPcTraceCudaRunDecisionMatches config
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof checked
+  exact
+    And.intro
+      (guest_pc_trace_cuda_run_checked_acceptance_projects_decision
+        validation
+        config
+        publicInput
+        proof
+        checked)
+      (checked_acceptance_sound_witness assumptions publicInput proof checked)
+
+theorem guest_pc_trace_cuda_run_checked_acceptance_verifier_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : GuestPcTraceCudaRunValidation)
+    (config : GuestPcTraceCudaRunConfig) :
+    forall publicInput proof,
+      GuestPcTraceCudaRunCheckedAcceptance
+          system
+          validation
+          config
+          publicInput
+          proof ->
+        RuntimeVerifierCoreContract system publicInput proof := by
+  intro publicInput proof checked
+  exact
+    checked_acceptance_verifier_core_contract
+      assumptions
+      publicInput
+      proof
+      checked
+
 theorem gpu_retained_leaf_digest_limit_checked_acceptance_projects_decision
     {system : VerifierModel}
     (validation : GpuRetainedLeafDigestLimitValidation)
