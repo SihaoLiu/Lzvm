@@ -479,6 +479,11 @@ fn proof_profile_can_require_proof_timing_summary_without_nsys_export() {
             "print('timing_finish_witness_opening_row_dedup_input_rows=0'); ",
             "print('timing_finish_witness_opening_row_dedup_unique_rows=0'); ",
             "print('timing_finish_witness_opening_row_dedup_elided_rows=0'); ",
+            "print('timing_finish_fri_opening_ms=10'); ",
+            "print('timing_finish_fri_opening_unit_build_ms=8'); ",
+            "print('timing_finish_fri_opening_layer_tree_ms=2'); ",
+            "print('timing_finish_fri_opening_query_ms=3'); ",
+            "print('timing_finish_fri_opening_fold_ms=1'); ",
             "print('timing_finish_fri_opening_unit_count=1'); ",
             "print('timing_finish_fri_opening_layer_count=2'); ",
             "print('timing_finish_fri_opening_query_count=3')"

@@ -26,6 +26,11 @@ TIMING_SUMMARY_REQUIRED_KEYS = [
     "timing_finish_witness_opening_row_dedup_input_rows",
     "timing_finish_witness_opening_row_dedup_unique_rows",
     "timing_finish_witness_opening_row_dedup_elided_rows",
+    "timing_finish_fri_opening_ms",
+    "timing_finish_fri_opening_unit_build_ms",
+    "timing_finish_fri_opening_layer_tree_ms",
+    "timing_finish_fri_opening_query_ms",
+    "timing_finish_fri_opening_fold_ms",
     "timing_finish_fri_opening_unit_count",
     "timing_finish_fri_opening_layer_count",
     "timing_finish_fri_opening_query_count",
@@ -1175,6 +1180,11 @@ def self_test() -> None:
                     "print('timing_finish_witness_opening_row_dedup_input_rows=0'); "
                     "print('timing_finish_witness_opening_row_dedup_unique_rows=0'); "
                     "print('timing_finish_witness_opening_row_dedup_elided_rows=0'); "
+                    "print('timing_finish_fri_opening_ms=10'); "
+                    "print('timing_finish_fri_opening_unit_build_ms=8'); "
+                    "print('timing_finish_fri_opening_layer_tree_ms=2'); "
+                    "print('timing_finish_fri_opening_query_ms=3'); "
+                    "print('timing_finish_fri_opening_fold_ms=1'); "
                     "print('timing_finish_fri_opening_unit_count=1'); "
                     "print('timing_finish_fri_opening_layer_count=2'); "
                     "print('timing_finish_fri_opening_query_count=3')"
@@ -1349,6 +1359,11 @@ def self_test() -> None:
                 "print('timing_finish_witness_opening_row_dedup_input_rows=0'); "
                 "print('timing_finish_witness_opening_row_dedup_unique_rows=0'); "
                 "print('timing_finish_witness_opening_row_dedup_elided_rows=0'); "
+                "print('timing_finish_fri_opening_ms=10'); "
+                "print('timing_finish_fri_opening_unit_build_ms=8'); "
+                "print('timing_finish_fri_opening_layer_tree_ms=2'); "
+                "print('timing_finish_fri_opening_query_ms=3'); "
+                "print('timing_finish_fri_opening_fold_ms=1'); "
                 "print('timing_finish_fri_opening_unit_count=1'); "
                 "print('timing_finish_fri_opening_layer_count=2'); "
                 "print('timing_finish_fri_opening_query_count=3')"

@@ -799,10 +799,6 @@ HEADER = (
     "opening_queries,opening_max_queries_per_unit,opening_stage_count,"
     "fri_opening_ms,fri_opening_unit_build_ms,fri_opening_layer_tree_ms,"
     "fri_opening_query_ms,fri_opening_fold_ms,"
-    "fri_opening_unit_build_pct,fri_opening_layer_tree_pct,"
-    "fri_opening_query_pct,fri_opening_fold_pct,"
-    "fri_opening_unattributed_ms,fri_opening_unattributed_pct,"
-    "fri_opening_phase_hint,"
     "fri_opening_units,fri_opening_layers,fri_opening_queries,"
     "fri_layers_per_unit,fri_queries_per_unit,"
     "opening_source_shape_hint,"
@@ -976,7 +972,12 @@ HEADER = (
     "trace_report_descriptor_ns_per_row,"
     "external_op_runs,external_op_avg_run,external_op_max_run,"
     "copy_runs,copy_avg_run,copy_max_run,trace_shape_run_hint,"
-    "trace_pipeline_action_hint,performance_focus_hint,trace_shape_profile_hint"
+    "trace_pipeline_action_hint,performance_focus_hint,trace_shape_profile_hint,"
+    "fri_opening_unit_build_scope_pct,"
+    "fri_opening_layer_tree_nested_pct,fri_opening_query_nested_pct,"
+    "fri_opening_fold_nested_pct,fri_opening_known_nested_ms,"
+    "fri_opening_known_nested_pct,fri_opening_unit_build_residual_ms,"
+    "fri_opening_unit_build_residual_pct,fri_opening_scope_hint"
 )
 AGGREGATE_HEADER = (
     "aggregate,total_count,valid_total_count,total_min_ms,total_mean_ms,"
@@ -2942,35 +2943,42 @@ def opening_source_shape_hint(
     return f"{query_shape}_with_{source_shape}"
 
 
-def fri_opening_phase_action_hint(
+def fri_opening_scope_action_hint(
     total_ms: int,
     unit_build_ms: int,
     layer_tree_ms: int,
     query_ms: int,
     fold_ms: int,
+    duration_breakdown_present: bool,
+    unit_count: int,
 ) -> str:
+    if unit_count > 0 and not duration_breakdown_present:
+        return "fri_opening_duration_breakdown_missing"
     if total_ms <= 0:
         return "none"
-    unattributed_ms = max(
-        total_ms - unit_build_ms - layer_tree_ms - query_ms - fold_ms,
-        0,
-    )
-    phase, phase_ms = max(
+    known_nested_ms = layer_tree_ms + query_ms + fold_ms
+    unit_build_residual_ms = max(unit_build_ms - known_nested_ms, 0)
+    nested_name, nested_ms = max(
         [
-            ("unit_build", unit_build_ms),
             ("layer_tree", layer_tree_ms),
             ("query", query_ms),
             ("fold", fold_ms),
-            ("unattributed", unattributed_ms),
         ],
         key=lambda item: item[1],
     )
-    if phase_ms <= 0:
+
+    residual_pct = unit_build_residual_ms * 100.0 / total_ms
+    nested_pct = nested_ms * 100.0 / total_ms
+    unit_scope_pct = unit_build_ms * 100.0 / total_ms
+    if residual_pct >= 30.0 and residual_pct >= nested_pct:
+        return "profile_fri_opening_unit_build_residual"
+    if nested_ms > 0 and nested_pct >= 30.0:
+        return f"profile_fri_opening_nested_{nested_name}"
+    if unit_scope_pct >= 50.0:
+        return "fri_opening_unit_build_scope_dominant"
+    if unit_build_ms <= 0 and known_nested_ms <= 0:
         return "none"
-    phase_pct = phase_ms * 100.0 / total_ms
-    if phase_pct < 30.0:
-        return "fri_opening_balanced"
-    return f"profile_fri_opening_{phase}"
+    return "fri_opening_balanced"
 
 
 def opening_source_rebuild_hint(
@@ -4682,6 +4690,16 @@ def summarize_profile_values(
     fri_opening_layer_tree_ms = values.get(FRI_OPENING_LAYER_TREE_MS_KEY, 0)
     fri_opening_query_ms = values.get(FRI_OPENING_QUERY_MS_KEY, 0)
     fri_opening_fold_ms = values.get(FRI_OPENING_FOLD_MS_KEY, 0)
+    fri_opening_duration_breakdown_present = all(
+        key in values
+        for key in (
+            FRI_OPENING_MS_KEY,
+            FRI_OPENING_UNIT_BUILD_MS_KEY,
+            FRI_OPENING_LAYER_TREE_MS_KEY,
+            FRI_OPENING_QUERY_MS_KEY,
+            FRI_OPENING_FOLD_MS_KEY,
+        )
+    )
     fri_opening_units = values.get(FRI_OPENING_UNIT_COUNT_KEY, 0)
     fri_opening_layers = values.get(FRI_OPENING_LAYER_COUNT_KEY, 0)
     fri_opening_queries = values.get(FRI_OPENING_QUERY_COUNT_KEY, 0)
@@ -4691,41 +4709,47 @@ def summarize_profile_values(
     fri_queries_per_unit = (
         fri_opening_queries / fri_opening_units if fri_opening_units else 0.0
     )
-    fri_opening_unit_build_pct = (
+    fri_opening_unit_build_scope_pct = (
         fri_opening_unit_build_ms * 100.0 / fri_opening_ms
         if fri_opening_ms
         else 0.0
     )
-    fri_opening_layer_tree_pct = (
+    fri_opening_layer_tree_nested_pct = (
         fri_opening_layer_tree_ms * 100.0 / fri_opening_ms
         if fri_opening_ms
         else 0.0
     )
-    fri_opening_query_pct = (
+    fri_opening_query_nested_pct = (
         fri_opening_query_ms * 100.0 / fri_opening_ms if fri_opening_ms else 0.0
     )
-    fri_opening_fold_pct = (
+    fri_opening_fold_nested_pct = (
         fri_opening_fold_ms * 100.0 / fri_opening_ms if fri_opening_ms else 0.0
     )
-    fri_opening_unattributed_ms = max(
-        fri_opening_ms
-        - fri_opening_unit_build_ms
-        - fri_opening_layer_tree_ms
-        - fri_opening_query_ms
-        - fri_opening_fold_ms,
-        0,
+    fri_opening_known_nested_ms = (
+        fri_opening_layer_tree_ms + fri_opening_query_ms + fri_opening_fold_ms
     )
-    fri_opening_unattributed_pct = (
-        fri_opening_unattributed_ms * 100.0 / fri_opening_ms
+    fri_opening_known_nested_pct = (
+        fri_opening_known_nested_ms * 100.0 / fri_opening_ms
         if fri_opening_ms
         else 0.0
     )
-    fri_opening_phase_hint = fri_opening_phase_action_hint(
+    fri_opening_unit_build_residual_ms = max(
+        fri_opening_unit_build_ms - fri_opening_known_nested_ms,
+        0,
+    )
+    fri_opening_unit_build_residual_pct = (
+        fri_opening_unit_build_residual_ms * 100.0 / fri_opening_ms
+        if fri_opening_ms
+        else 0.0
+    )
+    fri_opening_scope_hint = fri_opening_scope_action_hint(
         fri_opening_ms,
         fri_opening_unit_build_ms,
         fri_opening_layer_tree_ms,
         fri_opening_query_ms,
         fri_opening_fold_ms,
+        fri_opening_duration_breakdown_present,
+        fri_opening_units,
     )
     opening_retained_source_count = values.get(OPENING_RETAINED_SOURCE_COUNT_KEY, 0)
     opening_external_source_count = values.get(OPENING_EXTERNAL_SOURCE_COUNT_KEY, 0)
@@ -5312,10 +5336,6 @@ def summarize_profile_values(
         f"{opening_queries},{opening_max_queries_per_unit},{opening_stage_count},"
         f"{fri_opening_ms},{fri_opening_unit_build_ms},{fri_opening_layer_tree_ms},"
         f"{fri_opening_query_ms},{fri_opening_fold_ms},"
-        f"{fri_opening_unit_build_pct:.3f},{fri_opening_layer_tree_pct:.3f},"
-        f"{fri_opening_query_pct:.3f},{fri_opening_fold_pct:.3f},"
-        f"{fri_opening_unattributed_ms},{fri_opening_unattributed_pct:.3f},"
-        f"{fri_opening_phase_hint},"
         f"{fri_opening_units},{fri_opening_layers},{fri_opening_queries},"
         f"{fri_layers_per_unit:.3f},{fri_queries_per_unit:.3f},"
         f"{opening_source_hint},"
@@ -5508,7 +5528,14 @@ def summarize_profile_values(
         f"{external_op_runs},{external_op_avg_run:.3f},"
         f"{external_op_max_run},{copy_runs},{copy_avg_run:.3f},"
         f"{copy_max_run},{trace_shape_run},"
-        f"{trace_pipeline_hint},{performance_focus},{trace_shape_profile}"
+        f"{trace_pipeline_hint},{performance_focus},{trace_shape_profile},"
+        f"{fri_opening_unit_build_scope_pct:.3f},"
+        f"{fri_opening_layer_tree_nested_pct:.3f},"
+        f"{fri_opening_query_nested_pct:.3f},"
+        f"{fri_opening_fold_nested_pct:.3f},"
+        f"{fri_opening_known_nested_ms},{fri_opening_known_nested_pct:.3f},"
+        f"{fri_opening_unit_build_residual_ms},"
+        f"{fri_opening_unit_build_residual_pct:.3f},{fri_opening_scope_hint}"
     )
 
 

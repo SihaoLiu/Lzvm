@@ -567,13 +567,15 @@ fn prove_timing_root_summary_reports_root_grouping_shape() {
         "trace_report_exact_hotspot",
         "trace_report_exact_action_hint",
         "fri_opening_ms",
-        "fri_opening_unit_build_pct",
-        "fri_opening_layer_tree_pct",
-        "fri_opening_query_pct",
-        "fri_opening_fold_pct",
-        "fri_opening_unattributed_ms",
-        "fri_opening_unattributed_pct",
-        "fri_opening_phase_hint",
+        "fri_opening_unit_build_scope_pct",
+        "fri_opening_layer_tree_nested_pct",
+        "fri_opening_query_nested_pct",
+        "fri_opening_fold_nested_pct",
+        "fri_opening_known_nested_ms",
+        "fri_opening_known_nested_pct",
+        "fri_opening_unit_build_residual_ms",
+        "fri_opening_unit_build_residual_pct",
+        "fri_opening_scope_hint",
         "fri_opening_queries",
         "fri_queries_per_unit",
     ] {
@@ -4306,7 +4308,7 @@ fn prove_timing_root_summary_reports_opening_query_unit_scope() {
         "timing_finish_witness_opening_max_queries_per_unit=1",
         "timing_finish_witness_opening_stage_count=240",
         "timing_finish_fri_opening_ms=41",
-        "timing_finish_fri_opening_unit_build_ms=5",
+        "timing_finish_fri_opening_unit_build_ms=40",
         "timing_finish_fri_opening_layer_tree_ms=7",
         "timing_finish_fri_opening_query_ms=11",
         "timing_finish_fri_opening_fold_ms=13",
@@ -4375,17 +4377,22 @@ fn prove_timing_root_summary_reports_opening_query_unit_scope() {
     assert_eq!(value("opening_max_queries_per_unit"), "1");
     assert_eq!(value("opening_stage_count"), "240");
     assert_eq!(value("fri_opening_ms"), "41");
-    assert_eq!(value("fri_opening_unit_build_ms"), "5");
+    assert_eq!(value("fri_opening_unit_build_ms"), "40");
     assert_eq!(value("fri_opening_layer_tree_ms"), "7");
     assert_eq!(value("fri_opening_query_ms"), "11");
     assert_eq!(value("fri_opening_fold_ms"), "13");
-    assert_eq!(value("fri_opening_unit_build_pct"), "12.195");
-    assert_eq!(value("fri_opening_layer_tree_pct"), "17.073");
-    assert_eq!(value("fri_opening_query_pct"), "26.829");
-    assert_eq!(value("fri_opening_fold_pct"), "31.707");
-    assert_eq!(value("fri_opening_unattributed_ms"), "5");
-    assert_eq!(value("fri_opening_unattributed_pct"), "12.195");
-    assert_eq!(value("fri_opening_phase_hint"), "profile_fri_opening_fold");
+    assert_eq!(value("fri_opening_unit_build_scope_pct"), "97.561");
+    assert_eq!(value("fri_opening_layer_tree_nested_pct"), "17.073");
+    assert_eq!(value("fri_opening_query_nested_pct"), "26.829");
+    assert_eq!(value("fri_opening_fold_nested_pct"), "31.707");
+    assert_eq!(value("fri_opening_known_nested_ms"), "31");
+    assert_eq!(value("fri_opening_known_nested_pct"), "75.610");
+    assert_eq!(value("fri_opening_unit_build_residual_ms"), "9");
+    assert_eq!(value("fri_opening_unit_build_residual_pct"), "21.951");
+    assert_eq!(
+        value("fri_opening_scope_hint"),
+        "profile_fri_opening_nested_fold"
+    );
     assert_eq!(value("fri_opening_units"), "3");
     assert_eq!(value("fri_opening_layers"), "12");
     assert_eq!(value("fri_opening_queries"), "30");
