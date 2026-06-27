@@ -394,9 +394,11 @@ theorem runtime_opening_segment_binding_evidence_implies_fri_fold_trace_identity
           publicInput
           proof := by
   intro artifact publicInput proof evidence
+  rcases evidence with
+    ⟨queryPlanBound, traceIdentitiesMatch, _, _, _, friFoldsValid, _, _, _, _⟩
   exact
-    And.intro evidence.left
-      (And.intro evidence.right.left evidence.right.right.right.right.right.left)
+    And.intro queryPlanBound
+      (And.intro traceIdentitiesMatch friFoldsValid)
 
 theorem runtime_opening_segment_binding_evidence_implies_fri_opening_checks
     {system : VerifierModel}

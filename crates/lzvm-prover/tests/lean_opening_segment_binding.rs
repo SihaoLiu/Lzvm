@@ -165,10 +165,16 @@ fn lean_opening_segment_binding_exports_core_contract_projection() {
         &lean_source,
         "runtime_opening_segment_binding_evidence_implies_fri_fold_trace_identity_contract",
         &[
-            "evidence.left",
-            "evidence.right.left",
-            "evidence.right.right.right.right.right.left",
+            "rcases evidence with",
+            "queryPlanBound",
+            "traceIdentitiesMatch",
+            "friFoldsValid",
         ],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &lean_source,
+        "runtime_opening_segment_binding_evidence_implies_fri_fold_trace_identity_contract",
+        &["evidence.right.right.right.right.right.left"],
     );
     lean_binding::assert_theorem_prefix_contains(
         &lean_source,
