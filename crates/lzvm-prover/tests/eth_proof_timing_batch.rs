@@ -473,6 +473,41 @@ fn eth_proof_timing_batch_dry_run_applies_worker_overrides() {
 }
 
 #[test]
+fn eth_proof_timing_batch_dry_run_enables_owned_streaming_lower() {
+    let fixture = ProofFixture::new("eth-proof-timing-batch-owned-streaming");
+    let mut command = Command::new(script_path());
+    command
+        .arg("--suite")
+        .arg("small")
+        .arg("--dry-run")
+        .arg("--owned-streaming-lower")
+        .arg("--summary")
+        .arg("owned streaming");
+    fixture.apply_env(&mut command, SMALL_PREFIX);
+
+    let output = command
+        .output()
+        .expect("ETH proof timing batch dry-run should run");
+    let success = output.status.success();
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    fixture.cleanup();
+
+    assert!(
+        success,
+        "dry-run should build owned streaming lower command: stderr={stderr}"
+    );
+    assert!(
+        stdout.contains("owned_streaming_lower=true\n"),
+        "dry-run metadata should report owned streaming lower: {stdout}"
+    );
+    assert!(
+        stdout.contains("LZVM_CUDA_GUEST_PC_OWNED_STREAMING_LOWER=1"),
+        "prove command should enable owned streaming lower after clearing inherited controls: {stdout}"
+    );
+}
+
+#[test]
 fn eth_proof_timing_batch_target_thresholds_follow_selected_suite() {
     let fixture = ProofFixture::new("eth-proof-timing-batch-target-thresholds");
     let mut command = Command::new(script_path());

@@ -475,11 +475,15 @@ def mode_args(args: argparse.Namespace) -> list[str]:
     result = ["--small-mode", args.small_mode, "--large-mode", args.large_mode]
     if args.skip_verify_proof:
         result.append("--skip-verify-proof")
+    if args.owned_streaming_lower:
+        result.append("--owned-streaming-lower")
     return result
 
 
 def mode_env_for_args(args: argparse.Namespace, mode: str) -> dict[str, str]:
     mode_env = dict(MODE_ENV[mode])
+    if args.owned_streaming_lower:
+        mode_env["LZVM_CUDA_GUEST_PC_OWNED_STREAMING_LOWER"] = "1"
     if args.parallel_lower_workers is not None and (
         "LZVM_GUEST_PC_TRACE_PARALLEL_LOWER" in mode_env
         or "LZVM_GUEST_PC_TRACE_PARALLEL_LOWER_WORK_UNITS" in mode_env
@@ -1190,6 +1194,7 @@ def dry_run_summary_lines(args: argparse.Namespace, root: Path) -> list[str]:
         f"parallel_lower_workers={args.parallel_lower_workers or ''}",
         f"parallel_lower_job_queue={args.parallel_lower_job_queue or ''}",
         f"segment_commit_workers={args.segment_commit_workers or ''}",
+        f"owned_streaming_lower={str(args.owned_streaming_lower).lower()}",
         f"gpu_preallocate={str(args.gpu_preallocate).lower()}",
         f"minimal_memory={str(args.minimal_memory).lower()}",
         f"pack_trace={str(not args.no_pack_trace).lower()}",
@@ -1420,6 +1425,7 @@ def self_test() -> None:
         parallel_lower_job_queue=None,
         parallel_lower_workers=None,
         segment_commit_workers=None,
+        owned_streaming_lower=False,
         gpu_preallocate=False,
         minimal_memory=False,
         no_pack_trace=False,
@@ -1525,6 +1531,7 @@ def main() -> None:
     parser.add_argument("--parallel-lower-workers", type=positive_integer, default=None)
     parser.add_argument("--parallel-lower-job-queue", type=positive_integer, default=None)
     parser.add_argument("--segment-commit-workers", type=positive_integer, default=None)
+    parser.add_argument("--owned-streaming-lower", action="store_true")
     parser.add_argument("--gpu-preallocate", action="store_true")
     parser.add_argument("--minimal-memory", action="store_true")
     parser.add_argument("--no-pack-trace", action="store_true")
