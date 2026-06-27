@@ -8733,6 +8733,9 @@ fn lean_query_plan_binding_tracks_runtime_transcript_opening_checks() {
     let setup_preflight_path = crate_root.join("src/setup_preflight.rs");
     let setup_preflight_source =
         std::fs::read_to_string(&setup_preflight_path).expect("setup preflight source should read");
+    let proof_preflight_path = crate_root.join("src/proof_preflight.rs");
+    let proof_preflight_source =
+        std::fs::read_to_string(&proof_preflight_path).expect("proof preflight source should read");
     let proof_segment_ids_path = crate_root.join("src/proof_segment_ids.rs");
     let proof_segment_ids_source = std::fs::read_to_string(&proof_segment_ids_path)
         .expect("proof segment ID source should read");
@@ -8867,7 +8870,8 @@ fn lean_query_plan_binding_tracks_runtime_transcript_opening_checks() {
             && setup_preflight_source.contains("struct SetupPreflightContributionProofValues")
             && setup_preflight_source.contains("preloaded_packed_proof_values")
             && setup_preflight_source.contains("preloaded_proof_values")
-            && setup_preflight_source.contains("unexpected_proof_segment_id(segments)")
+            && proof_preflight_source.contains("validate_proof_artifact_runtime_shape")
+            && proof_preflight_source.contains("unexpected_proof_segment_id(&proof.segments)")
             && setup_preflight_source.contains("challenge_values.as_deref()")
             && setup_preflight_source.contains("derive_global_challenge_from_loaded_contributions")
             && setup_preflight_source.matches("load_group_values_from_segments(").count() == 1
@@ -8992,7 +8996,9 @@ fn lean_pipeline_binding_tracks_runtime_preflight_and_artifact_checks() {
             && setup_preflight_source.contains("validate_pcs_query_plan_segments")
             && setup_preflight_source.contains("validate_constant_opening_segments")
             && setup_preflight_source.contains("validate_witness_opening_segments")
-            && setup_preflight_source.contains("validate_optional_pcs_fri_opening_proof_segments"),
+            && setup_preflight_source.contains("validate_optional_pcs_fri_opening_proof_segments")
+            && !setup_preflight_source.contains("validate_setup_proof_segment_ids")
+            && !setup_preflight_source.contains("SetupPreflightError::UnexpectedProofSegment"),
         "setup preflight should keep all runtime proof-artifact binding checks wired together"
     );
     assert!(

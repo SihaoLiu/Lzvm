@@ -60,7 +60,6 @@ use crate::proof_preflight::{
     public_values_as_fields, validate_proof_public_values_for_setup_preflight_with_fields,
     ProofPreflightError, ProofPreflightReport, PublicValueFieldError, TraceConstraintPreflightUnit,
 };
-use crate::proof_segment_ids::unexpected_proof_segment_id;
 use crate::proof_values::{
     flatten_pcs_proof_values, load_pcs_proof_values_from_segments, LoadPcsProofValuesSegmentError,
     ProvePcsProofValuesSegmentError,
@@ -278,9 +277,6 @@ pub enum SetupPreflightError {
     },
     MissingContributionChallengeValues,
     ContributionChallengeValuesMismatch,
-    UnexpectedProofSegment {
-        id: u32,
-    },
     PublicValueEntryCountMismatch {
         expected: usize,
         found: usize,
@@ -348,9 +344,6 @@ impl fmt::Display for SetupPreflightError {
             }
             Self::ContributionChallengeValuesMismatch => {
                 write!(f, "contribution challenge values mismatch")
-            }
-            Self::UnexpectedProofSegment { id } => {
-                write!(f, "unexpected setup proof segment id {id}")
             }
             Self::PublicValueEntryCountMismatch { expected, found } => write!(
                 f,
@@ -423,7 +416,6 @@ impl std::error::Error for SetupPreflightError {
             | Self::MissingContributionChallengeValues
             | Self::ContributionChallengeValuesMismatch
             | Self::DuplicateChallengeValuesSegment
-            | Self::UnexpectedProofSegment { .. }
             | Self::PublicValueEntryCountMismatch { .. }
             | Self::PublicValueNameMismatch { .. }
             | Self::PublicValueElementCountMismatch { .. }
@@ -737,7 +729,6 @@ pub fn validate_setup_preflight(
     let public_fields = validation.public_value_fields;
     let report = validation.report;
     let schedule = derive_prove_schedule(catalog).map_err(SetupPreflightError::Schedule)?;
-    validate_setup_proof_segment_ids(&proof.segments)?;
     let contribution_entries = validate_optional_contribution_segment(catalog, proof)?;
     let challenge_values = validate_optional_challenge_values_segment(proof)?;
     let contribution_proof_values = validate_optional_contribution_challenge_values(
@@ -1064,13 +1055,6 @@ fn validate_optional_contribution_challenge_values(
     }))
 }
 
-fn validate_setup_proof_segment_ids(segments: &[ProofSegment]) -> Result<(), SetupPreflightError> {
-    if let Some(id) = unexpected_proof_segment_id(segments) {
-        return Err(SetupPreflightError::UnexpectedProofSegment { id });
-    }
-    Ok(())
-}
-
 fn validate_optional_trace_constraint_segment(
     catalog: &KeyDirectoryCatalog,
     trace_constraint_units: &[TraceConstraintPreflightUnit],
@@ -1194,56 +1178,12 @@ mod tests {
         encode_challenge_values_segment, ChallengeValuesSegment, ChallengeValuesSegmentError,
         CHALLENGE_VALUES_SEGMENT_ID,
     };
-    use lzvm_artifacts::pcs_material_segment::PCS_MATERIAL_MANIFEST_SEGMENT_ID;
     use lzvm_artifacts::proof::{ProofArtifact, ProofSegment};
-    use lzvm_artifacts::witness_segment::WITNESS_COMMITMENT_SEGMENT_BASE_ID;
     use lzvm_field::{FieldError, MODULUS};
 
-    use super::{
-        validate_optional_challenge_values_segment, validate_setup_proof_segment_ids,
-        SetupPreflightError,
-    };
+    use super::{validate_optional_challenge_values_segment, SetupPreflightError};
 
     const FIRST_CHALLENGE_VALUE_OFFSET: usize = 12;
-
-    #[test]
-    fn setup_proof_segment_id_check_accepts_challenge_values_segment() {
-        let segments = vec![
-            ProofSegment {
-                id: WITNESS_COMMITMENT_SEGMENT_BASE_ID,
-                data: vec![1],
-            },
-            ProofSegment {
-                id: PCS_MATERIAL_MANIFEST_SEGMENT_ID,
-                data: vec![1],
-            },
-            ProofSegment {
-                id: CHALLENGE_VALUES_SEGMENT_ID,
-                data: vec![1],
-            },
-        ];
-
-        validate_setup_proof_segment_ids(&segments).expect("setup proof segments should validate");
-    }
-
-    #[test]
-    fn setup_proof_segment_id_check_rejects_unknown_fixed_segments() {
-        let unknown_fixed_segment_id = 10_099;
-        let segments = vec![ProofSegment {
-            id: unknown_fixed_segment_id,
-            data: vec![1],
-        }];
-
-        let error = validate_setup_proof_segment_ids(&segments)
-            .expect_err("unknown setup proof segment should reject");
-
-        assert_eq!(
-            error,
-            SetupPreflightError::UnexpectedProofSegment {
-                id: unknown_fixed_segment_id
-            }
-        );
-    }
 
     #[test]
     fn challenge_values_preflight_accepts_encoded_segment() {
