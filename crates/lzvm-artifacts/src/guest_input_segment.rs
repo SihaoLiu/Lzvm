@@ -21,7 +21,9 @@ pub fn validate_framed_guest_input_segment(bytes: &[u8]) -> Result<(), FramedStd
 pub fn parse_framed_guest_input_segment(
     bytes: &[u8],
 ) -> Result<Vec<FramedStdinChunk>, FramedStdinError> {
-    validate_framed_guest_input_segment(bytes)?;
+    if bytes.is_empty() {
+        return Err(FramedStdinError::EmptyInput);
+    }
     parse_framed_stdin_chunks(bytes)
 }
 
