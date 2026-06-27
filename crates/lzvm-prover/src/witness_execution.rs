@@ -4200,8 +4200,9 @@ fn require_guest_pc_segment_host_trace(
 fn guest_pc_segment_commitment_trace(
     segment_output: GuestPcTraceSegmentRunOutput,
     has_external_device_source_material: bool,
+    traceless_commitment_input: bool,
 ) -> Result<Option<WitnessTraceBuffer>, ProveWitnessCommitmentError> {
-    if has_external_device_source_material && guest_pc_trace_less_commitment_input_enabled() {
+    if has_external_device_source_material && traceless_commitment_input {
         return Ok(None);
     }
     segment_output
@@ -4216,6 +4217,7 @@ fn guest_pc_segment_commitment_trace(
 fn guest_pc_segment_commitment_trace(
     segment_output: GuestPcTraceSegmentRunOutput,
     has_external_device_source_material: bool,
+    traceless_commitment_input: bool,
 ) -> Result<
     (
         Option<WitnessTraceBuffer>,
@@ -4224,7 +4226,7 @@ fn guest_pc_segment_commitment_trace(
     ProveWitnessCommitmentError,
 > {
     let (trace, device_segment_material) = segment_output.into_trace_and_device_material();
-    if has_external_device_source_material && guest_pc_trace_less_commitment_input_enabled() {
+    if has_external_device_source_material && traceless_commitment_input {
         return Ok((None, device_segment_material));
     }
     require_guest_pc_segment_host_trace(trace)
@@ -4244,9 +4246,15 @@ fn guest_pc_trace_less_commitment_input_enabled() -> bool {
         .unwrap_or(true)
 }
 
-#[cfg(not(feature = "cuda"))]
-fn guest_pc_trace_less_commitment_input_enabled() -> bool {
-    false
+fn guest_pc_trace_traceless_commitment_input_selected() -> bool {
+    #[cfg(feature = "cuda")]
+    {
+        guest_pc_trace_less_commitment_input_enabled()
+    }
+    #[cfg(not(feature = "cuda"))]
+    {
+        false
+    }
 }
 
 fn run_prove_witness_commitments_with_guest_pc_trace_segments_inner(
@@ -4280,6 +4288,7 @@ fn run_prove_witness_commitments_with_guest_pc_trace_segments_inner(
     let mut fixed_columns_cache = WitnessFixedColumnsCache::new();
     #[cfg(feature = "cuda")]
     let mut leaf_workspace_cache = WitnessStageLeafWorkspaceCache::default();
+    let traceless_commitment_input = guest_pc_trace_traceless_commitment_input_selected();
     for segment_output in trace_outputs {
         let trace_instance_index = segment_output.trace_instance_index();
         #[cfg(feature = "cuda")]
@@ -4311,11 +4320,17 @@ fn run_prove_witness_commitments_with_guest_pc_trace_segments_inner(
             None => WitnessRegularHintMode::AssignmentsOnly,
         };
         #[cfg(feature = "cuda")]
-        let (trace, guest_pc_device_segment_material) =
-            guest_pc_segment_commitment_trace(segment_output, has_external_device_source_material)?;
+        let (trace, guest_pc_device_segment_material) = guest_pc_segment_commitment_trace(
+            segment_output,
+            has_external_device_source_material,
+            traceless_commitment_input,
+        )?;
         #[cfg(not(feature = "cuda"))]
-        let trace =
-            guest_pc_segment_commitment_trace(segment_output, has_external_device_source_material)?;
+        let trace = guest_pc_segment_commitment_trace(
+            segment_output,
+            has_external_device_source_material,
+            traceless_commitment_input,
+        )?;
         let mut output = run_prove_witness_commitments_from_trace_inner(
             plan,
             unit_index,
@@ -4482,12 +4497,14 @@ struct GuestPcTraceSegmentCommitResult {
 
 struct GuestPcTraceSegmentCommitWorkerState {
     scratch: GuestPcTraceSegmentCommitScratch,
+    traceless_commitment_input: bool,
 }
 
 impl GuestPcTraceSegmentCommitWorkerState {
-    fn new() -> Self {
+    fn new(traceless_commitment_input: bool) -> Self {
         Self {
             scratch: GuestPcTraceSegmentCommitScratch::new(),
+            traceless_commitment_input,
         }
     }
 
@@ -4505,6 +4522,7 @@ impl GuestPcTraceSegmentCommitWorkerState {
             segment_output,
             use_source_lookup_balance,
             collect_timing,
+            self.traceless_commitment_input,
             &mut self.scratch,
         )
     }
@@ -4534,12 +4552,13 @@ impl<'scope, 'env> GuestPcTraceSegmentCommitWorkerPool<'scope, 'env> {
             input_byte_count,
             worker_count_override,
         );
+        let traceless_commitment_input = guest_pc_trace_traceless_commitment_input_selected();
         Self {
             scope,
             worker_count,
             async_single_worker: worker_count == 1
                 && guest_pc_trace_segment_commit_async_single_worker_enabled(),
-            worker_state: GuestPcTraceSegmentCommitWorkerState::new(),
+            worker_state: GuestPcTraceSegmentCommitWorkerState::new(traceless_commitment_input),
             pending_workers: VecDeque::new(),
             timing: GuestPcTraceSegmentCommitPoolTiming::default(),
         }
@@ -4580,8 +4599,10 @@ impl<'scope, 'env> GuestPcTraceSegmentCommitWorkerPool<'scope, 'env> {
             }
         }
 
+        let traceless_commitment_input = self.worker_state.traceless_commitment_input;
         self.pending_workers.push_back(self.scope.spawn(move || {
-            let mut worker_state = GuestPcTraceSegmentCommitWorkerState::new();
+            let mut worker_state =
+                GuestPcTraceSegmentCommitWorkerState::new(traceless_commitment_input);
             worker_state.commit_segment(
                 context,
                 auxiliary_inputs,
@@ -5128,6 +5149,7 @@ fn commit_guest_pc_trace_segment_with_scratch(
     segment_output: GuestPcTraceSegmentRunOutput,
     use_source_lookup_balance: bool,
     collect_timing: bool,
+    traceless_commitment_input: bool,
     scratch: &mut GuestPcTraceSegmentCommitScratch,
 ) -> Result<GuestPcTraceSegmentCommitResult, ProveWitnessCommitmentError> {
     let guest_segment_commit_started = collect_timing.then(Instant::now);
@@ -5145,6 +5167,7 @@ fn commit_guest_pc_trace_segment_with_scratch(
         segment_output,
         regular_hint_mode,
         scratch,
+        traceless_commitment_input,
         timing: trace_timing.as_mut(),
     })?;
     output.set_trace_instance_index(trace_instance_index);
@@ -5163,6 +5186,7 @@ struct GuestPcTraceSegmentCommitRequest<'a, 'b> {
     segment_output: GuestPcTraceSegmentRunOutput,
     regular_hint_mode: WitnessRegularHintMode<'b>,
     scratch: &'b mut GuestPcTraceSegmentCommitScratch,
+    traceless_commitment_input: bool,
     timing: Option<&'b mut ProveWitnessTraceTimingAccumulator>,
 }
 
@@ -5175,6 +5199,7 @@ fn commit_guest_pc_trace_segment_output(
         segment_output,
         regular_hint_mode,
         scratch,
+        traceless_commitment_input,
         timing,
     } = request;
     let GuestPcTraceSegmentCommitContext {
@@ -5217,11 +5242,17 @@ fn commit_guest_pc_trace_segment_output(
         segment_output.unit_values(),
     )?;
     #[cfg(feature = "cuda")]
-    let (trace, guest_pc_device_segment_material) =
-        guest_pc_segment_commitment_trace(segment_output, has_external_device_source_material)?;
+    let (trace, guest_pc_device_segment_material) = guest_pc_segment_commitment_trace(
+        segment_output,
+        has_external_device_source_material,
+        traceless_commitment_input,
+    )?;
     #[cfg(not(feature = "cuda"))]
-    let trace =
-        guest_pc_segment_commitment_trace(segment_output, has_external_device_source_material)?;
+    let trace = guest_pc_segment_commitment_trace(
+        segment_output,
+        has_external_device_source_material,
+        traceless_commitment_input,
+    )?;
     #[cfg(feature = "cuda")]
     if guest_pc_cross_segment_root_materialization_enabled()
         && guest_pc_cross_segment_root_materialization_supported_for_input(
@@ -7649,7 +7680,7 @@ mod tests {
                 scope,
                 worker_count: 2,
                 async_single_worker: false,
-                worker_state: GuestPcTraceSegmentCommitWorkerState::new(),
+                worker_state: GuestPcTraceSegmentCommitWorkerState::new(false),
                 pending_workers: VecDeque::from([first, second]),
                 timing: GuestPcTraceSegmentCommitPoolTiming::default(),
             };
@@ -7687,7 +7718,7 @@ mod tests {
                 scope,
                 worker_count: 2,
                 async_single_worker: false,
-                worker_state: GuestPcTraceSegmentCommitWorkerState::new(),
+                worker_state: GuestPcTraceSegmentCommitWorkerState::new(false),
                 pending_workers: VecDeque::from([backpressure, finish]),
                 timing: GuestPcTraceSegmentCommitPoolTiming::default(),
             };
