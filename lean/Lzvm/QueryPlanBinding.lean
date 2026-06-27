@@ -21,6 +21,7 @@ structure RuntimeQueryPlanBindingValidation (system : VerifierModel) where
   queryPlanBindingAccepted : RuntimeArtifact -> PublicInput -> Proof -> Prop
   queryPlanSegmentCanonical : RuntimeArtifact -> PublicInput -> Proof -> Prop
   queryPlanTranscriptInputsCanonical : RuntimeArtifact -> PublicInput -> Proof -> Prop
+  queryPlanMaterialManifestMatchesSchedule : RuntimeArtifact -> PublicInput -> Proof -> Prop
   queryPlanDerivedFromTranscript : RuntimeArtifact -> PublicInput -> Proof -> Prop
   queryPlanMatchesOpenedArtifacts : RuntimeArtifact -> PublicInput -> Proof -> Prop
   queryPlanSeedBindsWitnessTreeDigests : RuntimeArtifact -> PublicInput -> Proof -> Prop
@@ -41,6 +42,9 @@ structure RuntimeQueryPlanBindingValidation (system : VerifierModel) where
     forall artifact publicInput proof,
       queryPlanBindingAccepted artifact publicInput proof ->
         queryPlanTranscriptInputsCanonical artifact publicInput proof
+  queryPlanBindingAcceptedImpliesMaterialManifestMatchesSchedule :
+    forall artifact publicInput proof, queryPlanBindingAccepted artifact publicInput proof ->
+      queryPlanMaterialManifestMatchesSchedule artifact publicInput proof
   queryPlanBindingAcceptedImpliesDerivedFromTranscript :
     forall artifact publicInput proof,
       queryPlanBindingAccepted artifact publicInput proof ->
@@ -85,14 +89,17 @@ def RuntimeQueryPlanBindingBoundContract
       proof
     /\ validation.openingValidation.queryPlanBound artifact publicInput proof
 
-def RuntimeQueryPlanBindingSeededContract
-    (_system : VerifierModel)
-    (validation : RuntimeQueryPlanBindingValidation _system)
-    (artifact : RuntimeArtifact)
-    (publicInput : PublicInput)
-    (proof : Proof) : Prop :=
+def RuntimeQueryPlanBindingSeededContract (_system : VerifierModel)
+    (validation : RuntimeQueryPlanBindingValidation _system) (artifact : RuntimeArtifact)
+    (publicInput : PublicInput) (proof : Proof) : Prop :=
   validation.queryPlanSeedBindsWitnessTreeDigests artifact publicInput proof
     /\ validation.queryPlanSeededFriOpeningRequirementsChecked artifact publicInput proof
+
+def RuntimeQueryPlanMaterialManifestContract (_system : VerifierModel)
+    (validation : RuntimeQueryPlanBindingValidation _system) (artifact : RuntimeArtifact)
+    (publicInput : PublicInput) (proof : Proof) : Prop :=
+  validation.queryPlanSegmentCanonical artifact publicInput proof /\
+    validation.queryPlanMaterialManifestMatchesSchedule artifact publicInput proof
 
 def RuntimeQueryPlanBindingEvidence
     (_system : VerifierModel)
@@ -530,23 +537,21 @@ theorem runtime_query_plan_binding_checked_acceptance_transcript_query_plan_boun
       derivedFromTranscript
 
 theorem runtime_query_plan_binding_checked_acceptance_transcript_inputs_canonical
-    {system : VerifierModel}
-    (validation : RuntimeQueryPlanBindingValidation system) :
+    {system : VerifierModel} (validation : RuntimeQueryPlanBindingValidation system) :
     forall artifact publicInput proof,
-      RuntimeQueryPlanBindingCheckedAcceptance
-          system
-          validation
-          artifact
-          publicInput
-          proof ->
+      RuntimeQueryPlanBindingCheckedAcceptance system validation artifact publicInput proof ->
         validation.queryPlanTranscriptInputsCanonical artifact publicInput proof := by
   intro artifact publicInput proof accepted
-  exact
-    validation.queryPlanBindingAcceptedImpliesTranscriptInputsCanonical
-      artifact
-      publicInput
-      proof
-      accepted
+  exact validation.queryPlanBindingAcceptedImpliesTranscriptInputsCanonical _ _ _ accepted
+
+theorem runtime_query_plan_binding_checked_acceptance_material_manifest_contract
+    {system : VerifierModel} (validation : RuntimeQueryPlanBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeQueryPlanBindingCheckedAcceptance system validation artifact publicInput proof ->
+        RuntimeQueryPlanMaterialManifestContract system validation artifact publicInput proof := by
+  intro artifact publicInput proof accepted
+  exact ⟨validation.queryPlanBindingAcceptedImpliesSegmentCanonical _ _ _ accepted,
+    validation.queryPlanBindingAcceptedImpliesMaterialManifestMatchesSchedule _ _ _ accepted⟩
 
 theorem runtime_query_plan_binding_checked_acceptance_opening_query_plan_bound
     {system : VerifierModel}

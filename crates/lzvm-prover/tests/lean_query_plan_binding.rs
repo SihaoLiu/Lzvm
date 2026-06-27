@@ -15,6 +15,9 @@ fn lean_query_plan_binding_exports_opening_segment_projections() {
     let query_plan_build_path = crate_root.join("src/pcs_query_plan/build.rs");
     let query_plan_build_source = std::fs::read_to_string(&query_plan_build_path)
         .expect("PCS query plan build source should read");
+    let material_manifest_path = crate_root.join("src/pcs_material_manifest.rs");
+    let material_manifest_source = std::fs::read_to_string(&material_manifest_path)
+        .expect("PCS material manifest source should read");
     let query_plan_tests_path = crate_root.join("tests/pcs_query_plan.rs");
     let query_plan_tests_source = std::fs::read_to_string(&query_plan_tests_path)
         .expect("PCS query plan tests source should read");
@@ -24,6 +27,13 @@ fn lean_query_plan_binding_exports_opening_segment_projections() {
     let proof_artifact_path = crate_root.join("src/proof_artifact.rs");
     let proof_artifact_source =
         std::fs::read_to_string(&proof_artifact_path).expect("proof artifact source should read");
+    let parsed_material_manifest_body = function_body(
+        &material_manifest_source,
+        "pub(crate) fn validate_parsed_pcs_material_manifest_matches_schedule",
+        "pub fn build_pcs_material_manifest_segment",
+    );
+    let material_manifest_unit_body =
+        source_from(&material_manifest_source, "fn validate_manifest_unit");
 
     assert!(
         lean_source
@@ -38,8 +48,30 @@ fn lean_query_plan_binding_exports_opening_segment_projections() {
             && lean_source.contains("system.pcsOpeningsValid publicInput proof")
             && lean_source.contains("system.friQueriesValid publicInput proof")
             && lean_source.contains("queryPlanTranscriptInputsCanonical")
+            && lean_source.contains("queryPlanMaterialManifestMatchesSchedule")
+            && lean_source.contains("RuntimeQueryPlanMaterialManifestContract")
             && lean_source.contains("RuntimeVerifierCoreContract system publicInput proof"),
         "Lean query plan binding should expose opening segment and verifier core projections"
+    );
+    assert!(
+        query_plan_source.matches("validate_material_manifest_matches_schedule(schedule, &material)?").count()
+            == 2
+            && query_plan_source
+                .contains("validate_parsed_pcs_material_manifest_matches_schedule")
+            && parsed_material_manifest_body.contains("manifest.units.len() != schedule.units.len()")
+            && parsed_material_manifest_body.contains("manifest_unit.unit_index != expected_unit_index")
+            && material_manifest_unit_body.contains("manifest.plan_digest != plan_digest")
+            && material_manifest_unit_body
+                .contains("manifest.fixed_column_digest != fixed_column_digest")
+            && material_manifest_unit_body
+                .contains("manifest.constant_tree_digest != constant_tree_digest")
+            && material_manifest_unit_body.contains("manifest.constant_tree_root != constant_tree_root")
+            && material_manifest_unit_body.contains("manifest.fixed_byte_count != fixed_byte_count")
+            && material_manifest_unit_body
+                .contains("manifest.constant_tree_byte_count != constant_tree_byte_count")
+            && material_manifest_unit_body.contains("manifest.leaf_byte_count != leaf_byte_count")
+            && material_manifest_unit_body.contains("manifest.node_byte_count != node_byte_count"),
+        "runtime query-plan validation should require exact PCS material manifest schedule matching"
     );
     assert!(
         lean_source.contains("def RuntimeQueryPlanBindingSeededContract")
@@ -69,6 +101,7 @@ fn lean_query_plan_binding_exports_opening_segment_projections() {
             "runtime_query_plan_binding_checked_acceptance_bound_contract",
             "runtime_query_plan_binding_checked_acceptance_transcript_query_plan_bound",
             "runtime_query_plan_binding_checked_acceptance_transcript_inputs_canonical",
+            "runtime_query_plan_binding_checked_acceptance_material_manifest_contract",
             "runtime_query_plan_binding_checked_acceptance_opening_query_plan_bound",
             "runtime_query_plan_binding_checked_acceptance_seeded_contract",
             "runtime_query_plan_binding_checked_acceptance_seed_binds_witness_tree_digests",
@@ -170,6 +203,27 @@ fn lean_query_plan_binding_exports_opening_segment_projections() {
         &lean_source,
         "runtime_query_plan_binding_checked_acceptance_transcript_inputs_canonical",
         &["validation.queryPlanBindingAcceptedImpliesTranscriptInputsCanonical"],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_query_plan_binding_checked_acceptance_material_manifest_contract",
+        &[
+            "RuntimeQueryPlanBindingCheckedAcceptance",
+            "RuntimeQueryPlanMaterialManifestContract",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_omits(
+        &lean_source,
+        "runtime_query_plan_binding_checked_acceptance_material_manifest_contract",
+        &["AssumptionBundle"],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_query_plan_binding_checked_acceptance_material_manifest_contract",
+        &[
+            "validation.queryPlanBindingAcceptedImpliesSegmentCanonical",
+            "validation.queryPlanBindingAcceptedImpliesMaterialManifestMatchesSchedule",
+        ],
     );
     lean_binding::assert_theorem_body_contains(
         &lean_source,
@@ -635,4 +689,11 @@ fn function_body(source: &str, start: &str, end: &str) -> String {
         .find(end)
         .unwrap_or_else(|| panic!("source should contain {end} after {start}"));
     rest[..end_index].to_owned()
+}
+
+fn source_from(source: &str, start: &str) -> String {
+    let start_index = source
+        .find(start)
+        .unwrap_or_else(|| panic!("source should contain {start}"));
+    source[start_index..].to_owned()
 }
