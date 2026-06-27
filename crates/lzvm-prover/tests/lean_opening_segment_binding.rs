@@ -37,9 +37,13 @@ fn lean_opening_segment_binding_exports_core_contract_projection() {
     assert!(
         fri_parse_body.contains("PCS_FRI_OPENING_V1_VERSION | PCS_FRI_OPENING_V2_VERSION")
             && fri_parse_body.contains("PcsFriOpeningSegmentError::UnsupportedVersion { version }")
+            && fri_parse_body.contains("reader.require_items(unit_count, unit_header_bytes)?")
             && fri_parse_body.contains("reader.require_items(final_count, EXTENSION_BYTES)?")
+            && fri_parse_body.contains("reader.require_items(layer_count, LAYER_HEADER_BYTES)?")
             && fri_parse_body.contains("reader.require_items(last_level_count, ROOT_BYTES)?")
+            && fri_parse_body.contains("reader.require_items(query_count, QUERY_HEADER_BYTES)?")
             && fri_parse_body.contains("reader.require_items(value_count, EXTENSION_BYTES)?")
+            && fri_parse_body.contains("reader.require_items(level_count, LEVEL_HEADER_BYTES)?")
             && fri_parse_body.contains("reader.require_items(sibling_count, ROOT_BYTES)?")
             && fri_parse_body.contains("validate_pcs_fri_opening_segment(&out)?"),
         "Rust FRI opening parser should validate supported version, walk counted payloads, and re-run semantic validation"
