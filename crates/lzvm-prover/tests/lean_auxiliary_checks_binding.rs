@@ -3346,7 +3346,16 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "guest_pc_trace_commit_mode_checked_acceptance_projects_decision",
             "guest_pc_trace_commit_mode_effective_worker_positive",
             "guest_pc_trace_commit_mode_async_requires_single_worker",
+            concat!(
+                "guest_pc_trace_descriptor_buffer_retention_",
+                "default_disabled_for_parallel_lower"
+            ),
+            "guest_pc_trace_commit_mode_descriptor_retention_matches",
             "guest_pc_trace_commit_mode_disabled_root_window_is_one",
+            concat!(
+                "guest_pc_trace_commit_mode_checked_acceptance_",
+                "projects_descriptor_retention"
+            ),
             concat!(
                 "guest_pc_trace_commit_mode_checked_acceptance_",
                 "projects_disabled_root_window"

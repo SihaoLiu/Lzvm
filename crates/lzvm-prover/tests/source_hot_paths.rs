@@ -3310,8 +3310,7 @@ fn guest_pc_segment_commitment_input_can_be_trace_less_with_preloaded_device_sou
         "struct GuestPcTraceSegmentCommitDriver",
     );
     assert!(
-        pool_body.contains("mode.traceless_commitment_input")
-            && pool_body.contains("mode.cross_segment_root_materialization")
+        pool_body.contains("GuestPcTraceSegmentCommitWorkerState::from_mode(mode)")
             && !pool_body.contains("guest_pc_trace_less_commitment_input_enabled()"),
         "streamed guest PC segment worker pool should consume cached trace-less mode"
     );
@@ -4249,6 +4248,8 @@ fn guest_pc_trace_segment_commit_uses_worker_state() {
                 worker_body,
                 "fn new(traceless_commitment_input: bool, cross_segment_root_materialization: bool) -> Self"
             )
+            && worker_body.contains("fn from_mode(mode: GuestPcTraceSegmentCommitMode) -> Self")
+            && worker_body.contains("fn from_parts(")
             && worker_body.contains("fn commit_segment(")
             && worker_body.contains("commit_guest_pc_trace_segment_with_scratch"),
         "worker state should own worker-local scratch and run one segment commit work item"
@@ -4288,8 +4289,8 @@ fn guest_pc_trace_segment_commit_uses_worker_state() {
             && pool_body.contains("mode: GuestPcTraceSegmentCommitMode")
             && pool_body.contains("worker_count: mode.worker_count")
             && pool_body.contains("async_single_worker: mode.async_single_worker")
-            && pool_body.contains("mode.traceless_commitment_input")
-            && pool_body.contains("mode.cross_segment_root_materialization")
+            && pool_body.contains("GuestPcTraceSegmentCommitWorkerState::from_mode(mode)")
+            && !pool_body.contains(".descriptor_buffer_retention =")
             && pool_body.contains("fn submit_segment(")
             && pool_body.contains("fn finish(")
             && pool_body.contains("self.worker_state.commit_segment("),
@@ -4369,11 +4370,12 @@ fn guest_pc_trace_segment_commit_pool_uses_scoped_bounded_workers() {
             && pool_region.contains("join_guest_pc_trace_segment_commit_worker")
             && pool_region.contains("let _ = self.finish()")
             && pool_region.contains("self.scope.spawn(move ||")
-            && compact_source_contains(
-                pool_region,
-                "GuestPcTraceSegmentCommitWorkerState::new(traceless_commitment_input, cross_segment_root_materialization,)"
-            ),
-        "submit_segment should join the oldest saturated worker, drain pending workers on error, and spawn segment work on the scope"
+            && pool_region.contains("GuestPcTraceSegmentCommitWorkerState::from_parts")
+            && pool_region.contains("traceless_commitment_input")
+            && pool_region.contains("cross_segment_root_materialization")
+            && pool_region.contains("descriptor_buffer_retention")
+            && !pool_region.contains(".descriptor_buffer_retention ="),
+        "submit_segment should join the oldest saturated worker, drain pending workers on error, and spawn segment work on the scope with cached mode parts"
     );
     assert!(
         pool_region.contains("while let Some(handle) = self.pending_workers.pop_front()")

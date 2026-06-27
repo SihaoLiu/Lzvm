@@ -4510,13 +4510,36 @@ struct GuestPcTraceSegmentCommitWorkerState {
 }
 
 impl GuestPcTraceSegmentCommitWorkerState {
+    #[cfg(test)]
     fn new(traceless_commitment_input: bool, cross_segment_root_materialization: bool) -> Self {
+        Self::from_parts(
+            traceless_commitment_input,
+            cross_segment_root_materialization,
+            #[cfg(feature = "cuda")]
+            false,
+        )
+    }
+
+    fn from_mode(mode: GuestPcTraceSegmentCommitMode) -> Self {
+        Self::from_parts(
+            mode.traceless_commitment_input,
+            mode.cross_segment_root_materialization,
+            #[cfg(feature = "cuda")]
+            mode.descriptor_buffer_retention,
+        )
+    }
+
+    fn from_parts(
+        traceless_commitment_input: bool,
+        cross_segment_root_materialization: bool,
+        #[cfg(feature = "cuda")] descriptor_buffer_retention: bool,
+    ) -> Self {
         Self {
             scratch: GuestPcTraceSegmentCommitScratch::new(),
             traceless_commitment_input,
             cross_segment_root_materialization,
             #[cfg(feature = "cuda")]
-            descriptor_buffer_retention: false,
+            descriptor_buffer_retention,
         }
     }
 
@@ -4605,20 +4628,7 @@ impl<'scope, 'env> GuestPcTraceSegmentCommitWorkerPool<'scope, 'env> {
         scope: &'scope thread::Scope<'scope, 'env>,
         mode: GuestPcTraceSegmentCommitMode,
     ) -> Self {
-        #[cfg(feature = "cuda")]
-        let mut worker_state = GuestPcTraceSegmentCommitWorkerState::new(
-            mode.traceless_commitment_input,
-            mode.cross_segment_root_materialization,
-        );
-        #[cfg(not(feature = "cuda"))]
-        let worker_state = GuestPcTraceSegmentCommitWorkerState::new(
-            mode.traceless_commitment_input,
-            mode.cross_segment_root_materialization,
-        );
-        #[cfg(feature = "cuda")]
-        {
-            worker_state.descriptor_buffer_retention = mode.descriptor_buffer_retention;
-        }
+        let worker_state = GuestPcTraceSegmentCommitWorkerState::from_mode(mode);
         Self {
             scope,
             worker_count: mode.worker_count,
@@ -4670,14 +4680,12 @@ impl<'scope, 'env> GuestPcTraceSegmentCommitWorkerPool<'scope, 'env> {
         #[cfg(feature = "cuda")]
         let descriptor_buffer_retention = self.worker_state.descriptor_buffer_retention;
         self.pending_workers.push_back(self.scope.spawn(move || {
-            let mut worker_state = GuestPcTraceSegmentCommitWorkerState::new(
+            let mut worker_state = GuestPcTraceSegmentCommitWorkerState::from_parts(
                 traceless_commitment_input,
                 cross_segment_root_materialization,
+                #[cfg(feature = "cuda")]
+                descriptor_buffer_retention,
             );
-            #[cfg(feature = "cuda")]
-            {
-                worker_state.descriptor_buffer_retention = descriptor_buffer_retention;
-            }
             worker_state.commit_segment(
                 context,
                 auxiliary_inputs,
