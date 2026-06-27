@@ -15,6 +15,9 @@ fn lean_proof_artifact_binding_exports_core_contract_projection() {
     let proof_artifact_path = crate_root.join("src/proof_artifact.rs");
     let proof_artifact_source =
         std::fs::read_to_string(&proof_artifact_path).expect("proof artifact source should read");
+    let proof_preflight_path = crate_root.join("src/proof_preflight.rs");
+    let proof_preflight_source =
+        std::fs::read_to_string(&proof_preflight_path).expect("proof preflight source should read");
 
     assert!(
         lean_binding::contains_import(&top_level_source, "Lzvm.ProofArtifactBinding"),
@@ -61,6 +64,7 @@ fn lean_proof_artifact_binding_exports_core_contract_projection() {
             "runtime_proof_artifact_concrete_segment_id_binding_of_agreement_left",
             "runtime_proof_artifact_concrete_segment_id_binding_of_agreement_right",
             "runtime_proof_artifact_binding_checked_acceptance_concrete_segment_ids_allowed",
+            "runtime_proof_artifact_binding_checked_acceptance_runtime_shape_contract",
             "runtime_proof_artifact_finalized_concrete_segment_ids_allowed",
             "runtime_proof_artifact_finalized_from_checked_acceptance",
             "runtime_proof_artifact_finalized_structural_obligations",
@@ -183,6 +187,23 @@ fn lean_proof_artifact_binding_exports_core_contract_projection() {
         "runtime_proof_artifact_binding_checked_acceptance_concrete_segment_ids_allowed",
         &["segmentIdView"],
     );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_proof_artifact_binding_checked_acceptance_runtime_shape_contract",
+        &[
+            "RuntimeProofArtifactConcreteSegmentIdBinding validation",
+            "RuntimeProofArtifactBindingStructuralObligations",
+            "RuntimeProofArtifactConcreteSegmentIdsAllowed",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_proof_artifact_binding_checked_acceptance_runtime_shape_contract",
+        &[
+            "runtime_proof_artifact_binding_checked_acceptance_structural_obligations",
+            "runtime_proof_artifact_binding_checked_acceptance_concrete_segment_ids_allowed",
+        ],
+    );
     lean_binding::assert_theorem_body_contains(
         &lean_source,
         "runtime_proof_artifact_finalized_concrete_segment_ids_allowed",
@@ -279,6 +300,14 @@ fn lean_proof_artifact_binding_exports_core_contract_projection() {
         proof_artifact_source.contains("use crate::proof_segment_ids::unexpected_proof_segment_id;")
             && proof_artifact_source.contains("unexpected_proof_segment_id(&proof.segments)"),
         "Rust proof artifact finalization should reject proof segment IDs outside the checked runtime set"
+    );
+    assert!(
+        proof_preflight_source.contains("pub fn validate_proof_artifact_runtime_shape(")
+            && proof_preflight_source.contains("validate_proof_artifact(proof)")
+            && proof_preflight_source.contains("unexpected_proof_segment_id(&proof.segments)")
+            && proof_preflight_source.contains("pub fn read_checked_proof_artifact_file(")
+            && proof_preflight_source.contains("validate_proof_artifact_runtime_shape(&proof)?"),
+        "Rust proof preflight should expose a checked proof reader matching the Lean runtime shape contract"
     );
     assert_production_proof_artifact_literals_are_finalized(&proof_artifact_source);
 }

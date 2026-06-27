@@ -597,6 +597,42 @@ theorem runtime_proof_artifact_binding_checked_acceptance_structural_obligations
                   proof
                   accepted))))))
 
+theorem runtime_proof_artifact_binding_checked_acceptance_runtime_shape_contract
+    {system : VerifierModel}
+    (validation : RuntimeProofArtifactBindingValidation system)
+    (binding : RuntimeProofArtifactConcreteSegmentIdBinding validation) :
+    forall artifact publicInput proof,
+      RuntimeProofArtifactBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeProofArtifactBindingStructuralObligations
+            system
+            validation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeProofArtifactConcreteSegmentIdsAllowed
+            proof := by
+  intro artifact publicInput proof accepted
+  exact
+    And.intro
+      (runtime_proof_artifact_binding_checked_acceptance_structural_obligations
+        validation
+        artifact
+        publicInput
+        proof
+        accepted)
+      (runtime_proof_artifact_binding_checked_acceptance_concrete_segment_ids_allowed
+        validation
+        binding
+        artifact
+        publicInput
+        proof
+        accepted)
+
 theorem runtime_proof_artifact_finalized_from_checked_acceptance
     {system : VerifierModel}
     (validation : RuntimeProofArtifactBindingValidation system) :
