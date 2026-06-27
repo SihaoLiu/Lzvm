@@ -18425,11 +18425,13 @@ struct ContributionChallengeWriterBindingFixture {
     challenge_segment_path: PathBuf,
     block_input_path: PathBuf,
     cache_path: PathBuf,
+    input_data_path: PathBuf,
 }
 
 enum ContributionChallengeWriterBindingMismatch {
     EthBlock,
     ProgramImageCache,
+    FramedGuestInput,
 }
 
 fn write_contribution_challenge_writer_binding_fixture(
@@ -18455,6 +18457,8 @@ fn write_contribution_challenge_writer_binding_fixture(
     let cache = sample_contribution_program_image_cache(setup_hash);
     let mut mismatched_cache = cache.clone();
     mismatched_cache.source_image_digest = [0x13; 32];
+    let input_data = framed_stdin_chunk(&[7_u8]);
+    let mismatched_input_data = framed_stdin_chunk(&[9_u8]);
     let cache_segment = ProofSegment {
         id: PROGRAM_IMAGE_CACHE_SEGMENT_ID,
         data: encode_program_image_cache_segment(&cache).expect("cache segment should encode"),
@@ -18473,13 +18477,31 @@ fn write_contribution_challenge_writer_binding_fixture(
         data: encode_eth_block_input_segment(&mismatched_block_input)
             .expect("block segment should encode"),
     };
-    let (proof_b_cache_segment, proof_b_block_segment) = match mismatch {
-        ContributionChallengeWriterBindingMismatch::EthBlock => {
-            (cache_segment.clone(), mismatched_block_segment)
-        }
-        ContributionChallengeWriterBindingMismatch::ProgramImageCache => {
-            (mismatched_cache_segment, block_segment.clone())
-        }
+    let framed_segment = ProofSegment {
+        id: FRAMED_GUEST_INPUT_SEGMENT_ID,
+        data: encode_framed_guest_input_segment(&input_data).expect("input segment should encode"),
+    };
+    let mismatched_framed_segment = ProofSegment {
+        id: FRAMED_GUEST_INPUT_SEGMENT_ID,
+        data: encode_framed_guest_input_segment(&mismatched_input_data)
+            .expect("input segment should encode"),
+    };
+    let (proof_b_cache_segment, proof_b_block_segment, proof_b_framed_segment) = match mismatch {
+        ContributionChallengeWriterBindingMismatch::EthBlock => (
+            cache_segment.clone(),
+            mismatched_block_segment,
+            framed_segment.clone(),
+        ),
+        ContributionChallengeWriterBindingMismatch::ProgramImageCache => (
+            mismatched_cache_segment,
+            block_segment.clone(),
+            framed_segment.clone(),
+        ),
+        ContributionChallengeWriterBindingMismatch::FramedGuestInput => (
+            cache_segment.clone(),
+            block_segment.clone(),
+            mismatched_framed_segment,
+        ),
     };
     let proof_a = ProofArtifact {
         setup_hash,
@@ -18490,6 +18512,7 @@ fn write_contribution_challenge_writer_binding_fixture(
                 .expect("contribution segment should exist"),
             cache_segment,
             block_segment,
+            framed_segment,
         ],
     };
     let proof_b = ProofArtifact {
@@ -18501,6 +18524,7 @@ fn write_contribution_challenge_writer_binding_fixture(
                 .expect("contribution segment should exist"),
             proof_b_cache_segment,
             proof_b_block_segment,
+            proof_b_framed_segment,
         ],
     };
     let proof_a_path = dir.join("proof-a.bin");
@@ -18509,6 +18533,7 @@ fn write_contribution_challenge_writer_binding_fixture(
     let challenge_segment_path = dir.join("challenge_values_segment.bin");
     let block_input_path = dir.join("block.input");
     let cache_path = dir.join("program_image.cache");
+    let input_data_path = dir.join("input.bin");
     write_bytes(
         &proof_a_path,
         encode_proof_artifact(&proof_a).expect("proof should encode"),
@@ -18529,6 +18554,7 @@ fn write_contribution_challenge_writer_binding_fixture(
         &cache_path,
         encode_program_image_commitment_cache(&cache).expect("cache should encode"),
     );
+    write_bytes(&input_data_path, &input_data);
 
     ContributionChallengeWriterBindingFixture {
         dir,
@@ -18538,6 +18564,7 @@ fn write_contribution_challenge_writer_binding_fixture(
         challenge_segment_path,
         block_input_path,
         cache_path,
+        input_data_path,
     }
 }
 
@@ -18639,6 +18666,56 @@ fn rejects_writing_contribution_challenge_when_later_proof_mismatches_program_im
     assert_eq!(
         String::from_utf8(stderr).expect("stderr should be utf-8"),
         "prove contribution challenges write failed: program image cache proof segment mismatch\n"
+    );
+}
+
+#[test]
+fn rejects_writing_contribution_challenge_when_later_proof_mismatches_framed_guest_input_binding() {
+    let fixture = write_contribution_challenge_writer_binding_fixture(
+        "write-contribution-challenge-later-input-mismatch",
+        ContributionChallengeWriterBindingMismatch::FramedGuestInput,
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "prove",
+            "write-contribution-challenges",
+            "--input-data",
+            fixture
+                .input_data_path
+                .to_str()
+                .expect("input path should be utf-8"),
+            fixture.dir.to_str().expect("setup path should be utf-8"),
+            fixture
+                .public_values_path
+                .to_str()
+                .expect("public path should be utf-8"),
+            fixture
+                .challenge_segment_path
+                .to_str()
+                .expect("challenge path should be utf-8"),
+            fixture
+                .proof_a_path
+                .to_str()
+                .expect("proof path should be utf-8"),
+            fixture
+                .proof_b_path
+                .to_str()
+                .expect("proof path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    assert_eq!(code, 1);
+    assert!(stdout.is_empty());
+    assert!(!fixture.challenge_segment_path.exists());
+    fs::remove_dir_all(&fixture.dir).expect("fixture directory should be removed");
+    assert_eq!(
+        String::from_utf8(stderr).expect("stderr should be utf-8"),
+        "prove contribution challenges write failed: framed guest input proof segment mismatch\n"
     );
 }
 
