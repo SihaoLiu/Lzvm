@@ -18720,6 +18720,56 @@ fn rejects_writing_contribution_challenge_when_later_proof_mismatches_framed_gue
 }
 
 #[test]
+fn rejects_verifying_contribution_challenge_when_later_proof_mismatches_framed_guest_input_binding()
+{
+    let fixture = write_contribution_challenge_writer_binding_fixture(
+        "verify-contribution-challenge-later-input-mismatch",
+        ContributionChallengeWriterBindingMismatch::FramedGuestInput,
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "verify",
+            "contribution-challenge",
+            "--input-data",
+            fixture
+                .input_data_path
+                .to_str()
+                .expect("input path should be utf-8"),
+            fixture.dir.to_str().expect("setup path should be utf-8"),
+            fixture
+                .public_values_path
+                .to_str()
+                .expect("public path should be utf-8"),
+            fixture
+                .challenge_segment_path
+                .to_str()
+                .expect("challenge path should be utf-8"),
+            fixture
+                .proof_a_path
+                .to_str()
+                .expect("proof path should be utf-8"),
+            fixture
+                .proof_b_path
+                .to_str()
+                .expect("proof path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+    fs::remove_dir_all(&fixture.dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 1);
+    assert!(stdout.is_empty());
+    assert_eq!(
+        String::from_utf8(stderr).expect("stderr should be utf-8"),
+        "verify contribution-challenge failed: framed guest input proof segment mismatch\n"
+    );
+}
+
+#[test]
 fn writes_and_verifies_contribution_challenge_with_allowed_trailing_eth_public_input_binding() {
     let dir = temp_dir("write-verify-contribution-challenge-eth-public-input");
     let _ = fs::remove_dir_all(&dir);
