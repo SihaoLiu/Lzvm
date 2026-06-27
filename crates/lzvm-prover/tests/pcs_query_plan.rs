@@ -364,6 +364,32 @@ fn rejects_seeded_pcs_query_plan_duplicate_material_segments() {
 }
 
 #[test]
+fn rejects_seeded_pcs_query_plan_material_mismatch() {
+    let schedule = sample_schedule();
+    let public_hash = [7; 32];
+    let mut material_unit = material_unit(0);
+    material_unit.fixed_byte_count += 1;
+    let material = material_manifest_segment(vec![material_unit]);
+    let witness = witness_segment(0);
+    let query = build_pcs_query_plan_segment(
+        &schedule,
+        public_hash,
+        &material,
+        std::slice::from_ref(&witness),
+    )
+    .expect("query plan should build");
+    let segments = vec![material, witness, query];
+
+    let error = validate_seeded_pcs_query_plan_segments(&schedule, public_hash, &segments)
+        .expect_err("query plan material should match the schedule");
+
+    assert_eq!(
+        error,
+        ValidatePcsQueryPlanSegmentsError::UnitMismatch { unit_index: 0 }
+    );
+}
+
+#[test]
 fn rejects_seeded_pcs_query_plan_mismatches() {
     let schedule = sample_schedule();
     let public_hash = [7; 32];
@@ -702,6 +728,27 @@ fn rejects_transcript_pcs_query_plan_duplicate_material_segments() {
 }
 
 #[test]
+fn rejects_transcript_pcs_query_plan_extra_material_units() {
+    let (schedule, mut segments) = transcript_query_plan_segments();
+    let material_segment = segments
+        .iter_mut()
+        .find(|segment| segment.id == PCS_MATERIAL_MANIFEST_SEGMENT_ID)
+        .expect("material segment should exist");
+    material_segment.data = encode_pcs_material_manifest_segment(&PcsMaterialManifestSegment {
+        units: vec![material_unit(0), material_unit(1)],
+    })
+    .expect("material segment should encode");
+
+    let error = validate_transcript_pcs_query_plan_segments(&schedule, &[], &segments)
+        .expect_err("extra material unit should be rejected");
+
+    assert_eq!(
+        error,
+        ValidatePcsQueryPlanSegmentsError::UnitMismatch { unit_index: 1 }
+    );
+}
+
+#[test]
 fn rejects_transcript_pcs_query_plan_duplicate_nonce_segments() {
     let (schedule, mut segments) = transcript_query_plan_segments();
     let nonce = segments
@@ -863,6 +910,7 @@ fn rejects_transcript_pcs_query_plan_not_bound_to_each_unit_challenge() {
     second_unit.transcript_evaluation_challenge_draws = 1;
     second_unit.unit_id = Some(1);
     second_unit.unit_name = Some("unit-b".to_owned());
+    second_unit.pcs_material_constant_tree_root = Some([21, 22, 23, 24]);
     schedule.unit_count = 2;
     schedule.pcs_material_unit_count = 2;
     schedule.total_query_count = 4;
@@ -1596,9 +1644,14 @@ fn replace_query_plan_trace_instance(segments: &mut [ProofSegment], trace_instan
 }
 
 fn material_segment() -> ProofSegment {
+    material_manifest_segment(vec![material_unit(0)])
+}
+
+fn material_manifest_segment(units: Vec<PcsMaterialManifestUnit>) -> ProofSegment {
     ProofSegment {
         id: PCS_MATERIAL_MANIFEST_SEGMENT_ID,
-        data: vec![1, 2, 3, 4],
+        data: encode_pcs_material_manifest_segment(&PcsMaterialManifestSegment { units })
+            .expect("material segment should encode"),
     }
 }
 
@@ -1783,14 +1836,14 @@ fn sample_unit() -> ProveUnitSchedule {
         final_layer_bits: 1,
         fixed_bytes: 0,
         constant_tree_root: None,
-        pcs_material_bytes: None,
-        pcs_material_plan_digest: None,
-        pcs_material_fixed_column_digest: None,
-        pcs_material_constant_tree_digest: None,
-        pcs_material_constant_tree_root: None,
-        pcs_material_fixed_byte_count: None,
-        pcs_material_constant_tree_byte_count: None,
-        pcs_material_leaf_byte_count: None,
-        pcs_material_node_byte_count: None,
+        pcs_material_bytes: Some(0),
+        pcs_material_plan_digest: Some([1; 32]),
+        pcs_material_fixed_column_digest: Some([2; 32]),
+        pcs_material_constant_tree_digest: Some([3; 32]),
+        pcs_material_constant_tree_root: Some([1, 2, 3, 4]),
+        pcs_material_fixed_byte_count: Some(0),
+        pcs_material_constant_tree_byte_count: Some(0),
+        pcs_material_leaf_byte_count: Some(0),
+        pcs_material_node_byte_count: Some(0),
     }
 }
