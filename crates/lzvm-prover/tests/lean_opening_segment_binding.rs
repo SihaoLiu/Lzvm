@@ -15,16 +15,10 @@ fn lean_opening_segment_binding_exports_core_contract_projection() {
     let fri_segment_path = crate_root.join("../lzvm-artifacts/src/pcs_fri_segment.rs");
     let fri_segment_source =
         std::fs::read_to_string(&fri_segment_path).expect("FRI segment source should read");
-    let fri_parse_body = function_body(
-        &fri_segment_source,
-        "pub fn parse_pcs_fri_opening_segment",
-        "fn pcs_fri_opening_version",
-    );
-    let fri_validate_body = function_body(
-        &fri_segment_source,
-        "fn validate_pcs_fri_opening_segment",
-        "fn encoded_len",
-    );
+    let fri_parse_body =
+        rust_function_body(&fri_segment_source, "pub fn parse_pcs_fri_opening_segment");
+    let fri_validate_body =
+        rust_function_body(&fri_segment_source, "fn validate_pcs_fri_opening_segment");
 
     assert!(
         lean_binding::contains_import(&top_level_source, "Lzvm.OpeningSegmentBinding"),
@@ -476,13 +470,32 @@ fn lean_opening_segment_binding_exports_core_contract_projection() {
     );
 }
 
-fn function_body<'a>(source: &'a str, start: &str, end: &str) -> &'a str {
+fn rust_function_body<'a>(source: &'a str, start: &str) -> &'a str {
     let start_index = source
         .find(start)
         .unwrap_or_else(|| panic!("source should contain {start}"));
-    let end_index = source[start_index..]
-        .find(end)
+    let open_index = source[start_index..]
+        .find('{')
         .map(|offset| start_index + offset)
-        .unwrap_or_else(|| panic!("source should contain {end} after {start}"));
-    &source[start_index..end_index]
+        .unwrap_or_else(|| panic!("{start} should have an opening brace"));
+    let close_index = matching_closing_brace(source, open_index)
+        .unwrap_or_else(|| panic!("{start} should have a matching closing brace"));
+    &source[start_index..=close_index]
+}
+
+fn matching_closing_brace(source: &str, open_index: usize) -> Option<usize> {
+    let mut depth = 0_usize;
+    for (offset, ch) in source[open_index..].char_indices() {
+        match ch {
+            '{' => depth += 1,
+            '}' => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(open_index + offset);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
 }
