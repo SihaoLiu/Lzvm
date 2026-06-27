@@ -100,8 +100,14 @@ def read_text(path: Path) -> str:
     return path.read_text(encoding="utf-8", errors="replace")
 
 
-def open_text_no_follow(path: Path, mode: int = 0o600):
-    flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
+def open_text_no_follow(
+    path: Path,
+    mode: int = 0o600,
+    *,
+    readback: bool = False,
+    errors: str | None = None,
+):
+    flags = (os.O_RDWR if readback else os.O_WRONLY) | os.O_CREAT | os.O_TRUNC
     if hasattr(os, "O_NOFOLLOW"):
         flags |= os.O_NOFOLLOW
     try:
@@ -110,20 +116,14 @@ def open_text_no_follow(path: Path, mode: int = 0o600):
         if path.is_symlink():
             raise SystemExit(f"output path must not be a symlink: {path}") from error
         raise
+    if readback:
+        return os.fdopen(
+            descriptor,
+            "w+",
+            encoding="utf-8",
+            errors=errors or "strict",
+        )
     return os.fdopen(descriptor, "w", encoding="utf-8")
-
-
-def open_readwrite_text_no_follow(path: Path, mode: int = 0o600):
-    flags = os.O_RDWR | os.O_CREAT | os.O_TRUNC
-    if hasattr(os, "O_NOFOLLOW"):
-        flags |= os.O_NOFOLLOW
-    try:
-        descriptor = os.open(path, flags, mode)
-    except OSError as error:
-        if path.is_symlink():
-            raise SystemExit(f"output path must not be a symlink: {path}") from error
-        raise
-    return os.fdopen(descriptor, "w+", encoding="utf-8")
 
 
 def write_text_no_follow(path: Path, text: str) -> None:
@@ -428,8 +428,16 @@ def run_once(
 
     start = time.monotonic()
     timed_out = False
-    with open_readwrite_text_no_follow(stdout_path) as stdout_file:
-        with open_readwrite_text_no_follow(stderr_path) as stderr_file:
+    with open_text_no_follow(
+        stdout_path,
+        readback=True,
+        errors="replace",
+    ) as stdout_file:
+        with open_text_no_follow(
+            stderr_path,
+            readback=True,
+            errors="replace",
+        ) as stderr_file:
             process = subprocess.Popen(
                 command,
                 cwd=cwd,

@@ -1358,6 +1358,55 @@ fn proof_timing_batch_validates_open_stdout_capture() {
 }
 
 #[test]
+fn proof_timing_batch_replaces_invalid_capture_bytes() {
+    let script_path = batch_script_path();
+    let dir = test_dir("proof-timing-batch-invalid-capture-bytes");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("fixture dir should be created");
+    let log_path = dir.join("improve-log.csv");
+
+    let output = Command::new(&script_path)
+        .arg("--work-dir")
+        .arg(&dir)
+        .arg("--path")
+        .arg(&log_path)
+        .arg("--commit")
+        .arg("test")
+        .arg("--runs")
+        .arg("3")
+        .arg("--small-command")
+        .arg(concat!(
+            "python3 -c \"import sys; ",
+            "sys.stdout.buffer.write(b'invalid=' + bytes([255]) + ",
+            "b'\\ntiming_total_ms=1000\\n')\""
+        ))
+        .arg("--summary")
+        .arg("invalid capture bytes")
+        .output()
+        .expect("proof timing batch should run");
+    let success = output.status.success();
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    let batch_dir = single_batch_dir(&dir);
+    let combined_log =
+        std::fs::read_to_string(batch_dir.join("small-001.log")).expect("log should read");
+    let improve_log_created = log_path.exists();
+    let _ = std::fs::remove_dir_all(&dir);
+
+    assert!(
+        success,
+        "proof timing batch should tolerate invalid UTF-8 in captures: stderr={stderr}"
+    );
+    assert!(
+        combined_log.contains("invalid=") && combined_log.contains("timing_total_ms=1000"),
+        "combined log should include decoded capture output: {combined_log}"
+    );
+    assert!(
+        improve_log_created,
+        "valid timing captures with invalid bytes should still append improve log"
+    );
+}
+
+#[test]
 fn proof_timing_batch_rejects_missing_required_output_text() {
     let script_path = batch_script_path();
     let dir = test_dir("proof-timing-batch-required-text");
