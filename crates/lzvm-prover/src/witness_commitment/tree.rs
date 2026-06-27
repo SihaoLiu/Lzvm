@@ -37,6 +37,7 @@ use super::{
 
 #[cfg(feature = "cuda")]
 const RETAINED_PARENT_CHECKPOINT_MAX_STATES: usize = 524288;
+const DUPLICATE_QUERY_ROW_PRESCAN_LIMIT: usize = 64;
 
 #[cfg(feature = "cuda")]
 fn retained_parent_checkpoint_max_states() -> usize {
@@ -1253,6 +1254,9 @@ fn unique_witness_stage_opening_rows(
     if row_indices.len() != query_rows.len() || row_indices.len() < 2 {
         return None;
     }
+    if !query_rows_may_have_duplicates(query_rows) {
+        return None;
+    }
 
     let mut unique_positions_by_query_row = HashMap::with_capacity(query_rows.len());
     let mut unique_row_indices = Vec::with_capacity(row_indices.len());
@@ -1280,6 +1284,18 @@ fn unique_witness_stage_opening_rows(
             positions,
         })
     }
+}
+
+fn query_rows_may_have_duplicates(query_rows: &[usize]) -> bool {
+    if query_rows.len() > DUPLICATE_QUERY_ROW_PRESCAN_LIMIT {
+        return true;
+    }
+    for index in 1..query_rows.len() {
+        if query_rows[..index].contains(&query_rows[index]) {
+            return true;
+        }
+    }
+    false
 }
 
 fn expand_unique_items<T: Clone>(
@@ -1950,7 +1966,7 @@ mod tests {
         commit_witness_stage_zero_compact, open_witness_stage_commitment,
         open_witness_stage_commitments, unique_witness_stage_opening_rows,
         verify_witness_stage_opening_root, WitnessStageCommitmentError, WitnessStageLeaves,
-        WORD_BYTES,
+        DUPLICATE_QUERY_ROW_PRESCAN_LIMIT, WORD_BYTES,
     };
     #[cfg(feature = "cuda")]
     use crate::witness_commitment::compact_witness_stage_leaf_hash_level_from_source_device_view_timing;
@@ -1970,6 +1986,27 @@ mod tests {
         assert_eq!(unique.row_indices, vec![3, 1, 2]);
         assert_eq!(unique.positions, vec![0, 1, 0, 2, 1]);
         assert!(unique_witness_stage_opening_rows(&[0, 2], &[0, 2]).is_none());
+    }
+
+    #[test]
+    fn unique_opening_rows_compacts_large_duplicate_batches() {
+        let mut row_indices = (0..=DUPLICATE_QUERY_ROW_PRESCAN_LIMIT as u64).collect::<Vec<_>>();
+        row_indices.push(7);
+        let query_rows = row_indices
+            .iter()
+            .copied()
+            .map(|row| row as usize)
+            .collect::<Vec<_>>();
+
+        let unique = unique_witness_stage_opening_rows(&row_indices, &query_rows)
+            .expect("large duplicate rows should still be compacted");
+
+        assert_eq!(
+            unique.row_indices.len(),
+            DUPLICATE_QUERY_ROW_PRESCAN_LIMIT + 1
+        );
+        assert_eq!(unique.positions[7], 7);
+        assert_eq!(unique.positions.last().copied(), Some(7));
     }
 
     #[test]
