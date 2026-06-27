@@ -31,18 +31,24 @@ theorem runtime_pipeline_binding_checked_acceptance_accepts_full_soundness_contr
             publicInput
             proof
             requiresExternalSource
-          /\ RuntimeArtifactSoundnessObligations
-            system
-            validation.ethBindingValidation.proofArtifactBindingValidation.runtimeValidation
-            artifact
-            publicInput
-            proof
-          /\ RuntimeVerifierCoreContract system publicInput proof
-          /\ (exists witness trace constraints,
-            system.traceConsistent publicInput proof trace
-              /\ system.constraintsSatisfied constraints trace
-              /\ system.witnessMatchesTrace witness trace)
-          /\ SoundWitness system publicInput proof := by
+            /\ RuntimeArtifactSoundnessObligations
+              system
+              validation.ethBindingValidation.proofArtifactBindingValidation.runtimeValidation
+              artifact
+              publicInput
+              proof
+            /\ RuntimeVerifierCoreContract system publicInput proof
+            /\ (exists witness trace constraints,
+              system.traceConsistent publicInput proof trace
+                /\ system.constraintsSatisfied constraints trace
+                /\ system.witnessMatchesTrace witness trace)
+            /\ SoundWitness system publicInput proof
+            /\ RuntimeFriFoldTraceIdentityContract
+              system
+              validation.queryPlanBindingValidation.openingValidation
+              artifact
+              publicInput
+              proof := by
   intro artifact publicInput proof requiresExternalSource accepted
   have verifierAccepts :=
     runtime_pipeline_binding_checked_acceptance_verifier_accepts
@@ -60,19 +66,7 @@ theorem runtime_pipeline_binding_checked_acceptance_accepts_full_soundness_contr
       proof
       requiresExternalSource
       accepted
-  rcases fullContract with
-    ⟨pipelineEvidence,
-      artifactObligations,
-      coreContract,
-      executionObligations,
-      soundWitness,
-      _foldTraceIdentityContract⟩
-  exact
-    And.intro verifierAccepts
-      (And.intro pipelineEvidence
-        (And.intro artifactObligations
-          (And.intro coreContract
-            (And.intro executionObligations soundWitness))))
+  exact And.intro verifierAccepts fullContract
 
 theorem runtime_pipeline_binding_checked_acceptance_proof_system_sound
     {system : VerifierModel}

@@ -881,6 +881,48 @@ fn validates_pcs_fri_opening_folds_by_trace_identity() {
 }
 
 #[test]
+fn rejects_pcs_fri_opening_folds_with_trace_identity_mismatch() {
+    let (unit, segments) = valid_pcs_fri_opening_segments();
+    let base_query_plan =
+        load_pcs_query_plan_from_segments(&segments).expect("query plan should load");
+    let base_opening =
+        load_pcs_fri_opening_segment_from_segments(&segments).expect("FRI opening should load");
+    let mut trace_query = base_query_plan.units[0].clone();
+    trace_query.trace_instance_index = 1;
+    let mut trace_opening = base_opening.units[0].clone();
+    trace_opening.trace_instance_index = 1;
+    let base_challenges = sample_fold_challenges();
+    let mut trace_challenges = sample_fold_challenges();
+    trace_challenges.trace_instance_index = 1;
+
+    let opening_error = validate_pcs_fri_opening_folds_from_units(
+        std::slice::from_ref(&unit),
+        std::slice::from_ref(&trace_query),
+        std::slice::from_ref(&base_opening.units[0]),
+        std::slice::from_ref(&trace_challenges),
+    )
+    .expect_err("FRI opening folds should reject opening identity mismatch");
+
+    assert_eq!(
+        opening_error,
+        ValidatePcsFriOpeningFoldUnitsError::UnitMismatch { unit_index: 0 }
+    );
+
+    let challenge_error = validate_pcs_fri_opening_folds_from_units(
+        std::slice::from_ref(&unit),
+        std::slice::from_ref(&trace_query),
+        std::slice::from_ref(&trace_opening),
+        std::slice::from_ref(&base_challenges),
+    )
+    .expect_err("FRI opening folds should reject challenge identity mismatch");
+
+    assert_eq!(
+        challenge_error,
+        ValidatePcsFriOpeningFoldUnitsError::UnitMismatch { unit_index: 0 }
+    );
+}
+
+#[test]
 fn rejects_pcs_fri_opening_fold_mismatches_from_units() {
     let (unit, segments) = valid_pcs_fri_opening_segments();
     let query_plan = load_pcs_query_plan_from_segments(&segments).expect("query plan should load");

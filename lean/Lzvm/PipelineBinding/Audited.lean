@@ -25,35 +25,41 @@ theorem runtime_pipeline_binding_required_external_source_full_soundness_contrac
           proof ->
         requiresExternalSource ->
           system.accepts publicInput proof
-            /\ ExternalSourceOpeningEvidence
-              system
-              (runtime_pipeline_trace_source_validation validation)
-              publicInput
-              proof
-            /\ ExternalSourceOpeningEvidence
-              system
-              (runtime_pipeline_opening_source_validation validation)
-              publicInput
-              proof
-            /\ RuntimePipelineBindingEvidence
-              system
-              validation
-              artifact
-              publicInput
-              proof
-              requiresExternalSource
-            /\ RuntimeArtifactSoundnessObligations
-              system
-              validation.ethBindingValidation.proofArtifactBindingValidation.runtimeValidation
-              artifact
-              publicInput
-              proof
-            /\ RuntimeVerifierCoreContract system publicInput proof
-            /\ (exists witness trace constraints,
-              system.traceConsistent publicInput proof trace
-                /\ system.constraintsSatisfied constraints trace
-                /\ system.witnessMatchesTrace witness trace)
-            /\ SoundWitness system publicInput proof := by
+              /\ ExternalSourceOpeningEvidence
+                system
+                (runtime_pipeline_trace_source_validation validation)
+                publicInput
+                proof
+              /\ ExternalSourceOpeningEvidence
+                system
+                (runtime_pipeline_opening_source_validation validation)
+                publicInput
+                proof
+              /\ RuntimePipelineBindingEvidence
+                system
+                validation
+                artifact
+                publicInput
+                proof
+                requiresExternalSource
+              /\ RuntimeArtifactSoundnessObligations
+                system
+                validation.ethBindingValidation.proofArtifactBindingValidation.runtimeValidation
+                artifact
+                publicInput
+                proof
+              /\ RuntimeVerifierCoreContract system publicInput proof
+              /\ (exists witness trace constraints,
+                system.traceConsistent publicInput proof trace
+                  /\ system.constraintsSatisfied constraints trace
+                  /\ system.witnessMatchesTrace witness trace)
+              /\ SoundWitness system publicInput proof
+              /\ RuntimeFriFoldTraceIdentityContract
+                system
+                validation.queryPlanBindingValidation.openingValidation
+                artifact
+                publicInput
+                proof := by
   intro artifact publicInput proof requiresExternalSource accepted required
   have verifierAccepts :=
     runtime_pipeline_binding_checked_acceptance_verifier_accepts
@@ -93,7 +99,7 @@ theorem runtime_pipeline_binding_required_external_source_full_soundness_contrac
       coreContract,
       executionObligations,
       soundWitness,
-      _foldTraceIdentityContract⟩
+      foldTraceIdentityContract⟩
   exact
     ⟨verifierAccepts,
       traceExternalEvidence,
@@ -102,7 +108,8 @@ theorem runtime_pipeline_binding_required_external_source_full_soundness_contrac
       artifactObligations,
       coreContract,
       executionObligations,
-      soundWitness⟩
+      soundWitness,
+      foldTraceIdentityContract⟩
 
 theorem runtime_pipeline_binding_required_external_source_proof_system_full_soundness_contract
     {system : VerifierModel}
@@ -118,35 +125,41 @@ theorem runtime_pipeline_binding_required_external_source_proof_system_full_soun
         requiresExternalSource ->
           ProofSystemSound system
             /\ system.accepts publicInput proof
-            /\ ExternalSourceOpeningEvidence
-              system
-              (runtime_pipeline_trace_source_validation validation)
-              publicInput
-              proof
-            /\ ExternalSourceOpeningEvidence
-              system
-              (runtime_pipeline_opening_source_validation validation)
-              publicInput
-              proof
-            /\ RuntimePipelineBindingEvidence
-              system
-              validation
-              artifact
-              publicInput
-              proof
-              requiresExternalSource
-            /\ RuntimeArtifactSoundnessObligations
-              system
-              validation.ethBindingValidation.proofArtifactBindingValidation.runtimeValidation
-              artifact
-              publicInput
-              proof
-            /\ RuntimeVerifierCoreContract system publicInput proof
-            /\ (exists witness trace constraints,
-              system.traceConsistent publicInput proof trace
-                /\ system.constraintsSatisfied constraints trace
-                /\ system.witnessMatchesTrace witness trace)
-            /\ SoundWitness system publicInput proof := by
+              /\ ExternalSourceOpeningEvidence
+                system
+                (runtime_pipeline_trace_source_validation validation)
+                publicInput
+                proof
+              /\ ExternalSourceOpeningEvidence
+                system
+                (runtime_pipeline_opening_source_validation validation)
+                publicInput
+                proof
+              /\ RuntimePipelineBindingEvidence
+                system
+                validation
+                artifact
+                publicInput
+                proof
+                requiresExternalSource
+              /\ RuntimeArtifactSoundnessObligations
+                system
+                validation.ethBindingValidation.proofArtifactBindingValidation.runtimeValidation
+                artifact
+                publicInput
+                proof
+              /\ RuntimeVerifierCoreContract system publicInput proof
+              /\ (exists witness trace constraints,
+                system.traceConsistent publicInput proof trace
+                  /\ system.constraintsSatisfied constraints trace
+                  /\ system.witnessMatchesTrace witness trace)
+              /\ SoundWitness system publicInput proof
+              /\ RuntimeFriFoldTraceIdentityContract
+                system
+                validation.queryPlanBindingValidation.openingValidation
+                artifact
+                publicInput
+                proof := by
   intro artifact publicInput proof requiresExternalSource accepted required
   have proofSystemSound := abstract_verifier_sound assumptions
   have fullContract :=
@@ -200,11 +213,17 @@ theorem runtime_pipeline_binding_required_external_source_audited_proof_system_c
               publicInput
               proof
             /\ RuntimeVerifierCoreContract system publicInput proof
-            /\ (exists witness trace constraints,
-              system.traceConsistent publicInput proof trace
-                /\ system.constraintsSatisfied constraints trace
-                /\ system.witnessMatchesTrace witness trace)
-            /\ SoundWitness system publicInput proof := by
+              /\ (exists witness trace constraints,
+                system.traceConsistent publicInput proof trace
+                  /\ system.constraintsSatisfied constraints trace
+                  /\ system.witnessMatchesTrace witness trace)
+              /\ SoundWitness system publicInput proof
+              /\ RuntimeFriFoldTraceIdentityContract
+                system
+                validation.queryPlanBindingValidation.openingValidation
+                artifact
+                publicInput
+                proof := by
   intro artifact publicInput proof requiresExternalSource accepted required
   have auditedAssumptions :=
     assumption_bundle_carries_required_crypto_evidence assumptions
@@ -260,11 +279,17 @@ theorem runtime_pipeline_binding_required_external_source_audited_soundness_proo
               publicInput
               proof
             /\ RuntimeVerifierCoreContract system publicInput proof
-            /\ (exists witness trace constraints,
-              system.traceConsistent publicInput proof trace
-                /\ system.constraintsSatisfied constraints trace
-                /\ system.witnessMatchesTrace witness trace)
-            /\ SoundWitness system publicInput proof := by
+              /\ (exists witness trace constraints,
+                system.traceConsistent publicInput proof trace
+                  /\ system.constraintsSatisfied constraints trace
+                  /\ system.witnessMatchesTrace witness trace)
+              /\ SoundWitness system publicInput proof
+              /\ RuntimeFriFoldTraceIdentityContract
+                system
+                validation.queryPlanBindingValidation.openingValidation
+                artifact
+                publicInput
+                proof := by
   intro artifact publicInput proof requiresExternalSource accepted required
   have auditedContract :=
     runtime_pipeline_binding_required_external_source_audited_proof_system_contract
