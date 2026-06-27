@@ -655,10 +655,6 @@ fn build_witness_opening_segment_from_trace_outputs(
     outputs: &[&ProveWitnessTraceCommitments],
     timing: Option<&mut WitnessProofArtifactTiming>,
 ) -> Result<ProofSegment, ProveWitnessOpeningSegmentError> {
-    let commitments = outputs
-        .iter()
-        .map(|output| output.commitments())
-        .collect::<Vec<_>>();
     let mut outputs_by_unit = std::collections::BTreeMap::new();
     for output in outputs {
         let commitments = output.commitments();
@@ -680,15 +676,10 @@ fn build_witness_opening_segment_from_trace_outputs(
         .iter()
         .map(|unit| (unit.unit_index, unit.trace_instance_index))
         .collect::<std::collections::BTreeSet<_>>();
-    for output in &commitments {
-        let unit_index_u32 = u32::try_from(output.unit_index()).map_err(|_| {
-            ProveWitnessOpeningSegmentError::UnitIndexOverflow {
-                unit_index: output.unit_index(),
-            }
-        })?;
-        if !query_units.contains(&(unit_index_u32, output.trace_instance_index())) {
+    for (unit_index_u32, trace_instance_index) in outputs_by_unit.keys() {
+        if !query_units.contains(&(*unit_index_u32, *trace_instance_index)) {
             return Err(ProveWitnessOpeningSegmentError::MissingQueryUnit {
-                unit_index: unit_index_u32 as usize,
+                unit_index: *unit_index_u32 as usize,
             });
         }
     }
