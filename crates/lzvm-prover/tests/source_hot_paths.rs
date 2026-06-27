@@ -7,6 +7,10 @@ fn compact_source(source: &str) -> String {
     source.chars().filter(|ch| !ch.is_whitespace()).collect()
 }
 
+fn compact_source_contains(source: &str, needle: &str) -> bool {
+    compact_source(source).contains(&compact_source(needle))
+}
+
 fn unquoted_timing_name(timing_name: &str) -> &str {
     timing_name
         .strip_prefix('"')
@@ -2205,23 +2209,44 @@ fn lean_eth_block_public_input_binding_tracks_runtime_checks() {
         artifact_source.contains("fn validate_eth_block_binding")
             && artifact_source.contains("struct ValidatedEthBlockInput")
             && artifact_source.contains("eth_block_input: Option<ValidatedEthBlockInput<'a>>")
-            && artifact_source.contains(
+            && compact_source_contains(
+                &artifact_source,
                 "let eth_block_input = validate_eth_block_binding(public_values, eth_block_input)?"
             )
-            && validate_eth_block_binding_body
-                .contains("Result<Option<ValidatedEthBlockInput<'a>>, String>")
-            && validate_eth_block_binding_body.contains("Ok(input.map(ValidatedEthBlockInput))")
-            && eth_block_input_segment_body.contains("input: Option<ValidatedEthBlockInput<'_>>")
-            && eth_block_input_segment_body
-                .contains("encode_eth_block_input_segment(input.as_input())")
+            && compact_source_contains(
+                validate_eth_block_binding_body,
+                "Result<Option<ValidatedEthBlockInput<'a>>, String>"
+            )
+            && compact_source_contains(
+                validate_eth_block_binding_body,
+                "Ok(input.map(ValidatedEthBlockInput))"
+            )
+            && artifact_source
+                .matches("map(ValidatedEthBlockInput)")
+                .count()
+                == 1
+            && artifact_source.matches("ValidatedEthBlockInput(").count() == 0
+            && compact_source_contains(
+                eth_block_input_segment_body,
+                "input: Option<ValidatedEthBlockInput<'_>>"
+            )
+            && compact_source_contains(
+                eth_block_input_segment_body,
+                "encode_eth_block_input_segment(input.as_input())"
+            )
             && artifact_source.contains("public_values_hash")
             && artifact_source.contains("validate_proof_bindings"),
         "Rust proof artifact construction should keep runtime public-input binding checks"
     );
     assert!(
-        program_image_cache_segment_body.contains("input: Option<ValidatedProgramImageCache<'_>>")
-            && program_image_cache_segment_body
-                .contains("encode_program_image_cache_segment(cache.as_cache())")
+        compact_source_contains(
+            program_image_cache_segment_body,
+            "input: Option<ValidatedProgramImageCache<'_>>"
+        ) && compact_source_contains(
+            program_image_cache_segment_body,
+            "encode_program_image_cache_segment(cache.as_cache())"
+        ) && !program_image_cache_segment_body.contains("validate_")
+            && !program_image_cache_segment_body.contains("tree_root")
             && !program_image_cache_segment_body
                 .contains("validate_program_image_cache_tree_root"),
         "program image cache binding segment construction should rely on the canonical segment encoder validation"
@@ -2421,32 +2446,56 @@ fn lean_framed_guest_input_binding_tracks_runtime_checks() {
             && validate_proof_bindings_body
                 .contains("let framed_guest_input = validate_framed_guest_input_binding")
             && validate_proof_bindings_body.contains("let program_image_cache =")
-            && validate_proof_bindings_body
-                .contains("validate_program_image_cache_binding(public_values, program_image_cache)?")
-            && validate_proof_bindings_body
-                .contains("let eth_block_input = validate_eth_block_binding")
+            && compact_source_contains(
+                validate_proof_bindings_body,
+                "validate_program_image_cache_binding(public_values, program_image_cache)?"
+            )
+            && compact_source_contains(
+                validate_proof_bindings_body,
+                "let eth_block_input = validate_eth_block_binding(public_values, eth_block_input)?"
+            )
             && validate_proof_bindings_body.contains("Ok(ValidatedProofBindings")
             && proof_artifact_source.contains("struct ValidatedProgramImageCache")
             && proof_artifact_source
                 .contains("program_image_cache: Option<ValidatedProgramImageCache<'a>>")
             && proof_artifact_source.contains("struct ValidatedEthBlockInput")
             && proof_artifact_source.contains("eth_block_input: Option<ValidatedEthBlockInput<'a>>")
-            && validate_program_image_cache_binding_body
-                .contains("Result<Option<ValidatedProgramImageCache<'a>>, String>")
-            && validate_program_image_cache_binding_body
-                .contains("Ok(cache.map(ValidatedProgramImageCache))")
-            && validate_eth_block_binding_body
-                .contains("Result<Option<ValidatedEthBlockInput<'a>>, String>")
-            && validate_eth_block_binding_body.contains("Ok(input.map(ValidatedEthBlockInput))")
+            && compact_source_contains(
+                validate_program_image_cache_binding_body,
+                "Result<Option<ValidatedProgramImageCache<'a>>, String>"
+            )
+            && compact_source_contains(
+                validate_program_image_cache_binding_body,
+                "Ok(cache.map(ValidatedProgramImageCache))"
+            )
+            && proof_artifact_source
+                .matches("map(ValidatedProgramImageCache)")
+                .count()
+                == 1
+            && proof_artifact_source.matches("ValidatedProgramImageCache(").count() == 0
+            && compact_source_contains(
+                validate_eth_block_binding_body,
+                "Result<Option<ValidatedEthBlockInput<'a>>, String>"
+            )
+            && compact_source_contains(
+                validate_eth_block_binding_body,
+                "Ok(input.map(ValidatedEthBlockInput))"
+            )
+            && proof_artifact_source.matches("map(ValidatedEthBlockInput)").count() == 1
+            && proof_artifact_source.matches("ValidatedEthBlockInput(").count() == 0
             && validate_framed_guest_input_binding_body
                 .contains("Result<Option<ValidatedFramedGuestInput<'a>>, String>")
             && validate_framed_guest_input_binding_body
                 .contains("Ok(Some(ValidatedFramedGuestInput(input)))")
             && build_proof_binding_segments_body.contains("bindings: ValidatedProofBindings<'_>")
-            && build_proof_binding_segments_body
-                .contains("build_program_image_cache_proof_segment(bindings.program_image_cache)")
-            && build_proof_binding_segments_body
-                .contains("build_eth_block_input_proof_segment(bindings.eth_block_input)")
+            && compact_source_contains(
+                build_proof_binding_segments_body,
+                "build_program_image_cache_proof_segment(bindings.program_image_cache)"
+            )
+            && compact_source_contains(
+                build_proof_binding_segments_body,
+                "build_eth_block_input_proof_segment(bindings.eth_block_input)"
+            )
             && build_proof_binding_segments_body
                 .contains("build_framed_guest_input_proof_segment(bindings.framed_guest_input)")
             && validate_framed_guest_input_binding_body
