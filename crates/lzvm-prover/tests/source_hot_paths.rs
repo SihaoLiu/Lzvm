@@ -8706,6 +8706,30 @@ fn lean_opening_segment_binding_tracks_runtime_opening_checks() {
                 .contains("validate_constant_opening_units_match_query_units_from_segment")
             && verifier_query_validation
                 .contains("validate_witness_opening_units_match_query_units_from_segment")
+            && verifier_query_validation
+                .contains("fri_opening_units_by_identity(request.opening_units)")
+            && verifier_query_validation
+                .contains("constant_opening_units_by_identity(&constant_opening.units)")
+            && verifier_query_validation
+                .contains("witness_opening_units_by_identity(&witness_opening.units)")
+            && verifier_query_validation
+                .contains("transcript_challenges_by_identity(request.transcript_challenges)")
+            && verifier_query_validation.contains(
+                "let identity = (query_unit.unit_index, query_unit.trace_instance_index)"
+            )
+            && compact_source_contains(verifier_query_validation, "fri_opening_units.get(&identity)")
+            && compact_source_contains(
+                verifier_query_validation,
+                "constant_opening_units.get(&identity)"
+            )
+            && compact_source_contains(
+                verifier_query_validation,
+                "witness_opening_units.get(&identity)"
+            )
+            && compact_source_contains(
+                verifier_query_validation,
+                "transcript_challenges.get(&identity)"
+            )
             && verifier_query_validation.contains("let mut proof_value_offsets = None")
             && verifier_query_validation.contains("proof_value_offsets.is_none()")
             && !verifier_query_validation

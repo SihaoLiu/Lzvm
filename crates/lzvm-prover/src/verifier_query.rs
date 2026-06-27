@@ -1,4 +1,4 @@
-use std::fmt;
+use std::{collections::BTreeMap, fmt};
 
 use lzvm_artifacts::constant_opening_segment::ConstantOpeningUnitSegment;
 use lzvm_artifacts::global_info::{GlobalInfo, NamedStageValue};
@@ -718,6 +718,11 @@ fn validate_verifier_query_outputs_from_segments_inner(
     )
     .map_err(VerifierFriQueryOutputSegmentsError::WitnessOpeningUnit)?;
 
+    let fri_opening_units = fri_opening_units_by_identity(request.opening_units);
+    let constant_opening_units = constant_opening_units_by_identity(&constant_opening.units);
+    let witness_opening_units = witness_opening_units_by_identity(&witness_opening.units);
+    let transcript_challenges = transcript_challenges_by_identity(request.transcript_challenges);
+
     let mut proof_value_offsets = None;
     for query_unit in request.query_units {
         let unit_index = usize::try_from(query_unit.unit_index)
@@ -730,29 +735,18 @@ fn validate_verifier_query_outputs_from_segments_inner(
             .verifier_codes
             .get(unit_index)
             .ok_or(VerifierFriQueryOutputSegmentsError::UnitMismatch { unit_index })?;
-        let opening_unit = request
-            .opening_units
-            .iter()
-            .find(|unit| {
-                unit.unit_index == query_unit.unit_index
-                    && unit.trace_instance_index == query_unit.trace_instance_index
-            })
+        let identity = (query_unit.unit_index, query_unit.trace_instance_index);
+        let opening_unit = fri_opening_units
+            .get(&identity)
+            .copied()
             .ok_or(VerifierFriQueryOutputSegmentsError::UnitMismatch { unit_index })?;
-        let constant_unit = constant_opening
-            .units
-            .iter()
-            .find(|unit| {
-                unit.unit_index == query_unit.unit_index
-                    && unit.trace_instance_index == query_unit.trace_instance_index
-            })
+        let constant_unit = constant_opening_units
+            .get(&identity)
+            .copied()
             .ok_or(VerifierFriQueryOutputSegmentsError::UnitMismatch { unit_index })?;
-        let witness_unit = witness_opening
-            .units
-            .iter()
-            .find(|unit| {
-                unit.unit_index == query_unit.unit_index
-                    && unit.trace_instance_index == query_unit.trace_instance_index
-            })
+        let witness_unit = witness_opening_units
+            .get(&identity)
+            .copied()
             .ok_or(VerifierFriQueryOutputSegmentsError::UnitMismatch { unit_index })?;
         let evaluation_unit = load_pcs_evaluation_unit_for_identity_from_parsed_segment(
             unit_index,
@@ -761,13 +755,9 @@ fn validate_verifier_query_outputs_from_segments_inner(
             &evaluations,
         )
         .map_err(VerifierFriQueryOutputSegmentsError::Evaluation)?;
-        let challenges = request
-            .transcript_challenges
-            .iter()
-            .find(|unit| {
-                unit.unit_index == query_unit.unit_index
-                    && unit.trace_instance_index == query_unit.trace_instance_index
-            })
+        let challenges = transcript_challenges
+            .get(&identity)
+            .copied()
             .ok_or(VerifierFriQueryOutputSegmentsError::UnitMismatch { unit_index })?;
 
         if proof_value_offsets.is_none() {
@@ -809,6 +799,54 @@ fn validate_verifier_query_outputs_from_segments_inner(
     }
 
     Ok(())
+}
+
+fn fri_opening_units_by_identity(
+    units: &[PcsFriOpeningUnitSegment],
+) -> BTreeMap<(u32, u32), &PcsFriOpeningUnitSegment> {
+    let mut units_by_identity = BTreeMap::new();
+    for unit in units {
+        units_by_identity
+            .entry((unit.unit_index, unit.trace_instance_index))
+            .or_insert(unit);
+    }
+    units_by_identity
+}
+
+fn constant_opening_units_by_identity(
+    units: &[ConstantOpeningUnitSegment],
+) -> BTreeMap<(u32, u32), &ConstantOpeningUnitSegment> {
+    let mut units_by_identity = BTreeMap::new();
+    for unit in units {
+        units_by_identity
+            .entry((unit.unit_index, unit.trace_instance_index))
+            .or_insert(unit);
+    }
+    units_by_identity
+}
+
+fn witness_opening_units_by_identity(
+    units: &[WitnessOpeningUnitSegment],
+) -> BTreeMap<(u32, u32), &WitnessOpeningUnitSegment> {
+    let mut units_by_identity = BTreeMap::new();
+    for unit in units {
+        units_by_identity
+            .entry((unit.unit_index, unit.trace_instance_index))
+            .or_insert(unit);
+    }
+    units_by_identity
+}
+
+fn transcript_challenges_by_identity(
+    units: &[PcsTranscriptUnitChallenges],
+) -> BTreeMap<(u32, u32), &PcsTranscriptUnitChallenges> {
+    let mut units_by_identity = BTreeMap::new();
+    for unit in units {
+        units_by_identity
+            .entry((unit.unit_index, unit.trace_instance_index))
+            .or_insert(unit);
+    }
+    units_by_identity
 }
 
 fn verifier_code_with_proof_value_offsets(
