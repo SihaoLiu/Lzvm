@@ -92,7 +92,7 @@ def RuntimeOpeningCheckedAcceptance
     (proof : Proof) : Prop :=
   validation.openingAccepted artifact publicInput proof
 
-structure RuntimeFriOpeningParserBoundary
+structure RuntimeOpeningParserBoundary
     (system : VerifierModel)
     (validation : RuntimeOpeningValidation system) where
   parserAccepted : RuntimeArtifact -> PublicInput -> Proof -> Prop
@@ -111,23 +111,65 @@ structure RuntimeFriOpeningParserBoundary
       parserAccepted artifact publicInput proof ->
         digestRootsCanonical artifact publicInput proof
 
-def RuntimeFriOpeningParserBoundaryContract
+abbrev RuntimeConstantOpeningParserBoundary
+    (system : VerifierModel)
+    (validation : RuntimeOpeningValidation system) :=
+  RuntimeOpeningParserBoundary system validation
+
+abbrev RuntimeWitnessOpeningParserBoundary
+    (system : VerifierModel)
+    (validation : RuntimeOpeningValidation system) :=
+  RuntimeOpeningParserBoundary system validation
+
+abbrev RuntimeFriOpeningParserBoundary
+    (system : VerifierModel)
+    (validation : RuntimeOpeningValidation system) :=
+  RuntimeOpeningParserBoundary system validation
+
+def RuntimeOpeningParserBoundaryContract
     {system : VerifierModel}
     {validation : RuntimeOpeningValidation system}
-    (boundary : RuntimeFriOpeningParserBoundary system validation)
+    (boundary : RuntimeOpeningParserBoundary system validation)
     (artifact : RuntimeArtifact)
     (publicInput : PublicInput)
     (proof : Proof) : Prop :=
   boundary.openingValuesCanonical artifact publicInput proof
     /\ boundary.digestRootsCanonical artifact publicInput proof
 
-theorem runtime_fri_opening_checked_acceptance_parser_boundary_contract
+abbrev RuntimeConstantOpeningParserBoundaryContract
     {system : VerifierModel}
     {validation : RuntimeOpeningValidation system}
-    (boundary : RuntimeFriOpeningParserBoundary system validation) :
+    (boundary : RuntimeConstantOpeningParserBoundary system validation)
+    (artifact : RuntimeArtifact)
+    (publicInput : PublicInput)
+    (proof : Proof) : Prop :=
+  RuntimeOpeningParserBoundaryContract boundary artifact publicInput proof
+
+abbrev RuntimeWitnessOpeningParserBoundaryContract
+    {system : VerifierModel}
+    {validation : RuntimeOpeningValidation system}
+    (boundary : RuntimeWitnessOpeningParserBoundary system validation)
+    (artifact : RuntimeArtifact)
+    (publicInput : PublicInput)
+    (proof : Proof) : Prop :=
+  RuntimeOpeningParserBoundaryContract boundary artifact publicInput proof
+
+abbrev RuntimeFriOpeningParserBoundaryContract
+    {system : VerifierModel}
+    {validation : RuntimeOpeningValidation system}
+    (boundary : RuntimeFriOpeningParserBoundary system validation)
+    (artifact : RuntimeArtifact)
+    (publicInput : PublicInput)
+    (proof : Proof) : Prop :=
+  RuntimeOpeningParserBoundaryContract boundary artifact publicInput proof
+
+theorem runtime_opening_checked_acceptance_parser_boundary_contract
+    {system : VerifierModel}
+    {validation : RuntimeOpeningValidation system}
+    (boundary : RuntimeOpeningParserBoundary system validation) :
     forall artifact publicInput proof,
       RuntimeOpeningCheckedAcceptance system validation artifact publicInput proof ->
-        RuntimeFriOpeningParserBoundaryContract boundary artifact publicInput proof := by
+        RuntimeOpeningParserBoundaryContract boundary artifact publicInput proof := by
   intro artifact publicInput proof accepted
   have parsed :=
     boundary.openingAcceptedImpliesParserAccepted
@@ -147,6 +189,100 @@ theorem runtime_fri_opening_checked_acceptance_parser_boundary_contract
         publicInput
         proof
         parsed)
+
+theorem runtime_constant_opening_checked_acceptance_parser_boundary_contract
+    {system : VerifierModel}
+    {validation : RuntimeOpeningValidation system}
+    (boundary : RuntimeConstantOpeningParserBoundary system validation) :
+    forall artifact publicInput proof,
+      RuntimeOpeningCheckedAcceptance system validation artifact publicInput proof ->
+        RuntimeConstantOpeningParserBoundaryContract boundary artifact publicInput proof := by
+  intro artifact publicInput proof accepted
+  exact
+    runtime_opening_checked_acceptance_parser_boundary_contract
+      boundary
+      artifact
+      publicInput
+      proof
+      accepted
+
+theorem runtime_witness_opening_checked_acceptance_parser_boundary_contract
+    {system : VerifierModel}
+    {validation : RuntimeOpeningValidation system}
+    (boundary : RuntimeWitnessOpeningParserBoundary system validation) :
+    forall artifact publicInput proof,
+      RuntimeOpeningCheckedAcceptance system validation artifact publicInput proof ->
+        RuntimeWitnessOpeningParserBoundaryContract boundary artifact publicInput proof := by
+  intro artifact publicInput proof accepted
+  exact
+    runtime_opening_checked_acceptance_parser_boundary_contract
+      boundary
+      artifact
+      publicInput
+      proof
+      accepted
+
+theorem runtime_fri_opening_checked_acceptance_parser_boundary_contract
+    {system : VerifierModel}
+    {validation : RuntimeOpeningValidation system}
+    (boundary : RuntimeFriOpeningParserBoundary system validation) :
+    forall artifact publicInput proof,
+      RuntimeOpeningCheckedAcceptance system validation artifact publicInput proof ->
+        RuntimeFriOpeningParserBoundaryContract boundary artifact publicInput proof := by
+  intro artifact publicInput proof accepted
+  exact
+    runtime_opening_checked_acceptance_parser_boundary_contract
+      boundary
+      artifact
+      publicInput
+      proof
+      accepted
+
+theorem runtime_opening_checked_acceptance_all_parser_boundary_contracts
+    {system : VerifierModel}
+    {validation : RuntimeOpeningValidation system}
+    (constantBoundary : RuntimeConstantOpeningParserBoundary system validation)
+    (witnessBoundary : RuntimeWitnessOpeningParserBoundary system validation)
+    (friBoundary : RuntimeFriOpeningParserBoundary system validation) :
+    forall artifact publicInput proof,
+      RuntimeOpeningCheckedAcceptance system validation artifact publicInput proof ->
+        RuntimeConstantOpeningParserBoundaryContract
+            constantBoundary
+            artifact
+            publicInput
+            proof
+          /\ RuntimeWitnessOpeningParserBoundaryContract
+            witnessBoundary
+            artifact
+            publicInput
+            proof
+          /\ RuntimeFriOpeningParserBoundaryContract
+            friBoundary
+            artifact
+            publicInput
+            proof := by
+  intro artifact publicInput proof accepted
+  exact
+    And.intro
+      (runtime_constant_opening_checked_acceptance_parser_boundary_contract
+        constantBoundary
+        artifact
+        publicInput
+        proof
+        accepted)
+      (And.intro
+        (runtime_witness_opening_checked_acceptance_parser_boundary_contract
+          witnessBoundary
+          artifact
+          publicInput
+          proof
+          accepted)
+        (runtime_fri_opening_checked_acceptance_parser_boundary_contract
+          friBoundary
+          artifact
+          publicInput
+          proof
+          accepted))
 
 theorem runtime_opening_checked_acceptance_evidence
     {system : VerifierModel}
