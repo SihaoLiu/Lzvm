@@ -1119,6 +1119,10 @@ fn replace_first_fri_final_polynomial_word(data: &mut [u8], replacement: u64) {
     let mut cursor = PcsFriSegmentCursor::new(data);
     cursor.expect_magic();
     let version = cursor.read_u32("version");
+    assert!(
+        matches!(version, 1 | 2),
+        "test segment version should be supported"
+    );
     let unit_count = cursor.read_u32("unit count");
     assert_eq!(unit_count, 1, "test segment should contain one unit");
     cursor.read_u32("unit index");
@@ -1135,6 +1139,10 @@ fn replace_first_fri_query_value_word(data: &mut [u8], replacement: u64) {
     let mut cursor = PcsFriSegmentCursor::new(data);
     cursor.expect_magic();
     let version = cursor.read_u32("version");
+    assert!(
+        matches!(version, 1 | 2),
+        "test segment version should be supported"
+    );
     let unit_count = cursor.read_u32("unit count");
     assert_eq!(unit_count, 1, "test segment should contain one unit");
     cursor.read_u32("unit index");
@@ -1149,10 +1157,7 @@ fn replace_first_fri_query_value_word(data: &mut [u8], replacement: u64) {
     cursor.skip_digest("layer root");
     let last_level_count = cursor.read_u32("last level count");
     let query_count = cursor.read_u32("query count");
-    assert_eq!(
-        last_level_count, 0,
-        "test segment should not include last level"
-    );
+    cursor.skip_digests(last_level_count, "last level");
     assert_ne!(query_count, 0, "test segment should contain a query");
     cursor.read_u64("query row");
     let value_count = cursor.read_u32("query value count");
@@ -1192,6 +1197,10 @@ impl<'a> PcsFriSegmentCursor<'a> {
 
     fn skip_digest(&mut self, label: &str) {
         self.skip_words(4, label);
+    }
+
+    fn skip_digests(&mut self, count: u32, label: &str) {
+        self.skip_words(count as usize * 4, label);
     }
 
     fn skip_extension_values(&mut self, count: u32, label: &str) {
