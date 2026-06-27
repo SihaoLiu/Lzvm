@@ -26,6 +26,9 @@ TIMING_SUMMARY_REQUIRED_KEYS = [
     "timing_finish_witness_opening_row_dedup_input_rows",
     "timing_finish_witness_opening_row_dedup_unique_rows",
     "timing_finish_witness_opening_row_dedup_elided_rows",
+    "timing_finish_fri_opening_unit_count",
+    "timing_finish_fri_opening_layer_count",
+    "timing_finish_fri_opening_query_count",
 ]
 
 
@@ -1171,7 +1174,10 @@ def self_test() -> None:
                     "print('timing_guest_stage_tree_commit_root_materialization_max_group_size=1'); "
                     "print('timing_finish_witness_opening_row_dedup_input_rows=0'); "
                     "print('timing_finish_witness_opening_row_dedup_unique_rows=0'); "
-                    "print('timing_finish_witness_opening_row_dedup_elided_rows=0')"
+                    "print('timing_finish_witness_opening_row_dedup_elided_rows=0'); "
+                    "print('timing_finish_fri_opening_unit_count=1'); "
+                    "print('timing_finish_fri_opening_layer_count=2'); "
+                    "print('timing_finish_fri_opening_query_count=3')"
                 ),
             ],
             "cwd": ".",
@@ -1342,7 +1348,10 @@ def self_test() -> None:
                 "print('timing_guest_stage_tree_commit_root_materialization_max_group_size=1'); "
                 "print('timing_finish_witness_opening_row_dedup_input_rows=0'); "
                 "print('timing_finish_witness_opening_row_dedup_unique_rows=0'); "
-                "print('timing_finish_witness_opening_row_dedup_elided_rows=0')"
+                "print('timing_finish_witness_opening_row_dedup_elided_rows=0'); "
+                "print('timing_finish_fri_opening_unit_count=1'); "
+                "print('timing_finish_fri_opening_layer_count=2'); "
+                "print('timing_finish_fri_opening_query_count=3')"
             ),
         ]
         duplicate_base["name"] = "self-test-ncu-duplicate-timing"

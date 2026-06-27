@@ -131,7 +131,10 @@ fn proof_timing_batch_runs_commands_and_appends_stable_log() {
             "timing_guest_stage_tree_commit_root_materialization_max_group_size=1\\n",
             "timing_finish_witness_opening_row_dedup_input_rows=0\\n",
             "timing_finish_witness_opening_row_dedup_unique_rows=0\\n",
-            "timing_finish_witness_opening_row_dedup_elided_rows=0\\n'"
+            "timing_finish_witness_opening_row_dedup_elided_rows=0\\n",
+            "timing_finish_fri_opening_unit_count=1\\n",
+            "timing_finish_fri_opening_layer_count=2\\n",
+            "timing_finish_fri_opening_query_count=3\\n'"
         ))
         .arg("--large-command")
         .arg(concat!(
@@ -141,7 +144,10 @@ fn proof_timing_batch_runs_commands_and_appends_stable_log() {
             "timing_guest_stage_tree_commit_root_materialization_max_group_size=1\\n",
             "timing_finish_witness_opening_row_dedup_input_rows=0\\n",
             "timing_finish_witness_opening_row_dedup_unique_rows=0\\n",
-            "timing_finish_witness_opening_row_dedup_elided_rows=0\\n'"
+            "timing_finish_witness_opening_row_dedup_elided_rows=0\\n",
+            "timing_finish_fri_opening_unit_count=1\\n",
+            "timing_finish_fri_opening_layer_count=2\\n",
+            "timing_finish_fri_opening_query_count=3\\n'"
         ))
         .arg("--summary")
         .arg("batch timing")
@@ -352,7 +358,10 @@ fn proof_timing_batch_defaults_commit_to_head() {
             "timing_guest_stage_tree_commit_root_materialization_max_group_size=1\\n",
             "timing_finish_witness_opening_row_dedup_input_rows=0\\n",
             "timing_finish_witness_opening_row_dedup_unique_rows=0\\n",
-            "timing_finish_witness_opening_row_dedup_elided_rows=0\\n'"
+            "timing_finish_witness_opening_row_dedup_elided_rows=0\\n",
+            "timing_finish_fri_opening_unit_count=1\\n",
+            "timing_finish_fri_opening_layer_count=2\\n",
+            "timing_finish_fri_opening_query_count=3\\n'"
         ))
         .arg("--summary")
         .arg("default commit")
@@ -408,7 +417,10 @@ fn proof_timing_batch_reruns_until_stable_sample_group() {
             "timing_guest_stage_tree_commit_root_materialization_max_group_size=1\\n",
             "timing_finish_witness_opening_row_dedup_input_rows=0\\n",
             "timing_finish_witness_opening_row_dedup_unique_rows=0\\n",
-            "timing_finish_witness_opening_row_dedup_elided_rows=0\\n'"
+            "timing_finish_witness_opening_row_dedup_elided_rows=0\\n",
+            "timing_finish_fri_opening_unit_count=1\\n",
+            "timing_finish_fri_opening_layer_count=2\\n",
+            "timing_finish_fri_opening_query_count=3\\n'"
         ))
         .arg("--summary")
         .arg("rerun stable")
@@ -609,7 +621,10 @@ fn proof_timing_batch_removes_failed_per_run_summary_outputs() {
             "timing_guest_stage_tree_commit_root_materialization_max_group_size=1\\n",
             "timing_finish_witness_opening_row_dedup_input_rows=0\\n",
             "timing_finish_witness_opening_row_dedup_unique_rows=0\\n",
-            "timing_finish_witness_opening_row_dedup_elided_rows=0\\n'"
+            "timing_finish_witness_opening_row_dedup_elided_rows=0\\n",
+            "timing_finish_fri_opening_unit_count=1\\n",
+            "timing_finish_fri_opening_layer_count=2\\n",
+            "timing_finish_fri_opening_query_count=3\\n'"
         ))
         .arg("--summary")
         .arg("run summary failure")
@@ -697,7 +712,10 @@ fn proof_timing_batch_records_batch_json_when_stable_summary_fails() {
             "timing_guest_stage_tree_commit_root_materialization_max_group_size=1\\n",
             "timing_finish_witness_opening_row_dedup_input_rows=0\\n",
             "timing_finish_witness_opening_row_dedup_unique_rows=0\\n",
-            "timing_finish_witness_opening_row_dedup_elided_rows=0\\n'"
+            "timing_finish_witness_opening_row_dedup_elided_rows=0\\n",
+            "timing_finish_fri_opening_unit_count=1\\n",
+            "timing_finish_fri_opening_layer_count=2\\n",
+            "timing_finish_fri_opening_query_count=3\\n'"
         ))
         .arg("--summary")
         .arg("stable summary failure")
