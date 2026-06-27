@@ -149,6 +149,7 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
             "runtime_pipeline_query_opening_checked_contract_without_assumptions",
             "runtime_pipeline_binding_checked_acceptance_query_opening_evidence",
             "runtime_pipeline_binding_checked_acceptance_query_opening_contract",
+            "runtime_pipeline_binding_checked_acceptance_query_plan_material_manifest_contract",
             "runtime_pipeline_binding_checked_acceptance_seeded_query_plan_contract",
             "runtime_pipeline_binding_checked_acceptance_seed_binds_witness_tree_digests",
             "runtime_pipeline_binding_checked_acceptance_seeded_fri_opening_requirements_checked",
@@ -1953,6 +1954,27 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
         &[
             "RuntimePipelineBindingEvidence",
             "runtime_pipeline_binding_checked_acceptance_sound",
+        ],
+    );
+    assert!(
+        theorem_prefix(
+            &lean_source,
+            "runtime_pipeline_binding_checked_acceptance_query_plan_material_manifest_contract"
+        )
+        .contains("RuntimeQueryPlanMaterialManifestContract"),
+        "pipeline checked acceptance should project query-plan material manifest matching"
+    );
+    lean_binding::assert_theorem_prefix_omits(
+        &lean_source,
+        "runtime_pipeline_binding_checked_acceptance_query_plan_material_manifest_contract",
+        &["AssumptionBundle"],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_pipeline_binding_checked_acceptance_query_plan_material_manifest_contract",
+        &[
+            "runtime_pipeline_binding_checked_acceptance_query_plan",
+            "runtime_query_plan_binding_checked_acceptance_material_manifest_contract",
         ],
     );
     assert!(

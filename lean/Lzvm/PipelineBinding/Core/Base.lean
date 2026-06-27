@@ -761,6 +761,32 @@ theorem runtime_pipeline_binding_checked_acceptance_query_plan
       proof
       accepted
 
+theorem runtime_pipeline_binding_checked_acceptance_query_plan_material_manifest_contract
+    {system : VerifierModel} (validation : RuntimePipelineBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimePipelineBindingCheckedAcceptance system validation artifact publicInput proof ->
+        RuntimeQueryPlanMaterialManifestContract
+          system
+          validation.queryPlanBindingValidation
+          artifact
+          publicInput
+          proof := by
+  intro artifact publicInput proof accepted
+  have queryPlanAccepted :=
+    runtime_pipeline_binding_checked_acceptance_query_plan
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  exact
+    runtime_query_plan_binding_checked_acceptance_material_manifest_contract
+      validation.queryPlanBindingValidation
+      artifact
+      publicInput
+      proof
+      queryPlanAccepted
+
 theorem runtime_pipeline_binding_checked_acceptance_artifact_finalized
     {system : VerifierModel}
     (validation : RuntimePipelineBindingValidation system) :
