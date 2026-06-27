@@ -2,8 +2,8 @@ use std::{collections::BTreeMap, fmt};
 
 use lzvm_artifacts::pcs_fri_segment::PcsFriOpeningUnitSegment;
 use lzvm_artifacts::pcs_material_segment::{
-    parse_pcs_material_manifest_segment, PcsMaterialManifestSegmentError, PcsMaterialManifestUnit,
-    PCS_MATERIAL_MANIFEST_SEGMENT_ID,
+    parse_pcs_material_manifest_segment, PcsMaterialManifestSegment,
+    PcsMaterialManifestSegmentError, PcsMaterialManifestUnit, PCS_MATERIAL_MANIFEST_SEGMENT_ID,
 };
 use lzvm_artifacts::proof::ProofSegment;
 use lzvm_artifacts::witness_segment::WitnessCommitmentSegmentError;
@@ -152,6 +152,7 @@ pub fn derive_pcs_transcript_unit_challenges_from_proof_segments(
         .map_err(PcsTranscriptProofSegmentsError::QueryPlan)?;
     let material = parse_pcs_material_manifest_segment(&material_segment.data)
         .map_err(PcsTranscriptProofSegmentsError::Material)?;
+    validate_material_manifest_matches_schedule(schedule, &material)?;
     let fri = load_pcs_fri_opening_segment_from_segments(segments)
         .map_err(|error| PcsTranscriptProofSegmentsError::Fri(error.into()))?;
     let witness_segments =
@@ -259,6 +260,7 @@ pub fn derive_pcs_transcript_unit_challenges_from_loaded_witness_segments<'a>(
         .map_err(PcsTranscriptProofSegmentsError::QueryPlan)?;
     let material = parse_pcs_material_manifest_segment(&material_segment.data)
         .map_err(PcsTranscriptProofSegmentsError::Material)?;
+    validate_material_manifest_matches_schedule(schedule, &material)?;
     let fri = load_pcs_fri_opening_segment_from_segments(segments)
         .map_err(|error| PcsTranscriptProofSegmentsError::Fri(error.into()))?;
     let binding_segments = checked_proof_binding_segments(segments)
@@ -348,6 +350,47 @@ fn material_units_by_index(
     units: &[PcsMaterialManifestUnit],
 ) -> BTreeMap<u32, &PcsMaterialManifestUnit> {
     index_first_by_key(units, |unit| unit.unit_index)
+}
+
+fn validate_material_manifest_matches_schedule(
+    schedule: &ProveSchedule,
+    material: &PcsMaterialManifestSegment,
+) -> Result<(), PcsTranscriptProofSegmentsError> {
+    for unit in &material.units {
+        let unit_index = usize::try_from(unit.unit_index)
+            .map_err(|_| PcsTranscriptProofSegmentsError::UnitIndexOverflow)?;
+        if unit_index >= schedule.units.len() {
+            return Err(PcsTranscriptProofSegmentsError::UnitMismatch { unit_index });
+        }
+    }
+    if material.units.len() != schedule.units.len() {
+        return Err(PcsTranscriptProofSegmentsError::UnitMismatch {
+            unit_index: material.units.len().min(schedule.units.len()),
+        });
+    }
+    for (unit_index, (material_unit, schedule_unit)) in
+        material.units.iter().zip(schedule.units.iter()).enumerate()
+    {
+        let expected_unit_index = u32::try_from(unit_index)
+            .map_err(|_| PcsTranscriptProofSegmentsError::UnitIndexOverflow)?;
+        if material_unit.unit_index != expected_unit_index
+            || Some(material_unit.plan_digest) != schedule_unit.pcs_material_plan_digest
+            || Some(material_unit.fixed_column_digest)
+                != schedule_unit.pcs_material_fixed_column_digest
+            || Some(material_unit.constant_tree_digest)
+                != schedule_unit.pcs_material_constant_tree_digest
+            || Some(material_unit.constant_tree_root)
+                != schedule_unit.pcs_material_constant_tree_root
+            || Some(material_unit.fixed_byte_count) != schedule_unit.pcs_material_fixed_byte_count
+            || Some(material_unit.constant_tree_byte_count)
+                != schedule_unit.pcs_material_constant_tree_byte_count
+            || Some(material_unit.leaf_byte_count) != schedule_unit.pcs_material_leaf_byte_count
+            || Some(material_unit.node_byte_count) != schedule_unit.pcs_material_node_byte_count
+        {
+            return Err(PcsTranscriptProofSegmentsError::UnitMismatch { unit_index });
+        }
+    }
+    Ok(())
 }
 
 fn witness_segments_by_identity<'loaded, 'segment>(

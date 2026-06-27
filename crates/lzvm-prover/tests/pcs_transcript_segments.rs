@@ -240,6 +240,61 @@ fn rejects_transcript_challenge_extra_unit_values_units() {
 }
 
 #[test]
+fn rejects_transcript_challenge_material_mismatches() {
+    let schedule = sample_schedule();
+    let mut segments = transcript_segments(0);
+    let material_segment = segments
+        .iter_mut()
+        .find(|segment| segment.id == PCS_MATERIAL_MANIFEST_SEGMENT_ID)
+        .expect("material segment should exist");
+    let mut material = material_unit(0);
+    material.fixed_byte_count += 1;
+    material_segment.data = encode_pcs_material_manifest_segment(&PcsMaterialManifestSegment {
+        units: vec![material],
+    })
+    .expect("material segment should encode");
+
+    let error =
+        derive_pcs_transcript_unit_challenges_from_proof_segments(&schedule, &[], &segments)
+            .expect_err("material mismatch should be rejected");
+
+    assert_eq!(
+        error,
+        PcsTranscriptProofSegmentsError::UnitMismatch { unit_index: 0 }
+    );
+}
+
+#[test]
+fn rejects_loaded_witness_transcript_challenge_extra_material_units() {
+    let schedule = sample_schedule();
+    let mut segments = transcript_segments(0);
+    let material_segment = segments
+        .iter_mut()
+        .find(|segment| segment.id == PCS_MATERIAL_MANIFEST_SEGMENT_ID)
+        .expect("material segment should exist");
+    material_segment.data = encode_pcs_material_manifest_segment(&PcsMaterialManifestSegment {
+        units: vec![material_unit(0), material_unit(1)],
+    })
+    .expect("material segment should encode");
+    let witness_segments =
+        load_witness_commitment_segment_refs_with_shapes(&schedule.units, &segments)
+            .expect("witness segments should load");
+
+    let error = derive_pcs_transcript_unit_challenges_from_loaded_witness_segments(
+        &schedule,
+        &[],
+        &segments,
+        &witness_segments,
+    )
+    .expect_err("extra material unit should be rejected");
+
+    assert_eq!(
+        error,
+        PcsTranscriptProofSegmentsError::UnitMismatch { unit_index: 1 }
+    );
+}
+
+#[test]
 fn rejects_duplicate_transcript_material_segments() {
     let schedule = sample_schedule();
     let mut segments = transcript_segments(0);
