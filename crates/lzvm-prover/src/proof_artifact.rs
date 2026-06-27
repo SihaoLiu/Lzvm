@@ -1135,17 +1135,26 @@ fn build_witness_proof_artifact_for_all_units_inner(
 }
 
 fn build_program_image_cache_proof_segment(
-    cache: Option<&ProgramImageCommitmentCache>,
+    input: Option<ValidatedProgramImageCache<'_>>,
 ) -> Result<Option<ProofSegment>, String> {
-    let Some(cache) = cache else {
+    let Some(cache) = input else {
         return Ok(None);
     };
-    let data = encode_program_image_cache_segment(cache)
+    let data = encode_program_image_cache_segment(cache.as_cache())
         .map_err(|error| format!("build program image cache segment failed: {error}"))?;
     Ok(Some(ProofSegment {
         id: PROGRAM_IMAGE_CACHE_SEGMENT_ID,
         data,
     }))
+}
+
+#[derive(Clone, Copy, Debug)]
+struct ValidatedProgramImageCache<'a>(&'a ProgramImageCommitmentCache);
+
+impl<'a> ValidatedProgramImageCache<'a> {
+    fn as_cache(self) -> &'a ProgramImageCommitmentCache {
+        self.0
+    }
 }
 
 fn build_eth_block_input_proof_segment(
@@ -1185,7 +1194,7 @@ impl<'a> ValidatedFramedGuestInput<'a> {
 
 #[derive(Clone, Copy, Default)]
 struct ValidatedProofBindings<'a> {
-    program_image_cache: Option<&'a ProgramImageCommitmentCache>,
+    program_image_cache: Option<ValidatedProgramImageCache<'a>>,
     eth_block_input: Option<&'a EthBlockInput>,
     framed_guest_input: Option<ValidatedFramedGuestInput<'a>>,
 }
@@ -1196,7 +1205,8 @@ fn validate_proof_bindings<'a>(
     eth_block_input: Option<&'a EthBlockInput>,
     framed_guest_input: Option<&'a [u8]>,
 ) -> Result<ValidatedProofBindings<'a>, String> {
-    validate_program_image_cache_binding(public_values, program_image_cache)?;
+    let program_image_cache =
+        validate_program_image_cache_binding(public_values, program_image_cache)?;
     validate_eth_block_binding(public_values, eth_block_input)?;
     let framed_guest_input = validate_framed_guest_input_binding(framed_guest_input)?;
     Ok(ValidatedProofBindings {
@@ -1206,17 +1216,18 @@ fn validate_proof_bindings<'a>(
     })
 }
 
-fn validate_program_image_cache_binding(
+fn validate_program_image_cache_binding<'a>(
     public_values: &PublicValues,
-    cache: Option<&ProgramImageCommitmentCache>,
-) -> Result<(), String> {
+    cache: Option<&'a ProgramImageCommitmentCache>,
+) -> Result<Option<ValidatedProgramImageCache<'a>>, String> {
     if let Some(cache) = cache {
         if cache.constraint_system_digest != public_values.setup_hash {
             return Err("program image cache setup hash mismatch".to_owned());
         }
     }
     validate_program_image_cache_public_values(public_values, cache)
-        .map_err(|error| error.to_string())
+        .map_err(|error| error.to_string())?;
+    Ok(cache.map(ValidatedProgramImageCache))
 }
 
 fn validate_eth_block_binding(
@@ -2287,8 +2298,18 @@ mod tests {
             merkle_tree_arity: 4,
             gpu_mode: ProgramImageGpuMode::Cuda,
         };
+        let public_values = PublicValues {
+            schema_version: 1,
+            setup_hash: cache.constraint_system_digest,
+            values: vec![PublicValueEntry {
+                name: "sample_public".to_owned(),
+                elements: vec![19],
+            }],
+        };
+        let validated = validate_program_image_cache_binding(&public_values, Some(&cache))
+            .expect("program image cache binding should validate before segment encoding");
 
-        let error = build_program_image_cache_proof_segment(Some(&cache))
+        let error = build_program_image_cache_proof_segment(validated)
             .expect_err("program image cache root should be canonical");
 
         assert_eq!(

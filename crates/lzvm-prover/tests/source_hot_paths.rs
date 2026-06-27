@@ -2198,7 +2198,9 @@ fn lean_eth_block_public_input_binding_tracks_runtime_checks() {
         "Rust proof artifact construction should keep runtime public-input binding checks"
     );
     assert!(
-        program_image_cache_segment_body.contains("encode_program_image_cache_segment(cache)")
+        program_image_cache_segment_body.contains("input: Option<ValidatedProgramImageCache<'_>>")
+            && program_image_cache_segment_body
+                .contains("encode_program_image_cache_segment(cache.as_cache())")
             && !program_image_cache_segment_body
                 .contains("validate_program_image_cache_tree_root"),
         "program image cache binding segment construction should rely on the canonical segment encoder validation"
@@ -2260,6 +2262,11 @@ fn lean_framed_guest_input_binding_tracks_runtime_checks() {
         &proof_artifact_source,
         "fn validate_proof_bindings",
         "fn validate_program_image_cache_binding",
+    );
+    let validate_program_image_cache_binding_body = function_body(
+        &proof_artifact_source,
+        "fn validate_program_image_cache_binding",
+        "fn validate_eth_block_binding",
     );
     let build_proof_binding_segments_body = function_body(
         &proof_artifact_source,
@@ -2387,12 +2394,24 @@ fn lean_framed_guest_input_binding_tracks_runtime_checks() {
                 .contains("encode_framed_guest_input_segment")
             && validate_proof_bindings_body
                 .contains("let framed_guest_input = validate_framed_guest_input_binding")
+            && validate_proof_bindings_body.contains("let program_image_cache =")
+            && validate_proof_bindings_body
+                .contains("validate_program_image_cache_binding(public_values, program_image_cache)?")
             && validate_proof_bindings_body.contains("Ok(ValidatedProofBindings")
+            && proof_artifact_source.contains("struct ValidatedProgramImageCache")
+            && proof_artifact_source
+                .contains("program_image_cache: Option<ValidatedProgramImageCache<'a>>")
+            && validate_program_image_cache_binding_body
+                .contains("Result<Option<ValidatedProgramImageCache<'a>>, String>")
+            && validate_program_image_cache_binding_body
+                .contains("Ok(cache.map(ValidatedProgramImageCache))")
             && validate_framed_guest_input_binding_body
                 .contains("Result<Option<ValidatedFramedGuestInput<'a>>, String>")
             && validate_framed_guest_input_binding_body
                 .contains("Ok(Some(ValidatedFramedGuestInput(input)))")
             && build_proof_binding_segments_body.contains("bindings: ValidatedProofBindings<'_>")
+            && build_proof_binding_segments_body
+                .contains("build_program_image_cache_proof_segment(bindings.program_image_cache)")
             && build_proof_binding_segments_body
                 .contains("build_framed_guest_input_proof_segment(bindings.framed_guest_input)")
             && validate_framed_guest_input_binding_body
