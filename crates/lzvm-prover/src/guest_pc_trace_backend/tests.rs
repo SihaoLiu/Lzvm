@@ -357,11 +357,12 @@ fn guest_pc_trace_seed_discovery_scans_without_retaining_reports() {
             .seed
             .as_deref()
             .expect("serial seed mirror should attach segment seeds");
-        let expected_lowered = lower_guest_pc_trace_seeded_pending_segment(
+        let expected_lowered = lower_guest_pc_trace_seeded_pending_segment_with_output_mode(
             &layout,
             expected,
             expected_seed,
             None,
+            false,
             None,
         )
         .expect("serial pending segment should lower");
@@ -657,12 +658,14 @@ fn guest_pc_trace_seed_discovery_builds_replayable_pending_segments() {
             .seed
             .as_deref()
             .expect("replayable pending segment should carry a seed");
-        let replay_lowered =
-            lower_guest_pc_trace_seeded_pending_segment(&layout, rebuilt, seed, None, None)
-                .expect("replayable pending segment should lower");
-        let serial_lowered =
-            lower_guest_pc_trace_seeded_pending_segment(&layout, expected, seed, None, None)
-                .expect("serial pending segment should lower");
+        let replay_lowered = lower_guest_pc_trace_seeded_pending_segment_with_output_mode(
+            &layout, rebuilt, seed, None, false, None,
+        )
+        .expect("replayable pending segment should lower");
+        let serial_lowered = lower_guest_pc_trace_seeded_pending_segment_with_output_mode(
+            &layout, expected, seed, None, false, None,
+        )
+        .expect("serial pending segment should lower");
         assert_eq!(replay_lowered.next_seed, serial_lowered.next_seed);
         assert_eq!(replay_lowered.segment.trace, serial_lowered.segment.trace);
         assert_eq!(
@@ -1883,9 +1886,15 @@ fn elided_runner_seed_snapshot_does_not_retain_alu_last_report() {
         .next()
         .expect("fixture should produce a first segment");
     let current_seed = ZiskMainSegmentSeed::new();
-    let serial_lowered =
-        lower_guest_pc_trace_seeded_pending_segment(&layout, &expected, &current_seed, None, None)
-            .expect("serial pending segment should lower");
+    let serial_lowered = lower_guest_pc_trace_seeded_pending_segment_with_output_mode(
+        &layout,
+        &expected,
+        &current_seed,
+        None,
+        false,
+        None,
+    )
+    .expect("serial pending segment should lower");
 
     let (mut memory, mut state, mut fcall_handler) =
         load_guest_pc_trace_machine(context, &[]).expect("guest trace machine should load");
@@ -2201,12 +2210,14 @@ fn live_pending_segment_messages_reassemble_to_serial_lower_output() {
         .seed
         .as_deref()
         .expect("seed mirror should attach a segment seed");
-    let serial_lowered =
-        lower_guest_pc_trace_seeded_pending_segment(&layout, &expected, seed, None, None)
-            .expect("serial pending segment should lower");
-    let live_lowered =
-        lower_guest_pc_trace_seeded_pending_segment(&layout, &rebuilt, seed, None, None)
-            .expect("rebuilt live pending segment should lower");
+    let serial_lowered = lower_guest_pc_trace_seeded_pending_segment_with_output_mode(
+        &layout, &expected, seed, None, false, None,
+    )
+    .expect("serial pending segment should lower");
+    let live_lowered = lower_guest_pc_trace_seeded_pending_segment_with_output_mode(
+        &layout, &rebuilt, seed, None, false, None,
+    )
+    .expect("rebuilt live pending segment should lower");
     assert_eq!(live_lowered.next_seed, serial_lowered.next_seed);
     assert_eq!(
         live_lowered.segment.trace_instance_index,
@@ -2270,9 +2281,15 @@ fn live_pending_segment_boundary_snapshot_lifts_next_seed_without_retained_repor
         .as_deref()
         .expect("seed mirror should attach a segment seed")
         .clone();
-    let serial_lowered =
-        lower_guest_pc_trace_seeded_pending_segment(&layout, &expected, &current_seed, None, None)
-            .expect("serial pending segment should lower");
+    let serial_lowered = lower_guest_pc_trace_seeded_pending_segment_with_output_mode(
+        &layout,
+        &expected,
+        &current_seed,
+        None,
+        false,
+        None,
+    )
+    .expect("serial pending segment should lower");
 
     let (mut live_memory, mut live_state, mut live_fcall_handler) =
         load_guest_pc_trace_machine(context, &[]).expect("live guest trace machine should load");
@@ -2860,9 +2877,15 @@ fn seeded_pending_segment_lowers_without_prior_segment_state() {
         .seed
         .as_deref()
         .expect("second segment should carry its own seed");
-    let lowered =
-        lower_guest_pc_trace_seeded_pending_segment(&layout, second, second_seed, None, None)
-            .expect("seeded segment should lower independently");
+    let lowered = lower_guest_pc_trace_seeded_pending_segment_with_output_mode(
+        &layout,
+        second,
+        second_seed,
+        None,
+        false,
+        None,
+    )
+    .expect("seeded segment should lower independently");
     let trace = lowered
         .segment
         .trace
@@ -2929,8 +2952,10 @@ fn seeded_pending_segments_parallel_lower_matches_serial_output() {
             .as_deref()
             .expect("seeded pending segment should carry its own seed");
         serial.push(
-            lower_guest_pc_trace_seeded_pending_segment(&layout, segment, seed, None, None)
-                .expect("serial seeded segment should lower"),
+            lower_guest_pc_trace_seeded_pending_segment_with_output_mode(
+                &layout, segment, seed, None, false, None,
+            )
+            .expect("serial seeded segment should lower"),
         );
     }
 
@@ -3105,8 +3130,10 @@ fn pending_work_units_parallel_lower_without_replay_snapshots() {
             .as_deref()
             .expect("work-unit pending segment should carry its own seed");
         serial.push(
-            lower_guest_pc_trace_seeded_pending_segment(&layout, segment, seed, None, None)
-                .expect("serial seeded segment should lower"),
+            lower_guest_pc_trace_seeded_pending_segment_with_output_mode(
+                &layout, segment, seed, None, false, None,
+            )
+            .expect("serial seeded segment should lower"),
         );
     }
 
@@ -3276,15 +3303,17 @@ fn seeded_pending_segment_owned_streaming_lower_matches_borrowed_output() {
         .as_deref()
         .expect("seeded pending segment should carry its own seed")
         .clone();
-    let borrowed =
-        lower_guest_pc_trace_seeded_pending_segment(&layout, &segment, &seed, None, None)
-            .expect("borrowed seeded segment should lower");
+    let borrowed = lower_guest_pc_trace_seeded_pending_segment_with_output_mode(
+        &layout, &segment, &seed, None, false, None,
+    )
+    .expect("borrowed seeded segment should lower");
     let mut owned_timing = GuestPcTraceStreamTiming::default();
     let owned = lower_guest_pc_trace_owned_streaming_pending_segment(
         &layout,
         segment,
         &seed,
         None,
+        false,
         Some(&mut owned_timing),
     )
     .expect("owned streaming seeded segment should lower");
@@ -3351,9 +3380,10 @@ fn live_chunks_before_segment_start_lower_with_traceless_output() {
         .as_deref()
         .expect("seed mirror should attach a segment seed")
         .clone();
-    let expected_lowered =
-        lower_guest_pc_trace_owned_streaming_pending_segment(&layout, expected, &seed, None, None)
-            .expect("expected segment should lower");
+    let expected_lowered = lower_guest_pc_trace_owned_streaming_pending_segment(
+        &layout, expected, &seed, None, false, None,
+    )
+    .expect("expected segment should lower");
 
     let (mut live_memory, mut live_state, mut live_fcall_handler) =
         load_guest_pc_trace_machine(context, &[]).expect("live guest trace machine should load");

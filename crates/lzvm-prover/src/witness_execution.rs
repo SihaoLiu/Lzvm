@@ -4531,6 +4531,42 @@ impl GuestPcTraceSegmentCommitWorkerState {
     }
 }
 
+#[derive(Clone, Copy)]
+struct GuestPcTraceSegmentCommitMode {
+    worker_count: usize,
+    async_single_worker: bool,
+    traceless_commitment_input: bool,
+    cross_segment_root_materialization: bool,
+    #[cfg(feature = "cuda")]
+    pending_root_materialization_window: usize,
+}
+
+impl GuestPcTraceSegmentCommitMode {
+    fn from_input(input_byte_count: usize, worker_count_override: Option<usize>) -> Self {
+        let worker_count = guest_pc_trace_segment_commit_worker_count_for_input_with_override(
+            input_byte_count,
+            worker_count_override,
+        );
+        let cross_segment_root_materialization =
+            guest_pc_cross_segment_root_materialization_selected(input_byte_count);
+        #[cfg(feature = "cuda")]
+        let pending_root_materialization_window = if cross_segment_root_materialization {
+            guest_pc_cross_segment_root_materialization_window()
+        } else {
+            1
+        };
+        Self {
+            worker_count,
+            async_single_worker: worker_count == 1
+                && guest_pc_trace_segment_commit_async_single_worker_enabled(),
+            traceless_commitment_input: guest_pc_trace_traceless_commitment_input_selected(),
+            cross_segment_root_materialization,
+            #[cfg(feature = "cuda")]
+            pending_root_materialization_window,
+        }
+    }
+}
+
 type GuestPcTraceSegmentCommitWorkerHandle<'scope> = thread::ScopedJoinHandle<
     'scope,
     Result<GuestPcTraceSegmentCommitResult, ProveWitnessCommitmentError>,
@@ -4548,24 +4584,15 @@ struct GuestPcTraceSegmentCommitWorkerPool<'scope, 'env> {
 impl<'scope, 'env> GuestPcTraceSegmentCommitWorkerPool<'scope, 'env> {
     fn new(
         scope: &'scope thread::Scope<'scope, 'env>,
-        input_byte_count: usize,
-        worker_count_override: Option<usize>,
+        mode: GuestPcTraceSegmentCommitMode,
     ) -> Self {
-        let worker_count = guest_pc_trace_segment_commit_worker_count_for_input_with_override(
-            input_byte_count,
-            worker_count_override,
-        );
-        let traceless_commitment_input = guest_pc_trace_traceless_commitment_input_selected();
-        let cross_segment_root_materialization =
-            guest_pc_cross_segment_root_materialization_selected(input_byte_count);
         Self {
             scope,
-            worker_count,
-            async_single_worker: worker_count == 1
-                && guest_pc_trace_segment_commit_async_single_worker_enabled(),
+            worker_count: mode.worker_count,
+            async_single_worker: mode.async_single_worker,
             worker_state: GuestPcTraceSegmentCommitWorkerState::new(
-                traceless_commitment_input,
-                cross_segment_root_materialization,
+                mode.traceless_commitment_input,
+                mode.cross_segment_root_materialization,
             ),
             pending_workers: VecDeque::new(),
             timing: GuestPcTraceSegmentCommitPoolTiming::default(),
@@ -4909,9 +4936,13 @@ impl<'scope, 'env, 'b> GuestPcTraceSegmentCommitDriver<'scope, 'env, 'b> {
         collect_timing: bool,
         segment_commit_worker_count_override: Option<usize>,
     ) -> Self {
+        let segment_commit_mode = GuestPcTraceSegmentCommitMode::from_input(
+            input_byte_count,
+            segment_commit_worker_count_override,
+        );
         #[cfg(feature = "cuda")]
         let pending_root_materialization_window =
-            guest_pc_cross_segment_root_materialization_window();
+            segment_commit_mode.pending_root_materialization_window;
         Self {
             context,
             auxiliary_inputs,
@@ -4923,11 +4954,7 @@ impl<'scope, 'env, 'b> GuestPcTraceSegmentCommitDriver<'scope, 'env, 'b> {
             guest_segment_commit_duration: Duration::ZERO,
             trace_timing: ProveWitnessTraceTimingAccumulator::default(),
             segment_count: 0,
-            worker_pool: GuestPcTraceSegmentCommitWorkerPool::new(
-                scope,
-                input_byte_count,
-                segment_commit_worker_count_override,
-            ),
+            worker_pool: GuestPcTraceSegmentCommitWorkerPool::new(scope, segment_commit_mode),
             #[cfg(feature = "cuda")]
             pending_root_materialization_window,
         }
@@ -7820,6 +7847,56 @@ mod tests {
             guest_pc_trace_segment_commit_worker_count_for_input(8 * 1024 * 1024),
             3
         );
+    }
+
+    #[test]
+    fn guest_pc_segment_commit_mode_caches_worker_flags() {
+        let commit_workers_env = TestEnvVarGuard::new("LZVM_GUEST_PC_TRACE_SEGMENT_COMMIT_WORKERS");
+        let commit_pipeline_env =
+            TestEnvVarUnlockedGuard::new("LZVM_GUEST_PC_TRACE_COMMIT_PIPELINE");
+        let async_single_env =
+            TestEnvVarUnlockedGuard::new("LZVM_GUEST_PC_TRACE_SEGMENT_COMMIT_ASYNC_SINGLE");
+
+        commit_workers_env.unset();
+        commit_pipeline_env.set("1");
+        async_single_env.set("1");
+        let pipeline_mode = GuestPcTraceSegmentCommitMode::from_input(1024, None);
+        assert_eq!(pipeline_mode.worker_count, 2);
+        assert!(!pipeline_mode.async_single_worker);
+
+        commit_pipeline_env.unset();
+        commit_workers_env.set("1");
+        let serial_async_mode = GuestPcTraceSegmentCommitMode::from_input(1024, None);
+        assert_eq!(serial_async_mode.worker_count, 1);
+        assert!(serial_async_mode.async_single_worker);
+
+        async_single_env.set("0");
+        let serial_inline_mode = GuestPcTraceSegmentCommitMode::from_input(1024, None);
+        assert_eq!(serial_inline_mode.worker_count, 1);
+        assert!(!serial_inline_mode.async_single_worker);
+    }
+
+    #[cfg(feature = "cuda")]
+    #[test]
+    fn guest_pc_segment_commit_mode_gates_root_window_read() {
+        let root_env = TestEnvVarGuard::new("LZVM_CUDA_GUEST_PC_CROSS_SEGMENT_ROOTS");
+        let window_env =
+            TestEnvVarUnlockedGuard::new("LZVM_CUDA_GUEST_PC_CROSS_SEGMENT_ROOT_WINDOW");
+
+        window_env.set("7");
+        root_env.set("0");
+        let disabled_mode = GuestPcTraceSegmentCommitMode::from_input(1024, None);
+        assert!(!disabled_mode.cross_segment_root_materialization);
+        assert_eq!(disabled_mode.pending_root_materialization_window, 1);
+
+        root_env.set("1");
+        let enabled_mode = GuestPcTraceSegmentCommitMode::from_input(1024, None);
+        assert!(enabled_mode.cross_segment_root_materialization);
+        assert_eq!(enabled_mode.pending_root_materialization_window, 7);
+
+        let unsupported_mode = GuestPcTraceSegmentCommitMode::from_input(8 * 1024 * 1024, None);
+        assert!(!unsupported_mode.cross_segment_root_materialization);
+        assert_eq!(unsupported_mode.pending_root_materialization_window, 1);
     }
 
     #[cfg(feature = "cuda")]

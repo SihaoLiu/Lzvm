@@ -3289,24 +3289,31 @@ fn guest_pc_segment_commitment_input_can_be_trace_less_with_preloaded_device_sou
         "direct guest PC segment commitment input should cache trace-less mode outside the segment loop"
     );
 
+    let mode_body = function_body(
+        &execution_source,
+        "struct GuestPcTraceSegmentCommitMode",
+        "type GuestPcTraceSegmentCommitWorkerHandle",
+    );
+    assert!(
+        mode_body.contains(
+            "traceless_commitment_input: guest_pc_trace_traceless_commitment_input_selected()"
+        ) && compact_source_contains(
+            mode_body,
+            "let cross_segment_root_materialization = guest_pc_cross_segment_root_materialization_selected(input_byte_count);"
+        ) && !mode_body.contains("guest_pc_trace_less_commitment_input_enabled()"),
+        "streamed guest PC segment commitment input should cache trace-less mode before dispatch"
+    );
+
     let pool_body = function_body(
         &execution_source,
         "struct GuestPcTraceSegmentCommitWorkerPool",
         "struct GuestPcTraceSegmentCommitDriver",
     );
     assert!(
-        pool_body.contains(
-            "let traceless_commitment_input = guest_pc_trace_traceless_commitment_input_selected();"
-        ) && compact_source_contains(
-            pool_body,
-                "let cross_segment_root_materialization = guest_pc_cross_segment_root_materialization_selected(input_byte_count);"
-            )
-            && compact_source_contains(
-                pool_body,
-                "GuestPcTraceSegmentCommitWorkerState::new(traceless_commitment_input, cross_segment_root_materialization,)"
-            )
+        pool_body.contains("mode.traceless_commitment_input")
+            && pool_body.contains("mode.cross_segment_root_materialization")
             && !pool_body.contains("guest_pc_trace_less_commitment_input_enabled()"),
-        "streamed guest PC segment commitment input should cache trace-less mode before dispatch"
+        "streamed guest PC segment worker pool should consume cached trace-less mode"
     );
 }
 
@@ -3820,9 +3827,10 @@ fn guest_pc_segment_commit_can_gate_cross_segment_pending_roots() {
     );
     assert!(
         driver_body.contains("materialize_pending_guest_pc_segment_commitments")
+            && driver_body.contains("GuestPcTraceSegmentCommitMode::from_input")
             && compact_source_contains(
                 driver_body,
-                "let pending_root_materialization_window = guest_pc_cross_segment_root_materialization_window();"
+                "let pending_root_materialization_window = segment_commit_mode.pending_root_materialization_window;"
             )
             && driver_body.contains("self.pending_root_materialization_window")
             && driver_body.contains("self.pending_segment_results.len()")
@@ -4246,6 +4254,28 @@ fn guest_pc_trace_segment_commit_uses_worker_state() {
         "worker state should own worker-local scratch and run one segment commit work item"
     );
 
+    let mode_body = function_body(
+        &source,
+        "struct GuestPcTraceSegmentCommitMode",
+        "type GuestPcTraceSegmentCommitWorkerHandle",
+    );
+    assert!(
+        mode_body.contains("worker_count: usize")
+            && mode_body.contains("async_single_worker: bool")
+            && mode_body.contains("traceless_commitment_input: bool")
+            && mode_body.contains("cross_segment_root_materialization: bool")
+            && mode_body.contains("pending_root_materialization_window: usize")
+            && mode_body.contains(
+                "guest_pc_trace_segment_commit_worker_count_for_input_with_override"
+            )
+            && mode_body.contains("guest_pc_cross_segment_root_materialization_selected")
+            && compact_source_contains(
+                mode_body,
+                "let pending_root_materialization_window = if cross_segment_root_materialization"
+            ),
+        "segment commit mode should cache env-derived worker, trace, and root batching decisions once per attempt"
+    );
+
     let pool_body = function_body(
         &source,
         "struct GuestPcTraceSegmentCommitWorkerPool",
@@ -4255,10 +4285,11 @@ fn guest_pc_trace_segment_commit_uses_worker_state() {
         pool_body.contains("worker_state: GuestPcTraceSegmentCommitWorkerState")
             && pool_body.contains("fn new(")
             && pool_body.contains("scope:")
-            && pool_body.contains("input_byte_count: usize")
-            && pool_body.contains("worker_count_override: Option<usize>")
-            && pool_body
-                .contains("guest_pc_trace_segment_commit_worker_count_for_input_with_override")
+            && pool_body.contains("mode: GuestPcTraceSegmentCommitMode")
+            && pool_body.contains("worker_count: mode.worker_count")
+            && pool_body.contains("async_single_worker: mode.async_single_worker")
+            && pool_body.contains("mode.traceless_commitment_input")
+            && pool_body.contains("mode.cross_segment_root_materialization")
             && pool_body.contains("fn submit_segment(")
             && pool_body.contains("fn finish(")
             && pool_body.contains("self.worker_state.commit_segment("),
