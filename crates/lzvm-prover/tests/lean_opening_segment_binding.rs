@@ -12,9 +12,37 @@ fn lean_opening_segment_binding_exports_core_contract_projection() {
     let top_level_path = crate_root.join("../../lean/Lzvm.lean");
     let top_level_source =
         std::fs::read_to_string(&top_level_path).expect("Lean top-level source should read");
+    let constant_opening_path = crate_root.join("src/constant_opening.rs");
+    let constant_opening_source = std::fs::read_to_string(&constant_opening_path)
+        .expect("constant opening source should read");
+    let witness_opening_path = crate_root.join("src/witness_opening.rs");
+    let witness_opening_source =
+        std::fs::read_to_string(&witness_opening_path).expect("witness opening source should read");
+    let pcs_evaluation_path = crate_root.join("src/pcs_evaluation.rs");
+    let pcs_evaluation_source =
+        std::fs::read_to_string(&pcs_evaluation_path).expect("PCS evaluation source should read");
+    let verifier_query_path = crate_root.join("src/verifier_query.rs");
+    let verifier_query_source =
+        std::fs::read_to_string(&verifier_query_path).expect("verifier query source should read");
     let fri_segment_path = crate_root.join("../lzvm-artifacts/src/pcs_fri_segment.rs");
     let fri_segment_source =
         std::fs::read_to_string(&fri_segment_path).expect("FRI segment source should read");
+    let constant_opening_query_units_body = rust_function_body(
+        &constant_opening_source,
+        "pub(crate) fn validate_constant_opening_units_match_query_units_from_segment",
+    );
+    let witness_opening_query_units_body = rust_function_body(
+        &witness_opening_source,
+        "pub(crate) fn validate_witness_opening_units_match_query_units_from_segment",
+    );
+    let pcs_evaluation_query_units_body = rust_function_body(
+        &pcs_evaluation_source,
+        "pub(crate) fn validate_pcs_evaluation_units_match_query_units_from_segment",
+    );
+    let verifier_query_identity_body = rust_function_body(
+        &verifier_query_source,
+        "fn validate_verifier_query_unit_identities_match_query_units",
+    );
     let fri_parse_body =
         rust_function_body(&fri_segment_source, "pub fn parse_pcs_fri_opening_segment");
     let fri_validate_body =
@@ -28,12 +56,32 @@ fn lean_opening_segment_binding_exports_core_contract_projection() {
         lean_source.contains("RuntimeOpeningSegmentBindingValidation")
             && lean_source.contains("RuntimeOpeningSegmentBindingBoundContract")
             && lean_source.contains("RuntimeOpeningEvidence")
+            && lean_source.contains("RuntimeOpeningSegmentExactIdentityContract")
             && lean_source.contains("RuntimeFriOpeningSegmentParserBoundary")
             && lean_source.contains("RuntimeFriOpeningSegmentParserContract")
             && lean_source.contains("RuntimeFriFoldTraceIdentityContract")
+            && lean_source.contains("openingUnitTraceIdentityCoverageExact")
             && lean_source.contains("RuntimeVerifierCoreContract system publicInput proof")
             && lean_source.contains("SoundWitness system publicInput proof"),
         "Lean opening segment binding should expose checked soundness and verifier core projection"
+    );
+    assert!(
+        constant_opening_query_units_body.matches("BTreeSet").count() >= 2
+            && constant_opening_query_units_body.contains("opening_identities.insert(identity)")
+            && constant_opening_query_units_body.contains("LoadConstantOpeningUnitError::UnexpectedUnit")
+            && constant_opening_query_units_body.contains("LoadConstantOpeningUnitError::MissingUnit")
+            && witness_opening_query_units_body.matches("BTreeSet").count() >= 2
+            && witness_opening_query_units_body.contains("opening_identities.insert(identity)")
+            && witness_opening_query_units_body.contains("LoadWitnessOpeningUnitError::UnexpectedUnit")
+            && witness_opening_query_units_body.contains("LoadWitnessOpeningUnitError::MissingUnit")
+            && pcs_evaluation_query_units_body.matches("BTreeSet").count() >= 2
+            && pcs_evaluation_query_units_body.contains("evaluation_identities.insert(identity)")
+            && pcs_evaluation_query_units_body.contains("LoadPcsEvaluationUnitError::UnexpectedUnit")
+            && pcs_evaluation_query_units_body.contains("LoadPcsEvaluationUnitError::MissingUnit")
+            && verifier_query_identity_body.contains("opening_identities.insert(identity)")
+            && verifier_query_identity_body.contains("challenge_identities.insert(identity)")
+            && verifier_query_identity_body.contains("missing_query_identity_index"),
+        "Rust query artifact validators should enforce exact identity coverage for opened units and verifier inputs"
     );
     assert!(
         fri_parse_body.contains("PCS_FRI_OPENING_V1_VERSION | PCS_FRI_OPENING_V2_VERSION")
@@ -72,6 +120,8 @@ fn lean_opening_segment_binding_exports_core_contract_projection() {
             "runtime_opening_segment_binding_evidence_implies_query_plan_bound",
             "runtime_opening_segment_binding_evidence_implies_fri_opening_checks",
             "runtime_opening_segment_binding_evidence_implies_fri_fold_trace_identity_contract",
+            "runtime_opening_segment_binding_checked_acceptance_trace_identity_coverage_exact",
+            "runtime_opening_segment_binding_checked_acceptance_exact_identity_contract",
             "runtime_opening_segment_binding_evidence_implies_pcs_and_fri",
             "runtime_opening_segment_binding_checked_acceptance_query_plan_bound",
             "runtime_opening_segment_binding_checked_acceptance_bound_contract",
@@ -175,6 +225,46 @@ fn lean_opening_segment_binding_exports_core_contract_projection() {
         &lean_source,
         "runtime_opening_segment_binding_evidence_implies_fri_fold_trace_identity_contract",
         &["evidence.right.right.right.right.right.left"],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_opening_segment_binding_checked_acceptance_trace_identity_coverage_exact",
+        &[
+            "RuntimeOpeningSegmentBindingCheckedAcceptance",
+            "validation.openingUnitTraceIdentityCoverageExact",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_omits(
+        &lean_source,
+        "runtime_opening_segment_binding_checked_acceptance_trace_identity_coverage_exact",
+        &["AssumptionBundle"],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_opening_segment_binding_checked_acceptance_trace_identity_coverage_exact",
+        &["validation.openingSegmentBindingAcceptedImpliesTraceIdentityCoverageExact"],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_opening_segment_binding_checked_acceptance_exact_identity_contract",
+        &[
+            "RuntimeOpeningSegmentBindingCheckedAcceptance",
+            "RuntimeOpeningSegmentExactIdentityContract",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_omits(
+        &lean_source,
+        "runtime_opening_segment_binding_checked_acceptance_exact_identity_contract",
+        &["AssumptionBundle"],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_opening_segment_binding_checked_acceptance_exact_identity_contract",
+        &[
+            "validation.openingSegmentBindingAcceptedImpliesQueryPlanBound",
+            "validation.openingSegmentBindingAcceptedImpliesTraceIdentitiesMatch",
+            "runtime_opening_segment_binding_checked_acceptance_trace_identity_coverage_exact",
+        ],
     );
     lean_binding::assert_theorem_prefix_contains(
         &lean_source,

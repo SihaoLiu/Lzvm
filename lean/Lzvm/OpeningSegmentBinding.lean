@@ -19,6 +19,7 @@ structure RuntimeOpeningSegmentBindingValidation (system : VerifierModel) where
   openingSegmentBindingAccepted : RuntimeArtifact -> PublicInput -> Proof -> Prop
   queryPlanBound : RuntimeArtifact -> PublicInput -> Proof -> Prop
   openingUnitTraceIdentitiesMatch : RuntimeArtifact -> PublicInput -> Proof -> Prop
+  openingUnitTraceIdentityCoverageExact : RuntimeArtifact -> PublicInput -> Proof -> Prop
   constantOpeningSegmentsValid : RuntimeArtifact -> PublicInput -> Proof -> Prop
   witnessOpeningSegmentsValid : RuntimeArtifact -> PublicInput -> Proof -> Prop
   friOpeningSegmentsValid : RuntimeArtifact -> PublicInput -> Proof -> Prop
@@ -36,6 +37,10 @@ structure RuntimeOpeningSegmentBindingValidation (system : VerifierModel) where
     forall artifact publicInput proof,
       openingSegmentBindingAccepted artifact publicInput proof ->
         openingUnitTraceIdentitiesMatch artifact publicInput proof
+  openingSegmentBindingAcceptedImpliesTraceIdentityCoverageExact :
+    forall artifact publicInput proof,
+      openingSegmentBindingAccepted artifact publicInput proof ->
+        openingUnitTraceIdentityCoverageExact artifact publicInput proof
   openingSegmentBindingAcceptedImpliesConstantOpeningSegmentsValid :
     forall artifact publicInput proof,
       openingSegmentBindingAccepted artifact publicInput proof ->
@@ -93,6 +98,16 @@ def RuntimeOpeningSegmentBindingBoundContract
     /\ validation.openingValidation.constantOpeningsBound artifact publicInput proof
     /\ validation.openingValidation.witnessOpeningsBound artifact publicInput proof
     /\ validation.openingValidation.friOpeningBound artifact publicInput proof
+
+def RuntimeOpeningSegmentExactIdentityContract
+    (_system : VerifierModel)
+    (validation : RuntimeOpeningSegmentBindingValidation _system)
+    (artifact : RuntimeArtifact)
+    (publicInput : PublicInput)
+    (proof : Proof) : Prop :=
+  validation.queryPlanBound artifact publicInput proof
+    /\ validation.openingUnitTraceIdentitiesMatch artifact publicInput proof
+    /\ validation.openingUnitTraceIdentityCoverageExact artifact publicInput proof
 
 def RuntimeOpeningSegmentBindingEvidence
     (_system : VerifierModel)
@@ -376,6 +391,65 @@ theorem runtime_opening_segment_binding_evidence_implies_trace_identities_match
         validation.openingUnitTraceIdentitiesMatch artifact publicInput proof := by
   intro artifact publicInput proof evidence
   exact evidence.right.left
+
+theorem runtime_opening_segment_binding_checked_acceptance_trace_identity_coverage_exact
+    {system : VerifierModel}
+    (validation : RuntimeOpeningSegmentBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeOpeningSegmentBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        validation.openingUnitTraceIdentityCoverageExact
+          artifact
+          publicInput
+          proof := by
+  intro artifact publicInput proof accepted
+  exact
+    validation.openingSegmentBindingAcceptedImpliesTraceIdentityCoverageExact
+      artifact
+      publicInput
+      proof
+      accepted
+
+theorem runtime_opening_segment_binding_checked_acceptance_exact_identity_contract
+    {system : VerifierModel}
+    (validation : RuntimeOpeningSegmentBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeOpeningSegmentBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeOpeningSegmentExactIdentityContract
+          system
+          validation
+          artifact
+          publicInput
+          proof := by
+  intro artifact publicInput proof accepted
+  exact
+    And.intro
+      (validation.openingSegmentBindingAcceptedImpliesQueryPlanBound
+        artifact
+        publicInput
+        proof
+        accepted)
+      (And.intro
+        (validation.openingSegmentBindingAcceptedImpliesTraceIdentitiesMatch
+          artifact
+          publicInput
+          proof
+          accepted)
+        (runtime_opening_segment_binding_checked_acceptance_trace_identity_coverage_exact
+          validation
+          artifact
+          publicInput
+          proof
+          accepted))
 
 theorem runtime_opening_segment_binding_evidence_implies_fri_fold_trace_identity_contract
     {system : VerifierModel}
