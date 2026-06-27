@@ -3838,9 +3838,9 @@ fn run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_optiona
     let shared_inputs = load_witness_shared_inputs(plan)?;
     let auxiliary_inputs = Arc::new(auxiliary_inputs);
     let mut timing_observer = timing_observer;
-    let initial_worker_count =
-        guest_pc_trace_segment_commit_worker_count_for_input(shared_inputs.input.len());
-    let mut worker_count_override = None;
+    let input_byte_count = shared_inputs.input.len();
+    let mut segment_commit_mode = GuestPcTraceSegmentCommitMode::from_input(input_byte_count, None);
+    let initial_worker_count = segment_commit_mode.worker_count;
     let mut oom_retry_count = 0;
     let collect_segment_commit_memory_timing = timing_observer.is_some();
     let mut segment_commit_memory_timing = GuestPcTraceSegmentCommitMemoryTiming::default();
@@ -3854,11 +3854,7 @@ fn run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_optiona
         let segment_commit_attempt_started = Instant::now();
         let segment_commit_worker_timing = GuestPcTraceSegmentCommitWorkerTiming {
             initial_worker_count,
-            effective_worker_count:
-                guest_pc_trace_segment_commit_worker_count_for_input_with_override(
-                    shared_inputs.input.len(),
-                    worker_count_override,
-                ),
+            effective_worker_count: segment_commit_mode.worker_count,
             pool_timing: GuestPcTraceSegmentCommitPoolTiming::default(),
             oom_retry_count,
             attempt_duration: segment_commit_attempt_duration,
@@ -3883,7 +3879,7 @@ fn run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_optiona
                 instruction_limit,
                 GuestPcTraceSegmentCommitAttemptOptions {
                     timing_observer: attempt_timing_observer,
-                    segment_commit_worker_count_override: worker_count_override,
+                    segment_commit_mode,
                     segment_commit_worker_timing,
                 },
             )
@@ -3909,8 +3905,7 @@ fn run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_optiona
             }
             Err(error) => {
                 let Some(next_worker_count) = next_guest_pc_segment_commit_worker_count_after_oom(
-                    shared_inputs.input.len(),
-                    worker_count_override,
+                    segment_commit_mode.worker_count,
                     &error,
                 ) else {
                     return Err(error);
@@ -3919,7 +3914,10 @@ fn run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_optiona
                 let _ = lzvm_accel::cuda_allocator_clear_cache();
                 oom_retry_count += 1;
                 segment_commit_oom_retry_duration += segment_commit_attempt_elapsed;
-                worker_count_override = Some(next_worker_count);
+                segment_commit_mode = GuestPcTraceSegmentCommitMode::from_input(
+                    input_byte_count,
+                    Some(next_worker_count),
+                );
             }
         }
     }
@@ -3927,7 +3925,7 @@ fn run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_optiona
 
 struct GuestPcTraceSegmentCommitAttemptOptions<'timing> {
     timing_observer: Option<&'timing mut dyn FnMut(ProveWitnessGuestPcTraceTiming)>,
-    segment_commit_worker_count_override: Option<usize>,
+    segment_commit_mode: GuestPcTraceSegmentCommitMode,
     segment_commit_worker_timing: GuestPcTraceSegmentCommitWorkerTiming,
 }
 
@@ -3941,7 +3939,7 @@ fn run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_attempt
 ) -> Result<Vec<ProveWitnessTraceCommitments>, ProveWitnessCommitmentError> {
     let GuestPcTraceSegmentCommitAttemptOptions {
         timing_observer,
-        segment_commit_worker_count_override,
+        segment_commit_mode,
         segment_commit_worker_timing,
     } = options;
     let mut source_lookup_balance = SourceLookupBalance::default();
@@ -3956,7 +3954,7 @@ fn run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_attempt
                 shared_inputs,
                 source_lookup_balance: None,
                 timing_observer,
-                segment_commit_worker_count_override,
+                segment_commit_mode,
                 segment_commit_worker_timing,
             },
         )?
@@ -3970,7 +3968,7 @@ fn run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_attempt
                 shared_inputs,
                 source_lookup_balance: Some(&mut source_lookup_balance),
                 timing_observer,
-                segment_commit_worker_count_override,
+                segment_commit_mode,
                 segment_commit_worker_timing,
             },
         )?;
@@ -4792,17 +4790,12 @@ fn guest_pc_trace_segment_commit_pipeline_enabled() -> bool {
 }
 
 fn next_guest_pc_segment_commit_worker_count_after_oom(
-    input_byte_count: usize,
-    worker_count_override: Option<usize>,
+    worker_count: usize,
     error: &ProveWitnessCommitmentError,
 ) -> Option<usize> {
     if !prove_witness_commitment_error_is_cuda_out_of_memory(error) {
         return None;
     }
-    let worker_count = guest_pc_trace_segment_commit_worker_count_for_input_with_override(
-        input_byte_count,
-        worker_count_override,
-    );
     worker_count.checked_sub(1).filter(|count| *count > 0)
 }
 
@@ -4975,15 +4968,10 @@ impl<'scope, 'env, 'b> GuestPcTraceSegmentCommitDriver<'scope, 'env, 'b> {
         scope: &'scope thread::Scope<'scope, 'env>,
         context: GuestPcTraceSegmentCommitContext<'env>,
         auxiliary_inputs: Arc<ProveWitnessAuxiliaryInputs>,
-        input_byte_count: usize,
         source_lookup_balance: Option<&'b mut SourceLookupBalance>,
         collect_timing: bool,
-        segment_commit_worker_count_override: Option<usize>,
+        segment_commit_mode: GuestPcTraceSegmentCommitMode,
     ) -> Self {
-        let segment_commit_mode = GuestPcTraceSegmentCommitMode::from_input(
-            input_byte_count,
-            segment_commit_worker_count_override,
-        );
         #[cfg(feature = "cuda")]
         let pending_root_materialization_window =
             segment_commit_mode.pending_root_materialization_window;
@@ -5436,7 +5424,7 @@ struct GuestPcTraceSegmentCommitRunOptions<'shared, 'balance, 'timing> {
     shared_inputs: &'shared WitnessSharedInputs,
     source_lookup_balance: Option<&'balance mut SourceLookupBalance>,
     timing_observer: Option<&'timing mut dyn FnMut(ProveWitnessGuestPcTraceTiming)>,
-    segment_commit_worker_count_override: Option<usize>,
+    segment_commit_mode: GuestPcTraceSegmentCommitMode,
     segment_commit_worker_timing: GuestPcTraceSegmentCommitWorkerTiming,
 }
 
@@ -5451,7 +5439,7 @@ fn run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_inner(
         shared_inputs,
         source_lookup_balance,
         mut timing_observer,
-        segment_commit_worker_count_override,
+        segment_commit_mode,
         segment_commit_worker_timing,
     } = options;
     let unit_count = plan.run_plan.schedule.units.len();
@@ -5495,10 +5483,9 @@ fn run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_inner(
                 scope,
                 segment_commit_context,
                 auxiliary_inputs,
-                shared_inputs.input.len(),
                 source_lookup_balance,
                 collect_timing,
-                segment_commit_worker_count_override,
+                segment_commit_mode,
             );
             let guest_trace_stream_started = collect_timing.then(Instant::now);
             let stream_result =
@@ -5570,10 +5557,9 @@ fn run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_inner(
             scope,
             segment_commit_context,
             auxiliary_inputs,
-            shared_inputs.input.len(),
             source_lookup_balance,
             collect_timing,
-            segment_commit_worker_count_override,
+            segment_commit_mode,
         );
         let guest_trace_stream_started = collect_timing.then(Instant::now);
         let stream_timing = for_each_guest_pc_trace_segment_with_context(
@@ -7394,7 +7380,7 @@ mod tests {
         ));
 
         assert_eq!(
-            next_guest_pc_segment_commit_worker_count_after_oom(8 * 1024 * 1024, None, &error),
+            next_guest_pc_segment_commit_worker_count_after_oom(2, &error),
             None
         );
     }
@@ -7409,7 +7395,7 @@ mod tests {
         ));
 
         assert_eq!(
-            next_guest_pc_segment_commit_worker_count_after_oom(8 * 1024 * 1024, Some(3), &error),
+            next_guest_pc_segment_commit_worker_count_after_oom(3, &error),
             Some(2)
         );
     }
@@ -8073,47 +8059,27 @@ mod tests {
             &merkle_length_overflow
         ));
         assert_eq!(
-            next_guest_pc_segment_commit_worker_count_after_oom(8 * 1024 * 1024, None, &oom_error),
+            next_guest_pc_segment_commit_worker_count_after_oom(1, &oom_error),
             None
         );
         assert_eq!(
-            next_guest_pc_segment_commit_worker_count_after_oom(
-                8 * 1024 * 1024,
-                None,
-                &merkle_oom_error
-            ),
+            next_guest_pc_segment_commit_worker_count_after_oom(1, &merkle_oom_error),
             None
         );
         assert_eq!(
-            next_guest_pc_segment_commit_worker_count_after_oom(
-                8 * 1024 * 1024,
-                None,
-                &structural_length_overflow
-            ),
+            next_guest_pc_segment_commit_worker_count_after_oom(2, &structural_length_overflow),
             None
         );
         assert_eq!(
-            next_guest_pc_segment_commit_worker_count_after_oom(
-                8 * 1024 * 1024,
-                Some(2),
-                &oom_error
-            ),
+            next_guest_pc_segment_commit_worker_count_after_oom(2, &oom_error),
             Some(1)
         );
         assert_eq!(
-            next_guest_pc_segment_commit_worker_count_after_oom(
-                8 * 1024 * 1024,
-                Some(1),
-                &oom_error
-            ),
+            next_guest_pc_segment_commit_worker_count_after_oom(1, &oom_error),
             None
         );
         assert_eq!(
-            next_guest_pc_segment_commit_worker_count_after_oom(
-                8 * 1024 * 1024,
-                Some(3),
-                &other_cuda_error
-            ),
+            next_guest_pc_segment_commit_worker_count_after_oom(3, &other_cuda_error),
             None
         );
     }

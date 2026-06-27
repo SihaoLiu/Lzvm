@@ -3824,9 +3824,16 @@ fn guest_pc_segment_commit_can_gate_cross_segment_pending_roots() {
         "impl<'scope, 'env, 'b> GuestPcTraceSegmentCommitDriver<'scope, 'env, 'b>",
         "fn commit_guest_pc_trace_segment_with_scratch",
     );
+    let attempt_body = function_body(
+        &execution_source,
+        "fn run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_optional_timings",
+        "struct GuestPcTraceSegmentCommitAttemptOptions",
+    );
     assert!(
-        driver_body.contains("materialize_pending_guest_pc_segment_commitments")
-            && driver_body.contains("GuestPcTraceSegmentCommitMode::from_input")
+        attempt_body.contains("GuestPcTraceSegmentCommitMode::from_input")
+            && attempt_body.contains("segment_commit_mode")
+            && attempt_body.contains("effective_worker_count: segment_commit_mode.worker_count")
+            && driver_body.contains("materialize_pending_guest_pc_segment_commitments")
             && compact_source_contains(
                 driver_body,
                 "let pending_root_materialization_window = segment_commit_mode.pending_root_materialization_window;"
@@ -4407,8 +4414,8 @@ fn guest_pc_trace_segment_commit_pool_uses_scoped_bounded_workers() {
                 .matches("GuestPcTraceSegmentCommitDriver::new(")
                 .count()
                 >= 2
-            && run_body.matches("shared_inputs.input.len()").count() >= 2,
-        "both streaming guest PC segment paths should create the commit driver inside a thread scope with the trace-start input size available to the worker selector"
+            && run_body.matches("segment_commit_mode").count() >= 3,
+        "both streaming guest PC segment paths should create the commit driver inside a thread scope with the cached mode available"
     );
 }
 
@@ -4463,7 +4470,8 @@ fn guest_pc_segment_commit_oom_retry_clears_cuda_allocator_cache() {
         retry_body.contains("loop {")
             && retry_body.contains("next_guest_pc_segment_commit_worker_count_after_oom")
             && retry_body.contains("cuda_allocator_clear_cache()")
-            && retry_body.contains("worker_count_override = Some(next_worker_count)"),
+            && retry_body.contains("GuestPcTraceSegmentCommitMode::from_input")
+            && retry_body.contains("Some(next_worker_count)"),
         "CUDA OOM retry should free cached allocator blocks before retrying with fewer segment commit workers"
     );
     let retry_policy_body = function_body(
