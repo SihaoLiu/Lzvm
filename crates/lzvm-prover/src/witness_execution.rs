@@ -4337,6 +4337,13 @@ fn run_prove_witness_commitments_with_guest_pc_trace_segments_inner(
     let traceless_commitment_input = guest_pc_trace_traceless_commitment_input_selected();
     #[cfg(feature = "cuda")]
     let stage_source_upload_config = WitnessStageSourceUploadConfig::from_env();
+    #[cfg(feature = "cuda")]
+    let stage_source_retention = retain_fri_stage_source_devices();
+    #[cfg(feature = "cuda")]
+    let stage_source_retention_debug = stage_source_retention && debug_fri_stage_source_devices();
+    #[cfg(feature = "cuda")]
+    let descriptor_buffer_retention =
+        guest_pc_descriptor_buffer_retention_enabled(shared_inputs.input.len());
     for segment_output in trace_outputs {
         let trace_instance_index = segment_output.trace_instance_index();
         #[cfg(feature = "cuda")]
@@ -4405,11 +4412,11 @@ fn run_prove_witness_commitments_with_guest_pc_trace_segments_inner(
                 #[cfg(feature = "cuda")]
                 stage_source_upload_config: Some(stage_source_upload_config),
                 #[cfg(feature = "cuda")]
-                stage_source_retention: None,
+                stage_source_retention: Some(stage_source_retention),
                 #[cfg(feature = "cuda")]
-                stage_source_retention_debug: None,
+                stage_source_retention_debug: Some(stage_source_retention_debug),
                 #[cfg(feature = "cuda")]
-                descriptor_buffer_retention: None,
+                descriptor_buffer_retention: Some(descriptor_buffer_retention),
                 timing: None,
             },
         )?;

@@ -3299,8 +3299,17 @@ fn guest_pc_segment_commitment_input_can_be_trace_less_with_preloaded_device_sou
     assert!(
         direct_segment_body.contains(
             "let traceless_commitment_input = guest_pc_trace_traceless_commitment_input_selected();"
-        ) && !direct_segment_body.contains("guest_pc_trace_less_commitment_input_enabled()"),
-        "direct guest PC segment commitment input should cache trace-less mode outside the segment loop"
+        ) && direct_segment_body.contains("let stage_source_retention = retain_fri_stage_source_devices();")
+            && direct_segment_body.contains("let stage_source_retention_debug =")
+            && direct_segment_body.contains("stage_source_retention: Some(stage_source_retention)")
+            && direct_segment_body.contains(
+                "stage_source_retention_debug: Some(stage_source_retention_debug)"
+            )
+            && direct_segment_body.contains(
+                "descriptor_buffer_retention: Some(descriptor_buffer_retention)"
+            )
+            && !direct_segment_body.contains("guest_pc_trace_less_commitment_input_enabled()"),
+        "direct guest PC segment commitment input should cache trace and retention modes outside the segment loop"
     );
 
     let mode_body = function_body(
