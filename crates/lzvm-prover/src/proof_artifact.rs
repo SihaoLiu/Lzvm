@@ -13,8 +13,7 @@ use lzvm_artifacts::eth_block_public_values::{
     validate_eth_block_public_values, validate_program_image_cache_public_values,
 };
 use lzvm_artifacts::guest_input_segment::{
-    encode_framed_guest_input_segment, validate_framed_guest_input_segment,
-    FRAMED_GUEST_INPUT_SEGMENT_ID,
+    validate_framed_guest_input_segment, FRAMED_GUEST_INPUT_SEGMENT_ID,
 };
 use lzvm_artifacts::key_directory::KeyDirectoryCatalog;
 use lzvm_artifacts::pcs_evaluation_segment::parse_pcs_evaluation_segment;
@@ -514,18 +513,14 @@ fn build_witness_proof_artifact_for_unit_inner(
     }
     let public_values_hash = public_values_digest(public_values)
         .map_err(|error| format!("hash public inputs failed: {error}"))?;
-    validate_proof_bindings(
+    let proof_bindings = validate_proof_bindings(
         public_values,
         request.program_image_cache,
         request.eth_block_input,
         request.framed_guest_input,
     )?;
-    let binding_segments = build_proof_binding_segments(
-        request.program_image_cache,
-        request.eth_block_input,
-        request.framed_guest_input,
-        request.challenge_values_segment,
-    )?;
+    let binding_segments =
+        build_proof_binding_segments(proof_bindings, request.challenge_values_segment)?;
     let binding_segments_slice = binding_segments.segments.as_slice();
     let material_segment = build_pcs_material_manifest_segment(request.schedule)
         .map_err(|error| format!("build material manifest segment failed: {error}"))?;
@@ -822,18 +817,14 @@ pub fn build_witness_contribution_proof_artifact_for_unit(
     }
     let public_values_hash = public_values_digest(public_values)
         .map_err(|error| format!("hash public inputs failed: {error}"))?;
-    validate_proof_bindings(
+    let proof_bindings = validate_proof_bindings(
         public_values,
         request.program_image_cache,
         request.eth_block_input,
         request.framed_guest_input,
     )?;
-    let binding_segments = build_proof_binding_segments(
-        request.program_image_cache,
-        request.eth_block_input,
-        request.framed_guest_input,
-        request.challenge_values_segment,
-    )?;
+    let binding_segments =
+        build_proof_binding_segments(proof_bindings, request.challenge_values_segment)?;
     let unit_values = request
         .unit_values
         .unwrap_or(&request.output.auxiliary_inputs().unit_values);
@@ -919,18 +910,14 @@ pub fn build_witness_contribution_proof_artifact_for_all_units(
     }
     let public_values_hash = public_values_digest(public_values)
         .map_err(|error| format!("hash public inputs failed: {error}"))?;
-    validate_proof_bindings(
+    let proof_bindings = validate_proof_bindings(
         public_values,
         request.program_image_cache,
         request.eth_block_input,
         request.framed_guest_input,
     )?;
-    let binding_segments = build_proof_binding_segments(
-        request.program_image_cache,
-        request.eth_block_input,
-        request.framed_guest_input,
-        request.challenge_values_segment,
-    )?;
+    let binding_segments =
+        build_proof_binding_segments(proof_bindings, request.challenge_values_segment)?;
     let contribution_sources = request
         .outputs
         .iter()
@@ -1021,18 +1008,14 @@ fn build_witness_proof_artifact_for_all_units_inner(
     }
     let public_values_hash = public_values_digest(public_values)
         .map_err(|error| format!("hash public inputs failed: {error}"))?;
-    validate_proof_bindings(
+    let proof_bindings = validate_proof_bindings(
         public_values,
         request.program_image_cache,
         request.eth_block_input,
         request.framed_guest_input,
     )?;
-    let binding_segments = build_proof_binding_segments(
-        request.program_image_cache,
-        request.eth_block_input,
-        request.framed_guest_input,
-        request.challenge_values_segment,
-    )?;
+    let binding_segments =
+        build_proof_binding_segments(proof_bindings, request.challenge_values_segment)?;
     let binding_segments_slice = binding_segments.segments.as_slice();
     let proof_values =
         collect_global_proof_values(request.outputs, &request.auxiliary_inputs.proof_values)?;
@@ -1197,23 +1180,33 @@ fn build_framed_guest_input_proof_segment(
     let Some(input) = input else {
         return Ok(None);
     };
-    let data = encode_framed_guest_input_segment(input)
-        .map_err(|error| format!("build framed guest input segment failed: {error}"))?;
     Ok(Some(ProofSegment {
         id: FRAMED_GUEST_INPUT_SEGMENT_ID,
-        data,
+        data: input.to_vec(),
     }))
 }
 
-fn validate_proof_bindings(
+#[derive(Clone, Copy, Default)]
+struct ValidatedProofBindings<'a> {
+    program_image_cache: Option<&'a ProgramImageCommitmentCache>,
+    eth_block_input: Option<&'a EthBlockInput>,
+    framed_guest_input: Option<&'a [u8]>,
+}
+
+fn validate_proof_bindings<'a>(
     public_values: &PublicValues,
-    program_image_cache: Option<&ProgramImageCommitmentCache>,
-    eth_block_input: Option<&EthBlockInput>,
-    framed_guest_input: Option<&[u8]>,
-) -> Result<(), String> {
+    program_image_cache: Option<&'a ProgramImageCommitmentCache>,
+    eth_block_input: Option<&'a EthBlockInput>,
+    framed_guest_input: Option<&'a [u8]>,
+) -> Result<ValidatedProofBindings<'a>, String> {
     validate_program_image_cache_binding(public_values, program_image_cache)?;
     validate_eth_block_binding(public_values, eth_block_input)?;
-    validate_framed_guest_input_binding(framed_guest_input)
+    validate_framed_guest_input_binding(framed_guest_input)?;
+    Ok(ValidatedProofBindings {
+        program_image_cache,
+        eth_block_input,
+        framed_guest_input,
+    })
 }
 
 fn validate_program_image_cache_binding(
@@ -1359,20 +1352,18 @@ struct PreloadedContributionProofData<'a> {
 }
 
 fn build_proof_binding_segments(
-    cache: Option<&ProgramImageCommitmentCache>,
-    eth_block_input: Option<&EthBlockInput>,
-    framed_guest_input: Option<&[u8]>,
+    bindings: ValidatedProofBindings<'_>,
     challenge_values_segment: Option<&ProofSegment>,
 ) -> Result<ProofBindingSegments, String> {
     let mut segments = Vec::new();
     let mut challenge_values = None;
-    if let Some(segment) = build_program_image_cache_proof_segment(cache)? {
+    if let Some(segment) = build_program_image_cache_proof_segment(bindings.program_image_cache)? {
         segments.push(segment);
     }
-    if let Some(segment) = build_eth_block_input_proof_segment(eth_block_input)? {
+    if let Some(segment) = build_eth_block_input_proof_segment(bindings.eth_block_input)? {
         segments.push(segment);
     }
-    if let Some(segment) = build_framed_guest_input_proof_segment(framed_guest_input)? {
+    if let Some(segment) = build_framed_guest_input_proof_segment(bindings.framed_guest_input)? {
         segments.push(segment);
     }
     if let Some(segment) = challenge_values_segment {
@@ -2274,7 +2265,7 @@ mod tests {
             data: vec![1],
         };
 
-        let error = build_proof_binding_segments(None, None, None, Some(&segment))
+        let error = build_proof_binding_segments(ValidatedProofBindings::default(), Some(&segment))
             .expect_err("challenge values binding segment should parse");
 
         assert_eq!(

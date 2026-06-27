@@ -2240,6 +2240,56 @@ fn lean_framed_guest_input_binding_tracks_runtime_checks() {
         "fn verify_parsed",
         "fn verify_inner",
     );
+    let build_framed_guest_input_segment_body = function_body(
+        &proof_artifact_source,
+        "fn build_framed_guest_input_proof_segment",
+        "fn validate_proof_bindings",
+    );
+    let validate_proof_bindings_body = function_body(
+        &proof_artifact_source,
+        "fn validate_proof_bindings",
+        "fn validate_program_image_cache_binding",
+    );
+    let build_proof_binding_segments_body = function_body(
+        &proof_artifact_source,
+        "fn build_proof_binding_segments",
+        "fn preloaded_contribution_proof_data",
+    );
+    let validate_framed_guest_input_binding_body = function_body(
+        &proof_artifact_source,
+        "fn validate_framed_guest_input_binding",
+        "fn validate_contribution_proof_output",
+    );
+    let framed_guest_input_bytes_for_plan_body = function_body(
+        &prove_witness_source,
+        "fn framed_guest_input_bytes_for_plan",
+        "fn selected_single_unit_index",
+    );
+    let verify_framed_guest_input_binding_body = function_body(
+        &verify_bindings_source,
+        "fn verify_framed_guest_input_binding",
+        "pub(super) fn input_data_file_matches_segment",
+    );
+    let input_data_file_matches_segment_body = function_body(
+        &verify_bindings_source,
+        "pub(super) fn input_data_file_matches_segment",
+        "pub(super) fn pipeline_input_bindings_matched",
+    );
+    let encode_framed_guest_input_segment_body = function_body(
+        &guest_input_segment_source,
+        "pub fn encode_framed_guest_input_segment",
+        "pub fn validate_framed_guest_input_segment",
+    );
+    let validate_framed_guest_input_segment_body = function_body(
+        &guest_input_segment_source,
+        "pub fn validate_framed_guest_input_segment",
+        "pub fn parse_framed_guest_input_segment",
+    );
+    let parse_framed_guest_input_segment_body = function_body(
+        &guest_input_segment_source,
+        "pub fn parse_framed_guest_input_segment",
+        "pub fn framed_guest_input_segment_digest",
+    );
 
     assert!(
         lean_root_source.contains("import Lzvm.FramedGuestInputBinding"),
@@ -2293,24 +2343,33 @@ fn lean_framed_guest_input_binding_tracks_runtime_checks() {
         "proof timing batches should require framed guest stdin before invoking the proof path"
     );
     assert!(
-        proof_artifact_source.contains("fn build_framed_guest_input_proof_segment")
-            && proof_artifact_source.contains("validate_framed_guest_input_binding")
-            && proof_artifact_source.contains("validate_framed_guest_input_segment(input)")
-            && proof_artifact_source.contains("FRAMED_GUEST_INPUT_SEGMENT_ID"),
-        "proof artifact construction should embed framed guest stdin as a proof binding segment without reparsing payload copies"
+        build_framed_guest_input_segment_body.contains("FRAMED_GUEST_INPUT_SEGMENT_ID")
+            && build_framed_guest_input_segment_body.contains("data: input.to_vec()")
+            && !build_framed_guest_input_segment_body
+                .contains("encode_framed_guest_input_segment")
+            && validate_proof_bindings_body
+                .contains("validate_framed_guest_input_binding(framed_guest_input)")
+            && validate_proof_bindings_body.contains("Ok(ValidatedProofBindings")
+            && build_proof_binding_segments_body.contains("bindings: ValidatedProofBindings<'_>")
+            && build_proof_binding_segments_body
+                .contains("build_framed_guest_input_proof_segment(bindings.framed_guest_input)")
+            && validate_framed_guest_input_binding_body
+                .contains("validate_framed_guest_input_segment(input)"),
+        "proof artifact construction should validate framed guest stdin before embedding it without a second validation scan"
     );
     assert!(
-        prove_witness_source.contains("fn framed_guest_input_bytes_for_plan")
-            && prove_witness_source.contains("validate_framed_guest_input_segment(&bytes)")
-            && !prove_witness_source.contains("encode_framed_guest_input_segment(&bytes)"),
+        framed_guest_input_bytes_for_plan_body.contains("validate_framed_guest_input_segment(&bytes)")
+            && !framed_guest_input_bytes_for_plan_body
+                .contains("encode_framed_guest_input_segment(&bytes)"),
         "CLI proof construction should validate framed guest stdin without cloning it through the segment encoder"
     );
     assert!(
-        verify_bindings_source.contains("fn input_data_file_matches_segment")
-            && verify_bindings_source.contains("validate_framed_guest_input_segment(&segment.data)")
-            && !verify_bindings_source.contains("parse_framed_guest_input_segment(&segment.data)")
-            && verify_bindings_source.contains("read_exact")
-            && !verify_bindings_source.contains("fs::read(input_data_path)"),
+        verify_framed_guest_input_binding_body
+            .contains("validate_framed_guest_input_segment(&segment.data)")
+            && !verify_framed_guest_input_binding_body
+                .contains("parse_framed_guest_input_segment(&segment.data)")
+            && input_data_file_matches_segment_body.contains("read_exact")
+            && !input_data_file_matches_segment_body.contains("fs::read(input_data_path)"),
         "CLI verification should validate and compare framed guest stdin binding bytes without payload-copy parsing or a whole-file input read"
     );
     assert!(
@@ -2322,10 +2381,15 @@ fn lean_framed_guest_input_binding_tracks_runtime_checks() {
         "CLI verification should compare the requested program image cache with the proof binding segment"
     );
     assert!(
-        guest_input_segment_source.contains("FramedStdinError::EmptyInput")
-            && guest_input_segment_source.contains("validate_framed_stdin(bytes)")
-            && guest_input_segment_source.contains("validate_framed_guest_input_segment(bytes)?"),
-        "framed guest stdin segment encoding should reject empty payloads and validate framing without materializing chunks"
+        validate_framed_guest_input_segment_body.contains("FramedStdinError::EmptyInput")
+            && validate_framed_guest_input_segment_body.contains("validate_framed_stdin(bytes)")
+            && encode_framed_guest_input_segment_body
+                .contains("validate_framed_guest_input_segment(bytes)?")
+            && parse_framed_guest_input_segment_body.contains("FramedStdinError::EmptyInput")
+            && parse_framed_guest_input_segment_body.contains("parse_framed_stdin_chunks(bytes)")
+            && !parse_framed_guest_input_segment_body
+                .contains("validate_framed_guest_input_segment"),
+        "framed guest stdin segment helpers should keep validation explicit without materializing chunks or double-scanning parser callers"
     );
     assert!(
         query_plan_source.contains("FRAMED_GUEST_INPUT_SEGMENT_ID")
