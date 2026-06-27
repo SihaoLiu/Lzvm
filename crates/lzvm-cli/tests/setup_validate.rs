@@ -17048,6 +17048,59 @@ fn rejects_verify_contribution_with_mismatched_program_image_cache_binding() {
 }
 
 #[test]
+fn rejects_verify_contribution_with_mismatched_framed_guest_input_binding() {
+    let fixture = write_minimal_contribution_binding_fixture(
+        "verify-contribution-mismatched-framed-guest-input",
+    );
+    let mut proof =
+        parse_proof_artifact(&fs::read(&fixture.proof_path).expect("proof artifact should read"))
+            .expect("proof artifact should parse");
+    proof.segments.push(ProofSegment {
+        id: FRAMED_GUEST_INPUT_SEGMENT_ID,
+        data: encode_framed_guest_input_segment(&framed_stdin_chunk(&[7_u8]))
+            .expect("input segment should encode"),
+    });
+    write_bytes(
+        &fixture.proof_path,
+        encode_proof_artifact(&proof).expect("proof should encode"),
+    );
+    let input_data_path = fixture.dir.join("input.bin");
+    write_bytes(&input_data_path, framed_stdin_chunk(&[9_u8]));
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "verify",
+            "contribution",
+            "--input-data",
+            input_data_path
+                .to_str()
+                .expect("input path should be utf-8"),
+            fixture.dir.to_str().expect("setup path should be utf-8"),
+            fixture
+                .proof_path
+                .to_str()
+                .expect("proof path should be utf-8"),
+            fixture
+                .public_values_path
+                .to_str()
+                .expect("public path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+    fs::remove_dir_all(&fixture.dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 1);
+    assert!(stdout.is_empty());
+    assert_eq!(
+        String::from_utf8(stderr).expect("stderr should be utf-8"),
+        "verify contribution failed: framed guest input proof segment mismatch\n"
+    );
+}
+
+#[test]
 fn rejects_verify_contribution_with_mismatched_embedded_challenge() {
     let dir = temp_dir("verify-contribution-mismatched-challenge");
     let _ = fs::remove_dir_all(&dir);
