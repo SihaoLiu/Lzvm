@@ -1288,27 +1288,6 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "Lean theorem {theorem} body should pass the observed acceptance to the combined helper"
         );
     }
-    let routed_timing_wrappers = [
-        "guest_pc_trace_stream_elapsed_timing_acceptance_core_and_sound",
-        "guest_pc_trace_descriptor_width_counts_acceptance_core_and_sound",
-        "guest_pc_trace_report_timing_acceptance_core_and_sound",
-        "guest_pc_trace_report_subtiming_acceptance_core_and_sound",
-        "guest_pc_trace_report_lower_subtiming_acceptance_core_and_sound",
-        "guest_pc_trace_emit_descriptor_wait_timing_acceptance_core_and_sound",
-        "guest_pc_trace_device_source_timing_acceptance_core_and_sound",
-        "guest_pc_trace_regular_stage_timing_acceptance_core_and_sound",
-        "guest_pc_trace_shape_counts_acceptance_core_and_sound",
-        "guest_pc_trace_memory_access_shape_acceptance_core_and_sound",
-        "guest_pc_trace_report_buffer_capacity_acceptance_core_and_sound",
-        "guest_pc_trace_descriptor_upload_word_count_acceptance_core_and_sound",
-        "guest_pc_trace_descriptor_upload_shape_acceptance_core_and_sound",
-        "guest_pc_trace_source_retention_byte_counts_acceptance_core_and_sound",
-        "guest_pc_trace_source_retention_counts_acceptance_core_and_sound",
-        "guest_pc_trace_descriptor_buffer_retention_byte_counts_acceptance_core_and_sound",
-        "guest_pc_trace_descriptor_buffer_retention_counts_acceptance_core_and_sound",
-        "guest_pc_trace_leaf_output_cache_counts_acceptance_core_and_sound",
-        "guest_pc_trace_leaf_extend_timing_acceptance_core_and_sound",
-    ];
     for (theorem, field_terms) in [
         (
             "proof_artifact_finish_witness_opening_shape_acceptance_core_and_sound",
@@ -1909,235 +1888,6 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             &["sound_witness_implies_verifier_core_contract"],
         );
     }
-    for (theorem, omitted_terms) in [
-        (
-            "guest_pc_trace_stream_elapsed_timing_acceptance_core_and_sound",
-            [
-                "guest_pc_trace_stream_elapsed_timing_acceptance_verifier_core_contract",
-                "guest_pc_trace_stream_elapsed_timing_acceptance_sound",
-            ],
-        ),
-        (
-            "guest_pc_trace_descriptor_width_counts_acceptance_core_and_sound",
-            [
-                "guest_pc_trace_descriptor_width_counts_acceptance_verifier_core_contract",
-                "guest_pc_trace_descriptor_width_counts_acceptance_sound",
-            ],
-        ),
-        (
-            "guest_pc_trace_report_timing_acceptance_core_and_sound",
-            [
-                "guest_pc_trace_report_timing_acceptance_verifier_core_contract",
-                "guest_pc_trace_report_timing_acceptance_sound",
-            ],
-        ),
-        (
-            "guest_pc_trace_report_subtiming_acceptance_core_and_sound",
-            [
-                "guest_pc_trace_report_subtiming_acceptance_verifier_core_contract",
-                "guest_pc_trace_report_subtiming_acceptance_sound",
-            ],
-        ),
-        (
-            "guest_pc_trace_report_lower_subtiming_acceptance_core_and_sound",
-            [
-                "guest_pc_trace_report_lower_subtiming_acceptance_verifier_core_contract",
-                "guest_pc_trace_report_lower_subtiming_acceptance_sound",
-            ],
-        ),
-        (
-            "guest_pc_trace_emit_descriptor_wait_timing_acceptance_core_and_sound",
-            [
-                "guest_pc_trace_emit_descriptor_wait_timing_acceptance_verifier_core_contract",
-                "guest_pc_trace_emit_descriptor_wait_timing_acceptance_sound",
-            ],
-        ),
-        (
-            "guest_pc_trace_device_source_timing_acceptance_core_and_sound",
-            [
-                "guest_pc_trace_device_source_timing_acceptance_verifier_core_contract",
-                "guest_pc_trace_device_source_timing_acceptance_sound",
-            ],
-        ),
-        (
-            "guest_pc_trace_regular_stage_timing_acceptance_core_and_sound",
-            [
-                "guest_pc_trace_regular_stage_timing_acceptance_verifier_core_contract",
-                "guest_pc_trace_regular_stage_timing_acceptance_sound",
-            ],
-        ),
-        (
-            "guest_pc_trace_shape_counts_acceptance_core_and_sound",
-            [
-                "guest_pc_trace_shape_counts_acceptance_verifier_core_contract",
-                "guest_pc_trace_shape_counts_acceptance_sound",
-            ],
-        ),
-        (
-            "guest_pc_trace_memory_access_shape_acceptance_core_and_sound",
-            [
-                "guest_pc_trace_memory_access_shape_acceptance_verifier_core_contract",
-                "guest_pc_trace_memory_access_shape_acceptance_sound",
-            ],
-        ),
-        (
-            "guest_pc_trace_report_buffer_capacity_acceptance_core_and_sound",
-            [
-                "guest_pc_trace_report_buffer_capacity_acceptance_verifier_core_contract",
-                "guest_pc_trace_report_buffer_capacity_acceptance_sound",
-            ],
-        ),
-        (
-            "guest_pc_trace_descriptor_upload_word_count_acceptance_core_and_sound",
-            [
-                "guest_pc_trace_descriptor_upload_word_count_acceptance_verifier_core_contract",
-                "guest_pc_trace_descriptor_upload_word_count_acceptance_sound",
-            ],
-        ),
-        (
-            "guest_pc_trace_descriptor_upload_shape_acceptance_core_and_sound",
-            [
-                "guest_pc_trace_descriptor_upload_shape_acceptance_verifier_core_contract",
-                "guest_pc_trace_descriptor_upload_shape_acceptance_sound",
-            ],
-        ),
-        (
-            "guest_pc_trace_source_retention_byte_counts_acceptance_core_and_sound",
-            [
-                "guest_pc_trace_source_retention_byte_counts_acceptance_verifier_core_contract",
-                "guest_pc_trace_source_retention_byte_counts_acceptance_sound",
-            ],
-        ),
-        (
-            "guest_pc_trace_source_retention_counts_acceptance_core_and_sound",
-            [
-                "guest_pc_trace_source_retention_counts_acceptance_verifier_core_contract",
-                "guest_pc_trace_source_retention_counts_acceptance_sound",
-            ],
-        ),
-        (
-            "guest_pc_trace_descriptor_buffer_retention_byte_counts_acceptance_core_and_sound",
-            [
-                "guest_pc_trace_descriptor_buffer_retention_byte_counts_acceptance_verifier_core_contract",
-                "guest_pc_trace_descriptor_buffer_retention_byte_counts_acceptance_sound",
-            ],
-        ),
-        (
-            "guest_pc_trace_descriptor_buffer_retention_counts_acceptance_core_and_sound",
-            [
-                "guest_pc_trace_descriptor_buffer_retention_counts_acceptance_verifier_core_contract",
-                "guest_pc_trace_descriptor_buffer_retention_counts_acceptance_sound",
-            ],
-        ),
-        (
-            "guest_pc_trace_leaf_output_cache_counts_acceptance_core_and_sound",
-            [
-                "guest_pc_trace_leaf_output_cache_counts_acceptance_verifier_core_contract",
-                "guest_pc_trace_leaf_output_cache_counts_acceptance_sound",
-            ],
-        ),
-        (
-            "guest_pc_trace_leaf_extend_timing_acceptance_core_and_sound",
-            [
-                "guest_pc_trace_leaf_extend_timing_acceptance_verifier_core_contract",
-                "guest_pc_trace_leaf_extend_timing_acceptance_sound",
-            ],
-        ),
-    ] {
-        lean_binding::assert_theorem_prefix_contains(
-            &timing_source,
-            theorem,
-            &[
-                "RuntimeVerifierCoreContract system publicInput proof",
-                "SoundWitness system publicInput proof",
-            ],
-        );
-        lean_binding::assert_theorem_body_contains(
-            &timing_source,
-            theorem,
-            &["guest_pc_trace_timing_acceptance_core_and_sound"],
-        );
-        lean_binding::assert_theorem_body_omits(
-            &timing_source,
-            theorem,
-            &[
-                omitted_terms[0],
-                omitted_terms[1],
-                "sound_witness_implies_verifier_core_contract",
-            ],
-        );
-        let body = lean_binding::theorem_body(&timing_source, theorem);
-        assert!(
-            compact_source_contains(
-                &body,
-                "guest_pc_trace_timing_acceptance_core_and_sound assumptions (some { summary with"
-            ),
-            "Lean theorem {theorem} body should call the combined timing helper with the updated summary"
-        );
-        assert!(
-            compact_source_contains(&body, "publicInput proof observed"),
-            "Lean theorem {theorem} body should pass the observed acceptance to the combined helper"
-        );
-    }
-    for (theorem, body_terms) in [
-        (
-            "guest_pc_trace_leaf_setup_timing_acceptance_core_and_sound",
-            [
-                "guest_pc_trace_leaf_setup_timing_acceptance_verifier_core_contract",
-                "guest_pc_trace_leaf_setup_timing_acceptance_sound",
-            ],
-        ),
-        (
-            "guest_pc_trace_leaf_work_timing_acceptance_core_and_sound",
-            [
-                "guest_pc_trace_leaf_work_timing_acceptance_verifier_core_contract",
-                "guest_pc_trace_leaf_work_timing_acceptance_sound",
-            ],
-        ),
-        (
-            "guest_pc_trace_leaf_coset_timing_acceptance_core_and_sound",
-            [
-                "guest_pc_trace_leaf_coset_timing_acceptance_verifier_core_contract",
-                "guest_pc_trace_leaf_coset_timing_acceptance_sound",
-            ],
-        ),
-        (
-            "guest_pc_trace_tree_commit_timing_acceptance_core_and_sound",
-            [
-                "guest_pc_trace_tree_commit_timing_acceptance_verifier_core_contract",
-                "guest_pc_trace_tree_commit_timing_acceptance_sound",
-            ],
-        ),
-        (
-            "guest_pc_trace_segment_commit_worker_timing_acceptance_core_and_sound",
-            [
-                "guest_pc_trace_segment_commit_worker_timing_acceptance_verifier_core_contract",
-                "guest_pc_trace_segment_commit_worker_timing_acceptance_sound",
-            ],
-        ),
-        (
-            "guest_pc_trace_stage_timing_acceptance_core_and_sound",
-            [
-                "guest_pc_trace_stage_timing_acceptance_verifier_core_contract",
-                "guest_pc_trace_stage_timing_acceptance_sound",
-            ],
-        ),
-    ] {
-        lean_binding::assert_theorem_prefix_contains(
-            &timing_source,
-            theorem,
-            &[
-                "RuntimeVerifierCoreContract system publicInput proof",
-                "SoundWitness system publicInput proof",
-            ],
-        );
-        lean_binding::assert_theorem_body_contains(&timing_source, theorem, &body_terms);
-        lean_binding::assert_theorem_body_omits(
-            &timing_source,
-            theorem,
-            &["sound_witness_implies_verifier_core_contract"],
-        );
-    }
     for (theorem, field_terms) in [
         (
             "guest_pc_trace_stream_elapsed_timing_acceptance_core_and_sound",
@@ -2407,56 +2157,52 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
                 "Lean theorem {theorem} prefix should wire field {field_term}"
             );
         }
+        lean_binding::assert_theorem_prefix_contains(
+            &timing_source,
+            theorem,
+            &[
+                "RuntimeVerifierCoreContract system publicInput proof",
+                "SoundWitness system publicInput proof",
+            ],
+        );
 
         let base_theorem = theorem
             .strip_suffix("_core_and_sound")
             .expect("combined timing theorem name should use the core_and_sound suffix");
-        let mut ordered_args = vec!["assumptions".to_owned(), "summary".to_owned()];
-        for field_term in field_terms {
-            let (_, argument) = field_term
-                .rsplit_once(":=")
-                .expect("timing field wiring term should use Lean record assignment syntax");
-            ordered_args.push(argument.trim().to_owned());
-        }
-        ordered_args.extend([
-            "publicInput".to_owned(),
-            "proof".to_owned(),
-            "observed".to_owned(),
-        ]);
+        let verifier_callee = format!("{base_theorem}_verifier_core_contract");
+        let sound_callee = format!("{base_theorem}_sound");
+        lean_binding::assert_theorem_body_contains(
+            &timing_source,
+            theorem,
+            &["guest_pc_trace_timing_acceptance_core_and_sound"],
+        );
+        lean_binding::assert_theorem_body_omits(
+            &timing_source,
+            theorem,
+            &[
+                verifier_callee.as_str(),
+                sound_callee.as_str(),
+                "sound_witness_implies_verifier_core_contract",
+            ],
+        );
 
         let body = lean_binding::theorem_body(&timing_source, theorem);
-        if routed_timing_wrappers.contains(&theorem) {
+        assert!(
+            compact_source_contains(
+                &body,
+                "guest_pc_trace_timing_acceptance_core_and_sound assumptions (some { summary with"
+            ),
+            "Lean theorem {theorem} body should call the combined timing helper with the updated summary"
+        );
+        assert!(
+            compact_source_contains(&body, "publicInput proof observed"),
+            "Lean theorem {theorem} body should pass the observed acceptance to the combined helper"
+        );
+        for field_term in field_terms {
             assert!(
-                compact_source_contains(
-                    &body,
-                    "guest_pc_trace_timing_acceptance_core_and_sound assumptions (some { summary with"
-                ),
-                "Lean theorem {theorem} body should call the combined timing helper with the updated summary"
+                compact_source_contains(&body, field_term),
+                "Lean theorem {theorem} body should pass field {field_term} through the combined helper"
             );
-            assert!(
-                compact_source_contains(&body, "publicInput proof observed"),
-                "Lean theorem {theorem} body should pass the observed acceptance to the combined helper"
-            );
-            for field_term in field_terms {
-                assert!(
-                    compact_source_contains(&body, field_term),
-                    "Lean theorem {theorem} body should pass field {field_term} through the combined helper"
-                );
-            }
-        } else {
-            for callee in [
-                format!("{base_theorem}_verifier_core_contract"),
-                format!("{base_theorem}_sound"),
-            ] {
-                let expected_call = std::iter::once(callee.as_str())
-                    .chain(ordered_args.iter().map(String::as_str))
-                    .collect::<Vec<_>>()
-                    .join(" ");
-                assert!(
-                    compact_source_contains(&body, &expected_call),
-                    "Lean theorem {theorem} body should call {callee} with ordered timing arguments"
-                );
-            }
         }
     }
     assert!(

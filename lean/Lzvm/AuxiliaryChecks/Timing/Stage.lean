@@ -640,37 +640,22 @@ theorem guest_pc_trace_leaf_setup_timing_acceptance_core_and_sound
         RuntimeVerifierCoreContract system publicInput proof
           /\ SoundWitness system publicInput proof := by
   intro publicInput proof observed
-  have core :=
-    guest_pc_trace_leaf_setup_timing_acceptance_verifier_core_contract
+  exact
+    guest_pc_trace_timing_acceptance_core_and_sound
       assumptions
-      summary
-      setupMilliseconds
-      prepareMilliseconds
-      outputAllocMilliseconds
-      workspaceAllocMilliseconds
-      outputAllocByteCount
-      workspaceAllocByteCount
-      outputAllocCount
-      workspaceAllocCount
+      (some
+        { summary with
+          guestStageLeafSetupWorkMilliseconds := setupMilliseconds
+          guestStageLeafSetupPrepareMilliseconds := prepareMilliseconds
+          guestStageLeafSetupOutputAllocMilliseconds := outputAllocMilliseconds
+          guestStageLeafSetupWorkspaceAllocMilliseconds := workspaceAllocMilliseconds
+          guestStageLeafSetupOutputAllocByteCount := outputAllocByteCount
+          guestStageLeafSetupWorkspaceAllocByteCount := workspaceAllocByteCount
+          guestStageLeafSetupOutputAllocCount := outputAllocCount
+          guestStageLeafSetupWorkspaceAllocCount := workspaceAllocCount })
       publicInput
       proof
       observed
-  have sound :=
-    guest_pc_trace_leaf_setup_timing_acceptance_sound
-      assumptions
-      summary
-      setupMilliseconds
-      prepareMilliseconds
-      outputAllocMilliseconds
-      workspaceAllocMilliseconds
-      outputAllocByteCount
-      workspaceAllocByteCount
-      outputAllocCount
-      workspaceAllocCount
-      publicInput
-      proof
-      observed
-  exact And.intro core sound
 
 theorem guest_pc_trace_leaf_work_timing_acceptance_sound
     {system : VerifierModel}
@@ -793,43 +778,25 @@ theorem guest_pc_trace_leaf_work_timing_acceptance_core_and_sound
         RuntimeVerifierCoreContract system publicInput proof
           /\ SoundWitness system publicInput proof := by
   intro publicInput proof observed
-  have core :=
-    guest_pc_trace_leaf_work_timing_acceptance_verifier_core_contract
+  exact
+    guest_pc_trace_timing_acceptance_core_and_sound
       assumptions
-      summary
-      uploadMilliseconds
-      kernelMilliseconds
-      downloadMilliseconds
-      validateMilliseconds
-      hashMilliseconds
-      hashRows
-      hashBytes
-      hashArity2Rows
-      hashArity2Bytes
-      hashArity4Rows
-      hashArity4Bytes
+      (some
+        { summary with
+          guestStageLeafUploadWorkMilliseconds := uploadMilliseconds
+          guestStageLeafKernelWorkMilliseconds := kernelMilliseconds
+          guestStageLeafDownloadWorkMilliseconds := downloadMilliseconds
+          guestStageLeafValidateWorkMilliseconds := validateMilliseconds
+          guestStageLeafHashWorkMilliseconds := hashMilliseconds
+          guestStageLeafHashRowCount := hashRows
+          guestStageLeafHashByteCount := hashBytes
+          guestStageLeafHashArity2RowCount := hashArity2Rows
+          guestStageLeafHashArity2ByteCount := hashArity2Bytes
+          guestStageLeafHashArity4RowCount := hashArity4Rows
+          guestStageLeafHashArity4ByteCount := hashArity4Bytes })
       publicInput
       proof
       observed
-  have sound :=
-    guest_pc_trace_leaf_work_timing_acceptance_sound
-      assumptions
-      summary
-      uploadMilliseconds
-      kernelMilliseconds
-      downloadMilliseconds
-      validateMilliseconds
-      hashMilliseconds
-      hashRows
-      hashBytes
-      hashArity2Rows
-      hashArity2Bytes
-      hashArity4Rows
-      hashArity4Bytes
-      publicInput
-      proof
-      observed
-  exact And.intro core sound
 
 theorem guest_pc_trace_leaf_coset_timing_acceptance_sound
     {system : VerifierModel}
@@ -952,43 +919,25 @@ theorem guest_pc_trace_leaf_coset_timing_acceptance_core_and_sound
         RuntimeVerifierCoreContract system publicInput proof
           /\ SoundWitness system publicInput proof := by
   intro publicInput proof observed
-  have core :=
-    guest_pc_trace_leaf_coset_timing_acceptance_verifier_core_contract
+  exact
+    guest_pc_trace_timing_acceptance_core_and_sound
       assumptions
-      summary
-      callCount
-      outputByteCount
-      columnCount
-      maxColumnCount
-      nttLaunchCount
-      bitReverseLaunchCount
-      nttStageLaunchCount
-      nttBlockTwiddleLaunchCount
-      normalizeLaunchCount
-      packLaunchCount
-      unpackLaunchCount
+      (some
+        { summary with
+          guestStageLeafCosetExtendCallCount := callCount
+          guestStageLeafCosetExtendOutputByteCount := outputByteCount
+          guestStageLeafCosetExtendColumnCount := columnCount
+          guestStageLeafCosetExtendMaxColumnCount := maxColumnCount
+          guestStageLeafCosetExtendNttLaunchCount := nttLaunchCount
+          guestStageLeafCosetExtendBitReverseLaunchCount := bitReverseLaunchCount
+          guestStageLeafCosetExtendNttStageLaunchCount := nttStageLaunchCount
+          guestStageLeafCosetExtendNttBlockTwiddleLaunchCount := nttBlockTwiddleLaunchCount
+          guestStageLeafCosetExtendNormalizeLaunchCount := normalizeLaunchCount
+          guestStageLeafCosetExtendPackLaunchCount := packLaunchCount
+          guestStageLeafCosetExtendUnpackLaunchCount := unpackLaunchCount })
       publicInput
       proof
       observed
-  have sound :=
-    guest_pc_trace_leaf_coset_timing_acceptance_sound
-      assumptions
-      summary
-      callCount
-      outputByteCount
-      columnCount
-      maxColumnCount
-      nttLaunchCount
-      bitReverseLaunchCount
-      nttStageLaunchCount
-      nttBlockTwiddleLaunchCount
-      normalizeLaunchCount
-      packLaunchCount
-      unpackLaunchCount
-      publicInput
-      proof
-      observed
-  exact And.intro core sound
 
 theorem guest_pc_trace_tree_commit_timing_acceptance_sound
     {system : VerifierModel}
@@ -1106,37 +1055,24 @@ theorem guest_pc_trace_tree_commit_timing_acceptance_core_and_sound
         RuntimeVerifierCoreContract system publicInput proof
           /\ SoundWitness system publicInput proof := by
   intro publicInput proof observed
-  have core :=
-    guest_pc_trace_tree_commit_timing_acceptance_verifier_core_contract
+  exact
+    guest_pc_trace_timing_acceptance_core_and_sound
       assumptions
-      summary
-      workMilliseconds
-      checkpointMilliseconds
-      rootMilliseconds
-      rootCount
-      rootByteCount
-      rootMaterializationGroupCount
-      rootMaterializationMaxGroupSize
-      retainMilliseconds
+      (some
+        { summary with
+          guestStageTreeCommitWorkMilliseconds := workMilliseconds
+          guestStageTreeCommitCheckpointWorkMilliseconds := checkpointMilliseconds
+          guestStageTreeCommitRootWorkMilliseconds := rootMilliseconds
+          guestStageTreeCommitRootCount := rootCount
+          guestStageTreeCommitRootByteCount := rootByteCount
+          guestStageTreeCommitRootMaterializationGroupCount :=
+            rootMaterializationGroupCount
+          guestStageTreeCommitRootMaterializationMaxGroupSize :=
+            rootMaterializationMaxGroupSize
+          guestStageTreeCommitRetainWorkMilliseconds := retainMilliseconds })
       publicInput
       proof
       observed
-  have sound :=
-    guest_pc_trace_tree_commit_timing_acceptance_sound
-      assumptions
-      summary
-      workMilliseconds
-      checkpointMilliseconds
-      rootMilliseconds
-      rootCount
-      rootByteCount
-      rootMaterializationGroupCount
-      rootMaterializationMaxGroupSize
-      retainMilliseconds
-      publicInput
-      proof
-      observed
-  exact And.intro core sound
 
 theorem guest_pc_trace_segment_commit_worker_timing_acceptance_sound
     {system : VerifierModel}
@@ -1213,27 +1149,17 @@ theorem guest_pc_trace_segment_commit_worker_timing_acceptance_core_and_sound
         RuntimeVerifierCoreContract system publicInput proof
           /\ SoundWitness system publicInput proof := by
   intro publicInput proof observed
-  have core :=
-    guest_pc_trace_segment_commit_worker_timing_acceptance_verifier_core_contract
+  exact
+    guest_pc_trace_timing_acceptance_core_and_sound
       assumptions
-      summary
-      initialWorkerCount
-      effectiveWorkerCount
-      oomRetryCount
+      (some
+        { summary with
+          guestSegmentCommitInitialWorkerCount := initialWorkerCount
+          guestSegmentCommitEffectiveWorkerCount := effectiveWorkerCount
+          guestSegmentCommitOomRetryCount := oomRetryCount })
       publicInput
       proof
       observed
-  have sound :=
-    guest_pc_trace_segment_commit_worker_timing_acceptance_sound
-      assumptions
-      summary
-      initialWorkerCount
-      effectiveWorkerCount
-      oomRetryCount
-      publicInput
-      proof
-      observed
-  exact And.intro core sound
 
 theorem guest_pc_trace_stage_timing_acceptance_sound
     {system : VerifierModel}
@@ -1291,22 +1217,12 @@ theorem guest_pc_trace_stage_timing_acceptance_core_and_sound
         RuntimeVerifierCoreContract system publicInput proof
           /\ SoundWitness system publicInput proof := by
   intro publicInput proof observed
-  have core :=
-    guest_pc_trace_stage_timing_acceptance_verifier_core_contract
+  exact
+    guest_pc_trace_timing_acceptance_core_and_sound
       assumptions
-      summary
-      stageTimings
+      (some { summary with stageTimings := stageTimings })
       publicInput
       proof
       observed
-  have sound :=
-    guest_pc_trace_stage_timing_acceptance_sound
-      assumptions
-      summary
-      stageTimings
-      publicInput
-      proof
-      observed
-  exact And.intro core sound
 
 end Lzvm
