@@ -237,6 +237,49 @@ theorem guest_pc_trace_report_timing_acceptance_verifier_core_contract
       proof
       observed
 
+theorem guest_pc_trace_report_timing_acceptance_core_and_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : GuestPcTraceTimingSummary)
+    (reportMilliseconds validationMilliseconds reportCount reportRows : Nat) :
+    forall publicInput proof,
+      GuestPcTraceTimingObservedAcceptance
+        system
+        (some
+          { summary with
+            guestTraceReportMilliseconds := reportMilliseconds
+            guestTraceReportValidationMilliseconds := validationMilliseconds
+            guestTraceReportCount := reportCount
+            guestTraceReportRowCount := reportRows })
+        publicInput
+        proof ->
+        RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof observed
+  have core :=
+    guest_pc_trace_report_timing_acceptance_verifier_core_contract
+      assumptions
+      summary
+      reportMilliseconds
+      validationMilliseconds
+      reportCount
+      reportRows
+      publicInput
+      proof
+      observed
+  have sound :=
+    guest_pc_trace_report_timing_acceptance_sound
+      assumptions
+      summary
+      reportMilliseconds
+      validationMilliseconds
+      reportCount
+      reportRows
+      publicInput
+      proof
+      observed
+  exact And.intro core sound
+
 theorem guest_pc_trace_report_subtiming_acceptance_sound
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
@@ -321,6 +364,66 @@ theorem guest_pc_trace_report_subtiming_acceptance_verifier_core_contract
       publicInput
       proof
       observed
+
+theorem guest_pc_trace_report_subtiming_acceptance_core_and_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : GuestPcTraceTimingSummary)
+    (rowValidationMilliseconds sourceValuesMilliseconds precompileMemoryMilliseconds
+      instructionResultMilliseconds nextPcMilliseconds registerAccessMilliseconds
+      memoryAccessMilliseconds storeApplyMilliseconds visitMilliseconds : Nat) :
+    forall publicInput proof,
+      GuestPcTraceTimingObservedAcceptance
+        system
+        (some
+          { summary with
+            guestTraceReportRowValidationMilliseconds := rowValidationMilliseconds
+            guestTraceReportSourceValuesMilliseconds := sourceValuesMilliseconds
+            guestTraceReportPrecompileMemoryMilliseconds := precompileMemoryMilliseconds
+            guestTraceReportInstructionResultMilliseconds := instructionResultMilliseconds
+            guestTraceReportNextPcMilliseconds := nextPcMilliseconds
+            guestTraceReportRegisterAccessMilliseconds := registerAccessMilliseconds
+            guestTraceReportMemoryAccessMilliseconds := memoryAccessMilliseconds
+            guestTraceReportStoreApplyMilliseconds := storeApplyMilliseconds
+            guestTraceReportVisitMilliseconds := visitMilliseconds })
+        publicInput
+        proof ->
+        RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof observed
+  have core :=
+    guest_pc_trace_report_subtiming_acceptance_verifier_core_contract
+      assumptions
+      summary
+      rowValidationMilliseconds
+      sourceValuesMilliseconds
+      precompileMemoryMilliseconds
+      instructionResultMilliseconds
+      nextPcMilliseconds
+      registerAccessMilliseconds
+      memoryAccessMilliseconds
+      storeApplyMilliseconds
+      visitMilliseconds
+      publicInput
+      proof
+      observed
+  have sound :=
+    guest_pc_trace_report_subtiming_acceptance_sound
+      assumptions
+      summary
+      rowValidationMilliseconds
+      sourceValuesMilliseconds
+      precompileMemoryMilliseconds
+      instructionResultMilliseconds
+      nextPcMilliseconds
+      registerAccessMilliseconds
+      memoryAccessMilliseconds
+      storeApplyMilliseconds
+      visitMilliseconds
+      publicInput
+      proof
+      observed
+  exact And.intro core sound
 
 theorem guest_pc_trace_report_lower_subtiming_acceptance_sound
     {system : VerifierModel}

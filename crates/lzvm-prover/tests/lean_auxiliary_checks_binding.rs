@@ -1088,6 +1088,20 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
                 "guest_pc_trace_descriptor_width_counts_acceptance_sound",
             ],
         ),
+        (
+            "guest_pc_trace_report_timing_acceptance_core_and_sound",
+            [
+                "guest_pc_trace_report_timing_acceptance_verifier_core_contract",
+                "guest_pc_trace_report_timing_acceptance_sound",
+            ],
+        ),
+        (
+            "guest_pc_trace_report_subtiming_acceptance_core_and_sound",
+            [
+                "guest_pc_trace_report_subtiming_acceptance_verifier_core_contract",
+                "guest_pc_trace_report_subtiming_acceptance_sound",
+            ],
+        ),
     ] {
         lean_binding::assert_theorem_prefix_contains(
             &timing_source,
@@ -3695,6 +3709,8 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "guest_pc_trace_shape_counts_acceptance_verifier_core_contract",
             "guest_pc_trace_stream_elapsed_timing_acceptance_core_and_sound",
             "guest_pc_trace_descriptor_width_counts_acceptance_core_and_sound",
+            "guest_pc_trace_report_timing_acceptance_core_and_sound",
+            "guest_pc_trace_report_subtiming_acceptance_core_and_sound",
             "guest_pc_trace_memory_access_shape_acceptance_sound",
             "guest_pc_trace_memory_access_shape_acceptance_verifier_core_contract",
             "guest_pc_trace_report_buffer_capacity_acceptance_sound",
