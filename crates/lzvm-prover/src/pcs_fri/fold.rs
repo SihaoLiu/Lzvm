@@ -316,7 +316,9 @@ fn evaluate_fri_fold_columns(
     c1: Vec<Felt>,
     c2: Vec<Felt>,
 ) -> Result<Ext3, PcsFriFoldError> {
-    let coefficients = interpolate_fold_columns(c0, c1, c2, fold_bits as usize)?;
+    let c0 = interpolate_fold_column_owned(c0, fold_bits as usize)?;
+    let c1 = interpolate_fold_column_owned(c1, fold_bits as usize)?;
+    let c2 = interpolate_fold_column_owned(c2, fold_bits as usize)?;
     let shift = fold_shift(n_bits_ext, prev_bits);
     let root = Felt::root_of_unity(prev_bits as usize)
         .ok_or(PcsFriFoldError::UnsupportedRoot { bits: prev_bits })?;
@@ -324,27 +326,12 @@ fn evaluate_fri_fold_columns(
     let inverse = point
         .inverse()
         .ok_or(PcsFriFoldError::ZeroEvaluationPoint)?;
-    Ok(evaluate_extension_polynomial(
-        &coefficients,
+    Ok(evaluate_interpolated_fold_columns(
+        &c0,
+        &c1,
+        &c2,
         scale_extension(challenge, inverse),
     ))
-}
-
-fn interpolate_fold_columns(
-    c0: Vec<Felt>,
-    c1: Vec<Felt>,
-    c2: Vec<Felt>,
-    bits: usize,
-) -> Result<Vec<Ext3>, PcsFriFoldError> {
-    let c0 = interpolate_fold_column_owned(c0, bits)?;
-    let c1 = interpolate_fold_column_owned(c1, bits)?;
-    let c2 = interpolate_fold_column_owned(c2, bits)?;
-    Ok(c0
-        .into_iter()
-        .zip(c1)
-        .zip(c2)
-        .map(|((c0, c1), c2)| Ext3::new(c0, c1, c2))
-        .collect())
 }
 
 #[cfg(feature = "cuda")]
@@ -381,11 +368,16 @@ fn fold_shift(n_bits_ext: u32, prev_bits: u32) -> Felt {
     shift
 }
 
-fn evaluate_extension_polynomial(coefficients: &[Ext3], point: Ext3) -> Ext3 {
-    coefficients
-        .iter()
+fn evaluate_interpolated_fold_columns(c0: &[Felt], c1: &[Felt], c2: &[Felt], point: Ext3) -> Ext3 {
+    debug_assert_eq!(c0.len(), c1.len());
+    debug_assert_eq!(c0.len(), c2.len());
+    c0.iter()
+        .zip(c1.iter())
+        .zip(c2.iter())
         .rev()
-        .fold(Ext3::ZERO, |acc, coefficient| acc * point + *coefficient)
+        .fold(Ext3::ZERO, |acc, ((c0, c1), c2)| {
+            acc * point + Ext3::new(*c0, *c1, *c2)
+        })
 }
 
 fn scale_extension(value: Ext3, scalar: Felt) -> Ext3 {
