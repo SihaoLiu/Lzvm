@@ -629,4 +629,65 @@ theorem runtime_eth_block_public_input_binding_checked_acceptance_full_contract
       (And.intro sound.right.left
         (And.intro structural sound.right.right))
 
+theorem runtime_eth_block_public_input_binding_checked_acceptance_evidence_core_and_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeEthBlockPublicInputBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeEthBlockPublicInputBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeEthBlockPublicInputBindingEvidence
+            system
+            validation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeProofArtifactBindingEvidence
+            system
+            validation.proofArtifactBindingValidation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeEthBlockPublicInputBindingStructuralObligations
+            system
+            validation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeArtifactEvidence
+            system
+            validation.proofArtifactBindingValidation.runtimeValidation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro artifact publicInput proof accepted
+  have fullContract :=
+    runtime_eth_block_public_input_binding_checked_acceptance_full_contract
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have coreContract :=
+    runtime_eth_block_public_input_binding_checked_acceptance_verifier_core_contract
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  exact
+    And.intro fullContract.left
+      (And.intro fullContract.right.left
+        (And.intro fullContract.right.right.left
+          (And.intro fullContract.right.right.right.left
+            (And.intro coreContract fullContract.right.right.right.right))))
+
 end Lzvm
