@@ -208,9 +208,9 @@ def stable_average_field(
     return f"avg={average:.3f} samples={sample_text} used={len(best)}/{len(samples)}"
 
 
-def timing_total_seconds_from_log(path: Path) -> float:
+def timing_total_seconds_from_log(path: Path, label: str = "timing log") -> float:
     matches = []
-    with path.open() as source:
+    with open_read_text_no_follow(path, label) as source:
         for line in source:
             match = TIMING_TOTAL_RE.match(line)
             if match is not None:
@@ -249,7 +249,8 @@ def resolve_timing_field(
                     resolve_workspace_path(path, root),
                     root,
                     log_option,
-                )
+                ),
+                log_option,
             )
             for path in log_paths
         ]

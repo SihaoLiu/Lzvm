@@ -449,6 +449,61 @@ fn improve_log_writer_rejects_timing_log_outside_temp() {
     );
 }
 
+#[cfg(unix)]
+#[test]
+fn improve_log_writer_rejects_symlinked_timing_log() {
+    use std::os::unix::fs::symlink;
+
+    let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let workspace_root = crate_root
+        .parent()
+        .and_then(std::path::Path::parent)
+        .expect("workspace root should resolve");
+    let script_path = workspace_root.join("scripts/append-improve-log.py");
+    let dir = workspace_root.join(format!(
+        "temp/improve-log-input-symlink-{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("timing log fixture dir should be created");
+    let log_path = dir.join("improve-log.csv");
+    let timing_target = dir.join("timing-target.log");
+    let timing_link = dir.join("timing-link.log");
+    std::fs::write(&timing_target, "timing_total_ms=8550\n").expect("timing target should write");
+    symlink(&timing_target, &timing_link).expect("timing log symlink should be created");
+
+    let output = Command::new(&script_path)
+        .arg("--path")
+        .arg(&log_path)
+        .arg("--commit")
+        .arg("test")
+        .arg("--small-log")
+        .arg(&timing_link)
+        .arg("--large-runs")
+        .arg("52.29,51.61,51.21")
+        .arg("--summary")
+        .arg("input link guard")
+        .output()
+        .expect("improve-log writer should run");
+    let success = output.status.success();
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    let log_created = log_path.exists();
+    let _ = std::fs::remove_dir_all(&dir);
+
+    assert!(
+        !success,
+        "improve-log writer should reject symlinked timing logs"
+    );
+    assert!(
+        stderr.contains("--small-log must not be a symlink"),
+        "timing log symlink rejection should explain the path constraint: stderr={stderr}"
+    );
+    assert!(
+        !log_created,
+        "rejected symlinked timing log should not create an improve log"
+    );
+}
+
 #[test]
 fn improve_log_writer_rejects_unstable_run_samples() {
     let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
