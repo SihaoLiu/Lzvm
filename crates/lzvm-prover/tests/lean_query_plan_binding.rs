@@ -6,9 +6,14 @@ mod lean_binding;
 #[test]
 fn lean_query_plan_binding_exports_opening_segment_projections() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let lean_path = crate_root.join("../../lean/Lzvm/QueryPlanBinding.lean");
-    let lean_source =
-        std::fs::read_to_string(&lean_path).expect("Lean query plan binding source should read");
+    let lean_source = lean_binding::read_lean_sources(
+        crate_root,
+        &[
+            "../../lean/Lzvm/QueryPlanBinding.lean",
+            "../../lean/Lzvm/QueryPlanBinding/Core.lean",
+            "../../lean/Lzvm/QueryPlanBinding/Soundness.lean",
+        ],
+    );
     let query_plan_path = crate_root.join("src/pcs_query_plan.rs");
     let query_plan_source =
         std::fs::read_to_string(&query_plan_path).expect("PCS query plan source should read");
