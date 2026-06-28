@@ -527,6 +527,31 @@ theorem prover_gpu_mode_acceptance_verifier_core_contract
       proof
       observed
 
+theorem prover_gpu_mode_acceptance_core_and_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : Option ProverGpuModeSummary) :
+    forall publicInput proof,
+      ProverGpuModeObservedAcceptance system summary publicInput proof ->
+        RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof observed
+  have core :=
+    prover_gpu_mode_acceptance_verifier_core_contract
+      assumptions
+      summary
+      publicInput
+      proof
+      observed
+  have sound :=
+    prover_gpu_mode_acceptance_sound
+      assumptions
+      summary
+      publicInput
+      proof
+      observed
+  exact And.intro core sound
+
 def GpuRunOptionsObservedAcceptance
     (system : VerifierModel)
     (summary : Option GpuRunOptionsSummary)
@@ -574,6 +599,31 @@ theorem gpu_run_options_acceptance_verifier_core_contract
       publicInput
       proof
       observed
+
+theorem gpu_run_options_acceptance_core_and_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : Option GpuRunOptionsSummary) :
+    forall publicInput proof,
+      GpuRunOptionsObservedAcceptance system summary publicInput proof ->
+        RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof observed
+  have core :=
+    gpu_run_options_acceptance_verifier_core_contract
+      assumptions
+      summary
+      publicInput
+      proof
+      observed
+  have sound :=
+    gpu_run_options_acceptance_sound
+      assumptions
+      summary
+      publicInput
+      proof
+      observed
+  exact And.intro core sound
 
 def CudaBackendObservedAcceptance
     (system : VerifierModel)
@@ -623,6 +673,31 @@ theorem cuda_backend_acceptance_verifier_core_contract
       proof
       observed
 
+theorem cuda_backend_acceptance_core_and_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : Option CudaBackendSummary) :
+    forall publicInput proof,
+      CudaBackendObservedAcceptance system summary publicInput proof ->
+        RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof observed
+  have core :=
+    cuda_backend_acceptance_verifier_core_contract
+      assumptions
+      summary
+      publicInput
+      proof
+      observed
+  have sound :=
+    cuda_backend_acceptance_sound
+      assumptions
+      summary
+      publicInput
+      proof
+      observed
+  exact And.intro core sound
+
 def CudaAllocatorTimingObservedAcceptance
     (system : VerifierModel)
     (summary : Option CudaAllocatorTimingSummary)
@@ -670,6 +745,31 @@ theorem cuda_allocator_timing_acceptance_verifier_core_contract
       publicInput
       proof
       observed
+
+theorem cuda_allocator_timing_acceptance_core_and_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : Option CudaAllocatorTimingSummary) :
+    forall publicInput proof,
+      CudaAllocatorTimingObservedAcceptance system summary publicInput proof ->
+        RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof observed
+  have core :=
+    cuda_allocator_timing_acceptance_verifier_core_contract
+      assumptions
+      summary
+      publicInput
+      proof
+      observed
+  have sound :=
+    cuda_allocator_timing_acceptance_sound
+      assumptions
+      summary
+      publicInput
+      proof
+      observed
+  exact And.intro core sound
 
 theorem cuda_allocator_aggregate_timing_acceptance_sound
     {system : VerifierModel}

@@ -824,6 +824,34 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
                 "constant_material_validation_timing_acceptance_sound",
             ],
         ),
+        (
+            "prover_gpu_mode_acceptance_core_and_sound",
+            [
+                "prover_gpu_mode_acceptance_verifier_core_contract",
+                "prover_gpu_mode_acceptance_sound",
+            ],
+        ),
+        (
+            "gpu_run_options_acceptance_core_and_sound",
+            [
+                "gpu_run_options_acceptance_verifier_core_contract",
+                "gpu_run_options_acceptance_sound",
+            ],
+        ),
+        (
+            "cuda_backend_acceptance_core_and_sound",
+            [
+                "cuda_backend_acceptance_verifier_core_contract",
+                "cuda_backend_acceptance_sound",
+            ],
+        ),
+        (
+            "cuda_allocator_timing_acceptance_core_and_sound",
+            [
+                "cuda_allocator_timing_acceptance_verifier_core_contract",
+                "cuda_allocator_timing_acceptance_sound",
+            ],
+        ),
     ] {
         lean_binding::assert_theorem_prefix_contains(
             &lean_proof_timing_source,
@@ -4377,15 +4405,19 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "prover_gpu_mode_observed_acceptance_projects_verifier_acceptance",
             "prover_gpu_mode_acceptance_sound",
             "prover_gpu_mode_acceptance_verifier_core_contract",
+            "prover_gpu_mode_acceptance_core_and_sound",
             "gpu_run_options_observed_acceptance_projects_verifier_acceptance",
             "gpu_run_options_acceptance_sound",
             "gpu_run_options_acceptance_verifier_core_contract",
+            "gpu_run_options_acceptance_core_and_sound",
             "cuda_backend_observed_acceptance_projects_verifier_acceptance",
             "cuda_backend_acceptance_sound",
             "cuda_backend_acceptance_verifier_core_contract",
+            "cuda_backend_acceptance_core_and_sound",
             "cuda_allocator_timing_observed_acceptance_projects_verifier_acceptance",
             "cuda_allocator_timing_acceptance_sound",
             "cuda_allocator_timing_acceptance_verifier_core_contract",
+            "cuda_allocator_timing_acceptance_core_and_sound",
             "cuda_allocator_aggregate_timing_acceptance_sound",
             "cuda_allocator_aggregate_timing_acceptance_verifier_core_contract",
             "cuda_allocator_host_registration_timing_acceptance_sound",
