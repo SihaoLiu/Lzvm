@@ -77,23 +77,22 @@ theorem gpu_setup_checked_acceptance_constants_core_and_sound
           /\ RuntimeVerifierCoreContract system publicInput proof
           /\ SoundWitness system publicInput proof := by
   intro publicInput proof checked
-  have sound :=
-    gpu_setup_checked_acceptance_sound
-      assumptions
+  have constantsSound :=
+    gpu_setup_checked_acceptance_projects_constants_sound
       validation
       request
       publicInput
       proof
       checked
-  have core :=
-    gpu_setup_checked_acceptance_verifier_core_contract
+  have coreAndSound :=
+    GpuRuntimeInternal.checked_acceptance_core_and_sound
+      (auxiliaryAccepted := fun _publicInput _proof =>
+        validation.constantsSoundFor request.device request.requiredBits)
       assumptions
-      validation
-      request
       publicInput
       proof
       checked
-  exact And.intro sound.left (And.intro core sound.right)
+  exact And.intro constantsSound coreAndSound
 
 theorem gpu_allocation_cache_reuse_preserves_written_contents
     (validation : GpuAllocationCacheValidation)
@@ -197,23 +196,20 @@ theorem gpu_allocation_checked_acceptance_written_contents_core_and_sound
           /\ RuntimeVerifierCoreContract system publicInput proof
           /\ SoundWitness system publicInput proof := by
   intro publicInput proof checked
-  have sound :=
-    gpu_allocation_checked_acceptance_sound
-      assumptions
+  have writtenContents :=
+    gpu_allocation_checked_acceptance_projects_written_contents
       validation
       allocation
       publicInput
       proof
       checked
-  have core :=
-    gpu_allocation_checked_acceptance_verifier_core_contract
+  have coreAndSound :=
+    GpuRuntimeInternal.checked_acceptance_core_and_sound
       assumptions
-      validation
-      allocation
       publicInput
       proof
       checked
-  exact And.intro sound.left (And.intro core sound.right)
+  exact And.intro writtenContents coreAndSound
 
 theorem gpu_host_device_copy_round_trip_implies_written_contents
     (validation : GpuHostDeviceCopyRoundTripValidation)
@@ -336,23 +332,20 @@ theorem gpu_host_device_copy_round_trip_checked_acceptance_written_contents_core
           /\ RuntimeVerifierCoreContract system publicInput proof
           /\ SoundWitness system publicInput proof := by
   intro publicInput proof checked
-  have sound :=
-    gpu_host_device_copy_round_trip_checked_acceptance_sound
-      assumptions
+  have writtenContents :=
+    gpu_host_device_copy_round_trip_checked_acceptance_projects_written_contents
       validation
       allocation
       publicInput
       proof
       checked
-  have core :=
-    gpu_host_device_copy_round_trip_checked_acceptance_verifier_core_contract
+  have coreAndSound :=
+    GpuRuntimeInternal.checked_acceptance_core_and_sound
       assumptions
-      validation
-      allocation
       publicInput
       proof
       checked
-  exact And.intro sound.left (And.intro core sound.right)
+  exact And.intro writtenContents coreAndSound
 
 theorem gpu_temporary_buffer_reuse_implies_same_request
     (validation : GpuTemporaryBufferReuseValidation)

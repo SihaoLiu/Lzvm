@@ -5292,13 +5292,17 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "sound_witness_implies_verifier_core_contract",
         ],
     );
-    for (theorem, prefix_terms, body_terms) in [
+    for (theorem, prefix_terms, body_terms, omitted_terms) in [
         (
             "gpu_setup_checked_acceptance_constants_core_and_sound",
             [
                 "validation.constantsSoundFor request.device request.requiredBits",
                 "RuntimeVerifierCoreContract system publicInput proof",
                 "SoundWitness system publicInput proof",
+            ],
+            [
+                "gpu_setup_checked_acceptance_projects_constants_sound",
+                "GpuRuntimeInternal.checked_acceptance_core_and_sound",
             ],
             [
                 "gpu_setup_checked_acceptance_sound",
@@ -5311,6 +5315,10 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
                 "validation.writtenContentsBound allocation publicInput proof",
                 "RuntimeVerifierCoreContract system publicInput proof",
                 "SoundWitness system publicInput proof",
+            ],
+            [
+                "gpu_allocation_checked_acceptance_projects_written_contents",
+                "GpuRuntimeInternal.checked_acceptance_core_and_sound",
             ],
             [
                 "gpu_allocation_checked_acceptance_sound",
@@ -5328,6 +5336,10 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
                 "SoundWitness system publicInput proof",
             ],
             [
+                "gpu_host_device_copy_round_trip_checked_acceptance_projects_written_contents",
+                "GpuRuntimeInternal.checked_acceptance_core_and_sound",
+            ],
+            [
                 "gpu_host_device_copy_round_trip_checked_acceptance_sound",
                 "gpu_host_device_copy_round_trip_checked_acceptance_verifier_core_contract",
             ],
@@ -5338,7 +5350,11 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         lean_binding::assert_theorem_body_omits(
             &gpu_runtime_source,
             theorem,
-            &["sound_witness_implies_verifier_core_contract"],
+            &[
+                omitted_terms[0],
+                omitted_terms[1],
+                "sound_witness_implies_verifier_core_contract",
+            ],
         );
     }
     lean_binding::assert_theorem_prefix_contains(
