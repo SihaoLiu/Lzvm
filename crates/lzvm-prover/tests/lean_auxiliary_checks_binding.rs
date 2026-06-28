@@ -1,3 +1,4 @@
+use std::collections::BTreeSet;
 use std::path::Path;
 
 #[path = "support/lean_binding.rs"]
@@ -13,6 +14,22 @@ fn compact_source(source: &str) -> String {
 
 fn compact_source_contains(source: &str, needle: &str) -> bool {
     compact_source(source).contains(&compact_source(needle))
+}
+
+fn theorem_stems_with_suffix(source: &str, prefix: &str, suffix: &str) -> BTreeSet<String> {
+    source
+        .lines()
+        .filter_map(|line| line.trim().strip_prefix("theorem "))
+        .filter_map(|rest| {
+            let name = rest
+                .split(|ch: char| ch.is_whitespace() || ch == ':')
+                .next()?;
+            name.starts_with(prefix)
+                .then_some(name)?
+                .strip_suffix(suffix)
+                .map(str::to_owned)
+        })
+        .collect()
 }
 
 fn guest_pc_timing_source_contains(source: &str, line_name: &str, accessor: &str) -> bool {
@@ -4943,6 +4960,21 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "gpu_merkle_digest_prefix_batch_checked_acceptance_lower_prefixes_core_and_sound",
         ],
     );
+    let finish_sound_stems =
+        theorem_stems_with_suffix(&lean_source, "proof_artifact_finish_", "_sound");
+    let finish_core_stems = theorem_stems_with_suffix(
+        &lean_source,
+        "proof_artifact_finish_",
+        "_verifier_core_contract",
+    );
+    let finish_combined_stems =
+        theorem_stems_with_suffix(&lean_source, "proof_artifact_finish_", "_core_and_sound");
+    for stem in finish_sound_stems.intersection(&finish_core_stems) {
+        assert!(
+            finish_combined_stems.contains(stem),
+            "Lean proof finish timing theorem {stem} should expose a combined core_and_sound wrapper"
+        );
+    }
     lean_binding::assert_theorem_body_contains(
         &gpu_runtime_source,
         "gpu_setup_checked_acceptance_verifier_core_contract",
