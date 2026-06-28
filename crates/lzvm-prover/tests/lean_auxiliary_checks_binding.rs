@@ -247,6 +247,38 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         lean_binding::contains_import(&top_level_source, "Lzvm.AuxiliaryChecks.All"),
         "top-level Lean module should import the auxiliary checks aggregate"
     );
+    for moved_finish_theorem in [
+        "proof_artifact_finish_witness_opening_shape_acceptance_core_and_sound",
+        "proof_artifact_finish_leaf_work_shape_acceptance_core_and_sound",
+        "proof_artifact_finish_path_parent_hash_shape_acceptance_core_and_sound",
+        "proof_artifact_finish_row_values_shape_acceptance_core_and_sound",
+    ] {
+        assert!(
+            lean_binding::contains_theorem_declaration(
+                &proof_timing_finish_source,
+                moved_finish_theorem,
+            ) && !lean_binding::contains_theorem_declaration(
+                &proof_timing_core_source,
+                moved_finish_theorem,
+            ),
+            "Lean proof finish shape theorem {moved_finish_theorem} should stay in the finish module"
+        );
+    }
+    for moved_runtime_theorem in [
+        "guest_pc_trace_commit_mode_checked_acceptance_projects_decision",
+        "guest_pc_trace_commit_mode_checked_acceptance_core_and_sound",
+    ] {
+        assert!(
+            lean_binding::contains_theorem_declaration(
+                &gpu_runtime_trace_source,
+                moved_runtime_theorem,
+            ) && !lean_binding::contains_theorem_declaration(
+                &gpu_runtime_core_source,
+                moved_runtime_theorem,
+            ),
+            "Lean GPU runtime theorem {moved_runtime_theorem} should stay in the trace module"
+        );
+    }
     for obsolete_import in [
         "Lzvm.AuxiliaryChecks",
         "Lzvm.AuxiliaryChecks.GpuRuntime",
