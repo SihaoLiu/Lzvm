@@ -8871,6 +8871,7 @@ fn fri_opening_fold_verifier_avoids_extension_value_staging() {
     assert!(
         source.contains("fn extension_fold_value_columns")
             && source.contains("fn validate_fri_fold_shape")
+            && source.contains("fn validate_fri_fold_shape_with_cache")
             && source.contains("fn evaluate_fri_fold_values_with_bits")
             && source.contains("fn evaluate_fri_fold_columns")
             && source.contains("fn evaluate_binary_fri_fold_values")
@@ -8919,16 +8920,24 @@ fn fri_opening_fold_verifier_avoids_extension_value_staging() {
             && body.contains("let mut layer_challenges = vec![None; schedule.fri_layers.len()]")
             && body.contains("if let Some(challenge) = layer_challenges[layer_index]")
             && body.contains("layer_challenges[layer_index] = Some(challenge)")
+            && body.contains("let mut layer_fold_shapes = vec![None; schedule.fri_layers.len()]")
+            && body.contains("validate_fri_fold_shape_with_cache(")
+            && body
+                .find("let challenge = if")
+                .expect("opening fold verifier should read layer challenges")
+                < body
+                    .find("let fold_bits = validate_fri_fold_shape_with_cache")
+                    .expect("opening fold verifier should validate cached fold shape")
             && direct_body.contains("extension_fold_value_columns(values)")
             && direct_body.contains("evaluate_fri_fold_columns(")
             && source.contains("fn convert_fold_value_columns")
-            && source.contains("fn verify_fri_fold_columns")
-            && body.contains("verify_fri_fold(")
+            && !source.contains("fn verify_fri_fold_columns")
+            && body.contains("evaluate_fri_fold_values_with_bits(")
             && !body.contains("evaluate_binary_fri_fold_values(")
             && source.contains("evaluate_interpolated_fold_columns(")
             && source.contains("debug_assert_eq!(c0.len(), c1.len())")
             && body.contains("convert_fold_value_columns(&query.values)")
-            && body.contains("verify_fri_fold_columns(")
+            && body.contains("evaluate_fri_fold_columns(")
             && body.contains(".map_err(PcsFriOpeningFoldError::Fold)")
             && !body.contains("collect::<Result<Vec<_>, PcsFriOpeningFoldError>>()"),
         "FRI opening fold verification should convert serialized query values directly into interpolation columns"

@@ -13,6 +13,12 @@ use crate::ProveUnitSchedule;
 
 const TWO_INVERSE: u64 = (MODULUS + 1) / 2;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct FriOpeningFoldLayerShape {
+    fold_bits: u32,
+    expected_len: usize,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PcsFriFoldError {
     InvalidLayerBits {
@@ -175,6 +181,7 @@ pub fn verify_fri_opening_folds(
         .checked_sub(schedule.fri_layers.len())
         .and_then(|index| index.checked_sub(1));
     let mut layer_challenges = vec![None; schedule.fri_layers.len()];
+    let mut layer_fold_shapes = vec![None; schedule.fri_layers.len()];
 
     for (query_index, query_row) in request.query_rows.iter().enumerate() {
         for (layer_index, (layer_plan, opening_layer)) in
@@ -220,11 +227,19 @@ pub fn verify_fri_opening_folds(
                 layer_challenges[layer_index] = Some(challenge);
                 challenge
             };
+            let fold_bits = validate_fri_fold_shape_with_cache(
+                &mut layer_fold_shapes[layer_index],
+                schedule.extended_domain_bits,
+                layer_plan.output_bits,
+                layer_plan.input_bits,
+                query.values.len(),
+            )
+            .map_err(PcsFriOpeningFoldError::Fold)?;
             let folded = if let Some(values) = binary_values {
-                verify_fri_fold(
+                evaluate_fri_fold_values_with_bits(
                     schedule.extended_domain_bits,
-                    layer_plan.output_bits,
                     layer_plan.input_bits,
+                    fold_bits,
                     challenge,
                     expected_row,
                     &values,
@@ -233,10 +248,10 @@ pub fn verify_fri_opening_folds(
             } else {
                 let (c0, c1, c2) =
                     fold_columns.expect("fold columns are present outside binary path");
-                verify_fri_fold_columns(
+                evaluate_fri_fold_columns(
                     schedule.extended_domain_bits,
-                    layer_plan.output_bits,
                     layer_plan.input_bits,
+                    fold_bits,
                     challenge,
                     expected_row,
                     c0,
@@ -322,20 +337,32 @@ fn convert_binary_fold_values(
     Ok(None)
 }
 
-fn verify_fri_fold_columns(
+fn validate_fri_fold_shape_with_cache(
+    cached_shape: &mut Option<FriOpeningFoldLayerShape>,
     n_bits_ext: u32,
     current_bits: u32,
     prev_bits: u32,
-    challenge: Ext3,
-    index: u64,
-    c0: Vec<Felt>,
-    c1: Vec<Felt>,
-    c2: Vec<Felt>,
-) -> Result<Ext3, PcsFriFoldError> {
-    let fold_bits = validate_fri_fold_shape(n_bits_ext, current_bits, prev_bits, c0.len())?;
-    evaluate_fri_fold_columns(
-        n_bits_ext, prev_bits, fold_bits, challenge, index, c0, c1, c2,
-    )
+    value_len: usize,
+) -> Result<u32, PcsFriFoldError> {
+    if let Some(shape) = cached_shape {
+        if value_len != shape.expected_len {
+            return Err(PcsFriFoldError::ValueLengthMismatch {
+                expected: shape.expected_len,
+                found: value_len,
+            });
+        }
+        return Ok(shape.fold_bits);
+    }
+
+    let fold_bits = validate_fri_fold_shape(n_bits_ext, current_bits, prev_bits, value_len)?;
+    let expected_len = 1_usize
+        .checked_shl(fold_bits)
+        .ok_or(PcsFriFoldError::LengthOverflow)?;
+    *cached_shape = Some(FriOpeningFoldLayerShape {
+        fold_bits,
+        expected_len,
+    });
+    Ok(fold_bits)
 }
 
 pub(super) fn validate_fri_fold_shape(
