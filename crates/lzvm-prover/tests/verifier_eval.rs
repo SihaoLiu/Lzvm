@@ -282,6 +282,48 @@ fn evaluates_verifier_code_with_unordered_opened_stages() {
 }
 
 #[test]
+fn evaluates_verifier_code_with_duplicate_opened_stages_by_first_match() {
+    let code = code(
+        1,
+        vec![operation(
+            VerifierOperationKind::Copy,
+            destination(0),
+            vec![commitment(0, 1)],
+        )],
+    );
+    let first_stage_values = [Felt::from_u64(53)];
+    let second_stage_values = [Felt::from_u64(59)];
+    let other_stage_values = [Felt::from_u64(61)];
+    let opened_stages = [
+        VerifierOpenedStage {
+            stage_index: 2,
+            values: &first_stage_values,
+        },
+        VerifierOpenedStage {
+            stage_index: 2,
+            values: &second_stage_values,
+        },
+        VerifierOpenedStage {
+            stage_index: 1,
+            values: &other_stage_values,
+        },
+    ];
+    let commitment_columns = [VerifierCommitmentColumn {
+        stage_index: 2,
+        position: 0,
+    }];
+    let inputs = VerifierEvalInputs {
+        opened_stages: &opened_stages,
+        commitment_columns: &commitment_columns,
+        ..VerifierEvalInputs::default()
+    };
+
+    let value = evaluate_verifier_code(&code, &inputs).expect("code should evaluate");
+
+    assert_eq!(value, Ext3::from_u64s([53, 0, 0]));
+}
+
+#[test]
 fn rejects_verifier_code_source_indexes_outside_inputs() {
     let code = code(
         1,

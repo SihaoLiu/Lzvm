@@ -317,7 +317,12 @@ fn opened_stage_for_column<'stage, 'values>(
                 .get(stage_slot)
                 .filter(|stage| stage.stage_index == column.stage_index)
             {
-                return Ok(stage);
+                if opened_stages[..stage_slot]
+                    .iter()
+                    .all(|stage| stage.stage_index != column.stage_index)
+                {
+                    return Ok(stage);
+                }
             }
         }
     }

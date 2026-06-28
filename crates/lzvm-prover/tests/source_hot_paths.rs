@@ -8977,6 +8977,8 @@ fn verifier_eval_uses_indexed_opened_stage_fast_path() {
             && stage_lookup_body.contains(".get(stage_slot)")
             && stage_lookup_body
                 .contains(".filter(|stage| stage.stage_index == column.stage_index)")
+            && stage_lookup_body.contains("opened_stages[..stage_slot]")
+            && stage_lookup_body.contains(".all(|stage| stage.stage_index != column.stage_index)")
             && stage_lookup_body.contains(".iter()")
             && stage_lookup_body.contains(".find(|stage| stage.stage_index == column.stage_index)")
             && stage_lookup_body.contains("MissingOpenedStage"),
