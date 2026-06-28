@@ -22,6 +22,7 @@ structure RuntimeOpeningSegmentBindingValidation (system : VerifierModel) where
   openingUnitTraceIdentityCoverageExact : RuntimeArtifact -> PublicInput -> Proof -> Prop
   constantOpeningSegmentsValid : RuntimeArtifact -> PublicInput -> Proof -> Prop
   witnessOpeningSegmentsValid : RuntimeArtifact -> PublicInput -> Proof -> Prop
+  witnessOpeningStageOrderPreserved : RuntimeArtifact -> PublicInput -> Proof -> Prop
   friOpeningSegmentsValid : RuntimeArtifact -> PublicInput -> Proof -> Prop
   friFoldsValid : RuntimeArtifact -> PublicInput -> Proof -> Prop
   friFoldQueryPlanOrderPreserved : RuntimeArtifact -> PublicInput -> Proof -> Prop
@@ -50,6 +51,10 @@ structure RuntimeOpeningSegmentBindingValidation (system : VerifierModel) where
     forall artifact publicInput proof,
       openingSegmentBindingAccepted artifact publicInput proof ->
         witnessOpeningSegmentsValid artifact publicInput proof
+  openingSegmentBindingAcceptedImpliesWitnessOpeningStageOrderPreserved :
+    forall artifact publicInput proof,
+      openingSegmentBindingAccepted artifact publicInput proof ->
+        witnessOpeningStageOrderPreserved artifact publicInput proof
   openingSegmentBindingAcceptedImpliesFriOpeningSegmentsValid :
     forall artifact publicInput proof,
       openingSegmentBindingAccepted artifact publicInput proof ->
@@ -153,6 +158,15 @@ def RuntimeFriFoldQueryPlanOrderContract
     /\ validation.openingUnitTraceIdentitiesMatch artifact publicInput proof
     /\ validation.friFoldsValid artifact publicInput proof
     /\ validation.friFoldQueryPlanOrderPreserved artifact publicInput proof
+
+def RuntimeWitnessOpeningStageOrderContract
+    (_system : VerifierModel)
+    (validation : RuntimeOpeningSegmentBindingValidation _system)
+    (artifact : RuntimeArtifact)
+    (publicInput : PublicInput)
+    (proof : Proof) : Prop :=
+  validation.witnessOpeningSegmentsValid artifact publicInput proof
+    /\ validation.witnessOpeningStageOrderPreserved artifact publicInput proof
 
 def RuntimeOpeningSegmentBindingCheckedAcceptance
     (_system : VerifierModel)
@@ -828,6 +842,36 @@ theorem runtime_opening_segment_binding_checked_acceptance_fri_fold_query_plan_o
             publicInput
             proof
             accepted)))
+
+theorem runtime_opening_segment_binding_checked_acceptance_witness_stage_order_contract
+    {system : VerifierModel}
+    (validation : RuntimeOpeningSegmentBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeOpeningSegmentBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeWitnessOpeningStageOrderContract
+          system
+          validation
+          artifact
+          publicInput
+          proof := by
+  intro artifact publicInput proof accepted
+  exact
+    And.intro
+      (validation.openingSegmentBindingAcceptedImpliesWitnessOpeningSegmentsValid
+        artifact
+        publicInput
+        proof
+        accepted)
+      (validation.openingSegmentBindingAcceptedImpliesWitnessOpeningStageOrderPreserved
+        artifact
+        publicInput
+        proof
+        accepted)
 
 theorem runtime_opening_segment_binding_checked_acceptance_fri_parser_contract
     {system : VerifierModel}

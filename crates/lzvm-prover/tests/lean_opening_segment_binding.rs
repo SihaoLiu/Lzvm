@@ -41,6 +41,10 @@ fn lean_opening_segment_binding_exports_core_contract_projection() {
         &witness_opening_source,
         "pub(crate) fn validate_witness_opening_units_match_query_units_from_segment",
     );
+    let witness_opening_validation_body = rust_function_body(
+        &witness_opening_source,
+        "pub fn validate_witness_opening_segments",
+    );
     let pcs_evaluation_query_units_body = rust_function_body(
         &pcs_evaluation_source,
         "pub(crate) fn validate_pcs_evaluation_units_match_query_units_from_segment",
@@ -79,8 +83,10 @@ fn lean_opening_segment_binding_exports_core_contract_projection() {
             && lean_source.contains("RuntimeFriOpeningSegmentParserContract")
             && lean_source.contains("RuntimeFriFoldTraceIdentityContract")
             && lean_source.contains("RuntimeFriFoldQueryPlanOrderContract")
+            && lean_source.contains("RuntimeWitnessOpeningStageOrderContract")
             && lean_source.contains("friFoldQueryPlanOrderPreserved")
             && lean_source.contains("openingUnitTraceIdentityCoverageExact")
+            && lean_source.contains("witnessOpeningStageOrderPreserved")
             && lean_source.contains("RuntimeVerifierCoreContract system publicInput proof")
             && lean_source.contains("SoundWitness system publicInput proof"),
         "Lean opening segment binding should expose checked soundness and verifier core projection"
@@ -142,6 +148,18 @@ fn lean_opening_segment_binding_exports_core_contract_projection() {
             && duplicate_query_test_body.contains("assert_eq!(layer.queries[0], layer.queries[1])"),
         "Rust FRI opening validation should preserve query-plan order through duplicate rows and fold checks"
     );
+    assert!(
+        witness_opening_validation_body.contains("let Some(stage_slot) =")
+            && witness_opening_validation_body.contains("unit.stage_commit_widths.get(stage_slot)")
+            && witness_opening_validation_body.contains("witness_segment")
+            && witness_opening_validation_body.contains(".stages")
+            && witness_opening_validation_body.contains(".get(stage_slot)")
+            && witness_opening_validation_body.contains(
+                ".filter(|witness_stage| witness_stage.stage_index == stage.stage_index)"
+            )
+            && !witness_opening_validation_body.contains(".find(|witness_stage|"),
+        "Rust witness opening validation should preserve stage order before indexed stage reads"
+    );
     lean_binding::assert_theorem_declarations(
         &lean_source,
         &[
@@ -159,6 +177,7 @@ fn lean_opening_segment_binding_exports_core_contract_projection() {
             "runtime_opening_segment_binding_checked_acceptance_fri_opening_checks",
             "runtime_opening_segment_binding_checked_acceptance_fri_fold_trace_identity_contract",
             "runtime_opening_segment_binding_checked_acceptance_fri_fold_query_plan_order_contract",
+            "runtime_opening_segment_binding_checked_acceptance_witness_stage_order_contract",
             "runtime_opening_segment_binding_checked_acceptance_fri_parser_contract",
             "runtime_opening_segment_binding_checked_acceptance_pcs_and_fri_without_assumptions",
             "runtime_opening_segment_binding_checked_acceptance_pcs_and_fri",
@@ -359,6 +378,27 @@ fn lean_opening_segment_binding_exports_core_contract_projection() {
             "validation.openingSegmentBindingAcceptedImpliesTraceIdentitiesMatch",
             "validation.openingSegmentBindingAcceptedImpliesFriFoldsValid",
             "validation.openingSegmentBindingAcceptedImpliesFriFoldQueryPlanOrderPreserved",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_opening_segment_binding_checked_acceptance_witness_stage_order_contract",
+        &[
+            "RuntimeOpeningSegmentBindingCheckedAcceptance",
+            "RuntimeWitnessOpeningStageOrderContract",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_omits(
+        &lean_source,
+        "runtime_opening_segment_binding_checked_acceptance_witness_stage_order_contract",
+        &["AssumptionBundle"],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_opening_segment_binding_checked_acceptance_witness_stage_order_contract",
+        &[
+            "validation.openingSegmentBindingAcceptedImpliesWitnessOpeningSegmentsValid",
+            "validation.openingSegmentBindingAcceptedImpliesWitnessOpeningStageOrderPreserved",
         ],
     );
     lean_binding::assert_theorem_prefix_contains(
