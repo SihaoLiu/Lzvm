@@ -211,6 +211,54 @@ theorem runtime_external_source_checked_acceptance_verifier_core_contract
       proof
       checked.left
 
+theorem runtime_external_source_checked_acceptance_evidence_core_and_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (runtimeValidation : RuntimeConformanceValidation system)
+    (sourceValidation : ExternalSourceOpeningValidation system) :
+    forall artifact publicInput proof,
+      RuntimeExternalSourceCheckedAcceptance
+          system
+          runtimeValidation
+          sourceValidation
+          artifact
+          publicInput
+          proof ->
+        RuntimeArtifactEvidence
+            system
+            runtimeValidation
+            artifact
+            publicInput
+            proof
+          /\ ExternalSourceOpeningEvidence system sourceValidation publicInput proof
+          /\ system.pcsOpeningsValid publicInput proof
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro artifact publicInput proof checked
+  have checkedSound :=
+    runtime_external_source_checked_acceptance_sound
+      assumptions
+      runtimeValidation
+      sourceValidation
+      artifact
+      publicInput
+      proof
+      checked
+  have coreContract :=
+    runtime_external_source_checked_acceptance_verifier_core_contract
+      assumptions
+      runtimeValidation
+      sourceValidation
+      artifact
+      publicInput
+      proof
+      checked
+  exact
+    And.intro checkedSound.left
+      (And.intro checkedSound.right.left
+        (And.intro checkedSound.right.right.left
+          (And.intro coreContract checkedSound.right.right.right)))
+
 theorem runtime_guarded_external_source_checked_acceptance_sound
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
@@ -323,5 +371,61 @@ theorem runtime_guarded_external_source_checked_acceptance_verifier_core_contrac
       publicInput
       proof
       checked.left
+
+theorem runtime_guarded_external_source_checked_acceptance_evidence_core_and_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (runtimeValidation : RuntimeConformanceValidation system)
+    (sourceValidation : ExternalSourceOpeningValidation system) :
+    forall artifact publicInput proof requiresExternalSource,
+      RuntimeGuardedExternalSourceCheckedAcceptance
+          system
+          runtimeValidation
+          sourceValidation
+          artifact
+          publicInput
+          proof
+          requiresExternalSource ->
+        RuntimeArtifactEvidence
+            system
+            runtimeValidation
+            artifact
+            publicInput
+            proof
+          /\ ExternalSourceOpeningRequirement
+            system
+            sourceValidation
+            publicInput
+            proof
+            requiresExternalSource
+          /\ system.pcsOpeningsValid publicInput proof
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro artifact publicInput proof requiresExternalSource checked
+  have checkedSound :=
+    runtime_guarded_external_source_checked_acceptance_sound
+      assumptions
+      runtimeValidation
+      sourceValidation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      checked
+  have coreContract :=
+    runtime_guarded_external_source_checked_acceptance_verifier_core_contract
+      assumptions
+      runtimeValidation
+      sourceValidation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      checked
+  exact
+    And.intro checkedSound.left
+      (And.intro checkedSound.right.left
+        (And.intro checkedSound.right.right.left
+          (And.intro coreContract checkedSound.right.right.right)))
 
 end Lzvm
