@@ -551,18 +551,31 @@ fn ordered_opening_layers(
     fri: &PcsFriOpeningUnitSegment,
     expected_count: usize,
 ) -> Result<Vec<&PcsFriOpeningLayerSegment>, PcsFriOpeningFoldError> {
+    if expected_count
+        .checked_sub(1)
+        .is_some_and(|last_index| u32::try_from(last_index).is_err())
+    {
+        return Err(PcsFriOpeningFoldError::LengthOverflow);
+    }
+
+    let mut slots = vec![None; expected_count];
+    for layer in &fri.layers {
+        let layer_index = usize::try_from(layer.layer_index)
+            .map_err(|_| PcsFriOpeningFoldError::LengthOverflow)?;
+        if let Some(slot) = slots.get_mut(layer_index) {
+            if slot.is_none() {
+                *slot = Some(layer);
+            }
+        }
+    }
+
     let mut layers = Vec::with_capacity(expected_count);
-    for layer_index in 0..expected_count {
+    for (layer_index, layer) in slots.into_iter().enumerate() {
         let layer_index_u32 =
             u32::try_from(layer_index).map_err(|_| PcsFriOpeningFoldError::LengthOverflow)?;
-        let layer = fri
-            .layers
-            .iter()
-            .find(|layer| layer.layer_index == layer_index_u32)
-            .ok_or(PcsFriOpeningFoldError::MissingLayer {
-                layer_index: layer_index_u32,
-            })?;
-        layers.push(layer);
+        layers.push(layer.ok_or(PcsFriOpeningFoldError::MissingLayer {
+            layer_index: layer_index_u32,
+        })?);
     }
     Ok(layers)
 }

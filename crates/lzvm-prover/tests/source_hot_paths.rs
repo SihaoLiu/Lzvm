@@ -8867,6 +8867,7 @@ fn fri_opening_fold_verifier_avoids_extension_value_staging() {
         "fn evaluate_fri_fold_columns",
         "#[cfg(feature = \"cuda\")]",
     );
+    let ordering_body = function_body(&source, "fn ordered_opening_layers", "fn domain_size");
 
     assert!(
         source.contains("fn extension_fold_value_columns")
@@ -8881,6 +8882,7 @@ fn fri_opening_fold_verifier_avoids_extension_value_staging() {
             && source.contains("challenge: Option<Ext3>")
             && source.contains("fold_shape: Option<FriOpeningFoldLayerShape>")
             && source.contains("output_size: Option<u64>")
+            && source.contains("fn ordered_opening_layers")
             && source.contains("fn fold_evaluation_point")
             && source.contains("const TWO_INVERSE")
             && source.contains("fn evaluate_interpolated_fold_columns")
@@ -8907,6 +8909,11 @@ fn fri_opening_fold_verifier_avoids_extension_value_staging() {
                 < evaluator_body
                     .find("interpolate_fold_column_owned")
                     .expect("fold evaluator should transform wider columns")
+            && ordering_body.contains("vec![None; expected_count]")
+            && ordering_body.contains("slots.get_mut(layer_index)")
+            && ordering_body.contains("MissingLayer")
+            && ordering_body.contains("u32::try_from(layer_index)")
+            && !ordering_body.contains(".iter().find(")
             && body
                 .find("convert_binary_fold_values(&query.values)")
                 .expect("opening fold verifier should try the binary value path")
