@@ -612,6 +612,63 @@ fn builds_fri_opening_unit_from_polynomial_values() {
 }
 
 #[test]
+fn builds_wide_fri_opening_unit_from_polynomial_values() {
+    let query_rows = [1_u64, 6_u64];
+    let mut schedule = sample_validation_unit();
+    schedule.fri_layers = vec![PcsFriLayer {
+        input_bits: 3,
+        output_bits: 1,
+        folding_factor: 4,
+    }];
+    schedule.final_layer_bits = 1;
+    let polynomial = (0_u64..8)
+        .map(|index| Ext3::from_u64s([index + 1, index + 11, index + 21]))
+        .collect::<Vec<_>>();
+    let mut challenges = vec![Ext3::ZERO; 9];
+    challenges[7] = Ext3::from_u64s([31, 32, 33]);
+
+    let fri = build_pcs_fri_opening_unit(
+        &schedule,
+        PcsFriOpeningBuildRequest {
+            unit_index: 5,
+            trace_instance_index: 0,
+            query_rows: &query_rows,
+            challenges: &challenges,
+            polynomial: &polynomial,
+        },
+    )
+    .expect("wide FRI opening should build");
+
+    assert_eq!(fri.layers.len(), 1);
+    assert_eq!(fri.layers[0].queries.len(), query_rows.len());
+    assert_eq!(fri.final_polynomial.len(), 2);
+    assert!(verify_fri_opening_folds(
+        &schedule,
+        PcsFriOpeningFoldRequest {
+            unit_index: 5,
+            query_rows: &query_rows,
+            challenges: &challenges,
+            fri: &fri,
+        },
+    )
+    .expect("wide fold chain should verify"));
+
+    let expected = fold_full_layer(
+        &schedule,
+        &schedule.fri_layers[0],
+        challenges[7],
+        &polynomial,
+    );
+    assert_eq!(
+        fri.final_polynomial,
+        expected
+            .iter()
+            .map(|value| value.to_u64s())
+            .collect::<Vec<_>>()
+    );
+}
+
+#[test]
 fn records_fri_opening_unit_build_timing_shape() {
     let schedule = sample_validation_unit();
     let query_rows = [1_u64, 6_u64];
