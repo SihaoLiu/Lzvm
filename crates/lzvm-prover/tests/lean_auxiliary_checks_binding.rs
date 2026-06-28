@@ -4338,6 +4338,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "config.selectedTerminalSparseSource =",
             "config.selectedRetainedStageSource =",
             "config.selectedRetainedStageSourceDebug =",
+            "config.selectedRetainedStageSourceDebug = true ->",
             "config.selectedDescriptorBufferRetention =",
             "RuntimeVerifierCoreContract system publicInput proof",
             "SoundWitness system publicInput proof",
@@ -4365,6 +4366,10 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             concat!(
                 "guest_pc_trace_cuda_run_checked_acceptance_",
                 "projects_retained_source_debug"
+            ),
+            concat!(
+                "guest_pc_trace_cuda_run_checked_acceptance_",
+                "projects_retained_debug_requires_retention"
             ),
             concat!(
                 "guest_pc_trace_cuda_run_checked_acceptance_",

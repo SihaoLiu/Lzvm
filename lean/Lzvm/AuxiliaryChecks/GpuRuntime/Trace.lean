@@ -792,6 +792,8 @@ theorem guest_pc_trace_cuda_run_checked_acceptance_core_and_sound
             config.retainedStageSourceConfig.effectiveRetainedStageSourceEnabled
           /\ config.selectedRetainedStageSourceDebug =
             config.retainedStageSourceDebugConfig.effectiveRetainedStageSourceDebug
+          /\ (config.selectedRetainedStageSourceDebug = true ->
+            config.selectedRetainedStageSource = true)
           /\ config.selectedDescriptorBufferRetention =
             config.descriptorBufferRetentionConfig.effectiveDescriptorBufferRetention
           /\ RuntimeVerifierCoreContract system publicInput proof
@@ -848,6 +850,13 @@ theorem guest_pc_trace_cuda_run_checked_acceptance_core_and_sound
       publicInput
       proof
       checked
+  have retainedDebugRequiresRetention :=
+    guest_pc_trace_cuda_run_checked_acceptance_projects_retained_debug_requires_retention
+      validation
+      config
+      publicInput
+      proof
+      checked
   have descriptorRetention :=
     guest_pc_trace_cuda_run_checked_acceptance_projects_descriptor_retention
       validation
@@ -861,8 +870,9 @@ theorem guest_pc_trace_cuda_run_checked_acceptance_core_and_sound
         (And.intro terminalSparse
           (And.intro retainedStage
             (And.intro retainedDebug
-              (And.intro descriptorRetention
-                (And.intro core sound.right)))))))
+              (And.intro retainedDebugRequiresRetention
+                (And.intro descriptorRetention
+                  (And.intro core sound.right))))))))
 
 theorem gpu_retained_leaf_digest_limit_checked_acceptance_projects_decision
     {system : VerifierModel}
