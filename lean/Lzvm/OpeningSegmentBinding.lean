@@ -1402,6 +1402,55 @@ theorem runtime_opening_segment_binding_checked_acceptance_verifier_core_contrac
       _requiresExternalSource
       openingAccepted
 
+theorem runtime_opening_segment_binding_checked_acceptance_evidence_core_and_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeOpeningSegmentBindingValidation system) :
+    forall artifact publicInput proof requiresExternalSource,
+      RuntimeOpeningSegmentBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeOpeningSegmentBindingEvidence
+            system
+            validation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeOpeningEvidence
+            system
+            validation.openingValidation
+            artifact
+            publicInput
+            proof
+            requiresExternalSource
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro artifact publicInput proof requiresExternalSource accepted
+  have sound :=
+    runtime_opening_segment_binding_checked_acceptance_sound
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      accepted
+  have core :=
+    runtime_opening_segment_binding_checked_acceptance_verifier_core_contract
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      accepted
+  exact
+    And.intro sound.left
+      (And.intro sound.right.left (And.intro core sound.right.right))
+
 theorem runtime_opening_segment_binding_checked_acceptance_opening_and_core_contract
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)

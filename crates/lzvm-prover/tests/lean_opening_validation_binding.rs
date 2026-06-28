@@ -91,6 +91,7 @@ fn lean_opening_validation_binding_exports_core_contract_projection() {
             "runtime_opening_checked_acceptance_pcs_and_fri",
             "runtime_opening_checked_acceptance_sound",
             "runtime_opening_checked_acceptance_verifier_core_contract",
+            "runtime_opening_checked_acceptance_evidence_core_and_sound",
             "runtime_opening_checked_acceptance_full_soundness_contract",
             "runtime_opening_required_external_source_sound",
             "runtime_opening_required_external_source_verifier_core_contract",
@@ -797,6 +798,28 @@ fn lean_opening_validation_binding_exports_core_contract_projection() {
             "runtime_opening_checked_acceptance_sound",
             "sound_witness_implies_verifier_core_contract",
         ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_opening_checked_acceptance_evidence_core_and_sound",
+        &[
+            "RuntimeOpeningEvidence",
+            "RuntimeVerifierCoreContract system publicInput proof",
+            "SoundWitness system publicInput proof",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_opening_checked_acceptance_evidence_core_and_sound",
+        &[
+            "runtime_opening_checked_acceptance_sound",
+            "runtime_opening_checked_acceptance_verifier_core_contract",
+        ],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &lean_source,
+        "runtime_opening_checked_acceptance_evidence_core_and_sound",
+        &["sound_witness_implies_verifier_core_contract"],
     );
     lean_binding::assert_theorem_prefix_contains(
         &lean_source,

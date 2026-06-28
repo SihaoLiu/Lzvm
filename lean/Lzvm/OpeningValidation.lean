@@ -1444,6 +1444,42 @@ theorem runtime_opening_checked_acceptance_verifier_core_contract
       _requiresExternalSource
       runtimeAccepted
 
+theorem runtime_opening_checked_acceptance_evidence_core_and_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeOpeningValidation system) :
+    forall artifact publicInput proof requiresExternalSource,
+      RuntimeOpeningCheckedAcceptance system validation artifact publicInput proof ->
+        RuntimeOpeningEvidence
+            system
+            validation
+            artifact
+            publicInput
+            proof
+            requiresExternalSource
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro artifact publicInput proof requiresExternalSource accepted
+  have sound :=
+    runtime_opening_checked_acceptance_sound
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      accepted
+  have core :=
+    runtime_opening_checked_acceptance_verifier_core_contract
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      accepted
+  exact And.intro sound.left (And.intro core sound.right)
+
 theorem runtime_opening_checked_acceptance_full_soundness_contract
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)

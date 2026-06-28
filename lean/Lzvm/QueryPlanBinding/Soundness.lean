@@ -325,6 +325,76 @@ theorem runtime_query_plan_binding_checked_acceptance_verifier_core_contract
       _requiresExternalSource
       openingAccepted
 
+theorem runtime_query_plan_binding_checked_acceptance_evidence_core_and_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeQueryPlanBindingValidation system) :
+    forall artifact publicInput proof requiresExternalSource,
+      RuntimeQueryPlanBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeQueryPlanBindingEvidence
+            system
+            validation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeChallengeSegmentBindingEvidence
+            system
+            validation.challengeValidation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeOpeningSegmentBindingEvidence
+            system
+            validation.openingValidation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeOpeningEvidence
+            system
+            validation.openingValidation.openingValidation
+            artifact
+            publicInput
+            proof
+            requiresExternalSource
+          /\ system.transcriptBound publicInput proof
+          /\ system.pcsOpeningsValid publicInput proof
+          /\ system.friQueriesValid publicInput proof
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro artifact publicInput proof requiresExternalSource accepted
+  have sound :=
+    runtime_query_plan_binding_checked_acceptance_sound
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      accepted
+  have core :=
+    runtime_query_plan_binding_checked_acceptance_verifier_core_contract
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      accepted
+  exact
+    And.intro sound.left
+      (And.intro sound.right.left
+        (And.intro sound.right.right.left
+          (And.intro sound.right.right.right.left
+            (And.intro sound.right.right.right.right.left
+              (And.intro sound.right.right.right.right.right.left
+                (And.intro sound.right.right.right.right.right.right.left
+                  (And.intro core sound.right.right.right.right.right.right.right)))))))
+
 theorem runtime_query_plan_binding_checked_acceptance_opening_and_core_contract
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
