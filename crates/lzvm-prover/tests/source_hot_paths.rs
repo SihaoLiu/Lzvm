@@ -8915,6 +8915,10 @@ fn fri_opening_fold_verifier_avoids_extension_value_staging() {
                 < body
                     .find("let layer_challenge_start")
                     .expect("opening fold verifier should look up challenges after conversion")
+            && body.contains("let challenge_start = request")
+            && body.contains("let mut layer_challenges = vec![None; schedule.fri_layers.len()]")
+            && body.contains("if let Some(challenge) = layer_challenges[layer_index]")
+            && body.contains("layer_challenges[layer_index] = Some(challenge)")
             && direct_body.contains("extension_fold_value_columns(values)")
             && direct_body.contains("evaluate_fri_fold_columns(")
             && source.contains("fn convert_fold_value_columns")

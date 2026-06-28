@@ -169,6 +169,12 @@ pub fn verify_fri_opening_folds(
             });
         }
     }
+    let challenge_start = request
+        .challenges
+        .len()
+        .checked_sub(schedule.fri_layers.len())
+        .and_then(|index| index.checked_sub(1));
+    let mut layer_challenges = vec![None; schedule.fri_layers.len()];
 
     for (query_index, query_row) in request.query_rows.iter().enumerate() {
         for (layer_index, (layer_plan, opening_layer)) in
@@ -197,21 +203,23 @@ pub fn verify_fri_opening_folds(
             } else {
                 None
             };
-            let layer_challenge_start = request
-                .challenges
-                .len()
-                .checked_sub(schedule.fri_layers.len())
-                .and_then(|index| index.checked_sub(1))
-                .ok_or(PcsFriOpeningFoldError::LengthOverflow)?;
-            let challenge_index = layer_challenge_start
-                .checked_add(layer_index)
-                .ok_or(PcsFriOpeningFoldError::LengthOverflow)?;
-            let challenge = *request.challenges.get(challenge_index).ok_or(
-                PcsFriOpeningFoldError::MissingChallenge {
-                    index: challenge_index,
-                    len: request.challenges.len(),
-                },
-            )?;
+            let challenge = if let Some(challenge) = layer_challenges[layer_index] {
+                challenge
+            } else {
+                let layer_challenge_start =
+                    challenge_start.ok_or(PcsFriOpeningFoldError::LengthOverflow)?;
+                let challenge_index = layer_challenge_start
+                    .checked_add(layer_index)
+                    .ok_or(PcsFriOpeningFoldError::LengthOverflow)?;
+                let challenge = *request.challenges.get(challenge_index).ok_or(
+                    PcsFriOpeningFoldError::MissingChallenge {
+                        index: challenge_index,
+                        len: request.challenges.len(),
+                    },
+                )?;
+                layer_challenges[layer_index] = Some(challenge);
+                challenge
+            };
             let folded = if let Some(values) = binary_values {
                 verify_fri_fold(
                     schedule.extended_domain_bits,
