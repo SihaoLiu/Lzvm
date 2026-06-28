@@ -34,6 +34,10 @@ fn script_path() -> std::path::PathBuf {
     workspace_root().join("scripts/run-eth-proof-timing-batch.py")
 }
 
+fn proof_timing_batch_script_path() -> std::path::PathBuf {
+    workspace_root().join("scripts/run-proof-timing-batch.py")
+}
+
 fn test_dir(name: &str) -> std::path::PathBuf {
     workspace_root().join(format!("temp/{name}-{}", std::process::id()))
 }
@@ -224,6 +228,80 @@ fn eth_proof_timing_batch_self_test_runs() {
         stdout.contains("large_timing_summaries=3"),
         "self-test should summarize large timing logs: {stdout}"
     );
+}
+
+#[test]
+fn proof_timing_batch_reports_excluded_noisy_runs() {
+    let fixture = ProofFixture::new("eth-proof-timing-batch-excluded-runs");
+    let command_path = fixture.dir.join("emit-timing.py");
+    std::fs::write(
+        &command_path,
+        r#"#!/usr/bin/env python3
+import os
+run = int(os.environ["LZVM_TIMING_BATCH_RUN"])
+totals = {1: 1000, 2: 9000, 3: 1001, 4: 1002}
+print(f"timing_total_ms={totals[run]}")
+"#,
+    )
+    .expect("timing fixture command should write");
+    make_executable(&command_path);
+
+    let output = Command::new(proof_timing_batch_script_path())
+        .arg("--runs")
+        .arg("3")
+        .arg("--max-runs")
+        .arg("4")
+        .arg("--small-command")
+        .arg(&command_path)
+        .arg("--small-timeout")
+        .arg("10")
+        .arg("--max-relative-spread")
+        .arg("0.01")
+        .arg("--work-dir")
+        .arg(fixture.dir.join("runs"))
+        .arg("--path")
+        .arg(fixture.dir.join("improve-log.csv"))
+        .arg("--summary")
+        .arg("excluded run diagnostic")
+        .output()
+        .expect("proof timing batch should run");
+
+    let success = output.status.success();
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    assert!(
+        success,
+        "proof timing batch should accept stable runs after excluding the noisy run: stderr={stderr}"
+    );
+    assert!(
+        stdout.contains("small_runs=4")
+            && stdout.contains("small_stable_runs=3")
+            && stdout.contains("small_stable_avg_s=1.001")
+            && stdout.contains("small_excluded_runs=1")
+            && stdout.contains("small_excluded_timing_s=9.000"),
+        "stdout should report the excluded noisy run and the stable average: {stdout}"
+    );
+
+    let batch_json_line = stdout
+        .lines()
+        .find(|line| line.starts_with("batch_json="))
+        .expect("stdout should report batch_json path");
+    let batch_json_path = PathBuf::from(
+        batch_json_line
+            .strip_prefix("batch_json=")
+            .expect("batch_json line should have prefix"),
+    );
+    let batch_json =
+        std::fs::read_to_string(batch_json_path).expect("batch json should be readable");
+    assert!(
+        batch_json.contains("\"small_excluded_run_count\": 1")
+            && batch_json.contains("\"small_excluded_timing_s\": [\n    9.0\n  ]")
+            && batch_json
+                .contains("\"small_stable_timing_s\": [\n    1.0,\n    1.001,\n    1.002\n  ]"),
+        "batch json should preserve stable and excluded timing samples: {batch_json}"
+    );
+
+    fixture.cleanup();
 }
 
 #[test]

@@ -669,6 +669,16 @@ def timing_seconds_values(paths: list[Path]) -> tuple[list[float], int]:
     return values, failed
 
 
+def excluded_timing_values(all_values: list[float], stable_values: list[float]) -> list[float]:
+    remaining = list(all_values)
+    for stable in stable_values:
+        try:
+            remaining.remove(stable)
+        except ValueError:
+            pass
+    return remaining
+
+
 def timing_average_seconds(values: list[float]) -> float | None:
     if not values:
         return None
@@ -710,6 +720,16 @@ def print_stable_timing(label: str, logs: list[Path]) -> None:
         print(f"{label}_stable_relative_spread={relative_spread:.6f}")
     if failed:
         print(f"{label}_stable_timing_parse_failed_count={failed}")
+
+
+def print_excluded_timing(label: str, all_logs: list[Path], stable_logs: list[Path]) -> None:
+    all_values, _failed = timing_seconds_values(all_logs)
+    stable_values, _stable_failed = timing_seconds_values(stable_logs)
+    excluded = excluded_timing_values(all_values, stable_values)
+    print(f"{label}_excluded_runs={len(excluded)}")
+    if excluded:
+        joined = ";".join(f"{value:.3f}" for value in excluded)
+        print(f"{label}_excluded_timing_s={joined}")
 
 
 def safe_stable_timing_group(
@@ -760,6 +780,14 @@ def write_batch_json(
     )
     large_stable_timing_s, large_stable_timing_parse_failed_count = timing_seconds_values(
         large_stable_logs or []
+    )
+    small_excluded_timing_s = excluded_timing_values(
+        small_timing_s,
+        small_stable_timing_s,
+    )
+    large_excluded_timing_s = excluded_timing_values(
+        large_timing_s,
+        large_stable_timing_s,
     )
     small_stable_avg_s = timing_average_seconds(small_stable_timing_s)
     large_stable_avg_s = timing_average_seconds(large_stable_timing_s)
@@ -819,6 +847,10 @@ def write_batch_json(
         "large_stable_logs": path_texts(large_stable_logs or []),
         "small_stable_timing_s": small_stable_timing_s,
         "large_stable_timing_s": large_stable_timing_s,
+        "small_excluded_timing_s": small_excluded_timing_s,
+        "large_excluded_timing_s": large_excluded_timing_s,
+        "small_excluded_run_count": len(small_excluded_timing_s),
+        "large_excluded_run_count": len(large_excluded_timing_s),
         "small_stable_avg_s": small_stable_avg_s,
         "large_stable_avg_s": large_stable_avg_s,
         "small_stable_avg_ms": timing_milliseconds(small_stable_avg_s),
@@ -1030,6 +1062,7 @@ def run_batch(args: argparse.Namespace) -> Path:
         print(f"small_runs={len(small_logs)}")
         print(f"small_stable_runs={len(small_stable_logs)}")
         print_stable_timing("small", small_stable_logs)
+        print_excluded_timing("small", small_logs, small_stable_logs)
         print(
             "small_timing_summaries="
             f"{len(discovered_run_paths(batch_dir, 'small', '.proof-timing-summary.csv'))}"
@@ -1040,6 +1073,7 @@ def run_batch(args: argparse.Namespace) -> Path:
         print(f"large_runs={len(large_logs)}")
         print(f"large_stable_runs={len(large_stable_logs)}")
         print_stable_timing("large", large_stable_logs)
+        print_excluded_timing("large", large_logs, large_stable_logs)
         print(
             "large_timing_summaries="
             f"{len(discovered_run_paths(batch_dir, 'large', '.proof-timing-summary.csv'))}"
