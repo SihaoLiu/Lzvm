@@ -89,6 +89,29 @@ theorem runtime_performance_observation_projected_metadata_acceptance_verifier_c
       proof
       observed
 
+theorem runtime_performance_observation_projected_metadata_acceptance_core_and_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    {Metadata : Type u}
+    (summary : RuntimePerformanceObservationSummary)
+    (project : RuntimePerformanceObservationSummary -> Metadata) :
+    forall publicInput proof,
+      IgnoredMetadataObservedAcceptance
+        system
+        (project summary)
+        publicInput
+        proof ->
+        RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof observed
+  exact
+    ignored_metadata_acceptance_core_and_sound
+      assumptions
+      (project summary)
+      publicInput
+      proof
+      observed
+
 theorem runtime_performance_observation_acceptance_sound
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
@@ -130,21 +153,13 @@ theorem runtime_performance_observation_acceptance_core_and_sound
         RuntimeVerifierCoreContract system publicInput proof
           /\ SoundWitness system publicInput proof := by
   intro publicInput proof observed
-  have core :=
-    runtime_performance_observation_acceptance_verifier_core_contract
+  exact
+    ignored_metadata_acceptance_core_and_sound
       assumptions
       summary
       publicInput
       proof
       observed
-  have sound :=
-    runtime_performance_observation_acceptance_sound
-      assumptions
-      summary
-      publicInput
-      proof
-      observed
-  exact And.intro core sound
 
 theorem runtime_performance_observation_projects_timing_observations
     {system : VerifierModel}
@@ -210,21 +225,18 @@ theorem runtime_performance_observation_timing_observations_acceptance_core_and_
         RuntimeVerifierCoreContract system publicInput proof
           /\ SoundWitness system publicInput proof := by
   intro publicInput proof observed
-  have core :=
-    runtime_performance_observation_timing_observations_acceptance_verifier_core_contract
+  exact
+    runtime_performance_observation_projected_metadata_acceptance_core_and_sound
       assumptions
       summary
+      (fun summary => summary.timingObservations)
       publicInput
       proof
-      observed
-  have sound :=
-    runtime_performance_observation_timing_observations_acceptance_sound
-      assumptions
-      summary
-      publicInput
-      proof
-      observed
-  exact And.intro core sound
+      (runtime_performance_observation_projects_timing_observations
+        summary
+        publicInput
+        proof
+        observed)
 
 theorem runtime_performance_observation_projects_guest_pc_trace_timing
     {system : VerifierModel}
@@ -290,21 +302,18 @@ theorem runtime_performance_observation_guest_pc_trace_timing_acceptance_core_an
         RuntimeVerifierCoreContract system publicInput proof
           /\ SoundWitness system publicInput proof := by
   intro publicInput proof observed
-  have core :=
-    runtime_performance_observation_guest_pc_trace_timing_acceptance_verifier_core_contract
+  exact
+    runtime_performance_observation_projected_metadata_acceptance_core_and_sound
       assumptions
       summary
+      (fun summary => summary.guestPcTraceTiming)
       publicInput
       proof
-      observed
-  have sound :=
-    runtime_performance_observation_guest_pc_trace_timing_acceptance_sound
-      assumptions
-      summary
-      publicInput
-      proof
-      observed
-  exact And.intro core sound
+      (runtime_performance_observation_projects_guest_pc_trace_timing
+        summary
+        publicInput
+        proof
+        observed)
 
 theorem runtime_performance_observation_projects_witness_opening_row_value_timing
     {system : VerifierModel}
@@ -370,21 +379,18 @@ theorem runtime_performance_observation_row_value_timing_acceptance_core_and_sou
         RuntimeVerifierCoreContract system publicInput proof
           /\ SoundWitness system publicInput proof := by
   intro publicInput proof observed
-  have core :=
-    runtime_performance_observation_row_value_timing_acceptance_verifier_core_contract
+  exact
+    runtime_performance_observation_projected_metadata_acceptance_core_and_sound
       assumptions
       summary
+      (fun summary => summary.witnessOpeningRowValueTiming)
       publicInput
       proof
-      observed
-  have sound :=
-    runtime_performance_observation_row_value_timing_acceptance_sound
-      assumptions
-      summary
-      publicInput
-      proof
-      observed
-  exact And.intro core sound
+      (runtime_performance_observation_projects_witness_opening_row_value_timing
+        summary
+        publicInput
+        proof
+        observed)
 
 theorem runtime_performance_observation_projects_constant_material_validation_timing
     {system : VerifierModel}
@@ -450,21 +456,18 @@ theorem runtime_performance_observation_constant_material_timing_acceptance_core
         RuntimeVerifierCoreContract system publicInput proof
           /\ SoundWitness system publicInput proof := by
   intro publicInput proof observed
-  have core :=
-    runtime_performance_observation_constant_material_timing_acceptance_verifier_core_contract
+  exact
+    runtime_performance_observation_projected_metadata_acceptance_core_and_sound
       assumptions
       summary
+      (fun summary => summary.constantMaterialValidationTiming)
       publicInput
       proof
-      observed
-  have sound :=
-    runtime_performance_observation_constant_material_timing_acceptance_sound
-      assumptions
-      summary
-      publicInput
-      proof
-      observed
-  exact And.intro core sound
+      (runtime_performance_observation_projects_constant_material_validation_timing
+        summary
+        publicInput
+        proof
+        observed)
 
 theorem runtime_performance_observation_projects_prover_gpu_mode
     {system : VerifierModel}
@@ -530,21 +533,18 @@ theorem runtime_performance_observation_prover_gpu_mode_acceptance_core_and_soun
         RuntimeVerifierCoreContract system publicInput proof
           /\ SoundWitness system publicInput proof := by
   intro publicInput proof observed
-  have core :=
-    runtime_performance_observation_prover_gpu_mode_acceptance_verifier_core_contract
+  exact
+    runtime_performance_observation_projected_metadata_acceptance_core_and_sound
       assumptions
       summary
+      (fun summary => summary.proverGpuMode)
       publicInput
       proof
-      observed
-  have sound :=
-    runtime_performance_observation_prover_gpu_mode_acceptance_sound
-      assumptions
-      summary
-      publicInput
-      proof
-      observed
-  exact And.intro core sound
+      (runtime_performance_observation_projects_prover_gpu_mode
+        summary
+        publicInput
+        proof
+        observed)
 
 theorem runtime_performance_observation_projects_gpu_run_options
     {system : VerifierModel}
@@ -610,21 +610,18 @@ theorem runtime_performance_observation_gpu_run_options_acceptance_core_and_soun
         RuntimeVerifierCoreContract system publicInput proof
           /\ SoundWitness system publicInput proof := by
   intro publicInput proof observed
-  have core :=
-    runtime_performance_observation_gpu_run_options_acceptance_verifier_core_contract
+  exact
+    runtime_performance_observation_projected_metadata_acceptance_core_and_sound
       assumptions
       summary
+      (fun summary => summary.gpuRunOptions)
       publicInput
       proof
-      observed
-  have sound :=
-    runtime_performance_observation_gpu_run_options_acceptance_sound
-      assumptions
-      summary
-      publicInput
-      proof
-      observed
-  exact And.intro core sound
+      (runtime_performance_observation_projects_gpu_run_options
+        summary
+        publicInput
+        proof
+        observed)
 
 theorem runtime_performance_observation_projects_cuda_backend
     {system : VerifierModel}
@@ -690,21 +687,18 @@ theorem runtime_performance_observation_cuda_backend_acceptance_core_and_sound
         RuntimeVerifierCoreContract system publicInput proof
           /\ SoundWitness system publicInput proof := by
   intro publicInput proof observed
-  have core :=
-    runtime_performance_observation_cuda_backend_acceptance_verifier_core_contract
+  exact
+    runtime_performance_observation_projected_metadata_acceptance_core_and_sound
       assumptions
       summary
+      (fun summary => summary.cudaBackend)
       publicInput
       proof
-      observed
-  have sound :=
-    runtime_performance_observation_cuda_backend_acceptance_sound
-      assumptions
-      summary
-      publicInput
-      proof
-      observed
-  exact And.intro core sound
+      (runtime_performance_observation_projects_cuda_backend
+        summary
+        publicInput
+        proof
+        observed)
 
 theorem runtime_performance_observation_projects_cuda_allocator_timing
     {system : VerifierModel}
@@ -770,21 +764,18 @@ theorem runtime_performance_observation_cuda_allocator_timing_acceptance_core_an
         RuntimeVerifierCoreContract system publicInput proof
           /\ SoundWitness system publicInput proof := by
   intro publicInput proof observed
-  have core :=
-    runtime_performance_observation_cuda_allocator_timing_acceptance_verifier_core_contract
+  exact
+    runtime_performance_observation_projected_metadata_acceptance_core_and_sound
       assumptions
       summary
+      (fun summary => summary.cudaAllocatorTiming)
       publicInput
       proof
-      observed
-  have sound :=
-    runtime_performance_observation_cuda_allocator_timing_acceptance_sound
-      assumptions
-      summary
-      publicInput
-      proof
-      observed
-  exact And.intro core sound
+      (runtime_performance_observation_projects_cuda_allocator_timing
+        summary
+        publicInput
+        proof
+        observed)
 
 theorem runtime_performance_observation_projects_proof_artifact_finish_timing
     {system : VerifierModel}
@@ -850,21 +841,18 @@ theorem runtime_performance_observation_finish_timing_acceptance_core_and_sound
         RuntimeVerifierCoreContract system publicInput proof
           /\ SoundWitness system publicInput proof := by
   intro publicInput proof observed
-  have core :=
-    runtime_performance_observation_finish_timing_acceptance_verifier_core_contract
+  exact
+    runtime_performance_observation_projected_metadata_acceptance_core_and_sound
       assumptions
       summary
+      (fun summary => summary.proofArtifactFinishTiming)
       publicInput
       proof
-      observed
-  have sound :=
-    runtime_performance_observation_finish_timing_acceptance_sound
-      assumptions
-      summary
-      publicInput
-      proof
-      observed
-  exact And.intro core sound
+      (runtime_performance_observation_projects_proof_artifact_finish_timing
+        summary
+        publicInput
+        proof
+        observed)
 
 theorem runtime_performance_observation_projects_proof_timing_batch
     {system : VerifierModel}
@@ -930,21 +918,18 @@ theorem runtime_performance_observation_proof_timing_batch_acceptance_core_and_s
         RuntimeVerifierCoreContract system publicInput proof
           /\ SoundWitness system publicInput proof := by
   intro publicInput proof observed
-  have core :=
-    runtime_performance_observation_proof_timing_batch_acceptance_verifier_core_contract
+  exact
+    runtime_performance_observation_projected_metadata_acceptance_core_and_sound
       assumptions
       summary
+      (fun summary => summary.proofTimingBatch)
       publicInput
       proof
-      observed
-  have sound :=
-    runtime_performance_observation_proof_timing_batch_acceptance_sound
-      assumptions
-      summary
-      publicInput
-      proof
-      observed
-  exact And.intro core sound
+      (runtime_performance_observation_projects_proof_timing_batch
+        summary
+        publicInput
+        proof
+        observed)
 
 structure RuntimePerformanceObservationProjectedCoreContracts
     (system : VerifierModel)

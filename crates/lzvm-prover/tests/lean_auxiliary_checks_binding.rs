@@ -710,6 +710,38 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "runtime_performance_observation_projects_metadata",
             "runtime_performance_observation_projected_metadata_acceptance_sound",
             "runtime_performance_observation_projected_metadata_acceptance_verifier_core_contract",
+            "runtime_performance_observation_projected_metadata_acceptance_core_and_sound",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &runtime_performance_source,
+        "runtime_performance_observation_projected_metadata_acceptance_core_and_sound",
+        &["ignored_metadata_acceptance_core_and_sound"],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &runtime_performance_source,
+        "runtime_performance_observation_projected_metadata_acceptance_core_and_sound",
+        &[
+            "runtime_performance_observation_projected_metadata_acceptance_sound",
+            concat!(
+                "runtime_performance_observation_projected_metadata_",
+                "acceptance_verifier_core_contract"
+            ),
+            "sound_witness_implies_verifier_core_contract",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &runtime_performance_source,
+        "runtime_performance_observation_acceptance_core_and_sound",
+        &["ignored_metadata_acceptance_core_and_sound"],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &runtime_performance_source,
+        "runtime_performance_observation_acceptance_core_and_sound",
+        &[
+            "runtime_performance_observation_acceptance_sound",
+            "runtime_performance_observation_acceptance_verifier_core_contract",
+            "sound_witness_implies_verifier_core_contract",
         ],
     );
     assert_eq!(
@@ -873,27 +905,84 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
                 "SoundWitness system publicInput proof",
             ],
         );
-        let verifier_callee = format!("{stem}_verifier_core_contract");
-        let sound_callee = format!("{stem}_sound");
-        let body_terms = [verifier_callee.as_str(), sound_callee.as_str()];
-        lean_binding::assert_theorem_body_contains(
-            &runtime_performance_source,
-            &theorem,
-            &body_terms,
-        );
         lean_binding::assert_theorem_body_omits(
             &runtime_performance_source,
             &theorem,
             &["sound_witness_implies_verifier_core_contract"],
         );
-        let body = lean_binding::theorem_body(&runtime_performance_source, &theorem);
-        for callee in body_terms {
-            let expected_call = format!("{callee} assumptions summary publicInput proof observed");
-            assert!(
-                compact_source_contains(&body, &expected_call),
-                "Lean theorem {theorem} body should call {callee} with ordered runtime arguments"
-            );
-        }
+    }
+    for (theorem, projector) in [
+        (
+            "runtime_performance_observation_timing_observations_acceptance_core_and_sound",
+            "runtime_performance_observation_projects_timing_observations",
+        ),
+        (
+            "runtime_performance_observation_guest_pc_trace_timing_acceptance_core_and_sound",
+            "runtime_performance_observation_projects_guest_pc_trace_timing",
+        ),
+        (
+            "runtime_performance_observation_row_value_timing_acceptance_core_and_sound",
+            "runtime_performance_observation_projects_witness_opening_row_value_timing",
+        ),
+        (
+            "runtime_performance_observation_constant_material_timing_acceptance_core_and_sound",
+            "runtime_performance_observation_projects_constant_material_validation_timing",
+        ),
+        (
+            "runtime_performance_observation_prover_gpu_mode_acceptance_core_and_sound",
+            "runtime_performance_observation_projects_prover_gpu_mode",
+        ),
+        (
+            "runtime_performance_observation_gpu_run_options_acceptance_core_and_sound",
+            "runtime_performance_observation_projects_gpu_run_options",
+        ),
+        (
+            "runtime_performance_observation_cuda_backend_acceptance_core_and_sound",
+            "runtime_performance_observation_projects_cuda_backend",
+        ),
+        (
+            "runtime_performance_observation_cuda_allocator_timing_acceptance_core_and_sound",
+            "runtime_performance_observation_projects_cuda_allocator_timing",
+        ),
+        (
+            "runtime_performance_observation_finish_timing_acceptance_core_and_sound",
+            "runtime_performance_observation_projects_proof_artifact_finish_timing",
+        ),
+        (
+            "runtime_performance_observation_proof_timing_batch_acceptance_core_and_sound",
+            "runtime_performance_observation_projects_proof_timing_batch",
+        ),
+    ] {
+        let stem = theorem
+            .strip_suffix("_core_and_sound")
+            .expect("combined runtime theorem name should use the core_and_sound suffix");
+        let verifier_callee = format!("{stem}_verifier_core_contract");
+        let sound_callee = format!("{stem}_sound");
+        lean_binding::assert_theorem_body_contains(
+            &runtime_performance_source,
+            theorem,
+            &[
+                projector,
+                "runtime_performance_observation_projected_metadata_acceptance_core_and_sound",
+            ],
+        );
+        lean_binding::assert_theorem_body_omits(
+            &runtime_performance_source,
+            theorem,
+            &[
+                verifier_callee.as_str(),
+                sound_callee.as_str(),
+                "sound_witness_implies_verifier_core_contract",
+            ],
+        );
+        let body = lean_binding::theorem_body(&runtime_performance_source, theorem);
+        assert!(
+            compact_source_contains(
+                &body,
+                "runtime_performance_observation_projected_metadata_acceptance_core_and_sound assumptions summary"
+            ),
+            "Lean theorem {theorem} body should call the projected combined runtime helper with ordered arguments"
+        );
     }
     assert!(
         runtime_performance_source
