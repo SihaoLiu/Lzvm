@@ -11,6 +11,17 @@ fn compact_source_contains(source: &str, needle: &str) -> bool {
     compact_source(source).contains(&compact_source(needle))
 }
 
+fn read_sources(crate_root: &Path, relative_paths: &[&str]) -> String {
+    relative_paths
+        .iter()
+        .map(|relative_path| {
+            std::fs::read_to_string(crate_root.join(relative_path))
+                .unwrap_or_else(|err| panic!("source {relative_path} should read: {err}"))
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 fn unquoted_timing_name(timing_name: &str) -> &str {
     timing_name
         .strip_prefix('"')
@@ -9157,9 +9168,14 @@ fn lean_opening_segment_binding_tracks_runtime_opening_checks() {
 #[test]
 fn lean_query_plan_binding_tracks_runtime_transcript_opening_checks() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let lean_path = crate_root.join("../../lean/Lzvm/QueryPlanBinding.lean");
-    let lean_source =
-        std::fs::read_to_string(&lean_path).expect("Lean query plan binding source should read");
+    let lean_source = read_sources(
+        crate_root,
+        &[
+            "../../lean/Lzvm/QueryPlanBinding.lean",
+            "../../lean/Lzvm/QueryPlanBinding/Core.lean",
+            "../../lean/Lzvm/QueryPlanBinding/Soundness.lean",
+        ],
+    );
     let lean_root_path = crate_root.join("../../lean/Lzvm.lean");
     let lean_root_source =
         std::fs::read_to_string(&lean_root_path).expect("top-level Lean source should read");
@@ -9411,18 +9427,14 @@ fn lean_pipeline_binding_tracks_runtime_preflight_and_artifact_checks() {
     let core_derived_path = crate_root.join("../../lean/Lzvm/PipelineBinding/Core/Derived.lean");
     let core_derived_source = std::fs::read_to_string(&core_derived_path)
         .expect("Lean pipeline core derived binding source should read");
-    let obligations_source = [
-        "../../lean/Lzvm/PipelineBinding/Obligations.lean",
-        "../../lean/Lzvm/PipelineBinding/Obligations/Core.lean",
-        "../../lean/Lzvm/PipelineBinding/Obligations/Soundness.lean",
-    ]
-    .into_iter()
-    .map(|relative_path| {
-        std::fs::read_to_string(crate_root.join(relative_path))
-            .expect("Lean pipeline obligations source should read")
-    })
-    .collect::<Vec<_>>()
-    .join("\n");
+    let obligations_source = read_sources(
+        crate_root,
+        &[
+            "../../lean/Lzvm/PipelineBinding/Obligations.lean",
+            "../../lean/Lzvm/PipelineBinding/Obligations/Core.lean",
+            "../../lean/Lzvm/PipelineBinding/Obligations/Soundness.lean",
+        ],
+    );
     let audited_path = crate_root.join("../../lean/Lzvm/PipelineBinding/Audited.lean");
     let audited_source =
         std::fs::read_to_string(&audited_path).expect("Lean pipeline audited source should read");
