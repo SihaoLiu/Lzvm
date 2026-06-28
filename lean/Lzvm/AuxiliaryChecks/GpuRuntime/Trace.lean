@@ -1025,17 +1025,8 @@ theorem guest_pc_trace_cuda_run_checked_acceptance_core_and_sound
           /\ RuntimeVerifierCoreContract system publicInput proof
           /\ SoundWitness system publicInput proof := by
   intro publicInput proof checked
-  have sound :=
-    guest_pc_trace_cuda_run_checked_acceptance_sound
-      assumptions
-      validation
-      config
-      publicInput
-      proof
-      checked
-  have core :=
-    guest_pc_trace_cuda_run_checked_acceptance_verifier_core_contract
-      assumptions
+  have decision :=
+    guest_pc_trace_cuda_run_checked_acceptance_projects_decision
       validation
       config
       publicInput
@@ -1090,15 +1081,20 @@ theorem guest_pc_trace_cuda_run_checked_acceptance_core_and_sound
       publicInput
       proof
       checked
-  exact And.intro sound.left
+  have coreAndSound :=
+    GpuRuntimeInternal.checked_acceptance_core_and_sound
+      assumptions
+      publicInput
+      proof
+      checked
+  exact And.intro decision
     (And.intro sparse
       (And.intro sparseDebug
         (And.intro terminalSparse
           (And.intro retainedStage
             (And.intro retainedDebug
               (And.intro retainedDebugRequiresRetention
-                (And.intro descriptorRetention
-                  (And.intro core sound.right))))))))
+                (And.intro descriptorRetention coreAndSound)))))))
 
 theorem gpu_retained_leaf_digest_limit_checked_acceptance_projects_decision
     {system : VerifierModel}
@@ -1186,23 +1182,20 @@ theorem gpu_retained_leaf_digest_limit_checked_acceptance_core_and_sound
           /\ RuntimeVerifierCoreContract system publicInput proof
           /\ SoundWitness system publicInput proof := by
   intro publicInput proof checked
-  have sound :=
-    gpu_retained_leaf_digest_limit_checked_acceptance_sound
-      assumptions
+  have decision :=
+    gpu_retained_leaf_digest_limit_checked_acceptance_projects_decision
       validation
       config
       publicInput
       proof
       checked
-  have core :=
-    gpu_retained_leaf_digest_limit_checked_acceptance_verifier_core_contract
+  have coreAndSound :=
+    GpuRuntimeInternal.checked_acceptance_core_and_sound
       assumptions
-      validation
-      config
       publicInput
       proof
       checked
-  exact And.intro sound.left (And.intro core sound.right)
+  exact And.intro decision coreAndSound
 
 theorem gpu_retained_device_cache_budget_checked_acceptance_projects_within_limits
     {system : VerifierModel}
@@ -1290,23 +1283,20 @@ theorem gpu_retained_device_cache_budget_checked_acceptance_core_and_sound
           /\ RuntimeVerifierCoreContract system publicInput proof
           /\ SoundWitness system publicInput proof := by
   intro publicInput proof checked
-  have sound :=
-    gpu_retained_device_cache_budget_checked_acceptance_sound
-      assumptions
+  have withinLimits :=
+    gpu_retained_device_cache_budget_checked_acceptance_projects_within_limits
       validation
       budget
       publicInput
       proof
       checked
-  have core :=
-    gpu_retained_device_cache_budget_checked_acceptance_verifier_core_contract
+  have coreAndSound :=
+    GpuRuntimeInternal.checked_acceptance_core_and_sound
       assumptions
-      validation
-      budget
       publicInput
       proof
       checked
-  exact And.intro sound.left (And.intro core sound.right)
+  exact And.intro withinLimits coreAndSound
 
 theorem fri_fixed_column_cache_same_request_implies_cached_contents_bound
     (validation : FriFixedColumnCacheValidation)
@@ -1502,27 +1492,18 @@ theorem fri_fixed_column_cache_checked_acceptance_core_and_sound
       publicInput
       proof
       checked
-  have sound :=
-    fri_fixed_column_cache_checked_acceptance_sound
+  have coreAndSound :=
+    GpuRuntimeInternal.checked_acceptance_core_and_sound
+      (auxiliaryAccepted := fun publicInput proof =>
+        validation.fixedColumnCacheRequestBound cached fresh
+          /\ validation.allocationValidation.writtenContentsBound fresh publicInput proof)
       assumptions
-      validation
-      cached
-      fresh
-      publicInput
-      proof
-      checked
-  have core :=
-    fri_fixed_column_cache_checked_acceptance_verifier_core_contract
-      assumptions
-      validation
-      cached
-      fresh
       publicInput
       proof
       checked
   exact And.intro requestBound
     (And.intro freshBound
-      (And.intro cachedBound (And.intro core sound.right)))
+      (And.intro cachedBound coreAndSound))
 
 
 
