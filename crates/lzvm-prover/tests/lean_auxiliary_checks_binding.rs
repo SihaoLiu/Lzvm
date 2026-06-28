@@ -16,6 +16,18 @@ fn compact_source_contains(source: &str, needle: &str) -> bool {
     compact_source(source).contains(&compact_source(needle))
 }
 
+fn assert_theorem_body_contains_identifiers(source: &str, theorem: &str, identifiers: &[&str]) {
+    for identifier in identifiers {
+        lean_binding::assert_theorem_body_contains_identifier(source, theorem, identifier);
+    }
+}
+
+fn assert_theorem_body_omits_identifiers(source: &str, theorem: &str, identifiers: &[&str]) {
+    for identifier in identifiers {
+        lean_binding::assert_theorem_body_omits_identifier(source, theorem, identifier);
+    }
+}
+
 fn theorem_stems_with_suffix(source: &str, prefix: &str, suffix: &str) -> BTreeSet<String> {
     lean_binding::theorem_names(source)
         .into_iter()
@@ -5642,7 +5654,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
                 "SoundWitness system publicInput proof",
             ],
         );
-        lean_binding::assert_theorem_body_contains(
+        assert_theorem_body_contains_identifiers(
             &gpu_runtime_source,
             theorem,
             &[
@@ -5650,7 +5662,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
                 "GpuRuntimeInternal.checked_acceptance_core_and_sound",
             ],
         );
-        lean_binding::assert_theorem_body_omits(&gpu_runtime_source, theorem, omitted_terms);
+        assert_theorem_body_omits_identifiers(&gpu_runtime_source, theorem, omitted_terms);
     }
     lean_binding::assert_theorem_body_contains(
         &gpu_runtime_source,
@@ -5681,7 +5693,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "SoundWitness system publicInput proof",
         ],
     );
-    lean_binding::assert_theorem_body_contains(
+    assert_theorem_body_contains_identifiers(
         &gpu_runtime_source,
         "guest_pc_trace_cuda_run_checked_acceptance_core_and_sound",
         &[
@@ -5714,7 +5726,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "GpuRuntimeInternal.checked_acceptance_core_and_sound",
         ],
     );
-    lean_binding::assert_theorem_body_omits(
+    assert_theorem_body_omits_identifiers(
         &gpu_runtime_source,
         "guest_pc_trace_cuda_run_checked_acceptance_core_and_sound",
         &[
@@ -5780,7 +5792,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
                 "SoundWitness system publicInput proof",
             ],
         );
-        lean_binding::assert_theorem_body_contains(
+        assert_theorem_body_contains_identifiers(
             &gpu_runtime_source,
             theorem,
             &[
@@ -5788,7 +5800,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
                 "GpuRuntimeInternal.checked_acceptance_core_and_sound",
             ],
         );
-        lean_binding::assert_theorem_body_omits(&gpu_runtime_source, theorem, omitted_terms);
+        assert_theorem_body_omits_identifiers(&gpu_runtime_source, theorem, omitted_terms);
     }
     lean_binding::assert_theorem_body_contains(
         &gpu_runtime_source,
@@ -5814,7 +5826,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "SoundWitness system publicInput proof",
         ],
     );
-    lean_binding::assert_theorem_body_contains(
+    assert_theorem_body_contains_identifiers(
         &gpu_runtime_source,
         "fri_fixed_column_cache_checked_acceptance_core_and_sound",
         &[
@@ -5824,7 +5836,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "GpuRuntimeInternal.checked_acceptance_core_and_sound",
         ],
     );
-    lean_binding::assert_theorem_body_omits(
+    assert_theorem_body_omits_identifiers(
         &gpu_runtime_source,
         "fri_fixed_column_cache_checked_acceptance_core_and_sound",
         &[
@@ -6264,7 +6276,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         ),
     ] {
         lean_binding::assert_theorem_prefix_contains(&auxiliary_source, theorem, prefix_terms);
-        lean_binding::assert_theorem_body_contains(&auxiliary_source, theorem, body_terms);
-        lean_binding::assert_theorem_body_omits(&auxiliary_source, theorem, omitted_terms);
+        assert_theorem_body_contains_identifiers(&auxiliary_source, theorem, body_terms);
+        assert_theorem_body_omits_identifiers(&auxiliary_source, theorem, omitted_terms);
     }
 }
