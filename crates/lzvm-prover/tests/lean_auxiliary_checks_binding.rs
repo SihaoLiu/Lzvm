@@ -3910,9 +3910,11 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "gpu_retained_leaf_digest_limit_checked_acceptance_projects_decision",
             "gpu_retained_leaf_digest_limit_checked_acceptance_sound",
             "gpu_retained_leaf_digest_limit_checked_acceptance_verifier_core_contract",
+            "gpu_retained_leaf_digest_limit_checked_acceptance_core_and_sound",
             "gpu_retained_device_cache_budget_checked_acceptance_projects_within_limits",
             "gpu_retained_device_cache_budget_checked_acceptance_sound",
             "gpu_retained_device_cache_budget_checked_acceptance_verifier_core_contract",
+            "gpu_retained_device_cache_budget_checked_acceptance_core_and_sound",
             "fri_fixed_column_cache_same_request_implies_cached_contents_bound",
             "fri_fixed_column_cache_checked_acceptance_projects_request_bound",
             "fri_fixed_column_cache_checked_acceptance_projects_fresh_contents_bound",
@@ -4408,6 +4410,40 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "sound_witness_implies_verifier_core_contract",
         ],
     );
+    for (theorem, prefix_term, body_terms) in [
+        (
+            "gpu_retained_leaf_digest_limit_checked_acceptance_core_and_sound",
+            "GpuRetainedLeafDigestLimitDecisionMatches config",
+            [
+                "gpu_retained_leaf_digest_limit_checked_acceptance_sound",
+                "gpu_retained_leaf_digest_limit_checked_acceptance_verifier_core_contract",
+            ],
+        ),
+        (
+            "gpu_retained_device_cache_budget_checked_acceptance_core_and_sound",
+            "GpuRetainedDeviceCacheBudgetWithinLimits budget",
+            [
+                "gpu_retained_device_cache_budget_checked_acceptance_sound",
+                "gpu_retained_device_cache_budget_checked_acceptance_verifier_core_contract",
+            ],
+        ),
+    ] {
+        lean_binding::assert_theorem_prefix_contains(
+            &gpu_runtime_source,
+            theorem,
+            &[
+                prefix_term,
+                "RuntimeVerifierCoreContract system publicInput proof",
+                "SoundWitness system publicInput proof",
+            ],
+        );
+        lean_binding::assert_theorem_body_contains(&gpu_runtime_source, theorem, &body_terms);
+        lean_binding::assert_theorem_body_omits(
+            &gpu_runtime_source,
+            theorem,
+            &["sound_witness_implies_verifier_core_contract"],
+        );
+    }
     lean_binding::assert_theorem_body_contains(
         &gpu_runtime_source,
         "fri_fixed_column_cache_checked_acceptance_verifier_core_contract",

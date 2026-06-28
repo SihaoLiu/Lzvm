@@ -944,6 +944,40 @@ theorem gpu_retained_leaf_digest_limit_checked_acceptance_verifier_core_contract
       proof
       checked
 
+theorem gpu_retained_leaf_digest_limit_checked_acceptance_core_and_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : GpuRetainedLeafDigestLimitValidation)
+    (config : GpuRetainedLeafDigestLimitConfig) :
+    forall publicInput proof,
+      GpuRetainedLeafDigestLimitCheckedAcceptance
+          system
+          validation
+          config
+          publicInput
+          proof ->
+        GpuRetainedLeafDigestLimitDecisionMatches config
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof checked
+  have sound :=
+    gpu_retained_leaf_digest_limit_checked_acceptance_sound
+      assumptions
+      validation
+      config
+      publicInput
+      proof
+      checked
+  have core :=
+    gpu_retained_leaf_digest_limit_checked_acceptance_verifier_core_contract
+      assumptions
+      validation
+      config
+      publicInput
+      proof
+      checked
+  exact And.intro sound.left (And.intro core sound.right)
+
 theorem gpu_retained_device_cache_budget_checked_acceptance_projects_within_limits
     {system : VerifierModel}
     (validation : GpuRetainedDeviceCacheBudgetValidation)
@@ -1013,6 +1047,40 @@ theorem gpu_retained_device_cache_budget_checked_acceptance_verifier_core_contra
       publicInput
       proof
       checked
+
+theorem gpu_retained_device_cache_budget_checked_acceptance_core_and_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : GpuRetainedDeviceCacheBudgetValidation)
+    (budget : GpuRetainedDeviceCacheBudget) :
+    forall publicInput proof,
+      GpuRetainedDeviceCacheBudgetCheckedAcceptance
+          system
+          validation
+          budget
+          publicInput
+          proof ->
+        GpuRetainedDeviceCacheBudgetWithinLimits budget
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof checked
+  have sound :=
+    gpu_retained_device_cache_budget_checked_acceptance_sound
+      assumptions
+      validation
+      budget
+      publicInput
+      proof
+      checked
+  have core :=
+    gpu_retained_device_cache_budget_checked_acceptance_verifier_core_contract
+      assumptions
+      validation
+      budget
+      publicInput
+      proof
+      checked
+  exact And.intro sound.left (And.intro core sound.right)
 
 theorem fri_fixed_column_cache_same_request_implies_cached_contents_bound
     (validation : FriFixedColumnCacheValidation)
