@@ -19,6 +19,13 @@ struct FriOpeningFoldLayerShape {
     expected_len: usize,
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+struct FriOpeningFoldLayerCache {
+    challenge: Option<Ext3>,
+    fold_shape: Option<FriOpeningFoldLayerShape>,
+    output_size: Option<u64>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PcsFriFoldError {
     InvalidLayerBits {
@@ -180,18 +187,14 @@ pub fn verify_fri_opening_folds(
         .len()
         .checked_sub(schedule.fri_layers.len())
         .and_then(|index| index.checked_sub(1));
-    let mut layer_challenges = vec![None; schedule.fri_layers.len()];
-    let mut layer_fold_shapes = vec![None; schedule.fri_layers.len()];
-    let mut layer_output_sizes = vec![None; schedule.fri_layers.len()];
+    let mut layer_caches = vec![FriOpeningFoldLayerCache::default(); schedule.fri_layers.len()];
 
     for (query_index, query_row) in request.query_rows.iter().enumerate() {
         for (layer_index, (layer_plan, opening_layer)) in
             schedule.fri_layers.iter().zip(layers.iter()).enumerate()
         {
-            let output_size = domain_size_with_cache(
-                &mut layer_output_sizes[layer_index],
-                layer_plan.output_bits,
-            )?;
+            let output_size =
+                domain_size_with_cache(&mut layer_caches[layer_index], layer_plan.output_bits)?;
             let expected_row = query_row % output_size;
             let query = &opening_layer.queries[query_index];
             if query.row_index != expected_row {
@@ -214,25 +217,14 @@ pub fn verify_fri_opening_folds(
             } else {
                 None
             };
-            let challenge = if let Some(challenge) = layer_challenges[layer_index] {
-                challenge
-            } else {
-                let layer_challenge_start =
-                    challenge_start.ok_or(PcsFriOpeningFoldError::LengthOverflow)?;
-                let challenge_index = layer_challenge_start
-                    .checked_add(layer_index)
-                    .ok_or(PcsFriOpeningFoldError::LengthOverflow)?;
-                let challenge = *request.challenges.get(challenge_index).ok_or(
-                    PcsFriOpeningFoldError::MissingChallenge {
-                        index: challenge_index,
-                        len: request.challenges.len(),
-                    },
-                )?;
-                layer_challenges[layer_index] = Some(challenge);
-                challenge
-            };
+            let challenge = layer_challenge_with_cache(
+                &mut layer_caches[layer_index],
+                challenge_start,
+                layer_index,
+                request.challenges,
+            )?;
             let fold_bits = validate_fri_fold_shape_with_cache(
-                &mut layer_fold_shapes[layer_index],
+                &mut layer_caches[layer_index],
                 schedule.extended_domain_bits,
                 layer_plan.output_bits,
                 layer_plan.input_bits,
@@ -267,7 +259,7 @@ pub fn verify_fri_opening_folds(
 
             let target = if let Some(next_plan) = schedule.fri_layers.get(layer_index + 1) {
                 let next_output_size = domain_size_with_cache(
-                    &mut layer_output_sizes[layer_index + 1],
+                    &mut layer_caches[layer_index + 1],
                     next_plan.output_bits,
                 )?;
                 let value_index = usize::try_from(expected_row / next_output_size)
@@ -344,14 +336,38 @@ fn convert_binary_fold_values(
     Ok(None)
 }
 
+fn layer_challenge_with_cache(
+    cache: &mut FriOpeningFoldLayerCache,
+    challenge_start: Option<usize>,
+    layer_index: usize,
+    challenges: &[Ext3],
+) -> Result<Ext3, PcsFriOpeningFoldError> {
+    if let Some(challenge) = cache.challenge {
+        return Ok(challenge);
+    }
+    let layer_challenge_start = challenge_start.ok_or(PcsFriOpeningFoldError::LengthOverflow)?;
+    let challenge_index = layer_challenge_start
+        .checked_add(layer_index)
+        .ok_or(PcsFriOpeningFoldError::LengthOverflow)?;
+    let challenge =
+        *challenges
+            .get(challenge_index)
+            .ok_or(PcsFriOpeningFoldError::MissingChallenge {
+                index: challenge_index,
+                len: challenges.len(),
+            })?;
+    cache.challenge = Some(challenge);
+    Ok(challenge)
+}
+
 fn validate_fri_fold_shape_with_cache(
-    cached_shape: &mut Option<FriOpeningFoldLayerShape>,
+    cache: &mut FriOpeningFoldLayerCache,
     n_bits_ext: u32,
     current_bits: u32,
     prev_bits: u32,
     value_len: usize,
 ) -> Result<u32, PcsFriFoldError> {
-    if let Some(shape) = cached_shape {
+    if let Some(shape) = cache.fold_shape {
         if value_len != shape.expected_len {
             return Err(PcsFriFoldError::ValueLengthMismatch {
                 expected: shape.expected_len,
@@ -365,7 +381,7 @@ fn validate_fri_fold_shape_with_cache(
     let expected_len = 1_usize
         .checked_shl(fold_bits)
         .ok_or(PcsFriFoldError::LengthOverflow)?;
-    *cached_shape = Some(FriOpeningFoldLayerShape {
+    cache.fold_shape = Some(FriOpeningFoldLayerShape {
         fold_bits,
         expected_len,
     });
@@ -558,14 +574,14 @@ fn domain_size(bits: u32) -> Result<u64, PcsFriOpeningFoldError> {
 }
 
 fn domain_size_with_cache(
-    cached_size: &mut Option<u64>,
+    cache: &mut FriOpeningFoldLayerCache,
     bits: u32,
 ) -> Result<u64, PcsFriOpeningFoldError> {
-    if let Some(size) = *cached_size {
+    if let Some(size) = cache.output_size {
         return Ok(size);
     }
     let size = domain_size(bits)?;
-    *cached_size = Some(size);
+    cache.output_size = Some(size);
     Ok(size)
 }
 
