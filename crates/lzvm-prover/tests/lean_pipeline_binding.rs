@@ -41,6 +41,24 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
         crate_root.join("../../lean/Lzvm/PipelineBinding/Contracts/Core.lean");
     let contracts_core_source = std::fs::read_to_string(&contracts_core_path)
         .expect("Lean pipeline binding core contracts source should read");
+    assert!(
+        lean_binding::contains_import(
+            &contracts_core_source,
+            "Lzvm.PipelineBinding.Contracts.Core.Base",
+        ) && lean_binding::contains_import(
+            &contracts_core_source,
+            "Lzvm.PipelineBinding.Contracts.Core.Audited",
+        ),
+        "Lean pipeline contract core wrapper should re-export split core contract modules"
+    );
+    let contracts_core_base_path =
+        crate_root.join("../../lean/Lzvm/PipelineBinding/Contracts/Core/Base.lean");
+    let contracts_core_base_source = std::fs::read_to_string(&contracts_core_base_path)
+        .expect("Lean pipeline binding base core contracts source should read");
+    let contracts_core_audited_path =
+        crate_root.join("../../lean/Lzvm/PipelineBinding/Contracts/Core/Audited.lean");
+    let contracts_core_audited_source = std::fs::read_to_string(&contracts_core_audited_path)
+        .expect("Lean pipeline binding audited core contracts source should read");
     let contracts_external_source_path =
         crate_root.join("../../lean/Lzvm/PipelineBinding/Contracts/ExternalSource.lean");
     let contracts_external_source = std::fs::read_to_string(&contracts_external_source_path)
@@ -59,7 +77,7 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
     let audited_source =
         std::fs::read_to_string(&audited_path).expect("Lean pipeline audited source should read");
     let lean_source = format!(
-        "{core_source}\n{core_base_source}\n{core_derived_source}\n{pipeline_source}\n{obligations_source}\n{audited_source}\n{accepts_source}\n{contracts_source}\n{contracts_core_source}\n{contracts_external_source}\n{external_contracts_source}\n{segment_ids_source}"
+        "{core_source}\n{core_base_source}\n{core_derived_source}\n{pipeline_source}\n{obligations_source}\n{audited_source}\n{accepts_source}\n{contracts_source}\n{contracts_core_source}\n{contracts_core_base_source}\n{contracts_core_audited_source}\n{contracts_external_source}\n{external_contracts_source}\n{segment_ids_source}"
     );
     let top_level_path = crate_root.join("../../lean/Lzvm.lean");
     let top_level_source =
