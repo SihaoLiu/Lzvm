@@ -1288,6 +1288,13 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "Lean theorem {theorem} body should pass the observed acceptance to the combined helper"
         );
     }
+    let routed_trace_timing_wrappers = [
+        "guest_pc_trace_stream_elapsed_timing_acceptance_core_and_sound",
+        "guest_pc_trace_descriptor_width_counts_acceptance_core_and_sound",
+        "guest_pc_trace_report_timing_acceptance_core_and_sound",
+        "guest_pc_trace_report_subtiming_acceptance_core_and_sound",
+        "guest_pc_trace_report_lower_subtiming_acceptance_core_and_sound",
+    ];
     for (theorem, field_terms) in [
         (
             "proof_artifact_finish_witness_opening_shape_acceptance_core_and_sound",
@@ -1888,7 +1895,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             &["sound_witness_implies_verifier_core_contract"],
         );
     }
-    for (theorem, body_terms) in [
+    for (theorem, omitted_terms) in [
         (
             "guest_pc_trace_stream_elapsed_timing_acceptance_core_and_sound",
             [
@@ -1924,6 +1931,43 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
                 "guest_pc_trace_report_lower_subtiming_acceptance_sound",
             ],
         ),
+    ] {
+        lean_binding::assert_theorem_prefix_contains(
+            &timing_source,
+            theorem,
+            &[
+                "RuntimeVerifierCoreContract system publicInput proof",
+                "SoundWitness system publicInput proof",
+            ],
+        );
+        lean_binding::assert_theorem_body_contains(
+            &timing_source,
+            theorem,
+            &["guest_pc_trace_timing_acceptance_core_and_sound"],
+        );
+        lean_binding::assert_theorem_body_omits(
+            &timing_source,
+            theorem,
+            &[
+                omitted_terms[0],
+                omitted_terms[1],
+                "sound_witness_implies_verifier_core_contract",
+            ],
+        );
+        let body = lean_binding::theorem_body(&timing_source, theorem);
+        assert!(
+            compact_source_contains(
+                &body,
+                "guest_pc_trace_timing_acceptance_core_and_sound assumptions (some { summary with"
+            ),
+            "Lean theorem {theorem} body should call the combined timing helper with the updated summary"
+        );
+        assert!(
+            compact_source_contains(&body, "publicInput proof observed"),
+            "Lean theorem {theorem} body should pass the observed acceptance to the combined helper"
+        );
+    }
+    for (theorem, body_terms) in [
         (
             "guest_pc_trace_emit_descriptor_wait_timing_acceptance_core_and_sound",
             [
@@ -2367,18 +2411,38 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         ]);
 
         let body = lean_binding::theorem_body(&timing_source, theorem);
-        for callee in [
-            format!("{base_theorem}_verifier_core_contract"),
-            format!("{base_theorem}_sound"),
-        ] {
-            let expected_call = std::iter::once(callee.as_str())
-                .chain(ordered_args.iter().map(String::as_str))
-                .collect::<Vec<_>>()
-                .join(" ");
+        if routed_trace_timing_wrappers.contains(&theorem) {
             assert!(
-                compact_source_contains(&body, &expected_call),
-                "Lean theorem {theorem} body should call {callee} with ordered timing arguments"
+                compact_source_contains(
+                    &body,
+                    "guest_pc_trace_timing_acceptance_core_and_sound assumptions (some { summary with"
+                ),
+                "Lean theorem {theorem} body should call the combined timing helper with the updated summary"
             );
+            assert!(
+                compact_source_contains(&body, "publicInput proof observed"),
+                "Lean theorem {theorem} body should pass the observed acceptance to the combined helper"
+            );
+            for field_term in field_terms {
+                assert!(
+                    compact_source_contains(&body, field_term),
+                    "Lean theorem {theorem} body should pass field {field_term} through the combined helper"
+                );
+            }
+        } else {
+            for callee in [
+                format!("{base_theorem}_verifier_core_contract"),
+                format!("{base_theorem}_sound"),
+            ] {
+                let expected_call = std::iter::once(callee.as_str())
+                    .chain(ordered_args.iter().map(String::as_str))
+                    .collect::<Vec<_>>()
+                    .join(" ");
+                assert!(
+                    compact_source_contains(&body, &expected_call),
+                    "Lean theorem {theorem} body should call {callee} with ordered timing arguments"
+                );
+            }
         }
     }
     assert!(
