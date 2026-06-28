@@ -1098,6 +1098,85 @@ theorem guest_pc_trace_shape_counts_acceptance_verifier_core_contract
       proof
       observed
 
+theorem guest_pc_trace_shape_counts_acceptance_core_and_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : GuestPcTraceTimingSummary)
+    (singleRowReports multiRowReports pendingDmaReports amoReports
+      storeConditionalReports externalOpRows copyRows flagRows precompileRows
+      indirectMemoryRows registerSourceReads memorySourceReads registerStoreRows
+      memoryStoreRows noStoreRows : Nat) :
+    forall publicInput proof,
+      GuestPcTraceTimingObservedAcceptance
+        system
+        (some
+          { summary with
+            guestTraceSingleRowReportCount := singleRowReports
+            guestTraceMultiRowReportCount := multiRowReports
+            guestTracePendingDmaReportCount := pendingDmaReports
+            guestTraceAmoReportCount := amoReports
+            guestTraceStoreConditionalReportCount := storeConditionalReports
+            guestTraceExternalOpRowCount := externalOpRows
+            guestTraceCopyRowCount := copyRows
+            guestTraceFlagRowCount := flagRows
+            guestTracePrecompileRowCount := precompileRows
+            guestTraceIndirectMemoryRowCount := indirectMemoryRows
+            guestTraceRegisterSourceReadCount := registerSourceReads
+            guestTraceMemorySourceReadCount := memorySourceReads
+            guestTraceRegisterStoreRowCount := registerStoreRows
+            guestTraceMemoryStoreRowCount := memoryStoreRows
+            guestTraceNoStoreRowCount := noStoreRows })
+        publicInput
+        proof ->
+        RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof observed
+  have core :=
+    guest_pc_trace_shape_counts_acceptance_verifier_core_contract
+      assumptions
+      summary
+      singleRowReports
+      multiRowReports
+      pendingDmaReports
+      amoReports
+      storeConditionalReports
+      externalOpRows
+      copyRows
+      flagRows
+      precompileRows
+      indirectMemoryRows
+      registerSourceReads
+      memorySourceReads
+      registerStoreRows
+      memoryStoreRows
+      noStoreRows
+      publicInput
+      proof
+      observed
+  have sound :=
+    guest_pc_trace_shape_counts_acceptance_sound
+      assumptions
+      summary
+      singleRowReports
+      multiRowReports
+      pendingDmaReports
+      amoReports
+      storeConditionalReports
+      externalOpRows
+      copyRows
+      flagRows
+      precompileRows
+      indirectMemoryRows
+      registerSourceReads
+      memorySourceReads
+      registerStoreRows
+      memoryStoreRows
+      noStoreRows
+      publicInput
+      proof
+      observed
+  exact And.intro core sound
+
 theorem guest_pc_trace_memory_access_shape_acceptance_sound
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
@@ -1154,6 +1233,46 @@ theorem guest_pc_trace_memory_access_shape_acceptance_verifier_core_contract
       publicInput
       proof
       observed
+
+theorem guest_pc_trace_memory_access_shape_acceptance_core_and_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : GuestPcTraceTimingSummary)
+    (indirectMemoryRows memorySourceReads memoryStoreRows : Nat) :
+    forall publicInput proof,
+      GuestPcTraceTimingObservedAcceptance
+        system
+        (some
+          { summary with
+            guestTraceIndirectMemoryRowCount := indirectMemoryRows
+            guestTraceMemorySourceReadCount := memorySourceReads
+            guestTraceMemoryStoreRowCount := memoryStoreRows })
+        publicInput
+        proof ->
+        RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof observed
+  have core :=
+    guest_pc_trace_memory_access_shape_acceptance_verifier_core_contract
+      assumptions
+      summary
+      indirectMemoryRows
+      memorySourceReads
+      memoryStoreRows
+      publicInput
+      proof
+      observed
+  have sound :=
+    guest_pc_trace_memory_access_shape_acceptance_sound
+      assumptions
+      summary
+      indirectMemoryRows
+      memorySourceReads
+      memoryStoreRows
+      publicInput
+      proof
+      observed
+  exact And.intro core sound
 
 theorem guest_pc_trace_report_buffer_capacity_acceptance_sound
     {system : VerifierModel}
