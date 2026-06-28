@@ -864,8 +864,10 @@ theorem proof_artifact_finish_top_level_timing_acceptance_sound
     (assumptions : AssumptionBundle system)
     (summary : ProofArtifactFinishTimingSummary)
     (queryPlanMilliseconds constantOpeningMilliseconds witnessOpeningMilliseconds
-      friOpeningMilliseconds proofEncodeMilliseconds contributionSegmentMilliseconds
-      contributionVerifyMilliseconds : Nat) :
+      friOpeningMilliseconds friTranscriptUnitBuildMilliseconds
+      friTranscriptLayerTreeMilliseconds friTranscriptFoldMilliseconds proofEncodeMilliseconds
+      contributionSegmentMilliseconds contributionVerifyMilliseconds
+      contributionChallengeMilliseconds : Nat) :
     forall publicInput proof,
       ProofArtifactFinishTimingObservedAcceptance
         system
@@ -875,9 +877,13 @@ theorem proof_artifact_finish_top_level_timing_acceptance_sound
             finishConstantOpeningMilliseconds := constantOpeningMilliseconds
             finishWitnessOpeningMilliseconds := witnessOpeningMilliseconds
             finishFriOpeningMilliseconds := friOpeningMilliseconds
+            finishFriTranscriptUnitBuildMilliseconds := friTranscriptUnitBuildMilliseconds
+            finishFriTranscriptLayerTreeMilliseconds := friTranscriptLayerTreeMilliseconds
+            finishFriTranscriptFoldMilliseconds := friTranscriptFoldMilliseconds
             finishProofEncodeMilliseconds := proofEncodeMilliseconds
             finishContributionSegmentMilliseconds := contributionSegmentMilliseconds
-            finishContributionVerifyMilliseconds := contributionVerifyMilliseconds })
+            finishContributionVerifyMilliseconds := contributionVerifyMilliseconds
+            finishContributionChallengeMilliseconds := contributionChallengeMilliseconds })
         publicInput
         proof ->
         SoundWitness system publicInput proof := by
@@ -890,9 +896,13 @@ theorem proof_artifact_finish_top_level_timing_acceptance_sound
         finishConstantOpeningMilliseconds := constantOpeningMilliseconds
         finishWitnessOpeningMilliseconds := witnessOpeningMilliseconds
         finishFriOpeningMilliseconds := friOpeningMilliseconds
+        finishFriTranscriptUnitBuildMilliseconds := friTranscriptUnitBuildMilliseconds
+        finishFriTranscriptLayerTreeMilliseconds := friTranscriptLayerTreeMilliseconds
+        finishFriTranscriptFoldMilliseconds := friTranscriptFoldMilliseconds
         finishProofEncodeMilliseconds := proofEncodeMilliseconds
         finishContributionSegmentMilliseconds := contributionSegmentMilliseconds
-        finishContributionVerifyMilliseconds := contributionVerifyMilliseconds }
+        finishContributionVerifyMilliseconds := contributionVerifyMilliseconds
+        finishContributionChallengeMilliseconds := contributionChallengeMilliseconds }
       publicInput
       proof
       observed
@@ -902,8 +912,10 @@ theorem proof_artifact_finish_top_level_timing_acceptance_verifier_core_contract
     (assumptions : AssumptionBundle system)
     (summary : ProofArtifactFinishTimingSummary)
     (queryPlanMilliseconds constantOpeningMilliseconds witnessOpeningMilliseconds
-      friOpeningMilliseconds proofEncodeMilliseconds contributionSegmentMilliseconds
-      contributionVerifyMilliseconds : Nat) :
+      friOpeningMilliseconds friTranscriptUnitBuildMilliseconds
+      friTranscriptLayerTreeMilliseconds friTranscriptFoldMilliseconds proofEncodeMilliseconds
+      contributionSegmentMilliseconds contributionVerifyMilliseconds
+      contributionChallengeMilliseconds : Nat) :
     forall publicInput proof,
       ProofArtifactFinishTimingObservedAcceptance
         system
@@ -913,9 +925,13 @@ theorem proof_artifact_finish_top_level_timing_acceptance_verifier_core_contract
             finishConstantOpeningMilliseconds := constantOpeningMilliseconds
             finishWitnessOpeningMilliseconds := witnessOpeningMilliseconds
             finishFriOpeningMilliseconds := friOpeningMilliseconds
+            finishFriTranscriptUnitBuildMilliseconds := friTranscriptUnitBuildMilliseconds
+            finishFriTranscriptLayerTreeMilliseconds := friTranscriptLayerTreeMilliseconds
+            finishFriTranscriptFoldMilliseconds := friTranscriptFoldMilliseconds
             finishProofEncodeMilliseconds := proofEncodeMilliseconds
             finishContributionSegmentMilliseconds := contributionSegmentMilliseconds
-            finishContributionVerifyMilliseconds := contributionVerifyMilliseconds })
+            finishContributionVerifyMilliseconds := contributionVerifyMilliseconds
+            finishContributionChallengeMilliseconds := contributionChallengeMilliseconds })
         publicInput
         proof ->
         RuntimeVerifierCoreContract system publicInput proof := by
@@ -928,9 +944,13 @@ theorem proof_artifact_finish_top_level_timing_acceptance_verifier_core_contract
         finishConstantOpeningMilliseconds := constantOpeningMilliseconds
         finishWitnessOpeningMilliseconds := witnessOpeningMilliseconds
         finishFriOpeningMilliseconds := friOpeningMilliseconds
+        finishFriTranscriptUnitBuildMilliseconds := friTranscriptUnitBuildMilliseconds
+        finishFriTranscriptLayerTreeMilliseconds := friTranscriptLayerTreeMilliseconds
+        finishFriTranscriptFoldMilliseconds := friTranscriptFoldMilliseconds
         finishProofEncodeMilliseconds := proofEncodeMilliseconds
         finishContributionSegmentMilliseconds := contributionSegmentMilliseconds
-        finishContributionVerifyMilliseconds := contributionVerifyMilliseconds }
+        finishContributionVerifyMilliseconds := contributionVerifyMilliseconds
+        finishContributionChallengeMilliseconds := contributionChallengeMilliseconds }
       publicInput
       proof
       observed

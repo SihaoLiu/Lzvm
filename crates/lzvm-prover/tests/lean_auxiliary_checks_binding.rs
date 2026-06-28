@@ -3067,9 +3067,15 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         "finishWitnessOpeningRowValuesByteCount",
         "finishWitnessOpeningPathMilliseconds",
         "finishFriOpeningMilliseconds",
+        "finishFriTranscriptUnitBuildMilliseconds",
+        "finishFriTranscriptLayerTreeMilliseconds",
+        "finishFriTranscriptFoldMilliseconds",
+        "finishFriTranscriptUnitCount",
+        "finishFriTranscriptLayerCount",
         "finishProofEncodeMilliseconds",
         "finishContributionSegmentMilliseconds",
         "finishContributionVerifyMilliseconds",
+        "finishContributionChallengeMilliseconds",
     ] {
         assert!(
             lean_source.contains(field),
@@ -3081,8 +3087,14 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         "\"finish_constant_opening\"",
         "\"finish_witness_opening\"",
         "\"finish_fri_opening\"",
+        "\"finish_fri_transcript_unit_build\"",
+        "\"finish_fri_transcript_layer_tree\"",
+        "\"finish_fri_transcript_fold\"",
+        "\"finish_fri_transcript_unit_count\"",
+        "\"finish_fri_transcript_layer_count\"",
         "\"finish_contribution_segment\"",
         "\"finish_contribution_verify\"",
+        "\"finish_contribution_challenge\"",
     ] {
         assert!(
             proof_timing_source.contains(line_name),

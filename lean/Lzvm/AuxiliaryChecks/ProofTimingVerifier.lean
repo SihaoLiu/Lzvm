@@ -28,8 +28,11 @@ theorem proof_artifact_finish_aggregate_timing_acceptance_verifier_core_contract
       witnessOpeningRowDedupInputRowCount witnessOpeningRowDedupUniqueRowCount
       witnessOpeningRowDedupElidedRowCount
       descriptorUploadByteCount descriptorUploadWordCount descriptorUploadRowCount
-      friOpeningMilliseconds proofEncodeMilliseconds contributionSegmentMilliseconds
-      contributionVerifyMilliseconds : Nat) :
+      friOpeningMilliseconds friTranscriptUnitBuildMilliseconds
+      friTranscriptLayerTreeMilliseconds friTranscriptFoldMilliseconds
+      friTranscriptUnitCount friTranscriptLayerCount proofEncodeMilliseconds
+      contributionSegmentMilliseconds contributionVerifyMilliseconds
+      contributionChallengeMilliseconds : Nat) :
     forall publicInput proof,
       ProofArtifactFinishTimingObservedAcceptance
         system
@@ -65,9 +68,15 @@ theorem proof_artifact_finish_aggregate_timing_acceptance_verifier_core_contract
             finishWitnessExternalSourceDescriptorUploadWordCount := descriptorUploadWordCount
             finishWitnessExternalSourceDescriptorUploadRowCount := descriptorUploadRowCount
             finishFriOpeningMilliseconds := friOpeningMilliseconds
+            finishFriTranscriptUnitBuildMilliseconds := friTranscriptUnitBuildMilliseconds
+            finishFriTranscriptLayerTreeMilliseconds := friTranscriptLayerTreeMilliseconds
+            finishFriTranscriptFoldMilliseconds := friTranscriptFoldMilliseconds
+            finishFriTranscriptUnitCount := friTranscriptUnitCount
+            finishFriTranscriptLayerCount := friTranscriptLayerCount
             finishProofEncodeMilliseconds := proofEncodeMilliseconds
             finishContributionSegmentMilliseconds := contributionSegmentMilliseconds
-            finishContributionVerifyMilliseconds := contributionVerifyMilliseconds })
+            finishContributionVerifyMilliseconds := contributionVerifyMilliseconds
+            finishContributionChallengeMilliseconds := contributionChallengeMilliseconds })
         publicInput
         proof ->
         RuntimeVerifierCoreContract system publicInput proof := by
@@ -106,9 +115,15 @@ theorem proof_artifact_finish_aggregate_timing_acceptance_verifier_core_contract
         finishWitnessExternalSourceDescriptorUploadWordCount := descriptorUploadWordCount
         finishWitnessExternalSourceDescriptorUploadRowCount := descriptorUploadRowCount
         finishFriOpeningMilliseconds := friOpeningMilliseconds
+        finishFriTranscriptUnitBuildMilliseconds := friTranscriptUnitBuildMilliseconds
+        finishFriTranscriptLayerTreeMilliseconds := friTranscriptLayerTreeMilliseconds
+        finishFriTranscriptFoldMilliseconds := friTranscriptFoldMilliseconds
+        finishFriTranscriptUnitCount := friTranscriptUnitCount
+        finishFriTranscriptLayerCount := friTranscriptLayerCount
         finishProofEncodeMilliseconds := proofEncodeMilliseconds
         finishContributionSegmentMilliseconds := contributionSegmentMilliseconds
-        finishContributionVerifyMilliseconds := contributionVerifyMilliseconds }
+        finishContributionVerifyMilliseconds := contributionVerifyMilliseconds
+        finishContributionChallengeMilliseconds := contributionChallengeMilliseconds }
       publicInput
       proof
       observed

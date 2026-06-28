@@ -521,9 +521,15 @@ structure ProofArtifactFinishTimingSummary where
   finishWitnessOpeningRowValuesByteCount : Nat
   finishWitnessOpeningPathMilliseconds : Nat
   finishFriOpeningMilliseconds : Nat
+  finishFriTranscriptUnitBuildMilliseconds : Nat
+  finishFriTranscriptLayerTreeMilliseconds : Nat
+  finishFriTranscriptFoldMilliseconds : Nat
+  finishFriTranscriptUnitCount : Nat
+  finishFriTranscriptLayerCount : Nat
   finishProofEncodeMilliseconds : Nat
   finishContributionSegmentMilliseconds : Nat
   finishContributionVerifyMilliseconds : Nat
+  finishContributionChallengeMilliseconds : Nat
 deriving DecidableEq, Repr
 
 structure ProofTimingBatchSummary where
