@@ -8958,6 +8958,33 @@ fn fri_opening_fold_verifier_avoids_extension_value_staging() {
 }
 
 #[test]
+fn verifier_eval_uses_indexed_opened_stage_fast_path() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let source_path = crate_root.join("src/verifier_eval.rs");
+    let source = std::fs::read_to_string(&source_path).expect("verifier eval source should read");
+    let reader_body = function_body(
+        &source,
+        "fn read_commitment_vector",
+        "fn opened_stage_for_column",
+    );
+    let stage_lookup_body = function_body(&source, "fn opened_stage_for_column", "fn check_index");
+
+    assert!(
+        reader_body.contains("opened_stage_for_column(column, inputs.opened_stages)?")
+            && stage_lookup_body.contains("usize::try_from(column.stage_index)")
+            && stage_lookup_body.contains("stage_index.checked_sub(1)")
+            && stage_lookup_body.contains("opened_stages")
+            && stage_lookup_body.contains(".get(stage_slot)")
+            && stage_lookup_body
+                .contains(".filter(|stage| stage.stage_index == column.stage_index)")
+            && stage_lookup_body.contains(".iter()")
+            && stage_lookup_body.contains(".find(|stage| stage.stage_index == column.stage_index)")
+            && stage_lookup_body.contains("MissingOpenedStage"),
+        "verifier commitment reads should use ordered opened-stage slots before fallback search"
+    );
+}
+
+#[test]
 fn fri_opening_from_trace_borrows_challenges() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let source_path = crate_root.join("src/prove_fri_opening.rs");

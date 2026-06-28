@@ -245,6 +245,43 @@ fn evaluates_verifier_code_with_mapped_commitment_values() {
 }
 
 #[test]
+fn evaluates_verifier_code_with_unordered_opened_stages() {
+    let code = code(
+        1,
+        vec![operation(
+            VerifierOperationKind::Copy,
+            destination(0),
+            vec![commitment(0, 1)],
+        )],
+    );
+    let stage_one_values = [Felt::from_u64(31)];
+    let stage_two_values = [Felt::from_u64(41)];
+    let opened_stages = [
+        VerifierOpenedStage {
+            stage_index: 2,
+            values: &stage_two_values,
+        },
+        VerifierOpenedStage {
+            stage_index: 1,
+            values: &stage_one_values,
+        },
+    ];
+    let commitment_columns = [VerifierCommitmentColumn {
+        stage_index: 1,
+        position: 0,
+    }];
+    let inputs = VerifierEvalInputs {
+        opened_stages: &opened_stages,
+        commitment_columns: &commitment_columns,
+        ..VerifierEvalInputs::default()
+    };
+
+    let value = evaluate_verifier_code(&code, &inputs).expect("code should evaluate");
+
+    assert_eq!(value, Ext3::from_u64s([31, 0, 0]));
+}
+
+#[test]
 fn rejects_verifier_code_source_indexes_outside_inputs() {
     let code = code(
         1,

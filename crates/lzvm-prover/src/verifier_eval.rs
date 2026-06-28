@@ -302,15 +302,32 @@ fn read_commitment_vector(
             len: inputs.commitment_columns.len(),
         }
     })?;
-    let stage = inputs
-        .opened_stages
+    let stage = opened_stage_for_column(column, inputs.opened_stages)?;
+
+    read_felt_vector("cm", column.position, dimension, stage.values)
+}
+
+fn opened_stage_for_column<'stage, 'values>(
+    column: &VerifierCommitmentColumn,
+    opened_stages: &'stage [VerifierOpenedStage<'values>],
+) -> Result<&'stage VerifierOpenedStage<'values>, VerifierEvalError> {
+    if let Ok(stage_index) = usize::try_from(column.stage_index) {
+        if let Some(stage_slot) = stage_index.checked_sub(1) {
+            if let Some(stage) = opened_stages
+                .get(stage_slot)
+                .filter(|stage| stage.stage_index == column.stage_index)
+            {
+                return Ok(stage);
+            }
+        }
+    }
+
+    opened_stages
         .iter()
         .find(|stage| stage.stage_index == column.stage_index)
         .ok_or(VerifierEvalError::MissingOpenedStage {
             stage_index: column.stage_index,
-        })?;
-
-    read_felt_vector("cm", column.position, dimension, stage.values)
+        })
 }
 
 fn check_index(kind: &str, index: usize, len: usize) -> Result<(), VerifierEvalError> {
