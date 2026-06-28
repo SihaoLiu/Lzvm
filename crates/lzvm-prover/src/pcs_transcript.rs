@@ -171,6 +171,26 @@ pub fn absorb_commit_values(
     Ok(())
 }
 
+pub(crate) fn absorb_extension_values(
+    transcript: &mut PoseidonTranscript,
+    arity: usize,
+    hash_values: bool,
+    values: &[Ext3],
+) -> Result<(), PcsTranscriptError> {
+    if hash_values {
+        let mut inner = PoseidonTranscript::new(arity)?;
+        for value in values {
+            inner.put(&[value.c0, value.c1, value.c2]);
+        }
+        transcript.put(&inner.get_state());
+    } else {
+        for value in values {
+            transcript.put(&[value.c0, value.c1, value.c2]);
+        }
+    }
+    Ok(())
+}
+
 pub fn derive_pcs_final_query_challenge(
     input: PcsTranscriptInputs<'_>,
 ) -> Result<Ext3, PcsTranscriptError> {
@@ -248,12 +268,11 @@ pub fn derive_pcs_transcript_challenges(
         challenges.push(transcript.get_field());
     }
 
-    let final_values = flatten_extension_values(input.final_polynomial);
-    absorb_commit_values(
+    absorb_extension_values(
         &mut transcript,
         input.arity,
         input.hash_values,
-        &final_values,
+        input.final_polynomial,
     )?;
 
     challenges.push(transcript.get_field());
@@ -314,8 +333,12 @@ pub(crate) fn build_pcs_transcript_prefix(
         &mut challenges,
     );
     if !input.evaluation_values.is_empty() {
-        let values = flatten_extension_values(input.evaluation_values);
-        absorb_commit_values(&mut transcript, input.arity, input.hash_values, &values)?;
+        absorb_extension_values(
+            &mut transcript,
+            input.arity,
+            input.hash_values,
+            input.evaluation_values,
+        )?;
     }
 
     absorb_binding_segments(&mut transcript, input.binding_segments)?;
@@ -398,13 +421,6 @@ pub fn derive_pcs_transcript_challenges_from_segments(
         fri_roots: &fri_roots,
         final_polynomial: &final_polynomial,
     })
-}
-
-fn flatten_extension_values(values: &[Ext3]) -> Vec<Felt> {
-    values
-        .iter()
-        .flat_map(|value| [value.c0, value.c1, value.c2])
-        .collect()
 }
 
 fn absorb_stage_unit_values(

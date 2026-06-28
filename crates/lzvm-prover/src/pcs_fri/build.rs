@@ -4,7 +4,7 @@ use std::time::Instant;
 use lzvm_artifacts::pcs_fri_segment::{
     PcsFriOpeningLayerSegment, PcsFriOpeningQuerySegment, PcsFriOpeningUnitSegment,
 };
-use lzvm_field::{Ext3, Felt};
+use lzvm_field::Ext3;
 
 use super::errors::{PcsFriOpeningBuildError, PcsFriTranscriptCommitmentError};
 use super::fold::verify_fri_fold;
@@ -14,7 +14,7 @@ use super::requests::{
     PcsFriTranscriptCommitments, PcsFriTranscriptLayerMaterial,
 };
 use crate::pcs_transcript::{
-    absorb_commit_values, build_pcs_transcript_prefix, PcsTranscriptPrefixInputs,
+    absorb_extension_values, build_pcs_transcript_prefix, PcsTranscriptPrefixInputs,
 };
 use crate::ProveUnitSchedule;
 
@@ -154,12 +154,11 @@ pub fn build_pcs_fri_transcript_commitments_with_timing(
         .into());
     }
 
-    let final_values = flatten_extension_values_for_transcript(&current);
-    absorb_commit_values(
+    absorb_extension_values(
         &mut transcript,
         request.arity,
         request.hash_values,
-        &final_values,
+        &current,
     )?;
     let final_query_challenge = transcript.get_field();
     challenges.push(final_query_challenge);
@@ -523,13 +522,6 @@ fn record_fri_opening_duration<T, E>(
     let result = build();
     record(timing, started.elapsed());
     result
-}
-
-fn flatten_extension_values_for_transcript(values: &[Ext3]) -> Vec<Felt> {
-    values
-        .iter()
-        .flat_map(|value| [value.c0, value.c1, value.c2])
-        .collect()
 }
 
 fn build_fri_opening_queries(

@@ -8680,6 +8680,28 @@ fn fri_transcript_commitments_use_shared_prefix_builder() {
 }
 
 #[test]
+fn pcs_transcript_absorbs_extension_values_without_flattening() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let transcript_path = crate_root.join("src/pcs_transcript.rs");
+    let transcript_source =
+        std::fs::read_to_string(&transcript_path).expect("PCS transcript source should read");
+    let fri_build_path = crate_root.join("src/pcs_fri/build.rs");
+    let fri_build_source =
+        std::fs::read_to_string(&fri_build_path).expect("FRI build source should read");
+
+    assert!(
+        transcript_source.contains("fn absorb_extension_values")
+            && transcript_source.contains("for value in values")
+            && transcript_source.contains("inner.put(&[value.c0, value.c1, value.c2])")
+            && transcript_source.contains("transcript.put(&[value.c0, value.c1, value.c2])")
+            && !transcript_source.contains("fn flatten_extension_values")
+            && fri_build_source.contains("absorb_extension_values(")
+            && !fri_build_source.contains("flatten_extension_values_for_transcript"),
+        "PCS transcript extension commitments should avoid temporary flattened field vectors"
+    );
+}
+
+#[test]
 fn fri_opening_query_assembly_reuses_duplicate_rows() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let source_path = crate_root.join("src/pcs_fri/build.rs");
