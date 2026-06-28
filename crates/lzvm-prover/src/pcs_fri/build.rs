@@ -614,12 +614,12 @@ fn group_fri_layer_values(
     let mut grouped = Vec::with_capacity(output_size);
     for row in 0..output_size {
         let mut values = Vec::with_capacity(folding_factor);
+        let mut index = row;
         for slot in 0..folding_factor {
-            let index = slot
-                .checked_mul(output_size)
-                .and_then(|offset| offset.checked_add(row))
-                .ok_or(PcsFriOpeningBuildError::LengthOverflow)?;
             values.push(polynomial[index]);
+            if slot + 1 != folding_factor {
+                index += output_size;
+            }
         }
         grouped.push(values);
     }

@@ -9013,6 +9013,25 @@ fn fri_opening_build_validates_fold_shape_once_per_layer() {
 }
 
 #[test]
+fn fri_opening_grouping_uses_running_row_indices() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let source_path = crate_root.join("src/pcs_fri/build.rs");
+    let source = std::fs::read_to_string(&source_path).expect("FRI build source should read");
+    let helper_body = function_body(&source, "fn group_fri_layer_values", "fn build_domain_size");
+
+    assert!(
+        helper_body.contains("let expected = output_size")
+            && helper_body.contains("if polynomial.len() != expected")
+            && helper_body.contains("let mut index = row")
+            && helper_body.contains("values.push(polynomial[index])")
+            && helper_body.contains("index += output_size")
+            && !helper_body.contains("slot\n                .checked_mul(output_size)")
+            && !helper_body.contains("and_then(|offset| offset.checked_add(row))"),
+        "FRI layer grouping should use a running index after validating total shape"
+    );
+}
+
+#[test]
 fn fri_opening_fold_verifier_avoids_extension_value_staging() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let source_path = crate_root.join("src/pcs_fri/fold.rs");
