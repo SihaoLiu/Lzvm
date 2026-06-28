@@ -149,21 +149,20 @@ theorem ignored_metadata_acceptance_core_and_sound
         RuntimeVerifierCoreContract system publicInput proof
           /\ SoundWitness system publicInput proof := by
   intro publicInput proof observed
-  have core :=
-    ignored_metadata_acceptance_verifier_core_contract
-      assumptions
-      metadata
-      publicInput
-      proof
-      observed
-  have sound :=
-    ignored_metadata_acceptance_sound
-      assumptions
-      metadata
-      publicInput
-      proof
-      observed
-  exact And.intro core sound
+  exact
+    And.intro
+      (ignored_metadata_acceptance_verifier_core_contract
+        assumptions
+        metadata
+        publicInput
+        proof
+        observed)
+      (ignored_metadata_acceptance_sound
+        assumptions
+        metadata
+        publicInput
+        proof
+        observed)
 
 theorem auxiliary_checked_acceptance_verifier_core_contract
     {system : VerifierModel}
@@ -193,19 +192,18 @@ theorem auxiliary_checked_acceptance_core_and_sound
         RuntimeVerifierCoreContract system publicInput proof
           /\ SoundWitness system publicInput proof := by
   intro publicInput proof checked
-  have core :=
-    auxiliary_checked_acceptance_verifier_core_contract
-      assumptions
-      publicInput
-      proof
-      checked
-  have sound :=
-    auxiliary_checked_acceptance_sound_witness
-      assumptions
-      publicInput
-      proof
-      checked
-  exact And.intro core sound
+  exact
+    And.intro
+      (auxiliary_checked_acceptance_verifier_core_contract
+        assumptions
+        publicInput
+        proof
+        checked)
+      (auxiliary_checked_acceptance_sound_witness
+        assumptions
+        publicInput
+        proof
+        checked)
 
 structure TimingObservation where
   label : Nat
