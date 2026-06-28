@@ -4918,6 +4918,63 @@ fn builds_witness_proof_artifact_for_all_units_in_prover() {
     .expect("proof artifact should exist");
     let proof = parse_proof_artifact(&encode_proof_artifact(&proof).expect("proof should encode"))
         .expect("proof should parse");
+    let explicit_auxiliary_inputs = ProveWitnessAuxiliaryInputs {
+        proof_values: vec![Felt::from_u64(131)],
+        group_values: vec![Ext3::from_u64s([141, 142, 143])],
+        ..ProveWitnessAuxiliaryInputs::default()
+    };
+    let explicit_unit_values = vec![
+        ProveUnitValues {
+            unit_index: 0,
+            trace_instance_index: 0,
+            unit_value_map: plan.run_plan.schedule.units[0].unit_value_map.clone(),
+            packed_values: vec![
+                Felt::from_u64(1901),
+                Felt::from_u64(2001),
+                Felt::from_u64(2002),
+                Felt::from_u64(2003),
+                Felt::from_u64(1902),
+            ],
+        },
+        ProveUnitValues {
+            unit_index: 1,
+            trace_instance_index: 0,
+            unit_value_map: plan.run_plan.schedule.units[1].unit_value_map.clone(),
+            packed_values: vec![
+                Felt::from_u64(2901),
+                Felt::from_u64(3001),
+                Felt::from_u64(3002),
+                Felt::from_u64(3003),
+                Felt::from_u64(2902),
+            ],
+        },
+    ];
+    let explicit_proof = lzvm_prover::build_witness_proof_artifact_for_all_units(
+        &lzvm_prover::WitnessAllUnitsProofRequest {
+            catalog: &catalog,
+            schedule: &plan.run_plan.schedule,
+            constant_tree_material_summaries: None,
+            execution_units: &plan.units,
+            gpu_streams: plan.run_plan.gpu.max_streams,
+            public_values: Some(&public_values),
+            outputs: &outputs,
+            auxiliary_inputs: &explicit_auxiliary_inputs,
+            unit_values: &explicit_unit_values,
+            evaluation_values_segment: None,
+            verify_outputs: false,
+            program_image_cache: None,
+            eth_block_input: None,
+            framed_guest_input: None,
+            challenge_values_segment: None,
+            include_contribution_segment: false,
+        },
+    )
+    .expect("explicit proof artifact should build")
+    .expect("explicit proof artifact should exist");
+    let explicit_proof = parse_proof_artifact(
+        &encode_proof_artifact(&explicit_proof).expect("explicit proof should encode"),
+    )
+    .expect("explicit proof should parse");
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 
     assert_eq!(proof.setup_hash, plan.run_plan.schedule.setup_hash);
@@ -4976,6 +5033,42 @@ fn builds_witness_proof_artifact_for_all_units_in_prover() {
     assert_eq!(
         unit_values.units[1].values,
         vec![901, 1001, 1002, 1003, 902]
+    );
+
+    let explicit_proof_values_segment = explicit_proof
+        .segments
+        .iter()
+        .find(|segment| segment.id == PCS_PROOF_VALUES_SEGMENT_ID)
+        .expect("explicit proof values segment should exist");
+    let explicit_proof_values = parse_pcs_proof_values_segment(&explicit_proof_values_segment.data)
+        .expect("explicit proof values should parse");
+    assert_eq!(explicit_proof_values.values, vec![[131, 0, 0]]);
+    let explicit_group_values_segment = explicit_proof
+        .segments
+        .iter()
+        .find(|segment| segment.id == GROUP_VALUES_SEGMENT_ID)
+        .expect("explicit group values segment should exist");
+    let explicit_group_values = parse_group_values_segment(&explicit_group_values_segment.data)
+        .expect("explicit group values should parse");
+    assert_eq!(explicit_group_values.values, vec![[141, 142, 143]]);
+    let explicit_unit_values_segment = explicit_proof
+        .segments
+        .iter()
+        .find(|segment| segment.id == UNIT_VALUES_SEGMENT_ID)
+        .expect("explicit unit values segment should exist");
+    let explicit_unit_values_segment =
+        parse_unit_values_segment(&explicit_unit_values_segment.data)
+            .expect("explicit unit values should parse");
+    assert_eq!(explicit_unit_values_segment.units.len(), 2);
+    assert_eq!(explicit_unit_values_segment.units[0].unit_index, 0);
+    assert_eq!(explicit_unit_values_segment.units[1].unit_index, 1);
+    assert_eq!(
+        explicit_unit_values_segment.units[0].values,
+        vec![1901, 2001, 2002, 2003, 1902]
+    );
+    assert_eq!(
+        explicit_unit_values_segment.units[1].values,
+        vec![2901, 3001, 3002, 3003, 2902]
     );
 }
 
