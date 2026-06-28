@@ -8775,6 +8775,11 @@ fn fri_opening_fold_verifier_avoids_extension_value_staging() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let source_path = crate_root.join("src/pcs_fri/fold.rs");
     let source = std::fs::read_to_string(&source_path).expect("FRI fold source should read");
+    let direct_body = function_body(
+        &source,
+        "pub fn verify_fri_fold",
+        "pub fn verify_fri_opening_folds",
+    );
     let body = function_body(
         &source,
         "pub fn verify_fri_opening_folds",
@@ -8782,11 +8787,26 @@ fn fri_opening_fold_verifier_avoids_extension_value_staging() {
     );
 
     assert!(
-        source.contains("fn convert_fold_value_columns")
+        source.contains("fn extension_fold_value_columns")
+            && source.contains("fn validate_fri_fold_shape")
+            && source.contains("fn evaluate_fri_fold_columns")
+            && source.contains("fn interpolate_fold_column_owned")
+            && !source.contains("fn interpolate_fold_values")
+            && !source.contains("values.to_vec()")
+            && direct_body
+                .find("validate_fri_fold_shape")
+                .expect("direct fold verifier should validate shape")
+                < direct_body
+                    .find("extension_fold_value_columns(values)")
+                    .expect("direct fold verifier should build columns")
+            && direct_body.contains("extension_fold_value_columns(values)")
+            && direct_body.contains("evaluate_fri_fold_columns(")
+            && source.contains("fn convert_fold_value_columns")
             && source.contains("fn verify_fri_fold_columns")
             && source.contains("fn interpolate_fold_columns")
             && body.contains("convert_fold_value_columns(&query.values)")
             && body.contains("verify_fri_fold_columns(")
+            && body.contains(".map_err(PcsFriOpeningFoldError::Fold)")
             && !body.contains("collect::<Result<Vec<_>, PcsFriOpeningFoldError>>()"),
         "FRI opening fold verification should convert serialized query values directly into interpolation columns"
     );

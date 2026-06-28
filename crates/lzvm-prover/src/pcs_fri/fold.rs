@@ -107,42 +107,11 @@ pub fn verify_fri_fold(
     index: u64,
     values: &[Ext3],
 ) -> Result<Ext3, PcsFriFoldError> {
-    if prev_bits <= current_bits {
-        return Err(PcsFriFoldError::InvalidLayerBits {
-            current_bits,
-            prev_bits,
-        });
-    }
-    if n_bits_ext < prev_bits {
-        return Err(PcsFriFoldError::InvalidExtensionBits {
-            n_bits_ext,
-            prev_bits,
-        });
-    }
-
-    let fold_bits = prev_bits - current_bits;
-    let expected_len = 1_usize
-        .checked_shl(fold_bits)
-        .ok_or(PcsFriFoldError::LengthOverflow)?;
-    if values.len() != expected_len {
-        return Err(PcsFriFoldError::ValueLengthMismatch {
-            expected: expected_len,
-            found: values.len(),
-        });
-    }
-
-    let coefficients = interpolate_fold_values(values, fold_bits as usize)?;
-    let shift = fold_shift(n_bits_ext, prev_bits);
-    let root = Felt::root_of_unity(prev_bits as usize)
-        .ok_or(PcsFriFoldError::UnsupportedRoot { bits: prev_bits })?;
-    let point = shift * root.pow(index);
-    let inverse = point
-        .inverse()
-        .ok_or(PcsFriFoldError::ZeroEvaluationPoint)?;
-    Ok(evaluate_extension_polynomial(
-        &coefficients,
-        scale_extension(challenge, inverse),
-    ))
+    let fold_bits = validate_fri_fold_shape(n_bits_ext, current_bits, prev_bits, values.len())?;
+    let (c0, c1, c2) = extension_fold_value_columns(values);
+    evaluate_fri_fold_columns(
+        n_bits_ext, prev_bits, fold_bits, challenge, index, c0, c1, c2,
+    )
 }
 
 pub fn verify_fri_opening_folds(
@@ -223,7 +192,8 @@ pub fn verify_fri_opening_folds(
                 c0,
                 c1,
                 c2,
-            )?;
+            )
+            .map_err(PcsFriOpeningFoldError::Fold)?;
 
             let target = if let Some(next_plan) = schedule.fri_layers.get(layer_index + 1) {
                 let next_output_size = domain_size(next_plan.output_bits)?;
@@ -262,6 +232,18 @@ pub fn verify_fri_opening_folds(
     Ok(true)
 }
 
+fn extension_fold_value_columns(values: &[Ext3]) -> (Vec<Felt>, Vec<Felt>, Vec<Felt>) {
+    let mut c0 = Vec::with_capacity(values.len());
+    let mut c1 = Vec::with_capacity(values.len());
+    let mut c2 = Vec::with_capacity(values.len());
+    for value in values {
+        c0.push(value.c0);
+        c1.push(value.c1);
+        c2.push(value.c2);
+    }
+    (c0, c1, c2)
+}
+
 fn convert_fold_value_columns(
     values: &[[u64; 3]],
 ) -> Result<(Vec<Felt>, Vec<Felt>, Vec<Felt>), PcsFriOpeningFoldError> {
@@ -285,72 +267,67 @@ fn verify_fri_fold_columns(
     c0: Vec<Felt>,
     c1: Vec<Felt>,
     c2: Vec<Felt>,
-) -> Result<Ext3, PcsFriOpeningFoldError> {
+) -> Result<Ext3, PcsFriFoldError> {
+    let fold_bits = validate_fri_fold_shape(n_bits_ext, current_bits, prev_bits, c0.len())?;
+    evaluate_fri_fold_columns(
+        n_bits_ext, prev_bits, fold_bits, challenge, index, c0, c1, c2,
+    )
+}
+
+fn validate_fri_fold_shape(
+    n_bits_ext: u32,
+    current_bits: u32,
+    prev_bits: u32,
+    value_len: usize,
+) -> Result<u32, PcsFriFoldError> {
     if prev_bits <= current_bits {
-        return Err(PcsFriOpeningFoldError::Fold(
-            PcsFriFoldError::InvalidLayerBits {
-                current_bits,
-                prev_bits,
-            },
-        ));
+        return Err(PcsFriFoldError::InvalidLayerBits {
+            current_bits,
+            prev_bits,
+        });
     }
     if n_bits_ext < prev_bits {
-        return Err(PcsFriOpeningFoldError::Fold(
-            PcsFriFoldError::InvalidExtensionBits {
-                n_bits_ext,
-                prev_bits,
-            },
-        ));
+        return Err(PcsFriFoldError::InvalidExtensionBits {
+            n_bits_ext,
+            prev_bits,
+        });
     }
 
     let fold_bits = prev_bits - current_bits;
     let expected_len = 1_usize
         .checked_shl(fold_bits)
-        .ok_or(PcsFriOpeningFoldError::Fold(
-            PcsFriFoldError::LengthOverflow,
-        ))?;
-    if c0.len() != expected_len {
-        return Err(PcsFriOpeningFoldError::Fold(
-            PcsFriFoldError::ValueLengthMismatch {
-                expected: expected_len,
-                found: c0.len(),
-            },
-        ));
+        .ok_or(PcsFriFoldError::LengthOverflow)?;
+    if value_len != expected_len {
+        return Err(PcsFriFoldError::ValueLengthMismatch {
+            expected: expected_len,
+            found: value_len,
+        });
     }
+    Ok(fold_bits)
+}
 
+fn evaluate_fri_fold_columns(
+    n_bits_ext: u32,
+    prev_bits: u32,
+    fold_bits: u32,
+    challenge: Ext3,
+    index: u64,
+    c0: Vec<Felt>,
+    c1: Vec<Felt>,
+    c2: Vec<Felt>,
+) -> Result<Ext3, PcsFriFoldError> {
     let coefficients = interpolate_fold_columns(c0, c1, c2, fold_bits as usize)?;
     let shift = fold_shift(n_bits_ext, prev_bits);
-    let root = Felt::root_of_unity(prev_bits as usize).ok_or(PcsFriOpeningFoldError::Fold(
-        PcsFriFoldError::UnsupportedRoot { bits: prev_bits },
-    ))?;
+    let root = Felt::root_of_unity(prev_bits as usize)
+        .ok_or(PcsFriFoldError::UnsupportedRoot { bits: prev_bits })?;
     let point = shift * root.pow(index);
-    let inverse = point.inverse().ok_or(PcsFriOpeningFoldError::Fold(
-        PcsFriFoldError::ZeroEvaluationPoint,
-    ))?;
+    let inverse = point
+        .inverse()
+        .ok_or(PcsFriFoldError::ZeroEvaluationPoint)?;
     Ok(evaluate_extension_polynomial(
         &coefficients,
         scale_extension(challenge, inverse),
     ))
-}
-
-fn interpolate_fold_values(values: &[Ext3], bits: usize) -> Result<Vec<Ext3>, PcsFriFoldError> {
-    let mut c0 = Vec::with_capacity(values.len());
-    let mut c1 = Vec::with_capacity(values.len());
-    let mut c2 = Vec::with_capacity(values.len());
-    for value in values {
-        c0.push(value.c0);
-        c1.push(value.c1);
-        c2.push(value.c2);
-    }
-    c0 = interpolate_fold_column(&c0, bits)?;
-    c1 = interpolate_fold_column(&c1, bits)?;
-    c2 = interpolate_fold_column(&c2, bits)?;
-    Ok(c0
-        .into_iter()
-        .zip(c1)
-        .zip(c2)
-        .map(|((c0, c1), c2)| Ext3::new(c0, c1, c2))
-        .collect())
 }
 
 fn interpolate_fold_columns(
@@ -358,10 +335,10 @@ fn interpolate_fold_columns(
     c1: Vec<Felt>,
     c2: Vec<Felt>,
     bits: usize,
-) -> Result<Vec<Ext3>, PcsFriOpeningFoldError> {
-    let c0 = interpolate_fold_column(&c0, bits).map_err(PcsFriOpeningFoldError::Fold)?;
-    let c1 = interpolate_fold_column(&c1, bits).map_err(PcsFriOpeningFoldError::Fold)?;
-    let c2 = interpolate_fold_column(&c2, bits).map_err(PcsFriOpeningFoldError::Fold)?;
+) -> Result<Vec<Ext3>, PcsFriFoldError> {
+    let c0 = interpolate_fold_column_owned(c0, bits)?;
+    let c1 = interpolate_fold_column_owned(c1, bits)?;
+    let c2 = interpolate_fold_column_owned(c2, bits)?;
     Ok(c0
         .into_iter()
         .zip(c1)
@@ -371,7 +348,10 @@ fn interpolate_fold_columns(
 }
 
 #[cfg(feature = "cuda")]
-fn interpolate_fold_column(values: &[Felt], bits: usize) -> Result<Vec<Felt>, PcsFriFoldError> {
+fn interpolate_fold_column_owned(
+    values: Vec<Felt>,
+    bits: usize,
+) -> Result<Vec<Felt>, PcsFriFoldError> {
     let raw = values
         .iter()
         .map(|value| value.to_u64())
@@ -385,8 +365,10 @@ fn interpolate_fold_column(values: &[Felt], bits: usize) -> Result<Vec<Felt>, Pc
 }
 
 #[cfg(not(feature = "cuda"))]
-fn interpolate_fold_column(values: &[Felt], bits: usize) -> Result<Vec<Felt>, PcsFriFoldError> {
-    let mut values = values.to_vec();
+fn interpolate_fold_column_owned(
+    mut values: Vec<Felt>,
+    bits: usize,
+) -> Result<Vec<Felt>, PcsFriFoldError> {
     intt_in_place(&mut values, bits).map_err(PcsFriFoldError::Domain)?;
     Ok(values)
 }
