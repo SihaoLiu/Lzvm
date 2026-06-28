@@ -9393,8 +9393,10 @@ fn all_units_transcript_proof_borrows_auxiliary_vectors() {
         source.contains("use std::borrow::Cow")
             && inner_body.contains("proof_values: proof_values.as_ref()")
             && inner_body.contains("group_values: group_values.as_ref()")
+            && inner_body.contains("unit_values: proof_unit_values.as_ref()")
+            && inner_body.contains("proof_unit_values\n                    .as_ref()")
             && inner_body.contains("Some(proof_values.as_ref())"),
-        "all-units proof construction should pass borrowed global proof and group values through the artifact builders"
+        "all-units proof construction should pass borrowed global proof, group, and unit values through the artifact builders"
     );
     let global_proof_values_body = function_body(
         &source,
@@ -9421,6 +9423,20 @@ fn all_units_transcript_proof_borrows_auxiliary_vectors() {
             && !global_group_values_body.contains("explicit_values.to_vec()")
             && !global_group_values_body.contains("ToOwned::to_owned"),
         "global group value collection should borrow explicit or output-derived values"
+    );
+    let proof_unit_values_body = function_body(
+        &source,
+        "fn collect_proof_unit_values",
+        "fn validate_explicit_unit_values_trace_identity_coverage",
+    );
+    assert!(
+        proof_unit_values_body.contains("Result<Cow<'a, [ProveUnitValues]>")
+            && proof_unit_values_body
+                .contains("validate_explicit_unit_values_trace_identity_coverage")
+            && proof_unit_values_body.contains("Ok(Cow::Borrowed(explicit_values))")
+            && proof_unit_values_body.contains("Ok(Cow::Owned(values))")
+            && !proof_unit_values_body.contains("explicit_values.to_vec()"),
+        "proof unit value collection should borrow explicit values after validating trace identity coverage"
     );
 
     let fri_source_path = crate_root.join("src/prove_fri_opening.rs");

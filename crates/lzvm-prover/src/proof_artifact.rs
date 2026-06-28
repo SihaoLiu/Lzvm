@@ -1044,7 +1044,7 @@ fn build_witness_proof_artifact_for_all_units_inner(
                 proof_values: proof_values.as_ref(),
                 group_values: group_values.as_ref(),
                 evaluation_values: &evaluation_values,
-                unit_values: &proof_unit_values,
+                unit_values: proof_unit_values.as_ref(),
             },
             timing.as_deref_mut(),
         )?
@@ -1057,7 +1057,7 @@ fn build_witness_proof_artifact_for_all_units_inner(
             ProofArtifactInputs {
                 proof_values: proof_values.as_ref(),
                 group_values: group_values.as_ref(),
-                unit_values: &proof_unit_values,
+                unit_values: proof_unit_values.as_ref(),
                 binding_segments: binding_segments_slice,
             },
             request.constant_tree_material_summaries,
@@ -1071,6 +1071,7 @@ fn build_witness_proof_artifact_for_all_units_inner(
             .map(|output| {
                 let commitments = output.commitments();
                 let packed_unit_values = proof_unit_values
+                    .as_ref()
                     .packed_values_for_identity(
                         commitments.unit_index(),
                         commitments.trace_instance_index(),
@@ -2000,11 +2001,11 @@ fn collect_all_units_evaluation_values(
         .collect()
 }
 
-fn collect_proof_unit_values(
+fn collect_proof_unit_values<'a>(
     schedule: &ProveSchedule,
     outputs: &[ProveWitnessTraceCommitments],
-    explicit_values: &[ProveUnitValues],
-) -> Result<Vec<ProveUnitValues>, String> {
+    explicit_values: &'a [ProveUnitValues],
+) -> Result<Cow<'a, [ProveUnitValues]>, String> {
     if !explicit_values.is_empty() {
         let mut required_identities = Vec::new();
         for output in outputs {
@@ -2021,7 +2022,7 @@ fn collect_proof_unit_values(
             required_identities,
             explicit_values,
         )?;
-        return Ok(explicit_values.to_vec());
+        return Ok(Cow::Borrowed(explicit_values));
     }
 
     let mut values = Vec::with_capacity(outputs.len());
@@ -2041,7 +2042,7 @@ fn collect_proof_unit_values(
             });
         }
     }
-    Ok(values)
+    Ok(Cow::Owned(values))
 }
 
 fn validate_explicit_unit_values_trace_identity_coverage(
