@@ -5063,6 +5063,30 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "Lean proof finish timing theorem {stem} should expose a combined core_and_sound wrapper"
         );
     }
+    let runtime_sound_stems = theorem_stems_with_suffix(
+        &runtime_performance_source,
+        "runtime_performance_observation_",
+        "_sound",
+    );
+    let runtime_core_stems = theorem_stems_with_suffix(
+        &runtime_performance_source,
+        "runtime_performance_observation_",
+        "_verifier_core_contract",
+    );
+    let runtime_combined_stems = theorem_stems_with_suffix(
+        &runtime_performance_source,
+        "runtime_performance_observation_",
+        "_core_and_sound",
+    );
+    for stem in runtime_sound_stems.intersection(&runtime_core_stems) {
+        if *stem == "runtime_performance_observation_projected_metadata_acceptance" {
+            continue;
+        }
+        assert!(
+            runtime_combined_stems.contains(stem),
+            "Lean runtime performance theorem {stem} should expose a combined core_and_sound wrapper"
+        );
+    }
     lean_binding::assert_theorem_body_contains(
         &gpu_runtime_source,
         "gpu_setup_checked_acceptance_verifier_core_contract",
