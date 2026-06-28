@@ -69,6 +69,46 @@ theorem guest_pc_trace_source_retention_byte_counts_acceptance_verifier_core_con
       proof
       observed
 
+theorem guest_pc_trace_source_retention_byte_counts_acceptance_core_and_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : GuestPcTraceTimingSummary)
+    (retainedBytes rejectedBytes limitBytes : Nat) :
+    forall publicInput proof,
+      GuestPcTraceTimingObservedAcceptance
+        system
+        (some
+          { summary with
+            guestStageSourceRetentionRetainedByteCount := retainedBytes
+            guestStageSourceRetentionRejectedByteCount := rejectedBytes
+            guestStageSourceRetentionLimitByteCount := limitBytes })
+        publicInput
+        proof ->
+        RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof observed
+  have core :=
+    guest_pc_trace_source_retention_byte_counts_acceptance_verifier_core_contract
+      assumptions
+      summary
+      retainedBytes
+      rejectedBytes
+      limitBytes
+      publicInput
+      proof
+      observed
+  have sound :=
+    guest_pc_trace_source_retention_byte_counts_acceptance_sound
+      assumptions
+      summary
+      retainedBytes
+      rejectedBytes
+      limitBytes
+      publicInput
+      proof
+      observed
+  exact And.intro core sound
+
 theorem guest_pc_trace_source_retention_counts_acceptance_sound
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
@@ -125,6 +165,46 @@ theorem guest_pc_trace_source_retention_counts_acceptance_verifier_core_contract
       publicInput
       proof
       observed
+
+theorem guest_pc_trace_source_retention_counts_acceptance_core_and_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : GuestPcTraceTimingSummary)
+    (attemptCount retainedCount rejectedCount : Nat) :
+    forall publicInput proof,
+      GuestPcTraceTimingObservedAcceptance
+        system
+        (some
+          { summary with
+            guestStageSourceRetentionAttemptCount := attemptCount
+            guestStageSourceRetentionRetainedCount := retainedCount
+            guestStageSourceRetentionRejectedCount := rejectedCount })
+        publicInput
+        proof ->
+        RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof observed
+  have core :=
+    guest_pc_trace_source_retention_counts_acceptance_verifier_core_contract
+      assumptions
+      summary
+      attemptCount
+      retainedCount
+      rejectedCount
+      publicInput
+      proof
+      observed
+  have sound :=
+    guest_pc_trace_source_retention_counts_acceptance_sound
+      assumptions
+      summary
+      attemptCount
+      retainedCount
+      rejectedCount
+      publicInput
+      proof
+      observed
+  exact And.intro core sound
 
 theorem guest_pc_trace_descriptor_buffer_retention_byte_counts_acceptance_sound
     {system : VerifierModel}
@@ -183,6 +263,46 @@ theorem guest_pc_trace_descriptor_buffer_retention_byte_counts_acceptance_verifi
       proof
       observed
 
+theorem guest_pc_trace_descriptor_buffer_retention_byte_counts_acceptance_core_and_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : GuestPcTraceTimingSummary)
+    (retainedBytes rejectedBytes limitBytes : Nat) :
+    forall publicInput proof,
+      GuestPcTraceTimingObservedAcceptance
+        system
+        (some
+          { summary with
+            guestDescriptorBufferRetentionRetainedByteCount := retainedBytes
+            guestDescriptorBufferRetentionRejectedByteCount := rejectedBytes
+            guestDescriptorBufferRetentionLimitByteCount := limitBytes })
+        publicInput
+        proof ->
+        RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof observed
+  have core :=
+    guest_pc_trace_descriptor_buffer_retention_byte_counts_acceptance_verifier_core_contract
+      assumptions
+      summary
+      retainedBytes
+      rejectedBytes
+      limitBytes
+      publicInput
+      proof
+      observed
+  have sound :=
+    guest_pc_trace_descriptor_buffer_retention_byte_counts_acceptance_sound
+      assumptions
+      summary
+      retainedBytes
+      rejectedBytes
+      limitBytes
+      publicInput
+      proof
+      observed
+  exact And.intro core sound
+
 theorem guest_pc_trace_descriptor_buffer_retention_counts_acceptance_sound
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
@@ -239,6 +359,46 @@ theorem guest_pc_trace_descriptor_buffer_retention_counts_acceptance_verifier_co
       publicInput
       proof
       observed
+
+theorem guest_pc_trace_descriptor_buffer_retention_counts_acceptance_core_and_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : GuestPcTraceTimingSummary)
+    (attemptCount retainedCount rejectedCount : Nat) :
+    forall publicInput proof,
+      GuestPcTraceTimingObservedAcceptance
+        system
+        (some
+          { summary with
+            guestDescriptorBufferRetentionAttemptCount := attemptCount
+            guestDescriptorBufferRetentionRetainedCount := retainedCount
+            guestDescriptorBufferRetentionRejectedCount := rejectedCount })
+        publicInput
+        proof ->
+        RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof observed
+  have core :=
+    guest_pc_trace_descriptor_buffer_retention_counts_acceptance_verifier_core_contract
+      assumptions
+      summary
+      attemptCount
+      retainedCount
+      rejectedCount
+      publicInput
+      proof
+      observed
+  have sound :=
+    guest_pc_trace_descriptor_buffer_retention_counts_acceptance_sound
+      assumptions
+      summary
+      attemptCount
+      retainedCount
+      rejectedCount
+      publicInput
+      proof
+      observed
+  exact And.intro core sound
 
 theorem guest_pc_trace_leaf_output_cache_counts_acceptance_sound
     {system : VerifierModel}
