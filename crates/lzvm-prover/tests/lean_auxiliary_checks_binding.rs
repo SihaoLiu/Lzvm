@@ -1385,6 +1385,25 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "sound_witness_implies_verifier_core_contract",
         ],
     );
+    lean_binding::assert_theorem_body_contains(
+        &auxiliary_projected_source,
+        "runtime_performance_observation_auxiliary_contracts",
+        &[
+            "runtime_performance_observation_acceptance_core_and_sound",
+            "runtime_performance_observation_auxiliary_projected_core_contracts",
+            "coreAndSound.right",
+            "coreAndSound.left",
+        ],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &auxiliary_projected_source,
+        "runtime_performance_observation_auxiliary_contracts",
+        &[
+            "runtime_performance_observation_acceptance_sound",
+            "runtime_performance_observation_acceptance_verifier_core_contract",
+            "sound_witness_implies_verifier_core_contract",
+        ],
+    );
     lean_binding::assert_theorem_declarations(
         &gpu_runtime_source,
         &[
