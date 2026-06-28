@@ -67,6 +67,32 @@ theorem source_lookup_checked_acceptance_verifier_core_contract
       proof
       checked
 
+theorem source_lookup_checked_acceptance_auxiliary_evidence_core_and_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (auxiliary : AuxiliaryValidation system) :
+    forall publicInput proof,
+      SourceLookupCheckedAcceptance system auxiliary publicInput proof ->
+        SourceLookupAuxiliaryEvidence system auxiliary publicInput proof
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof checked
+  have sound :=
+    source_lookup_auxiliary_acceptance_sound
+      assumptions
+      auxiliary
+      publicInput
+      proof
+      checked
+  have core :=
+    source_lookup_checked_acceptance_verifier_core_contract
+      assumptions
+      auxiliary
+      publicInput
+      proof
+      checked
+  exact And.intro sound.left (And.intro core sound.right)
+
 theorem witness_leaf_digest_checked_acceptance_projects_verifier_acceptance
     {system : VerifierModel}
     (validation : WitnessLeafDigestValidation system) :
@@ -149,6 +175,32 @@ theorem witness_leaf_digest_checked_acceptance_verifier_core_contract
       proof
       checked
 
+theorem witness_leaf_digest_checked_acceptance_evidence_core_and_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : WitnessLeafDigestValidation system) :
+    forall publicInput proof,
+      WitnessLeafDigestCheckedAcceptance system validation publicInput proof ->
+        WitnessLeafDigestEvidence system validation publicInput proof
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof checked
+  have sound :=
+    witness_leaf_digest_acceptance_sound
+      assumptions
+      validation
+      publicInput
+      proof
+      checked
+  have core :=
+    witness_leaf_digest_checked_acceptance_verifier_core_contract
+      assumptions
+      validation
+      publicInput
+      proof
+      checked
+  exact And.intro sound.left (And.intro core sound.right)
+
 theorem gpu_canonical_leaf_checked_acceptance_projects_verifier_acceptance
     {system : VerifierModel}
     (validation : GpuCanonicalLeafValidation system) :
@@ -220,6 +272,32 @@ theorem gpu_canonical_leaf_checked_acceptance_verifier_core_contract
       publicInput
       proof
       checked
+
+theorem gpu_canonical_leaf_checked_acceptance_leaf_bytes_core_and_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : GpuCanonicalLeafValidation system) :
+    forall publicInput proof,
+      GpuCanonicalLeafCheckedAcceptance system validation publicInput proof ->
+        validation.leafValidation.canonicalExtendedLeafBytes publicInput proof
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof checked
+  have sound :=
+    gpu_canonical_leaf_checked_acceptance_sound
+      assumptions
+      validation
+      publicInput
+      proof
+      checked
+  have core :=
+    gpu_canonical_leaf_checked_acceptance_verifier_core_contract
+      assumptions
+      validation
+      publicInput
+      proof
+      checked
+  exact And.intro sound.left (And.intro core sound.right)
 
 theorem gpu_leaf_output_buffer_reuse_implies_canonical_leaf_bytes
     {system : VerifierModel}
@@ -321,6 +399,32 @@ theorem gpu_leaf_output_buffer_reuse_checked_acceptance_verifier_core_contract
       proof
       checked
 
+theorem gpu_leaf_output_buffer_reuse_checked_acceptance_leaf_bytes_core_and_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : GpuLeafOutputBufferReuseValidation system) :
+    forall publicInput proof,
+      GpuLeafOutputBufferReuseCheckedAcceptance system validation publicInput proof ->
+        validation.leafValidation.canonicalExtendedLeafBytes publicInput proof
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof checked
+  have sound :=
+    gpu_leaf_output_buffer_reuse_checked_acceptance_sound
+      assumptions
+      validation
+      publicInput
+      proof
+      checked
+  have core :=
+    gpu_leaf_output_buffer_reuse_checked_acceptance_verifier_core_contract
+      assumptions
+      validation
+      publicInput
+      proof
+      checked
+  exact And.intro sound.left (And.intro core sound.right)
+
 theorem gpu_coset_extension_matches_host_implies_leaf_bytes
     {system : VerifierModel}
     (validation : GpuCosetExtensionValidation system) :
@@ -406,6 +510,32 @@ theorem gpu_coset_extension_checked_acceptance_verifier_core_contract
       publicInput
       proof
       checked
+
+theorem gpu_coset_extension_checked_acceptance_leaf_bytes_core_and_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : GpuCosetExtensionValidation system) :
+    forall publicInput proof,
+      GpuCosetExtensionCheckedAcceptance system validation publicInput proof ->
+        validation.leafValidation.canonicalExtendedLeafBytes publicInput proof
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof checked
+  have sound :=
+    gpu_coset_extension_checked_acceptance_sound
+      assumptions
+      validation
+      publicInput
+      proof
+      checked
+  have core :=
+    gpu_coset_extension_checked_acceptance_verifier_core_contract
+      assumptions
+      validation
+      publicInput
+      proof
+      checked
+  exact And.intro sound.left (And.intro core sound.right)
 
 theorem gpu_fri_interpolation_matches_host_implies_fri_folds_valid
     {system : VerifierModel}
@@ -493,6 +623,32 @@ theorem gpu_fri_fold_interpolation_checked_acceptance_verifier_core_contract
       proof
       checked
 
+theorem gpu_fri_fold_interpolation_checked_acceptance_fri_folds_core_and_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : GpuFriFoldInterpolationValidation system) :
+    forall publicInput proof,
+      GpuFriFoldInterpolationCheckedAcceptance system validation publicInput proof ->
+        validation.friFoldsValid publicInput proof
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof checked
+  have sound :=
+    gpu_fri_fold_interpolation_checked_acceptance_sound
+      assumptions
+      validation
+      publicInput
+      proof
+      checked
+  have core :=
+    gpu_fri_fold_interpolation_checked_acceptance_verifier_core_contract
+      assumptions
+      validation
+      publicInput
+      proof
+      checked
+  exact And.intro sound.left (And.intro core sound.right)
+
 theorem gpu_merkle_digest_prefix_batch_matches_single_paths_implies_lower_prefixes_bound
     {system : VerifierModel}
     (validation : GpuMerkleDigestPrefixBatchValidation system) :
@@ -578,6 +734,32 @@ theorem gpu_merkle_digest_prefix_batch_checked_acceptance_verifier_core_contract
       publicInput
       proof
       checked
+
+theorem gpu_merkle_digest_prefix_batch_checked_acceptance_lower_prefixes_core_and_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : GpuMerkleDigestPrefixBatchValidation system) :
+    forall publicInput proof,
+      GpuMerkleDigestPrefixBatchCheckedAcceptance system validation publicInput proof ->
+        validation.lowerPrefixesBound publicInput proof
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof checked
+  have sound :=
+    gpu_merkle_digest_prefix_batch_checked_acceptance_sound
+      assumptions
+      validation
+      publicInput
+      proof
+      checked
+  have core :=
+    gpu_merkle_digest_prefix_batch_checked_acceptance_verifier_core_contract
+      assumptions
+      validation
+      publicInput
+      proof
+      checked
+  exact And.intro sound.left (And.intro core sound.right)
 
 theorem gpu_setup_cache_reuse_sound
     (validation : GpuSetupCacheValidation)
