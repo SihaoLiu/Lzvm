@@ -19,9 +19,17 @@ pub fn build_fri_polynomial(
         .ok_or(FriPolynomialError::MissingExpression { expression_id })?;
     let ops = entry_ops(entry, program)?;
     let args = entry_args(entry, program)?;
+    let tmp1_len = to_usize(entry.temp1_count)?;
+    let tmp3_len = to_usize(entry.temp3_count)?.saturating_mul(3);
+    let mut tmp1 = vec![Felt::ZERO; tmp1_len];
+    let mut tmp3 = vec![Felt::ZERO; tmp3_len];
     let mut out = Vec::with_capacity(inputs.domain_size);
     for row in 0..inputs.domain_size {
-        out.push(evaluate_row(row, entry, ops, args, program, inputs)?);
+        tmp1.fill(Felt::ZERO);
+        tmp3.fill(Felt::ZERO);
+        out.push(evaluate_row(
+            row, entry, ops, args, program, inputs, &mut tmp1, &mut tmp3,
+        )?);
     }
     Ok(out)
 }
@@ -80,9 +88,9 @@ fn evaluate_row(
     args: &[u16],
     program: &ExpressionProgram,
     inputs: FriPolynomialInputs<'_>,
+    tmp1: &mut [Felt],
+    tmp3: &mut [Felt],
 ) -> Result<Ext3, FriPolynomialError> {
-    let mut tmp1 = vec![Felt::ZERO; to_usize(entry.temp1_count)?];
-    let mut tmp3 = vec![Felt::ZERO; to_usize(entry.temp3_count)?.saturating_mul(3)];
     let layout = BufferLayout::new(inputs);
     let mut cursor = 0usize;
 
@@ -93,34 +101,34 @@ fn evaluate_row(
             0 => {
                 let value = apply_base_op(
                     op_args.kind,
-                    read_base(op_args.src0, row, &tmp1, &tmp3, program, inputs, layout)?,
-                    read_base(op_args.src1, row, &tmp1, &tmp3, program, inputs, layout)?,
+                    read_base(op_args.src0, row, tmp1, tmp3, program, inputs, layout)?,
+                    read_base(op_args.src1, row, tmp1, tmp3, program, inputs, layout)?,
                 )?;
-                write_base(&mut tmp1, op_args.destination_offset, value)?;
+                write_base(tmp1, op_args.destination_offset, value)?;
             }
             1 => {
                 let value = apply_ext_op(
                     op_args.kind,
-                    read_ext(op_args.src0, row, &tmp1, &tmp3, program, inputs, layout)?,
+                    read_ext(op_args.src0, row, tmp1, tmp3, program, inputs, layout)?,
                     scalar_ext(read_base(
                         op_args.src1,
                         row,
-                        &tmp1,
-                        &tmp3,
+                        tmp1,
+                        tmp3,
                         program,
                         inputs,
                         layout,
                     )?),
                 )?;
-                write_ext(&mut tmp3, op_args.destination_offset, value)?;
+                write_ext(tmp3, op_args.destination_offset, value)?;
             }
             2 => {
                 let value = apply_ext_op(
                     op_args.kind,
-                    read_ext(op_args.src0, row, &tmp1, &tmp3, program, inputs, layout)?,
-                    read_ext(op_args.src1, row, &tmp1, &tmp3, program, inputs, layout)?,
+                    read_ext(op_args.src0, row, tmp1, tmp3, program, inputs, layout)?,
+                    read_ext(op_args.src1, row, tmp1, tmp3, program, inputs, layout)?,
                 )?;
-                write_ext(&mut tmp3, op_args.destination_offset, value)?;
+                write_ext(tmp3, op_args.destination_offset, value)?;
             }
             shape => return Err(FriPolynomialError::UnsupportedOperationShape { shape }),
         }
@@ -134,7 +142,7 @@ fn evaluate_row(
         });
     }
 
-    read_destination(entry, &tmp1, &tmp3)
+    read_destination(entry, tmp1, tmp3)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

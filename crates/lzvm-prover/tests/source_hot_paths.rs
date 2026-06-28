@@ -10536,6 +10536,32 @@ fn fri_polynomial_evaluator_reuses_row_buffer_layout() {
 }
 
 #[test]
+fn fri_polynomial_evaluator_reuses_row_temporaries() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let source_path = crate_root.join("src/fri_polynomial/eval.rs");
+    let source =
+        std::fs::read_to_string(&source_path).expect("FRI polynomial eval source should read");
+
+    let build_body = function_body(&source, "pub fn build_fri_polynomial", "fn validate_inputs");
+    let evaluate_body = function_body(&source, "fn evaluate_row", "#[derive(Debug, Clone, Copy");
+
+    assert!(
+        build_body.contains("let tmp1_len = to_usize(entry.temp1_count)?")
+            && build_body.contains("let tmp3_len = to_usize(entry.temp3_count)?.saturating_mul(3)")
+            && build_body.contains("let mut tmp1 = vec![Felt::ZERO; tmp1_len]")
+            && build_body.contains("let mut tmp3 = vec![Felt::ZERO; tmp3_len]")
+            && build_body.contains("tmp1.fill(Felt::ZERO)")
+            && build_body.contains("tmp3.fill(Felt::ZERO)")
+            && build_body.contains("&mut tmp1")
+            && build_body.contains("&mut tmp3")
+            && evaluate_body.contains("tmp1: &mut [Felt]")
+            && evaluate_body.contains("tmp3: &mut [Felt]")
+            && !evaluate_body.contains("vec![Felt::ZERO"),
+        "FRI polynomial row evaluation should reuse caller-owned row temporaries"
+    );
+}
+
+#[test]
 fn witness_regular_constraints_pass_only_row_major_fixed_device_buffer() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let source_path = crate_root.join("src/witness_execution.rs");
