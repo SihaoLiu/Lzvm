@@ -110,6 +110,20 @@ pub fn verify_fri_fold(
     values: &[Ext3],
 ) -> Result<Ext3, PcsFriFoldError> {
     let fold_bits = validate_fri_fold_shape(n_bits_ext, current_bits, prev_bits, values.len())?;
+    evaluate_fri_fold_values_with_bits(n_bits_ext, prev_bits, fold_bits, challenge, index, values)
+}
+
+pub(super) fn evaluate_fri_fold_values_with_bits(
+    n_bits_ext: u32,
+    prev_bits: u32,
+    fold_bits: u32,
+    challenge: Ext3,
+    index: u64,
+    values: &[Ext3],
+) -> Result<Ext3, PcsFriFoldError> {
+    if let Some(expected_len) = 1_usize.checked_shl(fold_bits) {
+        debug_assert_eq!(values.len(), expected_len);
+    }
     if fold_bits == 1 {
         return evaluate_binary_fri_fold_values(n_bits_ext, prev_bits, challenge, index, values);
     }
@@ -316,7 +330,7 @@ fn verify_fri_fold_columns(
     )
 }
 
-fn validate_fri_fold_shape(
+pub(super) fn validate_fri_fold_shape(
     n_bits_ext: u32,
     current_bits: u32,
     prev_bits: u32,

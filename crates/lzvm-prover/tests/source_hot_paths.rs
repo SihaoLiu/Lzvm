@@ -8771,6 +8771,34 @@ fn fri_opening_query_assembly_reuses_duplicate_rows() {
 }
 
 #[test]
+fn fri_opening_build_validates_fold_shape_once_per_layer() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let source_path = crate_root.join("src/pcs_fri/build.rs");
+    let source = std::fs::read_to_string(&source_path).expect("FRI build source should read");
+    let helper_body = function_body(
+        &source,
+        "fn fold_fri_layer_values",
+        "fn group_fri_layer_values",
+    );
+
+    assert!(
+        source.matches("fold_fri_layer_values(").count() == 3
+            && source.contains("use super::fold::{")
+            && source.contains("validate_fri_fold_shape")
+            && source.contains("evaluate_fri_fold_values_with_bits")
+            && helper_body
+                .find("validate_fri_fold_shape(")
+                .expect("FRI build should validate fold shape once")
+                < helper_body
+                    .find("for (row_index, values) in grouped_values.iter().enumerate()")
+                    .expect("FRI build should fold each row after validation")
+            && helper_body.contains("evaluate_fri_fold_values_with_bits(")
+            && !helper_body.contains("verify_fri_fold("),
+        "FRI opening build should validate layer fold shape once before folding rows"
+    );
+}
+
+#[test]
 fn fri_opening_fold_verifier_avoids_extension_value_staging() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let source_path = crate_root.join("src/pcs_fri/fold.rs");
@@ -8794,6 +8822,7 @@ fn fri_opening_fold_verifier_avoids_extension_value_staging() {
     assert!(
         source.contains("fn extension_fold_value_columns")
             && source.contains("fn validate_fri_fold_shape")
+            && source.contains("fn evaluate_fri_fold_values_with_bits")
             && source.contains("fn evaluate_fri_fold_columns")
             && source.contains("fn evaluate_binary_fri_fold_values")
             && source.contains("fn evaluate_binary_fold_columns")

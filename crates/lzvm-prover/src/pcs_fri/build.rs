@@ -7,7 +7,7 @@ use lzvm_artifacts::pcs_fri_segment::{
 use lzvm_field::Ext3;
 
 use super::errors::{PcsFriOpeningBuildError, PcsFriTranscriptCommitmentError};
-use super::fold::verify_fri_fold;
+use super::fold::{evaluate_fri_fold_values_with_bits, validate_fri_fold_shape};
 use super::merkle;
 use super::requests::{
     PcsFriOpeningBuildRequest, PcsFriOpeningBuildTiming, PcsFriTranscriptCommitmentRequest,
@@ -128,22 +128,15 @@ pub fn build_pcs_fri_transcript_commitments_with_timing(
             timing.as_deref_mut(),
             |timing, duration| timing.add_transcript_fold_work(duration),
             || {
-                let mut next = Vec::with_capacity(output_size);
-                for (row_index, values) in grouped_values.iter().enumerate() {
-                    next.push(
-                        verify_fri_fold(
-                            schedule.extended_domain_bits,
-                            layer.output_bits,
-                            layer.input_bits,
-                            challenge,
-                            u64::try_from(row_index)
-                                .map_err(|_| PcsFriOpeningBuildError::LengthOverflow)?,
-                            values,
-                        )
-                        .map_err(PcsFriOpeningBuildError::from)?,
-                    );
-                }
-                Ok::<Vec<Ext3>, PcsFriTranscriptCommitmentError>(next)
+                fold_fri_layer_values(
+                    schedule,
+                    layer.output_bits,
+                    layer.input_bits,
+                    folding_factor,
+                    challenge,
+                    &grouped_values,
+                )
+                .map_err(PcsFriTranscriptCommitmentError::from)
             },
         )?;
         layer_materials.push(PcsFriTranscriptLayerMaterial {
@@ -326,19 +319,14 @@ pub fn build_pcs_fri_opening_unit_with_timing(
             timing.as_deref_mut(),
             |timing, duration| timing.add_fold_work(duration),
             || {
-                let mut next = Vec::with_capacity(output_size);
-                for (row_index, values) in grouped_values.iter().enumerate() {
-                    next.push(verify_fri_fold(
-                        schedule.extended_domain_bits,
-                        layer.output_bits,
-                        layer.input_bits,
-                        challenge,
-                        u64::try_from(row_index)
-                            .map_err(|_| PcsFriOpeningBuildError::LengthOverflow)?,
-                        values,
-                    )?);
-                }
-                Ok::<Vec<Ext3>, PcsFriOpeningBuildError>(next)
+                fold_fri_layer_values(
+                    schedule,
+                    layer.output_bits,
+                    layer.input_bits,
+                    folding_factor,
+                    challenge,
+                    &grouped_values,
+                )
             },
         )?;
         current = next;
@@ -565,6 +553,34 @@ fn build_fri_opening_queries(
         cached_query_positions.insert(row_index_usize, query_position);
     }
     Ok(queries)
+}
+
+fn fold_fri_layer_values(
+    schedule: &ProveUnitSchedule,
+    output_bits: u32,
+    input_bits: u32,
+    folding_factor: usize,
+    challenge: Ext3,
+    grouped_values: &[Vec<Ext3>],
+) -> Result<Vec<Ext3>, PcsFriOpeningBuildError> {
+    let fold_bits = validate_fri_fold_shape(
+        schedule.extended_domain_bits,
+        output_bits,
+        input_bits,
+        folding_factor,
+    )?;
+    let mut next = Vec::with_capacity(grouped_values.len());
+    for (row_index, values) in grouped_values.iter().enumerate() {
+        next.push(evaluate_fri_fold_values_with_bits(
+            schedule.extended_domain_bits,
+            input_bits,
+            fold_bits,
+            challenge,
+            u64::try_from(row_index).map_err(|_| PcsFriOpeningBuildError::LengthOverflow)?,
+            values,
+        )?);
+    }
+    Ok(next)
 }
 
 fn group_fri_layer_values(

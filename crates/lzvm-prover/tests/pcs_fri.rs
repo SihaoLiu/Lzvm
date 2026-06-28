@@ -19,9 +19,10 @@ use lzvm_prover::pcs_fri::{
     validate_optional_pcs_fri_opening_proof_segments, validate_pcs_fri_opening_folds_from_units,
     validate_pcs_fri_opening_segments, verify_fri_fold, verify_fri_last_level_root,
     verify_fri_opening_folds, verify_fri_query_path, LoadPcsFriOpeningSegmentError,
-    LoadPcsFriOpeningUnitError, PcsFriFoldError, PcsFriMerkleError, PcsFriOpeningBuildRequest,
-    PcsFriOpeningBuildTiming, PcsFriOpeningFoldError, PcsFriOpeningFoldRequest,
-    PcsFriTranscriptCommitmentRequest, ValidateOptionalPcsFriOpeningProofSegmentsError,
+    LoadPcsFriOpeningUnitError, PcsFriFoldError, PcsFriMerkleError, PcsFriOpeningBuildError,
+    PcsFriOpeningBuildRequest, PcsFriOpeningBuildTiming, PcsFriOpeningFoldError,
+    PcsFriOpeningFoldRequest, PcsFriTranscriptCommitmentRequest,
+    ValidateOptionalPcsFriOpeningProofSegmentsError,
     ValidateOptionalPcsFriOpeningProofSegmentsRequest, ValidatePcsFriOpeningFoldUnitsError,
     ValidatePcsFriOpeningSegmentsError,
 };
@@ -146,6 +147,42 @@ fn opening_fold_binary_path_preserves_invalid_extension_bits_error_shape() {
     assert_eq!(
         error,
         PcsFriOpeningFoldError::Fold(PcsFriFoldError::InvalidExtensionBits {
+            n_bits_ext: 1,
+            prev_bits: 2,
+        })
+    );
+}
+
+#[test]
+fn opening_build_preserves_fold_invalid_extension_bits_error_shape() {
+    let mut schedule = sample_validation_unit();
+    schedule.query_count = 1;
+    schedule.extended_domain_bits = 1;
+    schedule.fri_layers = vec![PcsFriLayer {
+        input_bits: 2,
+        output_bits: 1,
+        folding_factor: 2,
+    }];
+    schedule.final_layer_bits = 1;
+    let polynomial = (0_u64..4)
+        .map(|index| Ext3::from_u64s([index + 1, index + 11, index + 21]))
+        .collect::<Vec<_>>();
+
+    let error = build_pcs_fri_opening_unit(
+        &schedule,
+        PcsFriOpeningBuildRequest {
+            unit_index: 0,
+            trace_instance_index: 0,
+            query_rows: &[0],
+            challenges: &[Ext3::ZERO, Ext3::ONE, Ext3::ZERO],
+            polynomial: &polynomial,
+        },
+    )
+    .expect_err("FRI opening build should reject invalid fold extension bits");
+
+    assert_eq!(
+        error,
+        PcsFriOpeningBuildError::Fold(PcsFriFoldError::InvalidExtensionBits {
             n_bits_ext: 1,
             prev_bits: 2,
         })
