@@ -76,6 +76,7 @@ fn lean_runtime_soundness_binding_exports_core_contract_projection() {
             "runtime_soundness_checked_acceptance_segment_ids_unique",
             "runtime_soundness_checked_acceptance_unit_values_trace_identity_coverage",
             "runtime_soundness_checked_acceptance_verifier_core_contract",
+            "runtime_soundness_checked_acceptance_evidence_core_and_sound",
             "runtime_soundness_checked_acceptance_verifier_sound_witness",
             "runtime_soundness_checked_acceptance_execution_obligations",
             "runtime_soundness_checked_acceptance_audited_soundness_obligations",
@@ -1684,6 +1685,29 @@ fn lean_runtime_soundness_binding_exports_core_contract_projection() {
     lean_binding::assert_theorem_body_omits(
         &lean_source,
         "runtime_soundness_checked_acceptance_verifier_sound_witness",
+        &["sound_witness_implies_verifier_core_contract"],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_soundness_checked_acceptance_evidence_core_and_sound",
+        &[
+            "(assumptions : AssumptionBundle system)",
+            "RuntimeSoundnessEvidence",
+            "RuntimeVerifierCoreContract system publicInput proof",
+            "SoundWitness system publicInput proof",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_soundness_checked_acceptance_evidence_core_and_sound",
+        &[
+            "runtime_soundness_checked_acceptance_sound",
+            "runtime_soundness_checked_acceptance_verifier_core_contract",
+        ],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &lean_source,
+        "runtime_soundness_checked_acceptance_evidence_core_and_sound",
         &["sound_witness_implies_verifier_core_contract"],
     );
     lean_binding::assert_theorem_body_contains(

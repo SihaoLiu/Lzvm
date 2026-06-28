@@ -212,6 +212,7 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
             "runtime_pipeline_binding_checked_acceptance_runtime_artifact_soundness_obligations",
             "runtime_pipeline_binding_checked_acceptance_trace_artifact_soundness_obligations",
             "runtime_pipeline_binding_checked_acceptance_trace_artifact_evidence_core_and_sound",
+            "runtime_pipeline_binding_checked_acceptance_evidence_core_and_sound",
             "runtime_pipeline_binding_checked_acceptance_accepts_full_soundness_contract",
             "runtime_pipeline_binding_checked_acceptance_proof_system_sound",
             "runtime_pipeline_binding_checked_acceptance_proof_system_full_soundness_contract",
@@ -1326,6 +1327,30 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
             "runtime_trace_constraint_artifact_binding_checked_acceptance_sound\n",
             "sound_witness_implies_verifier_core_contract",
         ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_pipeline_binding_checked_acceptance_evidence_core_and_sound",
+        &[
+            "(assumptions : AssumptionBundle system)",
+            "requiresExternalSource",
+            "RuntimePipelineBindingEvidence",
+            "RuntimeVerifierCoreContract system publicInput proof",
+            "SoundWitness system publicInput proof",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_pipeline_binding_checked_acceptance_evidence_core_and_sound",
+        &[
+            "runtime_pipeline_binding_checked_acceptance_sound",
+            "runtime_pipeline_binding_checked_acceptance_core_obligations",
+        ],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &lean_source,
+        "runtime_pipeline_binding_checked_acceptance_evidence_core_and_sound",
+        &["sound_witness_implies_verifier_core_contract"],
     );
     assert!(
         theorem_prefix(
