@@ -1064,6 +1064,30 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
                 "finishWitnessOpeningLeafCosetExtendUnpackLaunchCount := leafCosetUnpackLaunches",
             ][..],
         ),
+        (
+            "proof_artifact_finish_path_parent_hash_shape_acceptance_core_and_sound",
+            [
+                "proof_artifact_finish_path_parent_hash_shape_acceptance_verifier_core_contract",
+                "proof_artifact_finish_path_parent_hash_shape_acceptance_sound",
+            ],
+            &[
+                "finishWitnessOpeningPathParentHashRowCount := parentHashRows",
+                "finishWitnessOpeningPathParentHashByteCount := parentHashBytes",
+                "finishWitnessOpeningPathParentHashLaunchCount := parentHashLaunches",
+                "finishWitnessOpeningPathParentHashRecomputedRowCount := recomputedRows",
+                "finishWitnessOpeningPathParentHashRecomputedByteCount := recomputedBytes",
+                "finishWitnessOpeningPathParentHashRecomputedLaunchCount := recomputedLaunches",
+                "finishWitnessOpeningPathParentHashRetainedLeafDigestRowCount := retainedLeafDigestRows",
+                "finishWitnessOpeningPathParentHashRetainedLeafDigestByteCount := retainedLeafDigestBytes",
+                "finishWitnessOpeningPathParentHashRetainedLeafDigestLaunchCount := retainedLeafDigestLaunches",
+                "finishWitnessOpeningPathParentHashRetainedParentCheckpointPrefixRowCount := retainedCheckpointPrefixRows",
+                "finishWitnessOpeningPathParentHashRetainedParentCheckpointPrefixByteCount := retainedCheckpointPrefixBytes",
+                "finishWitnessOpeningPathParentHashRetainedParentCheckpointPrefixLaunchCount := retainedCheckpointPrefixLaunches",
+                "finishWitnessOpeningPathParentHashRetainedParentCheckpointSuffixRowCount := retainedCheckpointSuffixRows",
+                "finishWitnessOpeningPathParentHashRetainedParentCheckpointSuffixByteCount := retainedCheckpointSuffixBytes",
+                "finishWitnessOpeningPathParentHashRetainedParentCheckpointSuffixLaunchCount := retainedCheckpointSuffixLaunches",
+            ][..],
+        ),
     ] {
         lean_binding::assert_theorem_prefix_contains(
             &lean_proof_timing_source,
@@ -4592,6 +4616,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "proof_artifact_finish_leaf_work_shape_acceptance_core_and_sound",
             "proof_artifact_finish_path_parent_hash_shape_acceptance_sound",
             "proof_artifact_finish_path_parent_hash_shape_acceptance_verifier_core_contract",
+            "proof_artifact_finish_path_parent_hash_shape_acceptance_core_and_sound",
             "proof_artifact_finish_path_parent_hash_per_unit_shape_acceptance_sound",
             "proof_artifact_finish_path_parent_hash_per_unit_shape_acceptance_verifier_core_contract",
             "proof_artifact_finish_row_values_shape_acceptance_sound",

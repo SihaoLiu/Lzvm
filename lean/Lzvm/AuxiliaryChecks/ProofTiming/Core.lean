@@ -2210,6 +2210,96 @@ theorem proof_artifact_finish_path_parent_hash_shape_acceptance_verifier_core_co
       proof
       observed
 
+theorem proof_artifact_finish_path_parent_hash_shape_acceptance_core_and_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : ProofArtifactFinishTimingSummary)
+    (parentHashRows parentHashBytes parentHashLaunches
+      recomputedRows recomputedBytes recomputedLaunches
+      retainedLeafDigestRows retainedLeafDigestBytes retainedLeafDigestLaunches
+      retainedCheckpointPrefixRows retainedCheckpointPrefixBytes retainedCheckpointPrefixLaunches
+      retainedCheckpointSuffixRows retainedCheckpointSuffixBytes retainedCheckpointSuffixLaunches
+      : Nat) :
+    forall publicInput proof,
+      ProofArtifactFinishTimingObservedAcceptance
+        system
+        (some
+          { summary with
+            finishWitnessOpeningPathParentHashRowCount := parentHashRows
+            finishWitnessOpeningPathParentHashByteCount := parentHashBytes
+            finishWitnessOpeningPathParentHashLaunchCount := parentHashLaunches
+            finishWitnessOpeningPathParentHashRecomputedRowCount := recomputedRows
+            finishWitnessOpeningPathParentHashRecomputedByteCount := recomputedBytes
+            finishWitnessOpeningPathParentHashRecomputedLaunchCount := recomputedLaunches
+            finishWitnessOpeningPathParentHashRetainedLeafDigestRowCount :=
+              retainedLeafDigestRows
+            finishWitnessOpeningPathParentHashRetainedLeafDigestByteCount :=
+              retainedLeafDigestBytes
+            finishWitnessOpeningPathParentHashRetainedLeafDigestLaunchCount :=
+              retainedLeafDigestLaunches
+            finishWitnessOpeningPathParentHashRetainedParentCheckpointPrefixRowCount :=
+              retainedCheckpointPrefixRows
+            finishWitnessOpeningPathParentHashRetainedParentCheckpointPrefixByteCount :=
+              retainedCheckpointPrefixBytes
+            finishWitnessOpeningPathParentHashRetainedParentCheckpointPrefixLaunchCount :=
+              retainedCheckpointPrefixLaunches
+            finishWitnessOpeningPathParentHashRetainedParentCheckpointSuffixRowCount :=
+              retainedCheckpointSuffixRows
+            finishWitnessOpeningPathParentHashRetainedParentCheckpointSuffixByteCount :=
+              retainedCheckpointSuffixBytes
+            finishWitnessOpeningPathParentHashRetainedParentCheckpointSuffixLaunchCount :=
+              retainedCheckpointSuffixLaunches })
+        publicInput
+        proof ->
+        RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof observed
+  have core :=
+    proof_artifact_finish_path_parent_hash_shape_acceptance_verifier_core_contract
+      assumptions
+      summary
+      parentHashRows
+      parentHashBytes
+      parentHashLaunches
+      recomputedRows
+      recomputedBytes
+      recomputedLaunches
+      retainedLeafDigestRows
+      retainedLeafDigestBytes
+      retainedLeafDigestLaunches
+      retainedCheckpointPrefixRows
+      retainedCheckpointPrefixBytes
+      retainedCheckpointPrefixLaunches
+      retainedCheckpointSuffixRows
+      retainedCheckpointSuffixBytes
+      retainedCheckpointSuffixLaunches
+      publicInput
+      proof
+      observed
+  have sound :=
+    proof_artifact_finish_path_parent_hash_shape_acceptance_sound
+      assumptions
+      summary
+      parentHashRows
+      parentHashBytes
+      parentHashLaunches
+      recomputedRows
+      recomputedBytes
+      recomputedLaunches
+      retainedLeafDigestRows
+      retainedLeafDigestBytes
+      retainedLeafDigestLaunches
+      retainedCheckpointPrefixRows
+      retainedCheckpointPrefixBytes
+      retainedCheckpointPrefixLaunches
+      retainedCheckpointSuffixRows
+      retainedCheckpointSuffixBytes
+      retainedCheckpointSuffixLaunches
+      publicInput
+      proof
+      observed
+  exact And.intro core sound
+
 theorem proof_artifact_finish_path_parent_hash_per_unit_shape_acceptance_sound
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
