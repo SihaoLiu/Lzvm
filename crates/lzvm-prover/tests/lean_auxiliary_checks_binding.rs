@@ -755,6 +755,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         "runtime_performance_observation_acceptance_core_and_sound",
         "runtime_performance_observation_timing_observations_acceptance_core_and_sound",
         "runtime_performance_observation_guest_pc_trace_timing_acceptance_core_and_sound",
+        "runtime_performance_observation_row_value_timing_acceptance_core_and_sound",
     ] {
         lean_binding::assert_theorem_prefix_contains(
             &runtime_performance_source,
@@ -4807,6 +4808,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "runtime_performance_observation_projects_witness_opening_row_value_timing",
             "runtime_performance_observation_row_value_timing_acceptance_sound",
             "runtime_performance_observation_row_value_timing_acceptance_verifier_core_contract",
+            "runtime_performance_observation_row_value_timing_acceptance_core_and_sound",
             "runtime_performance_observation_projects_constant_material_validation_timing",
             "runtime_performance_observation_constant_material_timing_acceptance_sound",
             "runtime_performance_observation_constant_material_timing_acceptance_verifier_core_contract",
