@@ -791,9 +791,6 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         "runtime_performance_observation_",
         "_core_and_sound",
     ) {
-        if stem == "runtime_performance_observation_projected_metadata_acceptance" {
-            continue;
-        }
         let theorem = format!("{stem}_core_and_sound");
         lean_binding::assert_theorem_prefix_contains(
             &runtime_performance_source,
@@ -1419,8 +1416,6 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         &[
             "runtime_performance_observation_acceptance_core_and_sound",
             "runtime_performance_observation_auxiliary_projected_core_contracts",
-            "coreAndSound.right",
-            "coreAndSound.left",
         ],
     );
     lean_binding::assert_theorem_body_omits(

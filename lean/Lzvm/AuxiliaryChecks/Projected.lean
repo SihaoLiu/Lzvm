@@ -128,22 +128,24 @@ theorem runtime_performance_observation_auxiliary_contracts
       RuntimePerformanceObservedAcceptance system summary publicInput proof ->
         RuntimePerformanceAuxiliaryContracts system publicInput proof := by
   intro publicInput proof observed
-  have coreAndSound :=
+  have contracts :=
     runtime_performance_observation_acceptance_core_and_sound
       assumptions
       summary
       publicInput
       proof
       observed
-  exact
-    { soundWitness := coreAndSound.right
-      verifierCore := coreAndSound.left
-      projected :=
-        runtime_performance_observation_auxiliary_projected_core_contracts
-          assumptions
-          summary
-          publicInput
-          proof
-          observed }
+  cases contracts with
+  | intro verifierCore soundWitness =>
+      exact
+        { soundWitness := soundWitness
+          verifierCore := verifierCore
+          projected :=
+            runtime_performance_observation_auxiliary_projected_core_contracts
+              assumptions
+              summary
+              publicInput
+              proof
+              observed }
 
 end Lzvm
