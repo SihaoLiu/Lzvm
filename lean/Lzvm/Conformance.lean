@@ -247,6 +247,43 @@ theorem runtime_artifact_checked_acceptance_verifier_core_contract
       artifactAccepted
   exact obligations.right.right
 
+theorem runtime_artifact_checked_acceptance_audited_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeConformanceValidation system) :
+    forall artifact publicInput proof,
+      RuntimeArtifactCheckedAcceptance system validation artifact publicInput proof ->
+        RequiredCryptographicAssumptionStatements assumptions.crypto
+          /\ RequiredSemanticAssumptionStatements assumptions.semantic
+          /\ RuntimeArtifactEvidence system validation artifact publicInput proof
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro artifact publicInput proof artifactAccepted
+  have verifierAccepts :=
+    runtime_artifact_checked_acceptance_implies_verifier_accepts
+      validation
+      artifact
+      publicInput
+      proof
+      artifactAccepted
+  have evidence :=
+    runtime_artifact_checked_acceptance_evidence
+      validation
+      artifact
+      publicInput
+      proof
+      artifactAccepted
+  have auditedSound :=
+    accepted_proof_audited_core_and_sound_witness
+      assumptions
+      publicInput
+      proof
+      verifierAccepts
+  exact
+    And.intro auditedSound.left
+      (And.intro auditedSound.right.left
+        (And.intro evidence auditedSound.right.right))
+
 theorem runtime_conformance_agreement_checked_acceptance_sound
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)

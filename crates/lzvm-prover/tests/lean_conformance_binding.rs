@@ -29,6 +29,7 @@ fn lean_conformance_binding_exports_core_contract_projection() {
         &[
             "runtime_artifact_checked_acceptance_sound",
             "runtime_artifact_checked_acceptance_verifier_core_contract",
+            "runtime_artifact_checked_acceptance_audited_sound",
         ],
     );
     lean_binding::assert_theorem_body_contains(
@@ -76,6 +77,27 @@ fn lean_conformance_binding_exports_core_contract_projection() {
             "runtime_artifact_checked_acceptance_sound",
             "sound_witness_implies_verifier_core_contract",
             "abstract_verifier_sound",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_artifact_checked_acceptance_audited_sound",
+        &[
+            "RuntimeArtifactCheckedAcceptance system validation artifact publicInput proof",
+            "RequiredCryptographicAssumptionStatements assumptions.crypto",
+            "RequiredSemanticAssumptionStatements assumptions.semantic",
+            "RuntimeArtifactEvidence system validation artifact publicInput proof",
+            "RuntimeVerifierCoreContract system publicInput proof",
+            "SoundWitness system publicInput proof",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_artifact_checked_acceptance_audited_sound",
+        &[
+            "runtime_artifact_checked_acceptance_implies_verifier_accepts",
+            "runtime_artifact_checked_acceptance_evidence",
+            "accepted_proof_audited_core_and_sound_witness",
         ],
     );
 }
