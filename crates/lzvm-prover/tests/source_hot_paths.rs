@@ -4042,6 +4042,32 @@ fn cuda_source_device_lookup_uses_ordered_stage_fast_path() {
 }
 
 #[test]
+fn retained_source_view_lookup_uses_ordered_stage_fast_path() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let source_path = crate_root.join("src/witness_execution.rs");
+    let source =
+        std::fs::read_to_string(&source_path).expect("witness execution source should read");
+
+    let body = function_body(
+        &source,
+        "pub(crate) fn stage_source_device_view",
+        "pub(crate) fn guest_pc_device_descriptor_buffer",
+    );
+
+    assert!(
+        body.contains("stage_index.checked_sub(1)")
+            && body.contains(".get(stage_slot)")
+            && body.contains(".filter(|source| source.stage_index() == stage_index)")
+            && body.contains("source_devices[..stage_slot]")
+            && body.contains(".all(|source| source.stage_index() != stage_index)")
+            && body.contains("return Some(source_device.source_view())")
+            && body.contains(".find(|source| source.stage_index() == stage_index)")
+            && body.contains(".map(WitnessStageRetainedSourceDevice::source_view)"),
+        "retained source-view lookups should use ordered stage slots before first-match fallback"
+    );
+}
+
+#[test]
 fn guest_pc_trace_segment_commit_has_single_helper() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let source_path = crate_root.join("src/witness_execution.rs");
