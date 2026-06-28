@@ -470,6 +470,41 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "assumptions.crypto.fri_query_sound",
         ],
     );
+    lean_binding::assert_theorem_prefix_contains(
+        &auxiliary_source,
+        "ignored_metadata_acceptance_core_and_sound",
+        &[
+            "RuntimeVerifierCoreContract system publicInput proof",
+            "SoundWitness system publicInput proof",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &auxiliary_source,
+        "ignored_metadata_acceptance_core_and_sound",
+        &[
+            "ignored_metadata_acceptance_verifier_core_contract",
+            "ignored_metadata_acceptance_sound",
+        ],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &auxiliary_source,
+        "ignored_metadata_acceptance_core_and_sound",
+        &["sound_witness_implies_verifier_core_contract"],
+    );
+    let ignored_metadata_body = lean_binding::theorem_body(
+        &auxiliary_source,
+        "ignored_metadata_acceptance_core_and_sound",
+    );
+    for callee in [
+        "ignored_metadata_acceptance_verifier_core_contract",
+        "ignored_metadata_acceptance_sound",
+    ] {
+        let expected_call = format!("{callee} assumptions metadata publicInput proof observed");
+        assert!(
+            compact_source_contains(&ignored_metadata_body, &expected_call),
+            "Lean theorem ignored_metadata_acceptance_core_and_sound body should call {callee} with ordered metadata arguments"
+        );
+    }
     lean_binding::assert_theorem_body_contains(
         &auxiliary_source,
         "auxiliary_checked_acceptance_verifier_core_contract",

@@ -139,6 +139,32 @@ theorem ignored_metadata_acceptance_verifier_core_contract
           (assumption_bundle_pcs_opening_soundness assumptions publicInput proof accepted)
           (assumption_bundle_fri_query_soundness assumptions publicInput proof accepted)))
 
+theorem ignored_metadata_acceptance_core_and_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    {Metadata : Type u}
+    (metadata : Metadata) :
+    forall publicInput proof,
+      IgnoredMetadataObservedAcceptance system metadata publicInput proof ->
+        RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof observed
+  have core :=
+    ignored_metadata_acceptance_verifier_core_contract
+      assumptions
+      metadata
+      publicInput
+      proof
+      observed
+  have sound :=
+    ignored_metadata_acceptance_sound
+      assumptions
+      metadata
+      publicInput
+      proof
+      observed
+  exact And.intro core sound
+
 theorem auxiliary_checked_acceptance_verifier_core_contract
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
