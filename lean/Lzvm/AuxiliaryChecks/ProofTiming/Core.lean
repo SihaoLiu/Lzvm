@@ -242,6 +242,65 @@ theorem witness_opening_row_value_aggregate_timing_acceptance_verifier_core_cont
       proof
       observed
 
+theorem witness_opening_row_value_aggregate_timing_acceptance_core_and_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : WitnessOpeningRowValueTimingSummary)
+    (sourceExtendMilliseconds sourceDownloadMilliseconds deviceDownloadMilliseconds
+      deviceRows deviceDownloadBatches deviceSingleDownloads sourceRows words bytes : Nat) :
+    forall publicInput proof,
+      WitnessOpeningRowValueTimingObservedAcceptance
+        system
+        (some
+          { summary with
+            rowValueSourceExtendMilliseconds := sourceExtendMilliseconds
+            rowValueSourceDownloadMilliseconds := sourceDownloadMilliseconds
+            rowValueDeviceDownloadMilliseconds := deviceDownloadMilliseconds
+            deviceRowCount := deviceRows
+            deviceDownloadBatchCount := deviceDownloadBatches
+            deviceSingleDownloadCount := deviceSingleDownloads
+            sourceRowCount := sourceRows
+            wordCount := words
+            byteCount := bytes })
+        publicInput
+        proof ->
+        RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof observed
+  have core :=
+    witness_opening_row_value_aggregate_timing_acceptance_verifier_core_contract
+      assumptions
+      summary
+      sourceExtendMilliseconds
+      sourceDownloadMilliseconds
+      deviceDownloadMilliseconds
+      deviceRows
+      deviceDownloadBatches
+      deviceSingleDownloads
+      sourceRows
+      words
+      bytes
+      publicInput
+      proof
+      observed
+  have sound :=
+    witness_opening_row_value_aggregate_timing_acceptance_sound
+      assumptions
+      summary
+      sourceExtendMilliseconds
+      sourceDownloadMilliseconds
+      deviceDownloadMilliseconds
+      deviceRows
+      deviceDownloadBatches
+      deviceSingleDownloads
+      sourceRows
+      words
+      bytes
+      publicInput
+      proof
+      observed
+  exact And.intro core sound
+
 def ConstantMaterialValidationTimingObservedAcceptance
     (system : VerifierModel)
     (summary : Option ConstantMaterialValidationTimingSummary)
@@ -376,6 +435,49 @@ theorem constant_material_validation_aggregate_timing_acceptance_verifier_core_c
       publicInput
       proof
       observed
+
+theorem constant_material_validation_aggregate_timing_acceptance_core_and_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : ConstantMaterialValidationTimingSummary)
+    (elapsedMilliseconds joinWaitMilliseconds unitCount byteCount : Nat) :
+    forall publicInput proof,
+      ConstantMaterialValidationTimingObservedAcceptance
+        system
+        (some
+          { summary with
+            constantMaterialValidationElapsedMilliseconds := elapsedMilliseconds
+            constantMaterialValidationJoinWaitMilliseconds := joinWaitMilliseconds
+            constantMaterialValidationUnitCount := unitCount
+            constantMaterialValidationByteCount := byteCount })
+        publicInput
+        proof ->
+        RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof observed
+  have core :=
+    constant_material_validation_aggregate_timing_acceptance_verifier_core_contract
+      assumptions
+      summary
+      elapsedMilliseconds
+      joinWaitMilliseconds
+      unitCount
+      byteCount
+      publicInput
+      proof
+      observed
+  have sound :=
+    constant_material_validation_aggregate_timing_acceptance_sound
+      assumptions
+      summary
+      elapsedMilliseconds
+      joinWaitMilliseconds
+      unitCount
+      byteCount
+      publicInput
+      proof
+      observed
+  exact And.intro core sound
 
 def ProverGpuModeObservedAcceptance
     (system : VerifierModel)
