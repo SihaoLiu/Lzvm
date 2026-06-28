@@ -4096,6 +4096,11 @@ fn retained_source_view_lookup_uses_ordered_stage_fast_path() {
     let source =
         std::fs::read_to_string(&source_path).expect("witness execution source should read");
 
+    let helper_body = function_body(
+        &source,
+        "fn find_ordered_stage_entry",
+        "#[cfg(feature = \"cuda\")]\nimpl ProveWitnessTracePendingCommitments",
+    );
     let body = function_body(
         &source,
         "pub(crate) fn stage_source_device_view",
@@ -4103,13 +4108,14 @@ fn retained_source_view_lookup_uses_ordered_stage_fast_path() {
     );
 
     assert!(
-        body.contains("stage_index.checked_sub(1)")
-            && body.contains(".get(stage_slot)")
-            && body.contains(".filter(|source| source.stage_index() == stage_index)")
-            && body.contains("source_devices[..stage_slot]")
-            && body.contains(".all(|source| source.stage_index() != stage_index)")
-            && body.contains("return Some(source_device.source_view())")
-            && body.contains(".find(|source| source.stage_index() == stage_index)")
+        helper_body.contains("stage_index.checked_sub(1)")
+            && helper_body.contains(".get(stage_slot)")
+            && helper_body.contains("entries[..stage_slot]")
+            && helper_body.contains(".all(|entry| entry_stage_index(entry) != stage_index)")
+            && helper_body.contains("return Some(entry)")
+            && helper_body.contains(".find(|entry| entry_stage_index(entry) == stage_index)")
+            && body.contains("find_ordered_stage_entry(")
+            && body.contains("WitnessStageRetainedSourceDevice::stage_index")
             && body.contains(".map(WitnessStageRetainedSourceDevice::source_view)"),
         "retained source-view lookups should use ordered stage slots before first-match fallback"
     );
@@ -6574,6 +6580,11 @@ fn stage_source_device_cache_lookup_uses_ordered_stage_fast_path() {
     let execution_source =
         std::fs::read_to_string(&execution_path).expect("witness execution source should read");
 
+    let helper_body = function_body(
+        &execution_source,
+        "fn find_ordered_stage_entry",
+        "#[cfg(feature = \"cuda\")]\nimpl ProveWitnessTracePendingCommitments",
+    );
     let cache_body = function_body(
         &execution_source,
         "impl WitnessStageSourceDeviceCache",
@@ -6581,12 +6592,14 @@ fn stage_source_device_cache_lookup_uses_ordered_stage_fast_path() {
     );
 
     assert!(
-        cache_body.contains("fn stage_entry(")
-            && cache_body.contains("stage_index.checked_sub(1)")
-            && cache_body.contains(".get(stage_slot)")
-            && cache_body.contains("self.stages[..stage_slot]")
-            && cache_body.contains(".all(|entry| entry.0 != stage_index)")
-            && cache_body.contains(".find(|(index, _, _, _, _, _)| *index == stage_index)")
+        helper_body.contains("stage_index.checked_sub(1)")
+            && helper_body.contains(".get(stage_slot)")
+            && helper_body.contains("entries[..stage_slot]")
+            && helper_body.contains(".all(|entry| entry_stage_index(entry) != stage_index)")
+            && helper_body.contains(".find(|entry| entry_stage_index(entry) == stage_index)")
+            && cache_body.contains("fn stage_entry(")
+            && cache_body.contains("find_ordered_stage_entry(&self.stages, stage_index")
+            && cache_body.contains("|entry| entry.0")
             && cache_body.matches("self.stage_entry(stage_index)?").count() >= 2,
         "stage source cache lookups should use ordered stage slots before first-match fallback"
     );

@@ -316,25 +316,12 @@ impl ProveWitnessTraceCommitments {
         &self,
         stage_index: usize,
     ) -> Option<&WitnessStageSourceDeviceView> {
-        let source_devices = &self.stage_source_devices;
-        if let Some(stage_slot) = stage_index.checked_sub(1) {
-            if let Some(source_device) = source_devices
-                .get(stage_slot)
-                .filter(|source| source.stage_index() == stage_index)
-            {
-                if source_devices[..stage_slot]
-                    .iter()
-                    .all(|source| source.stage_index() != stage_index)
-                {
-                    return Some(source_device.source_view());
-                }
-            }
-        }
-
-        source_devices
-            .iter()
-            .find(|source| source.stage_index() == stage_index)
-            .map(WitnessStageRetainedSourceDevice::source_view)
+        find_ordered_stage_entry(
+            &self.stage_source_devices,
+            stage_index,
+            WitnessStageRetainedSourceDevice::stage_index,
+        )
+        .map(WitnessStageRetainedSourceDevice::source_view)
     }
 
     #[cfg(feature = "cuda")]
@@ -367,6 +354,29 @@ impl ProveWitnessTraceCommitments {
         self.trace = None;
         self
     }
+}
+
+#[cfg(feature = "cuda")]
+fn find_ordered_stage_entry<T>(
+    entries: &[T],
+    stage_index: usize,
+    entry_stage_index: impl Fn(&T) -> usize,
+) -> Option<&T> {
+    if let Some(stage_slot) = stage_index.checked_sub(1) {
+        if let Some(entry) = entries.get(stage_slot) {
+            if entry_stage_index(entry) == stage_index
+                && entries[..stage_slot]
+                    .iter()
+                    .all(|entry| entry_stage_index(entry) != stage_index)
+            {
+                return Some(entry);
+            }
+        }
+    }
+
+    entries
+        .iter()
+        .find(|entry| entry_stage_index(entry) == stage_index)
 }
 
 #[cfg(feature = "cuda")]
@@ -3210,24 +3220,7 @@ impl WitnessStageSourceDeviceCache {
     }
 
     fn stage_entry(&self, stage_index: usize) -> Option<&WitnessStageSourceDeviceCacheEntry> {
-        if let Some(stage_slot) = stage_index.checked_sub(1) {
-            if let Some(entry) = self
-                .stages
-                .get(stage_slot)
-                .filter(|entry| entry.0 == stage_index)
-            {
-                if self.stages[..stage_slot]
-                    .iter()
-                    .all(|entry| entry.0 != stage_index)
-                {
-                    return Some(entry);
-                }
-            }
-        }
-
-        self.stages
-            .iter()
-            .find(|(index, _, _, _, _, _)| *index == stage_index)
+        find_ordered_stage_entry(&self.stages, stage_index, |entry| entry.0)
     }
 
     fn get(&self, stage_index: usize) -> Option<(usize, usize, usize, &CudaDeviceBuffer)> {
