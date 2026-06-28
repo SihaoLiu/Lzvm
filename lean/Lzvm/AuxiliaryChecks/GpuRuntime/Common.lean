@@ -12,7 +12,9 @@ Shared GPU auxiliary runtime checked-acceptance chokepoints.
 
 namespace Lzvm
 
-theorem gpu_runtime_checked_acceptance_sound_witness
+namespace GpuRuntimeInternal
+
+theorem checked_acceptance_sound_witness
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
     {auxiliaryAccepted : PublicInput -> Proof -> Prop} :
@@ -28,7 +30,7 @@ theorem gpu_runtime_checked_acceptance_sound_witness
       proof
       checked
 
-theorem gpu_runtime_checked_acceptance_verifier_core_contract
+theorem checked_acceptance_verifier_core_contract
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
     {auxiliaryAccepted : PublicInput -> Proof -> Prop} :
@@ -43,5 +45,7 @@ theorem gpu_runtime_checked_acceptance_verifier_core_contract
       publicInput
       proof
       checked
+
+end GpuRuntimeInternal
 
 end Lzvm

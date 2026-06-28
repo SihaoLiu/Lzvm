@@ -278,10 +278,10 @@ fn gpu_runtime_checked_acceptance_helpers_use_identifier_body_pins() {
         .lines()
         .filter_map(|line| {
             let trimmed = line.trim();
-            let rest = trimmed.strip_prefix("theorem gpu_runtime_checked_acceptance_")?;
+            let rest = trimmed.strip_prefix("theorem checked_acceptance_")?;
             rest.split_whitespace()
                 .next()
-                .map(|name| format!("gpu_runtime_checked_acceptance_{name}"))
+                .map(|name| format!("checked_acceptance_{name}"))
         })
         .collect::<Vec<_>>();
     assert!(

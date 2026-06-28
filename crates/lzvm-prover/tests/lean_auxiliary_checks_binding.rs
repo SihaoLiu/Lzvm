@@ -860,25 +860,25 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
     lean_binding::assert_theorem_declarations(
         &gpu_runtime_source,
         &[
-            "gpu_runtime_checked_acceptance_sound_witness",
-            "gpu_runtime_checked_acceptance_verifier_core_contract",
+            "checked_acceptance_sound_witness",
+            "checked_acceptance_verifier_core_contract",
         ],
     );
     assert_eq!(
         gpu_runtime_source
-            .matches("theorem gpu_runtime_checked_acceptance_sound_witness")
+            .matches("theorem checked_acceptance_sound_witness")
             .count(),
         1,
-        "Lean GPU runtime checks should centralize checked-acceptance SoundWitness projection"
+        "Lean GPU runtime internal checks should centralize checked-acceptance SoundWitness projection"
     );
     lean_binding::assert_theorem_body_contains(
         &gpu_runtime_source,
-        "gpu_runtime_checked_acceptance_sound_witness",
+        "checked_acceptance_sound_witness",
         &["auxiliary_checked_acceptance_sound_witness"],
     );
     lean_binding::assert_theorem_body_omits(
         &gpu_runtime_source,
-        "gpu_runtime_checked_acceptance_sound_witness",
+        "checked_acceptance_sound_witness",
         &[
             "abstract_verifier_sound",
             "sound_witness_implies_verifier_core_contract",
@@ -886,7 +886,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
     );
     lean_binding::assert_theorem_body_contains_identifier(
         &gpu_runtime_source,
-        "gpu_runtime_checked_acceptance_sound_witness",
+        "checked_acceptance_sound_witness",
         "auxiliary_checked_acceptance_sound_witness",
     );
     for shortcut in [
@@ -895,20 +895,20 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
     ] {
         lean_binding::assert_theorem_body_omits_identifier(
             &gpu_runtime_source,
-            "gpu_runtime_checked_acceptance_sound_witness",
+            "checked_acceptance_sound_witness",
             shortcut,
         );
     }
     lean_binding::assert_theorem_body_contains(
         &gpu_runtime_source,
-        "gpu_runtime_checked_acceptance_verifier_core_contract",
+        "checked_acceptance_verifier_core_contract",
         &["auxiliary_checked_acceptance_verifier_core_contract"],
     );
     lean_binding::assert_theorem_body_omits(
         &gpu_runtime_source,
-        "gpu_runtime_checked_acceptance_verifier_core_contract",
+        "checked_acceptance_verifier_core_contract",
         &[
-            "gpu_runtime_checked_acceptance_sound_witness",
+            "checked_acceptance_sound_witness",
             "assumptions.crypto.transcript_binding",
             "assumptions.semantic.public_input_binding",
             "assumptions.crypto.pcs_opening_sound",
@@ -918,11 +918,11 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
     );
     lean_binding::assert_theorem_body_contains_identifier(
         &gpu_runtime_source,
-        "gpu_runtime_checked_acceptance_verifier_core_contract",
+        "checked_acceptance_verifier_core_contract",
         "auxiliary_checked_acceptance_verifier_core_contract",
     );
     for shortcut in [
-        "gpu_runtime_checked_acceptance_sound_witness",
+        "checked_acceptance_sound_witness",
         "assumptions.crypto.transcript_binding",
         "assumptions.semantic.public_input_binding",
         "assumptions.crypto.pcs_opening_sound",
@@ -931,7 +931,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
     ] {
         lean_binding::assert_theorem_body_omits_identifier(
             &gpu_runtime_source,
-            "gpu_runtime_checked_acceptance_verifier_core_contract",
+            "checked_acceptance_verifier_core_contract",
             shortcut,
         );
     }
@@ -949,7 +949,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
     ] {
         let theorem_body = lean_binding::theorem_body(&gpu_runtime_source, theorem_name);
         assert!(
-            theorem_body.contains("gpu_runtime_checked_acceptance_sound_witness"),
+            theorem_body.contains("GpuRuntimeInternal.checked_acceptance_sound_witness"),
             "{theorem_name} should reuse the centralized checked-acceptance SoundWitness projector"
         );
     }
@@ -1408,7 +1408,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         lean_binding::assert_theorem_body_omits(
             &gpu_runtime_source,
             theorem_name,
-            &["gpu_runtime_checked_acceptance_sound_witness"],
+            &["GpuRuntimeInternal.checked_acceptance_sound_witness"],
         );
     }
     for (theorem_name, projector) in [
@@ -1425,7 +1425,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         lean_binding::assert_theorem_body_omits(
             &gpu_runtime_source,
             theorem_name,
-            &["gpu_runtime_checked_acceptance_sound_witness"],
+            &["GpuRuntimeInternal.checked_acceptance_sound_witness"],
         );
     }
     assert!(
@@ -3765,7 +3765,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
     lean_binding::assert_theorem_body_contains(
         &gpu_runtime_source,
         "gpu_setup_checked_acceptance_verifier_core_contract",
-        &["gpu_runtime_checked_acceptance_verifier_core_contract"],
+        &["GpuRuntimeInternal.checked_acceptance_verifier_core_contract"],
     );
     lean_binding::assert_theorem_body_omits(
         &gpu_runtime_source,
@@ -3778,7 +3778,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
     lean_binding::assert_theorem_body_contains(
         &gpu_runtime_source,
         "gpu_allocation_checked_acceptance_verifier_core_contract",
-        &["gpu_runtime_checked_acceptance_verifier_core_contract"],
+        &["GpuRuntimeInternal.checked_acceptance_verifier_core_contract"],
     );
     lean_binding::assert_theorem_body_omits(
         &gpu_runtime_source,
@@ -3791,7 +3791,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
     lean_binding::assert_theorem_body_contains(
         &gpu_runtime_source,
         "gpu_host_device_copy_round_trip_checked_acceptance_verifier_core_contract",
-        &["gpu_runtime_checked_acceptance_verifier_core_contract"],
+        &["GpuRuntimeInternal.checked_acceptance_verifier_core_contract"],
     );
     lean_binding::assert_theorem_body_omits(
         &gpu_runtime_source,
@@ -3804,7 +3804,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
     lean_binding::assert_theorem_body_contains(
         &gpu_runtime_source,
         "gpu_temporary_buffer_reuse_checked_acceptance_verifier_core_contract",
-        &["gpu_runtime_checked_acceptance_verifier_core_contract"],
+        &["GpuRuntimeInternal.checked_acceptance_verifier_core_contract"],
     );
     lean_binding::assert_theorem_body_omits(
         &gpu_runtime_source,
@@ -3817,7 +3817,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
     lean_binding::assert_theorem_body_contains(
         &gpu_runtime_source,
         "gpu_allocator_no_wait_bypass_checked_acceptance_verifier_core_contract",
-        &["gpu_runtime_checked_acceptance_verifier_core_contract"],
+        &["GpuRuntimeInternal.checked_acceptance_verifier_core_contract"],
     );
     lean_binding::assert_theorem_body_omits(
         &gpu_runtime_source,
@@ -3830,7 +3830,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
     lean_binding::assert_theorem_body_contains(
         &gpu_runtime_source,
         "gpu_allocator_no_wait_limit_checked_acceptance_verifier_core_contract",
-        &["gpu_runtime_checked_acceptance_verifier_core_contract"],
+        &["GpuRuntimeInternal.checked_acceptance_verifier_core_contract"],
     );
     lean_binding::assert_theorem_body_omits(
         &gpu_runtime_source,
@@ -3843,7 +3843,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
     lean_binding::assert_theorem_body_contains(
         &gpu_runtime_source,
         "guest_pc_trace_segment_queue_checked_acceptance_verifier_core_contract",
-        &["gpu_runtime_checked_acceptance_verifier_core_contract"],
+        &["GpuRuntimeInternal.checked_acceptance_verifier_core_contract"],
     );
     lean_binding::assert_theorem_body_omits(
         &gpu_runtime_source,
@@ -3856,7 +3856,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
     lean_binding::assert_theorem_body_contains(
         &gpu_runtime_source,
         "guest_pc_trace_cuda_run_checked_acceptance_verifier_core_contract",
-        &["gpu_runtime_checked_acceptance_verifier_core_contract"],
+        &["GpuRuntimeInternal.checked_acceptance_verifier_core_contract"],
     );
     lean_binding::assert_theorem_body_omits(
         &gpu_runtime_source,
@@ -3869,7 +3869,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
     lean_binding::assert_theorem_body_contains(
         &gpu_runtime_source,
         "gpu_retained_leaf_digest_limit_checked_acceptance_verifier_core_contract",
-        &["gpu_runtime_checked_acceptance_verifier_core_contract"],
+        &["GpuRuntimeInternal.checked_acceptance_verifier_core_contract"],
     );
     lean_binding::assert_theorem_body_omits(
         &gpu_runtime_source,
@@ -3882,7 +3882,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
     lean_binding::assert_theorem_body_contains(
         &gpu_runtime_source,
         "gpu_retained_device_cache_budget_checked_acceptance_verifier_core_contract",
-        &["gpu_runtime_checked_acceptance_verifier_core_contract"],
+        &["GpuRuntimeInternal.checked_acceptance_verifier_core_contract"],
     );
     lean_binding::assert_theorem_body_omits(
         &gpu_runtime_source,
@@ -3895,7 +3895,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
     lean_binding::assert_theorem_body_contains(
         &gpu_runtime_source,
         "fri_fixed_column_cache_checked_acceptance_verifier_core_contract",
-        &["gpu_runtime_checked_acceptance_verifier_core_contract"],
+        &["GpuRuntimeInternal.checked_acceptance_verifier_core_contract"],
     );
     lean_binding::assert_theorem_body_omits(
         &gpu_runtime_source,

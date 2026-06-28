@@ -2,6 +2,18 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 #[allow(dead_code)]
+pub fn read_lean_sources(crate_root: &Path, relative_paths: &[&str]) -> String {
+    relative_paths
+        .iter()
+        .map(|relative_path| {
+            std::fs::read_to_string(crate_root.join(relative_path))
+                .unwrap_or_else(|err| panic!("Lean source {relative_path} should read: {err}"))
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+#[allow(dead_code)]
 pub fn contains_theorem_declaration(source: &str, name: &str) -> bool {
     find_theorem_declaration(&searchable_source(source), name).is_some()
 }
