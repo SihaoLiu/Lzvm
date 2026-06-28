@@ -229,6 +229,26 @@ fn cuda_fri_fixed_extension_uses_device_output_without_extended_word_vector() {
 }
 
 #[test]
+fn fri_fixed_extension_reuses_cpu_source_column_buffer() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let source_path = crate_root.join("src/prove_fri_polynomial.rs");
+    let source = std::fs::read_to_string(&source_path).expect("FRI polynomial source should read");
+
+    let body = function_body(&source, "fn extend_row_major_columns", "fn fri_error");
+
+    assert!(
+        body.matches("let mut source = Vec::with_capacity(source_rows)")
+            .count()
+            == 1
+            && body.contains("for column in 0..column_count")
+            && body.contains("source.clear()")
+            && body.contains("coset_extend_evaluations(&source")
+            && !body.contains("for column in 0..column_count {\n            let mut source"),
+        "CPU FRI fixed extension should reuse one source column buffer"
+    );
+}
+
+#[test]
 fn cuda_witness_commit_has_stream_capable_row_major_extension() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let host_header_path = crate_root.join("../lzvm-accel/native/cuda_host.hpp");

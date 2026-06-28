@@ -622,8 +622,9 @@ fn extend_row_major_columns(
     #[cfg(not(feature = "cuda"))]
     {
         let mut extended_columns = Vec::with_capacity(column_count);
+        let mut source = Vec::with_capacity(source_rows);
         for column in 0..column_count {
-            let mut source = Vec::with_capacity(source_rows);
+            source.clear();
             for row in 0..source_rows {
                 source.push(values[row * column_count + column]);
             }
