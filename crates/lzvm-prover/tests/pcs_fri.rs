@@ -31,7 +31,8 @@ use lzvm_prover::pcs_transcript_segments::{
     PcsTranscriptProofSegmentsError, PcsTranscriptUnitChallenges,
 };
 use lzvm_prover::{
-    build_pcs_fri_opening_segment, ProvePcsFriOpeningValues, ProveSchedule, ProveUnitSchedule,
+    build_pcs_fri_opening_segment, build_pcs_fri_opening_segment_from_transcript_values,
+    ProvePcsFriOpeningValues, ProvePcsFriTranscriptValues, ProveSchedule, ProveUnitSchedule,
 };
 
 #[test]
@@ -512,6 +513,78 @@ fn records_fri_opening_unit_build_timing_shape() {
         timing.query_count,
         query_rows.len() * schedule.fri_layers.len()
     );
+}
+
+#[test]
+fn builds_duplicate_fri_queries_from_cached_rows_without_changing_shape() {
+    let unit = sample_validation_unit();
+    let schedule = sample_prove_schedule(unit.clone());
+    let query_rows = [1_u64, 5_u64];
+    let query_segment = ProofSegment {
+        id: PCS_QUERY_PLAN_SEGMENT_ID,
+        data: encode_pcs_query_plan_segment(&PcsQueryPlanSegment {
+            units: vec![PcsQueryPlanUnit {
+                unit_index: 0,
+                trace_instance_index: 0,
+                queries: query_rows.to_vec(),
+            }],
+        })
+        .expect("query plan should encode"),
+    };
+    let polynomial = (0_u64..8)
+        .map(|index| Ext3::from_u64s([index + 1, index + 11, index + 21]))
+        .collect::<Vec<_>>();
+    let constant_root = root(90);
+    let public_values = values(&[3, 4]);
+    let witness_roots = vec![root(10), root(20)];
+    let evaluations = vec![Ext3::from_u64s([30, 31, 32])];
+    let commitments = build_pcs_fri_transcript_commitments(
+        &unit,
+        PcsFriTranscriptCommitmentRequest {
+            arity: 2,
+            hash_values: false,
+            constant_root,
+            public_values: &public_values,
+            witness_roots: &witness_roots,
+            root_challenge_draws: &unit.transcript_root_challenge_draws,
+            unit_value_map: &[],
+            unit_values: &[],
+            evaluation_values: &evaluations,
+            evaluation_challenge_draws: unit.transcript_evaluation_challenge_draws,
+            polynomial: &polynomial,
+            binding_segments: &[],
+        },
+    )
+    .expect("FRI transcript commitments should build");
+    let direct = build_pcs_fri_opening_segment(
+        &schedule,
+        &query_segment,
+        &[ProvePcsFriOpeningValues {
+            unit_index: 0,
+            trace_instance_index: 0,
+            challenges: commitments.challenges.clone(),
+            polynomial: polynomial.clone(),
+        }],
+    )
+    .expect("direct FRI opening segment should build");
+    let retained = build_pcs_fri_opening_segment_from_transcript_values(
+        &schedule,
+        &query_segment,
+        &[ProvePcsFriTranscriptValues {
+            unit_index: 0,
+            trace_instance_index: 0,
+            polynomial,
+            commitments,
+        }],
+    )
+    .expect("retained FRI opening segment should build");
+
+    assert_eq!(retained, direct);
+    let parsed = parse_pcs_fri_opening_segment(&direct.data).expect("opening segment should parse");
+    for layer in &parsed.units[0].layers {
+        assert_eq!(layer.queries.len(), query_rows.len());
+        assert_eq!(layer.queries[0], layer.queries[1]);
+    }
 }
 
 #[test]

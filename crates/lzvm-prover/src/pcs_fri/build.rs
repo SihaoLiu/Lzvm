@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::time::Instant;
 
 use lzvm_artifacts::pcs_fri_segment::{
@@ -278,25 +279,12 @@ pub fn build_pcs_fri_opening_unit_with_timing(
             timing.as_deref_mut(),
             |timing, duration| timing.add_query_work(duration, request.query_rows.len()),
             || {
-                request
-                    .query_rows
-                    .iter()
-                    .map(|query_row| {
-                        let row_index = *query_row % output_size_u64;
-                        let row_index_usize = usize::try_from(row_index)
-                            .map_err(|_| PcsFriOpeningBuildError::LengthOverflow)?;
-                        let values = grouped_values[row_index_usize]
-                            .iter()
-                            .map(|value| value.to_u64s())
-                            .collect();
-                        let siblings = tree.query_siblings(row_index_usize)?;
-                        Ok(PcsFriOpeningQuerySegment {
-                            row_index,
-                            values,
-                            siblings,
-                        })
-                    })
-                    .collect::<Result<Vec<_>, PcsFriOpeningBuildError>>()
+                build_fri_opening_queries(
+                    request.query_rows,
+                    output_size_u64,
+                    &grouped_values,
+                    &tree,
+                )
             },
         )?;
 
@@ -468,24 +456,12 @@ pub(crate) fn build_pcs_fri_opening_unit_from_transcript_commitments_with_timing
             timing.as_deref_mut(),
             |timing, duration| timing.add_query_work(duration, query_rows.len()),
             || {
-                query_rows
-                    .iter()
-                    .map(|query_row| {
-                        let row_index = *query_row % output_size_u64;
-                        let row_index_usize = usize::try_from(row_index)
-                            .map_err(|_| PcsFriOpeningBuildError::LengthOverflow)?;
-                        let values = material.grouped_values[row_index_usize]
-                            .iter()
-                            .map(|value| value.to_u64s())
-                            .collect();
-                        let siblings = material.tree.query_siblings(row_index_usize)?;
-                        Ok(PcsFriOpeningQuerySegment {
-                            row_index,
-                            values,
-                            siblings,
-                        })
-                    })
-                    .collect::<Result<Vec<_>, PcsFriOpeningBuildError>>()
+                build_fri_opening_queries(
+                    query_rows,
+                    output_size_u64,
+                    &material.grouped_values,
+                    &material.tree,
+                )
             },
         )?;
 
@@ -554,6 +530,39 @@ fn flatten_extension_values_for_transcript(values: &[Ext3]) -> Vec<Felt> {
         .iter()
         .flat_map(|value| [value.c0, value.c1, value.c2])
         .collect()
+}
+
+fn build_fri_opening_queries(
+    query_rows: &[u64],
+    output_size_u64: u64,
+    grouped_values: &[Vec<Ext3>],
+    tree: &merkle::FriLayerTree,
+) -> Result<Vec<PcsFriOpeningQuerySegment>, PcsFriOpeningBuildError> {
+    let mut cached_queries: BTreeMap<usize, PcsFriOpeningQuerySegment> = BTreeMap::new();
+    let mut queries = Vec::with_capacity(query_rows.len());
+    for query_row in query_rows {
+        let row_index = *query_row % output_size_u64;
+        let row_index_usize =
+            usize::try_from(row_index).map_err(|_| PcsFriOpeningBuildError::LengthOverflow)?;
+        if let Some(query) = cached_queries.get(&row_index_usize) {
+            queries.push(query.clone());
+            continue;
+        }
+
+        let values = grouped_values[row_index_usize]
+            .iter()
+            .map(|value| value.to_u64s())
+            .collect();
+        let siblings = tree.query_siblings(row_index_usize)?;
+        let query = PcsFriOpeningQuerySegment {
+            row_index,
+            values,
+            siblings,
+        };
+        cached_queries.insert(row_index_usize, query.clone());
+        queries.push(query);
+    }
+    Ok(queries)
 }
 
 fn group_fri_layer_values(

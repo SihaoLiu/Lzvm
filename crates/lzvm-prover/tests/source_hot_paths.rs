@@ -8680,6 +8680,27 @@ fn fri_transcript_commitments_use_shared_prefix_builder() {
 }
 
 #[test]
+fn fri_opening_query_assembly_reuses_duplicate_rows() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let source_path = crate_root.join("src/pcs_fri/build.rs");
+    let source = std::fs::read_to_string(&source_path).expect("FRI build source should read");
+    let helper_body = function_body(
+        &source,
+        "fn build_fri_opening_queries",
+        "fn group_fri_layer_values",
+    );
+
+    assert!(
+        source.matches("build_fri_opening_queries(").count() == 3
+            && source.contains("use std::collections::BTreeMap")
+            && helper_body.contains("cached_queries.get(&row_index_usize)")
+            && helper_body.contains("cached_queries.insert(row_index_usize, query.clone())")
+            && helper_body.contains("tree.query_siblings(row_index_usize)"),
+        "FRI opening query assembly should cache repeated layer rows inside one helper"
+    );
+}
+
+#[test]
 fn fri_opening_from_trace_borrows_challenges() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let source_path = crate_root.join("src/prove_fri_opening.rs");
