@@ -390,4 +390,53 @@ theorem runtime_trace_constraint_artifact_binding_checked_acceptance_verifier_co
       False
       traceConstraintAccepted
 
+theorem runtime_trace_constraint_artifact_binding_checked_acceptance_evidence_core_and_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeTraceConstraintArtifactBindingValidation system) :
+    forall artifact publicInput proof requiresExternalSource,
+      RuntimeTraceConstraintArtifactBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeTraceConstraintPreflightBindingEvidence
+            system
+            validation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeTraceConstraintEvidence
+            system
+            validation.traceConstraintValidation
+            artifact
+            publicInput
+            proof
+            requiresExternalSource
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro artifact publicInput proof requiresExternalSource accepted
+  have checkedSound :=
+    runtime_trace_constraint_artifact_binding_checked_acceptance_sound
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      accepted
+  have coreContract :=
+    runtime_trace_constraint_artifact_binding_checked_acceptance_verifier_core_contract
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  exact
+    And.intro checkedSound.left
+      (And.intro checkedSound.right.left
+        (And.intro coreContract checkedSound.right.right))
+
 end Lzvm
