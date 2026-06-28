@@ -1228,6 +1228,27 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
                 "guest_pc_trace_leaf_coset_timing_acceptance_sound",
             ],
         ),
+        (
+            "guest_pc_trace_tree_commit_timing_acceptance_core_and_sound",
+            [
+                "guest_pc_trace_tree_commit_timing_acceptance_verifier_core_contract",
+                "guest_pc_trace_tree_commit_timing_acceptance_sound",
+            ],
+        ),
+        (
+            "guest_pc_trace_segment_commit_worker_timing_acceptance_core_and_sound",
+            [
+                "guest_pc_trace_segment_commit_worker_timing_acceptance_verifier_core_contract",
+                "guest_pc_trace_segment_commit_worker_timing_acceptance_sound",
+            ],
+        ),
+        (
+            "guest_pc_trace_stage_timing_acceptance_core_and_sound",
+            [
+                "guest_pc_trace_stage_timing_acceptance_verifier_core_contract",
+                "guest_pc_trace_stage_timing_acceptance_sound",
+            ],
+        ),
     ] {
         lean_binding::assert_theorem_prefix_contains(
             &timing_source,
@@ -1479,6 +1500,31 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
                 "guestStageLeafCosetExtendPackLaunchCount := packLaunchCount",
                 "guestStageLeafCosetExtendUnpackLaunchCount := unpackLaunchCount",
             ][..],
+        ),
+        (
+            "guest_pc_trace_tree_commit_timing_acceptance_core_and_sound",
+            &[
+                "guestStageTreeCommitWorkMilliseconds := workMilliseconds",
+                "guestStageTreeCommitCheckpointWorkMilliseconds := checkpointMilliseconds",
+                "guestStageTreeCommitRootWorkMilliseconds := rootMilliseconds",
+                "guestStageTreeCommitRootCount := rootCount",
+                "guestStageTreeCommitRootByteCount := rootByteCount",
+                "guestStageTreeCommitRootMaterializationGroupCount := rootMaterializationGroupCount",
+                "guestStageTreeCommitRootMaterializationMaxGroupSize := rootMaterializationMaxGroupSize",
+                "guestStageTreeCommitRetainWorkMilliseconds := retainMilliseconds",
+            ][..],
+        ),
+        (
+            "guest_pc_trace_segment_commit_worker_timing_acceptance_core_and_sound",
+            &[
+                "guestSegmentCommitInitialWorkerCount := initialWorkerCount",
+                "guestSegmentCommitEffectiveWorkerCount := effectiveWorkerCount",
+                "guestSegmentCommitOomRetryCount := oomRetryCount",
+            ][..],
+        ),
+        (
+            "guest_pc_trace_stage_timing_acceptance_core_and_sound",
+            &["stageTimings := stageTimings"][..],
         ),
     ] {
         let prefix = lean_binding::theorem_prefix(&timing_source, theorem);
@@ -4144,8 +4190,13 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "guest_pc_trace_leaf_coset_timing_acceptance_core_and_sound",
             "guest_pc_trace_tree_commit_timing_acceptance_sound",
             "guest_pc_trace_tree_commit_timing_acceptance_verifier_core_contract",
+            "guest_pc_trace_tree_commit_timing_acceptance_core_and_sound",
             "guest_pc_trace_segment_commit_worker_timing_acceptance_sound",
             "guest_pc_trace_segment_commit_worker_timing_acceptance_verifier_core_contract",
+            "guest_pc_trace_segment_commit_worker_timing_acceptance_core_and_sound",
+            "guest_pc_trace_stage_timing_acceptance_sound",
+            "guest_pc_trace_stage_timing_acceptance_verifier_core_contract",
+            "guest_pc_trace_stage_timing_acceptance_core_and_sound",
             "timing_projected_core_contracts",
             "witness_opening_row_value_timing_observed_acceptance_projects_verifier_acceptance",
             "witness_opening_row_value_timing_acceptance_sound",
