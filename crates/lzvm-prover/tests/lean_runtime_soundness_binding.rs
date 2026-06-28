@@ -92,6 +92,7 @@ fn lean_runtime_soundness_binding_exports_core_contract_projection() {
             "runtime_soundness_checked_acceptance_audited_accepts_sound_witness_contract",
             "runtime_soundness_required_external_source_pcs_sound",
             "runtime_soundness_required_external_source_verifier_core_contract",
+            "runtime_soundness_required_external_source_evidence_core_and_sound",
             "runtime_soundness_required_external_source_accepts_core_sound_witness",
             "runtime_soundness_required_external_source_full_soundness_contract",
             "runtime_soundness_required_external_source_proof_system_full_soundness_contract",
@@ -880,6 +881,30 @@ fn lean_runtime_soundness_binding_exports_core_contract_projection() {
             "runtime_soundness_required_external_source_sound",
             "sound_witness_implies_verifier_core_contract",
         ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_soundness_required_external_source_evidence_core_and_sound",
+        &[
+            "requiresExternalSource ->",
+            "RuntimeSoundnessEvidence",
+            "ExternalSourceOpeningEvidence",
+            "RuntimeVerifierCoreContract system publicInput proof",
+            "SoundWitness system publicInput proof",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_soundness_required_external_source_evidence_core_and_sound",
+        &[
+            "runtime_soundness_required_external_source_sound",
+            "runtime_soundness_required_external_source_verifier_core_contract",
+        ],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &lean_source,
+        "runtime_soundness_required_external_source_evidence_core_and_sound",
+        &["sound_witness_implies_verifier_core_contract"],
     );
     lean_binding::assert_theorem_body_contains(
         &lean_source,
