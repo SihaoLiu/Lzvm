@@ -177,6 +177,60 @@ theorem runtime_guarded_external_source_required_verifier_core_contract
       requiresExternalSource
       checked
 
+theorem runtime_guarded_external_source_required_evidence_core_and_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (runtimeValidation : RuntimeConformanceValidation system)
+    (sourceValidation : ExternalSourceOpeningValidation system) :
+    forall artifact publicInput proof requiresExternalSource,
+      RuntimeGuardedExternalSourceCheckedAcceptance
+          system
+          runtimeValidation
+          sourceValidation
+          artifact
+          publicInput
+          proof
+          requiresExternalSource ->
+        requiresExternalSource ->
+          RuntimeArtifactEvidence
+              system
+              runtimeValidation
+              artifact
+              publicInput
+              proof
+            /\ ExternalSourceOpeningEvidence system sourceValidation publicInput proof
+            /\ system.pcsOpeningsValid publicInput proof
+            /\ RuntimeVerifierCoreContract system publicInput proof
+            /\ SoundWitness system publicInput proof := by
+  intro artifact publicInput proof requiresExternalSource checked required
+  have requiredSound :=
+    runtime_guarded_external_source_required_sound
+      assumptions
+      runtimeValidation
+      sourceValidation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      checked
+      required
+  have coreContract :=
+    runtime_guarded_external_source_required_verifier_core_contract
+      assumptions
+      runtimeValidation
+      sourceValidation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      checked
+      required
+  exact
+    And.intro requiredSound.left
+      (And.intro requiredSound.right.left
+        (And.intro requiredSound.right.right.left
+          (And.intro coreContract requiredSound.right.right.right)))
+
 set_option linter.style.longLine false in
 theorem runtime_guarded_external_source_required_pcs_and_fri_from_hash_concrete_opening
     {Digest : Type uDigest}
@@ -359,14 +413,17 @@ theorem runtime_guarded_external_source_required_hash_concrete_opening_sound
             /\ RuntimeVerifierCoreContract system publicInput proof
             /\ SoundWitness system publicInput proof := by
   intro artifact publicInput proof requiresExternalSource checked openingAccepted required
-  have artifactAccepted := checked.left
-  have artifactEvidence :=
-    runtime_artifact_checked_acceptance_evidence
+  have requiredContract :=
+    runtime_guarded_external_source_required_evidence_core_and_sound
+      assumptions
       runtimeValidation
+      sourceValidation
       artifact
       publicInput
       proof
-      artifactAccepted
+      requiresExternalSource
+      checked
+      required
   have concretePcsFri :=
     runtime_guarded_external_source_required_pcs_and_fri_from_hash_concrete_opening
       hashAssumptions
@@ -383,32 +440,14 @@ theorem runtime_guarded_external_source_required_hash_concrete_opening_sound
       checked
       openingAccepted
       required
-  have verifierAccepts :=
-    runtime_artifact_checked_acceptance_implies_verifier_accepts
-      runtimeValidation
-      artifact
-      publicInput
-      proof
-      artifactAccepted
-  have soundWitness :=
-    abstract_verifier_sound assumptions publicInput proof verifierAccepts
-  have coreContract :=
-    runtime_guarded_external_source_required_verifier_core_contract
-      assumptions
-      runtimeValidation
-      sourceValidation
-      artifact
-      publicInput
-      proof
-      requiresExternalSource
-      checked
-      required
   exact
-    And.intro artifactEvidence
+    And.intro requiredContract.left
       (And.intro concretePcsFri.left
         (And.intro concretePcsFri.right.left
           (And.intro concretePcsFri.right.right
-            (And.intro coreContract soundWitness))))
+            (And.intro
+              requiredContract.right.right.right.left
+              requiredContract.right.right.right.right))))
 
 set_option linter.style.longLine false in
 theorem runtime_guarded_external_source_required_audited_hash_concrete_opening_sound
@@ -463,14 +502,17 @@ theorem runtime_guarded_external_source_required_audited_hash_concrete_opening_s
             /\ RuntimeVerifierCoreContract system publicInput proof
             /\ SoundWitness system publicInput proof := by
   intro artifact publicInput proof requiresExternalSource checked openingAccepted required
-  have artifactAccepted := checked.left
-  have artifactEvidence :=
-    runtime_artifact_checked_acceptance_evidence
+  have requiredContract :=
+    runtime_guarded_external_source_required_evidence_core_and_sound
+      assumptions
       runtimeValidation
+      sourceValidation
       artifact
       publicInput
       proof
-      artifactAccepted
+      requiresExternalSource
+      checked
+      required
   have concretePcsFri :=
     runtime_guarded_external_source_required_pcs_and_fri_from_concrete_opening
       assumptions
@@ -487,31 +529,13 @@ theorem runtime_guarded_external_source_required_audited_hash_concrete_opening_s
       checked
       openingAccepted
       required
-  have verifierAccepts :=
-    runtime_artifact_checked_acceptance_implies_verifier_accepts
-      runtimeValidation
-      artifact
-      publicInput
-      proof
-      artifactAccepted
-  have soundWitness :=
-    abstract_verifier_sound assumptions publicInput proof verifierAccepts
-  have coreContract :=
-    runtime_guarded_external_source_required_verifier_core_contract
-      assumptions
-      runtimeValidation
-      sourceValidation
-      artifact
-      publicInput
-      proof
-      requiresExternalSource
-      checked
-      required
   exact
-    And.intro artifactEvidence
+    And.intro requiredContract.left
       (And.intro concretePcsFri.left
         (And.intro concretePcsFri.right.left
           (And.intro concretePcsFri.right.right
-            (And.intro coreContract soundWitness))))
+            (And.intro
+              requiredContract.right.right.right.left
+              requiredContract.right.right.right.right))))
 
 end Lzvm
