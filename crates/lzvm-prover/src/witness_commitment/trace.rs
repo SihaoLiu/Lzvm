@@ -257,6 +257,20 @@ fn find_stage_source_device(
     source_devices: &[WitnessStageSourceDevice],
     stage_index: usize,
 ) -> Option<&WitnessStageSourceDevice> {
+    if let Some(stage_slot) = stage_index.checked_sub(1) {
+        if let Some(source_device) = source_devices
+            .get(stage_slot)
+            .filter(|source| source.stage_index == stage_index)
+        {
+            if source_devices[..stage_slot]
+                .iter()
+                .all(|source| source.stage_index != stage_index)
+            {
+                return Some(source_device);
+            }
+        }
+    }
+
     source_devices
         .iter()
         .find(|source| source.stage_index == stage_index)
@@ -267,6 +281,20 @@ fn find_retained_stage_source_device(
     source_devices: &[WitnessStageRetainedSourceDevice],
     stage_index: usize,
 ) -> Option<&WitnessStageRetainedSourceDevice> {
+    if let Some(stage_slot) = stage_index.checked_sub(1) {
+        if let Some(source_device) = source_devices
+            .get(stage_slot)
+            .filter(|source| source.stage_index() == stage_index)
+        {
+            if source_devices[..stage_slot]
+                .iter()
+                .all(|source| source.stage_index() != stage_index)
+            {
+                return Some(source_device);
+            }
+        }
+    }
+
     source_devices
         .iter()
         .find(|source| source.stage_index() == stage_index)

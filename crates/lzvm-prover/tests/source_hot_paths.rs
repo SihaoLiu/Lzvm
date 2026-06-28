@@ -4009,6 +4009,39 @@ fn cuda_source_device_commit_can_pipeline_stream_leaf_extensions() {
 }
 
 #[test]
+fn cuda_source_device_lookup_uses_ordered_stage_fast_path() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let trace_path = crate_root.join("src/witness_commitment/trace.rs");
+    let trace_source =
+        std::fs::read_to_string(&trace_path).expect("witness trace commitment source should read");
+
+    let source_lookup_body = function_body(
+        &trace_source,
+        "fn find_stage_source_device",
+        "#[cfg(feature = \"cuda\")]\nfn find_retained_stage_source_device",
+    );
+    let retained_lookup_body = function_body(
+        &trace_source,
+        "fn find_retained_stage_source_device",
+        "impl WitnessStageCommitTiming",
+    );
+
+    assert!(
+        source_lookup_body.contains("stage_index.checked_sub(1)")
+            && source_lookup_body.contains(".get(stage_slot)")
+            && source_lookup_body.contains("source_devices[..stage_slot]")
+            && source_lookup_body.contains(".all(|source| source.stage_index != stage_index)")
+            && source_lookup_body.contains(".find(|source| source.stage_index == stage_index)")
+            && retained_lookup_body.contains("stage_index.checked_sub(1)")
+            && retained_lookup_body.contains(".get(stage_slot)")
+            && retained_lookup_body.contains("source_devices[..stage_slot]")
+            && retained_lookup_body.contains(".all(|source| source.stage_index() != stage_index)")
+            && retained_lookup_body.contains(".find(|source| source.stage_index() == stage_index)"),
+        "CUDA source-device lookups should use ordered stage slots before first-match fallback"
+    );
+}
+
+#[test]
 fn guest_pc_trace_segment_commit_has_single_helper() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let source_path = crate_root.join("src/witness_execution.rs");
