@@ -93,6 +93,24 @@ pub(super) fn find_stage_columns(
     inputs: RegularConstraintInputs<'_>,
     stage_index: u16,
 ) -> Result<RegularColumnMatrix<'_>, RegularConstraintEvalError> {
+    if let Some(stage_slot) = usize::from(stage_index).checked_sub(1) {
+        if let Some(stage) = inputs
+            .stage_columns
+            .get(stage_slot)
+            .filter(|stage| stage.stage_index == stage_index)
+        {
+            if inputs.stage_columns[..stage_slot]
+                .iter()
+                .all(|stage| stage.stage_index != stage_index)
+            {
+                return Ok(RegularColumnMatrix {
+                    column_count: stage.column_count,
+                    values: stage.values,
+                });
+            }
+        }
+    }
+
     inputs
         .stage_columns
         .iter()

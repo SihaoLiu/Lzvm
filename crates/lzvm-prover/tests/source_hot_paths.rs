@@ -10464,6 +10464,10 @@ fn evaluation_stage_column_lookups_use_ordered_stage_fast_path() {
     let hint_resolve_path = crate_root.join("src/hint_eval/resolve.rs");
     let hint_resolve_source =
         std::fs::read_to_string(&hint_resolve_path).expect("hint resolve source should read");
+    let regular_support_path =
+        crate_root.join("src/regular_constraints/regular_constraints_support.rs");
+    let regular_support_source =
+        std::fs::read_to_string(&regular_support_path).expect("regular support source should read");
 
     let fri_lookup_body = function_body(&fri_eval_source, "fn find_stage_columns", "fn source_row");
     let regular_lookup_body = function_body(
@@ -10471,10 +10475,16 @@ fn evaluation_stage_column_lookups_use_ordered_stage_fast_path() {
         "fn find_regular_stage_columns",
         "fn regular_source_row",
     );
+    let regular_support_lookup_body = function_body(
+        &regular_support_source,
+        "pub(super) fn find_stage_columns",
+        "pub(super) fn source_row_offset",
+    );
 
     for (name, body) in [
         ("FRI polynomial", fri_lookup_body),
         ("regular hint", regular_lookup_body),
+        ("regular constraint", regular_support_lookup_body),
     ] {
         assert!(
             body.contains("usize::from(stage_index).checked_sub(1)")
