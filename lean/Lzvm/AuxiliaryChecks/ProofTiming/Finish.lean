@@ -74,6 +74,48 @@ theorem proof_artifact_finish_external_source_timing_acceptance_verifier_core_co
       proof
       observed
 
+theorem proof_artifact_finish_external_source_timing_acceptance_core_and_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : ProofArtifactFinishTimingSummary)
+    (externalSourceMilliseconds descriptorUploadMilliseconds
+      traceExpandMilliseconds : Nat) :
+    forall publicInput proof,
+      ProofArtifactFinishTimingObservedAcceptance
+        system
+        (some
+          { summary with
+            finishWitnessExternalSourceMilliseconds := externalSourceMilliseconds
+            finishWitnessExternalSourceDescriptorUploadMilliseconds :=
+              descriptorUploadMilliseconds
+            finishWitnessExternalSourceTraceExpandMilliseconds := traceExpandMilliseconds })
+        publicInput
+        proof ->
+        RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof observed
+  have core :=
+    proof_artifact_finish_external_source_timing_acceptance_verifier_core_contract
+      assumptions
+      summary
+      externalSourceMilliseconds
+      descriptorUploadMilliseconds
+      traceExpandMilliseconds
+      publicInput
+      proof
+      observed
+  have sound :=
+    proof_artifact_finish_external_source_timing_acceptance_sound
+      assumptions
+      summary
+      externalSourceMilliseconds
+      descriptorUploadMilliseconds
+      traceExpandMilliseconds
+      publicInput
+      proof
+      observed
+  exact And.intro core sound
+
 theorem proof_artifact_finish_witness_opening_subtiming_acceptance_sound
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)

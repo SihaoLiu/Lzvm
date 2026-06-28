@@ -1025,6 +1025,14 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
                 "finishWitnessOpeningRowValuesByteCount := bytes",
             ][..],
         ),
+        (
+            "proof_artifact_finish_external_source_timing_acceptance_core_and_sound",
+            &[
+                "finishWitnessExternalSourceMilliseconds := externalSourceMilliseconds",
+                "finishWitnessExternalSourceDescriptorUploadMilliseconds := descriptorUploadMilliseconds",
+                "finishWitnessExternalSourceTraceExpandMilliseconds := traceExpandMilliseconds",
+            ][..],
+        ),
     ] {
         lean_binding::assert_theorem_prefix_contains(
             &lean_proof_timing_source,
@@ -4568,6 +4576,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "proof_artifact_finish_row_values_shape_acceptance_core_and_sound",
             "proof_artifact_finish_external_source_timing_acceptance_sound",
             "proof_artifact_finish_external_source_timing_acceptance_verifier_core_contract",
+            "proof_artifact_finish_external_source_timing_acceptance_core_and_sound",
             "proof_artifact_finish_witness_opening_subtiming_acceptance_sound",
             "proof_artifact_finish_witness_opening_subtiming_acceptance_verifier_core_contract",
             "proof_artifact_finish_descriptor_upload_word_count_acceptance_sound",
