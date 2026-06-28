@@ -172,7 +172,17 @@ pub fn verify_fri_opening_folds(
                 });
             }
 
-            let (c0, c1, c2) = convert_fold_value_columns(&query.values)?;
+            let binary_values =
+                if is_binary_fold_layer(layer_plan.output_bits, layer_plan.input_bits) {
+                    convert_binary_fold_values(&query.values)?
+                } else {
+                    None
+                };
+            let fold_columns = if binary_values.is_none() {
+                Some(convert_fold_value_columns(&query.values)?)
+            } else {
+                None
+            };
             let layer_challenge_start = request
                 .challenges
                 .len()
@@ -188,17 +198,30 @@ pub fn verify_fri_opening_folds(
                     len: request.challenges.len(),
                 },
             )?;
-            let folded = verify_fri_fold_columns(
-                schedule.extended_domain_bits,
-                layer_plan.output_bits,
-                layer_plan.input_bits,
-                challenge,
-                expected_row,
-                c0,
-                c1,
-                c2,
-            )
-            .map_err(PcsFriOpeningFoldError::Fold)?;
+            let folded = if let Some(values) = binary_values {
+                evaluate_binary_fri_fold_values(
+                    schedule.extended_domain_bits,
+                    layer_plan.input_bits,
+                    challenge,
+                    expected_row,
+                    &values,
+                )
+                .map_err(PcsFriOpeningFoldError::Fold)?
+            } else {
+                let (c0, c1, c2) =
+                    fold_columns.expect("fold columns are present outside binary path");
+                verify_fri_fold_columns(
+                    schedule.extended_domain_bits,
+                    layer_plan.output_bits,
+                    layer_plan.input_bits,
+                    challenge,
+                    expected_row,
+                    c0,
+                    c1,
+                    c2,
+                )
+                .map_err(PcsFriOpeningFoldError::Fold)?
+            };
 
             let target = if let Some(next_plan) = schedule.fri_layers.get(layer_index + 1) {
                 let next_output_size = domain_size(next_plan.output_bits)?;
@@ -263,6 +286,19 @@ fn convert_fold_value_columns(
     Ok((c0, c1, c2))
 }
 
+fn convert_binary_fold_values(
+    values: &[[u64; 3]],
+) -> Result<Option<[Ext3; 2]>, PcsFriOpeningFoldError> {
+    if let [left, right] = values {
+        return Ok(Some([convert_ext(*left)?, convert_ext(*right)?]));
+    }
+
+    for value in values {
+        let _ = convert_ext(*value)?;
+    }
+    Ok(None)
+}
+
 fn verify_fri_fold_columns(
     n_bits_ext: u32,
     current_bits: u32,
@@ -309,6 +345,12 @@ fn validate_fri_fold_shape(
         });
     }
     Ok(fold_bits)
+}
+
+fn is_binary_fold_layer(current_bits: u32, prev_bits: u32) -> bool {
+    current_bits
+        .checked_add(1)
+        .is_some_and(|expected_prev_bits| expected_prev_bits == prev_bits)
 }
 
 fn evaluate_fri_fold_columns(

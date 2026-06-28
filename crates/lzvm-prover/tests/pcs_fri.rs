@@ -346,6 +346,21 @@ fn rejects_noncanonical_in_memory_fri_opening_fold_values() {
         PcsFriOpeningFoldError::NonCanonicalField { value: MODULUS }
     );
 
+    let error = verify_fri_opening_folds(
+        &schedule,
+        PcsFriOpeningFoldRequest {
+            unit_index: 0,
+            query_rows: &query_rows,
+            challenges: &[],
+            fri: &query_value,
+        },
+    )
+    .expect_err("direct FRI fold verification should reject noncanonical query values first");
+    assert_eq!(
+        error,
+        PcsFriOpeningFoldError::NonCanonicalField { value: MODULUS }
+    );
+
     let mut final_value = fri;
     final_value.final_polynomial[0][0] = MODULUS;
     let error = verify_fri_opening_folds(

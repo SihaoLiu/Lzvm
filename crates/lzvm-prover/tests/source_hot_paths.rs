@@ -8797,6 +8797,8 @@ fn fri_opening_fold_verifier_avoids_extension_value_staging() {
             && source.contains("fn evaluate_fri_fold_columns")
             && source.contains("fn evaluate_binary_fri_fold_values")
             && source.contains("fn evaluate_binary_fold_columns")
+            && source.contains("fn convert_binary_fold_values")
+            && source.contains("fn is_binary_fold_layer")
             && source.contains("fn fold_evaluation_point")
             && source.contains("const TWO_INVERSE")
             && source.contains("fn evaluate_interpolated_fold_columns")
@@ -8823,10 +8825,23 @@ fn fri_opening_fold_verifier_avoids_extension_value_staging() {
                 < evaluator_body
                     .find("interpolate_fold_column_owned")
                     .expect("fold evaluator should transform wider columns")
+            && body
+                .find("convert_binary_fold_values(&query.values)")
+                .expect("opening fold verifier should try the binary value path")
+                < body
+                    .find("convert_fold_value_columns(&query.values)")
+                    .expect("opening fold verifier should keep a column fallback")
+            && body
+                .find("convert_fold_value_columns(&query.values)")
+                .expect("opening fold verifier should keep a column fallback")
+                < body
+                    .find("let layer_challenge_start")
+                    .expect("opening fold verifier should look up challenges after conversion")
             && direct_body.contains("extension_fold_value_columns(values)")
             && direct_body.contains("evaluate_fri_fold_columns(")
             && source.contains("fn convert_fold_value_columns")
             && source.contains("fn verify_fri_fold_columns")
+            && body.contains("evaluate_binary_fri_fold_values(")
             && source.contains("evaluate_interpolated_fold_columns(")
             && source.contains("debug_assert_eq!(c0.len(), c1.len())")
             && body.contains("convert_fold_value_columns(&query.values)")
