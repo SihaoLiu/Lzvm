@@ -459,6 +459,47 @@ theorem guest_pc_trace_leaf_output_cache_counts_acceptance_verifier_core_contrac
       proof
       observed
 
+theorem guest_pc_trace_leaf_output_cache_counts_acceptance_core_and_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : GuestPcTraceTimingSummary)
+    (hitCount missCount : Nat)
+    (stageTimings : List GuestPcTraceStageTimingSummary) :
+    forall publicInput proof,
+      GuestPcTraceTimingObservedAcceptance
+        system
+        (some
+          { summary with
+            guestStageLeafOutputCacheHitCount := hitCount
+            guestStageLeafOutputCacheMissCount := missCount
+            stageTimings := stageTimings })
+        publicInput
+        proof ->
+        RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof observed
+  have core :=
+    guest_pc_trace_leaf_output_cache_counts_acceptance_verifier_core_contract
+      assumptions
+      summary
+      hitCount
+      missCount
+      stageTimings
+      publicInput
+      proof
+      observed
+  have sound :=
+    guest_pc_trace_leaf_output_cache_counts_acceptance_sound
+      assumptions
+      summary
+      hitCount
+      missCount
+      stageTimings
+      publicInput
+      proof
+      observed
+  exact And.intro core sound
+
 theorem guest_pc_trace_leaf_extend_timing_acceptance_sound
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
@@ -513,6 +554,44 @@ theorem guest_pc_trace_leaf_extend_timing_acceptance_verifier_core_contract
       publicInput
       proof
       observed
+
+theorem guest_pc_trace_leaf_extend_timing_acceptance_core_and_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : GuestPcTraceTimingSummary)
+    (extendMilliseconds : Nat)
+    (stageTimings : List GuestPcTraceStageTimingSummary) :
+    forall publicInput proof,
+      GuestPcTraceTimingObservedAcceptance
+        system
+        (some
+          { summary with
+            guestStageLeafExtendWorkMilliseconds := extendMilliseconds
+            stageTimings := stageTimings })
+        publicInput
+        proof ->
+        RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof observed
+  have core :=
+    guest_pc_trace_leaf_extend_timing_acceptance_verifier_core_contract
+      assumptions
+      summary
+      extendMilliseconds
+      stageTimings
+      publicInput
+      proof
+      observed
+  have sound :=
+    guest_pc_trace_leaf_extend_timing_acceptance_sound
+      assumptions
+      summary
+      extendMilliseconds
+      stageTimings
+      publicInput
+      proof
+      observed
+  exact And.intro core sound
 
 theorem guest_pc_trace_leaf_setup_timing_acceptance_sound
     {system : VerifierModel}
@@ -594,6 +673,63 @@ theorem guest_pc_trace_leaf_setup_timing_acceptance_verifier_core_contract
       publicInput
       proof
       observed
+
+theorem guest_pc_trace_leaf_setup_timing_acceptance_core_and_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : GuestPcTraceTimingSummary)
+    (setupMilliseconds prepareMilliseconds outputAllocMilliseconds
+      workspaceAllocMilliseconds outputAllocByteCount workspaceAllocByteCount
+      outputAllocCount workspaceAllocCount : Nat) :
+    forall publicInput proof,
+      GuestPcTraceTimingObservedAcceptance
+        system
+        (some
+          { summary with
+            guestStageLeafSetupWorkMilliseconds := setupMilliseconds
+            guestStageLeafSetupPrepareMilliseconds := prepareMilliseconds
+            guestStageLeafSetupOutputAllocMilliseconds := outputAllocMilliseconds
+            guestStageLeafSetupWorkspaceAllocMilliseconds := workspaceAllocMilliseconds
+            guestStageLeafSetupOutputAllocByteCount := outputAllocByteCount
+            guestStageLeafSetupWorkspaceAllocByteCount := workspaceAllocByteCount
+            guestStageLeafSetupOutputAllocCount := outputAllocCount
+            guestStageLeafSetupWorkspaceAllocCount := workspaceAllocCount })
+        publicInput
+        proof ->
+        RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof observed
+  have core :=
+    guest_pc_trace_leaf_setup_timing_acceptance_verifier_core_contract
+      assumptions
+      summary
+      setupMilliseconds
+      prepareMilliseconds
+      outputAllocMilliseconds
+      workspaceAllocMilliseconds
+      outputAllocByteCount
+      workspaceAllocByteCount
+      outputAllocCount
+      workspaceAllocCount
+      publicInput
+      proof
+      observed
+  have sound :=
+    guest_pc_trace_leaf_setup_timing_acceptance_sound
+      assumptions
+      summary
+      setupMilliseconds
+      prepareMilliseconds
+      outputAllocMilliseconds
+      workspaceAllocMilliseconds
+      outputAllocByteCount
+      workspaceAllocByteCount
+      outputAllocCount
+      workspaceAllocCount
+      publicInput
+      proof
+      observed
+  exact And.intro core sound
 
 theorem guest_pc_trace_leaf_work_timing_acceptance_sound
     {system : VerifierModel}
