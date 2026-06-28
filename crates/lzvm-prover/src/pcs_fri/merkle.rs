@@ -244,24 +244,28 @@ pub(super) fn build_fri_layer_tree(
     let mut levels = Vec::new();
     let mut unpadded_counts = Vec::new();
     loop {
-        unpadded_counts.push(current.len());
-        let mut padded = current.clone();
-        if padded.len() > 1 {
-            let extra_zeros = (arity - (padded.len() % arity)) % arity;
-            padded.resize(
-                padded
+        let unpadded_count = current.len();
+        unpadded_counts.push(unpadded_count);
+        if current.len() > 1 {
+            let extra_zeros = (arity - (current.len() % arity)) % arity;
+            current.resize(
+                current
                     .len()
                     .checked_add(extra_zeros)
                     .ok_or(PcsFriOpeningBuildError::LengthOverflow)?,
                 [Felt::ZERO; HASH_WORDS],
             );
         }
-        levels.push(padded.clone());
-        if current.len() == 1 {
+        let next = if unpadded_count == 1 {
+            None
+        } else {
+            Some(parent_hashes(&current, arity).map_err(PcsFriMerkleError::from)?)
+        };
+        levels.push(current);
+        let Some(next) = next else {
             break;
-        }
-
-        current = parent_hashes(&padded, arity).map_err(PcsFriMerkleError::from)?;
+        };
+        current = next;
     }
 
     let root = *levels

@@ -8731,6 +8731,10 @@ fn fri_layer_tree_hashes_uniform_rows_from_row_major_bytes() {
                 < build_body
                     .find("collect::<Result<Vec<_>, PcsFriMerkleError>>()")
                     .expect("FRI tree should retain the ragged-row fallback")
+            && build_body.contains("let next = if unpadded_count == 1")
+            && build_body.contains("levels.push(current)")
+            && !build_body.contains("padded.clone()")
+            && !build_body.contains("current.clone()")
             && flatten_body.contains("if rows.iter().any(|row| row.len() != row_value_count)")
             && flatten_body.contains(".try_reserve_exact(byte_count)")
             && flatten_body.contains("value.c0.to_le_bytes()")
