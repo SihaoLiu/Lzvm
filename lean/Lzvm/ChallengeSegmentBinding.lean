@@ -17,6 +17,8 @@ structure RuntimeChallengeSegmentBindingValidation (system : VerifierModel) wher
   challengeBindingAccepted : RuntimeArtifact -> PublicInput -> Proof -> Prop
   challengeSegmentPayloadValid : RuntimeArtifact -> PublicInput -> Proof -> Prop
   challengeSegmentMatchesTranscript : RuntimeArtifact -> PublicInput -> Proof -> Prop
+  challengeQueryNonceValid : RuntimeArtifact -> PublicInput -> Proof -> Prop
+  challengeQueriesDerivedFromNonce : RuntimeArtifact -> PublicInput -> Proof -> Prop
   challengeBindingAcceptedImpliesTranscriptAccepted :
     forall artifact publicInput proof,
       challengeBindingAccepted artifact publicInput proof ->
@@ -29,6 +31,14 @@ structure RuntimeChallengeSegmentBindingValidation (system : VerifierModel) wher
     forall artifact publicInput proof,
       challengeBindingAccepted artifact publicInput proof ->
         challengeSegmentMatchesTranscript artifact publicInput proof
+  challengeBindingAcceptedImpliesQueryNonceValid :
+    forall artifact publicInput proof,
+      challengeBindingAccepted artifact publicInput proof ->
+        challengeQueryNonceValid artifact publicInput proof
+  challengeBindingAcceptedImpliesQueriesDerivedFromNonce :
+    forall artifact publicInput proof,
+      challengeBindingAccepted artifact publicInput proof ->
+        challengeQueriesDerivedFromNonce artifact publicInput proof
   challengeSegmentChecksImplyBound :
     forall artifact publicInput proof,
       challengeSegmentPayloadValid artifact publicInput proof ->
@@ -44,6 +54,16 @@ def RuntimeChallengeSegmentBindingEvidence
   validation.challengeSegmentPayloadValid artifact publicInput proof
     /\ validation.challengeSegmentMatchesTranscript artifact publicInput proof
     /\ validation.transcriptValidation.challengeSegmentBound artifact publicInput proof
+
+def RuntimeChallengeQueryDerivationContract
+    (_system : VerifierModel)
+    (validation : RuntimeChallengeSegmentBindingValidation _system)
+    (artifact : RuntimeArtifact)
+    (publicInput : PublicInput)
+    (proof : Proof) : Prop :=
+  validation.challengeQueryNonceValid artifact publicInput proof
+    /\ validation.challengeQueriesDerivedFromNonce artifact publicInput proof
+    /\ validation.transcriptValidation.queryPlanBound artifact publicInput proof
 
 def RuntimeChallengeSegmentPayloadReuseContract
     (_system : VerifierModel)
@@ -395,6 +415,48 @@ theorem runtime_challenge_segment_binding_checked_acceptance_payload_reuse_contr
       (And.intro challengeEvidence.right.left
         (And.intro challengeEvidence.right.right
           (And.intro segmentIdsUnique unitValuesTraceIdentityCoverage)))
+
+theorem runtime_challenge_segment_binding_checked_acceptance_query_derivation_contract
+    {system : VerifierModel}
+    (validation : RuntimeChallengeSegmentBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeChallengeSegmentBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeChallengeQueryDerivationContract
+          system
+          validation
+          artifact
+          publicInput
+          proof := by
+  intro artifact publicInput proof accepted
+  have transcriptAccepted :=
+    validation.challengeBindingAcceptedImpliesTranscriptAccepted
+      artifact
+      publicInput
+      proof
+      accepted
+  exact
+    And.intro
+      (validation.challengeBindingAcceptedImpliesQueryNonceValid
+        artifact
+        publicInput
+        proof
+        accepted)
+      (And.intro
+        (validation.challengeBindingAcceptedImpliesQueriesDerivedFromNonce
+          artifact
+          publicInput
+          proof
+          accepted)
+        (validation.transcriptValidation.transcriptAcceptedImpliesQueryPlanBound
+          artifact
+          publicInput
+          proof
+          transcriptAccepted))
 
 theorem runtime_challenge_segment_binding_checked_acceptance_container_canonical
     {system : VerifierModel}

@@ -20,6 +20,7 @@ fn lean_challenge_segment_binding_exports_core_contract_projection() {
     assert!(
         lean_source.contains("RuntimeChallengeSegmentBindingValidation")
             && lean_source.contains("RuntimeChallengeSegmentBindingEvidence")
+            && lean_source.contains("RuntimeChallengeQueryDerivationContract")
             && lean_source.contains("RuntimeChallengeSegmentPayloadReuseContract")
             && lean_source.contains("RuntimeTranscriptBindingEvidence")
             && lean_source.contains("RuntimeProofArtifactFinalized")
@@ -43,6 +44,7 @@ fn lean_challenge_segment_binding_exports_core_contract_projection() {
             "runtime_challenge_segment_binding_checked_acceptance_segment_ids_unique",
             "runtime_challenge_segment_binding_checked_acceptance_unit_values_trace_identity_coverage",
             "runtime_challenge_segment_binding_checked_acceptance_payload_reuse_contract",
+            "runtime_challenge_segment_binding_checked_acceptance_query_derivation_contract",
             "runtime_challenge_segment_binding_checked_acceptance_container_canonical",
             "runtime_challenge_segment_binding_checked_acceptance_metadata_canonical",
             "runtime_challenge_segment_binding_checked_acceptance_segment_payloads_nonempty",
@@ -141,6 +143,23 @@ fn lean_challenge_segment_binding_exports_core_contract_projection() {
             "runtime_challenge_segment_binding_checked_acceptance_evidence",
             "runtime_challenge_segment_binding_checked_acceptance_segment_ids_unique",
             "runtime_challenge_segment_binding_checked_acceptance_unit_values_trace_identity_coverage",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_challenge_segment_binding_checked_acceptance_query_derivation_contract",
+        &[
+            "RuntimeChallengeSegmentBindingCheckedAcceptance",
+            "RuntimeChallengeQueryDerivationContract",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_challenge_segment_binding_checked_acceptance_query_derivation_contract",
+        &[
+            "validation.challengeBindingAcceptedImpliesQueryNonceValid",
+            "validation.challengeBindingAcceptedImpliesQueriesDerivedFromNonce",
+            "validation.transcriptValidation.transcriptAcceptedImpliesQueryPlanBound",
         ],
     );
     lean_binding::assert_theorem_prefix_contains(
@@ -312,5 +331,39 @@ fn lean_challenge_segment_binding_exports_core_contract_projection() {
             "runtime_challenge_segment_binding_checked_acceptance_sound",
             "sound_witness_implies_verifier_core_contract",
         ],
+    );
+}
+
+#[test]
+fn lean_challenge_query_derivation_contract_matches_runtime_helpers() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let lean_path = crate_root.join("../../lean/Lzvm/ChallengeSegmentBinding.lean");
+    let lean_source =
+        std::fs::read_to_string(&lean_path).expect("Lean challenge binding source should read");
+    let runtime_path = crate_root.join("src/pcs_challenge.rs");
+    let runtime_source =
+        std::fs::read_to_string(&runtime_path).expect("PCS challenge source should read");
+
+    assert!(
+        lean_source.contains("challengeQueryNonceValid")
+            && lean_source.contains("challengeQueriesDerivedFromNonce")
+            && lean_source.contains("RuntimeChallengeQueryDerivationContract"),
+        "Lean challenge binding should name nonce validation and derived-query obligations"
+    );
+    assert!(
+        runtime_source.contains("pub fn verify_query_nonce")
+            && runtime_source.contains("pub fn derive_fri_queries")
+            && runtime_source.contains("poseidon2_hash_4([challenge.c0, challenge.c1, challenge.c2, nonce])")
+            && runtime_source.contains("transcript.put(&[challenge.c0, challenge.c1, challenge.c2]);")
+            && runtime_source.contains("transcript.put(&[nonce]);")
+            && runtime_source.contains("transcript.get_permutations(count, bits)"),
+        "Runtime PCS challenge helpers should validate the nonce and derive queries from challenge plus nonce"
+    );
+    assert!(
+        runtime_source.contains("if bits > 64")
+            && runtime_source
+                .contains("let target = if bits == 64 { 1 } else { 1_u64 << (64 - bits) };")
+            && runtime_source.contains("digest[0].to_u64() < target"),
+        "Runtime nonce validation should retain the checked work-bit bound"
     );
 }
