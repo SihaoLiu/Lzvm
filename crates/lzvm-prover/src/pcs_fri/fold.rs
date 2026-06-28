@@ -199,8 +199,9 @@ pub fn verify_fri_opening_folds(
                 },
             )?;
             let folded = if let Some(values) = binary_values {
-                evaluate_binary_fri_fold_values(
+                verify_fri_fold(
                     schedule.extended_domain_bits,
+                    layer_plan.output_bits,
                     layer_plan.input_bits,
                     challenge,
                     expected_row,
