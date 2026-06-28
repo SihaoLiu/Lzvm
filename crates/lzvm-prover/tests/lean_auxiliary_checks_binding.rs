@@ -1214,6 +1214,20 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
                 "guest_pc_trace_leaf_setup_timing_acceptance_sound",
             ],
         ),
+        (
+            "guest_pc_trace_leaf_work_timing_acceptance_core_and_sound",
+            [
+                "guest_pc_trace_leaf_work_timing_acceptance_verifier_core_contract",
+                "guest_pc_trace_leaf_work_timing_acceptance_sound",
+            ],
+        ),
+        (
+            "guest_pc_trace_leaf_coset_timing_acceptance_core_and_sound",
+            [
+                "guest_pc_trace_leaf_coset_timing_acceptance_verifier_core_contract",
+                "guest_pc_trace_leaf_coset_timing_acceptance_sound",
+            ],
+        ),
     ] {
         lean_binding::assert_theorem_prefix_contains(
             &timing_source,
@@ -1432,6 +1446,38 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
                 "guestStageLeafSetupWorkspaceAllocByteCount := workspaceAllocByteCount",
                 "guestStageLeafSetupOutputAllocCount := outputAllocCount",
                 "guestStageLeafSetupWorkspaceAllocCount := workspaceAllocCount",
+            ][..],
+        ),
+        (
+            "guest_pc_trace_leaf_work_timing_acceptance_core_and_sound",
+            &[
+                "guestStageLeafUploadWorkMilliseconds := uploadMilliseconds",
+                "guestStageLeafKernelWorkMilliseconds := kernelMilliseconds",
+                "guestStageLeafDownloadWorkMilliseconds := downloadMilliseconds",
+                "guestStageLeafValidateWorkMilliseconds := validateMilliseconds",
+                "guestStageLeafHashWorkMilliseconds := hashMilliseconds",
+                "guestStageLeafHashRowCount := hashRows",
+                "guestStageLeafHashByteCount := hashBytes",
+                "guestStageLeafHashArity2RowCount := hashArity2Rows",
+                "guestStageLeafHashArity2ByteCount := hashArity2Bytes",
+                "guestStageLeafHashArity4RowCount := hashArity4Rows",
+                "guestStageLeafHashArity4ByteCount := hashArity4Bytes",
+            ][..],
+        ),
+        (
+            "guest_pc_trace_leaf_coset_timing_acceptance_core_and_sound",
+            &[
+                "guestStageLeafCosetExtendCallCount := callCount",
+                "guestStageLeafCosetExtendOutputByteCount := outputByteCount",
+                "guestStageLeafCosetExtendColumnCount := columnCount",
+                "guestStageLeafCosetExtendMaxColumnCount := maxColumnCount",
+                "guestStageLeafCosetExtendNttLaunchCount := nttLaunchCount",
+                "guestStageLeafCosetExtendBitReverseLaunchCount := bitReverseLaunchCount",
+                "guestStageLeafCosetExtendNttStageLaunchCount := nttStageLaunchCount",
+                "guestStageLeafCosetExtendNttBlockTwiddleLaunchCount := nttBlockTwiddleLaunchCount",
+                "guestStageLeafCosetExtendNormalizeLaunchCount := normalizeLaunchCount",
+                "guestStageLeafCosetExtendPackLaunchCount := packLaunchCount",
+                "guestStageLeafCosetExtendUnpackLaunchCount := unpackLaunchCount",
             ][..],
         ),
     ] {
@@ -4092,8 +4138,10 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "guest_pc_trace_leaf_setup_timing_acceptance_core_and_sound",
             "guest_pc_trace_leaf_work_timing_acceptance_sound",
             "guest_pc_trace_leaf_work_timing_acceptance_verifier_core_contract",
+            "guest_pc_trace_leaf_work_timing_acceptance_core_and_sound",
             "guest_pc_trace_leaf_coset_timing_acceptance_sound",
             "guest_pc_trace_leaf_coset_timing_acceptance_verifier_core_contract",
+            "guest_pc_trace_leaf_coset_timing_acceptance_core_and_sound",
             "guest_pc_trace_tree_commit_timing_acceptance_sound",
             "guest_pc_trace_tree_commit_timing_acceptance_verifier_core_contract",
             "guest_pc_trace_segment_commit_worker_timing_acceptance_sound",

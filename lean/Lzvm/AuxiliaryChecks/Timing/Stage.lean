@@ -824,6 +824,72 @@ theorem guest_pc_trace_leaf_work_timing_acceptance_verifier_core_contract
       proof
       observed
 
+theorem guest_pc_trace_leaf_work_timing_acceptance_core_and_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : GuestPcTraceTimingSummary)
+    (uploadMilliseconds kernelMilliseconds downloadMilliseconds
+      validateMilliseconds hashMilliseconds hashRows hashBytes hashArity2Rows
+      hashArity2Bytes hashArity4Rows hashArity4Bytes : Nat) :
+    forall publicInput proof,
+      GuestPcTraceTimingObservedAcceptance
+        system
+        (some
+          { summary with
+            guestStageLeafUploadWorkMilliseconds := uploadMilliseconds
+            guestStageLeafKernelWorkMilliseconds := kernelMilliseconds
+            guestStageLeafDownloadWorkMilliseconds := downloadMilliseconds
+            guestStageLeafValidateWorkMilliseconds := validateMilliseconds
+            guestStageLeafHashWorkMilliseconds := hashMilliseconds
+            guestStageLeafHashRowCount := hashRows
+            guestStageLeafHashByteCount := hashBytes
+            guestStageLeafHashArity2RowCount := hashArity2Rows
+            guestStageLeafHashArity2ByteCount := hashArity2Bytes
+            guestStageLeafHashArity4RowCount := hashArity4Rows
+            guestStageLeafHashArity4ByteCount := hashArity4Bytes })
+        publicInput
+        proof ->
+        RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof observed
+  have core :=
+    guest_pc_trace_leaf_work_timing_acceptance_verifier_core_contract
+      assumptions
+      summary
+      uploadMilliseconds
+      kernelMilliseconds
+      downloadMilliseconds
+      validateMilliseconds
+      hashMilliseconds
+      hashRows
+      hashBytes
+      hashArity2Rows
+      hashArity2Bytes
+      hashArity4Rows
+      hashArity4Bytes
+      publicInput
+      proof
+      observed
+  have sound :=
+    guest_pc_trace_leaf_work_timing_acceptance_sound
+      assumptions
+      summary
+      uploadMilliseconds
+      kernelMilliseconds
+      downloadMilliseconds
+      validateMilliseconds
+      hashMilliseconds
+      hashRows
+      hashBytes
+      hashArity2Rows
+      hashArity2Bytes
+      hashArity4Rows
+      hashArity4Bytes
+      publicInput
+      proof
+      observed
+  exact And.intro core sound
+
 theorem guest_pc_trace_leaf_coset_timing_acceptance_sound
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
@@ -916,6 +982,72 @@ theorem guest_pc_trace_leaf_coset_timing_acceptance_verifier_core_contract
       publicInput
       proof
       observed
+
+theorem guest_pc_trace_leaf_coset_timing_acceptance_core_and_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : GuestPcTraceTimingSummary)
+    (callCount outputByteCount columnCount maxColumnCount nttLaunchCount
+      bitReverseLaunchCount nttStageLaunchCount nttBlockTwiddleLaunchCount
+      normalizeLaunchCount packLaunchCount unpackLaunchCount : Nat) :
+    forall publicInput proof,
+      GuestPcTraceTimingObservedAcceptance
+        system
+        (some
+          { summary with
+            guestStageLeafCosetExtendCallCount := callCount
+            guestStageLeafCosetExtendOutputByteCount := outputByteCount
+            guestStageLeafCosetExtendColumnCount := columnCount
+            guestStageLeafCosetExtendMaxColumnCount := maxColumnCount
+            guestStageLeafCosetExtendNttLaunchCount := nttLaunchCount
+            guestStageLeafCosetExtendBitReverseLaunchCount := bitReverseLaunchCount
+            guestStageLeafCosetExtendNttStageLaunchCount := nttStageLaunchCount
+            guestStageLeafCosetExtendNttBlockTwiddleLaunchCount := nttBlockTwiddleLaunchCount
+            guestStageLeafCosetExtendNormalizeLaunchCount := normalizeLaunchCount
+            guestStageLeafCosetExtendPackLaunchCount := packLaunchCount
+            guestStageLeafCosetExtendUnpackLaunchCount := unpackLaunchCount })
+        publicInput
+        proof ->
+        RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof observed
+  have core :=
+    guest_pc_trace_leaf_coset_timing_acceptance_verifier_core_contract
+      assumptions
+      summary
+      callCount
+      outputByteCount
+      columnCount
+      maxColumnCount
+      nttLaunchCount
+      bitReverseLaunchCount
+      nttStageLaunchCount
+      nttBlockTwiddleLaunchCount
+      normalizeLaunchCount
+      packLaunchCount
+      unpackLaunchCount
+      publicInput
+      proof
+      observed
+  have sound :=
+    guest_pc_trace_leaf_coset_timing_acceptance_sound
+      assumptions
+      summary
+      callCount
+      outputByteCount
+      columnCount
+      maxColumnCount
+      nttLaunchCount
+      bitReverseLaunchCount
+      nttStageLaunchCount
+      nttBlockTwiddleLaunchCount
+      normalizeLaunchCount
+      packLaunchCount
+      unpackLaunchCount
+      publicInput
+      proof
+      observed
+  exact And.intro core sound
 
 theorem guest_pc_trace_tree_commit_timing_acceptance_sound
     {system : VerifierModel}
