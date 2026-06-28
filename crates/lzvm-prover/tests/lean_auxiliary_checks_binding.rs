@@ -1534,6 +1534,37 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
                 "Lean theorem {theorem} prefix should wire field {field_term}"
             );
         }
+
+        let base_theorem = theorem
+            .strip_suffix("_core_and_sound")
+            .expect("combined timing theorem name should use the core_and_sound suffix");
+        let mut ordered_args = vec!["assumptions".to_owned(), "summary".to_owned()];
+        for field_term in field_terms {
+            let (_, argument) = field_term
+                .rsplit_once(":=")
+                .expect("timing field wiring term should use Lean record assignment syntax");
+            ordered_args.push(argument.trim().to_owned());
+        }
+        ordered_args.extend([
+            "publicInput".to_owned(),
+            "proof".to_owned(),
+            "observed".to_owned(),
+        ]);
+
+        let body = lean_binding::theorem_body(&timing_source, theorem);
+        for callee in [
+            format!("{base_theorem}_verifier_core_contract"),
+            format!("{base_theorem}_sound"),
+        ] {
+            let expected_call = std::iter::once(callee.as_str())
+                .chain(ordered_args.iter().map(String::as_str))
+                .collect::<Vec<_>>()
+                .join(" ");
+            assert!(
+                compact_source_contains(&body, &expected_call),
+                "Lean theorem {theorem} body should call {callee} with ordered timing arguments"
+            );
+        }
     }
     assert!(
         lean_source.contains("guestStageSourceRetentionRetainedByteCount")
