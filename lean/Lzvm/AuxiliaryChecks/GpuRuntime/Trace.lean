@@ -1268,6 +1268,14 @@ theorem fri_fixed_column_cache_checked_acceptance_core_and_sound
       publicInput
       proof
       checked
+  have cachedBound :=
+    fri_fixed_column_cache_checked_acceptance_projects_cached_contents_bound
+      validation
+      cached
+      fresh
+      publicInput
+      proof
+      checked
   have sound :=
     fri_fixed_column_cache_checked_acceptance_sound
       assumptions
@@ -1288,7 +1296,7 @@ theorem fri_fixed_column_cache_checked_acceptance_core_and_sound
       checked
   exact And.intro requestBound
     (And.intro freshBound
-      (And.intro sound.left (And.intro core sound.right)))
+      (And.intro cachedBound (And.intro core sound.right)))
 
 
 
