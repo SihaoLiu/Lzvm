@@ -736,27 +736,38 @@ theorem gpu_allocator_no_wait_bypass_checked_acceptance_core_and_sound
           /\ RuntimeVerifierCoreContract system publicInput proof
           /\ SoundWitness system publicInput proof := by
   intro publicInput proof checked
-  have sound :=
-    gpu_allocator_no_wait_bypass_checked_acceptance_sound
-      assumptions
+  have sameRequest :=
+    gpu_allocator_no_wait_bypass_checked_acceptance_projects_same_request
       validation
       pending
       fresh
       publicInput
       proof
       checked
-  have core :=
-    gpu_allocator_no_wait_bypass_checked_acceptance_verifier_core_contract
-      assumptions
+  have pendingNotReused :=
+    gpu_allocator_no_wait_bypass_checked_acceptance_projects_pending_not_reused
       validation
       pending
       fresh
       publicInput
       proof
       checked
-  exact And.intro sound.left
-    (And.intro sound.right.left
-      (And.intro sound.right.right.left (And.intro core sound.right.right.right)))
+  have freshIssued :=
+    gpu_allocator_no_wait_bypass_checked_acceptance_projects_fresh_allocation
+      validation
+      pending
+      fresh
+      publicInput
+      proof
+      checked
+  have coreAndSound :=
+    GpuRuntimeInternal.checked_acceptance_core_and_sound
+      assumptions
+      publicInput
+      proof
+      checked
+  exact And.intro sameRequest
+    (And.intro pendingNotReused (And.intro freshIssued coreAndSound))
 
 theorem gpu_allocator_no_wait_limit_checked_acceptance_projects_decision
     {system : VerifierModel}
@@ -844,23 +855,20 @@ theorem gpu_allocator_no_wait_limit_checked_acceptance_core_and_sound
           /\ RuntimeVerifierCoreContract system publicInput proof
           /\ SoundWitness system publicInput proof := by
   intro publicInput proof checked
-  have sound :=
-    gpu_allocator_no_wait_limit_checked_acceptance_sound
-      assumptions
+  have decision :=
+    gpu_allocator_no_wait_limit_checked_acceptance_projects_decision
       validation
       config
       publicInput
       proof
       checked
-  have core :=
-    gpu_allocator_no_wait_limit_checked_acceptance_verifier_core_contract
+  have coreAndSound :=
+    GpuRuntimeInternal.checked_acceptance_core_and_sound
       assumptions
-      validation
-      config
       publicInput
       proof
       checked
-  exact And.intro sound.left (And.intro core sound.right)
+  exact And.intro decision coreAndSound
 
 theorem guest_pc_trace_segment_queue_checked_acceptance_projects_decision
     {system : VerifierModel}
@@ -948,23 +956,20 @@ theorem guest_pc_trace_segment_queue_checked_acceptance_core_and_sound
           /\ RuntimeVerifierCoreContract system publicInput proof
           /\ SoundWitness system publicInput proof := by
   intro publicInput proof checked
-  have sound :=
-    guest_pc_trace_segment_queue_checked_acceptance_sound
-      assumptions
+  have decision :=
+    guest_pc_trace_segment_queue_checked_acceptance_projects_decision
       validation
       config
       publicInput
       proof
       checked
-  have core :=
-    guest_pc_trace_segment_queue_checked_acceptance_verifier_core_contract
+  have coreAndSound :=
+    GpuRuntimeInternal.checked_acceptance_core_and_sound
       assumptions
-      validation
-      config
       publicInput
       proof
       checked
-  exact And.intro sound.left (And.intro core sound.right)
+  exact And.intro decision coreAndSound
 
 theorem guest_pc_trace_large_gpu_gate_checked_acceptance_projects_decision
     {system : VerifierModel}
@@ -1154,23 +1159,20 @@ theorem guest_pc_trace_large_gpu_gate_checked_acceptance_core_and_sound
           /\ RuntimeVerifierCoreContract system publicInput proof
           /\ SoundWitness system publicInput proof := by
   intro publicInput proof checked
-  have sound :=
-    guest_pc_trace_large_gpu_gate_checked_acceptance_sound
-      assumptions
+  have decision :=
+    guest_pc_trace_large_gpu_gate_checked_acceptance_projects_decision
       validation
       config
       publicInput
       proof
       checked
-  have core :=
-    guest_pc_trace_large_gpu_gate_checked_acceptance_verifier_core_contract
+  have coreAndSound :=
+    GpuRuntimeInternal.checked_acceptance_core_and_sound
       assumptions
-      validation
-      config
       publicInput
       proof
       checked
-  exact And.intro sound.left (And.intro core sound.right)
+  exact And.intro decision coreAndSound
 
 theorem guest_pc_trace_traceless_commitment_input_checked_acceptance_projects_decision
     {system : VerifierModel}
@@ -1287,23 +1289,20 @@ theorem guest_pc_trace_traceless_commitment_input_checked_acceptance_core_and_so
           /\ RuntimeVerifierCoreContract system publicInput proof
           /\ SoundWitness system publicInput proof := by
   intro publicInput proof checked
-  have sound :=
-    guest_pc_trace_traceless_commitment_input_checked_acceptance_sound
-      assumptions
+  have decision :=
+    guest_pc_trace_traceless_commitment_input_checked_acceptance_projects_decision
       validation
       config
       publicInput
       proof
       checked
-  have core :=
-    guest_pc_trace_traceless_commitment_input_checked_acceptance_verifier_core_contract
+  have coreAndSound :=
+    GpuRuntimeInternal.checked_acceptance_core_and_sound
       assumptions
-      validation
-      config
       publicInput
       proof
       checked
-  exact And.intro sound.left (And.intro core sound.right)
+  exact And.intro decision coreAndSound
 
 theorem guest_pc_trace_traceless_segment_output_checked_acceptance_projects_decision
     {system : VerifierModel}
@@ -1420,23 +1419,20 @@ theorem guest_pc_trace_traceless_segment_output_checked_acceptance_core_and_soun
           /\ RuntimeVerifierCoreContract system publicInput proof
           /\ SoundWitness system publicInput proof := by
   intro publicInput proof checked
-  have sound :=
-    guest_pc_trace_traceless_segment_output_checked_acceptance_sound
-      assumptions
+  have decision :=
+    guest_pc_trace_traceless_segment_output_checked_acceptance_projects_decision
       validation
       config
       publicInput
       proof
       checked
-  have core :=
-    guest_pc_trace_traceless_segment_output_checked_acceptance_verifier_core_contract
+  have coreAndSound :=
+    GpuRuntimeInternal.checked_acceptance_core_and_sound
       assumptions
-      validation
-      config
       publicInput
       proof
       checked
-  exact And.intro sound.left (And.intro core sound.right)
+  exact And.intro decision coreAndSound
 
 theorem guest_pc_trace_cross_root_materialization_checked_acceptance_projects_decision
     {system : VerifierModel}
@@ -1607,23 +1603,20 @@ theorem guest_pc_trace_cross_root_materialization_checked_acceptance_core_and_so
           /\ RuntimeVerifierCoreContract system publicInput proof
           /\ SoundWitness system publicInput proof := by
   intro publicInput proof checked
-  have sound :=
-    guest_pc_trace_cross_root_materialization_checked_acceptance_sound
-      assumptions
+  have decision :=
+    guest_pc_trace_cross_root_materialization_checked_acceptance_projects_decision
       validation
       config
       publicInput
       proof
       checked
-  have core :=
-    guest_pc_trace_cross_root_materialization_checked_acceptance_verifier_core_contract
+  have coreAndSound :=
+    GpuRuntimeInternal.checked_acceptance_core_and_sound
       assumptions
-      validation
-      config
       publicInput
       proof
       checked
-  exact And.intro sound.left (And.intro core sound.right)
+  exact And.intro decision coreAndSound
 
 
 end Lzvm
