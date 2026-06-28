@@ -4,45 +4,13 @@ Released under MIT OR Apache-2.0 license.
 Authors: Sihao Liu
 -/
 
-import Lzvm.AuxiliaryChecks
+import Lzvm.AuxiliaryChecks.GpuRuntime.Common
 
 /-!
 GPU auxiliary runtime cache and reuse contracts.
 -/
 
 namespace Lzvm
-
-private theorem checked_acceptance_sound_witness
-    {system : VerifierModel}
-    (assumptions : AssumptionBundle system)
-    {auxiliaryAccepted : PublicInput -> Proof -> Prop} :
-    forall publicInput proof,
-      system.accepts publicInput proof
-        /\ auxiliaryAccepted publicInput proof ->
-        SoundWitness system publicInput proof := by
-  intro publicInput proof checked
-  exact
-    auxiliary_checked_acceptance_sound_witness
-      assumptions
-      publicInput
-      proof
-      checked
-
-private theorem checked_acceptance_verifier_core_contract
-    {system : VerifierModel}
-    (assumptions : AssumptionBundle system)
-    {auxiliaryAccepted : PublicInput -> Proof -> Prop} :
-    forall publicInput proof,
-      system.accepts publicInput proof
-        /\ auxiliaryAccepted publicInput proof ->
-        RuntimeVerifierCoreContract system publicInput proof := by
-  intro publicInput proof checked
-  exact
-    auxiliary_checked_acceptance_verifier_core_contract
-      assumptions
-      publicInput
-      proof
-      checked
 
 theorem gpu_setup_checked_acceptance_projects_constants_sound
     {system : VerifierModel}
@@ -72,7 +40,7 @@ theorem gpu_setup_checked_acceptance_sound
         publicInput
         proof
         acceptedWithSetup)
-      (checked_acceptance_sound_witness
+      (gpu_runtime_checked_acceptance_sound_witness
         (auxiliaryAccepted := fun _publicInput _proof =>
           validation.constantsSoundFor request.device request.requiredBits)
         assumptions
@@ -90,7 +58,7 @@ theorem gpu_setup_checked_acceptance_verifier_core_contract
         RuntimeVerifierCoreContract system publicInput proof := by
   intro publicInput proof checked
   exact
-    checked_acceptance_verifier_core_contract
+    gpu_runtime_checked_acceptance_verifier_core_contract
       (auxiliaryAccepted := fun _publicInput _proof =>
         validation.constantsSoundFor request.device request.requiredBits)
       assumptions
@@ -167,7 +135,7 @@ theorem gpu_allocation_checked_acceptance_sound
         publicInput
         proof
         acceptedWithAllocation)
-      (checked_acceptance_sound_witness
+      (gpu_runtime_checked_acceptance_sound_witness
         assumptions
         publicInput
         proof
@@ -183,7 +151,7 @@ theorem gpu_allocation_checked_acceptance_verifier_core_contract
         RuntimeVerifierCoreContract system publicInput proof := by
   intro publicInput proof checked
   exact
-    checked_acceptance_verifier_core_contract
+    gpu_runtime_checked_acceptance_verifier_core_contract
       assumptions
       publicInput
       proof
@@ -267,7 +235,7 @@ theorem gpu_host_device_copy_round_trip_checked_acceptance_sound
         publicInput
         proof
         checked)
-      (checked_acceptance_sound_witness
+      (gpu_runtime_checked_acceptance_sound_witness
         assumptions
         publicInput
         proof
@@ -288,7 +256,7 @@ theorem gpu_host_device_copy_round_trip_checked_acceptance_verifier_core_contrac
         RuntimeVerifierCoreContract system publicInput proof := by
   intro publicInput proof checked
   exact
-    checked_acceptance_verifier_core_contract
+    gpu_runtime_checked_acceptance_verifier_core_contract
       assumptions
       publicInput
       proof
@@ -406,7 +374,7 @@ theorem gpu_temporary_buffer_reuse_checked_acceptance_sound
   exact
     And.intro sameRequest
       (And.intro pendingComplete
-        (checked_acceptance_sound_witness
+        (gpu_runtime_checked_acceptance_sound_witness
           assumptions
           publicInput
           proof
@@ -428,7 +396,7 @@ theorem gpu_temporary_buffer_reuse_checked_acceptance_verifier_core_contract
         RuntimeVerifierCoreContract system publicInput proof := by
   intro publicInput proof checked
   exact
-    checked_acceptance_verifier_core_contract
+    gpu_runtime_checked_acceptance_verifier_core_contract
       assumptions
       publicInput
       proof
@@ -594,7 +562,7 @@ theorem gpu_allocator_no_wait_bypass_checked_acceptance_sound
     And.intro sameRequest
       (And.intro pendingNotReused
         (And.intro freshIssued
-          (checked_acceptance_sound_witness
+          (gpu_runtime_checked_acceptance_sound_witness
             assumptions
             publicInput
             proof
@@ -616,7 +584,7 @@ theorem gpu_allocator_no_wait_bypass_checked_acceptance_verifier_core_contract
         RuntimeVerifierCoreContract system publicInput proof := by
   intro publicInput proof checked
   exact
-    checked_acceptance_verifier_core_contract
+    gpu_runtime_checked_acceptance_verifier_core_contract
       assumptions
       publicInput
       proof
@@ -665,7 +633,7 @@ theorem gpu_allocator_no_wait_limit_checked_acceptance_sound
         publicInput
         proof
         checked)
-      (checked_acceptance_sound_witness
+      (gpu_runtime_checked_acceptance_sound_witness
         assumptions
         publicInput
         proof
@@ -686,7 +654,7 @@ theorem gpu_allocator_no_wait_limit_checked_acceptance_verifier_core_contract
         RuntimeVerifierCoreContract system publicInput proof := by
   intro publicInput proof checked
   exact
-    checked_acceptance_verifier_core_contract
+    gpu_runtime_checked_acceptance_verifier_core_contract
       assumptions
       publicInput
       proof
@@ -735,7 +703,7 @@ theorem guest_pc_trace_segment_queue_checked_acceptance_sound
         publicInput
         proof
         checked)
-      (checked_acceptance_sound_witness
+      (gpu_runtime_checked_acceptance_sound_witness
         assumptions
         publicInput
         proof
@@ -756,7 +724,7 @@ theorem guest_pc_trace_segment_queue_checked_acceptance_verifier_core_contract
         RuntimeVerifierCoreContract system publicInput proof := by
   intro publicInput proof checked
   exact
-    checked_acceptance_verifier_core_contract
+    gpu_runtime_checked_acceptance_verifier_core_contract
       assumptions
       publicInput
       proof
@@ -911,7 +879,7 @@ theorem guest_pc_trace_large_gpu_gate_checked_acceptance_sound
         publicInput
         proof
         checked)
-      (checked_acceptance_sound_witness assumptions publicInput proof checked)
+      (gpu_runtime_checked_acceptance_sound_witness assumptions publicInput proof checked)
 
 theorem guest_pc_trace_large_gpu_gate_checked_acceptance_verifier_core_contract
     {system : VerifierModel}
@@ -928,7 +896,7 @@ theorem guest_pc_trace_large_gpu_gate_checked_acceptance_verifier_core_contract
         RuntimeVerifierCoreContract system publicInput proof := by
   intro publicInput proof checked
   exact
-    checked_acceptance_verifier_core_contract
+    gpu_runtime_checked_acceptance_verifier_core_contract
       assumptions
       publicInput
       proof
@@ -1010,7 +978,7 @@ theorem guest_pc_trace_traceless_commitment_input_checked_acceptance_sound
         publicInput
         proof
         checked)
-      (checked_acceptance_sound_witness assumptions publicInput proof checked)
+      (gpu_runtime_checked_acceptance_sound_witness assumptions publicInput proof checked)
 
 theorem guest_pc_trace_traceless_commitment_input_checked_acceptance_verifier_core_contract
     {system : VerifierModel}
@@ -1027,7 +995,7 @@ theorem guest_pc_trace_traceless_commitment_input_checked_acceptance_verifier_co
         RuntimeVerifierCoreContract system publicInput proof := by
   intro publicInput proof checked
   exact
-    checked_acceptance_verifier_core_contract
+    gpu_runtime_checked_acceptance_verifier_core_contract
       assumptions
       publicInput
       proof
@@ -1109,7 +1077,7 @@ theorem guest_pc_trace_traceless_segment_output_checked_acceptance_sound
         publicInput
         proof
         checked)
-      (checked_acceptance_sound_witness assumptions publicInput proof checked)
+      (gpu_runtime_checked_acceptance_sound_witness assumptions publicInput proof checked)
 
 theorem guest_pc_trace_traceless_segment_output_checked_acceptance_verifier_core_contract
     {system : VerifierModel}
@@ -1126,7 +1094,7 @@ theorem guest_pc_trace_traceless_segment_output_checked_acceptance_verifier_core
         RuntimeVerifierCoreContract system publicInput proof := by
   intro publicInput proof checked
   exact
-    checked_acceptance_verifier_core_contract
+    gpu_runtime_checked_acceptance_verifier_core_contract
       assumptions
       publicInput
       proof
@@ -1262,7 +1230,7 @@ theorem guest_pc_trace_cross_root_materialization_checked_acceptance_sound
         publicInput
         proof
         checked)
-      (checked_acceptance_sound_witness assumptions publicInput proof checked)
+      (gpu_runtime_checked_acceptance_sound_witness assumptions publicInput proof checked)
 
 theorem guest_pc_trace_cross_root_materialization_checked_acceptance_verifier_core_contract
     {system : VerifierModel}
@@ -1279,7 +1247,7 @@ theorem guest_pc_trace_cross_root_materialization_checked_acceptance_verifier_co
         RuntimeVerifierCoreContract system publicInput proof := by
   intro publicInput proof checked
   exact
-    checked_acceptance_verifier_core_contract
+    gpu_runtime_checked_acceptance_verifier_core_contract
       assumptions
       publicInput
       proof
@@ -1467,7 +1435,7 @@ theorem guest_pc_trace_commit_mode_checked_acceptance_sound
         publicInput
         proof
         checked)
-      (checked_acceptance_sound_witness assumptions publicInput proof checked)
+      (gpu_runtime_checked_acceptance_sound_witness assumptions publicInput proof checked)
 
 theorem guest_pc_trace_commit_mode_checked_acceptance_verifier_core_contract
     {system : VerifierModel}
@@ -1484,7 +1452,7 @@ theorem guest_pc_trace_commit_mode_checked_acceptance_verifier_core_contract
         RuntimeVerifierCoreContract system publicInput proof := by
   intro publicInput proof checked
   exact
-    checked_acceptance_verifier_core_contract
+    gpu_runtime_checked_acceptance_verifier_core_contract
       assumptions
       publicInput
       proof

@@ -257,6 +257,10 @@ fn gpu_runtime_checked_acceptance_helpers_use_identifier_body_pins() {
         std::fs::read_to_string(crate_root.join("../../lean/Lzvm/AuxiliaryChecks/GpuRuntime.lean"))
             .expect("Lean GPU runtime auxiliary checks source should read"),
         std::fs::read_to_string(
+            crate_root.join("../../lean/Lzvm/AuxiliaryChecks/GpuRuntime/Common.lean"),
+        )
+        .expect("Lean GPU runtime common checks source should read"),
+        std::fs::read_to_string(
             crate_root.join("../../lean/Lzvm/AuxiliaryChecks/GpuRuntime/Core.lean"),
         )
         .expect("Lean GPU runtime core checks source should read"),
@@ -274,15 +278,15 @@ fn gpu_runtime_checked_acceptance_helpers_use_identifier_body_pins() {
         .lines()
         .filter_map(|line| {
             let trimmed = line.trim();
-            let rest = trimmed.strip_prefix("private theorem checked_acceptance_")?;
+            let rest = trimmed.strip_prefix("theorem gpu_runtime_checked_acceptance_")?;
             rest.split_whitespace()
                 .next()
-                .map(|name| format!("checked_acceptance_{name}"))
+                .map(|name| format!("gpu_runtime_checked_acceptance_{name}"))
         })
         .collect::<Vec<_>>();
     assert!(
         !chokepoints.is_empty(),
-        "Lean GPU runtime checks should declare private checked acceptance chokepoints"
+        "Lean GPU runtime checks should declare shared checked acceptance chokepoints"
     );
 
     for chokepoint in chokepoints {

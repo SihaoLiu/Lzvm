@@ -12,38 +12,6 @@ GPU trace, retained-source, and retained-cache auxiliary runtime contracts.
 
 namespace Lzvm
 
-private theorem checked_acceptance_sound_witness
-    {system : VerifierModel}
-    (assumptions : AssumptionBundle system)
-    {auxiliaryAccepted : PublicInput -> Proof -> Prop} :
-    forall publicInput proof,
-      system.accepts publicInput proof
-        /\ auxiliaryAccepted publicInput proof ->
-        SoundWitness system publicInput proof := by
-  intro publicInput proof checked
-  exact
-    auxiliary_checked_acceptance_sound_witness
-      assumptions
-      publicInput
-      proof
-      checked
-
-private theorem checked_acceptance_verifier_core_contract
-    {system : VerifierModel}
-    (assumptions : AssumptionBundle system)
-    {auxiliaryAccepted : PublicInput -> Proof -> Prop} :
-    forall publicInput proof,
-      system.accepts publicInput proof
-        /\ auxiliaryAccepted publicInput proof ->
-        RuntimeVerifierCoreContract system publicInput proof := by
-  intro publicInput proof checked
-  exact
-    auxiliary_checked_acceptance_verifier_core_contract
-      assumptions
-      publicInput
-      proof
-      checked
-
 theorem guest_pc_trace_device_trace_source_checked_acceptance_projects_decision
     {system : VerifierModel}
     (validation : GuestPcTraceDeviceTraceSourceValidation)
@@ -87,7 +55,7 @@ theorem guest_pc_trace_device_trace_source_checked_acceptance_sound
         publicInput
         proof
         checked)
-      (checked_acceptance_sound_witness assumptions publicInput proof checked)
+      (gpu_runtime_checked_acceptance_sound_witness assumptions publicInput proof checked)
 
 theorem guest_pc_trace_device_trace_source_checked_acceptance_verifier_core_contract
     {system : VerifierModel}
@@ -104,7 +72,7 @@ theorem guest_pc_trace_device_trace_source_checked_acceptance_verifier_core_cont
         RuntimeVerifierCoreContract system publicInput proof := by
   intro publicInput proof checked
   exact
-    checked_acceptance_verifier_core_contract
+    gpu_runtime_checked_acceptance_verifier_core_contract
       assumptions
       publicInput
       proof
@@ -153,7 +121,7 @@ theorem guest_pc_trace_sparse_source_checked_acceptance_sound
         publicInput
         proof
         checked)
-      (checked_acceptance_sound_witness assumptions publicInput proof checked)
+      (gpu_runtime_checked_acceptance_sound_witness assumptions publicInput proof checked)
 
 theorem guest_pc_trace_sparse_source_checked_acceptance_verifier_core_contract
     {system : VerifierModel}
@@ -170,7 +138,7 @@ theorem guest_pc_trace_sparse_source_checked_acceptance_verifier_core_contract
         RuntimeVerifierCoreContract system publicInput proof := by
   intro publicInput proof checked
   exact
-    checked_acceptance_verifier_core_contract
+    gpu_runtime_checked_acceptance_verifier_core_contract
       assumptions
       publicInput
       proof
@@ -219,7 +187,7 @@ theorem guest_pc_trace_terminal_sparse_source_checked_acceptance_sound
         publicInput
         proof
         checked)
-      (checked_acceptance_sound_witness assumptions publicInput proof checked)
+      (gpu_runtime_checked_acceptance_sound_witness assumptions publicInput proof checked)
 
 theorem guest_pc_trace_terminal_sparse_source_checked_acceptance_verifier_core_contract
     {system : VerifierModel}
@@ -236,7 +204,7 @@ theorem guest_pc_trace_terminal_sparse_source_checked_acceptance_verifier_core_c
         RuntimeVerifierCoreContract system publicInput proof := by
   intro publicInput proof checked
   exact
-    checked_acceptance_verifier_core_contract
+    gpu_runtime_checked_acceptance_verifier_core_contract
       assumptions
       publicInput
       proof
@@ -285,7 +253,7 @@ theorem fri_retained_stage_source_checked_acceptance_sound
         publicInput
         proof
         checked)
-      (checked_acceptance_sound_witness assumptions publicInput proof checked)
+      (gpu_runtime_checked_acceptance_sound_witness assumptions publicInput proof checked)
 
 theorem fri_retained_stage_source_checked_acceptance_verifier_core_contract
     {system : VerifierModel}
@@ -302,7 +270,7 @@ theorem fri_retained_stage_source_checked_acceptance_verifier_core_contract
         RuntimeVerifierCoreContract system publicInput proof := by
   intro publicInput proof checked
   exact
-    checked_acceptance_verifier_core_contract
+    gpu_runtime_checked_acceptance_verifier_core_contract
       assumptions
       publicInput
       proof
@@ -642,7 +610,7 @@ theorem guest_pc_trace_cuda_run_checked_acceptance_sound
         publicInput
         proof
         checked)
-      (checked_acceptance_sound_witness assumptions publicInput proof checked)
+      (gpu_runtime_checked_acceptance_sound_witness assumptions publicInput proof checked)
 
 theorem guest_pc_trace_cuda_run_checked_acceptance_verifier_core_contract
     {system : VerifierModel}
@@ -659,7 +627,7 @@ theorem guest_pc_trace_cuda_run_checked_acceptance_verifier_core_contract
         RuntimeVerifierCoreContract system publicInput proof := by
   intro publicInput proof checked
   exact
-    checked_acceptance_verifier_core_contract
+    gpu_runtime_checked_acceptance_verifier_core_contract
       assumptions
       publicInput
       proof
@@ -708,7 +676,7 @@ theorem gpu_retained_leaf_digest_limit_checked_acceptance_sound
         publicInput
         proof
         checked)
-      (checked_acceptance_sound_witness
+      (gpu_runtime_checked_acceptance_sound_witness
         assumptions
         publicInput
         proof
@@ -729,7 +697,7 @@ theorem gpu_retained_leaf_digest_limit_checked_acceptance_verifier_core_contract
         RuntimeVerifierCoreContract system publicInput proof := by
   intro publicInput proof checked
   exact
-    checked_acceptance_verifier_core_contract
+    gpu_runtime_checked_acceptance_verifier_core_contract
       assumptions
       publicInput
       proof
@@ -778,7 +746,7 @@ theorem gpu_retained_device_cache_budget_checked_acceptance_sound
         publicInput
         proof
         checked)
-      (checked_acceptance_sound_witness
+      (gpu_runtime_checked_acceptance_sound_witness
         assumptions
         publicInput
         proof
@@ -799,7 +767,7 @@ theorem gpu_retained_device_cache_budget_checked_acceptance_verifier_core_contra
         RuntimeVerifierCoreContract system publicInput proof := by
   intro publicInput proof checked
   exact
-    checked_acceptance_verifier_core_contract
+    gpu_runtime_checked_acceptance_verifier_core_contract
       assumptions
       publicInput
       proof
@@ -922,7 +890,7 @@ theorem fri_fixed_column_cache_checked_acceptance_sound
         publicInput
         proof
         checked)
-      (checked_acceptance_sound_witness
+      (gpu_runtime_checked_acceptance_sound_witness
         (auxiliaryAccepted := fun publicInput proof =>
           validation.fixedColumnCacheRequestBound cached fresh
             /\ validation.allocationValidation.writtenContentsBound fresh publicInput proof)
@@ -947,7 +915,7 @@ theorem fri_fixed_column_cache_checked_acceptance_verifier_core_contract
         RuntimeVerifierCoreContract system publicInput proof := by
   intro publicInput proof checked
   exact
-    checked_acceptance_verifier_core_contract
+    gpu_runtime_checked_acceptance_verifier_core_contract
       (auxiliaryAccepted := fun publicInput proof =>
         validation.fixedColumnCacheRequestBound cached fresh
           /\ validation.allocationValidation.writtenContentsBound fresh publicInput proof)
