@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 #[cfg(feature = "cuda")]
 use std::collections::HashSet;
 use std::collections::{btree_map::Entry, BTreeMap, VecDeque};
@@ -3908,7 +3909,7 @@ pub fn run_prove_witness_commitments_with_guest_pc_trace_segments(
         accumulate_witness_global_hints(
             plan,
             &shared_inputs.publics,
-            &global_auxiliary_inputs,
+            global_auxiliary_inputs.as_ref(),
             &mut source_lookup_balance,
         )?;
         source_lookup_balance.validate_all_units()?;
@@ -4098,7 +4099,7 @@ fn run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_attempt
         accumulate_witness_global_hints(
             plan,
             &shared_inputs.publics,
-            &global_auxiliary_inputs,
+            global_auxiliary_inputs.as_ref(),
             &mut source_lookup_balance,
         )?;
         source_lookup_balance.validate_all_units()?;
@@ -4107,13 +4108,12 @@ fn run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_attempt
     Ok(outputs)
 }
 
-fn global_auxiliary_inputs_from_outputs(
-    auxiliary_inputs: &ProveWitnessAuxiliaryInputs,
+fn global_auxiliary_inputs_from_outputs<'a>(
+    auxiliary_inputs: &'a ProveWitnessAuxiliaryInputs,
     outputs: &[ProveWitnessTraceCommitments],
-) -> Result<ProveWitnessAuxiliaryInputs, ProveWitnessCommitmentError> {
-    let mut merged = auxiliary_inputs.clone();
-    if !merged.proof_values.is_empty() {
-        return Ok(merged);
+) -> Result<Cow<'a, ProveWitnessAuxiliaryInputs>, ProveWitnessCommitmentError> {
+    if !auxiliary_inputs.proof_values.is_empty() {
+        return Ok(Cow::Borrowed(auxiliary_inputs));
     }
 
     let mut proof_values = None;
@@ -4134,9 +4134,11 @@ fn global_auxiliary_inputs_from_outputs(
         }
     }
     if let Some(proof_values) = proof_values {
+        let mut merged = auxiliary_inputs.clone();
         merged.proof_values = proof_values.to_vec();
+        return Ok(Cow::Owned(merged));
     }
-    Ok(merged)
+    Ok(Cow::Borrowed(auxiliary_inputs))
 }
 
 pub fn run_prove_witness_commitments_with_trace_bytes(
@@ -6613,7 +6615,7 @@ pub fn run_prove_witness_commitments_for_all_units(
     accumulate_witness_global_hints(
         plan,
         &shared_inputs.publics,
-        &global_auxiliary_inputs,
+        global_auxiliary_inputs.as_ref(),
         &mut source_lookup_balance,
     )
     .map_err(|error| error.to_string())?;
@@ -6658,7 +6660,7 @@ pub fn run_prove_witness_commitments_for_all_units_with_trace_bundle(
     accumulate_witness_global_hints(
         plan,
         &shared_inputs.publics,
-        &global_auxiliary_inputs,
+        global_auxiliary_inputs.as_ref(),
         &mut source_lookup_balance,
     )
     .map_err(|error| error.to_string())?;

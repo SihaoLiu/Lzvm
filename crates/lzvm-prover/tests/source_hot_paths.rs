@@ -8444,6 +8444,26 @@ fn all_units_witness_reuses_shared_inputs_and_borrows_trace_bundle_bytes() {
         !trace_bundle_body.contains("TraceBytesBackend"),
         "all-units trace bundle execution should avoid copying through the witness backend buffer"
     );
+
+    let global_auxiliary_body = function_body(
+        &source,
+        "fn global_auxiliary_inputs_from_outputs",
+        "pub fn run_prove_witness_commitments_with_trace_bytes",
+    );
+    assert!(
+        source.contains("use std::borrow::Cow")
+            && global_auxiliary_body
+                .contains("Result<Cow<'a, ProveWitnessAuxiliaryInputs>")
+            && global_auxiliary_body.contains("Ok(Cow::Borrowed(auxiliary_inputs))")
+            && global_auxiliary_body.contains("Ok(Cow::Owned(merged))")
+            && global_auxiliary_body.find("let mut merged = auxiliary_inputs.clone()")
+                > global_auxiliary_body.find("if let Some(proof_values) = proof_values"),
+        "global auxiliary input merge should borrow the shared inputs unless backend proof values must be materialized"
+    );
+    assert!(
+        source.matches("global_auxiliary_inputs.as_ref()").count() >= 4,
+        "global auxiliary input merge callers should pass borrowed or owned values through Cow::as_ref"
+    );
 }
 
 #[test]
