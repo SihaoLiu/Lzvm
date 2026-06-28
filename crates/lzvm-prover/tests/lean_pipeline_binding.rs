@@ -70,9 +70,14 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
     let segment_ids_path = crate_root.join("../../lean/Lzvm/PipelineBinding/SegmentIds.lean");
     let segment_ids_source = std::fs::read_to_string(&segment_ids_path)
         .expect("Lean pipeline segment IDs binding source should read");
-    let obligations_path = crate_root.join("../../lean/Lzvm/PipelineBinding/Obligations.lean");
-    let obligations_source = std::fs::read_to_string(&obligations_path)
-        .expect("Lean pipeline obligations source should read");
+    let obligations_source = lean_binding::read_lean_sources(
+        crate_root,
+        &[
+            "../../lean/Lzvm/PipelineBinding/Obligations.lean",
+            "../../lean/Lzvm/PipelineBinding/Obligations/Core.lean",
+            "../../lean/Lzvm/PipelineBinding/Obligations/Soundness.lean",
+        ],
+    );
     let audited_path = crate_root.join("../../lean/Lzvm/PipelineBinding/Audited.lean");
     let audited_source =
         std::fs::read_to_string(&audited_path).expect("Lean pipeline audited source should read");
