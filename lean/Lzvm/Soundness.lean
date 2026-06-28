@@ -80,4 +80,33 @@ theorem abstract_verifier_sound_with_audited_soundness_obligations
     And.intro auditedAssumptions.left
       (And.intro auditedAssumptions.right sound.right)
 
+theorem accepted_proof_audited_core_and_sound_witness
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system) :
+    forall publicInput proof,
+      system.accepts publicInput proof ->
+        RequiredCryptographicAssumptionStatements assumptions.crypto
+          /\ RequiredSemanticAssumptionStatements assumptions.semantic
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof accepted
+  have auditedAssumptions :=
+    assumption_bundle_carries_required_evidence assumptions
+  have coreContract :=
+    assumption_bundle_verifier_core_contract
+      assumptions
+      publicInput
+      proof
+      accepted
+  have soundWitness :=
+    abstract_verifier_sound
+      assumptions
+      publicInput
+      proof
+      accepted
+  exact
+    And.intro auditedAssumptions.left
+      (And.intro auditedAssumptions.right
+        (And.intro coreContract soundWitness))
+
 end Lzvm

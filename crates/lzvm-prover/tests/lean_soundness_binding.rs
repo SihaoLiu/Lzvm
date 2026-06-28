@@ -29,6 +29,7 @@ fn lean_soundness_binding_exports_abstract_soundness_theorems() {
             "abstract_verifier_sound",
             "abstract_verifier_sound_with_audited_assumptions",
             "abstract_verifier_sound_with_audited_soundness_obligations",
+            "accepted_proof_audited_core_and_sound_witness",
         ],
     );
     lean_binding::assert_theorem_body_contains(
@@ -77,6 +78,26 @@ fn lean_soundness_binding_exports_abstract_soundness_theorems() {
         &[
             "abstract_verifier_sound_with_audited_assumptions",
             "assumption_bundle_carries_required_evidence",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "accepted_proof_audited_core_and_sound_witness",
+        &[
+            "system.accepts publicInput proof",
+            "RequiredCryptographicAssumptionStatements assumptions.crypto",
+            "RequiredSemanticAssumptionStatements assumptions.semantic",
+            "RuntimeVerifierCoreContract system publicInput proof",
+            "SoundWitness system publicInput proof",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "accepted_proof_audited_core_and_sound_witness",
+        &[
+            "assumption_bundle_carries_required_evidence",
+            "assumption_bundle_verifier_core_contract",
+            "abstract_verifier_sound",
         ],
     );
 }
