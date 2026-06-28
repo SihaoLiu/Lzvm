@@ -37,6 +37,7 @@ fn lean_trace_constraint_artifact_binding_exports_core_contract_projection() {
             "runtime_trace_constraint_artifact_binding_checked_acceptance_soundness_obligations",
             "runtime_trace_constraint_artifact_binding_checked_acceptance_verifier_core_contract",
             "runtime_trace_constraint_artifact_binding_checked_acceptance_evidence_core_and_sound",
+            "runtime_trace_constraint_artifact_binding_required_external_source_evidence_core_and_sound",
         ],
     );
     lean_binding::assert_theorem_prefix_contains(
@@ -100,6 +101,33 @@ fn lean_trace_constraint_artifact_binding_exports_core_contract_projection() {
     lean_binding::assert_theorem_body_omits(
         &lean_source,
         "runtime_trace_constraint_artifact_binding_checked_acceptance_evidence_core_and_sound",
+        &["sound_witness_implies_verifier_core_contract"],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_trace_constraint_artifact_binding_required_external_source_evidence_core_and_sound",
+        &[
+            "RuntimeTraceConstraintArtifactBindingCheckedAcceptance",
+            "requiresExternalSource ->",
+            "RuntimeTraceConstraintPreflightBindingEvidence",
+            "RuntimeTraceConstraintEvidence",
+            "ExternalSourceOpeningEvidence",
+            "RuntimeVerifierCoreContract system publicInput proof",
+            "SoundWitness system publicInput proof",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_trace_constraint_artifact_binding_required_external_source_evidence_core_and_sound",
+        &[
+            "runtime_trace_constraint_artifact_binding_checked_acceptance_evidence",
+            "runtime_trace_constraint_artifact_binding_checked_acceptance_trace_constraint",
+            "runtime_trace_constraint_required_external_source_evidence_core_and_sound",
+        ],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &lean_source,
+        "runtime_trace_constraint_artifact_binding_required_external_source_evidence_core_and_sound",
         &["sound_witness_implies_verifier_core_contract"],
     );
 }

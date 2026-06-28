@@ -439,4 +439,69 @@ theorem runtime_trace_constraint_artifact_binding_checked_acceptance_evidence_co
       (And.intro checkedSound.right.left
         (And.intro coreContract checkedSound.right.right))
 
+set_option linter.style.longLine false in
+theorem runtime_trace_constraint_artifact_binding_required_external_source_evidence_core_and_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeTraceConstraintArtifactBindingValidation system) :
+    forall artifact publicInput proof (requiresExternalSource : Prop),
+      RuntimeTraceConstraintArtifactBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        requiresExternalSource ->
+          RuntimeTraceConstraintPreflightBindingEvidence
+              system
+              validation
+              artifact
+              publicInput
+              proof
+            /\ RuntimeTraceConstraintEvidence
+              system
+              validation.traceConstraintValidation
+              artifact
+              publicInput
+              proof
+              requiresExternalSource
+            /\ ExternalSourceOpeningEvidence
+              system
+              validation.traceConstraintValidation.openingValidation.runtimeSoundnessValidation.sourceValidation
+              publicInput
+              proof
+            /\ RuntimeVerifierCoreContract system publicInput proof
+            /\ SoundWitness system publicInput proof := by
+  intro artifact publicInput proof requiresExternalSource accepted required
+  have artifactEvidence :=
+    runtime_trace_constraint_artifact_binding_checked_acceptance_evidence
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have traceConstraintAccepted :=
+    runtime_trace_constraint_artifact_binding_checked_acceptance_trace_constraint
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have requiredContract :=
+    runtime_trace_constraint_required_external_source_evidence_core_and_sound
+      assumptions
+      validation.traceConstraintValidation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      traceConstraintAccepted
+      required
+  exact
+    And.intro artifactEvidence
+      (And.intro requiredContract.left
+        (And.intro requiredContract.right.left
+          (And.intro requiredContract.right.right.left
+            requiredContract.right.right.right)))
+
 end Lzvm
