@@ -751,44 +751,37 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             ],
         );
     }
-    for theorem in [
-        "runtime_performance_observation_acceptance_core_and_sound",
-        "runtime_performance_observation_timing_observations_acceptance_core_and_sound",
-        "runtime_performance_observation_guest_pc_trace_timing_acceptance_core_and_sound",
-        "runtime_performance_observation_row_value_timing_acceptance_core_and_sound",
-        "runtime_performance_observation_constant_material_timing_acceptance_core_and_sound",
-        "runtime_performance_observation_prover_gpu_mode_acceptance_core_and_sound",
-        "runtime_performance_observation_gpu_run_options_acceptance_core_and_sound",
-        "runtime_performance_observation_cuda_backend_acceptance_core_and_sound",
-        "runtime_performance_observation_cuda_allocator_timing_acceptance_core_and_sound",
-        "runtime_performance_observation_finish_timing_acceptance_core_and_sound",
-        "runtime_performance_observation_proof_timing_batch_acceptance_core_and_sound",
-    ] {
+    for stem in theorem_stems_with_suffix(
+        &runtime_performance_source,
+        "runtime_performance_observation_",
+        "_core_and_sound",
+    ) {
+        if stem == "runtime_performance_observation_projected_metadata_acceptance" {
+            continue;
+        }
+        let theorem = format!("{stem}_core_and_sound");
         lean_binding::assert_theorem_prefix_contains(
             &runtime_performance_source,
-            theorem,
+            &theorem,
             &[
                 "RuntimeVerifierCoreContract system publicInput proof",
                 "SoundWitness system publicInput proof",
             ],
         );
-        let base_theorem = theorem.strip_suffix("_core_and_sound").expect(
-            "combined runtime-performance theorem name should use the core_and_sound suffix",
-        );
-        let verifier_callee = format!("{base_theorem}_verifier_core_contract");
-        let sound_callee = format!("{base_theorem}_sound");
+        let verifier_callee = format!("{stem}_verifier_core_contract");
+        let sound_callee = format!("{stem}_sound");
         let body_terms = [verifier_callee.as_str(), sound_callee.as_str()];
         lean_binding::assert_theorem_body_contains(
             &runtime_performance_source,
-            theorem,
+            &theorem,
             &body_terms,
         );
         lean_binding::assert_theorem_body_omits(
             &runtime_performance_source,
-            theorem,
+            &theorem,
             &["sound_witness_implies_verifier_core_contract"],
         );
-        let body = lean_binding::theorem_body(&runtime_performance_source, theorem);
+        let body = lean_binding::theorem_body(&runtime_performance_source, &theorem);
         for callee in body_terms {
             let expected_call = format!("{callee} assumptions summary publicInput proof observed");
             assert!(
