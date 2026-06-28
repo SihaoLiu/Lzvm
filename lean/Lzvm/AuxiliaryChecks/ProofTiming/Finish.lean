@@ -352,6 +352,46 @@ theorem proof_artifact_finish_descriptor_upload_shape_acceptance_verifier_core_c
       proof
       observed
 
+theorem proof_artifact_finish_descriptor_upload_shape_acceptance_core_and_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : ProofArtifactFinishTimingSummary)
+    (byteCount wordCount rowCount : Nat) :
+    forall publicInput proof,
+      ProofArtifactFinishTimingObservedAcceptance
+        system
+        (some
+          { summary with
+            finishWitnessExternalSourceDescriptorUploadByteCount := byteCount
+            finishWitnessExternalSourceDescriptorUploadWordCount := wordCount
+            finishWitnessExternalSourceDescriptorUploadRowCount := rowCount })
+        publicInput
+        proof ->
+        RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof observed
+  have core :=
+    proof_artifact_finish_descriptor_upload_shape_acceptance_verifier_core_contract
+      assumptions
+      summary
+      byteCount
+      wordCount
+      rowCount
+      publicInput
+      proof
+      observed
+  have sound :=
+    proof_artifact_finish_descriptor_upload_shape_acceptance_sound
+      assumptions
+      summary
+      byteCount
+      wordCount
+      rowCount
+      publicInput
+      proof
+      observed
+  exact And.intro core sound
+
 theorem proof_artifact_finish_aggregate_timing_acceptance_sound
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
