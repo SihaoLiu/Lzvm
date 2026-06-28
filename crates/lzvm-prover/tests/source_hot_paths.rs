@@ -6568,6 +6568,31 @@ fn guest_pc_trace_retains_stage_sources_before_descriptor_buffers() {
 }
 
 #[test]
+fn stage_source_device_cache_lookup_uses_ordered_stage_fast_path() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let execution_path = crate_root.join("src/witness_execution.rs");
+    let execution_source =
+        std::fs::read_to_string(&execution_path).expect("witness execution source should read");
+
+    let cache_body = function_body(
+        &execution_source,
+        "impl WitnessStageSourceDeviceCache",
+        "#[derive(Debug, Clone, Copy, PartialEq, Eq)]\nstruct WitnessStageSourceUploadConfig",
+    );
+
+    assert!(
+        cache_body.contains("fn stage_entry(")
+            && cache_body.contains("stage_index.checked_sub(1)")
+            && cache_body.contains(".get(stage_slot)")
+            && cache_body.contains("self.stages[..stage_slot]")
+            && cache_body.contains(".all(|entry| entry.0 != stage_index)")
+            && cache_body.contains(".find(|(index, _, _, _, _, _)| *index == stage_index)")
+            && cache_body.matches("self.stage_entry(stage_index)?").count() >= 2,
+        "stage source cache lookups should use ordered stage slots before first-match fallback"
+    );
+}
+
+#[test]
 fn guest_pc_trace_segments_split_runner_and_lowerer_with_bounded_pending_queue() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let backend_path = crate_root.join("src/guest_pc_trace_backend.rs");

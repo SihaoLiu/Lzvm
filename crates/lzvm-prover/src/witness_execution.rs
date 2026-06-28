@@ -2865,11 +2865,14 @@ impl WitnessStageTraceCache {
 }
 
 #[cfg(feature = "cuda")]
+type WitnessStageSourceDeviceCacheEntry = (usize, usize, usize, usize, usize, bool);
+
+#[cfg(feature = "cuda")]
 #[derive(Default)]
 struct WitnessStageSourceDeviceCache {
     trace: Option<Arc<CudaDeviceBuffer>>,
     guest_pc_device_descriptor_buffer: Option<Arc<CudaDeviceBuffer>>,
-    stages: Vec<(usize, usize, usize, usize, usize, bool)>,
+    stages: Vec<WitnessStageSourceDeviceCacheEntry>,
 }
 
 #[cfg(feature = "cuda")]
@@ -3206,14 +3209,31 @@ impl WitnessStageSourceDeviceCache {
         retained
     }
 
-    fn get(&self, stage_index: usize) -> Option<(usize, usize, usize, &CudaDeviceBuffer)> {
-        let trace = self.trace.as_ref()?;
+    fn stage_entry(&self, stage_index: usize) -> Option<&WitnessStageSourceDeviceCacheEntry> {
+        if let Some(stage_slot) = stage_index.checked_sub(1) {
+            if let Some(entry) = self
+                .stages
+                .get(stage_slot)
+                .filter(|entry| entry.0 == stage_index)
+            {
+                if self.stages[..stage_slot]
+                    .iter()
+                    .all(|entry| entry.0 != stage_index)
+                {
+                    return Some(entry);
+                }
+            }
+        }
+
         self.stages
             .iter()
             .find(|(index, _, _, _, _, _)| *index == stage_index)
-            .map(|(_, _, column_count, row_stride, column_offset, _)| {
-                (*column_count, *row_stride, *column_offset, trace.as_ref())
-            })
+    }
+
+    fn get(&self, stage_index: usize) -> Option<(usize, usize, usize, &CudaDeviceBuffer)> {
+        let trace = self.trace.as_ref()?;
+        let (_, _, column_count, row_stride, column_offset, _) = self.stage_entry(stage_index)?;
+        Some((*column_count, *row_stride, *column_offset, trace.as_ref()))
     }
 
     fn get_stage(
@@ -3221,21 +3241,16 @@ impl WitnessStageSourceDeviceCache {
         stage_index: usize,
     ) -> Option<(usize, usize, usize, usize, bool, &CudaDeviceBuffer)> {
         let trace = self.trace.as_ref()?;
-        self.stages
-            .iter()
-            .find(|(index, _, _, _, _, _)| *index == stage_index)
-            .map(
-                |(_, row_count, column_count, row_stride, column_offset, known_zero)| {
-                    (
-                        *row_count,
-                        *column_count,
-                        *row_stride,
-                        *column_offset,
-                        *known_zero,
-                        trace.as_ref(),
-                    )
-                },
-            )
+        let (_, row_count, column_count, row_stride, column_offset, known_zero) =
+            self.stage_entry(stage_index)?;
+        Some((
+            *row_count,
+            *column_count,
+            *row_stride,
+            *column_offset,
+            *known_zero,
+            trace.as_ref(),
+        ))
     }
 }
 
