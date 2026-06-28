@@ -461,8 +461,6 @@ def run_once(
             stdout = stdout_file.read()
             stderr = stderr_file.read()
     elapsed_s = time.monotonic() - start
-    write_combined_log(combined_path, stdout, stderr)
-
     status_lines.extend(
         [
             f"elapsed_s={elapsed_s:.3f}",
@@ -471,6 +469,13 @@ def run_once(
             f"combined_log={combined_path}",
         ]
     )
+    try:
+        write_combined_log(combined_path, stdout, stderr)
+    except (OSError, SystemExit) as error:
+        status_lines.append(f"validation_error={error}")
+        write_status(status_path, status_lines)
+        raise
+
     if timed_out:
         write_status(status_path, status_lines)
         raise SystemExit(

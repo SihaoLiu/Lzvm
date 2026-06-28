@@ -1234,6 +1234,70 @@ fn proof_timing_batch_rejects_status_path_replaced_with_symlink() {
 
 #[cfg(unix)]
 #[test]
+fn proof_timing_batch_records_status_when_combined_log_is_symlink() {
+    let script_path = batch_script_path();
+    let dir = test_dir("proof-timing-batch-log-symlink");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("fixture dir should be created");
+    let log_path = dir.join("improve-log.csv");
+    let redirected = dir.join("redirected.log");
+    std::fs::write(&redirected, "sentinel\n").expect("redirect target should write");
+    let command = format!(
+        "ln -s '{}' {{batch_dir}}/small-001.log; printf 'timing_total_ms=1000\\n'",
+        redirected.display()
+    );
+
+    let output = Command::new(&script_path)
+        .arg("--work-dir")
+        .arg(&dir)
+        .arg("--path")
+        .arg(&log_path)
+        .arg("--commit")
+        .arg("test")
+        .arg("--runs")
+        .arg("3")
+        .arg("--small-command")
+        .arg(command)
+        .arg("--summary")
+        .arg("log link guard")
+        .output()
+        .expect("proof timing batch should run");
+    let success = output.status.success();
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    let redirected_text =
+        std::fs::read_to_string(&redirected).expect("redirect target should remain readable");
+    let batch_dir = single_batch_dir(&dir);
+    let status =
+        std::fs::read_to_string(batch_dir.join("small-001.status")).expect("status should read");
+    let batch_json =
+        std::fs::read_to_string(batch_dir.join("batch.json")).expect("batch json should read");
+    let _ = std::fs::remove_dir_all(&dir);
+
+    assert!(
+        !success,
+        "proof timing batch should reject combined log symlink output"
+    );
+    assert!(
+        stderr.contains("output path must not be a symlink"),
+        "combined log symlink rejection should explain the path constraint: stderr={stderr}"
+    );
+    assert_eq!(
+        redirected_text, "sentinel\n",
+        "rejected combined log write should not overwrite a symlink target"
+    );
+    assert!(
+        status.contains("validation_error=output path must not be a symlink")
+            && status.contains("combined_log="),
+        "combined log validation failure should be recorded in status: {status}"
+    );
+    assert!(
+        batch_json.contains("\"appended\": false") && batch_json.contains("small-001.status"),
+        "failed combined log write should still record batch json: {batch_json}"
+    );
+}
+
+#[cfg(unix)]
+#[test]
 fn proof_timing_batch_rejects_preexisting_run_tmpdir_symlink() {
     let script_path = batch_script_path();
     let dir = test_dir("proof-timing-batch-tmpdir-symlink");
