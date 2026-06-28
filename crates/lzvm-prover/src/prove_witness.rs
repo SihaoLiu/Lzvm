@@ -4,7 +4,8 @@ pub use crate::constant_opening::{
     ProveConstantOpeningSegmentError,
 };
 pub use crate::pcs_evaluation::{
-    build_pcs_evaluation_segment, ProvePcsEvaluationSegmentError, ProvePcsEvaluationValues,
+    build_pcs_evaluation_segment, build_pcs_evaluation_segment_from_value_refs,
+    ProvePcsEvaluationSegmentError, ProvePcsEvaluationValueRef, ProvePcsEvaluationValues,
 };
 pub use crate::pcs_material_manifest::{
     build_pcs_material_manifest_segment, ProvePcsMaterialSegmentError,

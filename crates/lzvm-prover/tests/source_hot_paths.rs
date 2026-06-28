@@ -9368,6 +9368,13 @@ fn all_units_transcript_proof_borrows_auxiliary_vectors() {
         "all-units transcript proof should use the borrowed transcript builder"
     );
     assert!(
+        body.contains("build_pcs_evaluation_segment_from_value_refs")
+            && body
+                .contains("TranscriptEvaluationValues::Borrowed(proof_inputs.evaluation_values)")
+            && body.contains(".values_for_identity(unit_index, trace_instance_index)"),
+        "all-units transcript proof should build evaluation segments from borrowed value refs"
+    );
+    assert!(
         body.contains("build_witness_opening_segment_batch_from_trace_outputs"),
         "all-units transcript proof should build witness openings from trace outputs so CUDA source buffers can be reused"
     );
@@ -9408,6 +9415,11 @@ fn all_units_transcript_proof_borrows_auxiliary_vectors() {
         "fn collect_global_group_values",
         "fn collect_all_units_evaluation_values",
     );
+    let evaluation_values_body = function_body(
+        &source,
+        "fn collect_all_units_evaluation_values",
+        "fn collect_proof_unit_values",
+    );
     assert!(
         global_proof_values_body.contains("Result<Cow<'a, [Felt]>")
             && global_proof_values_body.contains("Ok(Cow::Borrowed(explicit_values))")
@@ -9424,6 +9436,14 @@ fn all_units_transcript_proof_borrows_auxiliary_vectors() {
             && !global_group_values_body.contains("ToOwned::to_owned"),
         "global group value collection should borrow explicit or output-derived values"
     );
+    assert!(
+        evaluation_values_body.contains("Vec<ProvePcsEvaluationValueRef<'a>>")
+            && evaluation_values_body.contains("values: explicit_values")
+            && evaluation_values_body.contains(".evaluations.as_slice()")
+            && !evaluation_values_body.contains("explicit_values.to_vec()")
+            && !evaluation_values_body.contains(".evaluations.clone()"),
+        "evaluation value collection should borrow explicit or output-derived values"
+    );
     let proof_unit_values_body = function_body(
         &source,
         "fn collect_proof_unit_values",
@@ -9437,6 +9457,18 @@ fn all_units_transcript_proof_borrows_auxiliary_vectors() {
             && proof_unit_values_body.contains("Ok(Cow::Owned(values))")
             && !proof_unit_values_body.contains("explicit_values.to_vec()"),
         "proof unit value collection should borrow explicit values after validating trace identity coverage"
+    );
+    let unit_proof_body = function_body(
+        &source,
+        "fn build_witness_proof_artifact_for_unit_inner",
+        "pub struct WitnessAllUnitsProofRequest",
+    );
+    assert!(
+        unit_proof_body.contains("build_pcs_evaluation_segment_from_value_refs")
+            && unit_proof_body.contains("ProvePcsEvaluationValueRef")
+            && unit_proof_body.contains(".evaluations.as_slice()")
+            && !unit_proof_body.contains(".evaluations.clone()"),
+        "single-unit proof construction should build evaluation segments from borrowed output values"
     );
 
     let fri_source_path = crate_root.join("src/prove_fri_opening.rs");

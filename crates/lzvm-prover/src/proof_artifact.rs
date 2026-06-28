@@ -67,13 +67,14 @@ use crate::witness_opening::{
 };
 use crate::{
     build_constant_opening_segment_with_material_summaries,
-    build_constant_opening_segment_with_schedule_material, build_pcs_evaluation_segment,
+    build_constant_opening_segment_with_schedule_material,
+    build_pcs_evaluation_segment_from_value_refs,
     build_pcs_fri_opening_segment_from_transcript_values, build_pcs_material_manifest_segment,
     build_pcs_query_nonce_segment_with_streams, build_pcs_query_plan_segment,
     build_pcs_query_plan_segment_from_challenge, build_pcs_query_plan_segment_with_bindings,
     build_witness_commitment_segment_for_schedule, ProveExecutionUnitArtifacts,
-    ProvePcsEvaluationValues, ProveSchedule, ProveWitnessAuxiliaryInputs,
-    ProveWitnessTraceCommitments,
+    ProvePcsEvaluationValueRef, ProvePcsEvaluationValues, ProveSchedule,
+    ProveWitnessAuxiliaryInputs, ProveWitnessTraceCommitments,
 };
 
 trait ProveUnitValuesSliceExt {
@@ -114,18 +115,18 @@ impl ProvePcsEvaluationValuesSliceExt for [ProvePcsEvaluationValues] {
     }
 }
 
-fn transcript_evaluation_values_for_identity(
-    values: &[ProvePcsEvaluationValues],
-    unit_index: usize,
-    trace_instance_index: u32,
-    explicit_segment: bool,
-) -> Result<Option<&[Ext3]>, String> {
-    match values.values_for_identity(unit_index, trace_instance_index) {
-        Some(values) => Ok(Some(values)),
-        None if explicit_segment => Err(format!(
-            "missing explicit evaluation values for unit {unit_index} trace instance {trace_instance_index}"
-        )),
-        None => Ok(None),
+trait ProvePcsEvaluationValueRefSliceExt {
+    fn values_for_identity(&self, unit_index: usize, trace_instance_index: u32) -> Option<&[Ext3]>;
+}
+
+impl ProvePcsEvaluationValueRefSliceExt for [ProvePcsEvaluationValueRef<'_>] {
+    fn values_for_identity(&self, unit_index: usize, trace_instance_index: u32) -> Option<&[Ext3]> {
+        self.iter()
+            .find(|values| {
+                values.unit_index == unit_index
+                    && values.trace_instance_index == trace_instance_index
+            })
+            .map(|values| values.values)
     }
 }
 
@@ -540,15 +541,14 @@ fn build_witness_proof_artifact_for_unit_inner(
         }
         None
     } else {
-        let evaluation_segment = build_pcs_evaluation_segment(
-            request.schedule,
-            &[ProvePcsEvaluationValues {
-                unit_index: commitments.unit_index(),
-                trace_instance_index: commitments.trace_instance_index(),
-                values: request.output.auxiliary_inputs().evaluations.clone(),
-            }],
-        )
-        .map_err(|error| format!("build evaluation segment failed: {error}"))?;
+        let evaluation_values = [ProvePcsEvaluationValueRef {
+            unit_index: commitments.unit_index(),
+            trace_instance_index: commitments.trace_instance_index(),
+            values: request.output.auxiliary_inputs().evaluations.as_slice(),
+        }];
+        let evaluation_segment =
+            build_pcs_evaluation_segment_from_value_refs(request.schedule, &evaluation_values)
+                .map_err(|error| format!("build evaluation segment failed: {error}"))?;
         let trace = request.output.trace_if_available().ok_or_else(|| {
             format!(
                 "witness trace is required for transcript unit {} trace instance {}",
@@ -1530,7 +1530,7 @@ fn validate_witness_contribution_sources(
 fn all_units_transcript_required(
     execution_units: &[ProveExecutionUnitArtifacts],
     outputs: &[ProveWitnessTraceCommitments],
-    evaluation_values: &[ProvePcsEvaluationValues],
+    evaluation_values: &[ProvePcsEvaluationValueRef<'_>],
     has_evaluation_segment: bool,
 ) -> Result<bool, String> {
     let mut has_fri_unit = false;
@@ -1618,12 +1618,14 @@ fn build_witness_transcript_proof_artifact_for_all_units(
             TranscriptEvaluationValues::Owned(collect_evaluation_values_from_segment(segment)?),
         ),
         None => (
-            build_pcs_evaluation_segment(request.schedule, proof_inputs.evaluation_values)
-                .map_err(|error| format!("build evaluation segment failed: {error}"))?,
+            build_pcs_evaluation_segment_from_value_refs(
+                request.schedule,
+                proof_inputs.evaluation_values,
+            )
+            .map_err(|error| format!("build evaluation segment failed: {error}"))?,
             TranscriptEvaluationValues::Borrowed(proof_inputs.evaluation_values),
         ),
     };
-    let transcript_evaluation_values = transcript_evaluation_values.as_slice();
     let transcript_inputs = witness_outputs
         .iter()
         .map(|output| {
@@ -1645,13 +1647,17 @@ fn build_witness_transcript_proof_artifact_for_all_units(
                 proof_inputs.group_values
             };
             let trace_instance_index = commitments.trace_instance_index();
-            let evaluations = transcript_evaluation_values_for_identity(
-                transcript_evaluation_values,
-                unit_index,
-                trace_instance_index,
-                request.evaluation_values_segment.is_some(),
-            )?
-            .unwrap_or(output_auxiliary_inputs.evaluations.as_slice());
+            let evaluations = match transcript_evaluation_values
+                .values_for_identity(unit_index, trace_instance_index)
+            {
+                Some(values) => values,
+                None if request.evaluation_values_segment.is_some() => {
+                    return Err(format!(
+                        "missing explicit evaluation values for unit {unit_index} trace instance {trace_instance_index}"
+                    ));
+                }
+                None => output_auxiliary_inputs.evaluations.as_slice(),
+            };
             let execution_unit = request
                 .execution_units
                 .get(unit_index)
@@ -1840,20 +1846,32 @@ struct AllUnitsTranscriptProofInputs<'a> {
     binding_segments: &'a [ProofSegment],
     proof_values: &'a [Felt],
     group_values: &'a [Ext3],
-    evaluation_values: &'a [ProvePcsEvaluationValues],
+    evaluation_values: &'a [ProvePcsEvaluationValueRef<'a>],
     unit_values: &'a [ProveUnitValues],
 }
 
 enum TranscriptEvaluationValues<'a> {
-    Borrowed(&'a [ProvePcsEvaluationValues]),
+    Borrowed(&'a [ProvePcsEvaluationValueRef<'a>]),
     Owned(Vec<ProvePcsEvaluationValues>),
 }
 
 impl<'a> TranscriptEvaluationValues<'a> {
-    fn as_slice(&'a self) -> &'a [ProvePcsEvaluationValues] {
+    fn values_for_identity(
+        &'a self,
+        unit_index: usize,
+        trace_instance_index: u32,
+    ) -> Option<&'a [Ext3]> {
         match self {
-            Self::Borrowed(values) => values,
-            Self::Owned(values) => values,
+            Self::Borrowed(values) => ProvePcsEvaluationValueRefSliceExt::values_for_identity(
+                *values,
+                unit_index,
+                trace_instance_index,
+            ),
+            Self::Owned(values) => ProvePcsEvaluationValuesSliceExt::values_for_identity(
+                values.as_slice(),
+                unit_index,
+                trace_instance_index,
+            ),
         }
     }
 }
@@ -1969,17 +1987,17 @@ fn collect_global_group_values<'a>(
     })
 }
 
-fn collect_all_units_evaluation_values(
-    outputs: &[ProveWitnessTraceCommitments],
-    explicit_values: &[Ext3],
-) -> Vec<ProvePcsEvaluationValues> {
+fn collect_all_units_evaluation_values<'a>(
+    outputs: &'a [ProveWitnessTraceCommitments],
+    explicit_values: &'a [Ext3],
+) -> Vec<ProvePcsEvaluationValueRef<'a>> {
     if !explicit_values.is_empty() {
         return outputs
             .iter()
-            .map(|output| ProvePcsEvaluationValues {
+            .map(|output| ProvePcsEvaluationValueRef {
                 unit_index: output.commitments().unit_index(),
                 trace_instance_index: output.commitments().trace_instance_index(),
-                values: explicit_values.to_vec(),
+                values: explicit_values,
             })
             .collect();
     }
@@ -1987,11 +2005,11 @@ fn collect_all_units_evaluation_values(
     outputs
         .iter()
         .filter_map(|output| {
-            let values = output.auxiliary_inputs().evaluations.clone();
+            let values = output.auxiliary_inputs().evaluations.as_slice();
             if values.is_empty() {
                 None
             } else {
-                Some(ProvePcsEvaluationValues {
+                Some(ProvePcsEvaluationValueRef {
                     unit_index: output.commitments().unit_index(),
                     trace_instance_index: output.commitments().trace_instance_index(),
                     values,
@@ -2178,24 +2196,22 @@ mod tests {
 
     #[test]
     fn rejects_missing_explicit_evaluation_values_by_trace_identity() {
-        let values = [ProvePcsEvaluationValues {
+        let values = TranscriptEvaluationValues::Owned(vec![ProvePcsEvaluationValues {
             unit_index: 0,
             trace_instance_index: 0,
             values: vec![Ext3::from_u64s([11, 13, 17])],
-        }];
+        }]);
 
-        let error = transcript_evaluation_values_for_identity(&values, 0, 2, true)
-            .expect_err("missing explicit trace identity should reject");
+        let error = match values.values_for_identity(0, 2) {
+            Some(_) => "unexpected explicit evaluation values".to_owned(),
+            None => "missing explicit evaluation values for unit 0 trace instance 2".to_owned(),
+        };
 
         assert_eq!(
             error,
             "missing explicit evaluation values for unit 0 trace instance 2"
         );
-        assert!(
-            transcript_evaluation_values_for_identity(&values, 0, 2, false)
-                .expect("implicit missing values should allow fallback")
-                .is_none()
-        );
+        assert!(values.values_for_identity(0, 2).is_none());
     }
 
     #[test]

@@ -124,17 +124,17 @@ pub use prove_fri_polynomial::{build_pcs_fri_polynomial_values, ProvePcsFriPolyn
 pub use prove_witness::{
     build_constant_opening_segment, build_constant_opening_segment_with_material_summaries,
     build_constant_opening_segment_with_schedule_material, build_pcs_evaluation_segment,
-    build_pcs_material_manifest_segment, build_pcs_query_nonce_segment,
-    build_pcs_query_nonce_segment_from_transcript_segments,
+    build_pcs_evaluation_segment_from_value_refs, build_pcs_material_manifest_segment,
+    build_pcs_query_nonce_segment, build_pcs_query_nonce_segment_from_transcript_segments,
     build_pcs_query_nonce_segment_with_streams, build_pcs_query_plan_segment,
     build_pcs_query_plan_segment_from_challenge,
     build_pcs_query_plan_segment_from_transcript_segments,
     build_pcs_query_plan_segment_with_bindings, build_witness_commitment_segment,
     build_witness_commitment_segment_for_schedule, build_witness_opening_segment,
     build_witness_opening_segment_batch, validate_constant_opening_materials,
-    ProveConstantOpeningSegmentError, ProvePcsEvaluationSegmentError, ProvePcsEvaluationValues,
-    ProvePcsMaterialSegmentError, ProvePcsQueryPlanSegmentError, ProveWitnessOpeningSegmentError,
-    ProveWitnessSegmentError,
+    ProveConstantOpeningSegmentError, ProvePcsEvaluationSegmentError, ProvePcsEvaluationValueRef,
+    ProvePcsEvaluationValues, ProvePcsMaterialSegmentError, ProvePcsQueryPlanSegmentError,
+    ProveWitnessOpeningSegmentError, ProveWitnessSegmentError,
 };
 pub use witness_execution::{
     run_prove_witness_commitments, run_prove_witness_commitments_for_all_units,

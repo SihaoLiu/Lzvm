@@ -11,7 +11,8 @@ use lzvm_prover::pcs_evaluation::{
     LoadPcsEvaluationUnitError,
 };
 use lzvm_prover::{
-    build_pcs_evaluation_segment, ProvePcsEvaluationValues, ProveSchedule, ProveUnitSchedule,
+    build_pcs_evaluation_segment, build_pcs_evaluation_segment_from_value_refs,
+    ProvePcsEvaluationValueRef, ProvePcsEvaluationValues, ProveSchedule, ProveUnitSchedule,
 };
 
 const FIRST_EVALUATION_VALUE_OFFSET: usize = 12 + 4 + 4;
@@ -133,6 +134,34 @@ fn builds_pcs_evaluation_segments_in_unit_index_order() {
 
     assert_eq!(parsed.units[0].unit_index, 0);
     assert_eq!(parsed.units[1].unit_index, 1);
+}
+
+#[test]
+fn builds_pcs_evaluation_segments_from_borrowed_values() {
+    let schedule = sample_schedule();
+    let first_values = [Ext3::from_u64s([1, 2, 3])];
+    let second_values = [Ext3::from_u64s([4, 5, 6])];
+    let segment = build_pcs_evaluation_segment_from_value_refs(
+        &schedule,
+        &[
+            ProvePcsEvaluationValueRef {
+                unit_index: 1,
+                trace_instance_index: 0,
+                values: &second_values,
+            },
+            ProvePcsEvaluationValueRef {
+                unit_index: 0,
+                trace_instance_index: 0,
+                values: &first_values,
+            },
+        ],
+    )
+    .expect("borrowed evaluation segment should build");
+    let parsed =
+        parse_pcs_evaluation_segment(&segment.data).expect("evaluation segment should parse");
+
+    assert_eq!(parsed.units[0], evaluation_unit(0, vec![[1, 2, 3]]));
+    assert_eq!(parsed.units[1], evaluation_unit(1, vec![[4, 5, 6]]));
 }
 
 #[test]

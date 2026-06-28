@@ -18,6 +18,23 @@ pub struct ProvePcsEvaluationValues {
     pub values: Vec<Ext3>,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct ProvePcsEvaluationValueRef<'a> {
+    pub unit_index: usize,
+    pub trace_instance_index: u32,
+    pub values: &'a [Ext3],
+}
+
+impl<'a> From<&'a ProvePcsEvaluationValues> for ProvePcsEvaluationValueRef<'a> {
+    fn from(values: &'a ProvePcsEvaluationValues) -> Self {
+        Self {
+            unit_index: values.unit_index,
+            trace_instance_index: values.trace_instance_index,
+            values: values.values.as_slice(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ProvePcsEvaluationSegmentError {
     UnitIndexOverflow {
@@ -268,6 +285,17 @@ pub(crate) fn validate_pcs_evaluation_units_match_query_units_from_segment(
 pub fn build_pcs_evaluation_segment(
     schedule: &ProveSchedule,
     values: &[ProvePcsEvaluationValues],
+) -> Result<ProofSegment, ProvePcsEvaluationSegmentError> {
+    let value_refs = values
+        .iter()
+        .map(ProvePcsEvaluationValueRef::from)
+        .collect::<Vec<_>>();
+    build_pcs_evaluation_segment_from_value_refs(schedule, &value_refs)
+}
+
+pub fn build_pcs_evaluation_segment_from_value_refs(
+    schedule: &ProveSchedule,
+    values: &[ProvePcsEvaluationValueRef<'_>],
 ) -> Result<ProofSegment, ProvePcsEvaluationSegmentError> {
     let mut units = Vec::with_capacity(values.len());
     for input in values {
