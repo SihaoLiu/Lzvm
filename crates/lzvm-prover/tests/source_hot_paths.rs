@@ -8640,6 +8640,26 @@ fn fri_transcript_segment_builder_indexes_payload_units() {
 }
 
 #[test]
+fn fri_transcript_commitments_use_shared_prefix_builder() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let fri_build_path = crate_root.join("src/pcs_fri/build.rs");
+    let fri_build_source =
+        std::fs::read_to_string(&fri_build_path).expect("FRI build source should read");
+    let transcript_path = crate_root.join("src/pcs_transcript.rs");
+    let transcript_source =
+        std::fs::read_to_string(&transcript_path).expect("PCS transcript source should read");
+
+    assert!(
+        transcript_source.contains("pub(crate) fn build_pcs_transcript_prefix")
+            && fri_build_source.contains("build_pcs_transcript_prefix(PcsTranscriptPrefixInputs")
+            && !fri_build_source.contains("fn build_fri_transcript_prefix")
+            && !fri_build_source.contains("fn absorb_transcript_stage_unit_values")
+            && !fri_build_source.contains("fn draw_transcript_fields"),
+        "FRI transcript commitments should reuse the shared PCS transcript prefix builder"
+    );
+}
+
+#[test]
 fn fri_opening_from_trace_borrows_challenges() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let source_path = crate_root.join("src/prove_fri_opening.rs");

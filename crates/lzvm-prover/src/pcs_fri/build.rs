@@ -3,8 +3,7 @@ use std::time::Instant;
 use lzvm_artifacts::pcs_fri_segment::{
     PcsFriOpeningLayerSegment, PcsFriOpeningQuerySegment, PcsFriOpeningUnitSegment,
 };
-use lzvm_artifacts::setup_info::StageValue;
-use lzvm_field::{Ext3, Felt, PoseidonTranscript};
+use lzvm_field::{Ext3, Felt};
 
 use super::errors::{PcsFriOpeningBuildError, PcsFriTranscriptCommitmentError};
 use super::fold::verify_fri_fold;
@@ -13,7 +12,9 @@ use super::requests::{
     PcsFriOpeningBuildRequest, PcsFriOpeningBuildTiming, PcsFriTranscriptCommitmentRequest,
     PcsFriTranscriptCommitments, PcsFriTranscriptLayerMaterial,
 };
-use crate::pcs_transcript::{absorb_binding_segments, absorb_commit_values, PcsTranscriptError};
+use crate::pcs_transcript::{
+    absorb_commit_values, build_pcs_transcript_prefix, PcsTranscriptPrefixInputs,
+};
 use crate::ProveUnitSchedule;
 
 pub fn build_pcs_fri_transcript_commitments(
@@ -33,7 +34,20 @@ pub fn build_pcs_fri_transcript_commitments_with_timing(
         return Err(PcsFriOpeningBuildError::EmptyFriLayers.into());
     }
 
-    let (mut transcript, mut challenges) = build_fri_transcript_prefix(request)?;
+    let (mut transcript, mut challenges) =
+        build_pcs_transcript_prefix(PcsTranscriptPrefixInputs {
+            arity: request.arity,
+            hash_values: request.hash_values,
+            constant_root: request.constant_root,
+            public_values: request.public_values,
+            witness_roots: request.witness_roots,
+            root_challenge_draws: request.root_challenge_draws,
+            unit_value_map: request.unit_value_map,
+            unit_values: request.unit_values,
+            evaluation_values: request.evaluation_values,
+            evaluation_challenge_draws: request.evaluation_challenge_draws,
+            binding_segments: request.binding_segments,
+        })?;
     challenges.push(Ext3::ZERO);
 
     let arity = usize::try_from(schedule.merkle_tree_arity)
@@ -533,96 +547,6 @@ fn record_fri_opening_duration<T, E>(
     let result = build();
     record(timing, started.elapsed());
     result
-}
-
-fn build_fri_transcript_prefix(
-    request: PcsFriTranscriptCommitmentRequest<'_>,
-) -> Result<(PoseidonTranscript, Vec<Ext3>), PcsTranscriptError> {
-    if request.witness_roots.len() != request.root_challenge_draws.len() {
-        return Err(PcsTranscriptError::RootChallengeDrawMismatch {
-            root_count: request.witness_roots.len(),
-            draw_count: request.root_challenge_draws.len(),
-        });
-    }
-
-    let mut transcript = PoseidonTranscript::new(request.arity)?;
-    let mut challenges = Vec::new();
-    transcript.put(&request.constant_root);
-
-    if !request.public_values.is_empty() {
-        absorb_commit_values(
-            &mut transcript,
-            request.arity,
-            request.hash_values,
-            request.public_values,
-        )?;
-    }
-
-    for (stage_index, (root, draw_count)) in request
-        .witness_roots
-        .iter()
-        .zip(request.root_challenge_draws.iter())
-        .enumerate()
-    {
-        let stage =
-            u32::try_from(stage_index + 1).map_err(|_| PcsTranscriptError::LengthOverflow)?;
-        transcript.put(root);
-        absorb_transcript_stage_unit_values(
-            &mut transcript,
-            stage,
-            request.unit_value_map,
-            request.unit_values,
-        )?;
-        draw_transcript_fields(&mut transcript, *draw_count, &mut challenges);
-    }
-
-    draw_transcript_fields(
-        &mut transcript,
-        request.evaluation_challenge_draws,
-        &mut challenges,
-    );
-    if !request.evaluation_values.is_empty() {
-        let values = flatten_extension_values_for_transcript(request.evaluation_values);
-        absorb_commit_values(&mut transcript, request.arity, request.hash_values, &values)?;
-    }
-
-    absorb_binding_segments(&mut transcript, request.binding_segments)?;
-
-    Ok((transcript, challenges))
-}
-
-fn absorb_transcript_stage_unit_values(
-    transcript: &mut PoseidonTranscript,
-    stage: u32,
-    value_map: &[StageValue],
-    values: &[Felt],
-) -> Result<(), PcsTranscriptError> {
-    let mut offset = 0_usize;
-    for (value_index, value) in value_map.iter().enumerate() {
-        let width = if value.stage == 1 { 1 } else { 3 };
-        let end = offset
-            .checked_add(width)
-            .ok_or(PcsTranscriptError::LengthOverflow)?;
-        if end > values.len() {
-            return Err(PcsTranscriptError::UnitValueOutOfRange {
-                value_index,
-                offset,
-                width,
-                len: values.len(),
-            });
-        }
-        if value.stage == stage && value.stage > 1 {
-            transcript.put(&values[offset..end]);
-        }
-        offset = end;
-    }
-    Ok(())
-}
-
-fn draw_transcript_fields(transcript: &mut PoseidonTranscript, count: usize, out: &mut Vec<Ext3>) {
-    for _ in 0..count {
-        out.push(transcript.get_field());
-    }
 }
 
 fn flatten_extension_values_for_transcript(values: &[Ext3]) -> Vec<Felt> {

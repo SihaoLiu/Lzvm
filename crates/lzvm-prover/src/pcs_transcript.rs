@@ -267,7 +267,7 @@ pub fn derive_pcs_transcript_prefix_challenges(
     Ok(challenges)
 }
 
-fn build_pcs_transcript_prefix(
+pub(crate) fn build_pcs_transcript_prefix(
     input: PcsTranscriptPrefixInputs<'_>,
 ) -> Result<(PoseidonTranscript, Vec<Ext3>), PcsTranscriptError> {
     if input.witness_roots.len() != input.root_challenge_draws.len() {
