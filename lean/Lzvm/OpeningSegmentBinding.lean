@@ -1540,6 +1540,12 @@ theorem runtime_opening_segment_binding_checked_acceptance_full_soundness_with_f
             validation
             artifact
             publicInput
+            proof
+          /\ RuntimeFriFoldQueryPlanOrderContract
+            system
+            validation
+            artifact
+            publicInput
             proof := by
   intro artifact publicInput proof requiresExternalSource accepted
   have fullContract :=
@@ -1566,6 +1572,13 @@ theorem runtime_opening_segment_binding_checked_acceptance_full_soundness_with_f
       publicInput
       proof
       accepted
+  have foldQueryPlanOrderContract :=
+    runtime_opening_segment_binding_checked_acceptance_fri_fold_query_plan_order_contract
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
   rcases fullContract with
     ⟨segmentBound,
       openingEvidence,
@@ -1582,6 +1595,7 @@ theorem runtime_opening_segment_binding_checked_acceptance_full_soundness_with_f
             (And.intro friQueries
               (And.intro coreContract
                 (And.intro soundWitness
-                  (And.intro parserContract foldTraceIdentityContract)))))))
+                  (And.intro parserContract
+                    (And.intro foldTraceIdentityContract foldQueryPlanOrderContract))))))))
 
 end Lzvm
