@@ -255,34 +255,27 @@ theorem runtime_artifact_checked_acceptance_audited_sound
       RuntimeArtifactCheckedAcceptance system validation artifact publicInput proof ->
         RequiredCryptographicAssumptionStatements assumptions.crypto
           /\ RequiredSemanticAssumptionStatements assumptions.semantic
-          /\ RuntimeArtifactEvidence system validation artifact publicInput proof
-          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ RuntimeArtifactSoundnessObligations
+            system
+            validation
+            artifact
+            publicInput
+            proof
           /\ SoundWitness system publicInput proof := by
   intro artifact publicInput proof artifactAccepted
-  have verifierAccepts :=
-    runtime_artifact_checked_acceptance_implies_verifier_accepts
-      validation
-      artifact
-      publicInput
-      proof
-      artifactAccepted
-  have evidence :=
-    runtime_artifact_checked_acceptance_evidence
-      validation
-      artifact
-      publicInput
-      proof
-      artifactAccepted
-  have auditedSound :=
-    accepted_proof_audited_core_and_sound_witness
+  have auditedAssumptions :=
+    assumption_bundle_carries_required_evidence assumptions
+  have checkedSound :=
+    runtime_artifact_checked_acceptance_sound
       assumptions
+      validation
+      artifact
       publicInput
       proof
-      verifierAccepts
+      artifactAccepted
   exact
-    And.intro auditedSound.left
-      (And.intro auditedSound.right.left
-        (And.intro evidence auditedSound.right.right))
+    And.intro auditedAssumptions.left
+      (And.intro auditedAssumptions.right checkedSound)
 
 theorem runtime_conformance_agreement_checked_acceptance_sound
     {system : VerifierModel}
@@ -324,8 +317,12 @@ theorem runtime_conformance_agreement_checked_acceptance_audited_sound
       RuntimeArtifactCheckedAcceptance system left artifact publicInput proof ->
         RequiredCryptographicAssumptionStatements assumptions.crypto
           /\ RequiredSemanticAssumptionStatements assumptions.semantic
-          /\ RuntimeArtifactEvidence system right artifact publicInput proof
-          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ RuntimeArtifactSoundnessObligations
+            system
+            right
+            artifact
+            publicInput
+            proof
           /\ SoundWitness system publicInput proof := by
   intro artifact publicInput proof leftAccepted
   have rightAccepted :
