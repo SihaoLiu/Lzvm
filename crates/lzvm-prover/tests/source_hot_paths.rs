@@ -10456,6 +10456,39 @@ fn regular_constraint_fixed_device_buffer_stays_out_of_cpu_inputs() {
 }
 
 #[test]
+fn evaluation_stage_column_lookups_use_ordered_stage_fast_path() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let fri_eval_path = crate_root.join("src/fri_polynomial/eval.rs");
+    let fri_eval_source =
+        std::fs::read_to_string(&fri_eval_path).expect("FRI polynomial eval source should read");
+    let hint_resolve_path = crate_root.join("src/hint_eval/resolve.rs");
+    let hint_resolve_source =
+        std::fs::read_to_string(&hint_resolve_path).expect("hint resolve source should read");
+
+    let fri_lookup_body = function_body(&fri_eval_source, "fn find_stage_columns", "fn source_row");
+    let regular_lookup_body = function_body(
+        &hint_resolve_source,
+        "fn find_regular_stage_columns",
+        "fn regular_source_row",
+    );
+
+    for (name, body) in [
+        ("FRI polynomial", fri_lookup_body),
+        ("regular hint", regular_lookup_body),
+    ] {
+        assert!(
+            body.contains("usize::from(stage_index).checked_sub(1)")
+                && body.contains(".get(stage_slot)")
+                && body.contains(".filter(|stage| stage.stage_index == stage_index)")
+                && body.contains("[..stage_slot]")
+                && body.contains(".all(|stage| stage.stage_index != stage_index)")
+                && body.contains(".find(|stage| stage.stage_index == stage_index)"),
+            "{name} stage-column lookup should use ordered stage slots before first-match fallback"
+        );
+    }
+}
+
+#[test]
 fn witness_regular_constraints_pass_only_row_major_fixed_device_buffer() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let source_path = crate_root.join("src/witness_execution.rs");
