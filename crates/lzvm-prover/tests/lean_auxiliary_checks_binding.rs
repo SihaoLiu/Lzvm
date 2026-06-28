@@ -954,6 +954,22 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
                 "cudaAllocatorNoWaitBypassByteCount := noWaitBypassBytes",
             ][..],
         ),
+        (
+            "cuda_allocator_host_registration_timing_acceptance_core_and_sound",
+            [
+                "cuda_allocator_host_registration_timing_acceptance_verifier_core_contract",
+                "cuda_allocator_host_registration_timing_acceptance_sound",
+            ],
+            &[
+                "cudaAllocatorHostRegisterCallCount := hostRegisterCalls",
+                "cudaAllocatorHostRegisterByteCount := hostRegisterBytes",
+                "cudaAllocatorHostRegisterWaitNanoseconds := hostRegisterWaitNanoseconds",
+                "cudaAllocatorHostRegisterMaxWaitNanoseconds := hostRegisterMaxWaitNanoseconds",
+                "cudaAllocatorHostUnregisterCallCount := hostUnregisterCalls",
+                "cudaAllocatorHostUnregisterWaitNanoseconds := hostUnregisterWaitNanoseconds",
+                "cudaAllocatorHostUnregisterMaxWaitNanoseconds := hostUnregisterMaxWaitNanoseconds",
+            ][..],
+        ),
     ] {
         lean_binding::assert_theorem_prefix_contains(
             &lean_proof_timing_source,
@@ -4463,6 +4479,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "cuda_allocator_aggregate_timing_acceptance_core_and_sound",
             "cuda_allocator_host_registration_timing_acceptance_sound",
             "cuda_allocator_host_registration_timing_acceptance_verifier_core_contract",
+            "cuda_allocator_host_registration_timing_acceptance_core_and_sound",
             "proof_artifact_finish_timing_observed_acceptance_projects_verifier_acceptance",
             "proof_artifact_finish_timing_acceptance_sound",
             "proof_artifact_finish_timing_acceptance_verifier_core_contract",
