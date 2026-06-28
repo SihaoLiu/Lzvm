@@ -40,6 +40,53 @@ theorem runtime_guarded_external_source_required_evidence
       checked.right
       required
 
+theorem runtime_guarded_external_source_required_provider_obligations
+    {system : VerifierModel}
+    (runtimeValidation : RuntimeConformanceValidation system)
+    (sourceValidation : ExternalSourceOpeningValidation system) :
+    forall artifact publicInput proof requiresExternalSource,
+      RuntimeGuardedExternalSourceCheckedAcceptance
+          system
+          runtimeValidation
+          sourceValidation
+          artifact
+          publicInput
+          proof
+          requiresExternalSource ->
+        requiresExternalSource ->
+          sourceValidation.providerTranscriptBound publicInput proof
+            /\ sourceValidation.providerMatchesCommittedTrace publicInput proof
+            /\ sourceValidation.providerOpeningsRootBound publicInput proof := by
+  intro artifact publicInput proof requiresExternalSource checked required
+  have externalEvidence :=
+    runtime_guarded_external_source_required_evidence
+      runtimeValidation
+      sourceValidation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      checked
+      required
+  exact
+    And.intro
+      (external_source_opening_evidence_provider_transcript_bound
+        sourceValidation
+        publicInput
+        proof
+        externalEvidence)
+      (And.intro
+        (external_source_opening_evidence_provider_matches_committed_trace
+          sourceValidation
+          publicInput
+          proof
+          externalEvidence)
+        (external_source_opening_evidence_provider_openings_root_bound
+          sourceValidation
+          publicInput
+          proof
+          externalEvidence))
+
 theorem runtime_guarded_external_source_required_sound
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)

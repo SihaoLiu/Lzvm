@@ -41,6 +41,33 @@ def ExternalSourceOpeningEvidence
     /\ validation.providerMatchesCommittedTrace publicInput proof
     /\ validation.providerOpeningsRootBound publicInput proof
 
+theorem external_source_opening_evidence_provider_transcript_bound
+    {system : VerifierModel}
+    (validation : ExternalSourceOpeningValidation system) :
+    forall publicInput proof,
+      ExternalSourceOpeningEvidence system validation publicInput proof ->
+        validation.providerTranscriptBound publicInput proof := by
+  intro publicInput proof evidence
+  exact evidence.left
+
+theorem external_source_opening_evidence_provider_matches_committed_trace
+    {system : VerifierModel}
+    (validation : ExternalSourceOpeningValidation system) :
+    forall publicInput proof,
+      ExternalSourceOpeningEvidence system validation publicInput proof ->
+        validation.providerMatchesCommittedTrace publicInput proof := by
+  intro publicInput proof evidence
+  exact evidence.right.left
+
+theorem external_source_opening_evidence_provider_openings_root_bound
+    {system : VerifierModel}
+    (validation : ExternalSourceOpeningValidation system) :
+    forall publicInput proof,
+      ExternalSourceOpeningEvidence system validation publicInput proof ->
+        validation.providerOpeningsRootBound publicInput proof := by
+  intro publicInput proof evidence
+  exact evidence.right.right
+
 def ExternalSourceOpeningRequirement
     (system : VerifierModel)
     (validation : ExternalSourceOpeningValidation system)
