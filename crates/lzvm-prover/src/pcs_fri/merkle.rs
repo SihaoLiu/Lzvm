@@ -167,6 +167,7 @@ pub fn verify_fri_query_path(
     let expected_siblings = arity
         .checked_sub(1)
         .ok_or(PcsFriMerkleError::LengthOverflow)?;
+    let mut children = vec![[Felt::ZERO; HASH_WORDS]; arity];
 
     for level in siblings {
         if level.len() != expected_siblings {
@@ -178,7 +179,6 @@ pub fn verify_fri_query_path(
 
         let child_slot = usize::try_from(path_index % arity_u64)
             .map_err(|_| PcsFriMerkleError::LengthOverflow)?;
-        let mut children = vec![[Felt::ZERO; HASH_WORDS]; arity];
         let mut sibling_index = 0;
         for (slot, child) in children.iter_mut().enumerate() {
             if slot == child_slot {

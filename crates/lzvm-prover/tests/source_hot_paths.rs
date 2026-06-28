@@ -8910,6 +8910,29 @@ fn fri_layer_tree_hashes_uniform_rows_from_row_major_bytes() {
 }
 
 #[test]
+fn fri_query_path_verifier_reuses_child_digest_buffer() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let merkle_path = crate_root.join("src/pcs_fri/merkle.rs");
+    let merkle_source =
+        std::fs::read_to_string(&merkle_path).expect("FRI Merkle source should read");
+    let body = function_body(
+        &merkle_source,
+        "pub fn verify_fri_query_path",
+        "pub fn verify_fri_last_level_root",
+    );
+
+    assert!(
+        body.matches("let mut children = vec![[Felt::ZERO; HASH_WORDS]; arity]")
+            .count()
+            == 1
+            && body.contains("for level in siblings")
+            && body.contains("for (slot, child) in children.iter_mut().enumerate()")
+            && body.contains("digest = parent_hash(&children, arity)?"),
+        "FRI query path verification should reuse one child digest buffer across path levels"
+    );
+}
+
+#[test]
 fn pcs_transcript_challenges_preallocate_expected_draws() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let transcript_path = crate_root.join("src/pcs_transcript.rs");
