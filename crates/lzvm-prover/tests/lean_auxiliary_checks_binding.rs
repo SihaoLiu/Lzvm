@@ -6142,98 +6142,129 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "sound_witness_implies_verifier_core_contract",
         ],
     );
-    for (theorem, prefix_terms, body_terms) in [
+    for (theorem, prefix_terms, body_terms, omitted_terms) in [
         (
             "source_lookup_checked_acceptance_auxiliary_evidence_core_and_sound",
-            [
+            &[
                 "SourceLookupAuxiliaryEvidence system auxiliary publicInput proof",
                 "RuntimeVerifierCoreContract system publicInput proof",
                 "SoundWitness system publicInput proof",
-            ],
-            [
+            ][..],
+            &[
+                "source_lookup_checked_acceptance_projects_auxiliary_evidence",
+                "auxiliary_checked_acceptance_core_and_sound",
+            ][..],
+            &[
                 "source_lookup_auxiliary_acceptance_sound",
                 "source_lookup_checked_acceptance_verifier_core_contract",
-            ],
+                "sound_witness_implies_verifier_core_contract",
+            ][..],
         ),
         (
             "witness_leaf_digest_checked_acceptance_evidence_core_and_sound",
-            [
+            &[
                 "WitnessLeafDigestEvidence system validation publicInput proof",
                 "RuntimeVerifierCoreContract system publicInput proof",
                 "SoundWitness system publicInput proof",
-            ],
-            [
+            ][..],
+            &[
+                "witness_leaf_digest_checked_acceptance_projects_evidence",
+                "auxiliary_checked_acceptance_core_and_sound",
+            ][..],
+            &[
                 "witness_leaf_digest_acceptance_sound",
                 "witness_leaf_digest_checked_acceptance_verifier_core_contract",
-            ],
+                "sound_witness_implies_verifier_core_contract",
+            ][..],
         ),
         (
             "gpu_canonical_leaf_checked_acceptance_leaf_bytes_core_and_sound",
-            [
+            &[
                 "validation.leafValidation.canonicalExtendedLeafBytes publicInput proof",
                 "RuntimeVerifierCoreContract system publicInput proof",
                 "SoundWitness system publicInput proof",
-            ],
-            [
+            ][..],
+            &[
+                "gpu_canonical_leaf_checked_acceptance_projects_leaf_bytes",
+                "auxiliary_checked_acceptance_core_and_sound",
+            ][..],
+            &[
                 "gpu_canonical_leaf_checked_acceptance_sound",
                 "gpu_canonical_leaf_checked_acceptance_verifier_core_contract",
-            ],
+                "sound_witness_implies_verifier_core_contract",
+            ][..],
         ),
         (
             "gpu_leaf_output_buffer_reuse_checked_acceptance_leaf_bytes_core_and_sound",
-            [
+            &[
                 "validation.leafValidation.canonicalExtendedLeafBytes publicInput proof",
                 "RuntimeVerifierCoreContract system publicInput proof",
                 "SoundWitness system publicInput proof",
-            ],
-            [
+            ][..],
+            &[
+                "gpu_leaf_output_buffer_reuse_checked_acceptance_projects_leaf_bytes",
+                "auxiliary_checked_acceptance_core_and_sound",
+            ][..],
+            &[
                 "gpu_leaf_output_buffer_reuse_checked_acceptance_sound",
                 "gpu_leaf_output_buffer_reuse_checked_acceptance_verifier_core_contract",
-            ],
+                "sound_witness_implies_verifier_core_contract",
+            ][..],
         ),
         (
             "gpu_coset_extension_checked_acceptance_leaf_bytes_core_and_sound",
-            [
+            &[
                 "validation.leafValidation.canonicalExtendedLeafBytes publicInput proof",
                 "RuntimeVerifierCoreContract system publicInput proof",
                 "SoundWitness system publicInput proof",
-            ],
-            [
+            ][..],
+            &[
+                "gpu_coset_extension_checked_acceptance_projects_leaf_bytes",
+                "auxiliary_checked_acceptance_core_and_sound",
+            ][..],
+            &[
                 "gpu_coset_extension_checked_acceptance_sound",
                 "gpu_coset_extension_checked_acceptance_verifier_core_contract",
-            ],
+                "sound_witness_implies_verifier_core_contract",
+            ][..],
         ),
         (
             "gpu_fri_fold_interpolation_checked_acceptance_fri_folds_core_and_sound",
-            [
+            &[
                 "validation.friFoldsValid publicInput proof",
                 "RuntimeVerifierCoreContract system publicInput proof",
                 "SoundWitness system publicInput proof",
-            ],
-            [
+            ][..],
+            &[
+                "gpu_fri_fold_interpolation_checked_acceptance_projects_fri_folds_valid",
+                "auxiliary_checked_acceptance_core_and_sound",
+            ][..],
+            &[
                 "gpu_fri_fold_interpolation_checked_acceptance_sound",
                 "gpu_fri_fold_interpolation_checked_acceptance_verifier_core_contract",
-            ],
+                "sound_witness_implies_verifier_core_contract",
+            ][..],
         ),
         (
             "gpu_merkle_digest_prefix_batch_checked_acceptance_lower_prefixes_core_and_sound",
-            [
+            &[
                 "validation.lowerPrefixesBound publicInput proof",
                 "RuntimeVerifierCoreContract system publicInput proof",
                 "SoundWitness system publicInput proof",
-            ],
-            [
+            ][..],
+            &[
+                "gpu_merkle_digest_prefix_batch_checked_acceptance_projects_lower_prefixes_bound",
+                "auxiliary_checked_acceptance_core_and_sound",
+            ][..],
+            &[
                 "gpu_merkle_digest_prefix_batch_checked_acceptance_sound",
                 "gpu_merkle_digest_prefix_batch_checked_acceptance_verifier_core_contract",
-            ],
+                "sound_witness_implies_verifier_core_contract",
+            ][..],
         ),
     ] {
-        lean_binding::assert_theorem_prefix_contains(&auxiliary_source, theorem, &prefix_terms);
-        lean_binding::assert_theorem_body_contains(&auxiliary_source, theorem, &body_terms);
-        lean_binding::assert_theorem_body_omits(
-            &auxiliary_source,
-            theorem,
-            &["sound_witness_implies_verifier_core_contract"],
-        );
+        lean_binding::assert_theorem_prefix_contains(&auxiliary_source, theorem, prefix_terms);
+        lean_binding::assert_theorem_body_contains(&auxiliary_source, theorem, body_terms);
+        lean_binding::assert_theorem_body_omits(&auxiliary_source, theorem, omitted_terms);
     }
 }
