@@ -584,8 +584,21 @@ def append_improve_log(
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
     )
-    write_text_no_follow(batch_dir / "append.stdout", output.stdout)
-    write_text_no_follow(batch_dir / "append.stderr", output.stderr)
+    append_stdout_path = batch_dir / "append.stdout"
+    append_stderr_path = batch_dir / "append.stderr"
+    append_status_path = batch_dir / "append.status"
+    write_text_no_follow(append_stdout_path, output.stdout)
+    write_text_no_follow(append_stderr_path, output.stderr)
+    write_status(
+        append_status_path,
+        [
+            f"append_script={append_script}",
+            f"improve_log={improve_log_path}",
+            f"exit_code={output.returncode}",
+            f"append_stdout={append_stdout_path}",
+            f"append_stderr={append_stderr_path}",
+        ],
+    )
     if output.returncode != 0:
         raise SystemExit(
             "append-improve-log failed with status "
@@ -704,6 +717,9 @@ def write_batch_json(
     large_stable_avg_s = timing_average_seconds(large_stable_timing_s)
     small_stable_spread_s = timing_spread_seconds(small_stable_timing_s)
     large_stable_spread_s = timing_spread_seconds(large_stable_timing_s)
+    append_status_path = batch_dir / "append.status"
+    append_stdout_path = batch_dir / "append.stdout"
+    append_stderr_path = batch_dir / "append.stderr"
     payload = {
         "created_at": datetime.now().astimezone().strftime("%Y-%m-%dT%H:%M:%S%z"),
         "workspace": str(root),
@@ -711,6 +727,10 @@ def write_batch_json(
         "cwd": str(cwd),
         "improve_log": str(improve_log_path),
         "appended": appended,
+        "append_script": args.append_script,
+        "append_status": str(append_status_path) if append_status_path.exists() else None,
+        "append_stdout": str(append_stdout_path) if append_stdout_path.exists() else None,
+        "append_stderr": str(append_stderr_path) if append_stderr_path.exists() else None,
         "runs": args.runs,
         "max_runs": max_runs,
         "small_timeout_s": args.small_timeout,

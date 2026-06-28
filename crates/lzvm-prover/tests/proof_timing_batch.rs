@@ -306,6 +306,24 @@ fn proof_timing_batch_runs_commands_and_appends_stable_log() {
             && batch_json.contains("large-stable.proof-timing-summary.csv"),
         "batch json should record stable timing summary paths: {batch_json}"
     );
+    assert!(
+        batch_json.contains("\"append_script\": \"scripts/append-improve-log.py\"")
+            && batch_json.contains("\"append_status\":")
+            && batch_json.contains("append.status")
+            && batch_json.contains("\"append_stdout\":")
+            && batch_json.contains("append.stdout")
+            && batch_json.contains("\"append_stderr\":")
+            && batch_json.contains("append.stderr"),
+        "batch json should record append helper artifacts: {batch_json}"
+    );
+    let append_status =
+        std::fs::read_to_string(batch_dir.join("append.status")).expect("append status read");
+    assert!(
+        append_status.contains("exit_code=0")
+            && append_status.contains("append_stdout=")
+            && append_status.contains("append_stderr="),
+        "append status should record the successful append outcome: {append_status}"
+    );
     let small_status =
         std::fs::read_to_string(batch_dir.join("small-001.status")).expect("status should read");
     assert!(
@@ -1566,6 +1584,15 @@ fn proof_timing_batch_records_logs_when_append_fails() {
         "batch json should record that append did not succeed: {batch_json}"
     );
     assert!(
+        batch_json.contains("\"append_script\":")
+            && batch_json.contains("failing-append.py")
+            && batch_json.contains("\"append_status\":")
+            && batch_json.contains("append.status")
+            && batch_json.contains("\"append_stderr\":")
+            && batch_json.contains("append.stderr"),
+        "batch json should record failed append artifacts: {batch_json}"
+    );
+    assert!(
         batch_json.contains("small-001.log"),
         "batch json should retain completed small logs: {batch_json}"
     );
@@ -1584,9 +1611,17 @@ fn proof_timing_batch_records_logs_when_append_fails() {
     );
     let append_stderr =
         std::fs::read_to_string(batch_dirs[0].join("append.stderr")).expect("append stderr read");
+    let append_status =
+        std::fs::read_to_string(batch_dirs[0].join("append.status")).expect("append status read");
     assert!(
         append_stderr.contains("append failed"),
         "append stderr should be captured: {append_stderr}"
+    );
+    assert!(
+        append_status.contains("exit_code=7")
+            && append_status.contains("append_stdout=")
+            && append_status.contains("append_stderr="),
+        "append status should record the failed append outcome: {append_status}"
     );
     let _ = std::fs::remove_dir_all(&dir);
 }
