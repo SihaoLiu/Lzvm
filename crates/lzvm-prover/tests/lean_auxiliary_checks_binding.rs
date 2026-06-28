@@ -1418,42 +1418,42 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             .expect("combined proof-timing theorem name should use the core_and_sound suffix");
         let verifier_callee = format!("{base_theorem}_verifier_core_contract");
         let sound_callee = format!("{base_theorem}_sound");
-        let body_terms = [verifier_callee.as_str(), sound_callee.as_str()];
-        lean_binding::assert_theorem_body_contains(&lean_proof_timing_source, theorem, &body_terms);
+        let combined_helper = "proof_artifact_finish_timing_some_summary_acceptance_core_and_sound";
+        lean_binding::assert_theorem_body_contains(
+            &lean_proof_timing_source,
+            theorem,
+            &[combined_helper],
+        );
         lean_binding::assert_theorem_body_omits(
             &lean_proof_timing_source,
             theorem,
-            &["sound_witness_implies_verifier_core_contract"],
+            &[
+                verifier_callee.as_str(),
+                sound_callee.as_str(),
+                "sound_witness_implies_verifier_core_contract",
+            ],
         );
         let prefix = lean_binding::theorem_prefix(&lean_proof_timing_source, theorem);
-        let mut ordered_args = vec!["assumptions".to_owned(), "summary".to_owned()];
+        let body = lean_binding::theorem_body(&lean_proof_timing_source, theorem);
         for field_term in field_terms {
             assert!(
                 compact_source_contains(&prefix, field_term),
                 "Lean theorem {theorem} prefix should wire field {field_term}"
             );
-            let (_, argument) = field_term
-                .rsplit_once(":=")
-                .expect("proof timing field wiring term should use Lean record assignment syntax");
-            ordered_args.push(argument.trim().to_owned());
-        }
-        ordered_args.extend([
-            "publicInput".to_owned(),
-            "proof".to_owned(),
-            "observed".to_owned(),
-        ]);
-
-        let body = lean_binding::theorem_body(&lean_proof_timing_source, theorem);
-        for callee in body_terms {
-            let expected_call = std::iter::once(callee)
-                .chain(ordered_args.iter().map(String::as_str))
-                .collect::<Vec<_>>()
-                .join(" ");
             assert!(
-                compact_source_contains(&body, &expected_call),
-                "Lean theorem {theorem} body should call {callee} with ordered timing arguments"
+                compact_source_contains(&body, field_term),
+                "Lean theorem {theorem} body should pass field {field_term} through the combined helper"
             );
         }
+        let helper_summary_prefix = format!("{combined_helper} assumptions {{ summary with");
+        assert!(
+            compact_source_contains(&body, &helper_summary_prefix),
+            "Lean theorem {theorem} body should call the combined helper with the updated summary"
+        );
+        assert!(
+            compact_source_contains(&body, "publicInput proof observed"),
+            "Lean theorem {theorem} body should pass the observed acceptance to the combined helper"
+        );
     }
     let aggregate_finish_theorem =
         "proof_artifact_finish_aggregate_timing_acceptance_core_and_sound";

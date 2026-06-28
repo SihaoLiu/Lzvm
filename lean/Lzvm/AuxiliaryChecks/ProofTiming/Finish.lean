@@ -177,53 +177,32 @@ theorem proof_artifact_finish_witness_opening_shape_acceptance_core_and_sound
         RuntimeVerifierCoreContract system publicInput proof
           /\ SoundWitness system publicInput proof := by
   intro publicInput proof observed
-  have core :=
-    proof_artifact_finish_witness_opening_shape_acceptance_verifier_core_contract
+  exact
+    proof_artifact_finish_timing_some_summary_acceptance_core_and_sound
       assumptions
-      summary
-      queryCount
-      queryUnitCount
-      singleQueryUnitCount
-      maxQueriesPerUnit
-      stageCount
-      retainedSourceCount
-      externalSourceCount
-      embeddedSourceCount
-      missingSourceCount
-      retainedLeafDigestOpeningCount
-      retainedLeafDigestOpeningRowCount
-      retainedParentCheckpointOpeningCount
-      retainedParentCheckpointOpeningRowCount
-      rowDedupInputRowCount
-      rowDedupUniqueRowCount
-      rowDedupElidedRowCount
+      { summary with
+        finishWitnessOpeningQueryCount := queryCount
+        finishWitnessOpeningQueryUnitCount := queryUnitCount
+        finishWitnessOpeningSingleQueryUnitCount := singleQueryUnitCount
+        finishWitnessOpeningMaxQueriesPerUnit := maxQueriesPerUnit
+        finishWitnessOpeningStageCount := stageCount
+        finishWitnessOpeningRetainedSourceCount := retainedSourceCount
+        finishWitnessOpeningExternalSourceCount := externalSourceCount
+        finishWitnessOpeningEmbeddedSourceCount := embeddedSourceCount
+        finishWitnessOpeningMissingSourceCount := missingSourceCount
+        finishWitnessOpeningRetainedLeafDigestOpeningCount := retainedLeafDigestOpeningCount
+        finishWitnessOpeningRetainedLeafDigestOpeningRowCount :=
+          retainedLeafDigestOpeningRowCount
+        finishWitnessOpeningRetainedParentCheckpointOpeningCount :=
+          retainedParentCheckpointOpeningCount
+        finishWitnessOpeningRetainedParentCheckpointOpeningRowCount :=
+          retainedParentCheckpointOpeningRowCount
+        finishWitnessOpeningRowDedupInputRowCount := rowDedupInputRowCount
+        finishWitnessOpeningRowDedupUniqueRowCount := rowDedupUniqueRowCount
+        finishWitnessOpeningRowDedupElidedRowCount := rowDedupElidedRowCount }
       publicInput
       proof
       observed
-  have sound :=
-    proof_artifact_finish_witness_opening_shape_acceptance_sound
-      assumptions
-      summary
-      queryCount
-      queryUnitCount
-      singleQueryUnitCount
-      maxQueriesPerUnit
-      stageCount
-      retainedSourceCount
-      externalSourceCount
-      embeddedSourceCount
-      missingSourceCount
-      retainedLeafDigestOpeningCount
-      retainedLeafDigestOpeningRowCount
-      retainedParentCheckpointOpeningCount
-      retainedParentCheckpointOpeningRowCount
-      rowDedupInputRowCount
-      rowDedupUniqueRowCount
-      rowDedupElidedRowCount
-      publicInput
-      proof
-      observed
-  exact And.intro core sound
 
 theorem proof_artifact_finish_leaf_work_shape_acceptance_sound
     {system : VerifierModel}
@@ -402,55 +381,34 @@ theorem proof_artifact_finish_leaf_work_shape_acceptance_core_and_sound
         RuntimeVerifierCoreContract system publicInput proof
           /\ SoundWitness system publicInput proof := by
   intro publicInput proof observed
-  have core :=
-    proof_artifact_finish_leaf_work_shape_acceptance_verifier_core_contract
+  exact
+    proof_artifact_finish_timing_some_summary_acceptance_core_and_sound
       assumptions
-      summary
-      leafHashRows
-      leafHashBytes
-      leafHashArity2Rows
-      leafHashArity2Bytes
-      leafHashArity4Rows
-      leafHashArity4Bytes
-      leafCosetCalls
-      leafCosetOutputBytes
-      leafCosetColumns
-      leafCosetMaxColumns
-      leafCosetNttLaunches
-      leafCosetBitReverseLaunches
-      leafCosetNttStageLaunches
-      leafCosetNttBlockTwiddleLaunches
-      leafCosetNormalizeLaunches
-      leafCosetPackLaunches
-      leafCosetUnpackLaunches
+      { summary with
+        finishWitnessOpeningLeafHashRowCount := leafHashRows
+        finishWitnessOpeningLeafHashByteCount := leafHashBytes
+        finishWitnessOpeningLeafHashArity2RowCount := leafHashArity2Rows
+        finishWitnessOpeningLeafHashArity2ByteCount := leafHashArity2Bytes
+        finishWitnessOpeningLeafHashArity4RowCount := leafHashArity4Rows
+        finishWitnessOpeningLeafHashArity4ByteCount := leafHashArity4Bytes
+        finishWitnessOpeningLeafCosetExtendCallCount := leafCosetCalls
+        finishWitnessOpeningLeafCosetExtendOutputByteCount := leafCosetOutputBytes
+        finishWitnessOpeningLeafCosetExtendColumnCount := leafCosetColumns
+        finishWitnessOpeningLeafCosetExtendMaxColumnCount := leafCosetMaxColumns
+        finishWitnessOpeningLeafCosetExtendNttLaunchCount := leafCosetNttLaunches
+        finishWitnessOpeningLeafCosetExtendBitReverseLaunchCount :=
+          leafCosetBitReverseLaunches
+        finishWitnessOpeningLeafCosetExtendNttStageLaunchCount :=
+          leafCosetNttStageLaunches
+        finishWitnessOpeningLeafCosetExtendNttBlockTwiddleLaunchCount :=
+          leafCosetNttBlockTwiddleLaunches
+        finishWitnessOpeningLeafCosetExtendNormalizeLaunchCount :=
+          leafCosetNormalizeLaunches
+        finishWitnessOpeningLeafCosetExtendPackLaunchCount := leafCosetPackLaunches
+        finishWitnessOpeningLeafCosetExtendUnpackLaunchCount := leafCosetUnpackLaunches }
       publicInput
       proof
       observed
-  have sound :=
-    proof_artifact_finish_leaf_work_shape_acceptance_sound
-      assumptions
-      summary
-      leafHashRows
-      leafHashBytes
-      leafHashArity2Rows
-      leafHashArity2Bytes
-      leafHashArity4Rows
-      leafHashArity4Bytes
-      leafCosetCalls
-      leafCosetOutputBytes
-      leafCosetColumns
-      leafCosetMaxColumns
-      leafCosetNttLaunches
-      leafCosetBitReverseLaunches
-      leafCosetNttStageLaunches
-      leafCosetNttBlockTwiddleLaunches
-      leafCosetNormalizeLaunches
-      leafCosetPackLaunches
-      leafCosetUnpackLaunches
-      publicInput
-      proof
-      observed
-  exact And.intro core sound
 
 theorem proof_artifact_finish_path_parent_hash_shape_acceptance_sound
     {system : VerifierModel}
@@ -646,51 +604,37 @@ theorem proof_artifact_finish_path_parent_hash_shape_acceptance_core_and_sound
         RuntimeVerifierCoreContract system publicInput proof
           /\ SoundWitness system publicInput proof := by
   intro publicInput proof observed
-  have core :=
-    proof_artifact_finish_path_parent_hash_shape_acceptance_verifier_core_contract
+  exact
+    proof_artifact_finish_timing_some_summary_acceptance_core_and_sound
       assumptions
-      summary
-      parentHashRows
-      parentHashBytes
-      parentHashLaunches
-      recomputedRows
-      recomputedBytes
-      recomputedLaunches
-      retainedLeafDigestRows
-      retainedLeafDigestBytes
-      retainedLeafDigestLaunches
-      retainedCheckpointPrefixRows
-      retainedCheckpointPrefixBytes
-      retainedCheckpointPrefixLaunches
-      retainedCheckpointSuffixRows
-      retainedCheckpointSuffixBytes
-      retainedCheckpointSuffixLaunches
+      { summary with
+        finishWitnessOpeningPathParentHashRowCount := parentHashRows
+        finishWitnessOpeningPathParentHashByteCount := parentHashBytes
+        finishWitnessOpeningPathParentHashLaunchCount := parentHashLaunches
+        finishWitnessOpeningPathParentHashRecomputedRowCount := recomputedRows
+        finishWitnessOpeningPathParentHashRecomputedByteCount := recomputedBytes
+        finishWitnessOpeningPathParentHashRecomputedLaunchCount := recomputedLaunches
+        finishWitnessOpeningPathParentHashRetainedLeafDigestRowCount :=
+          retainedLeafDigestRows
+        finishWitnessOpeningPathParentHashRetainedLeafDigestByteCount :=
+          retainedLeafDigestBytes
+        finishWitnessOpeningPathParentHashRetainedLeafDigestLaunchCount :=
+          retainedLeafDigestLaunches
+        finishWitnessOpeningPathParentHashRetainedParentCheckpointPrefixRowCount :=
+          retainedCheckpointPrefixRows
+        finishWitnessOpeningPathParentHashRetainedParentCheckpointPrefixByteCount :=
+          retainedCheckpointPrefixBytes
+        finishWitnessOpeningPathParentHashRetainedParentCheckpointPrefixLaunchCount :=
+          retainedCheckpointPrefixLaunches
+        finishWitnessOpeningPathParentHashRetainedParentCheckpointSuffixRowCount :=
+          retainedCheckpointSuffixRows
+        finishWitnessOpeningPathParentHashRetainedParentCheckpointSuffixByteCount :=
+          retainedCheckpointSuffixBytes
+        finishWitnessOpeningPathParentHashRetainedParentCheckpointSuffixLaunchCount :=
+          retainedCheckpointSuffixLaunches }
       publicInput
       proof
       observed
-  have sound :=
-    proof_artifact_finish_path_parent_hash_shape_acceptance_sound
-      assumptions
-      summary
-      parentHashRows
-      parentHashBytes
-      parentHashLaunches
-      recomputedRows
-      recomputedBytes
-      recomputedLaunches
-      retainedLeafDigestRows
-      retainedLeafDigestBytes
-      retainedLeafDigestLaunches
-      retainedCheckpointPrefixRows
-      retainedCheckpointPrefixBytes
-      retainedCheckpointPrefixLaunches
-      retainedCheckpointSuffixRows
-      retainedCheckpointSuffixBytes
-      retainedCheckpointSuffixLaunches
-      publicInput
-      proof
-      observed
-  exact And.intro core sound
 
 theorem proof_artifact_finish_path_parent_hash_per_unit_shape_acceptance_sound
     {system : VerifierModel}
@@ -766,27 +710,16 @@ theorem proof_artifact_finish_path_parent_hash_per_unit_shape_acceptance_core_an
         RuntimeVerifierCoreContract system publicInput proof
           /\ SoundWitness system publicInput proof := by
   intro publicInput proof observed
-  have core :=
-    proof_artifact_finish_path_parent_hash_per_unit_shape_acceptance_verifier_core_contract
+  exact
+    proof_artifact_finish_timing_some_summary_acceptance_core_and_sound
       assumptions
-      summary
-      rowsPerQuery
-      rowsPerStage
-      launchesPerStage
+      { summary with
+        finishWitnessOpeningPathParentHashRowsPerQuery := rowsPerQuery
+        finishWitnessOpeningPathParentHashRowsPerStage := rowsPerStage
+        finishWitnessOpeningPathParentHashLaunchesPerStage := launchesPerStage }
       publicInput
       proof
       observed
-  have sound :=
-    proof_artifact_finish_path_parent_hash_per_unit_shape_acceptance_sound
-      assumptions
-      summary
-      rowsPerQuery
-      rowsPerStage
-      launchesPerStage
-      publicInput
-      proof
-      observed
-  exact And.intro core sound
 
 theorem proof_artifact_finish_row_values_shape_acceptance_sound
     {system : VerifierModel}
@@ -928,41 +861,28 @@ theorem proof_artifact_finish_row_values_shape_acceptance_core_and_sound
         RuntimeVerifierCoreContract system publicInput proof
           /\ SoundWitness system publicInput proof := by
   intro publicInput proof observed
-  have core :=
-    proof_artifact_finish_row_values_shape_acceptance_verifier_core_contract
+  exact
+    proof_artifact_finish_timing_some_summary_acceptance_core_and_sound
       assumptions
-      summary
-      rowValuesMilliseconds
-      sourceExtendMilliseconds
-      sourceDownloadMilliseconds
-      deviceDownloadMilliseconds
-      deviceRows
-      deviceDownloadBatches
-      deviceSingleDownloads
-      sourceRows
-      words
-      bytes
+      { summary with
+        finishWitnessOpeningRowValuesMilliseconds := rowValuesMilliseconds
+        finishWitnessOpeningRowValueSourceExtendMilliseconds :=
+          sourceExtendMilliseconds
+        finishWitnessOpeningRowValueSourceDownloadMilliseconds :=
+          sourceDownloadMilliseconds
+        finishWitnessOpeningRowValueDeviceDownloadMilliseconds :=
+          deviceDownloadMilliseconds
+        finishWitnessOpeningRowValuesDeviceRowCount := deviceRows
+        finishWitnessOpeningRowValuesDeviceDownloadBatchCount :=
+          deviceDownloadBatches
+        finishWitnessOpeningRowValuesDeviceSingleDownloadCount :=
+          deviceSingleDownloads
+        finishWitnessOpeningRowValuesSourceRowCount := sourceRows
+        finishWitnessOpeningRowValuesWordCount := words
+        finishWitnessOpeningRowValuesByteCount := bytes }
       publicInput
       proof
       observed
-  have sound :=
-    proof_artifact_finish_row_values_shape_acceptance_sound
-      assumptions
-      summary
-      rowValuesMilliseconds
-      sourceExtendMilliseconds
-      sourceDownloadMilliseconds
-      deviceDownloadMilliseconds
-      deviceRows
-      deviceDownloadBatches
-      deviceSingleDownloads
-      sourceRows
-      words
-      bytes
-      publicInput
-      proof
-      observed
-  exact And.intro core sound
 
 
 
@@ -1049,27 +969,17 @@ theorem proof_artifact_finish_external_source_timing_acceptance_core_and_sound
         RuntimeVerifierCoreContract system publicInput proof
           /\ SoundWitness system publicInput proof := by
   intro publicInput proof observed
-  have core :=
-    proof_artifact_finish_external_source_timing_acceptance_verifier_core_contract
+  exact
+    proof_artifact_finish_timing_some_summary_acceptance_core_and_sound
       assumptions
-      summary
-      externalSourceMilliseconds
-      descriptorUploadMilliseconds
-      traceExpandMilliseconds
+      { summary with
+        finishWitnessExternalSourceMilliseconds := externalSourceMilliseconds
+        finishWitnessExternalSourceDescriptorUploadMilliseconds :=
+          descriptorUploadMilliseconds
+        finishWitnessExternalSourceTraceExpandMilliseconds := traceExpandMilliseconds }
       publicInput
       proof
       observed
-  have sound :=
-    proof_artifact_finish_external_source_timing_acceptance_sound
-      assumptions
-      summary
-      externalSourceMilliseconds
-      descriptorUploadMilliseconds
-      traceExpandMilliseconds
-      publicInput
-      proof
-      observed
-  exact And.intro core sound
 
 theorem proof_artifact_finish_witness_opening_subtiming_acceptance_sound
     {system : VerifierModel}
@@ -1153,29 +1063,17 @@ theorem proof_artifact_finish_witness_opening_subtiming_acceptance_core_and_soun
         RuntimeVerifierCoreContract system publicInput proof
           /\ SoundWitness system publicInput proof := by
   intro publicInput proof observed
-  have core :=
-    proof_artifact_finish_witness_opening_subtiming_acceptance_verifier_core_contract
+  exact
+    proof_artifact_finish_timing_some_summary_acceptance_core_and_sound
       assumptions
-      summary
-      setupMilliseconds
-      leafExtendMilliseconds
-      leafHashMilliseconds
-      pathMilliseconds
+      { summary with
+        finishWitnessOpeningSetupMilliseconds := setupMilliseconds
+        finishWitnessOpeningLeafExtendMilliseconds := leafExtendMilliseconds
+        finishWitnessOpeningLeafHashMilliseconds := leafHashMilliseconds
+        finishWitnessOpeningPathMilliseconds := pathMilliseconds }
       publicInput
       proof
       observed
-  have sound :=
-    proof_artifact_finish_witness_opening_subtiming_acceptance_sound
-      assumptions
-      summary
-      setupMilliseconds
-      leafExtendMilliseconds
-      leafHashMilliseconds
-      pathMilliseconds
-      publicInput
-      proof
-      observed
-  exact And.intro core sound
 
 theorem proof_artifact_finish_descriptor_upload_word_count_acceptance_sound
     {system : VerifierModel}
@@ -1233,23 +1131,13 @@ theorem proof_artifact_finish_descriptor_upload_word_count_acceptance_core_and_s
         RuntimeVerifierCoreContract system publicInput proof
           /\ SoundWitness system publicInput proof := by
   intro publicInput proof observed
-  have core :=
-    proof_artifact_finish_descriptor_upload_word_count_acceptance_verifier_core_contract
+  exact
+    proof_artifact_finish_timing_some_summary_acceptance_core_and_sound
       assumptions
-      summary
-      wordCount
+      { summary with finishWitnessExternalSourceDescriptorUploadWordCount := wordCount }
       publicInput
       proof
       observed
-  have sound :=
-    proof_artifact_finish_descriptor_upload_word_count_acceptance_sound
-      assumptions
-      summary
-      wordCount
-      publicInput
-      proof
-      observed
-  exact And.intro core sound
 
 theorem proof_artifact_finish_descriptor_upload_shape_acceptance_sound
     {system : VerifierModel}
@@ -1325,27 +1213,16 @@ theorem proof_artifact_finish_descriptor_upload_shape_acceptance_core_and_sound
         RuntimeVerifierCoreContract system publicInput proof
           /\ SoundWitness system publicInput proof := by
   intro publicInput proof observed
-  have core :=
-    proof_artifact_finish_descriptor_upload_shape_acceptance_verifier_core_contract
+  exact
+    proof_artifact_finish_timing_some_summary_acceptance_core_and_sound
       assumptions
-      summary
-      byteCount
-      wordCount
-      rowCount
+      { summary with
+        finishWitnessExternalSourceDescriptorUploadByteCount := byteCount
+        finishWitnessExternalSourceDescriptorUploadWordCount := wordCount
+        finishWitnessExternalSourceDescriptorUploadRowCount := rowCount }
       publicInput
       proof
       observed
-  have sound :=
-    proof_artifact_finish_descriptor_upload_shape_acceptance_sound
-      assumptions
-      summary
-      byteCount
-      wordCount
-      rowCount
-      publicInput
-      proof
-      observed
-  exact And.intro core sound
 
 theorem proof_artifact_finish_aggregate_timing_acceptance_sound
     {system : VerifierModel}
