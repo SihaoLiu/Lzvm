@@ -1595,6 +1595,40 @@ theorem guest_pc_trace_cross_root_materialization_checked_acceptance_verifier_co
       proof
       checked
 
+theorem guest_pc_trace_cross_root_materialization_checked_acceptance_core_and_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : GuestPcTraceCrossSegmentRootMaterializationValidation)
+    (config : GuestPcTraceCrossSegmentRootMaterializationConfig) :
+    forall publicInput proof,
+      GuestPcTraceCrossSegmentRootMaterializationCheckedAcceptance
+          system
+          validation
+          config
+          publicInput
+          proof ->
+        GuestPcTraceCrossSegmentRootMaterializationDecisionMatches config
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof checked
+  have sound :=
+    guest_pc_trace_cross_root_materialization_checked_acceptance_sound
+      assumptions
+      validation
+      config
+      publicInput
+      proof
+      checked
+  have core :=
+    guest_pc_trace_cross_root_materialization_checked_acceptance_verifier_core_contract
+      assumptions
+      validation
+      config
+      publicInput
+      proof
+      checked
+  exact And.intro sound.left (And.intro core sound.right)
+
 theorem guest_pc_trace_commit_mode_checked_acceptance_projects_decision
     {system : VerifierModel}
     (validation : GuestPcTraceSegmentCommitModeValidation)
@@ -1799,6 +1833,40 @@ theorem guest_pc_trace_commit_mode_checked_acceptance_verifier_core_contract
       publicInput
       proof
       checked
+
+theorem guest_pc_trace_commit_mode_checked_acceptance_core_and_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : GuestPcTraceSegmentCommitModeValidation)
+    (config : GuestPcTraceSegmentCommitModeConfig) :
+    forall publicInput proof,
+      GuestPcTraceSegmentCommitModeCheckedAcceptance
+          system
+          validation
+          config
+          publicInput
+          proof ->
+        GuestPcTraceSegmentCommitModeDecisionMatches config
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof checked
+  have sound :=
+    guest_pc_trace_commit_mode_checked_acceptance_sound
+      assumptions
+      validation
+      config
+      publicInput
+      proof
+      checked
+  have core :=
+    guest_pc_trace_commit_mode_checked_acceptance_verifier_core_contract
+      assumptions
+      validation
+      config
+      publicInput
+      proof
+      checked
+  exact And.intro sound.left (And.intro core sound.right)
 
 
 end Lzvm
