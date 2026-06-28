@@ -10552,6 +10552,10 @@ fn contribution_proof_artifact_timing_reports_segment_verify_and_challenge_work(
 #[test]
 fn proof_runner_summary_gates_require_opening_fri_and_contribution_shape() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let keys_source_path = crate_root.join("../../scripts/proof_timing_keys.py");
+    let keys_source =
+        std::fs::read_to_string(&keys_source_path).expect("proof timing key source should read");
+    let required_keys = source_between(&keys_source, "TIMING_SUMMARY_REQUIRED_KEYS = [", "]\n");
 
     for relative_path in [
         "../../scripts/run-proof-timing-batch.py",
@@ -10560,7 +10564,11 @@ fn proof_runner_summary_gates_require_opening_fri_and_contribution_shape() {
         let source_path = crate_root.join(relative_path);
         let source =
             std::fs::read_to_string(&source_path).expect("proof runner script source should read");
-        let required_keys = source_between(&source, "TIMING_SUMMARY_REQUIRED_KEYS = [", "]\n");
+        assert!(
+            source.contains("from proof_timing_keys import TIMING_SUMMARY_REQUIRED_KEYS")
+                && source.contains("key for key in TIMING_SUMMARY_REQUIRED_KEYS"),
+            "{relative_path} should gate summary generation with shared proof timing keys"
+        );
 
         for required in [
             "timing_finish_witness_opening_row_dedup_input_rows",

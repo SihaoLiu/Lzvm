@@ -13,32 +13,14 @@ import time
 from datetime import datetime
 from pathlib import Path
 
+SCRIPT_DIR = Path(__file__).resolve().parent
+if str(SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIR))
+sys.dont_write_bytecode = True
+
+from proof_timing_keys import TIMING_SUMMARY_REQUIRED_KEYS
+
 TIMING_TOTAL_RE = re.compile(r"^timing_total_ms=(\d+)\s*$", re.MULTILINE)
-TIMING_SUMMARY_REQUIRED_KEYS = [
-    "timing_total_ms",
-    "timing_guest_stage_tree_commit_root_count",
-    "timing_guest_stage_tree_commit_root_materialization_groups",
-    "timing_guest_stage_tree_commit_root_materialization_max_group_size",
-    "timing_finish_witness_opening_row_dedup_input_rows",
-    "timing_finish_witness_opening_row_dedup_unique_rows",
-    "timing_finish_witness_opening_row_dedup_elided_rows",
-    "timing_finish_fri_opening_ms",
-    "timing_finish_fri_opening_unit_build_ms",
-    "timing_finish_fri_opening_layer_tree_ms",
-    "timing_finish_fri_opening_query_ms",
-    "timing_finish_fri_opening_fold_ms",
-    "timing_finish_fri_opening_unit_count",
-    "timing_finish_fri_opening_layer_count",
-    "timing_finish_fri_opening_query_count",
-    "timing_finish_fri_transcript_unit_build_ms",
-    "timing_finish_fri_transcript_layer_tree_ms",
-    "timing_finish_fri_transcript_fold_ms",
-    "timing_finish_fri_transcript_unit_count",
-    "timing_finish_fri_transcript_layer_count",
-    "timing_finish_contribution_segment_ms",
-    "timing_finish_contribution_verify_ms",
-    "timing_finish_contribution_challenge_ms",
-]
 
 
 def workspace_root() -> Path:
