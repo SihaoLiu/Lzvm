@@ -60,6 +60,31 @@ theorem proof_timing_batch_acceptance_verifier_core_contract
       proof
       observed
 
+theorem proof_timing_batch_acceptance_core_and_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : Option ProofTimingBatchSummary) :
+    forall publicInput proof,
+      ProofTimingBatchObservedAcceptance system summary publicInput proof ->
+        RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof observed
+  have core :=
+    proof_timing_batch_acceptance_verifier_core_contract
+      assumptions
+      summary
+      publicInput
+      proof
+      observed
+  have sound :=
+    proof_timing_batch_acceptance_sound
+      assumptions
+      summary
+      publicInput
+      proof
+      observed
+  exact And.intro core sound
+
 def WitnessOpeningRowValueTimingObservedAcceptance
     (system : VerifierModel)
     (summary : Option WitnessOpeningRowValueTimingSummary)
@@ -107,6 +132,31 @@ theorem witness_opening_row_value_timing_acceptance_verifier_core_contract
       publicInput
       proof
       observed
+
+theorem witness_opening_row_value_timing_acceptance_core_and_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : Option WitnessOpeningRowValueTimingSummary) :
+    forall publicInput proof,
+      WitnessOpeningRowValueTimingObservedAcceptance system summary publicInput proof ->
+        RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof observed
+  have core :=
+    witness_opening_row_value_timing_acceptance_verifier_core_contract
+      assumptions
+      summary
+      publicInput
+      proof
+      observed
+  have sound :=
+    witness_opening_row_value_timing_acceptance_sound
+      assumptions
+      summary
+      publicInput
+      proof
+      observed
+  exact And.intro core sound
 
 theorem witness_opening_row_value_aggregate_timing_acceptance_sound
     {system : VerifierModel}
@@ -239,6 +289,31 @@ theorem constant_material_validation_timing_acceptance_verifier_core_contract
       publicInput
       proof
       observed
+
+theorem constant_material_validation_timing_acceptance_core_and_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : Option ConstantMaterialValidationTimingSummary) :
+    forall publicInput proof,
+      ConstantMaterialValidationTimingObservedAcceptance system summary publicInput proof ->
+        RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof observed
+  have core :=
+    constant_material_validation_timing_acceptance_verifier_core_contract
+      assumptions
+      summary
+      publicInput
+      proof
+      observed
+  have sound :=
+    constant_material_validation_timing_acceptance_sound
+      assumptions
+      summary
+      publicInput
+      proof
+      observed
+  exact And.intro core sound
 
 theorem constant_material_validation_aggregate_timing_acceptance_sound
     {system : VerifierModel}

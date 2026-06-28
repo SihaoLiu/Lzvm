@@ -802,6 +802,58 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             &["sound_witness_implies_verifier_core_contract"],
         );
     }
+    for (theorem, body_terms) in [
+        (
+            "proof_timing_batch_acceptance_core_and_sound",
+            [
+                "proof_timing_batch_acceptance_verifier_core_contract",
+                "proof_timing_batch_acceptance_sound",
+            ],
+        ),
+        (
+            "witness_opening_row_value_timing_acceptance_core_and_sound",
+            [
+                "witness_opening_row_value_timing_acceptance_verifier_core_contract",
+                "witness_opening_row_value_timing_acceptance_sound",
+            ],
+        ),
+        (
+            "constant_material_validation_timing_acceptance_core_and_sound",
+            [
+                "constant_material_validation_timing_acceptance_verifier_core_contract",
+                "constant_material_validation_timing_acceptance_sound",
+            ],
+        ),
+    ] {
+        lean_binding::assert_theorem_prefix_contains(
+            &lean_proof_timing_source,
+            theorem,
+            &[
+                "RuntimeVerifierCoreContract system publicInput proof",
+                "SoundWitness system publicInput proof",
+            ],
+        );
+        lean_binding::assert_theorem_body_contains(&lean_proof_timing_source, theorem, &body_terms);
+        lean_binding::assert_theorem_body_omits(
+            &lean_proof_timing_source,
+            theorem,
+            &["sound_witness_implies_verifier_core_contract"],
+        );
+        let body = lean_binding::theorem_body(&lean_proof_timing_source, theorem);
+        let base_theorem = theorem
+            .strip_suffix("_core_and_sound")
+            .expect("combined proof-timing theorem name should use the core_and_sound suffix");
+        for callee in [
+            format!("{base_theorem}_verifier_core_contract"),
+            format!("{base_theorem}_sound"),
+        ] {
+            let expected_call = format!("{callee} assumptions summary publicInput proof observed");
+            assert!(
+                compact_source_contains(&body, &expected_call),
+                "Lean theorem {theorem} body should call {callee} with ordered timing arguments"
+            );
+        }
+    }
     assert!(
         proof_timing_projected_source.contains("structure ProofTimingProjectedCoreContracts")
             && proof_timing_projected_source.contains("witnessOpeningRowValueTiming :")
@@ -3423,6 +3475,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "proof_timing_batch_observed_acceptance_projects_verifier_acceptance",
             "proof_timing_batch_acceptance_sound",
             "proof_timing_batch_acceptance_verifier_core_contract",
+            "proof_timing_batch_acceptance_core_and_sound",
         ],
     );
     lean_binding::assert_theorem_body_contains(
@@ -4229,14 +4282,17 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "guest_pc_trace_stage_timing_acceptance_verifier_core_contract",
             "guest_pc_trace_stage_timing_acceptance_core_and_sound",
             "timing_projected_core_contracts",
+            "proof_timing_batch_acceptance_core_and_sound",
             "witness_opening_row_value_timing_observed_acceptance_projects_verifier_acceptance",
             "witness_opening_row_value_timing_acceptance_sound",
             "witness_opening_row_value_timing_acceptance_verifier_core_contract",
+            "witness_opening_row_value_timing_acceptance_core_and_sound",
             "witness_opening_row_value_aggregate_timing_acceptance_sound",
             "witness_opening_row_value_aggregate_timing_acceptance_verifier_core_contract",
             "constant_material_validation_timing_observed_acceptance_projects_verifier_acceptance",
             "constant_material_validation_timing_acceptance_sound",
             "constant_material_validation_timing_acceptance_verifier_core_contract",
+            "constant_material_validation_timing_acceptance_core_and_sound",
             "constant_material_validation_aggregate_timing_acceptance_sound",
             "constant_material_validation_aggregate_timing_acceptance_verifier_core_contract",
             "prover_gpu_mode_observed_acceptance_projects_verifier_acceptance",
