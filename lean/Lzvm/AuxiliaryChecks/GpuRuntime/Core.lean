@@ -936,6 +936,40 @@ theorem guest_pc_trace_segment_queue_checked_acceptance_verifier_core_contract
       proof
       checked
 
+theorem guest_pc_trace_segment_queue_checked_acceptance_core_and_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : GuestPcTraceSegmentQueueValidation)
+    (config : GuestPcTraceSegmentQueueConfig) :
+    forall publicInput proof,
+      GuestPcTraceSegmentQueueCheckedAcceptance
+          system
+          validation
+          config
+          publicInput
+          proof ->
+        GuestPcTraceSegmentQueueDecisionMatches config
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof checked
+  have sound :=
+    guest_pc_trace_segment_queue_checked_acceptance_sound
+      assumptions
+      validation
+      config
+      publicInput
+      proof
+      checked
+  have core :=
+    guest_pc_trace_segment_queue_checked_acceptance_verifier_core_contract
+      assumptions
+      validation
+      config
+      publicInput
+      proof
+      checked
+  exact And.intro sound.left (And.intro core sound.right)
+
 theorem guest_pc_trace_large_gpu_gate_checked_acceptance_projects_decision
     {system : VerifierModel}
     (validation : GuestPcTraceLargeGpuGateValidation)
@@ -1107,6 +1141,40 @@ theorem guest_pc_trace_large_gpu_gate_checked_acceptance_verifier_core_contract
       publicInput
       proof
       checked
+
+theorem guest_pc_trace_large_gpu_gate_checked_acceptance_core_and_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : GuestPcTraceLargeGpuGateValidation)
+    (config : GuestPcTraceLargeGpuGateConfig) :
+    forall publicInput proof,
+      GuestPcTraceLargeGpuGateCheckedAcceptance
+          system
+          validation
+          config
+          publicInput
+          proof ->
+        GuestPcTraceLargeGpuGateDecisionMatches config
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof checked
+  have sound :=
+    guest_pc_trace_large_gpu_gate_checked_acceptance_sound
+      assumptions
+      validation
+      config
+      publicInput
+      proof
+      checked
+  have core :=
+    guest_pc_trace_large_gpu_gate_checked_acceptance_verifier_core_contract
+      assumptions
+      validation
+      config
+      publicInput
+      proof
+      checked
+  exact And.intro sound.left (And.intro core sound.right)
 
 theorem guest_pc_trace_traceless_commitment_input_checked_acceptance_projects_decision
     {system : VerifierModel}

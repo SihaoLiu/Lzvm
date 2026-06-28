@@ -1248,6 +1248,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             && lean_source.contains(
                 "guest_pc_trace_large_gpu_gate_checked_acceptance_verifier_core_contract"
             )
+            && lean_source.contains("guest_pc_trace_large_gpu_gate_checked_acceptance_core_and_sound")
             && prove_witness_source.contains("validate_large_guest_pc_runtime_gpu")
             && gpu_preflight_source.contains("fn validate_large_guest_pc_gpu")
             && gpu_preflight_source.contains("fn validate_large_guest_pc_runtime_gpu")
@@ -3775,6 +3776,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "guest_pc_trace_segment_queue_checked_acceptance_projects_decision",
             "guest_pc_trace_segment_queue_checked_acceptance_sound",
             "guest_pc_trace_segment_queue_checked_acceptance_verifier_core_contract",
+            "guest_pc_trace_segment_queue_checked_acceptance_core_and_sound",
             "guest_pc_trace_cross_root_materialization_checked_acceptance_projects_decision",
             concat!(
                 "guest_pc_trace_cross_root_materialization_decision_",
@@ -4107,6 +4109,40 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "sound_witness_implies_verifier_core_contract",
         ],
     );
+    for (theorem, prefix_terms, body_terms) in [
+        (
+            "guest_pc_trace_segment_queue_checked_acceptance_core_and_sound",
+            [
+                "GuestPcTraceSegmentQueueDecisionMatches config",
+                "RuntimeVerifierCoreContract system publicInput proof",
+                "SoundWitness system publicInput proof",
+            ],
+            [
+                "guest_pc_trace_segment_queue_checked_acceptance_sound",
+                "guest_pc_trace_segment_queue_checked_acceptance_verifier_core_contract",
+            ],
+        ),
+        (
+            "guest_pc_trace_large_gpu_gate_checked_acceptance_core_and_sound",
+            [
+                "GuestPcTraceLargeGpuGateDecisionMatches config",
+                "RuntimeVerifierCoreContract system publicInput proof",
+                "SoundWitness system publicInput proof",
+            ],
+            [
+                "guest_pc_trace_large_gpu_gate_checked_acceptance_sound",
+                "guest_pc_trace_large_gpu_gate_checked_acceptance_verifier_core_contract",
+            ],
+        ),
+    ] {
+        lean_binding::assert_theorem_prefix_contains(&gpu_runtime_source, theorem, &prefix_terms);
+        lean_binding::assert_theorem_body_contains(&gpu_runtime_source, theorem, &body_terms);
+        lean_binding::assert_theorem_body_omits(
+            &gpu_runtime_source,
+            theorem,
+            &["sound_witness_implies_verifier_core_contract"],
+        );
+    }
     lean_binding::assert_theorem_body_contains(
         &gpu_runtime_source,
         "guest_pc_trace_cuda_run_checked_acceptance_verifier_core_contract",
