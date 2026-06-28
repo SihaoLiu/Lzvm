@@ -178,6 +178,50 @@ theorem proof_artifact_finish_witness_opening_subtiming_acceptance_verifier_core
       proof
       observed
 
+theorem proof_artifact_finish_witness_opening_subtiming_acceptance_core_and_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : ProofArtifactFinishTimingSummary)
+    (setupMilliseconds leafExtendMilliseconds leafHashMilliseconds
+      pathMilliseconds : Nat) :
+    forall publicInput proof,
+      ProofArtifactFinishTimingObservedAcceptance
+        system
+        (some
+          { summary with
+            finishWitnessOpeningSetupMilliseconds := setupMilliseconds
+            finishWitnessOpeningLeafExtendMilliseconds := leafExtendMilliseconds
+            finishWitnessOpeningLeafHashMilliseconds := leafHashMilliseconds
+            finishWitnessOpeningPathMilliseconds := pathMilliseconds })
+        publicInput
+        proof ->
+        RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof observed
+  have core :=
+    proof_artifact_finish_witness_opening_subtiming_acceptance_verifier_core_contract
+      assumptions
+      summary
+      setupMilliseconds
+      leafExtendMilliseconds
+      leafHashMilliseconds
+      pathMilliseconds
+      publicInput
+      proof
+      observed
+  have sound :=
+    proof_artifact_finish_witness_opening_subtiming_acceptance_sound
+      assumptions
+      summary
+      setupMilliseconds
+      leafExtendMilliseconds
+      leafHashMilliseconds
+      pathMilliseconds
+      publicInput
+      proof
+      observed
+  exact And.intro core sound
+
 theorem proof_artifact_finish_descriptor_upload_word_count_acceptance_sound
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)

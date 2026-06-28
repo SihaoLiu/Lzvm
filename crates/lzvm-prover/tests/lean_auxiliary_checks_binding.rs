@@ -1033,6 +1033,15 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
                 "finishWitnessExternalSourceTraceExpandMilliseconds := traceExpandMilliseconds",
             ][..],
         ),
+        (
+            "proof_artifact_finish_witness_opening_subtiming_acceptance_core_and_sound",
+            &[
+                "finishWitnessOpeningSetupMilliseconds := setupMilliseconds",
+                "finishWitnessOpeningLeafExtendMilliseconds := leafExtendMilliseconds",
+                "finishWitnessOpeningLeafHashMilliseconds := leafHashMilliseconds",
+                "finishWitnessOpeningPathMilliseconds := pathMilliseconds",
+            ][..],
+        ),
     ] {
         lean_binding::assert_theorem_prefix_contains(
             &lean_proof_timing_source,
@@ -4579,6 +4588,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "proof_artifact_finish_external_source_timing_acceptance_core_and_sound",
             "proof_artifact_finish_witness_opening_subtiming_acceptance_sound",
             "proof_artifact_finish_witness_opening_subtiming_acceptance_verifier_core_contract",
+            "proof_artifact_finish_witness_opening_subtiming_acceptance_core_and_sound",
             "proof_artifact_finish_descriptor_upload_word_count_acceptance_sound",
             "proof_artifact_finish_descriptor_upload_word_count_acceptance_verifier_core_contract",
             "proof_artifact_finish_descriptor_upload_shape_acceptance_sound",
