@@ -8617,6 +8617,29 @@ fn fri_opening_builders_index_query_plan_units() {
 }
 
 #[test]
+fn fri_transcript_segment_builder_indexes_payload_units() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let source_path = crate_root.join("src/prove_fri_opening.rs");
+    let source = std::fs::read_to_string(&source_path).expect("FRI opening source should read");
+
+    let body = function_body(
+        &source,
+        "pub(crate) fn build_pcs_fri_transcript_values_from_trace_segment_refs_with_timing",
+        "pub fn build_pcs_fri_opening_segment_from_transcript_values",
+    );
+
+    assert!(
+        source.contains("units_by_index: BTreeMap<u32, usize>")
+            && source.contains("units_by_identity: BTreeMap<(u32, u32), usize>")
+            && body.contains(".unit_by_index(input.material_segment, unit_index_u32)")
+            && body.contains(".unit_by_identity(")
+            && !body.contains(".units\n            .iter()\n            .find")
+            && !body.contains(".units.iter().find"),
+        "FRI transcript segment assembly should use cached unit indexes"
+    );
+}
+
+#[test]
 fn fri_opening_from_trace_borrows_challenges() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let source_path = crate_root.join("src/prove_fri_opening.rs");

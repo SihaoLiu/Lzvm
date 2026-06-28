@@ -8,14 +8,14 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use lzvm_artifacts::pcs_evaluation_segment::{
     parse_pcs_evaluation_segment, PcsEvaluationSegment, PcsEvaluationSegmentError,
-    PCS_EVALUATION_SEGMENT_ID,
+    PcsEvaluationUnitSegment, PCS_EVALUATION_SEGMENT_ID,
 };
 use lzvm_artifacts::pcs_fri_segment::{
     encode_pcs_fri_opening_segment, PcsFriOpeningSegment, PCS_FRI_OPENING_SEGMENT_ID,
 };
 use lzvm_artifacts::pcs_material_segment::{
     parse_pcs_material_manifest_segment, PcsMaterialManifestSegment,
-    PcsMaterialManifestSegmentError, PCS_MATERIAL_MANIFEST_SEGMENT_ID,
+    PcsMaterialManifestSegmentError, PcsMaterialManifestUnit, PCS_MATERIAL_MANIFEST_SEGMENT_ID,
 };
 use lzvm_artifacts::pcs_query_segment::{
     parse_pcs_query_plan_segment, PcsQueryPlanUnit, PCS_QUERY_PLAN_SEGMENT_ID,
@@ -60,6 +60,7 @@ where
 struct CachedMaterialSegment<'a> {
     data: &'a [u8],
     parsed: PcsMaterialManifestSegment,
+    units_by_index: BTreeMap<u32, usize>,
 }
 
 impl<'a> MaterialSegmentCache<'a, MaterialSegmentParser> {
@@ -79,10 +80,23 @@ where
         }
     }
 
-    fn get(
+    fn unit_by_index(
         &mut self,
         segment: &'a ProofSegment,
-    ) -> Result<&PcsMaterialManifestSegment, ProvePcsFriTranscriptTraceValuesError> {
+        unit_index: u32,
+    ) -> Result<Option<&PcsMaterialManifestUnit>, ProvePcsFriTranscriptTraceValuesError> {
+        let index = self.entry_index(segment)?;
+        let entry = &self.entries[index];
+        Ok(entry
+            .units_by_index
+            .get(&unit_index)
+            .map(|unit_position| &entry.parsed.units[*unit_position]))
+    }
+
+    fn entry_index(
+        &mut self,
+        segment: &'a ProofSegment,
+    ) -> Result<usize, ProvePcsFriTranscriptTraceValuesError> {
         if segment.id != PCS_MATERIAL_MANIFEST_SEGMENT_ID {
             return Err(
                 ProvePcsFriTranscriptTraceValuesError::InvalidMaterialSegmentId {
@@ -95,16 +109,17 @@ where
             .iter()
             .position(|entry| same_segment_data(entry.data, &segment.data))
         {
-            return Ok(&self.entries[index].parsed);
+            return Ok(index);
         }
         let parsed = (self.parser)(&segment.data)
             .map_err(ProvePcsFriTranscriptTraceValuesError::MaterialSegment)?;
+        let units_by_index = index_first_position_by_key(&parsed.units, |unit| unit.unit_index);
         self.entries.push(CachedMaterialSegment {
             data: segment.data.as_slice(),
             parsed,
+            units_by_index,
         });
-        let index = self.entries.len() - 1;
-        Ok(&self.entries[index].parsed)
+        Ok(self.entries.len() - 1)
     }
 }
 
@@ -119,6 +134,7 @@ where
 struct CachedEvaluationSegment<'a> {
     data: &'a [u8],
     parsed: PcsEvaluationSegment,
+    units_by_identity: BTreeMap<(u32, u32), usize>,
 }
 
 impl<'a> EvaluationSegmentCache<'a, EvaluationSegmentParser> {
@@ -138,10 +154,24 @@ where
         }
     }
 
-    fn get(
+    fn unit_by_identity(
         &mut self,
         segment: &'a ProofSegment,
-    ) -> Result<&PcsEvaluationSegment, ProvePcsFriTranscriptTraceValuesError> {
+        unit_index: u32,
+        trace_instance_index: u32,
+    ) -> Result<Option<&PcsEvaluationUnitSegment>, ProvePcsFriTranscriptTraceValuesError> {
+        let index = self.entry_index(segment)?;
+        let entry = &self.entries[index];
+        Ok(entry
+            .units_by_identity
+            .get(&(unit_index, trace_instance_index))
+            .map(|unit_position| &entry.parsed.units[*unit_position]))
+    }
+
+    fn entry_index(
+        &mut self,
+        segment: &'a ProofSegment,
+    ) -> Result<usize, ProvePcsFriTranscriptTraceValuesError> {
         if segment.id != PCS_EVALUATION_SEGMENT_ID {
             return Err(
                 ProvePcsFriTranscriptTraceValuesError::InvalidEvaluationSegmentId {
@@ -154,21 +184,36 @@ where
             .iter()
             .position(|entry| same_segment_data(entry.data, &segment.data))
         {
-            return Ok(&self.entries[index].parsed);
+            return Ok(index);
         }
         let parsed = (self.parser)(&segment.data)
             .map_err(ProvePcsFriTranscriptTraceValuesError::EvaluationSegment)?;
+        let units_by_identity = index_first_position_by_key(&parsed.units, |unit| {
+            (unit.unit_index, unit.trace_instance_index)
+        });
         self.entries.push(CachedEvaluationSegment {
             data: segment.data.as_slice(),
             parsed,
+            units_by_identity,
         });
-        let index = self.entries.len() - 1;
-        Ok(&self.entries[index].parsed)
+        Ok(self.entries.len() - 1)
     }
 }
 
 fn same_segment_data(left: &[u8], right: &[u8]) -> bool {
     (left.len() == right.len() && std::ptr::eq(left.as_ptr(), right.as_ptr())) || left == right
+}
+
+fn index_first_position_by_key<T, K, F>(items: &[T], key: F) -> BTreeMap<K, usize>
+where
+    K: Ord,
+    F: Fn(&T) -> K,
+{
+    let mut indexed = BTreeMap::new();
+    for (index, item) in items.iter().enumerate() {
+        indexed.entry(key(item)).or_insert(index);
+    }
+    indexed
 }
 
 fn query_plan_units_by_identity(
@@ -471,18 +516,13 @@ pub(crate) fn build_pcs_fri_transcript_values_from_trace_segment_refs_with_timin
                 unit_index: input.unit_index,
             },
         )? as usize;
-        validate_material_segment_id(input.material_segment)?;
         let witness_identity = WitnessCommitmentSegmentIdentity {
             unit_index: unit_index_u32,
             trace_instance_index: input.trace_instance_index,
         };
-        validate_evaluation_segment_id(input.evaluation_segment)?;
 
         let material = material_cache
-            .get(input.material_segment)?
-            .units
-            .iter()
-            .find(|unit| unit.unit_index == unit_index_u32)
+            .unit_by_index(input.material_segment, unit_index_u32)?
             .ok_or(ProvePcsFriTranscriptTraceValuesError::MissingMaterialUnit {
                 unit_index: input.unit_index,
             })?;
@@ -494,13 +534,11 @@ pub(crate) fn build_pcs_fri_transcript_values_from_trace_segment_refs_with_timin
         .map_err(|source| map_transcript_witness_load_error(input.unit_index, source))?
         .witness;
         let evaluations = evaluation_cache
-            .get(input.evaluation_segment)?
-            .units
-            .iter()
-            .find(|unit| {
-                unit.unit_index == unit_index_u32
-                    && unit.trace_instance_index == input.trace_instance_index
-            })
+            .unit_by_identity(
+                input.evaluation_segment,
+                unit_index_u32,
+                input.trace_instance_index,
+            )?
             .ok_or(
                 ProvePcsFriTranscriptTraceValuesError::MissingEvaluationUnit {
                     unit_index: input.unit_index,
@@ -769,34 +807,6 @@ pub fn build_pcs_fri_opening_segment_from_trace_segments(
     })
 }
 
-fn validate_material_segment_id(
-    segment: &ProofSegment,
-) -> Result<(), ProvePcsFriTranscriptTraceValuesError> {
-    if segment.id == PCS_MATERIAL_MANIFEST_SEGMENT_ID {
-        Ok(())
-    } else {
-        Err(
-            ProvePcsFriTranscriptTraceValuesError::InvalidMaterialSegmentId {
-                segment_id: segment.id,
-            },
-        )
-    }
-}
-
-fn validate_evaluation_segment_id(
-    segment: &ProofSegment,
-) -> Result<(), ProvePcsFriTranscriptTraceValuesError> {
-    if segment.id == PCS_EVALUATION_SEGMENT_ID {
-        Ok(())
-    } else {
-        Err(
-            ProvePcsFriTranscriptTraceValuesError::InvalidEvaluationSegmentId {
-                segment_id: segment.id,
-            },
-        )
-    }
-}
-
 fn root_from_words(words: [u64; 4]) -> Result<[Felt; 4], FieldError> {
     Ok([
         Felt::from_canonical(words[0])?,
@@ -880,11 +890,19 @@ mod tests {
         });
 
         assert_eq!(
-            cache.get(&segment).expect("segment should parse").units[0].unit_index,
+            cache
+                .unit_by_index(&segment, 7)
+                .expect("segment should parse")
+                .expect("unit should exist")
+                .unit_index,
             7
         );
         assert_eq!(
-            cache.get(&segment).expect("segment should be reused").units[0].unit_index,
+            cache
+                .unit_by_index(&segment, 7)
+                .expect("segment should be reused")
+                .expect("unit should exist")
+                .unit_index,
             7
         );
         assert_eq!(parses.get(), 1);
@@ -924,34 +942,82 @@ mod tests {
         });
 
         assert_eq!(
-            cache.get(&first).expect("segment should parse").units[0].unit_index,
+            cache
+                .unit_by_index(&first, 7)
+                .expect("segment should parse")
+                .expect("unit should exist")
+                .unit_index,
             7
         );
         assert_eq!(
             cache
-                .get(&equal)
+                .unit_by_index(&equal, 7)
                 .expect("equal segment should be reused")
-                .units[0]
+                .expect("unit should exist")
                 .unit_index,
             7
         );
         assert_eq!(parses.get(), 1);
         assert_eq!(
             cache
-                .get(&changed)
+                .unit_by_index(&changed, 8)
                 .expect("changed segment should parse")
-                .units[0]
+                .expect("unit should exist")
                 .unit_index,
             8
         );
         assert_eq!(parses.get(), 2);
         assert!(matches!(
-            cache.get(&corrupt),
+            cache.unit_by_index(&corrupt, 9),
             Err(ProvePcsFriTranscriptTraceValuesError::MaterialSegment(
                 PcsMaterialManifestSegmentError::InvalidMagic
             ))
         ));
         assert_eq!(parses.get(), 3);
+    }
+
+    #[test]
+    fn material_segment_cache_indexes_units_by_index() {
+        let parses = Cell::new(0);
+        let segment = ProofSegment {
+            id: PCS_MATERIAL_MANIFEST_SEGMENT_ID,
+            data: vec![1, 2, 3],
+        };
+        let mut first = material_unit(7);
+        first.constant_tree_root = [71, 0, 0, 0];
+        let mut second = material_unit(8);
+        second.constant_tree_root = [81, 0, 0, 0];
+        let mut duplicate = material_unit(7);
+        duplicate.constant_tree_root = [72, 0, 0, 0];
+        let mut cache = MaterialSegmentCache::with_parser(|bytes| {
+            parses.set(parses.get() + 1);
+            assert_eq!(bytes, [1, 2, 3]);
+            Ok(PcsMaterialManifestSegment {
+                units: vec![first.clone(), second.clone(), duplicate.clone()],
+            })
+        });
+
+        assert_eq!(
+            cache
+                .unit_by_index(&segment, 7)
+                .expect("segment should parse")
+                .expect("unit should exist")
+                .constant_tree_root,
+            [71, 0, 0, 0]
+        );
+        assert_eq!(
+            cache
+                .unit_by_index(&segment, 8)
+                .expect("segment should be reused")
+                .expect("unit should exist")
+                .constant_tree_root,
+            [81, 0, 0, 0]
+        );
+        assert!(cache
+            .unit_by_index(&segment, 9)
+            .expect("segment should be reused")
+            .is_none());
+        assert_eq!(parses.get(), 1);
     }
 
     #[test]
@@ -970,11 +1036,19 @@ mod tests {
         });
 
         assert_eq!(
-            cache.get(&segment).expect("segment should parse").units[0].unit_index,
+            cache
+                .unit_by_identity(&segment, 9, 0)
+                .expect("segment should parse")
+                .expect("unit should exist")
+                .unit_index,
             9
         );
         assert_eq!(
-            cache.get(&segment).expect("segment should be reused").units[0].unit_index,
+            cache
+                .unit_by_identity(&segment, 9, 0)
+                .expect("segment should be reused")
+                .expect("unit should exist")
+                .unit_index,
             9
         );
         assert_eq!(parses.get(), 1);
@@ -1014,34 +1088,83 @@ mod tests {
         });
 
         assert_eq!(
-            cache.get(&first).expect("segment should parse").units[0].unit_index,
+            cache
+                .unit_by_identity(&first, 9, 0)
+                .expect("segment should parse")
+                .expect("unit should exist")
+                .unit_index,
             9
         );
         assert_eq!(
             cache
-                .get(&equal)
+                .unit_by_identity(&equal, 9, 0)
                 .expect("equal segment should be reused")
-                .units[0]
+                .expect("unit should exist")
                 .unit_index,
             9
         );
         assert_eq!(parses.get(), 1);
         assert_eq!(
             cache
-                .get(&changed)
+                .unit_by_identity(&changed, 10, 0)
                 .expect("changed segment should parse")
-                .units[0]
+                .expect("unit should exist")
                 .unit_index,
             10
         );
         assert_eq!(parses.get(), 2);
         assert!(matches!(
-            cache.get(&corrupt),
+            cache.unit_by_identity(&corrupt, 8, 0),
             Err(ProvePcsFriTranscriptTraceValuesError::EvaluationSegment(
                 PcsEvaluationSegmentError::InvalidMagic
             ))
         ));
         assert_eq!(parses.get(), 3);
+    }
+
+    #[test]
+    fn evaluation_segment_cache_indexes_units_by_trace_identity() {
+        let parses = Cell::new(0);
+        let segment = ProofSegment {
+            id: PCS_EVALUATION_SEGMENT_ID,
+            data: vec![4, 5, 6],
+        };
+        let mut first = evaluation_unit(9);
+        first.values = vec![[91, 0, 0]];
+        let mut second = evaluation_unit(9);
+        second.trace_instance_index = 1;
+        second.values = vec![[92, 0, 0]];
+        let mut duplicate = evaluation_unit(9);
+        duplicate.values = vec![[93, 0, 0]];
+        let mut cache = EvaluationSegmentCache::with_parser(|bytes| {
+            parses.set(parses.get() + 1);
+            assert_eq!(bytes, [4, 5, 6]);
+            Ok(PcsEvaluationSegment {
+                units: vec![first.clone(), second.clone(), duplicate.clone()],
+            })
+        });
+
+        assert_eq!(
+            cache
+                .unit_by_identity(&segment, 9, 0)
+                .expect("segment should parse")
+                .expect("unit should exist")
+                .values[0],
+            [91, 0, 0]
+        );
+        assert_eq!(
+            cache
+                .unit_by_identity(&segment, 9, 1)
+                .expect("segment should be reused")
+                .expect("unit should exist")
+                .values[0],
+            [92, 0, 0]
+        );
+        assert!(cache
+            .unit_by_identity(&segment, 9, 2)
+            .expect("segment should be reused")
+            .is_none());
+        assert_eq!(parses.get(), 1);
     }
 
     fn material_unit(unit_index: u32) -> PcsMaterialManifestUnit {
