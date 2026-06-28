@@ -202,9 +202,15 @@ fn retained_opening_bindings_use_theorem_declaration_export_checks() {
 #[test]
 fn auxiliary_checked_acceptance_chokepoints_use_identifier_body_pins() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let auxiliary_source =
+    let auxiliary_source = [
         std::fs::read_to_string(crate_root.join("../../lean/Lzvm/AuxiliaryChecks.lean"))
-            .expect("Lean auxiliary checks source should read");
+            .expect("Lean auxiliary checks source should read"),
+        std::fs::read_to_string(crate_root.join("../../lean/Lzvm/AuxiliaryChecks/Core.lean"))
+            .expect("Lean auxiliary core checks source should read"),
+        std::fs::read_to_string(crate_root.join("../../lean/Lzvm/AuxiliaryChecks/LeafDigest.lean"))
+            .expect("Lean auxiliary leaf checks source should read"),
+    ]
+    .join("\n");
     let binding_source =
         std::fs::read_to_string(crate_root.join("tests/lean_auxiliary_checks_binding.rs"))
             .expect("Lean auxiliary checks binding test source should read");
@@ -247,9 +253,19 @@ fn auxiliary_checked_acceptance_chokepoints_use_identifier_body_pins() {
 #[test]
 fn gpu_runtime_checked_acceptance_helpers_use_identifier_body_pins() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let gpu_runtime_source =
+    let gpu_runtime_source = [
         std::fs::read_to_string(crate_root.join("../../lean/Lzvm/AuxiliaryChecks/GpuRuntime.lean"))
-            .expect("Lean GPU runtime auxiliary checks source should read");
+            .expect("Lean GPU runtime auxiliary checks source should read"),
+        std::fs::read_to_string(
+            crate_root.join("../../lean/Lzvm/AuxiliaryChecks/GpuRuntime/Core.lean"),
+        )
+        .expect("Lean GPU runtime core checks source should read"),
+        std::fs::read_to_string(
+            crate_root.join("../../lean/Lzvm/AuxiliaryChecks/GpuRuntime/Trace.lean"),
+        )
+        .expect("Lean GPU runtime trace checks source should read"),
+    ]
+    .join("\n");
     let binding_source =
         std::fs::read_to_string(crate_root.join("tests/lean_auxiliary_checks_binding.rs"))
             .expect("Lean auxiliary checks binding test source should read");

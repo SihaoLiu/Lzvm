@@ -38,15 +38,42 @@ fn guest_pc_timing_source_contains(source: &str, line_name: &str, accessor: &str
 #[test]
 fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let lean_path = crate_root.join("../../lean/Lzvm/AuxiliaryChecks.lean");
-    let auxiliary_source =
-        std::fs::read_to_string(&lean_path).expect("Lean auxiliary checks should read");
+    let auxiliary_wrapper_path = crate_root.join("../../lean/Lzvm/AuxiliaryChecks.lean");
+    let auxiliary_wrapper_source = std::fs::read_to_string(&auxiliary_wrapper_path)
+        .expect("Lean auxiliary checks wrapper should read");
+    let auxiliary_core_path = crate_root.join("../../lean/Lzvm/AuxiliaryChecks/Core.lean");
+    let auxiliary_core_source =
+        std::fs::read_to_string(&auxiliary_core_path).expect("Lean auxiliary core should read");
+    let auxiliary_leaf_path = crate_root.join("../../lean/Lzvm/AuxiliaryChecks/LeafDigest.lean");
+    let auxiliary_leaf_source =
+        std::fs::read_to_string(&auxiliary_leaf_path).expect("Lean auxiliary leaf checks read");
+    let auxiliary_source = [
+        auxiliary_wrapper_source.as_str(),
+        auxiliary_core_source.as_str(),
+        auxiliary_leaf_source.as_str(),
+    ]
+    .join("\n");
     let auxiliary_all_path = crate_root.join("../../lean/Lzvm/AuxiliaryChecks/All.lean");
     let auxiliary_all_source = std::fs::read_to_string(&auxiliary_all_path)
         .expect("Lean auxiliary checks aggregate should read");
-    let gpu_runtime_path = crate_root.join("../../lean/Lzvm/AuxiliaryChecks/GpuRuntime.lean");
-    let gpu_runtime_source =
-        std::fs::read_to_string(&gpu_runtime_path).expect("Lean GPU runtime checks should read");
+    let gpu_runtime_wrapper_path =
+        crate_root.join("../../lean/Lzvm/AuxiliaryChecks/GpuRuntime.lean");
+    let gpu_runtime_wrapper_source = std::fs::read_to_string(&gpu_runtime_wrapper_path)
+        .expect("Lean GPU runtime checks wrapper should read");
+    let gpu_runtime_core_path =
+        crate_root.join("../../lean/Lzvm/AuxiliaryChecks/GpuRuntime/Core.lean");
+    let gpu_runtime_core_source = std::fs::read_to_string(&gpu_runtime_core_path)
+        .expect("Lean GPU runtime core checks should read");
+    let gpu_runtime_trace_path =
+        crate_root.join("../../lean/Lzvm/AuxiliaryChecks/GpuRuntime/Trace.lean");
+    let gpu_runtime_trace_source = std::fs::read_to_string(&gpu_runtime_trace_path)
+        .expect("Lean GPU runtime trace checks should read");
+    let gpu_runtime_source = [
+        gpu_runtime_wrapper_source.as_str(),
+        gpu_runtime_core_source.as_str(),
+        gpu_runtime_trace_source.as_str(),
+    ]
+    .join("\n");
     let timing_core_path = crate_root.join("../../lean/Lzvm/AuxiliaryChecks/TimingCore.lean");
     let timing_core_source =
         std::fs::read_to_string(&timing_core_path).expect("Lean timing core checks should read");
@@ -170,6 +197,22 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
     let guest_backend_source =
         std::fs::read_to_string(&guest_backend_path).expect("guest backend source should read");
 
+    assert!(
+        lean_binding::contains_import(&auxiliary_wrapper_source, "Lzvm.AuxiliaryChecks.Core")
+            && lean_binding::contains_import(
+                &auxiliary_wrapper_source,
+                "Lzvm.AuxiliaryChecks.LeafDigest",
+            )
+            && lean_binding::contains_import(
+                &gpu_runtime_wrapper_source,
+                "Lzvm.AuxiliaryChecks.GpuRuntime.Core",
+            )
+            && lean_binding::contains_import(
+                &gpu_runtime_wrapper_source,
+                "Lzvm.AuxiliaryChecks.GpuRuntime.Trace",
+            ),
+        "Lean auxiliary aggregate wrappers should re-export split core and runtime modules"
+    );
     assert!(
         lean_binding::contains_import(&top_level_source, "Lzvm.AuxiliaryChecks.All"),
         "top-level Lean module should import the auxiliary checks aggregate"
