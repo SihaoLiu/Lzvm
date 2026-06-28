@@ -868,7 +868,8 @@ theorem proof_artifact_finish_top_level_timing_acceptance_sound
       friOpeningLayerTreeMilliseconds friOpeningQueryMilliseconds
       friOpeningFoldMilliseconds friOpeningUnitCount friOpeningLayerCount
       friOpeningQueryCount friTranscriptUnitBuildMilliseconds
-      friTranscriptLayerTreeMilliseconds friTranscriptFoldMilliseconds proofEncodeMilliseconds
+      friTranscriptLayerTreeMilliseconds friTranscriptFoldMilliseconds
+      friTranscriptUnitCount friTranscriptLayerCount proofEncodeMilliseconds
       contributionSegmentMilliseconds contributionVerifyMilliseconds
       contributionChallengeMilliseconds : Nat) :
     forall publicInput proof,
@@ -890,6 +891,8 @@ theorem proof_artifact_finish_top_level_timing_acceptance_sound
             finishFriTranscriptUnitBuildMilliseconds := friTranscriptUnitBuildMilliseconds
             finishFriTranscriptLayerTreeMilliseconds := friTranscriptLayerTreeMilliseconds
             finishFriTranscriptFoldMilliseconds := friTranscriptFoldMilliseconds
+            finishFriTranscriptUnitCount := friTranscriptUnitCount
+            finishFriTranscriptLayerCount := friTranscriptLayerCount
             finishProofEncodeMilliseconds := proofEncodeMilliseconds
             finishContributionSegmentMilliseconds := contributionSegmentMilliseconds
             finishContributionVerifyMilliseconds := contributionVerifyMilliseconds
@@ -916,6 +919,8 @@ theorem proof_artifact_finish_top_level_timing_acceptance_sound
         finishFriTranscriptUnitBuildMilliseconds := friTranscriptUnitBuildMilliseconds
         finishFriTranscriptLayerTreeMilliseconds := friTranscriptLayerTreeMilliseconds
         finishFriTranscriptFoldMilliseconds := friTranscriptFoldMilliseconds
+        finishFriTranscriptUnitCount := friTranscriptUnitCount
+        finishFriTranscriptLayerCount := friTranscriptLayerCount
         finishProofEncodeMilliseconds := proofEncodeMilliseconds
         finishContributionSegmentMilliseconds := contributionSegmentMilliseconds
         finishContributionVerifyMilliseconds := contributionVerifyMilliseconds
@@ -933,7 +938,8 @@ theorem proof_artifact_finish_top_level_timing_acceptance_verifier_core_contract
       friOpeningLayerTreeMilliseconds friOpeningQueryMilliseconds
       friOpeningFoldMilliseconds friOpeningUnitCount friOpeningLayerCount
       friOpeningQueryCount friTranscriptUnitBuildMilliseconds
-      friTranscriptLayerTreeMilliseconds friTranscriptFoldMilliseconds proofEncodeMilliseconds
+      friTranscriptLayerTreeMilliseconds friTranscriptFoldMilliseconds
+      friTranscriptUnitCount friTranscriptLayerCount proofEncodeMilliseconds
       contributionSegmentMilliseconds contributionVerifyMilliseconds
       contributionChallengeMilliseconds : Nat) :
     forall publicInput proof,
@@ -955,6 +961,8 @@ theorem proof_artifact_finish_top_level_timing_acceptance_verifier_core_contract
             finishFriTranscriptUnitBuildMilliseconds := friTranscriptUnitBuildMilliseconds
             finishFriTranscriptLayerTreeMilliseconds := friTranscriptLayerTreeMilliseconds
             finishFriTranscriptFoldMilliseconds := friTranscriptFoldMilliseconds
+            finishFriTranscriptUnitCount := friTranscriptUnitCount
+            finishFriTranscriptLayerCount := friTranscriptLayerCount
             finishProofEncodeMilliseconds := proofEncodeMilliseconds
             finishContributionSegmentMilliseconds := contributionSegmentMilliseconds
             finishContributionVerifyMilliseconds := contributionVerifyMilliseconds
@@ -981,6 +989,8 @@ theorem proof_artifact_finish_top_level_timing_acceptance_verifier_core_contract
         finishFriTranscriptUnitBuildMilliseconds := friTranscriptUnitBuildMilliseconds
         finishFriTranscriptLayerTreeMilliseconds := friTranscriptLayerTreeMilliseconds
         finishFriTranscriptFoldMilliseconds := friTranscriptFoldMilliseconds
+        finishFriTranscriptUnitCount := friTranscriptUnitCount
+        finishFriTranscriptLayerCount := friTranscriptLayerCount
         finishProofEncodeMilliseconds := proofEncodeMilliseconds
         finishContributionSegmentMilliseconds := contributionSegmentMilliseconds
         finishContributionVerifyMilliseconds := contributionVerifyMilliseconds

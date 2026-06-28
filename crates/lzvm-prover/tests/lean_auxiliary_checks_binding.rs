@@ -2908,9 +2908,13 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
     );
     assert!(
         proof_batch_runner_source
-            .contains("from proof_timing_keys import TIMING_SUMMARY_REQUIRED_KEYS")
-            && proof_batch_runner_source.contains("key for key in TIMING_SUMMARY_REQUIRED_KEYS"),
-        "proof timing batch runner should gate summaries through the shared required-key source"
+            .contains("TIMING_SUMMARY_REQUIRED_KEYS = load_timing_summary_required_keys()")
+            && proof_batch_runner_source.contains("spec_from_file_location(\"proof_timing_keys\"")
+            && proof_batch_runner_source
+                .contains("sys.dont_write_bytecode = previous_dont_write_bytecode")
+            && proof_batch_runner_source.contains("key for key in TIMING_SUMMARY_REQUIRED_KEYS")
+            && !proof_batch_runner_source.contains("sys.path.insert("),
+        "proof timing batch runner should gate summaries through a scoped shared-key load"
     );
     for (lean_field, runner_key) in [
         ("smallRunCount", "\"small_run_count\""),
@@ -4091,6 +4095,33 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         "proof_artifact_finish_top_level_timing_acceptance_verifier_core_contract",
         &["proof_artifact_finish_timing_some_summary_acceptance_verifier_core_contract"],
     );
+    for theorem_name in [
+        "proof_artifact_finish_top_level_timing_acceptance_sound",
+        "proof_artifact_finish_top_level_timing_acceptance_verifier_core_contract",
+    ] {
+        lean_binding::assert_theorem_body_contains(
+            &lean_proof_timing_source,
+            theorem_name,
+            &[
+                "finishFriOpeningMilliseconds",
+                "finishFriOpeningUnitBuildMilliseconds",
+                "finishFriOpeningLayerTreeMilliseconds",
+                "finishFriOpeningQueryMilliseconds",
+                "finishFriOpeningFoldMilliseconds",
+                "finishFriOpeningUnitCount",
+                "finishFriOpeningLayerCount",
+                "finishFriOpeningQueryCount",
+                "finishFriTranscriptUnitBuildMilliseconds",
+                "finishFriTranscriptLayerTreeMilliseconds",
+                "finishFriTranscriptFoldMilliseconds",
+                "finishFriTranscriptUnitCount",
+                "finishFriTranscriptLayerCount",
+                "finishContributionSegmentMilliseconds",
+                "finishContributionVerifyMilliseconds",
+                "finishContributionChallengeMilliseconds",
+            ],
+        );
+    }
     lean_binding::assert_theorem_body_omits(
         &lean_proof_timing_source,
         "proof_artifact_finish_top_level_timing_acceptance_verifier_core_contract",

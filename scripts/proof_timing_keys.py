@@ -1,4 +1,4 @@
-TIMING_SUMMARY_REQUIRED_KEYS = [
+TIMING_SUMMARY_REQUIRED_KEYS = (
     "timing_total_ms",
     "timing_guest_stage_tree_commit_root_count",
     "timing_guest_stage_tree_commit_root_materialization_groups",
@@ -22,4 +22,4 @@ TIMING_SUMMARY_REQUIRED_KEYS = [
     "timing_finish_contribution_segment_ms",
     "timing_finish_contribution_verify_ms",
     "timing_finish_contribution_challenge_ms",
-]
+)

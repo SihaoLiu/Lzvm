@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import argparse
 import csv
+import importlib.util
 import json
 import os
 import re
@@ -13,12 +14,23 @@ from datetime import datetime
 from pathlib import Path
 from typing import NamedTuple
 
-SCRIPT_DIR = Path(__file__).resolve().parent
-if str(SCRIPT_DIR) not in sys.path:
-    sys.path.insert(0, str(SCRIPT_DIR))
-sys.dont_write_bytecode = True
 
-from proof_timing_keys import TIMING_SUMMARY_REQUIRED_KEYS
+def load_timing_summary_required_keys() -> tuple[str, ...]:
+    module_path = Path(__file__).resolve().parent / "proof_timing_keys.py"
+    spec = importlib.util.spec_from_file_location("proof_timing_keys", module_path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"failed to load proof timing keys from {module_path}")
+    module = importlib.util.module_from_spec(spec)
+    previous_dont_write_bytecode = sys.dont_write_bytecode
+    sys.dont_write_bytecode = True
+    try:
+        spec.loader.exec_module(module)
+    finally:
+        sys.dont_write_bytecode = previous_dont_write_bytecode
+    return tuple(module.TIMING_SUMMARY_REQUIRED_KEYS)
+
+
+TIMING_SUMMARY_REQUIRED_KEYS = load_timing_summary_required_keys()
 
 
 SAFE_NAME_RE = re.compile(r"^[A-Za-z0-9._-]+$")

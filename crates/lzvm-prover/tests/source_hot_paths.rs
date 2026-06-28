@@ -10555,7 +10555,7 @@ fn proof_runner_summary_gates_require_opening_fri_and_contribution_shape() {
     let keys_source_path = crate_root.join("../../scripts/proof_timing_keys.py");
     let keys_source =
         std::fs::read_to_string(&keys_source_path).expect("proof timing key source should read");
-    let required_keys = source_between(&keys_source, "TIMING_SUMMARY_REQUIRED_KEYS = [", "]\n");
+    let required_keys = source_between(&keys_source, "TIMING_SUMMARY_REQUIRED_KEYS = (", ")\n");
 
     for relative_path in [
         "../../scripts/run-proof-timing-batch.py",
@@ -10565,9 +10565,15 @@ fn proof_runner_summary_gates_require_opening_fri_and_contribution_shape() {
         let source =
             std::fs::read_to_string(&source_path).expect("proof runner script source should read");
         assert!(
-            source.contains("from proof_timing_keys import TIMING_SUMMARY_REQUIRED_KEYS")
+            source.contains("TIMING_SUMMARY_REQUIRED_KEYS = load_timing_summary_required_keys()")
+                && source.contains("spec_from_file_location(\"proof_timing_keys\"")
+                && source.contains("sys.dont_write_bytecode = previous_dont_write_bytecode")
                 && source.contains("key for key in TIMING_SUMMARY_REQUIRED_KEYS"),
-            "{relative_path} should gate summary generation with shared proof timing keys"
+            "{relative_path} should gate summary generation with a scoped shared proof timing key load"
+        );
+        assert!(
+            !source.contains("sys.path.insert("),
+            "{relative_path} should not mutate the global module search path"
         );
 
         for required in [
