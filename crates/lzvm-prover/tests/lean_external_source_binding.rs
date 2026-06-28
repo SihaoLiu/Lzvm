@@ -30,6 +30,7 @@ fn lean_external_source_binding_exports_core_contract_projection() {
             "external_source_opening_checked_acceptance_obligations",
             "external_source_opening_checked_acceptance_sound",
             "external_source_opening_checked_acceptance_verifier_core_contract",
+            "external_source_opening_checked_acceptance_evidence_core_and_sound",
         ],
     );
     lean_binding::assert_theorem_body_contains(
@@ -49,5 +50,29 @@ fn lean_external_source_binding_exports_core_contract_projection() {
             "assumptions.semantic.public_input_binding",
             "assumptions.crypto.fri_query_sound",
         ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "external_source_opening_checked_acceptance_evidence_core_and_sound",
+        &[
+            "ExternalSourceOpeningCheckedAcceptance system validation publicInput proof",
+            "ExternalSourceOpeningEvidence system validation publicInput proof",
+            "system.pcsOpeningsValid publicInput proof",
+            "RuntimeVerifierCoreContract system publicInput proof",
+            "SoundWitness system publicInput proof",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "external_source_opening_checked_acceptance_evidence_core_and_sound",
+        &[
+            "external_source_opening_checked_acceptance_sound",
+            "external_source_opening_checked_acceptance_verifier_core_contract",
+        ],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &lean_source,
+        "external_source_opening_checked_acceptance_evidence_core_and_sound",
+        &["sound_witness_implies_verifier_core_contract"],
     );
 }

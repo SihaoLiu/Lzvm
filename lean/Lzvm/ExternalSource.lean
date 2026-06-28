@@ -251,4 +251,34 @@ theorem external_source_opening_checked_acceptance_sound
           proof
           acceptedWithExternalSource.left))
 
+theorem external_source_opening_checked_acceptance_evidence_core_and_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : ExternalSourceOpeningValidation system) :
+    forall publicInput proof,
+      ExternalSourceOpeningCheckedAcceptance system validation publicInput proof ->
+        ExternalSourceOpeningEvidence system validation publicInput proof
+          /\ system.pcsOpeningsValid publicInput proof
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof acceptedWithExternalSource
+  have checkedSound :=
+    external_source_opening_checked_acceptance_sound
+      assumptions
+      validation
+      publicInput
+      proof
+      acceptedWithExternalSource
+  have coreContract :=
+    external_source_opening_checked_acceptance_verifier_core_contract
+      assumptions
+      validation
+      publicInput
+      proof
+      acceptedWithExternalSource
+  exact
+    And.intro checkedSound.left
+      (And.intro checkedSound.right.left
+        (And.intro coreContract checkedSound.right.right))
+
 end Lzvm
