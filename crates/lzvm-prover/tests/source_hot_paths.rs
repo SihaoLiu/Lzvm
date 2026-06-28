@@ -8945,6 +8945,12 @@ fn global_constraints_reuse_entry_scratch_buffers() {
         "pub fn validate_global_constraints",
     );
     let entry_body = function_body(&source, "fn evaluate_entry", "#[derive(Debug, Clone, Copy");
+    let validation_index = entry_body
+        .find("validate_operation_arg_count(constraint_index, args, ops.len())?")
+        .expect("global constraint entry should validate argument count");
+    let tmp1_index = entry_body
+        .find("let tmp1_len = to_usize(entry.temp1_count)?")
+        .expect("global constraint entry should size tmp1 scratch");
 
     assert!(
         evaluate_body.contains("let mut tmp1 = Vec::new()")
@@ -8957,6 +8963,7 @@ fn global_constraints_reuse_entry_scratch_buffers() {
             && entry_body.contains("let tmp3 = &mut tmp3[..tmp3_len]")
             && entry_body.contains("tmp1.fill(Felt::ZERO)")
             && entry_body.contains("tmp3.fill(Felt::ZERO)")
+            && validation_index < tmp1_index
             && !entry_body.contains("vec![Felt::ZERO"),
         "global constraint evaluation should reuse backing scratch buffers across entries"
     );

@@ -273,6 +273,7 @@ fn evaluate_entry(
 ) -> Result<Ext3, GlobalConstraintEvalError> {
     let ops = entry_ops(constraint_index, entry, program)?;
     let args = entry_args(constraint_index, entry, program)?;
+    validate_operation_arg_count(constraint_index, args, ops.len())?;
     let tmp1_len = to_usize(entry.temp1_count)?;
     let tmp3_len = to_usize(entry.temp3_count)?.saturating_mul(3);
     if tmp1.len() < tmp1_len {
@@ -412,6 +413,29 @@ fn entry_args<'a>(
         .args
         .get(offset..end)
         .ok_or(GlobalConstraintEvalError::ArgumentSpanOutOfBounds { constraint_index })
+}
+
+fn validate_operation_arg_count(
+    constraint_index: usize,
+    args: &[u16],
+    op_count: usize,
+) -> Result<(), GlobalConstraintEvalError> {
+    let expected = op_count
+        .checked_mul(6)
+        .ok_or(GlobalConstraintEvalError::LengthOverflow)?;
+    if args.len() == expected {
+        return Ok(());
+    }
+    let consumed = if args.len() < expected {
+        args.len() - (args.len() % 6)
+    } else {
+        expected
+    };
+    Err(GlobalConstraintEvalError::ArgumentCountMismatch {
+        constraint_index,
+        consumed,
+        declared: args.len(),
+    })
 }
 
 fn read_operation_args(

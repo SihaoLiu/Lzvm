@@ -286,6 +286,46 @@ fn rejects_argument_count_mismatch() {
 }
 
 #[test]
+fn rejects_extra_arguments_before_source_reads() {
+    let program = GlobalConstraintProgram {
+        entries: vec![GlobalConstraintEntry {
+            destination_dimension: 1,
+            destination_id: 0,
+            temp1_count: 1,
+            temp3_count: 0,
+            ops_count: 1,
+            ops_offset: 0,
+            args_count: 7,
+            args_offset: 0,
+            source_line: "extra args".to_owned(),
+        }],
+        ops: vec![0],
+        args: vec![0, 0, 1, 2, 2, 0, 9],
+        numbers: vec![1],
+    };
+
+    let error = evaluate_global_constraints(
+        &program,
+        GlobalConstraintInputs {
+            publics: &[felt(1)],
+            proof_values: &[],
+            challenges: &[],
+            group_values: &[],
+        },
+    )
+    .expect_err("extra argument stream should be rejected before source reads");
+
+    assert_eq!(
+        error,
+        GlobalConstraintEvalError::ArgumentCountMismatch {
+            constraint_index: 0,
+            consumed: 6,
+            declared: 7
+        }
+    );
+}
+
+#[test]
 fn rejects_out_of_range_sources() {
     let program = GlobalConstraintProgram {
         entries: vec![GlobalConstraintEntry {
