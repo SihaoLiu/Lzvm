@@ -1969,6 +1969,97 @@ theorem proof_artifact_finish_leaf_work_shape_acceptance_verifier_core_contract
       proof
       observed
 
+theorem proof_artifact_finish_leaf_work_shape_acceptance_core_and_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : ProofArtifactFinishTimingSummary)
+    (leafHashRows leafHashBytes leafHashArity2Rows leafHashArity2Bytes
+      leafHashArity4Rows leafHashArity4Bytes leafCosetCalls leafCosetOutputBytes
+      leafCosetColumns leafCosetMaxColumns leafCosetNttLaunches
+      leafCosetBitReverseLaunches leafCosetNttStageLaunches
+      leafCosetNttBlockTwiddleLaunches leafCosetNormalizeLaunches
+      leafCosetPackLaunches leafCosetUnpackLaunches : Nat) :
+    forall publicInput proof,
+      ProofArtifactFinishTimingObservedAcceptance
+        system
+        (some
+          { summary with
+            finishWitnessOpeningLeafHashRowCount := leafHashRows
+            finishWitnessOpeningLeafHashByteCount := leafHashBytes
+            finishWitnessOpeningLeafHashArity2RowCount := leafHashArity2Rows
+            finishWitnessOpeningLeafHashArity2ByteCount := leafHashArity2Bytes
+            finishWitnessOpeningLeafHashArity4RowCount := leafHashArity4Rows
+            finishWitnessOpeningLeafHashArity4ByteCount := leafHashArity4Bytes
+            finishWitnessOpeningLeafCosetExtendCallCount := leafCosetCalls
+            finishWitnessOpeningLeafCosetExtendOutputByteCount := leafCosetOutputBytes
+            finishWitnessOpeningLeafCosetExtendColumnCount := leafCosetColumns
+            finishWitnessOpeningLeafCosetExtendMaxColumnCount := leafCosetMaxColumns
+            finishWitnessOpeningLeafCosetExtendNttLaunchCount := leafCosetNttLaunches
+            finishWitnessOpeningLeafCosetExtendBitReverseLaunchCount :=
+              leafCosetBitReverseLaunches
+            finishWitnessOpeningLeafCosetExtendNttStageLaunchCount :=
+              leafCosetNttStageLaunches
+            finishWitnessOpeningLeafCosetExtendNttBlockTwiddleLaunchCount :=
+              leafCosetNttBlockTwiddleLaunches
+            finishWitnessOpeningLeafCosetExtendNormalizeLaunchCount :=
+              leafCosetNormalizeLaunches
+            finishWitnessOpeningLeafCosetExtendPackLaunchCount := leafCosetPackLaunches
+            finishWitnessOpeningLeafCosetExtendUnpackLaunchCount := leafCosetUnpackLaunches })
+        publicInput
+        proof ->
+        RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof observed
+  have core :=
+    proof_artifact_finish_leaf_work_shape_acceptance_verifier_core_contract
+      assumptions
+      summary
+      leafHashRows
+      leafHashBytes
+      leafHashArity2Rows
+      leafHashArity2Bytes
+      leafHashArity4Rows
+      leafHashArity4Bytes
+      leafCosetCalls
+      leafCosetOutputBytes
+      leafCosetColumns
+      leafCosetMaxColumns
+      leafCosetNttLaunches
+      leafCosetBitReverseLaunches
+      leafCosetNttStageLaunches
+      leafCosetNttBlockTwiddleLaunches
+      leafCosetNormalizeLaunches
+      leafCosetPackLaunches
+      leafCosetUnpackLaunches
+      publicInput
+      proof
+      observed
+  have sound :=
+    proof_artifact_finish_leaf_work_shape_acceptance_sound
+      assumptions
+      summary
+      leafHashRows
+      leafHashBytes
+      leafHashArity2Rows
+      leafHashArity2Bytes
+      leafHashArity4Rows
+      leafHashArity4Bytes
+      leafCosetCalls
+      leafCosetOutputBytes
+      leafCosetColumns
+      leafCosetMaxColumns
+      leafCosetNttLaunches
+      leafCosetBitReverseLaunches
+      leafCosetNttStageLaunches
+      leafCosetNttBlockTwiddleLaunches
+      leafCosetNormalizeLaunches
+      leafCosetPackLaunches
+      leafCosetUnpackLaunches
+      publicInput
+      proof
+      observed
+  exact And.intro core sound
+
 theorem proof_artifact_finish_path_parent_hash_shape_acceptance_sound
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
