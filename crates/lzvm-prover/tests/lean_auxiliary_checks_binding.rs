@@ -1461,6 +1461,9 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             && lean_source.contains(
                 "guest_pc_trace_device_trace_source_checked_acceptance_verifier_core_contract"
             )
+            && lean_source.contains(
+                "guest_pc_trace_device_trace_source_checked_acceptance_core_and_sound"
+            )
             && guest_backend_source.contains("fn guest_pc_device_trace_source_enabled")
             && guest_backend_source.contains(
                 "env_flag_enabled(\"LZVM_CUDA_GUEST_PC_DEVICE_TRACE_SOURCE\", true)"
@@ -1497,6 +1500,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             && lean_source.contains("guest_pc_trace_sparse_source_checked_acceptance_sound")
             && lean_source
                 .contains("guest_pc_trace_sparse_source_checked_acceptance_verifier_core_contract")
+            && lean_source.contains("guest_pc_trace_sparse_source_checked_acceptance_core_and_sound")
             && witness_execution_source.contains("fn sparse_trace_source_enabled")
             && witness_execution_source.contains("LZVM_CUDA_SPARSE_TRACE_SOURCE")
             && witness_execution_source.contains("fn sparse_trace_source_max_percent")
@@ -1533,6 +1537,9 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             && lean_source.contains(
                 "guest_pc_trace_terminal_sparse_source_checked_acceptance_verifier_core_contract"
             )
+            && lean_source.contains(
+                "guest_pc_trace_terminal_sparse_source_checked_acceptance_core_and_sound"
+            )
             && witness_execution_source.contains("fn terminal_sparse_trace_source_enabled")
             && witness_execution_source.contains("LZVM_CUDA_TERMINAL_SPARSE_TRACE_SOURCE")
             && witness_execution_source.contains("unwrap_or(false)")
@@ -1557,6 +1564,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             && lean_source.contains("fri_retained_stage_source_checked_acceptance_sound")
             && lean_source
                 .contains("fri_retained_stage_source_checked_acceptance_verifier_core_contract")
+            && lean_source.contains("fri_retained_stage_source_checked_acceptance_core_and_sound")
             && witness_execution_source.contains("fn retain_fri_stage_source_devices")
             && witness_execution_source.contains("LZVM_CUDA_RETAIN_FRI_STAGE_SOURCES")
             && witness_execution_source.contains("Ok(\"0\") | Ok(\"false\") | Ok(\"no\")")
@@ -3834,6 +3842,22 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "guest_pc_trace_commit_mode_checked_acceptance_sound",
             "guest_pc_trace_commit_mode_checked_acceptance_verifier_core_contract",
             "guest_pc_trace_commit_mode_checked_acceptance_core_and_sound",
+            "guest_pc_trace_device_trace_source_checked_acceptance_projects_decision",
+            "guest_pc_trace_device_trace_source_checked_acceptance_sound",
+            "guest_pc_trace_device_trace_source_checked_acceptance_verifier_core_contract",
+            "guest_pc_trace_device_trace_source_checked_acceptance_core_and_sound",
+            "guest_pc_trace_sparse_source_checked_acceptance_projects_decision",
+            "guest_pc_trace_sparse_source_checked_acceptance_sound",
+            "guest_pc_trace_sparse_source_checked_acceptance_verifier_core_contract",
+            "guest_pc_trace_sparse_source_checked_acceptance_core_and_sound",
+            "guest_pc_trace_terminal_sparse_source_checked_acceptance_projects_decision",
+            "guest_pc_trace_terminal_sparse_source_checked_acceptance_sound",
+            "guest_pc_trace_terminal_sparse_source_checked_acceptance_verifier_core_contract",
+            "guest_pc_trace_terminal_sparse_source_checked_acceptance_core_and_sound",
+            "fri_retained_stage_source_checked_acceptance_projects_decision",
+            "fri_retained_stage_source_checked_acceptance_sound",
+            "fri_retained_stage_source_checked_acceptance_verifier_core_contract",
+            "fri_retained_stage_source_checked_acceptance_core_and_sound",
             "guest_pc_trace_cuda_run_checked_acceptance_projects_decision",
             "guest_pc_trace_cuda_run_sparse_source_matches",
             "guest_pc_trace_cuda_run_sparse_source_debug_matches",
@@ -4229,6 +4253,59 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         ),
     ] {
         lean_binding::assert_theorem_prefix_contains(&gpu_runtime_source, theorem, &prefix_terms);
+        lean_binding::assert_theorem_body_contains(&gpu_runtime_source, theorem, &body_terms);
+        lean_binding::assert_theorem_body_omits(
+            &gpu_runtime_source,
+            theorem,
+            &["sound_witness_implies_verifier_core_contract"],
+        );
+    }
+    for (theorem, prefix_term, body_terms) in [
+        (
+            "guest_pc_trace_device_trace_source_checked_acceptance_core_and_sound",
+            "GuestPcTraceDeviceTraceSourceDecisionMatches config",
+            [
+                "guest_pc_trace_device_trace_source_checked_acceptance_sound",
+                "guest_pc_trace_device_trace_source_checked_acceptance_verifier_core_contract",
+            ],
+        ),
+        (
+            "guest_pc_trace_sparse_source_checked_acceptance_core_and_sound",
+            "GuestPcTraceSparseSourceDecisionMatches config",
+            [
+                "guest_pc_trace_sparse_source_checked_acceptance_sound",
+                "guest_pc_trace_sparse_source_checked_acceptance_verifier_core_contract",
+            ],
+        ),
+        (
+            "guest_pc_trace_terminal_sparse_source_checked_acceptance_core_and_sound",
+            "GuestPcTraceTerminalSparseSourceDecisionMatches config",
+            [
+                "guest_pc_trace_terminal_sparse_source_checked_acceptance_sound",
+                concat!(
+                    "guest_pc_trace_terminal_sparse_source_checked_acceptance_",
+                    "verifier_core_contract"
+                ),
+            ],
+        ),
+        (
+            "fri_retained_stage_source_checked_acceptance_core_and_sound",
+            "FriRetainedStageSourceDecisionMatches config",
+            [
+                "fri_retained_stage_source_checked_acceptance_sound",
+                "fri_retained_stage_source_checked_acceptance_verifier_core_contract",
+            ],
+        ),
+    ] {
+        lean_binding::assert_theorem_prefix_contains(
+            &gpu_runtime_source,
+            theorem,
+            &[
+                prefix_term,
+                "RuntimeVerifierCoreContract system publicInput proof",
+                "SoundWitness system publicInput proof",
+            ],
+        );
         lean_binding::assert_theorem_body_contains(&gpu_runtime_source, theorem, &body_terms);
         lean_binding::assert_theorem_body_omits(
             &gpu_runtime_source,

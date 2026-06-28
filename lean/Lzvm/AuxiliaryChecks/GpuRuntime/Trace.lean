@@ -78,6 +78,40 @@ theorem guest_pc_trace_device_trace_source_checked_acceptance_verifier_core_cont
       proof
       checked
 
+theorem guest_pc_trace_device_trace_source_checked_acceptance_core_and_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : GuestPcTraceDeviceTraceSourceValidation)
+    (config : GuestPcTraceDeviceTraceSourceConfig) :
+    forall publicInput proof,
+      GuestPcTraceDeviceTraceSourceCheckedAcceptance
+          system
+          validation
+          config
+          publicInput
+          proof ->
+        GuestPcTraceDeviceTraceSourceDecisionMatches config
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof checked
+  have sound :=
+    guest_pc_trace_device_trace_source_checked_acceptance_sound
+      assumptions
+      validation
+      config
+      publicInput
+      proof
+      checked
+  have core :=
+    guest_pc_trace_device_trace_source_checked_acceptance_verifier_core_contract
+      assumptions
+      validation
+      config
+      publicInput
+      proof
+      checked
+  exact And.intro sound.left (And.intro core sound.right)
+
 theorem guest_pc_trace_sparse_source_checked_acceptance_projects_decision
     {system : VerifierModel}
     (validation : GuestPcTraceSparseSourceValidation)
@@ -143,6 +177,40 @@ theorem guest_pc_trace_sparse_source_checked_acceptance_verifier_core_contract
       publicInput
       proof
       checked
+
+theorem guest_pc_trace_sparse_source_checked_acceptance_core_and_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : GuestPcTraceSparseSourceValidation)
+    (config : GuestPcTraceSparseSourceConfig) :
+    forall publicInput proof,
+      GuestPcTraceSparseSourceCheckedAcceptance
+          system
+          validation
+          config
+          publicInput
+          proof ->
+        GuestPcTraceSparseSourceDecisionMatches config
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof checked
+  have sound :=
+    guest_pc_trace_sparse_source_checked_acceptance_sound
+      assumptions
+      validation
+      config
+      publicInput
+      proof
+      checked
+  have core :=
+    guest_pc_trace_sparse_source_checked_acceptance_verifier_core_contract
+      assumptions
+      validation
+      config
+      publicInput
+      proof
+      checked
+  exact And.intro sound.left (And.intro core sound.right)
 
 theorem guest_pc_trace_terminal_sparse_source_checked_acceptance_projects_decision
     {system : VerifierModel}
@@ -210,6 +278,40 @@ theorem guest_pc_trace_terminal_sparse_source_checked_acceptance_verifier_core_c
       proof
       checked
 
+theorem guest_pc_trace_terminal_sparse_source_checked_acceptance_core_and_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : GuestPcTraceTerminalSparseSourceValidation)
+    (config : GuestPcTraceTerminalSparseSourceConfig) :
+    forall publicInput proof,
+      GuestPcTraceTerminalSparseSourceCheckedAcceptance
+          system
+          validation
+          config
+          publicInput
+          proof ->
+        GuestPcTraceTerminalSparseSourceDecisionMatches config
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof checked
+  have sound :=
+    guest_pc_trace_terminal_sparse_source_checked_acceptance_sound
+      assumptions
+      validation
+      config
+      publicInput
+      proof
+      checked
+  have core :=
+    guest_pc_trace_terminal_sparse_source_checked_acceptance_verifier_core_contract
+      assumptions
+      validation
+      config
+      publicInput
+      proof
+      checked
+  exact And.intro sound.left (And.intro core sound.right)
+
 theorem fri_retained_stage_source_checked_acceptance_projects_decision
     {system : VerifierModel}
     (validation : FriRetainedStageSourceValidation)
@@ -275,6 +377,40 @@ theorem fri_retained_stage_source_checked_acceptance_verifier_core_contract
       publicInput
       proof
       checked
+
+theorem fri_retained_stage_source_checked_acceptance_core_and_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : FriRetainedStageSourceValidation)
+    (config : FriRetainedStageSourceConfig) :
+    forall publicInput proof,
+      FriRetainedStageSourceCheckedAcceptance
+          system
+          validation
+          config
+          publicInput
+          proof ->
+        FriRetainedStageSourceDecisionMatches config
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof checked
+  have sound :=
+    fri_retained_stage_source_checked_acceptance_sound
+      assumptions
+      validation
+      config
+      publicInput
+      proof
+      checked
+  have core :=
+    fri_retained_stage_source_checked_acceptance_verifier_core_contract
+      assumptions
+      validation
+      config
+      publicInput
+      proof
+      checked
+  exact And.intro sound.left (And.intro core sound.right)
 
 theorem guest_pc_trace_cuda_run_checked_acceptance_projects_decision
     {system : VerifierModel}
