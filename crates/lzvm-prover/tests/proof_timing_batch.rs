@@ -1694,3 +1694,142 @@ fn proof_timing_batch_records_logs_when_append_fails() {
     );
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[cfg(unix)]
+#[test]
+fn proof_timing_batch_rejects_append_status_symlink_before_appending() {
+    let script_path = batch_script_path();
+    let dir = test_dir("proof-timing-batch-append-status-symlink");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("fixture dir should be created");
+    let log_path = dir.join("improve-log.csv");
+    let redirected = dir.join("redirected-append.status");
+    std::fs::write(&redirected, "sentinel\n").expect("redirect target should write");
+    let command = format!(
+        concat!(
+            "if [ \"{{run}}\" = \"1\" ]; then ",
+            "ln -s '{}' {{batch_dir}}/append.status; ",
+            "fi; printf 'timing_total_ms=100{{run}}\\n'"
+        ),
+        redirected.display()
+    );
+
+    let output = Command::new(&script_path)
+        .arg("--work-dir")
+        .arg(&dir)
+        .arg("--path")
+        .arg(&log_path)
+        .arg("--commit")
+        .arg("test")
+        .arg("--runs")
+        .arg("3")
+        .arg("--small-command")
+        .arg(command)
+        .arg("--summary")
+        .arg("append status link guard")
+        .output()
+        .expect("proof timing batch should run");
+    let success = output.status.success();
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    let batch_dir = single_batch_dir(&dir);
+    let batch_json =
+        std::fs::read_to_string(batch_dir.join("batch.json")).expect("batch json should read");
+    let redirected_text =
+        std::fs::read_to_string(&redirected).expect("redirect target should remain readable");
+    let improve_log_created = log_path.exists();
+    let _ = std::fs::remove_dir_all(&dir);
+
+    assert!(
+        !success,
+        "proof timing batch should reject append status symlinks before appending"
+    );
+    assert!(
+        stderr.contains("append artifact path must not already exist"),
+        "append artifact rejection should explain the preexisting path: stderr={stderr}"
+    );
+    assert_eq!(
+        redirected_text, "sentinel\n",
+        "rejected append status write should not overwrite a symlink target"
+    );
+    assert!(
+        !improve_log_created,
+        "append artifact rejection should happen before writing the improve log"
+    );
+    assert!(
+        batch_json.contains("\"appended\": false")
+            && batch_json.contains("\"append_status\": null")
+            && batch_json.contains("\"append_stdout\": null")
+            && batch_json.contains("\"append_stderr\": null"),
+        "batch json should not report rejected append symlink artifacts: {batch_json}"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn proof_timing_batch_ignores_symlinked_append_artifacts_after_early_failure() {
+    let script_path = batch_script_path();
+    let dir = test_dir("proof-timing-batch-append-artifact-symlinks");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("fixture dir should be created");
+    let log_path = dir.join("improve-log.csv");
+    let stdout_target = dir.join("redirected-append.stdout");
+    let stderr_target = dir.join("redirected-append.stderr");
+    let status_target = dir.join("redirected-append.status");
+    std::fs::write(&stdout_target, "stdout sentinel\n").expect("stdout target should write");
+    std::fs::write(&stderr_target, "stderr sentinel\n").expect("stderr target should write");
+    std::fs::write(&status_target, "status sentinel\n").expect("status target should write");
+    let command = format!(
+        concat!(
+            "ln -s '{}' {{batch_dir}}/append.stdout; ",
+            "ln -s '{}' {{batch_dir}}/append.stderr; ",
+            "ln -s '{}' {{batch_dir}}/append.status; ",
+            "exit 5"
+        ),
+        stdout_target.display(),
+        stderr_target.display(),
+        status_target.display()
+    );
+
+    let output = Command::new(&script_path)
+        .arg("--work-dir")
+        .arg(&dir)
+        .arg("--path")
+        .arg(&log_path)
+        .arg("--commit")
+        .arg("test")
+        .arg("--runs")
+        .arg("3")
+        .arg("--small-command")
+        .arg(command)
+        .arg("--summary")
+        .arg("early append artifact link guard")
+        .output()
+        .expect("proof timing batch should run");
+    let success = output.status.success();
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    let batch_dir = single_batch_dir(&dir);
+    let batch_json =
+        std::fs::read_to_string(batch_dir.join("batch.json")).expect("batch json should read");
+    let improve_log_created = log_path.exists();
+    let _ = std::fs::remove_dir_all(&dir);
+
+    assert!(
+        !success,
+        "proof timing batch should fail on the command's nonzero exit"
+    );
+    assert!(
+        stderr.contains("exited with status 5"),
+        "nonzero run should report the failing status: stderr={stderr}"
+    );
+    assert!(
+        !improve_log_created,
+        "early command failure should not create the improve log"
+    );
+    assert!(
+        batch_json.contains("\"appended\": false")
+            && batch_json.contains("\"append_status\": null")
+            && batch_json.contains("\"append_stdout\": null")
+            && batch_json.contains("\"append_stderr\": null"),
+        "batch json should not report symlinked append artifacts after early failure: {batch_json}"
+    );
+}

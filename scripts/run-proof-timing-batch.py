@@ -6,6 +6,7 @@ import re
 import shlex
 import shutil
 import signal
+import stat
 import subprocess
 import sys
 import time
@@ -173,6 +174,13 @@ def write_status(path: Path, lines: list[str]) -> None:
     write_text_no_follow(path, "\n".join(lines) + "\n")
 
 
+def path_is_regular_file_no_follow(path: Path) -> bool:
+    try:
+        return stat.S_ISREG(path.lstat().st_mode)
+    except FileNotFoundError:
+        return False
+
+
 def prepare_run_tmp_dir(path: Path) -> None:
     if path.exists() or path.is_symlink():
         raise SystemExit(f"run tmp dir must not already exist: {path}")
@@ -271,6 +279,25 @@ def has_stable_timing_group(
     min_stable_count: int = 3,
 ) -> bool:
     return stable_timing_group(logs, max_relative_spread, min_stable_count) is not None
+
+
+def append_artifact_paths(batch_dir: Path) -> tuple[Path, Path, Path]:
+    return (
+        batch_dir / "append.stdout",
+        batch_dir / "append.stderr",
+        batch_dir / "append.status",
+    )
+
+
+def prepare_append_artifact_paths(batch_dir: Path) -> tuple[Path, Path, Path]:
+    paths = append_artifact_paths(batch_dir)
+    for path in paths:
+        if path.exists() or path.is_symlink():
+            raise SystemExit(f"append artifact path must not already exist: {path}")
+    for path in paths:
+        with open_text_no_follow(path):
+            pass
+    return paths
 
 
 def require_texts_in_log(text: str, path: Path, required_texts: list[str]) -> None:
@@ -596,6 +623,9 @@ def append_improve_log(
     for path in large_logs:
         command.extend(["--large-log", str(path)])
 
+    append_stdout_path, append_stderr_path, append_status_path = prepare_append_artifact_paths(
+        batch_dir
+    )
     output = subprocess.run(
         command,
         cwd=root,
@@ -603,9 +633,6 @@ def append_improve_log(
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
     )
-    append_stdout_path = batch_dir / "append.stdout"
-    append_stderr_path = batch_dir / "append.stderr"
-    append_status_path = batch_dir / "append.status"
     write_text_no_follow(append_stdout_path, output.stdout)
     write_text_no_follow(append_stderr_path, output.stderr)
     write_status(
@@ -736,9 +763,7 @@ def write_batch_json(
     large_stable_avg_s = timing_average_seconds(large_stable_timing_s)
     small_stable_spread_s = timing_spread_seconds(small_stable_timing_s)
     large_stable_spread_s = timing_spread_seconds(large_stable_timing_s)
-    append_status_path = batch_dir / "append.status"
-    append_stdout_path = batch_dir / "append.stdout"
-    append_stderr_path = batch_dir / "append.stderr"
+    append_stdout_path, append_stderr_path, append_status_path = append_artifact_paths(batch_dir)
     payload = {
         "created_at": datetime.now().astimezone().strftime("%Y-%m-%dT%H:%M:%S%z"),
         "workspace": str(root),
@@ -747,9 +772,21 @@ def write_batch_json(
         "improve_log": str(improve_log_path),
         "appended": appended,
         "append_script": args.append_script,
-        "append_status": str(append_status_path) if append_status_path.exists() else None,
-        "append_stdout": str(append_stdout_path) if append_stdout_path.exists() else None,
-        "append_stderr": str(append_stderr_path) if append_stderr_path.exists() else None,
+        "append_status": (
+            str(append_status_path)
+            if path_is_regular_file_no_follow(append_status_path)
+            else None
+        ),
+        "append_stdout": (
+            str(append_stdout_path)
+            if path_is_regular_file_no_follow(append_stdout_path)
+            else None
+        ),
+        "append_stderr": (
+            str(append_stderr_path)
+            if path_is_regular_file_no_follow(append_stderr_path)
+            else None
+        ),
         "runs": args.runs,
         "max_runs": max_runs,
         "small_timeout_s": args.small_timeout,
