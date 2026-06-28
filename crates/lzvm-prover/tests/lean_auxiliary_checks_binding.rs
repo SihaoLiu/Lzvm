@@ -82,9 +82,14 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
     let timing_core_path = crate_root.join("../../lean/Lzvm/AuxiliaryChecks/TimingCore.lean");
     let timing_core_source =
         std::fs::read_to_string(&timing_core_path).expect("Lean timing core checks should read");
-    let timing_path = crate_root.join("../../lean/Lzvm/AuxiliaryChecks/Timing.lean");
-    let timing_source =
-        std::fs::read_to_string(&timing_path).expect("Lean timing checks should read");
+    let timing_source = lean_binding::read_lean_sources(
+        crate_root,
+        &[
+            "../../lean/Lzvm/AuxiliaryChecks/Timing.lean",
+            "../../lean/Lzvm/AuxiliaryChecks/Timing/Trace.lean",
+            "../../lean/Lzvm/AuxiliaryChecks/Timing/Stage.lean",
+        ],
+    );
     let timing_projected_path =
         crate_root.join("../../lean/Lzvm/AuxiliaryChecks/TimingProjected.lean");
     let timing_projected_source = std::fs::read_to_string(&timing_projected_path)
