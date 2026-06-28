@@ -1679,6 +1679,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             && lean_source.contains("guest_pc_trace_cuda_run_checked_acceptance_sound")
             && lean_source
                 .contains("guest_pc_trace_cuda_run_checked_acceptance_verifier_core_contract")
+            && lean_source.contains("guest_pc_trace_cuda_run_checked_acceptance_core_and_sound")
             && witness_execution_source.contains("struct WitnessTraceCudaRunConfig")
             && witness_execution_source.contains("selected_trace_cuda_run_config")
             && witness_execution_source.contains(
@@ -3905,6 +3906,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             ),
             "guest_pc_trace_cuda_run_checked_acceptance_sound",
             "guest_pc_trace_cuda_run_checked_acceptance_verifier_core_contract",
+            "guest_pc_trace_cuda_run_checked_acceptance_core_and_sound",
             "gpu_retained_leaf_digest_limit_checked_acceptance_projects_decision",
             "gpu_retained_leaf_digest_limit_checked_acceptance_sound",
             "gpu_retained_leaf_digest_limit_checked_acceptance_verifier_core_contract",
@@ -4325,6 +4327,55 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "guest_pc_trace_cuda_run_checked_acceptance_sound",
             "sound_witness_implies_verifier_core_contract",
         ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &gpu_runtime_source,
+        "guest_pc_trace_cuda_run_checked_acceptance_core_and_sound",
+        &[
+            "GuestPcTraceCudaRunDecisionMatches config",
+            "config.selectedSparseSource =",
+            "config.selectedSparseSourceDebug =",
+            "config.selectedTerminalSparseSource =",
+            "config.selectedRetainedStageSource =",
+            "config.selectedRetainedStageSourceDebug =",
+            "config.selectedDescriptorBufferRetention =",
+            "RuntimeVerifierCoreContract system publicInput proof",
+            "SoundWitness system publicInput proof",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &gpu_runtime_source,
+        "guest_pc_trace_cuda_run_checked_acceptance_core_and_sound",
+        &[
+            "guest_pc_trace_cuda_run_checked_acceptance_sound",
+            "guest_pc_trace_cuda_run_checked_acceptance_verifier_core_contract",
+            "guest_pc_trace_cuda_run_checked_acceptance_projects_sparse_source",
+            concat!(
+                "guest_pc_trace_cuda_run_checked_acceptance_",
+                "projects_sparse_source_debug"
+            ),
+            concat!(
+                "guest_pc_trace_cuda_run_checked_acceptance_",
+                "projects_terminal_sparse_source"
+            ),
+            concat!(
+                "guest_pc_trace_cuda_run_checked_acceptance_",
+                "projects_retained_stage_source"
+            ),
+            concat!(
+                "guest_pc_trace_cuda_run_checked_acceptance_",
+                "projects_retained_source_debug"
+            ),
+            concat!(
+                "guest_pc_trace_cuda_run_checked_acceptance_",
+                "projects_descriptor_retention"
+            ),
+        ],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &gpu_runtime_source,
+        "guest_pc_trace_cuda_run_checked_acceptance_core_and_sound",
+        &["sound_witness_implies_verifier_core_contract"],
     );
     lean_binding::assert_theorem_body_contains(
         &gpu_runtime_source,

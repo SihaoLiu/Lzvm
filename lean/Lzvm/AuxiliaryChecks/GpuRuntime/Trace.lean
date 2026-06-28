@@ -769,6 +769,101 @@ theorem guest_pc_trace_cuda_run_checked_acceptance_verifier_core_contract
       proof
       checked
 
+theorem guest_pc_trace_cuda_run_checked_acceptance_core_and_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : GuestPcTraceCudaRunValidation)
+    (config : GuestPcTraceCudaRunConfig) :
+    forall publicInput proof,
+      GuestPcTraceCudaRunCheckedAcceptance
+          system
+          validation
+          config
+          publicInput
+          proof ->
+        GuestPcTraceCudaRunDecisionMatches config
+          /\ config.selectedSparseSource =
+            config.sparseSourceConfig.effectiveSparseSourceSelected
+          /\ config.selectedSparseSourceDebug =
+            config.sparseSourceDebugConfig.effectiveSparseSourceDebug
+          /\ config.selectedTerminalSparseSource =
+            config.terminalSparseSourceConfig.effectiveTerminalSparseSourceSelected
+          /\ config.selectedRetainedStageSource =
+            config.retainedStageSourceConfig.effectiveRetainedStageSourceEnabled
+          /\ config.selectedRetainedStageSourceDebug =
+            config.retainedStageSourceDebugConfig.effectiveRetainedStageSourceDebug
+          /\ config.selectedDescriptorBufferRetention =
+            config.descriptorBufferRetentionConfig.effectiveDescriptorBufferRetention
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof checked
+  have sound :=
+    guest_pc_trace_cuda_run_checked_acceptance_sound
+      assumptions
+      validation
+      config
+      publicInput
+      proof
+      checked
+  have core :=
+    guest_pc_trace_cuda_run_checked_acceptance_verifier_core_contract
+      assumptions
+      validation
+      config
+      publicInput
+      proof
+      checked
+  have sparse :=
+    guest_pc_trace_cuda_run_checked_acceptance_projects_sparse_source
+      validation
+      config
+      publicInput
+      proof
+      checked
+  have sparseDebug :=
+    guest_pc_trace_cuda_run_checked_acceptance_projects_sparse_source_debug
+      validation
+      config
+      publicInput
+      proof
+      checked
+  have terminalSparse :=
+    guest_pc_trace_cuda_run_checked_acceptance_projects_terminal_sparse_source
+      validation
+      config
+      publicInput
+      proof
+      checked
+  have retainedStage :=
+    guest_pc_trace_cuda_run_checked_acceptance_projects_retained_stage_source
+      validation
+      config
+      publicInput
+      proof
+      checked
+  have retainedDebug :=
+    guest_pc_trace_cuda_run_checked_acceptance_projects_retained_source_debug
+      validation
+      config
+      publicInput
+      proof
+      checked
+  have descriptorRetention :=
+    guest_pc_trace_cuda_run_checked_acceptance_projects_descriptor_retention
+      validation
+      config
+      publicInput
+      proof
+      checked
+  exact And.intro sound.left
+    (And.intro sparse
+      (And.intro sparseDebug
+        (And.intro terminalSparse
+          (And.intro retainedStage
+            (And.intro retainedDebug
+              (And.intro descriptorRetention
+                (And.intro core sound.right)))))))
+
 theorem gpu_retained_leaf_digest_limit_checked_acceptance_projects_decision
     {system : VerifierModel}
     (validation : GpuRetainedLeafDigestLimitValidation)
