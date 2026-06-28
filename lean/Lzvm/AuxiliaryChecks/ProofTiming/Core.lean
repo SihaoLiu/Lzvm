@@ -1747,6 +1747,92 @@ theorem proof_artifact_finish_witness_opening_shape_acceptance_verifier_core_con
       proof
       observed
 
+theorem proof_artifact_finish_witness_opening_shape_acceptance_core_and_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : ProofArtifactFinishTimingSummary)
+    (queryCount queryUnitCount singleQueryUnitCount maxQueriesPerUnit stageCount
+      retainedSourceCount externalSourceCount embeddedSourceCount missingSourceCount
+      retainedLeafDigestOpeningCount retainedLeafDigestOpeningRowCount
+      retainedParentCheckpointOpeningCount retainedParentCheckpointOpeningRowCount
+      rowDedupInputRowCount rowDedupUniqueRowCount rowDedupElidedRowCount : Nat) :
+    forall publicInput proof,
+      ProofArtifactFinishTimingObservedAcceptance
+        system
+        (some
+          { summary with
+            finishWitnessOpeningQueryCount := queryCount
+            finishWitnessOpeningQueryUnitCount := queryUnitCount
+            finishWitnessOpeningSingleQueryUnitCount := singleQueryUnitCount
+            finishWitnessOpeningMaxQueriesPerUnit := maxQueriesPerUnit
+            finishWitnessOpeningStageCount := stageCount
+            finishWitnessOpeningRetainedSourceCount := retainedSourceCount
+            finishWitnessOpeningExternalSourceCount := externalSourceCount
+            finishWitnessOpeningEmbeddedSourceCount := embeddedSourceCount
+            finishWitnessOpeningMissingSourceCount := missingSourceCount
+            finishWitnessOpeningRetainedLeafDigestOpeningCount := retainedLeafDigestOpeningCount
+            finishWitnessOpeningRetainedLeafDigestOpeningRowCount :=
+              retainedLeafDigestOpeningRowCount
+            finishWitnessOpeningRetainedParentCheckpointOpeningCount :=
+              retainedParentCheckpointOpeningCount
+            finishWitnessOpeningRetainedParentCheckpointOpeningRowCount :=
+              retainedParentCheckpointOpeningRowCount
+            finishWitnessOpeningRowDedupInputRowCount := rowDedupInputRowCount
+            finishWitnessOpeningRowDedupUniqueRowCount := rowDedupUniqueRowCount
+            finishWitnessOpeningRowDedupElidedRowCount := rowDedupElidedRowCount })
+        publicInput
+        proof ->
+        RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof observed
+  have core :=
+    proof_artifact_finish_witness_opening_shape_acceptance_verifier_core_contract
+      assumptions
+      summary
+      queryCount
+      queryUnitCount
+      singleQueryUnitCount
+      maxQueriesPerUnit
+      stageCount
+      retainedSourceCount
+      externalSourceCount
+      embeddedSourceCount
+      missingSourceCount
+      retainedLeafDigestOpeningCount
+      retainedLeafDigestOpeningRowCount
+      retainedParentCheckpointOpeningCount
+      retainedParentCheckpointOpeningRowCount
+      rowDedupInputRowCount
+      rowDedupUniqueRowCount
+      rowDedupElidedRowCount
+      publicInput
+      proof
+      observed
+  have sound :=
+    proof_artifact_finish_witness_opening_shape_acceptance_sound
+      assumptions
+      summary
+      queryCount
+      queryUnitCount
+      singleQueryUnitCount
+      maxQueriesPerUnit
+      stageCount
+      retainedSourceCount
+      externalSourceCount
+      embeddedSourceCount
+      missingSourceCount
+      retainedLeafDigestOpeningCount
+      retainedLeafDigestOpeningRowCount
+      retainedParentCheckpointOpeningCount
+      retainedParentCheckpointOpeningRowCount
+      rowDedupInputRowCount
+      rowDedupUniqueRowCount
+      rowDedupElidedRowCount
+      publicInput
+      proof
+      observed
+  exact And.intro core sound
+
 theorem proof_artifact_finish_leaf_work_shape_acceptance_sound
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
