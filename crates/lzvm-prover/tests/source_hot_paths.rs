@@ -10512,6 +10512,30 @@ fn evaluation_stage_column_lookups_use_ordered_stage_fast_path() {
 }
 
 #[test]
+fn fri_polynomial_evaluator_reuses_row_buffer_layout() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let source_path = crate_root.join("src/fri_polynomial/eval.rs");
+    let source =
+        std::fs::read_to_string(&source_path).expect("FRI polynomial eval source should read");
+
+    let evaluate_body = function_body(&source, "fn evaluate_row", "#[derive(Debug, Clone, Copy");
+    let read_base_body = function_body(&source, "fn read_base", "fn read_ext");
+    let read_ext_body = function_body(&source, "fn read_ext", "#[derive(Debug, Clone, Copy");
+
+    assert!(
+        evaluate_body.matches("let layout = BufferLayout::new(inputs);").count() == 1
+            && evaluate_body.contains("read_base(op_args.src0")
+            && evaluate_body.contains("read_ext(op_args.src0")
+            && evaluate_body.contains("inputs,\n                        layout,")
+            && read_base_body.contains("layout: BufferLayout")
+            && read_ext_body.contains("layout: BufferLayout")
+            && !read_base_body.contains("BufferLayout::new(inputs)")
+            && !read_ext_body.contains("BufferLayout::new(inputs)"),
+        "FRI polynomial row evaluation should build one buffer layout and reuse it across source reads"
+    );
+}
+
+#[test]
 fn witness_regular_constraints_pass_only_row_major_fixed_device_buffer() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let source_path = crate_root.join("src/witness_execution.rs");

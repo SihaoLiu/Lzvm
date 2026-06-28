@@ -83,6 +83,7 @@ fn evaluate_row(
 ) -> Result<Ext3, FriPolynomialError> {
     let mut tmp1 = vec![Felt::ZERO; to_usize(entry.temp1_count)?];
     let mut tmp3 = vec![Felt::ZERO; to_usize(entry.temp3_count)?.saturating_mul(3)];
+    let layout = BufferLayout::new(inputs);
     let mut cursor = 0usize;
 
     for shape in ops {
@@ -92,24 +93,32 @@ fn evaluate_row(
             0 => {
                 let value = apply_base_op(
                     op_args.kind,
-                    read_base(op_args.src0, row, &tmp1, &tmp3, program, inputs)?,
-                    read_base(op_args.src1, row, &tmp1, &tmp3, program, inputs)?,
+                    read_base(op_args.src0, row, &tmp1, &tmp3, program, inputs, layout)?,
+                    read_base(op_args.src1, row, &tmp1, &tmp3, program, inputs, layout)?,
                 )?;
                 write_base(&mut tmp1, op_args.destination_offset, value)?;
             }
             1 => {
                 let value = apply_ext_op(
                     op_args.kind,
-                    read_ext(op_args.src0, row, &tmp1, &tmp3, program, inputs)?,
-                    scalar_ext(read_base(op_args.src1, row, &tmp1, &tmp3, program, inputs)?),
+                    read_ext(op_args.src0, row, &tmp1, &tmp3, program, inputs, layout)?,
+                    scalar_ext(read_base(
+                        op_args.src1,
+                        row,
+                        &tmp1,
+                        &tmp3,
+                        program,
+                        inputs,
+                        layout,
+                    )?),
                 )?;
                 write_ext(&mut tmp3, op_args.destination_offset, value)?;
             }
             2 => {
                 let value = apply_ext_op(
                     op_args.kind,
-                    read_ext(op_args.src0, row, &tmp1, &tmp3, program, inputs)?,
-                    read_ext(op_args.src1, row, &tmp1, &tmp3, program, inputs)?,
+                    read_ext(op_args.src0, row, &tmp1, &tmp3, program, inputs, layout)?,
+                    read_ext(op_args.src1, row, &tmp1, &tmp3, program, inputs, layout)?,
                 )?;
                 write_ext(&mut tmp3, op_args.destination_offset, value)?;
             }
@@ -232,8 +241,8 @@ fn read_base(
     tmp3: &[Felt],
     program: &ExpressionProgram,
     inputs: FriPolynomialInputs<'_>,
+    layout: BufferLayout,
 ) -> Result<Felt, FriPolynomialError> {
-    let layout = BufferLayout::new(inputs);
     match layout.resolve(source.buffer)? {
         BufferKind::Fixed => read_matrix_base(
             "fixed column",
@@ -283,8 +292,8 @@ fn read_ext(
     tmp3: &[Felt],
     program: &ExpressionProgram,
     inputs: FriPolynomialInputs<'_>,
+    layout: BufferLayout,
 ) -> Result<Ext3, FriPolynomialError> {
-    let layout = BufferLayout::new(inputs);
     match layout.resolve(source.buffer)? {
         BufferKind::Fixed => read_matrix_ext(
             "fixed column",
