@@ -842,4 +842,67 @@ theorem runtime_transcript_binding_checked_acceptance_transcript_and_core_contra
       (And.intro artifactRuntimeEvidence
         (And.intro transcriptBound coreContract))
 
+theorem runtime_transcript_binding_checked_acceptance_evidence_core_and_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeTranscriptBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeTranscriptBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeTranscriptBindingEvidence
+            system
+            validation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeTranscriptBindingStructuralObligations
+            system
+            validation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeArtifactEvidence
+            system
+            validation.artifactBindingValidation.runtimeValidation
+            artifact
+            publicInput
+            proof
+          /\ system.transcriptBound publicInput proof
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro artifact publicInput proof accepted
+  have fullContract :=
+    runtime_transcript_binding_checked_acceptance_full_contract
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have transcriptBound :=
+    runtime_transcript_binding_evidence_implies_transcript_bound
+      validation
+      artifact
+      publicInput
+      proof
+      fullContract.left
+  have coreContract :=
+    runtime_transcript_binding_checked_acceptance_verifier_core_contract
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  exact
+    And.intro fullContract.left
+      (And.intro fullContract.right.left
+        (And.intro fullContract.right.right.left
+          (And.intro transcriptBound
+            (And.intro coreContract fullContract.right.right.right))))
+
 end Lzvm

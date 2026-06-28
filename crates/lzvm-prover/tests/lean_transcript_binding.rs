@@ -38,6 +38,7 @@ fn lean_transcript_binding_exports_core_contract_projection() {
             "runtime_transcript_binding_checked_acceptance_sound",
             "runtime_transcript_binding_checked_acceptance_verifier_core_contract",
             "runtime_transcript_binding_checked_acceptance_transcript_and_core_contract",
+            "runtime_transcript_binding_checked_acceptance_evidence_core_and_sound",
             "runtime_transcript_binding_checked_acceptance_extension_payload_order_canonical",
             "runtime_transcript_binding_evidence_implies_payload_contract",
             "runtime_transcript_binding_checked_acceptance_payload_contract",
@@ -172,6 +173,37 @@ fn lean_transcript_binding_exports_core_contract_projection() {
         &[
             "runtime_transcript_binding_checked_acceptance_sound",
             "sound_witness_implies_verifier_core_contract",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_transcript_binding_checked_acceptance_evidence_core_and_sound",
+        &[
+            "RuntimeTranscriptBindingCheckedAcceptance",
+            "RuntimeTranscriptBindingEvidence",
+            "RuntimeTranscriptBindingStructuralObligations",
+            "RuntimeArtifactEvidence",
+            "system.transcriptBound publicInput proof",
+            "RuntimeVerifierCoreContract system publicInput proof",
+            "SoundWitness system publicInput proof",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_transcript_binding_checked_acceptance_evidence_core_and_sound",
+        &[
+            "runtime_transcript_binding_checked_acceptance_full_contract",
+            "runtime_transcript_binding_evidence_implies_transcript_bound",
+            "runtime_transcript_binding_checked_acceptance_verifier_core_contract",
+        ],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &lean_source,
+        "runtime_transcript_binding_checked_acceptance_evidence_core_and_sound",
+        &[
+            "runtime_transcript_binding_checked_acceptance_sound",
+            "sound_witness_implies_verifier_core_contract",
+            "abstract_verifier_sound",
         ],
     );
     lean_binding::assert_theorem_prefix_contains(
