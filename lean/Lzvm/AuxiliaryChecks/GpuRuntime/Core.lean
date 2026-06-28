@@ -721,6 +721,47 @@ theorem gpu_allocator_no_wait_bypass_checked_acceptance_verifier_core_contract
       proof
       checked
 
+theorem gpu_allocator_no_wait_bypass_checked_acceptance_core_and_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : GpuAllocatorNoWaitBypassValidation)
+    (pending fresh : GpuAllocationSource) :
+    forall publicInput proof,
+      GpuAllocatorNoWaitBypassCheckedAcceptance
+          system
+          validation
+          pending
+          fresh
+          publicInput
+          proof ->
+        GpuAllocationSameRequest pending fresh
+          /\ validation.pendingAllocationNotReused pending publicInput proof
+          /\ validation.freshAllocationIssued fresh publicInput proof
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof checked
+  have sound :=
+    gpu_allocator_no_wait_bypass_checked_acceptance_sound
+      assumptions
+      validation
+      pending
+      fresh
+      publicInput
+      proof
+      checked
+  have core :=
+    gpu_allocator_no_wait_bypass_checked_acceptance_verifier_core_contract
+      assumptions
+      validation
+      pending
+      fresh
+      publicInput
+      proof
+      checked
+  exact And.intro sound.left
+    (And.intro sound.right.left
+      (And.intro sound.right.right.left (And.intro core sound.right.right.right)))
+
 theorem gpu_allocator_no_wait_limit_checked_acceptance_projects_decision
     {system : VerifierModel}
     (validation : GpuAllocatorNoWaitLimitValidation)
@@ -790,6 +831,40 @@ theorem gpu_allocator_no_wait_limit_checked_acceptance_verifier_core_contract
       publicInput
       proof
       checked
+
+theorem gpu_allocator_no_wait_limit_checked_acceptance_core_and_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : GpuAllocatorNoWaitLimitValidation)
+    (config : GpuAllocatorNoWaitLimitConfig) :
+    forall publicInput proof,
+      GpuAllocatorNoWaitLimitCheckedAcceptance
+          system
+          validation
+          config
+          publicInput
+          proof ->
+        GpuAllocatorNoWaitLimitDecisionMatches config
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof checked
+  have sound :=
+    gpu_allocator_no_wait_limit_checked_acceptance_sound
+      assumptions
+      validation
+      config
+      publicInput
+      proof
+      checked
+  have core :=
+    gpu_allocator_no_wait_limit_checked_acceptance_verifier_core_contract
+      assumptions
+      validation
+      config
+      publicInput
+      proof
+      checked
+  exact And.intro sound.left (And.intro core sound.right)
 
 theorem guest_pc_trace_segment_queue_checked_acceptance_projects_decision
     {system : VerifierModel}

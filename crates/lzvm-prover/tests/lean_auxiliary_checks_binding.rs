@@ -3767,9 +3767,11 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "gpu_allocator_no_wait_bypass_checked_acceptance_projects_fresh_allocation",
             "gpu_allocator_no_wait_bypass_checked_acceptance_sound",
             "gpu_allocator_no_wait_bypass_checked_acceptance_verifier_core_contract",
+            "gpu_allocator_no_wait_bypass_checked_acceptance_core_and_sound",
             "gpu_allocator_no_wait_limit_checked_acceptance_projects_decision",
             "gpu_allocator_no_wait_limit_checked_acceptance_sound",
             "gpu_allocator_no_wait_limit_checked_acceptance_verifier_core_contract",
+            "gpu_allocator_no_wait_limit_checked_acceptance_core_and_sound",
             "guest_pc_trace_segment_queue_checked_acceptance_projects_decision",
             "guest_pc_trace_segment_queue_checked_acceptance_sound",
             "guest_pc_trace_segment_queue_checked_acceptance_verifier_core_contract",
@@ -4045,6 +4047,52 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "gpu_allocator_no_wait_limit_checked_acceptance_sound",
             "sound_witness_implies_verifier_core_contract",
         ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &gpu_runtime_source,
+        "gpu_allocator_no_wait_bypass_checked_acceptance_core_and_sound",
+        &[
+            "GpuAllocationSameRequest pending fresh",
+            "validation.pendingAllocationNotReused pending publicInput proof",
+            "validation.freshAllocationIssued fresh publicInput proof",
+            "RuntimeVerifierCoreContract system publicInput proof",
+            "SoundWitness system publicInput proof",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &gpu_runtime_source,
+        "gpu_allocator_no_wait_bypass_checked_acceptance_core_and_sound",
+        &[
+            "gpu_allocator_no_wait_bypass_checked_acceptance_sound",
+            "gpu_allocator_no_wait_bypass_checked_acceptance_verifier_core_contract",
+        ],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &gpu_runtime_source,
+        "gpu_allocator_no_wait_bypass_checked_acceptance_core_and_sound",
+        &["sound_witness_implies_verifier_core_contract"],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &gpu_runtime_source,
+        "gpu_allocator_no_wait_limit_checked_acceptance_core_and_sound",
+        &[
+            "GpuAllocatorNoWaitLimitDecisionMatches config",
+            "RuntimeVerifierCoreContract system publicInput proof",
+            "SoundWitness system publicInput proof",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &gpu_runtime_source,
+        "gpu_allocator_no_wait_limit_checked_acceptance_core_and_sound",
+        &[
+            "gpu_allocator_no_wait_limit_checked_acceptance_sound",
+            "gpu_allocator_no_wait_limit_checked_acceptance_verifier_core_contract",
+        ],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &gpu_runtime_source,
+        "gpu_allocator_no_wait_limit_checked_acceptance_core_and_sound",
+        &["sound_witness_implies_verifier_core_contract"],
     );
     lean_binding::assert_theorem_body_contains(
         &gpu_runtime_source,
