@@ -46,6 +46,7 @@ fn lean_program_image_cache_binding_exports_core_contract_projection() {
             "runtime_program_image_cache_binding_checked_acceptance_soundness_contract",
             "runtime_program_image_cache_binding_checked_acceptance_structural_obligations",
             "runtime_program_image_cache_binding_checked_acceptance_full_contract",
+            "runtime_program_image_cache_binding_checked_acceptance_evidence_core_and_sound",
             "runtime_program_image_cache_binding_checked_acceptance_unit_values_trace_identity_coverage",
         ],
     );
@@ -199,5 +200,31 @@ fn lean_program_image_cache_binding_exports_core_contract_projection() {
             "runtime_proof_artifact_binding_checked_acceptance_verifier_core_contract",
             "sound_witness_implies_verifier_core_contract",
         ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_program_image_cache_binding_checked_acceptance_evidence_core_and_sound",
+        &[
+            "RuntimeProgramImageCacheBindingCheckedAcceptance",
+            "RuntimeProgramImageCacheBindingEvidence",
+            "RuntimeProofArtifactBindingEvidence",
+            "RuntimeProgramImageCacheBindingStructuralObligations",
+            "RuntimeArtifactEvidence",
+            "RuntimeVerifierCoreContract system publicInput proof",
+            "SoundWitness system publicInput proof",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_program_image_cache_binding_checked_acceptance_evidence_core_and_sound",
+        &[
+            "runtime_program_image_cache_binding_checked_acceptance_full_contract",
+            "runtime_program_image_cache_binding_checked_acceptance_verifier_core_contract",
+        ],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &lean_source,
+        "runtime_program_image_cache_binding_checked_acceptance_evidence_core_and_sound",
+        &["sound_witness_implies_verifier_core_contract"],
     );
 }
