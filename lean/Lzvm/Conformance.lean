@@ -315,4 +315,33 @@ theorem runtime_conformance_agreement_checked_acceptance_sound
       proof
       rightAccepted
 
+theorem runtime_conformance_agreement_checked_acceptance_audited_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (left right : RuntimeConformanceValidation system)
+    (agreement : RuntimeConformanceValidationAgreement left right) :
+    forall artifact publicInput proof,
+      RuntimeArtifactCheckedAcceptance system left artifact publicInput proof ->
+        RequiredCryptographicAssumptionStatements assumptions.crypto
+          /\ RequiredSemanticAssumptionStatements assumptions.semantic
+          /\ RuntimeArtifactEvidence system right artifact publicInput proof
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro artifact publicInput proof leftAccepted
+  have rightAccepted :
+      RuntimeArtifactCheckedAcceptance system right artifact publicInput proof :=
+    (runtime_conformance_agreement_checked_acceptance_iff
+      agreement
+      artifact
+      publicInput
+      proof).mp leftAccepted
+  exact
+    runtime_artifact_checked_acceptance_audited_sound
+      assumptions
+      right
+      artifact
+      publicInput
+      proof
+      rightAccepted
+
 end Lzvm
