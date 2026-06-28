@@ -659,4 +659,62 @@ theorem runtime_batch_witness_opening_rows_checked_acceptance_opening_and_core_c
           proof
           accepted))
 
+theorem runtime_batch_witness_opening_rows_checked_acceptance_evidence_core_and_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeBatchWitnessOpeningRowsValidation system) :
+    forall artifact publicInput proof requiresExternalSource,
+      RuntimeBatchWitnessOpeningRowsCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeBatchWitnessOpeningRowsEvidence
+            system
+            validation
+            artifact
+            publicInput
+            proof
+            requiresExternalSource
+          /\ RuntimeOpeningEvidence
+            system
+            validation.openingSegmentValidation.openingValidation
+            artifact
+            publicInput
+            proof
+            requiresExternalSource
+          /\ RuntimeBatchWitnessOpeningRowsBoundContract
+            system
+            validation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro artifact publicInput proof requiresExternalSource accepted
+  have checkedSound :=
+    runtime_batch_witness_opening_rows_checked_acceptance_sound
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      accepted
+  have openingAndCore :=
+    runtime_batch_witness_opening_rows_checked_acceptance_opening_and_core_contract
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      accepted
+  exact
+    And.intro checkedSound.left
+      (And.intro openingAndCore.left
+        (And.intro openingAndCore.right.left
+          (And.intro openingAndCore.right.right checkedSound.right)))
+
 end Lzvm
