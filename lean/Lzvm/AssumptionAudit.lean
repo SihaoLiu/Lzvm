@@ -233,6 +233,30 @@ theorem assumption_bundle_carries_required_crypto_evidence
     RequiredCryptographicAssumptionStatements assumptions.crypto := by
   exact cryptographic_assumptions_carry_required_evidence assumptions.crypto
 
+theorem assumption_bundle_merkle_hash_collision_resistance
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system) :
+    assumptions.crypto.hashCollisionResistance.merkleHashCollisionResistanceStatement := by
+  exact
+    required_crypto_assumptions_merkle_hash_collision_resistance
+      (assumption_bundle_carries_required_crypto_evidence assumptions)
+
+theorem assumption_bundle_transcript_hash_collision_resistance
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system) :
+    assumptions.crypto.hashCollisionResistance.transcriptHashCollisionResistanceStatement := by
+  exact
+    required_crypto_assumptions_transcript_hash_collision_resistance
+      (assumption_bundle_carries_required_crypto_evidence assumptions)
+
+theorem assumption_bundle_random_oracle_model
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system) :
+    assumptions.crypto.randomOracleFiatShamir.randomOracleModelStatement := by
+  exact
+    required_crypto_assumptions_random_oracle_model
+      (assumption_bundle_carries_required_crypto_evidence assumptions)
+
 theorem assumption_bundle_fiat_shamir_transcript_binding
     {system : VerifierModel}
     (assumptions : AssumptionBundle system) :
@@ -243,6 +267,14 @@ theorem assumption_bundle_fiat_shamir_transcript_binding
     required_crypto_assumptions_fiat_shamir_transcript_binding
       (assumption_bundle_carries_required_crypto_evidence assumptions)
 
+theorem assumption_bundle_pcs_binding
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system) :
+    assumptions.crypto.pcsSoundness.pcsBindingStatement := by
+  exact
+    required_crypto_assumptions_pcs_binding
+      (assumption_bundle_carries_required_crypto_evidence assumptions)
+
 theorem assumption_bundle_pcs_opening_soundness
     {system : VerifierModel}
     (assumptions : AssumptionBundle system) :
@@ -251,6 +283,14 @@ theorem assumption_bundle_pcs_opening_soundness
         system.pcsOpeningsValid publicInput proof := by
   exact
     required_crypto_assumptions_pcs_opening_soundness
+      (assumption_bundle_carries_required_crypto_evidence assumptions)
+
+theorem assumption_bundle_fri_low_degree_soundness
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system) :
+    assumptions.crypto.friSoundness.friLowDegreeSoundnessStatement := by
+  exact
+    required_crypto_assumptions_fri_low_degree_soundness
       (assumption_bundle_carries_required_crypto_evidence assumptions)
 
 theorem assumption_bundle_fri_query_soundness

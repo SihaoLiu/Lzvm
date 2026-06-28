@@ -63,8 +63,13 @@ fn lean_assumption_audit_exports_runtime_soundness_coverage() {
             "required_crypto_assumptions_pcs_opening_soundness",
             "required_crypto_assumptions_fri_low_degree_soundness",
             "required_crypto_assumptions_fri_query_soundness",
+            "assumption_bundle_merkle_hash_collision_resistance",
+            "assumption_bundle_transcript_hash_collision_resistance",
+            "assumption_bundle_random_oracle_model",
             "assumption_bundle_fiat_shamir_transcript_binding",
+            "assumption_bundle_pcs_binding",
             "assumption_bundle_pcs_opening_soundness",
+            "assumption_bundle_fri_low_degree_soundness",
             "assumption_bundle_fri_query_soundness",
             "required_semantic_assumptions_public_input_binding",
             "required_semantic_assumptions_trace_extraction",
@@ -289,7 +294,9 @@ fn lean_assumption_audit_exports_runtime_soundness_coverage() {
         "required_crypto_assumptions_transcript_hash_collision_resistance",
         "required_crypto_assumptions_random_oracle_model",
         "required_crypto_assumptions_fiat_shamir_transcript_binding",
+        "required_crypto_assumptions_pcs_binding",
         "required_crypto_assumptions_pcs_opening_soundness",
+        "required_crypto_assumptions_fri_low_degree_soundness",
         "required_crypto_assumptions_fri_query_soundness",
     ] {
         lean_binding::assert_theorem_prefix_contains(
@@ -308,12 +315,34 @@ fn lean_assumption_audit_exports_runtime_soundness_coverage() {
             "required_crypto_assumptions_fiat_shamir_transcript_binding" => {
                 "required.fiatShamirTranscriptBinding"
             }
+            "required_crypto_assumptions_pcs_binding" => "required.pcsBinding",
             "required_crypto_assumptions_pcs_opening_soundness" => "required.pcsOpeningSoundness",
+            "required_crypto_assumptions_fri_low_degree_soundness" => {
+                "required.friLowDegreeSoundness"
+            }
             "required_crypto_assumptions_fri_query_soundness" => "required.friQuerySoundness",
             _ => unreachable!("unexpected theorem name"),
         };
         lean_binding::assert_theorem_body_contains(&audit_source, theorem_name, &[expected_field]);
         lean_binding::assert_theorem_body_omits(&audit_source, theorem_name, &["rcases required"]);
+    }
+    for theorem_name in [
+        "assumption_bundle_merkle_hash_collision_resistance",
+        "assumption_bundle_transcript_hash_collision_resistance",
+        "assumption_bundle_random_oracle_model",
+        "assumption_bundle_pcs_binding",
+        "assumption_bundle_fri_low_degree_soundness",
+    ] {
+        lean_binding::assert_theorem_prefix_contains(
+            &audit_source,
+            theorem_name,
+            &["AssumptionBundle system"],
+        );
+        lean_binding::assert_theorem_body_contains(
+            &audit_source,
+            theorem_name,
+            &["assumption_bundle_carries_required_crypto_evidence"],
+        );
     }
     for theorem_name in [
         "assumption_bundle_fiat_shamir_transcript_binding",
