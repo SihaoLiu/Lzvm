@@ -111,6 +111,7 @@ fn lean_retained_parent_checkpoint_binding_tracks_runtime_opening_contract() {
             "runtime_retained_parent_checkpoint_opening_checked_acceptance_sound_from_concrete_nary_merkle",
             "runtime_retained_parent_checkpoint_opening_checked_acceptance_verifier_core_contract",
             "runtime_retained_parent_checkpoint_opening_checked_acceptance_opening_and_core_contract",
+            "runtime_retained_parent_checkpoint_opening_checked_acceptance_evidence_core_and_sound",
             "runtime_retained_parent_checkpoint_opening_checked_acceptance_source_and_core_contract",
         ],
     );
@@ -404,6 +405,32 @@ fn lean_retained_parent_checkpoint_binding_tracks_runtime_opening_contract() {
             "runtime_retained_parent_checkpoint_opening_checked_acceptance_sound",
             "sound_witness_implies_verifier_core_contract",
         ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_retained_parent_checkpoint_opening_checked_acceptance_evidence_core_and_sound",
+        &[
+            "RuntimeRetainedParentCheckpointOpeningEvidence",
+            "RuntimeOpeningEvidence",
+            "RuntimeRetainedParentCheckpointOpeningDigestContract",
+            "RuntimeRetainedParentCheckpointOpeningPrefixBatchContract",
+            "RuntimeRetainedParentCheckpointOpeningRetainedRowsContract",
+            "RuntimeVerifierCoreContract system publicInput proof",
+            "SoundWitness system publicInput proof",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_retained_parent_checkpoint_opening_checked_acceptance_evidence_core_and_sound",
+        &[
+            "runtime_retained_parent_checkpoint_opening_checked_acceptance_sound",
+            "runtime_retained_parent_checkpoint_opening_checked_acceptance_opening_and_core_contract",
+        ],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &lean_source,
+        "runtime_retained_parent_checkpoint_opening_checked_acceptance_evidence_core_and_sound",
+        &["sound_witness_implies_verifier_core_contract"],
     );
     lean_binding::assert_theorem_prefix_contains(
         &lean_source,

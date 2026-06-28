@@ -562,6 +562,71 @@ theorem runtime_retained_leaf_digest_opening_checked_acceptance_opening_and_core
             proof
             accepted)))
 
+theorem runtime_retained_leaf_digest_opening_checked_acceptance_evidence_core_and_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeRetainedLeafDigestOpeningValidation system) :
+    forall artifact publicInput proof requiresExternalSource,
+      RuntimeRetainedLeafDigestOpeningCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeRetainedLeafDigestOpeningEvidence
+            system
+            validation
+            artifact
+            publicInput
+            proof
+            requiresExternalSource
+          /\ RuntimeOpeningEvidence
+            system
+            validation.batchRowsValidation.openingSegmentValidation.openingValidation
+            artifact
+            publicInput
+            proof
+            requiresExternalSource
+          /\ RuntimeRetainedLeafDigestOpeningDigestContract
+            system
+            validation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeRetainedLeafDigestOpeningRetainedRowsContract
+            system
+            validation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro artifact publicInput proof requiresExternalSource accepted
+  have checkedSound :=
+    runtime_retained_leaf_digest_opening_checked_acceptance_sound
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      accepted
+  have openingAndCore :=
+    runtime_retained_leaf_digest_opening_checked_acceptance_opening_and_core_contract
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      accepted
+  exact
+    And.intro checkedSound.left
+      (And.intro openingAndCore.left
+        (And.intro openingAndCore.right.left
+          (And.intro openingAndCore.right.right.left
+            (And.intro openingAndCore.right.right.right checkedSound.right))))
+
 theorem runtime_retained_leaf_digest_concrete_path_opening_and_core_contract_from_bundle
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)

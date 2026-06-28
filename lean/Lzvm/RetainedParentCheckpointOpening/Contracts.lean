@@ -289,6 +289,78 @@ theorem runtime_retained_parent_checkpoint_opening_checked_acceptance_opening_an
               proof
               accepted))))
 
+theorem runtime_retained_parent_checkpoint_opening_checked_acceptance_evidence_core_and_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeRetainedParentCheckpointOpeningValidation system) :
+    forall artifact publicInput proof requiresExternalSource,
+      RuntimeRetainedParentCheckpointOpeningCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeRetainedParentCheckpointOpeningEvidence
+            system
+            validation
+            artifact
+            publicInput
+            proof
+            requiresExternalSource
+          /\ RuntimeOpeningEvidence
+            system
+            validation.batchRowsValidation.openingSegmentValidation.openingValidation
+            artifact
+            publicInput
+            proof
+            requiresExternalSource
+          /\ RuntimeRetainedParentCheckpointOpeningDigestContract
+            system
+            validation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeRetainedParentCheckpointOpeningPrefixBatchContract
+            system
+            validation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeRetainedParentCheckpointOpeningRetainedRowsContract
+            system
+            validation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro artifact publicInput proof requiresExternalSource accepted
+  have checkedSound :=
+    runtime_retained_parent_checkpoint_opening_checked_acceptance_sound
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      accepted
+  have openingAndCore :=
+    runtime_retained_parent_checkpoint_opening_checked_acceptance_opening_and_core_contract
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      accepted
+  exact
+    And.intro checkedSound.left
+      (And.intro openingAndCore.left
+        (And.intro openingAndCore.right.left
+          (And.intro openingAndCore.right.right.left
+            (And.intro openingAndCore.right.right.right.left
+              (And.intro openingAndCore.right.right.right.right checkedSound.right)))))
+
 theorem
   runtime_retained_parent_checkpoint_concrete_path_opening_and_core_contract_from_bundle
     {system : VerifierModel}
