@@ -1144,6 +1144,27 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
                 "guest_pc_trace_memory_access_shape_acceptance_sound",
             ],
         ),
+        (
+            "guest_pc_trace_report_buffer_capacity_acceptance_core_and_sound",
+            [
+                "guest_pc_trace_report_buffer_capacity_acceptance_verifier_core_contract",
+                "guest_pc_trace_report_buffer_capacity_acceptance_sound",
+            ],
+        ),
+        (
+            "guest_pc_trace_descriptor_upload_word_count_acceptance_core_and_sound",
+            [
+                "guest_pc_trace_descriptor_upload_word_count_acceptance_verifier_core_contract",
+                "guest_pc_trace_descriptor_upload_word_count_acceptance_sound",
+            ],
+        ),
+        (
+            "guest_pc_trace_descriptor_upload_shape_acceptance_core_and_sound",
+            [
+                "guest_pc_trace_descriptor_upload_shape_acceptance_verifier_core_contract",
+                "guest_pc_trace_descriptor_upload_shape_acceptance_sound",
+            ],
+        ),
     ] {
         lean_binding::assert_theorem_prefix_contains(
             &timing_source,
@@ -1282,6 +1303,26 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
                 "guestTraceIndirectMemoryRowCount := indirectMemoryRows",
                 "guestTraceMemorySourceReadCount := memorySourceReads",
                 "guestTraceMemoryStoreRowCount := memoryStoreRows",
+            ][..],
+        ),
+        (
+            "guest_pc_trace_report_buffer_capacity_acceptance_core_and_sound",
+            &[
+                "guestTraceReportBufferCapacity := capacity",
+                "guestTraceReportBufferMaxCapacity := maxCapacity",
+                "guestTraceReportBufferExcessCapacity := excessCapacity",
+            ][..],
+        ),
+        (
+            "guest_pc_trace_descriptor_upload_word_count_acceptance_core_and_sound",
+            &["guestDeviceSourceDescriptorUploadWordCount := wordCount"][..],
+        ),
+        (
+            "guest_pc_trace_descriptor_upload_shape_acceptance_core_and_sound",
+            &[
+                "guestDeviceSourceDescriptorUploadByteCount := byteCount",
+                "guestDeviceSourceDescriptorUploadWordCount := wordCount",
+                "guestDeviceSourceDescriptorUploadRowCount := rowCount",
             ][..],
         ),
     ] {
@@ -3912,10 +3953,13 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "guest_pc_trace_memory_access_shape_acceptance_core_and_sound",
             "guest_pc_trace_report_buffer_capacity_acceptance_sound",
             "guest_pc_trace_report_buffer_capacity_acceptance_verifier_core_contract",
+            "guest_pc_trace_report_buffer_capacity_acceptance_core_and_sound",
             "guest_pc_trace_descriptor_upload_word_count_acceptance_sound",
             "guest_pc_trace_descriptor_upload_word_count_acceptance_verifier_core_contract",
+            "guest_pc_trace_descriptor_upload_word_count_acceptance_core_and_sound",
             "guest_pc_trace_descriptor_upload_shape_acceptance_sound",
             "guest_pc_trace_descriptor_upload_shape_acceptance_verifier_core_contract",
+            "guest_pc_trace_descriptor_upload_shape_acceptance_core_and_sound",
             "guest_pc_trace_source_retention_byte_counts_acceptance_sound",
             "guest_pc_trace_source_retention_byte_counts_acceptance_verifier_core_contract",
             "guest_pc_trace_descriptor_buffer_retention_byte_counts_acceptance_sound",

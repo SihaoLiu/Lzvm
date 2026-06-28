@@ -1331,6 +1331,46 @@ theorem guest_pc_trace_report_buffer_capacity_acceptance_verifier_core_contract
       proof
       observed
 
+theorem guest_pc_trace_report_buffer_capacity_acceptance_core_and_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : GuestPcTraceTimingSummary)
+    (capacity maxCapacity excessCapacity : Nat) :
+    forall publicInput proof,
+      GuestPcTraceTimingObservedAcceptance
+        system
+        (some
+          { summary with
+            guestTraceReportBufferCapacity := capacity
+            guestTraceReportBufferMaxCapacity := maxCapacity
+            guestTraceReportBufferExcessCapacity := excessCapacity })
+        publicInput
+        proof ->
+        RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof observed
+  have core :=
+    guest_pc_trace_report_buffer_capacity_acceptance_verifier_core_contract
+      assumptions
+      summary
+      capacity
+      maxCapacity
+      excessCapacity
+      publicInput
+      proof
+      observed
+  have sound :=
+    guest_pc_trace_report_buffer_capacity_acceptance_sound
+      assumptions
+      summary
+      capacity
+      maxCapacity
+      excessCapacity
+      publicInput
+      proof
+      observed
+  exact And.intro core sound
+
 theorem guest_pc_trace_descriptor_upload_word_count_acceptance_sound
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
@@ -1379,6 +1419,40 @@ theorem guest_pc_trace_descriptor_upload_word_count_acceptance_verifier_core_con
       publicInput
       proof
       observed
+
+theorem guest_pc_trace_descriptor_upload_word_count_acceptance_core_and_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : GuestPcTraceTimingSummary)
+    (wordCount : Nat) :
+    forall publicInput proof,
+      GuestPcTraceTimingObservedAcceptance
+        system
+        (some
+          { summary with
+            guestDeviceSourceDescriptorUploadWordCount := wordCount })
+        publicInput
+        proof ->
+        RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof observed
+  have core :=
+    guest_pc_trace_descriptor_upload_word_count_acceptance_verifier_core_contract
+      assumptions
+      summary
+      wordCount
+      publicInput
+      proof
+      observed
+  have sound :=
+    guest_pc_trace_descriptor_upload_word_count_acceptance_sound
+      assumptions
+      summary
+      wordCount
+      publicInput
+      proof
+      observed
+  exact And.intro core sound
 
 theorem guest_pc_trace_descriptor_upload_shape_acceptance_sound
     {system : VerifierModel}
@@ -1436,6 +1510,46 @@ theorem guest_pc_trace_descriptor_upload_shape_acceptance_verifier_core_contract
       publicInput
       proof
       observed
+
+theorem guest_pc_trace_descriptor_upload_shape_acceptance_core_and_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : GuestPcTraceTimingSummary)
+    (byteCount wordCount rowCount : Nat) :
+    forall publicInput proof,
+      GuestPcTraceTimingObservedAcceptance
+        system
+        (some
+          { summary with
+            guestDeviceSourceDescriptorUploadByteCount := byteCount
+            guestDeviceSourceDescriptorUploadWordCount := wordCount
+            guestDeviceSourceDescriptorUploadRowCount := rowCount })
+        publicInput
+        proof ->
+        RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof observed
+  have core :=
+    guest_pc_trace_descriptor_upload_shape_acceptance_verifier_core_contract
+      assumptions
+      summary
+      byteCount
+      wordCount
+      rowCount
+      publicInput
+      proof
+      observed
+  have sound :=
+    guest_pc_trace_descriptor_upload_shape_acceptance_sound
+      assumptions
+      summary
+      byteCount
+      wordCount
+      rowCount
+      publicInput
+      proof
+      observed
+  exact And.intro core sound
 
 
 end Lzvm
