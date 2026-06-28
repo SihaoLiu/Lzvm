@@ -10512,18 +10512,25 @@ fn evaluation_stage_column_lookups_use_ordered_stage_fast_path() {
 }
 
 #[test]
-fn fri_polynomial_evaluator_reuses_row_buffer_layout() {
+fn fri_polynomial_evaluator_reuses_polynomial_buffer_layout() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let source_path = crate_root.join("src/fri_polynomial/eval.rs");
     let source =
         std::fs::read_to_string(&source_path).expect("FRI polynomial eval source should read");
 
+    let build_body = function_body(&source, "pub fn build_fri_polynomial", "fn validate_inputs");
     let evaluate_body = function_body(&source, "fn evaluate_row", "#[derive(Debug, Clone, Copy");
     let read_base_body = function_body(&source, "fn read_base", "fn read_ext");
     let read_ext_body = function_body(&source, "fn read_ext", "#[derive(Debug, Clone, Copy");
 
     assert!(
-        evaluate_body.matches("let layout = BufferLayout::new(inputs);").count() == 1
+        build_body
+            .matches("let layout = BufferLayout::new(inputs);")
+            .count()
+            == 1
+            && build_body.contains("layout,")
+            && evaluate_body.contains("layout: BufferLayout")
+            && !evaluate_body.contains("BufferLayout::new(inputs)")
             && evaluate_body.contains("read_base(op_args.src0")
             && evaluate_body.contains("read_ext(op_args.src0")
             && evaluate_body.contains("inputs,\n                        layout,")
@@ -10531,7 +10538,7 @@ fn fri_polynomial_evaluator_reuses_row_buffer_layout() {
             && read_ext_body.contains("layout: BufferLayout")
             && !read_base_body.contains("BufferLayout::new(inputs)")
             && !read_ext_body.contains("BufferLayout::new(inputs)"),
-        "FRI polynomial row evaluation should build one buffer layout and reuse it across source reads"
+        "FRI polynomial evaluation should build one buffer layout and reuse it across rows"
     );
 }
 

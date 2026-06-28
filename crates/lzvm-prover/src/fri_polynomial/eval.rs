@@ -20,6 +20,7 @@ pub fn build_fri_polynomial(
     let ops = entry_ops(entry, program)?;
     let args = entry_args(entry, program)?;
     let operation_args = decode_operation_args(entry, args, ops.len())?;
+    let layout = BufferLayout::new(inputs);
     let tmp1_len = to_usize(entry.temp1_count)?;
     let tmp3_len = to_usize(entry.temp3_count)?.saturating_mul(3);
     let mut tmp1 = vec![Felt::ZERO; tmp1_len];
@@ -35,6 +36,7 @@ pub fn build_fri_polynomial(
             &operation_args,
             program,
             inputs,
+            layout,
             &mut tmp1,
             &mut tmp3,
         )?);
@@ -96,11 +98,10 @@ fn evaluate_row(
     operation_args: &[OperationArgs],
     program: &ExpressionProgram,
     inputs: FriPolynomialInputs<'_>,
+    layout: BufferLayout,
     tmp1: &mut [Felt],
     tmp3: &mut [Felt],
 ) -> Result<Ext3, FriPolynomialError> {
-    let layout = BufferLayout::new(inputs);
-
     for (shape, op_args) in ops.iter().copied().zip(operation_args.iter().copied()) {
         match shape {
             0 => {
