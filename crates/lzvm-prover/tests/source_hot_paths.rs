@@ -4057,6 +4057,11 @@ fn cuda_source_device_lookup_uses_ordered_stage_fast_path() {
     let trace_source =
         std::fs::read_to_string(&trace_path).expect("witness trace commitment source should read");
 
+    let shared_lookup_body = function_body(
+        &trace_source,
+        "fn find_source_device_by_stage_index",
+        "#[cfg(feature = \"cuda\")]\nfn find_stage_source_device",
+    );
     let source_lookup_body = function_body(
         &trace_source,
         "fn find_stage_source_device",
@@ -4069,16 +4074,17 @@ fn cuda_source_device_lookup_uses_ordered_stage_fast_path() {
     );
 
     assert!(
-        source_lookup_body.contains("stage_index.checked_sub(1)")
-            && source_lookup_body.contains(".get(stage_slot)")
-            && source_lookup_body.contains("source_devices[..stage_slot]")
-            && source_lookup_body.contains(".all(|source| source.stage_index != stage_index)")
-            && source_lookup_body.contains(".find(|source| source.stage_index == stage_index)")
-            && retained_lookup_body.contains("stage_index.checked_sub(1)")
-            && retained_lookup_body.contains(".get(stage_slot)")
-            && retained_lookup_body.contains("source_devices[..stage_slot]")
-            && retained_lookup_body.contains(".all(|source| source.stage_index() != stage_index)")
-            && retained_lookup_body.contains(".find(|source| source.stage_index() == stage_index)"),
+        shared_lookup_body.contains("stage_index.checked_sub(1)")
+            && shared_lookup_body.contains(".get(stage_slot)")
+            && shared_lookup_body.contains("source_devices[..stage_slot]")
+            && shared_lookup_body
+                .contains(".all(|source| source_stage_index(source) != stage_index)")
+            && shared_lookup_body
+                .contains(".find(|source| source_stage_index(*source) == stage_index)")
+            && source_lookup_body.contains("find_source_device_by_stage_index(")
+            && source_lookup_body.contains("WitnessStageSourceDevice::stage_index")
+            && retained_lookup_body.contains("find_source_device_by_stage_index(")
+            && retained_lookup_body.contains("WitnessStageRetainedSourceDevice::stage_index"),
         "CUDA source-device lookups should use ordered stage slots before first-match fallback"
     );
 }

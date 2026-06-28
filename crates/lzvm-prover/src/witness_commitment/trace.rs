@@ -253,18 +253,17 @@ impl WitnessStageSourceDevice {
 }
 
 #[cfg(feature = "cuda")]
-fn find_stage_source_device(
-    source_devices: &[WitnessStageSourceDevice],
+fn find_source_device_by_stage_index<T>(
+    source_devices: &[T],
     stage_index: usize,
-) -> Option<&WitnessStageSourceDevice> {
+    source_stage_index: impl Fn(&T) -> usize,
+) -> Option<&T> {
     if let Some(stage_slot) = stage_index.checked_sub(1) {
-        if let Some(source_device) = source_devices
-            .get(stage_slot)
-            .filter(|source| source.stage_index == stage_index)
-        {
-            if source_devices[..stage_slot]
-                .iter()
-                .all(|source| source.stage_index != stage_index)
+        if let Some(source_device) = source_devices.get(stage_slot) {
+            if source_stage_index(source_device) == stage_index
+                && source_devices[..stage_slot]
+                    .iter()
+                    .all(|source| source_stage_index(source) != stage_index)
             {
                 return Some(source_device);
             }
@@ -273,7 +272,19 @@ fn find_stage_source_device(
 
     source_devices
         .iter()
-        .find(|source| source.stage_index == stage_index)
+        .find(|source| source_stage_index(*source) == stage_index)
+}
+
+#[cfg(feature = "cuda")]
+fn find_stage_source_device(
+    source_devices: &[WitnessStageSourceDevice],
+    stage_index: usize,
+) -> Option<&WitnessStageSourceDevice> {
+    find_source_device_by_stage_index(
+        source_devices,
+        stage_index,
+        WitnessStageSourceDevice::stage_index,
+    )
 }
 
 #[cfg(feature = "cuda")]
@@ -281,23 +292,11 @@ fn find_retained_stage_source_device(
     source_devices: &[WitnessStageRetainedSourceDevice],
     stage_index: usize,
 ) -> Option<&WitnessStageRetainedSourceDevice> {
-    if let Some(stage_slot) = stage_index.checked_sub(1) {
-        if let Some(source_device) = source_devices
-            .get(stage_slot)
-            .filter(|source| source.stage_index() == stage_index)
-        {
-            if source_devices[..stage_slot]
-                .iter()
-                .all(|source| source.stage_index() != stage_index)
-            {
-                return Some(source_device);
-            }
-        }
-    }
-
-    source_devices
-        .iter()
-        .find(|source| source.stage_index() == stage_index)
+    find_source_device_by_stage_index(
+        source_devices,
+        stage_index,
+        WitnessStageRetainedSourceDevice::stage_index,
+    )
 }
 
 impl WitnessStageCommitTiming {
