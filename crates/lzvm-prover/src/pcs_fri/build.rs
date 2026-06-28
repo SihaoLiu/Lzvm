@@ -530,14 +530,15 @@ fn build_fri_opening_queries(
     grouped_values: &[Vec<Ext3>],
     tree: &merkle::FriLayerTree,
 ) -> Result<Vec<PcsFriOpeningQuerySegment>, PcsFriOpeningBuildError> {
-    let mut cached_queries: BTreeMap<usize, PcsFriOpeningQuerySegment> = BTreeMap::new();
-    let mut queries = Vec::with_capacity(query_rows.len());
+    let mut cached_query_positions: BTreeMap<usize, usize> = BTreeMap::new();
+    let mut queries: Vec<PcsFriOpeningQuerySegment> = Vec::with_capacity(query_rows.len());
     for query_row in query_rows {
         let row_index = *query_row % output_size_u64;
         let row_index_usize =
             usize::try_from(row_index).map_err(|_| PcsFriOpeningBuildError::LengthOverflow)?;
-        if let Some(query) = cached_queries.get(&row_index_usize) {
-            queries.push(query.clone());
+        if let Some(&query_position) = cached_query_positions.get(&row_index_usize) {
+            let query = queries[query_position].clone();
+            queries.push(query);
             continue;
         }
 
@@ -551,8 +552,9 @@ fn build_fri_opening_queries(
             values,
             siblings,
         };
-        cached_queries.insert(row_index_usize, query.clone());
+        let query_position = queries.len();
         queries.push(query);
+        cached_query_positions.insert(row_index_usize, query_position);
     }
     Ok(queries)
 }
