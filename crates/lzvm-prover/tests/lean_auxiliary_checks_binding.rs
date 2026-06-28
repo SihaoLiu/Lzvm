@@ -1127,9 +1127,11 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             ],
         );
     }
-    for (theorem, field_terms) in [
+    for (theorem, combined_helper, wraps_some, field_terms) in [
         (
             "witness_opening_row_value_aggregate_timing_acceptance_core_and_sound",
+            "witness_opening_row_value_timing_acceptance_core_and_sound",
+            true,
             &[
                 "rowValueSourceExtendMilliseconds := sourceExtendMilliseconds",
                 "rowValueSourceDownloadMilliseconds := sourceDownloadMilliseconds",
@@ -1144,6 +1146,8 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         ),
         (
             "constant_material_validation_aggregate_timing_acceptance_core_and_sound",
+            "constant_material_validation_timing_acceptance_core_and_sound",
+            true,
             &[
                 "constantMaterialValidationElapsedMilliseconds := elapsedMilliseconds",
                 "constantMaterialValidationJoinWaitMilliseconds := joinWaitMilliseconds",
@@ -1153,6 +1157,8 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         ),
         (
             "cuda_allocator_aggregate_timing_acceptance_core_and_sound",
+            "cuda_allocator_timing_acceptance_core_and_sound",
+            true,
             &[
                 "cudaAllocatorMallocCallCount := mallocCalls",
                 "cudaAllocatorMallocByteCount := mallocBytes",
@@ -1189,6 +1195,8 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         ),
         (
             "cuda_allocator_host_registration_timing_acceptance_core_and_sound",
+            "cuda_allocator_timing_acceptance_core_and_sound",
+            true,
             &[
                 "cudaAllocatorHostRegisterCallCount := hostRegisterCalls",
                 "cudaAllocatorHostRegisterByteCount := hostRegisterBytes",
@@ -1201,6 +1209,8 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         ),
         (
             "proof_artifact_finish_top_level_timing_acceptance_core_and_sound",
+            "proof_artifact_finish_timing_some_summary_acceptance_core_and_sound",
+            false,
             &[
                 "finishQueryPlanMilliseconds := queryPlanMilliseconds",
                 "finishConstantOpeningMilliseconds := constantOpeningMilliseconds",
@@ -1224,6 +1234,61 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
                 "finishContributionChallengeMilliseconds := contributionChallengeMilliseconds",
             ][..],
         ),
+    ] {
+        lean_binding::assert_theorem_prefix_contains(
+            &lean_proof_timing_source,
+            theorem,
+            &[
+                "RuntimeVerifierCoreContract system publicInput proof",
+                "SoundWitness system publicInput proof",
+            ],
+        );
+        let base_theorem = theorem
+            .strip_suffix("_core_and_sound")
+            .expect("combined proof-timing theorem name should use the core_and_sound suffix");
+        let verifier_callee = format!("{base_theorem}_verifier_core_contract");
+        let sound_callee = format!("{base_theorem}_sound");
+        lean_binding::assert_theorem_body_contains(
+            &lean_proof_timing_source,
+            theorem,
+            &[combined_helper],
+        );
+        lean_binding::assert_theorem_body_omits(
+            &lean_proof_timing_source,
+            theorem,
+            &[
+                verifier_callee.as_str(),
+                sound_callee.as_str(),
+                "sound_witness_implies_verifier_core_contract",
+            ],
+        );
+        let prefix = lean_binding::theorem_prefix(&lean_proof_timing_source, theorem);
+        let body = lean_binding::theorem_body(&lean_proof_timing_source, theorem);
+        for field_term in field_terms {
+            assert!(
+                compact_source_contains(&prefix, field_term),
+                "Lean theorem {theorem} prefix should wire field {field_term}"
+            );
+            assert!(
+                compact_source_contains(&body, field_term),
+                "Lean theorem {theorem} body should pass field {field_term} through the combined helper"
+            );
+        }
+        let helper_summary_prefix = if wraps_some {
+            format!("{combined_helper} assumptions (some {{ summary with")
+        } else {
+            format!("{combined_helper} assumptions {{ summary with")
+        };
+        assert!(
+            compact_source_contains(&body, &helper_summary_prefix),
+            "Lean theorem {theorem} body should call the combined helper with the updated summary"
+        );
+        assert!(
+            compact_source_contains(&body, "publicInput proof observed"),
+            "Lean theorem {theorem} body should pass the observed acceptance to the combined helper"
+        );
+    }
+    for (theorem, field_terms) in [
         (
             "proof_artifact_finish_witness_opening_shape_acceptance_core_and_sound",
             &[

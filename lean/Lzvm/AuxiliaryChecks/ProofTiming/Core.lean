@@ -251,39 +251,23 @@ theorem witness_opening_row_value_aggregate_timing_acceptance_core_and_sound
         RuntimeVerifierCoreContract system publicInput proof
           /\ SoundWitness system publicInput proof := by
   intro publicInput proof observed
-  have core :=
-    witness_opening_row_value_aggregate_timing_acceptance_verifier_core_contract
+  exact
+    witness_opening_row_value_timing_acceptance_core_and_sound
       assumptions
-      summary
-      sourceExtendMilliseconds
-      sourceDownloadMilliseconds
-      deviceDownloadMilliseconds
-      deviceRows
-      deviceDownloadBatches
-      deviceSingleDownloads
-      sourceRows
-      words
-      bytes
+      (some
+        { summary with
+          rowValueSourceExtendMilliseconds := sourceExtendMilliseconds
+          rowValueSourceDownloadMilliseconds := sourceDownloadMilliseconds
+          rowValueDeviceDownloadMilliseconds := deviceDownloadMilliseconds
+          deviceRowCount := deviceRows
+          deviceDownloadBatchCount := deviceDownloadBatches
+          deviceSingleDownloadCount := deviceSingleDownloads
+          sourceRowCount := sourceRows
+          wordCount := words
+          byteCount := bytes })
       publicInput
       proof
       observed
-  have sound :=
-    witness_opening_row_value_aggregate_timing_acceptance_sound
-      assumptions
-      summary
-      sourceExtendMilliseconds
-      sourceDownloadMilliseconds
-      deviceDownloadMilliseconds
-      deviceRows
-      deviceDownloadBatches
-      deviceSingleDownloads
-      sourceRows
-      words
-      bytes
-      publicInput
-      proof
-      observed
-  exact And.intro core sound
 
 def ConstantMaterialValidationTimingObservedAcceptance
     (system : VerifierModel)
@@ -431,29 +415,18 @@ theorem constant_material_validation_aggregate_timing_acceptance_core_and_sound
         RuntimeVerifierCoreContract system publicInput proof
           /\ SoundWitness system publicInput proof := by
   intro publicInput proof observed
-  have core :=
-    constant_material_validation_aggregate_timing_acceptance_verifier_core_contract
+  exact
+    constant_material_validation_timing_acceptance_core_and_sound
       assumptions
-      summary
-      elapsedMilliseconds
-      joinWaitMilliseconds
-      unitCount
-      byteCount
+      (some
+        { summary with
+          constantMaterialValidationElapsedMilliseconds := elapsedMilliseconds
+          constantMaterialValidationJoinWaitMilliseconds := joinWaitMilliseconds
+          constantMaterialValidationUnitCount := unitCount
+          constantMaterialValidationByteCount := byteCount })
       publicInput
       proof
       observed
-  have sound :=
-    constant_material_validation_aggregate_timing_acceptance_sound
-      assumptions
-      summary
-      elapsedMilliseconds
-      joinWaitMilliseconds
-      unitCount
-      byteCount
-      publicInput
-      proof
-      observed
-  exact And.intro core sound
 
 def ProverGpuModeObservedAcceptance
     (system : VerifierModel)
@@ -986,83 +959,50 @@ theorem cuda_allocator_aggregate_timing_acceptance_core_and_sound
         RuntimeVerifierCoreContract system publicInput proof
           /\ SoundWitness system publicInput proof := by
   intro publicInput proof observed
-  have core :=
-    cuda_allocator_aggregate_timing_acceptance_verifier_core_contract
+  exact
+    cuda_allocator_timing_acceptance_core_and_sound
       assumptions
-      summary
-      mallocCalls
-      mallocBytes
-      mallocWaitNanoseconds
-      mallocMaxWaitNanoseconds
-      hostRegisterCalls
-      hostRegisterBytes
-      hostRegisterWaitNanoseconds
-      hostRegisterMaxWaitNanoseconds
-      hostUnregisterCalls
-      hostUnregisterWaitNanoseconds
-      hostUnregisterMaxWaitNanoseconds
-      deviceSynchronizeCalls
-      deviceSynchronizeWaitNanoseconds
-      deviceSynchronizeMaxWaitNanoseconds
-      cachedBlocks
-      cachedBytes
-      eventQueryCalls
-      eventQueryReadyCount
-      eventQueryNotReadyCount
-      eventSynchronizeCalls
-      eventSynchronizeBytes
-      eventSynchronizeMaxBytes
-      eventSynchronizeWaitNanoseconds
-      eventSynchronizeMaxWaitNanoseconds
-      eventSynchronizeHotBytes
-      eventSynchronizeHotCount
-      eventSynchronizeHotWaitNanoseconds
-      cachedReuseCount
-      pendingReuseCount
-      noWaitBypassCount
-      noWaitBypassBytes
+      (some
+        { summary with
+          cudaAllocatorMallocCallCount := mallocCalls
+          cudaAllocatorMallocByteCount := mallocBytes
+          cudaAllocatorMallocWaitNanoseconds := mallocWaitNanoseconds
+          cudaAllocatorMallocMaxWaitNanoseconds := mallocMaxWaitNanoseconds
+          cudaAllocatorHostRegisterCallCount := hostRegisterCalls
+          cudaAllocatorHostRegisterByteCount := hostRegisterBytes
+          cudaAllocatorHostRegisterWaitNanoseconds := hostRegisterWaitNanoseconds
+          cudaAllocatorHostRegisterMaxWaitNanoseconds := hostRegisterMaxWaitNanoseconds
+          cudaAllocatorHostUnregisterCallCount := hostUnregisterCalls
+          cudaAllocatorHostUnregisterWaitNanoseconds := hostUnregisterWaitNanoseconds
+          cudaAllocatorHostUnregisterMaxWaitNanoseconds :=
+            hostUnregisterMaxWaitNanoseconds
+          cudaAllocatorDeviceSynchronizeCallCount := deviceSynchronizeCalls
+          cudaAllocatorDeviceSynchronizeWaitNanoseconds :=
+            deviceSynchronizeWaitNanoseconds
+          cudaAllocatorDeviceSynchronizeMaxWaitNanoseconds :=
+            deviceSynchronizeMaxWaitNanoseconds
+          cudaAllocatorCachedBlockCount := cachedBlocks
+          cudaAllocatorCachedByteCount := cachedBytes
+          cudaAllocatorEventQueryCallCount := eventQueryCalls
+          cudaAllocatorEventQueryReadyCount := eventQueryReadyCount
+          cudaAllocatorEventQueryNotReadyCount := eventQueryNotReadyCount
+          cudaAllocatorEventSynchronizeCallCount := eventSynchronizeCalls
+          cudaAllocatorEventSynchronizeByteCount := eventSynchronizeBytes
+          cudaAllocatorEventSynchronizeMaxByteCount := eventSynchronizeMaxBytes
+          cudaAllocatorEventSynchronizeWaitNanoseconds := eventSynchronizeWaitNanoseconds
+          cudaAllocatorEventSynchronizeMaxWaitNanoseconds :=
+            eventSynchronizeMaxWaitNanoseconds
+          cudaAllocatorEventSynchronizeHotByteCount := eventSynchronizeHotBytes
+          cudaAllocatorEventSynchronizeHotCount := eventSynchronizeHotCount
+          cudaAllocatorEventSynchronizeHotWaitNanoseconds :=
+            eventSynchronizeHotWaitNanoseconds
+          cudaAllocatorCachedReuseCount := cachedReuseCount
+          cudaAllocatorPendingReuseCount := pendingReuseCount
+          cudaAllocatorNoWaitBypassCount := noWaitBypassCount
+          cudaAllocatorNoWaitBypassByteCount := noWaitBypassBytes })
       publicInput
       proof
       observed
-  have sound :=
-    cuda_allocator_aggregate_timing_acceptance_sound
-      assumptions
-      summary
-      mallocCalls
-      mallocBytes
-      mallocWaitNanoseconds
-      mallocMaxWaitNanoseconds
-      hostRegisterCalls
-      hostRegisterBytes
-      hostRegisterWaitNanoseconds
-      hostRegisterMaxWaitNanoseconds
-      hostUnregisterCalls
-      hostUnregisterWaitNanoseconds
-      hostUnregisterMaxWaitNanoseconds
-      deviceSynchronizeCalls
-      deviceSynchronizeWaitNanoseconds
-      deviceSynchronizeMaxWaitNanoseconds
-      cachedBlocks
-      cachedBytes
-      eventQueryCalls
-      eventQueryReadyCount
-      eventQueryNotReadyCount
-      eventSynchronizeCalls
-      eventSynchronizeBytes
-      eventSynchronizeMaxBytes
-      eventSynchronizeWaitNanoseconds
-      eventSynchronizeMaxWaitNanoseconds
-      eventSynchronizeHotBytes
-      eventSynchronizeHotCount
-      eventSynchronizeHotWaitNanoseconds
-      cachedReuseCount
-      pendingReuseCount
-      noWaitBypassCount
-      noWaitBypassBytes
-      publicInput
-      proof
-      observed
-  exact And.intro core sound
 
 theorem cuda_allocator_host_registration_timing_acceptance_sound
     {system : VerifierModel}
@@ -1171,35 +1111,22 @@ theorem cuda_allocator_host_registration_timing_acceptance_core_and_sound
         RuntimeVerifierCoreContract system publicInput proof
           /\ SoundWitness system publicInput proof := by
   intro publicInput proof observed
-  have core :=
-    cuda_allocator_host_registration_timing_acceptance_verifier_core_contract
+  exact
+    cuda_allocator_timing_acceptance_core_and_sound
       assumptions
-      summary
-      hostRegisterCalls
-      hostRegisterBytes
-      hostRegisterWaitNanoseconds
-      hostRegisterMaxWaitNanoseconds
-      hostUnregisterCalls
-      hostUnregisterWaitNanoseconds
-      hostUnregisterMaxWaitNanoseconds
+      (some
+        { summary with
+          cudaAllocatorHostRegisterCallCount := hostRegisterCalls
+          cudaAllocatorHostRegisterByteCount := hostRegisterBytes
+          cudaAllocatorHostRegisterWaitNanoseconds := hostRegisterWaitNanoseconds
+          cudaAllocatorHostRegisterMaxWaitNanoseconds := hostRegisterMaxWaitNanoseconds
+          cudaAllocatorHostUnregisterCallCount := hostUnregisterCalls
+          cudaAllocatorHostUnregisterWaitNanoseconds := hostUnregisterWaitNanoseconds
+          cudaAllocatorHostUnregisterMaxWaitNanoseconds :=
+            hostUnregisterMaxWaitNanoseconds })
       publicInput
       proof
       observed
-  have sound :=
-    cuda_allocator_host_registration_timing_acceptance_sound
-      assumptions
-      summary
-      hostRegisterCalls
-      hostRegisterBytes
-      hostRegisterWaitNanoseconds
-      hostRegisterMaxWaitNanoseconds
-      hostUnregisterCalls
-      hostUnregisterWaitNanoseconds
-      hostUnregisterMaxWaitNanoseconds
-      publicInput
-      proof
-      observed
-  exact And.intro core sound
 
 def ProofArtifactFinishTimingObservedAcceptance
     (system : VerifierModel)
@@ -1491,61 +1418,33 @@ theorem proof_artifact_finish_top_level_timing_acceptance_core_and_sound
         RuntimeVerifierCoreContract system publicInput proof
           /\ SoundWitness system publicInput proof := by
   intro publicInput proof observed
-  have core :=
-    proof_artifact_finish_top_level_timing_acceptance_verifier_core_contract
+  exact
+    proof_artifact_finish_timing_some_summary_acceptance_core_and_sound
       assumptions
-      summary
-      queryPlanMilliseconds
-      constantOpeningMilliseconds
-      witnessOpeningMilliseconds
-      friOpeningMilliseconds
-      friOpeningUnitBuildMilliseconds
-      friOpeningLayerTreeMilliseconds
-      friOpeningQueryMilliseconds
-      friOpeningFoldMilliseconds
-      friOpeningUnitCount
-      friOpeningLayerCount
-      friOpeningQueryCount
-      friTranscriptUnitBuildMilliseconds
-      friTranscriptLayerTreeMilliseconds
-      friTranscriptFoldMilliseconds
-      friTranscriptUnitCount
-      friTranscriptLayerCount
-      proofEncodeMilliseconds
-      contributionSegmentMilliseconds
-      contributionVerifyMilliseconds
-      contributionChallengeMilliseconds
+      { summary with
+        finishQueryPlanMilliseconds := queryPlanMilliseconds
+        finishConstantOpeningMilliseconds := constantOpeningMilliseconds
+        finishWitnessOpeningMilliseconds := witnessOpeningMilliseconds
+        finishFriOpeningMilliseconds := friOpeningMilliseconds
+        finishFriOpeningUnitBuildMilliseconds := friOpeningUnitBuildMilliseconds
+        finishFriOpeningLayerTreeMilliseconds := friOpeningLayerTreeMilliseconds
+        finishFriOpeningQueryMilliseconds := friOpeningQueryMilliseconds
+        finishFriOpeningFoldMilliseconds := friOpeningFoldMilliseconds
+        finishFriOpeningUnitCount := friOpeningUnitCount
+        finishFriOpeningLayerCount := friOpeningLayerCount
+        finishFriOpeningQueryCount := friOpeningQueryCount
+        finishFriTranscriptUnitBuildMilliseconds := friTranscriptUnitBuildMilliseconds
+        finishFriTranscriptLayerTreeMilliseconds := friTranscriptLayerTreeMilliseconds
+        finishFriTranscriptFoldMilliseconds := friTranscriptFoldMilliseconds
+        finishFriTranscriptUnitCount := friTranscriptUnitCount
+        finishFriTranscriptLayerCount := friTranscriptLayerCount
+        finishProofEncodeMilliseconds := proofEncodeMilliseconds
+        finishContributionSegmentMilliseconds := contributionSegmentMilliseconds
+        finishContributionVerifyMilliseconds := contributionVerifyMilliseconds
+        finishContributionChallengeMilliseconds := contributionChallengeMilliseconds }
       publicInput
       proof
       observed
-  have sound :=
-    proof_artifact_finish_top_level_timing_acceptance_sound
-      assumptions
-      summary
-      queryPlanMilliseconds
-      constantOpeningMilliseconds
-      witnessOpeningMilliseconds
-      friOpeningMilliseconds
-      friOpeningUnitBuildMilliseconds
-      friOpeningLayerTreeMilliseconds
-      friOpeningQueryMilliseconds
-      friOpeningFoldMilliseconds
-      friOpeningUnitCount
-      friOpeningLayerCount
-      friOpeningQueryCount
-      friTranscriptUnitBuildMilliseconds
-      friTranscriptLayerTreeMilliseconds
-      friTranscriptFoldMilliseconds
-      friTranscriptUnitCount
-      friTranscriptLayerCount
-      proofEncodeMilliseconds
-      contributionSegmentMilliseconds
-      contributionVerifyMilliseconds
-      contributionChallengeMilliseconds
-      publicInput
-      proof
-      observed
-  exact And.intro core sound
 
 
 end Lzvm
