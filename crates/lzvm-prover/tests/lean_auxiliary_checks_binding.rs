@@ -1506,50 +1506,49 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "SoundWitness system publicInput proof",
         ],
     );
-    let aggregate_finish_body_terms = [
-        "proof_artifact_finish_aggregate_timing_acceptance_verifier_core_contract",
-        "proof_artifact_finish_aggregate_timing_acceptance_sound",
-    ];
+    let aggregate_finish_helper =
+        "proof_artifact_finish_timing_some_summary_acceptance_core_and_sound";
     lean_binding::assert_theorem_body_contains(
         &proof_timing_verifier_source,
         aggregate_finish_theorem,
-        &aggregate_finish_body_terms,
+        &[aggregate_finish_helper],
     );
     lean_binding::assert_theorem_body_omits(
         &proof_timing_verifier_source,
         aggregate_finish_theorem,
-        &["sound_witness_implies_verifier_core_contract"],
+        &[
+            "proof_artifact_finish_aggregate_timing_acceptance_verifier_core_contract",
+            "proof_artifact_finish_aggregate_timing_acceptance_sound",
+            "sound_witness_implies_verifier_core_contract",
+        ],
     );
     let aggregate_finish_prefix =
         lean_binding::theorem_prefix(&proof_timing_verifier_source, aggregate_finish_theorem);
-    let mut aggregate_finish_ordered_args = vec!["assumptions".to_owned(), "summary".to_owned()];
+    let aggregate_finish_body =
+        lean_binding::theorem_body(&proof_timing_verifier_source, aggregate_finish_theorem);
     for field_term in aggregate_finish_field_terms {
         assert!(
             compact_source_contains(&aggregate_finish_prefix, field_term),
             "Lean theorem {aggregate_finish_theorem} prefix should wire field {field_term}"
         );
-        let (_, argument) = field_term
-            .rsplit_once(":=")
-            .expect("proof timing field wiring term should use Lean record assignment syntax");
-        aggregate_finish_ordered_args.push(argument.trim().to_owned());
-    }
-    aggregate_finish_ordered_args.extend([
-        "publicInput".to_owned(),
-        "proof".to_owned(),
-        "observed".to_owned(),
-    ]);
-    let aggregate_finish_body =
-        lean_binding::theorem_body(&proof_timing_verifier_source, aggregate_finish_theorem);
-    for callee in aggregate_finish_body_terms {
-        let expected_call = std::iter::once(callee)
-            .chain(aggregate_finish_ordered_args.iter().map(String::as_str))
-            .collect::<Vec<_>>()
-            .join(" ");
         assert!(
-            compact_source_contains(&aggregate_finish_body, &expected_call),
-            "Lean theorem {aggregate_finish_theorem} body should call {callee} with ordered timing arguments"
+            compact_source_contains(&aggregate_finish_body, field_term),
+            "Lean theorem {aggregate_finish_theorem} body should pass field {field_term} through the combined helper"
         );
     }
+    let aggregate_finish_helper_summary_prefix =
+        format!("{aggregate_finish_helper} assumptions {{ summary with");
+    assert!(
+        compact_source_contains(
+            &aggregate_finish_body,
+            &aggregate_finish_helper_summary_prefix
+        ),
+        "Lean theorem {aggregate_finish_theorem} body should call the combined helper with the updated summary"
+    );
+    assert!(
+        compact_source_contains(&aggregate_finish_body, "publicInput proof observed"),
+        "Lean theorem {aggregate_finish_theorem} body should pass the observed acceptance to the combined helper"
+    );
     assert!(
         proof_timing_projected_source.contains("structure ProofTimingProjectedCoreContracts")
             && proof_timing_projected_source.contains("witnessOpeningRowValueTiming :")
