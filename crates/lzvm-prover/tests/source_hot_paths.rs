@@ -8456,9 +8456,43 @@ fn all_units_witness_reuses_shared_inputs_and_borrows_trace_bundle_bytes() {
                 .contains("Result<Cow<'a, ProveWitnessAuxiliaryInputs>")
             && global_auxiliary_body.contains("Ok(Cow::Borrowed(auxiliary_inputs))")
             && global_auxiliary_body.contains("Ok(Cow::Owned(merged))")
-            && global_auxiliary_body.find("let mut merged = auxiliary_inputs.clone()")
+            && global_auxiliary_body.find("auxiliary_inputs_with_proof_values")
                 > global_auxiliary_body.find("if let Some(proof_values) = proof_values"),
         "global auxiliary input merge should borrow the shared inputs unless backend proof values must be materialized"
+    );
+    let unit_merge_body = function_body(
+        &source,
+        "fn merge_backend_unit_values",
+        "fn merge_backend_proof_values",
+    );
+    let proof_merge_body = function_body(
+        &source,
+        "fn merge_backend_proof_values",
+        "fn auxiliary_inputs_with_proof_values",
+    );
+    let unit_replace_body = function_body(
+        &source,
+        "fn auxiliary_inputs_with_unit_values",
+        "fn auxiliary_inputs_with_owned_proof_values",
+    );
+    let proof_replace_body = function_body(
+        &source,
+        "fn auxiliary_inputs_with_owned_proof_values",
+        "fn pack_backend_proof_values",
+    );
+    assert!(
+        unit_merge_body.contains("auxiliary_inputs_with_unit_values")
+            && proof_merge_body.contains("auxiliary_inputs_with_owned_proof_values")
+            && !unit_merge_body.contains("auxiliary_inputs.as_ref().clone()")
+            && !proof_merge_body.contains("auxiliary_inputs.as_ref().clone()"),
+        "backend auxiliary input merges should delegate replacement without cloning the whole input struct"
+    );
+    assert!(
+        unit_replace_body.contains("Arc::try_unwrap(auxiliary_inputs)")
+            && proof_replace_body.contains("Arc::try_unwrap(auxiliary_inputs)")
+            && !unit_replace_body.contains("unit_values: auxiliary_inputs.unit_values.clone()")
+            && !proof_replace_body.contains("proof_values: auxiliary_inputs.proof_values.clone()"),
+        "backend auxiliary input replacement should move unique Arc inputs and avoid cloning replaced vectors"
     );
     assert!(
         source.matches("global_auxiliary_inputs.as_ref()").count() >= 4,

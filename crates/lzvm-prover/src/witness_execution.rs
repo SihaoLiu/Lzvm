@@ -4134,8 +4134,7 @@ fn global_auxiliary_inputs_from_outputs<'a>(
         }
     }
     if let Some(proof_values) = proof_values {
-        let mut merged = auxiliary_inputs.clone();
-        merged.proof_values = proof_values.to_vec();
+        let merged = auxiliary_inputs_with_proof_values(auxiliary_inputs, proof_values);
         return Ok(Cow::Owned(merged));
     }
     Ok(Cow::Borrowed(auxiliary_inputs))
@@ -5732,9 +5731,10 @@ fn merge_backend_unit_values(
 
     let packed_values =
         pack_backend_unit_values(unit_index, &unit.unit_value_map, backend_unit_values)?;
-    let mut merged = auxiliary_inputs.as_ref().clone();
-    merged.unit_values = packed_values;
-    Ok(Arc::new(merged))
+    Ok(auxiliary_inputs_with_unit_values(
+        auxiliary_inputs,
+        packed_values,
+    ))
 }
 
 fn merge_backend_proof_values(
@@ -5749,9 +5749,10 @@ fn merge_backend_proof_values(
 
     let packed_values = pack_backend_proof_values(unit_index, global_info, backend_proof_values)?;
     if auxiliary_inputs.proof_values.is_empty() {
-        let mut merged = auxiliary_inputs.as_ref().clone();
-        merged.proof_values = packed_values;
-        return Ok(Arc::new(merged));
+        return Ok(auxiliary_inputs_with_owned_proof_values(
+            auxiliary_inputs,
+            packed_values,
+        ));
     }
     if auxiliary_inputs.proof_values == packed_values {
         return Ok(auxiliary_inputs);
@@ -5760,6 +5761,57 @@ fn merge_backend_proof_values(
         unit_index,
         message: "backend proof values conflict with provided proof values".to_owned(),
     })
+}
+
+fn auxiliary_inputs_with_proof_values(
+    auxiliary_inputs: &ProveWitnessAuxiliaryInputs,
+    proof_values: &[Felt],
+) -> ProveWitnessAuxiliaryInputs {
+    ProveWitnessAuxiliaryInputs {
+        unit_values: auxiliary_inputs.unit_values.clone(),
+        proof_values: proof_values.to_vec(),
+        group_values: auxiliary_inputs.group_values.clone(),
+        challenges: auxiliary_inputs.challenges.clone(),
+        evaluations: auxiliary_inputs.evaluations.clone(),
+    }
+}
+
+fn auxiliary_inputs_with_unit_values(
+    auxiliary_inputs: Arc<ProveWitnessAuxiliaryInputs>,
+    unit_values: Vec<Felt>,
+) -> Arc<ProveWitnessAuxiliaryInputs> {
+    match Arc::try_unwrap(auxiliary_inputs) {
+        Ok(mut auxiliary_inputs) => {
+            auxiliary_inputs.unit_values = unit_values;
+            Arc::new(auxiliary_inputs)
+        }
+        Err(auxiliary_inputs) => Arc::new(ProveWitnessAuxiliaryInputs {
+            unit_values,
+            proof_values: auxiliary_inputs.proof_values.clone(),
+            group_values: auxiliary_inputs.group_values.clone(),
+            challenges: auxiliary_inputs.challenges.clone(),
+            evaluations: auxiliary_inputs.evaluations.clone(),
+        }),
+    }
+}
+
+fn auxiliary_inputs_with_owned_proof_values(
+    auxiliary_inputs: Arc<ProveWitnessAuxiliaryInputs>,
+    proof_values: Vec<Felt>,
+) -> Arc<ProveWitnessAuxiliaryInputs> {
+    match Arc::try_unwrap(auxiliary_inputs) {
+        Ok(mut auxiliary_inputs) => {
+            auxiliary_inputs.proof_values = proof_values;
+            Arc::new(auxiliary_inputs)
+        }
+        Err(auxiliary_inputs) => Arc::new(ProveWitnessAuxiliaryInputs {
+            unit_values: auxiliary_inputs.unit_values.clone(),
+            proof_values,
+            group_values: auxiliary_inputs.group_values.clone(),
+            challenges: auxiliary_inputs.challenges.clone(),
+            evaluations: auxiliary_inputs.evaluations.clone(),
+        }),
+    }
 }
 
 fn pack_backend_proof_values(
