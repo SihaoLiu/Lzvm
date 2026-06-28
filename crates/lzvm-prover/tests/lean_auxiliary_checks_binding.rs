@@ -1275,6 +1275,9 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             && lean_source.contains(
                 "guest_pc_trace_traceless_commitment_input_checked_acceptance_verifier_core_contract"
             )
+            && lean_source.contains(
+                "guest_pc_trace_traceless_commitment_input_checked_acceptance_core_and_sound"
+            )
             && witness_execution_source
                 .contains("fn guest_pc_trace_less_commitment_input_enabled")
             && witness_execution_source.contains("LZVM_CUDA_GUEST_PC_TRACELESS_COMMITMENT_INPUT")
@@ -1295,6 +1298,9 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             )
             && lean_source.contains(
                 "guest_pc_trace_traceless_segment_output_checked_acceptance_verifier_core_contract"
+            )
+            && lean_source.contains(
+                "guest_pc_trace_traceless_segment_output_checked_acceptance_core_and_sound"
             )
             && guest_backend_source.contains("fn guest_pc_trace_less_segment_output_enabled")
             && guest_backend_source.contains("LZVM_CUDA_GUEST_PC_TRACELESS_SEGMENT_OUTPUT")
@@ -4132,6 +4138,46 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             [
                 "guest_pc_trace_large_gpu_gate_checked_acceptance_sound",
                 "guest_pc_trace_large_gpu_gate_checked_acceptance_verifier_core_contract",
+            ],
+        ),
+    ] {
+        lean_binding::assert_theorem_prefix_contains(&gpu_runtime_source, theorem, &prefix_terms);
+        lean_binding::assert_theorem_body_contains(&gpu_runtime_source, theorem, &body_terms);
+        lean_binding::assert_theorem_body_omits(
+            &gpu_runtime_source,
+            theorem,
+            &["sound_witness_implies_verifier_core_contract"],
+        );
+    }
+    for (theorem, prefix_terms, body_terms) in [
+        (
+            "guest_pc_trace_traceless_commitment_input_checked_acceptance_core_and_sound",
+            [
+                "GuestPcTraceTracelessCommitmentInputDecisionMatches config",
+                "RuntimeVerifierCoreContract system publicInput proof",
+                "SoundWitness system publicInput proof",
+            ],
+            [
+                "guest_pc_trace_traceless_commitment_input_checked_acceptance_sound",
+                concat!(
+                    "guest_pc_trace_traceless_commitment_input_checked_acceptance_",
+                    "verifier_core_contract"
+                ),
+            ],
+        ),
+        (
+            "guest_pc_trace_traceless_segment_output_checked_acceptance_core_and_sound",
+            [
+                "GuestPcTraceTracelessSegmentOutputDecisionMatches config",
+                "RuntimeVerifierCoreContract system publicInput proof",
+                "SoundWitness system publicInput proof",
+            ],
+            [
+                "guest_pc_trace_traceless_segment_output_checked_acceptance_sound",
+                concat!(
+                    "guest_pc_trace_traceless_segment_output_checked_acceptance_",
+                    "verifier_core_contract"
+                ),
             ],
         ),
     ] {

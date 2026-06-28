@@ -1275,6 +1275,40 @@ theorem guest_pc_trace_traceless_commitment_input_checked_acceptance_verifier_co
       proof
       checked
 
+theorem guest_pc_trace_traceless_commitment_input_checked_acceptance_core_and_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : GuestPcTraceTracelessCommitmentInputValidation)
+    (config : GuestPcTraceTracelessCommitmentInputConfig) :
+    forall publicInput proof,
+      GuestPcTraceTracelessCommitmentInputCheckedAcceptance
+          system
+          validation
+          config
+          publicInput
+          proof ->
+        GuestPcTraceTracelessCommitmentInputDecisionMatches config
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof checked
+  have sound :=
+    guest_pc_trace_traceless_commitment_input_checked_acceptance_sound
+      assumptions
+      validation
+      config
+      publicInput
+      proof
+      checked
+  have core :=
+    guest_pc_trace_traceless_commitment_input_checked_acceptance_verifier_core_contract
+      assumptions
+      validation
+      config
+      publicInput
+      proof
+      checked
+  exact And.intro sound.left (And.intro core sound.right)
+
 theorem guest_pc_trace_traceless_segment_output_checked_acceptance_projects_decision
     {system : VerifierModel}
     (validation : GuestPcTraceTracelessSegmentOutputValidation)
@@ -1373,6 +1407,40 @@ theorem guest_pc_trace_traceless_segment_output_checked_acceptance_verifier_core
       publicInput
       proof
       checked
+
+theorem guest_pc_trace_traceless_segment_output_checked_acceptance_core_and_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : GuestPcTraceTracelessSegmentOutputValidation)
+    (config : GuestPcTraceTracelessSegmentOutputConfig) :
+    forall publicInput proof,
+      GuestPcTraceTracelessSegmentOutputCheckedAcceptance
+          system
+          validation
+          config
+          publicInput
+          proof ->
+        GuestPcTraceTracelessSegmentOutputDecisionMatches config
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof checked
+  have sound :=
+    guest_pc_trace_traceless_segment_output_checked_acceptance_sound
+      assumptions
+      validation
+      config
+      publicInput
+      proof
+      checked
+  have core :=
+    guest_pc_trace_traceless_segment_output_checked_acceptance_verifier_core_contract
+      assumptions
+      validation
+      config
+      publicInput
+      proof
+      checked
+  exact And.intro sound.left (And.intro core sound.right)
 
 theorem guest_pc_trace_cross_root_materialization_checked_acceptance_projects_decision
     {system : VerifierModel}
