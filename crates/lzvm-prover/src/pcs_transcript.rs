@@ -256,6 +256,14 @@ pub fn derive_pcs_transcript_challenges(
             binding_segments: input.binding_segments,
         })?;
 
+    let extra_challenge_capacity = input
+        .fri_roots
+        .len()
+        .checked_add(2)
+        .ok_or(PcsTranscriptError::LengthOverflow)?;
+    challenges
+        .try_reserve_exact(extra_challenge_capacity)
+        .map_err(|_| PcsTranscriptError::LengthOverflow)?;
     challenges.push(Ext3::ZERO);
 
     for (index, root) in input.fri_roots.iter().enumerate() {
@@ -297,7 +305,18 @@ pub(crate) fn build_pcs_transcript_prefix(
     }
 
     let mut transcript = PoseidonTranscript::new(input.arity)?;
+    let challenge_capacity = input.root_challenge_draws.iter().try_fold(
+        input.evaluation_challenge_draws,
+        |capacity, draw_count| {
+            capacity
+                .checked_add(*draw_count)
+                .ok_or(PcsTranscriptError::LengthOverflow)
+        },
+    )?;
     let mut challenges = Vec::new();
+    challenges
+        .try_reserve_exact(challenge_capacity)
+        .map_err(|_| PcsTranscriptError::LengthOverflow)?;
     transcript.put(&input.constant_root);
 
     if !input.public_values.is_empty() {

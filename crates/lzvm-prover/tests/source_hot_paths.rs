@@ -8702,6 +8702,35 @@ fn pcs_transcript_absorbs_extension_values_without_flattening() {
 }
 
 #[test]
+fn pcs_transcript_challenges_preallocate_expected_draws() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let transcript_path = crate_root.join("src/pcs_transcript.rs");
+    let transcript_source =
+        std::fs::read_to_string(&transcript_path).expect("PCS transcript source should read");
+    let full_body = function_body(
+        &transcript_source,
+        "pub fn derive_pcs_transcript_challenges",
+        "pub fn derive_pcs_transcript_prefix_challenges",
+    );
+    let prefix_body = function_body(
+        &transcript_source,
+        "pub(crate) fn build_pcs_transcript_prefix",
+        "pub fn derive_pcs_final_query_challenge_from_segments",
+    );
+
+    assert!(
+        full_body.contains("checked_add(2)")
+            && full_body.contains("try_reserve_exact(extra_challenge_capacity)")
+            && prefix_body
+                .contains("let challenge_capacity = input.root_challenge_draws.iter().try_fold")
+            && prefix_body.contains(".checked_add(*draw_count)")
+            && prefix_body.contains("try_reserve_exact(challenge_capacity)")
+            && prefix_body.contains("PcsTranscriptError::LengthOverflow"),
+        "PCS transcript challenge vectors should fallibly reserve known draw counts"
+    );
+}
+
+#[test]
 fn fri_opening_query_assembly_reuses_duplicate_rows() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let source_path = crate_root.join("src/pcs_fri/build.rs");

@@ -386,6 +386,42 @@ fn rejects_empty_final_polynomials() {
 }
 
 #[test]
+fn rejects_challenge_capacity_overflows_before_drawing() {
+    assert_eq!(
+        derive_pcs_transcript_prefix_challenges(PcsTranscriptPrefixInputs {
+            arity: 4,
+            hash_values: false,
+            constant_root: root(1),
+            public_values: &[],
+            witness_roots: &[root(10)],
+            root_challenge_draws: &[usize::MAX],
+            unit_value_map: &[],
+            unit_values: &[],
+            evaluation_values: &[],
+            evaluation_challenge_draws: 1,
+            binding_segments: &[],
+        }),
+        Err(PcsTranscriptError::LengthOverflow)
+    );
+    assert_eq!(
+        derive_pcs_transcript_prefix_challenges(PcsTranscriptPrefixInputs {
+            arity: 4,
+            hash_values: false,
+            constant_root: root(1),
+            public_values: &[],
+            witness_roots: &[],
+            root_challenge_draws: &[],
+            unit_value_map: &[],
+            unit_values: &[],
+            evaluation_values: &[],
+            evaluation_challenge_draws: usize::MAX,
+            binding_segments: &[],
+        }),
+        Err(PcsTranscriptError::LengthOverflow)
+    );
+}
+
+#[test]
 fn derives_final_query_challenge_from_parsed_segments() {
     let unit = sample_unit(Some(4), true);
     let material = sample_material(0, 1);
