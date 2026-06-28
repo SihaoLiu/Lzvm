@@ -1241,7 +1241,7 @@ fn proof_timing_batch_records_status_when_combined_log_is_symlink() {
     std::fs::create_dir_all(&dir).expect("fixture dir should be created");
     let log_path = dir.join("improve-log.csv");
     let redirected = dir.join("redirected.log");
-    std::fs::write(&redirected, "sentinel\n").expect("redirect target should write");
+    std::fs::write(&redirected, "timing_total_ms=9999\n").expect("redirect target should write");
     let command = format!(
         "ln -s '{}' {{batch_dir}}/small-001.log; printf 'timing_total_ms=1000\\n'",
         redirected.display()
@@ -1282,7 +1282,7 @@ fn proof_timing_batch_records_status_when_combined_log_is_symlink() {
         "combined log symlink rejection should explain the path constraint: stderr={stderr}"
     );
     assert_eq!(
-        redirected_text, "sentinel\n",
+        redirected_text, "timing_total_ms=9999\n",
         "rejected combined log write should not overwrite a symlink target"
     );
     assert!(
@@ -1293,6 +1293,11 @@ fn proof_timing_batch_records_status_when_combined_log_is_symlink() {
     assert!(
         batch_json.contains("\"appended\": false") && batch_json.contains("small-001.status"),
         "failed combined log write should still record batch json: {batch_json}"
+    );
+    assert!(
+        batch_json.contains("\"small_timing_parse_failed_count\": 1")
+            && !batch_json.contains("9.999"),
+        "batch json timing discovery should not follow the rejected log symlink: {batch_json}"
     );
 }
 

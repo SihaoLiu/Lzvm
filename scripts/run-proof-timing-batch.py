@@ -96,10 +96,6 @@ def nonnegative_float(raw: str) -> float:
     return value
 
 
-def read_text(path: Path) -> str:
-    return path.read_text(encoding="utf-8", errors="replace")
-
-
 def open_text_no_follow(
     path: Path,
     mode: int = 0o600,
@@ -124,6 +120,24 @@ def open_text_no_follow(
             errors=errors or "strict",
         )
     return os.fdopen(descriptor, "w", encoding="utf-8")
+
+
+def open_read_text_no_follow(path: Path, label: str = "input path"):
+    flags = os.O_RDONLY
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    try:
+        descriptor = os.open(path, flags)
+    except OSError as error:
+        if path.is_symlink():
+            raise SystemExit(f"{label} must not be a symlink: {path}") from error
+        raise
+    return os.fdopen(descriptor, "r", encoding="utf-8", errors="replace")
+
+
+def read_text(path: Path) -> str:
+    with open_read_text_no_follow(path) as source:
+        return source.read()
 
 
 def write_text_no_follow(path: Path, text: str) -> None:
