@@ -3921,6 +3921,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "fri_fixed_column_cache_checked_acceptance_projects_cached_contents_bound",
             "fri_fixed_column_cache_checked_acceptance_sound",
             "fri_fixed_column_cache_checked_acceptance_verifier_core_contract",
+            "fri_fixed_column_cache_checked_acceptance_core_and_sound",
             "gpu_coset_extension_matches_host_implies_leaf_bytes",
             "gpu_coset_extension_checked_acceptance_projects_verifier_acceptance",
             "gpu_coset_extension_checked_acceptance_projects_matches_host",
@@ -4456,6 +4457,32 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "fri_fixed_column_cache_checked_acceptance_sound",
             "sound_witness_implies_verifier_core_contract",
         ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &gpu_runtime_source,
+        "fri_fixed_column_cache_checked_acceptance_core_and_sound",
+        &[
+            "validation.fixedColumnCacheRequestBound cached fresh",
+            "validation.allocationValidation.writtenContentsBound fresh publicInput proof",
+            "validation.allocationValidation.writtenContentsBound cached publicInput proof",
+            "RuntimeVerifierCoreContract system publicInput proof",
+            "SoundWitness system publicInput proof",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &gpu_runtime_source,
+        "fri_fixed_column_cache_checked_acceptance_core_and_sound",
+        &[
+            "fri_fixed_column_cache_checked_acceptance_projects_request_bound",
+            "fri_fixed_column_cache_checked_acceptance_projects_fresh_contents_bound",
+            "fri_fixed_column_cache_checked_acceptance_sound",
+            "fri_fixed_column_cache_checked_acceptance_verifier_core_contract",
+        ],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &gpu_runtime_source,
+        "fri_fixed_column_cache_checked_acceptance_core_and_sound",
+        &["sound_witness_implies_verifier_core_contract"],
     );
     lean_binding::assert_theorem_body_contains(
         &lean_proof_timing_source,
