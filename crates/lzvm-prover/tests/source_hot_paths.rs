@@ -8954,6 +8954,43 @@ fn pcs_transcript_challenges_preallocate_expected_draws() {
 }
 
 #[test]
+fn fri_build_avoids_initial_polynomial_clone_before_first_fold() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let source_path = crate_root.join("src/pcs_fri/build.rs");
+    let source = std::fs::read_to_string(&source_path).expect("FRI build source should read");
+
+    let helper_body = function_body(
+        &source,
+        "enum CurrentFriLayerValues",
+        "pub fn build_pcs_fri_transcript_commitments",
+    );
+    let transcript_body = function_body(
+        &source,
+        "pub fn build_pcs_fri_transcript_commitments_with_timing",
+        "fn record_fri_transcript_duration",
+    );
+    let opening_body = function_body(
+        &source,
+        "pub fn build_pcs_fri_opening_unit_with_timing",
+        "pub(crate) fn build_pcs_fri_opening_unit_from_transcript_commitments_with_timing",
+    );
+
+    assert!(
+        helper_body.contains("Borrowed(&")
+            && helper_body.contains("Owned(Vec<Ext3>)")
+            && helper_body.contains("fn as_slice(&self)")
+            && helper_body.contains("fn replace_with_owned(&mut self, values: Vec<Ext3>)")
+            && transcript_body.contains("CurrentFriLayerValues::Borrowed(request.polynomial)")
+            && transcript_body.contains("current.replace_with_owned(next)")
+            && transcript_body.contains("final_polynomial: current.into_vec()")
+            && opening_body.contains("CurrentFriLayerValues::Borrowed(request.polynomial)")
+            && opening_body.contains("current.replace_with_owned(next)")
+            && !source.contains("request.polynomial.to_vec()"),
+        "FRI build should borrow the initial polynomial until the first folded layer is owned"
+    );
+}
+
+#[test]
 fn fri_opening_query_assembly_reuses_duplicate_rows() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let source_path = crate_root.join("src/pcs_fri/build.rs");
