@@ -8600,7 +8600,8 @@ fn fri_opening_builders_index_query_plan_units() {
     );
 
     assert!(
-        source.contains("use crate::indexing::index_first_by_key")
+        source.contains("index_first_by_key")
+            && source.contains("index_first_position_by_key")
             && source.contains("fn query_plan_units_by_identity")
             && direct_body
                 .contains("let query_units = query_plan_units_by_identity(&query_plan.units)")
@@ -8627,12 +8628,31 @@ fn fri_transcript_segment_builder_indexes_payload_units() {
         "pub(crate) fn build_pcs_fri_transcript_values_from_trace_segment_refs_with_timing",
         "pub fn build_pcs_fri_opening_segment_from_transcript_values",
     );
+    let material_check = body
+        .find("validate_material_segment_id(input.material_segment)")
+        .expect("material segment ID check should be present");
+    let evaluation_check = body
+        .find("validate_evaluation_segment_id(input.evaluation_segment)")
+        .expect("evaluation segment ID check should be present");
+    let material_lookup = body
+        .find(".unit_by_index(input.material_segment, unit_index_u32)")
+        .expect("material unit index lookup should be present");
+    let witness_load = body
+        .find("load_witness_commitment_segment_ref_for_identity")
+        .expect("witness load should be present");
+    let evaluation_lookup = body
+        .find(".unit_by_identity(")
+        .expect("evaluation identity lookup should be present");
 
     assert!(
         source.contains("units_by_index: BTreeMap<u32, usize>")
             && source.contains("units_by_identity: BTreeMap<(u32, u32), usize>")
-            && body.contains(".unit_by_index(input.material_segment, unit_index_u32)")
-            && body.contains(".unit_by_identity(")
+            && source
+                .contains("use crate::indexing::{index_first_by_key, index_first_position_by_key}")
+            && material_check < material_lookup
+            && evaluation_check < material_lookup
+            && evaluation_check < witness_load
+            && evaluation_check < evaluation_lookup
             && !body.contains(".units\n            .iter()\n            .find")
             && !body.contains(".units.iter().find"),
         "FRI transcript segment assembly should use cached unit indexes"
@@ -9307,8 +9327,10 @@ fn lean_query_plan_binding_tracks_runtime_transcript_opening_checks() {
     );
     assert!(
         indexing_source.contains("fn index_first_by_key")
+            && indexing_source.contains("fn index_first_position_by_key")
             && indexing_source.contains("BTreeMap")
             && indexing_source.contains(".or_insert(item)")
+            && indexing_source.contains(".or_insert(index)")
             && !indexing_source.contains("collect::<BTreeMap"),
         "shared indexing helper should preserve first matching unit semantics"
     );

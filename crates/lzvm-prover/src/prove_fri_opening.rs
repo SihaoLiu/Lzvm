@@ -24,7 +24,7 @@ use lzvm_artifacts::proof::ProofSegment;
 use lzvm_artifacts::witness_segment::WitnessCommitmentSegmentIdentity;
 use lzvm_field::{Ext3, Felt, FieldError};
 
-use crate::indexing::index_first_by_key;
+use crate::indexing::{index_first_by_key, index_first_position_by_key};
 use crate::pcs_fri::{
     build_pcs_fri_opening_unit, build_pcs_fri_opening_unit_from_transcript_commitments_with_timing,
     build_pcs_fri_opening_unit_with_timing, build_pcs_fri_transcript_commitments,
@@ -202,18 +202,6 @@ where
 
 fn same_segment_data(left: &[u8], right: &[u8]) -> bool {
     (left.len() == right.len() && std::ptr::eq(left.as_ptr(), right.as_ptr())) || left == right
-}
-
-fn index_first_position_by_key<T, K, F>(items: &[T], key: F) -> BTreeMap<K, usize>
-where
-    K: Ord,
-    F: Fn(&T) -> K,
-{
-    let mut indexed = BTreeMap::new();
-    for (index, item) in items.iter().enumerate() {
-        indexed.entry(key(item)).or_insert(index);
-    }
-    indexed
 }
 
 fn query_plan_units_by_identity(
@@ -516,10 +504,12 @@ pub(crate) fn build_pcs_fri_transcript_values_from_trace_segment_refs_with_timin
                 unit_index: input.unit_index,
             },
         )? as usize;
+        validate_material_segment_id(input.material_segment)?;
         let witness_identity = WitnessCommitmentSegmentIdentity {
             unit_index: unit_index_u32,
             trace_instance_index: input.trace_instance_index,
         };
+        validate_evaluation_segment_id(input.evaluation_segment)?;
 
         let material = material_cache
             .unit_by_index(input.material_segment, unit_index_u32)?
@@ -805,6 +795,34 @@ pub fn build_pcs_fri_opening_segment_from_trace_segments(
     .map_err(|source| ProvePcsFriOpeningTraceSegmentError::Opening {
         source: Box::new(source),
     })
+}
+
+fn validate_material_segment_id(
+    segment: &ProofSegment,
+) -> Result<(), ProvePcsFriTranscriptTraceValuesError> {
+    if segment.id == PCS_MATERIAL_MANIFEST_SEGMENT_ID {
+        Ok(())
+    } else {
+        Err(
+            ProvePcsFriTranscriptTraceValuesError::InvalidMaterialSegmentId {
+                segment_id: segment.id,
+            },
+        )
+    }
+}
+
+fn validate_evaluation_segment_id(
+    segment: &ProofSegment,
+) -> Result<(), ProvePcsFriTranscriptTraceValuesError> {
+    if segment.id == PCS_EVALUATION_SEGMENT_ID {
+        Ok(())
+    } else {
+        Err(
+            ProvePcsFriTranscriptTraceValuesError::InvalidEvaluationSegmentId {
+                segment_id: segment.id,
+            },
+        )
+    }
 }
 
 fn root_from_words(words: [u64; 4]) -> Result<[Felt; 4], FieldError> {
