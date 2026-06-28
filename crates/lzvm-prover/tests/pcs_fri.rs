@@ -556,6 +556,7 @@ fn builds_duplicate_fri_queries_from_cached_rows_without_changing_shape() {
         },
     )
     .expect("FRI transcript commitments should build");
+    let fold_challenges = commitments.challenges.clone();
     let direct = build_pcs_fri_opening_segment(
         &schedule,
         &query_segment,
@@ -585,6 +586,23 @@ fn builds_duplicate_fri_queries_from_cached_rows_without_changing_shape() {
         assert_eq!(layer.queries.len(), query_rows.len());
         assert_eq!(layer.queries[0], layer.queries[1]);
     }
+    let segments = [query_segment, direct];
+    let query_plan = load_pcs_query_plan_from_segments(&segments).expect("query plan should load");
+    let opening =
+        load_pcs_fri_opening_segment_from_segments(&segments).expect("FRI opening should load");
+    validate_pcs_fri_opening_segments(&[unit.clone()], &segments)
+        .expect("duplicate-row FRI opening segment should validate");
+    validate_pcs_fri_opening_folds_from_units(
+        &[unit],
+        &query_plan.units,
+        &opening.units,
+        &[PcsTranscriptUnitChallenges {
+            unit_index: 0,
+            trace_instance_index: 0,
+            challenges: fold_challenges,
+        }],
+    )
+    .expect("duplicate-row FRI opening folds should validate");
 }
 
 #[test]
