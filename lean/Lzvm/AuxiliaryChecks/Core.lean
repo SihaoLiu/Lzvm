@@ -521,6 +521,13 @@ structure ProofArtifactFinishTimingSummary where
   finishWitnessOpeningRowValuesByteCount : Nat
   finishWitnessOpeningPathMilliseconds : Nat
   finishFriOpeningMilliseconds : Nat
+  finishFriOpeningUnitBuildMilliseconds : Nat
+  finishFriOpeningLayerTreeMilliseconds : Nat
+  finishFriOpeningQueryMilliseconds : Nat
+  finishFriOpeningFoldMilliseconds : Nat
+  finishFriOpeningUnitCount : Nat
+  finishFriOpeningLayerCount : Nat
+  finishFriOpeningQueryCount : Nat
   finishFriTranscriptUnitBuildMilliseconds : Nat
   finishFriTranscriptLayerTreeMilliseconds : Nat
   finishFriTranscriptFoldMilliseconds : Nat

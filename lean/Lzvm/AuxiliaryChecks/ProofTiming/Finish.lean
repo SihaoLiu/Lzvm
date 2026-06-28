@@ -250,7 +250,10 @@ theorem proof_artifact_finish_aggregate_timing_acceptance_sound
       witnessOpeningRowDedupInputRowCount witnessOpeningRowDedupUniqueRowCount
       witnessOpeningRowDedupElidedRowCount
       descriptorUploadByteCount descriptorUploadWordCount descriptorUploadRowCount
-      friOpeningMilliseconds friTranscriptUnitBuildMilliseconds
+      friOpeningMilliseconds friOpeningUnitBuildMilliseconds
+      friOpeningLayerTreeMilliseconds friOpeningQueryMilliseconds
+      friOpeningFoldMilliseconds friOpeningUnitCount friOpeningLayerCount
+      friOpeningQueryCount friTranscriptUnitBuildMilliseconds
       friTranscriptLayerTreeMilliseconds friTranscriptFoldMilliseconds
       friTranscriptUnitCount friTranscriptLayerCount proofEncodeMilliseconds
       contributionSegmentMilliseconds contributionVerifyMilliseconds
@@ -290,6 +293,13 @@ theorem proof_artifact_finish_aggregate_timing_acceptance_sound
             finishWitnessExternalSourceDescriptorUploadWordCount := descriptorUploadWordCount
             finishWitnessExternalSourceDescriptorUploadRowCount := descriptorUploadRowCount
             finishFriOpeningMilliseconds := friOpeningMilliseconds
+            finishFriOpeningUnitBuildMilliseconds := friOpeningUnitBuildMilliseconds
+            finishFriOpeningLayerTreeMilliseconds := friOpeningLayerTreeMilliseconds
+            finishFriOpeningQueryMilliseconds := friOpeningQueryMilliseconds
+            finishFriOpeningFoldMilliseconds := friOpeningFoldMilliseconds
+            finishFriOpeningUnitCount := friOpeningUnitCount
+            finishFriOpeningLayerCount := friOpeningLayerCount
+            finishFriOpeningQueryCount := friOpeningQueryCount
             finishFriTranscriptUnitBuildMilliseconds := friTranscriptUnitBuildMilliseconds
             finishFriTranscriptLayerTreeMilliseconds := friTranscriptLayerTreeMilliseconds
             finishFriTranscriptFoldMilliseconds := friTranscriptFoldMilliseconds
@@ -337,6 +347,13 @@ theorem proof_artifact_finish_aggregate_timing_acceptance_sound
         finishWitnessExternalSourceDescriptorUploadWordCount := descriptorUploadWordCount
         finishWitnessExternalSourceDescriptorUploadRowCount := descriptorUploadRowCount
         finishFriOpeningMilliseconds := friOpeningMilliseconds
+        finishFriOpeningUnitBuildMilliseconds := friOpeningUnitBuildMilliseconds
+        finishFriOpeningLayerTreeMilliseconds := friOpeningLayerTreeMilliseconds
+        finishFriOpeningQueryMilliseconds := friOpeningQueryMilliseconds
+        finishFriOpeningFoldMilliseconds := friOpeningFoldMilliseconds
+        finishFriOpeningUnitCount := friOpeningUnitCount
+        finishFriOpeningLayerCount := friOpeningLayerCount
+        finishFriOpeningQueryCount := friOpeningQueryCount
         finishFriTranscriptUnitBuildMilliseconds := friTranscriptUnitBuildMilliseconds
         finishFriTranscriptLayerTreeMilliseconds := friTranscriptLayerTreeMilliseconds
         finishFriTranscriptFoldMilliseconds := friTranscriptFoldMilliseconds

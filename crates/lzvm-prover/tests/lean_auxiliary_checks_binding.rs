@@ -140,6 +140,9 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
     let proof_batch_runner_path = crate_root.join("../../scripts/run-proof-timing-batch.py");
     let proof_batch_runner_source =
         std::fs::read_to_string(&proof_batch_runner_path).expect("proof batch runner should read");
+    let proof_timing_keys_path = crate_root.join("../../scripts/proof_timing_keys.py");
+    let proof_timing_keys_source =
+        std::fs::read_to_string(&proof_timing_keys_path).expect("proof timing keys should read");
     let lean_source = [
         auxiliary_source.as_str(),
         auxiliary_all_source.as_str(),
@@ -2903,6 +2906,12 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "summary.proofTimingBatch",
         ],
     );
+    assert!(
+        proof_batch_runner_source
+            .contains("from proof_timing_keys import TIMING_SUMMARY_REQUIRED_KEYS")
+            && proof_batch_runner_source.contains("key for key in TIMING_SUMMARY_REQUIRED_KEYS"),
+        "proof timing batch runner should gate summaries through the shared required-key source"
+    );
     for (lean_field, runner_key) in [
         ("smallRunCount", "\"small_run_count\""),
         ("largeRunCount", "\"large_run_count\""),
@@ -2930,6 +2939,89 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         assert!(
             lean_source.contains(lean_field) && proof_batch_runner_source.contains(runner_key),
             "Lean proof timing batch field {lean_field} should align with runner key {runner_key}"
+        );
+    }
+    for (lean_field, timing_key) in [
+        (
+            "finishWitnessOpeningRowDedupInputRowCount",
+            "\"timing_finish_witness_opening_row_dedup_input_rows\"",
+        ),
+        (
+            "finishWitnessOpeningRowDedupUniqueRowCount",
+            "\"timing_finish_witness_opening_row_dedup_unique_rows\"",
+        ),
+        (
+            "finishWitnessOpeningRowDedupElidedRowCount",
+            "\"timing_finish_witness_opening_row_dedup_elided_rows\"",
+        ),
+        (
+            "finishFriOpeningMilliseconds",
+            "\"timing_finish_fri_opening_ms\"",
+        ),
+        (
+            "finishFriOpeningUnitBuildMilliseconds",
+            "\"timing_finish_fri_opening_unit_build_ms\"",
+        ),
+        (
+            "finishFriOpeningLayerTreeMilliseconds",
+            "\"timing_finish_fri_opening_layer_tree_ms\"",
+        ),
+        (
+            "finishFriOpeningQueryMilliseconds",
+            "\"timing_finish_fri_opening_query_ms\"",
+        ),
+        (
+            "finishFriOpeningFoldMilliseconds",
+            "\"timing_finish_fri_opening_fold_ms\"",
+        ),
+        (
+            "finishFriOpeningUnitCount",
+            "\"timing_finish_fri_opening_unit_count\"",
+        ),
+        (
+            "finishFriOpeningLayerCount",
+            "\"timing_finish_fri_opening_layer_count\"",
+        ),
+        (
+            "finishFriOpeningQueryCount",
+            "\"timing_finish_fri_opening_query_count\"",
+        ),
+        (
+            "finishFriTranscriptUnitBuildMilliseconds",
+            "\"timing_finish_fri_transcript_unit_build_ms\"",
+        ),
+        (
+            "finishFriTranscriptLayerTreeMilliseconds",
+            "\"timing_finish_fri_transcript_layer_tree_ms\"",
+        ),
+        (
+            "finishFriTranscriptFoldMilliseconds",
+            "\"timing_finish_fri_transcript_fold_ms\"",
+        ),
+        (
+            "finishFriTranscriptUnitCount",
+            "\"timing_finish_fri_transcript_unit_count\"",
+        ),
+        (
+            "finishFriTranscriptLayerCount",
+            "\"timing_finish_fri_transcript_layer_count\"",
+        ),
+        (
+            "finishContributionSegmentMilliseconds",
+            "\"timing_finish_contribution_segment_ms\"",
+        ),
+        (
+            "finishContributionVerifyMilliseconds",
+            "\"timing_finish_contribution_verify_ms\"",
+        ),
+        (
+            "finishContributionChallengeMilliseconds",
+            "\"timing_finish_contribution_challenge_ms\"",
+        ),
+    ] {
+        assert!(
+            lean_source.contains(lean_field) && proof_timing_keys_source.contains(timing_key),
+            "Lean proof finish timing field {lean_field} should align with required key {timing_key}"
         );
     }
     for line_name in [
@@ -3067,6 +3159,13 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         "finishWitnessOpeningRowValuesByteCount",
         "finishWitnessOpeningPathMilliseconds",
         "finishFriOpeningMilliseconds",
+        "finishFriOpeningUnitBuildMilliseconds",
+        "finishFriOpeningLayerTreeMilliseconds",
+        "finishFriOpeningQueryMilliseconds",
+        "finishFriOpeningFoldMilliseconds",
+        "finishFriOpeningUnitCount",
+        "finishFriOpeningLayerCount",
+        "finishFriOpeningQueryCount",
         "finishFriTranscriptUnitBuildMilliseconds",
         "finishFriTranscriptLayerTreeMilliseconds",
         "finishFriTranscriptFoldMilliseconds",

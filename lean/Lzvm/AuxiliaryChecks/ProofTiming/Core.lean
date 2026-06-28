@@ -864,7 +864,10 @@ theorem proof_artifact_finish_top_level_timing_acceptance_sound
     (assumptions : AssumptionBundle system)
     (summary : ProofArtifactFinishTimingSummary)
     (queryPlanMilliseconds constantOpeningMilliseconds witnessOpeningMilliseconds
-      friOpeningMilliseconds friTranscriptUnitBuildMilliseconds
+      friOpeningMilliseconds friOpeningUnitBuildMilliseconds
+      friOpeningLayerTreeMilliseconds friOpeningQueryMilliseconds
+      friOpeningFoldMilliseconds friOpeningUnitCount friOpeningLayerCount
+      friOpeningQueryCount friTranscriptUnitBuildMilliseconds
       friTranscriptLayerTreeMilliseconds friTranscriptFoldMilliseconds proofEncodeMilliseconds
       contributionSegmentMilliseconds contributionVerifyMilliseconds
       contributionChallengeMilliseconds : Nat) :
@@ -877,6 +880,13 @@ theorem proof_artifact_finish_top_level_timing_acceptance_sound
             finishConstantOpeningMilliseconds := constantOpeningMilliseconds
             finishWitnessOpeningMilliseconds := witnessOpeningMilliseconds
             finishFriOpeningMilliseconds := friOpeningMilliseconds
+            finishFriOpeningUnitBuildMilliseconds := friOpeningUnitBuildMilliseconds
+            finishFriOpeningLayerTreeMilliseconds := friOpeningLayerTreeMilliseconds
+            finishFriOpeningQueryMilliseconds := friOpeningQueryMilliseconds
+            finishFriOpeningFoldMilliseconds := friOpeningFoldMilliseconds
+            finishFriOpeningUnitCount := friOpeningUnitCount
+            finishFriOpeningLayerCount := friOpeningLayerCount
+            finishFriOpeningQueryCount := friOpeningQueryCount
             finishFriTranscriptUnitBuildMilliseconds := friTranscriptUnitBuildMilliseconds
             finishFriTranscriptLayerTreeMilliseconds := friTranscriptLayerTreeMilliseconds
             finishFriTranscriptFoldMilliseconds := friTranscriptFoldMilliseconds
@@ -896,6 +906,13 @@ theorem proof_artifact_finish_top_level_timing_acceptance_sound
         finishConstantOpeningMilliseconds := constantOpeningMilliseconds
         finishWitnessOpeningMilliseconds := witnessOpeningMilliseconds
         finishFriOpeningMilliseconds := friOpeningMilliseconds
+        finishFriOpeningUnitBuildMilliseconds := friOpeningUnitBuildMilliseconds
+        finishFriOpeningLayerTreeMilliseconds := friOpeningLayerTreeMilliseconds
+        finishFriOpeningQueryMilliseconds := friOpeningQueryMilliseconds
+        finishFriOpeningFoldMilliseconds := friOpeningFoldMilliseconds
+        finishFriOpeningUnitCount := friOpeningUnitCount
+        finishFriOpeningLayerCount := friOpeningLayerCount
+        finishFriOpeningQueryCount := friOpeningQueryCount
         finishFriTranscriptUnitBuildMilliseconds := friTranscriptUnitBuildMilliseconds
         finishFriTranscriptLayerTreeMilliseconds := friTranscriptLayerTreeMilliseconds
         finishFriTranscriptFoldMilliseconds := friTranscriptFoldMilliseconds
@@ -912,7 +929,10 @@ theorem proof_artifact_finish_top_level_timing_acceptance_verifier_core_contract
     (assumptions : AssumptionBundle system)
     (summary : ProofArtifactFinishTimingSummary)
     (queryPlanMilliseconds constantOpeningMilliseconds witnessOpeningMilliseconds
-      friOpeningMilliseconds friTranscriptUnitBuildMilliseconds
+      friOpeningMilliseconds friOpeningUnitBuildMilliseconds
+      friOpeningLayerTreeMilliseconds friOpeningQueryMilliseconds
+      friOpeningFoldMilliseconds friOpeningUnitCount friOpeningLayerCount
+      friOpeningQueryCount friTranscriptUnitBuildMilliseconds
       friTranscriptLayerTreeMilliseconds friTranscriptFoldMilliseconds proofEncodeMilliseconds
       contributionSegmentMilliseconds contributionVerifyMilliseconds
       contributionChallengeMilliseconds : Nat) :
@@ -925,6 +945,13 @@ theorem proof_artifact_finish_top_level_timing_acceptance_verifier_core_contract
             finishConstantOpeningMilliseconds := constantOpeningMilliseconds
             finishWitnessOpeningMilliseconds := witnessOpeningMilliseconds
             finishFriOpeningMilliseconds := friOpeningMilliseconds
+            finishFriOpeningUnitBuildMilliseconds := friOpeningUnitBuildMilliseconds
+            finishFriOpeningLayerTreeMilliseconds := friOpeningLayerTreeMilliseconds
+            finishFriOpeningQueryMilliseconds := friOpeningQueryMilliseconds
+            finishFriOpeningFoldMilliseconds := friOpeningFoldMilliseconds
+            finishFriOpeningUnitCount := friOpeningUnitCount
+            finishFriOpeningLayerCount := friOpeningLayerCount
+            finishFriOpeningQueryCount := friOpeningQueryCount
             finishFriTranscriptUnitBuildMilliseconds := friTranscriptUnitBuildMilliseconds
             finishFriTranscriptLayerTreeMilliseconds := friTranscriptLayerTreeMilliseconds
             finishFriTranscriptFoldMilliseconds := friTranscriptFoldMilliseconds
@@ -944,6 +971,13 @@ theorem proof_artifact_finish_top_level_timing_acceptance_verifier_core_contract
         finishConstantOpeningMilliseconds := constantOpeningMilliseconds
         finishWitnessOpeningMilliseconds := witnessOpeningMilliseconds
         finishFriOpeningMilliseconds := friOpeningMilliseconds
+        finishFriOpeningUnitBuildMilliseconds := friOpeningUnitBuildMilliseconds
+        finishFriOpeningLayerTreeMilliseconds := friOpeningLayerTreeMilliseconds
+        finishFriOpeningQueryMilliseconds := friOpeningQueryMilliseconds
+        finishFriOpeningFoldMilliseconds := friOpeningFoldMilliseconds
+        finishFriOpeningUnitCount := friOpeningUnitCount
+        finishFriOpeningLayerCount := friOpeningLayerCount
+        finishFriOpeningQueryCount := friOpeningQueryCount
         finishFriTranscriptUnitBuildMilliseconds := friTranscriptUnitBuildMilliseconds
         finishFriTranscriptLayerTreeMilliseconds := friTranscriptLayerTreeMilliseconds
         finishFriTranscriptFoldMilliseconds := friTranscriptFoldMilliseconds
