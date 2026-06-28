@@ -761,6 +761,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         "runtime_performance_observation_gpu_run_options_acceptance_core_and_sound",
         "runtime_performance_observation_cuda_backend_acceptance_core_and_sound",
         "runtime_performance_observation_cuda_allocator_timing_acceptance_core_and_sound",
+        "runtime_performance_observation_finish_timing_acceptance_core_and_sound",
     ] {
         lean_binding::assert_theorem_prefix_contains(
             &runtime_performance_source,
@@ -4843,6 +4844,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "runtime_performance_observation_projects_proof_artifact_finish_timing",
             "runtime_performance_observation_finish_timing_acceptance_sound",
             "runtime_performance_observation_finish_timing_acceptance_verifier_core_contract",
+            "runtime_performance_observation_finish_timing_acceptance_core_and_sound",
             "runtime_performance_observation_projects_proof_timing_batch",
             "runtime_performance_observation_proof_timing_batch_acceptance_sound",
             "runtime_performance_observation_proof_timing_batch_acceptance_verifier_core_contract",
