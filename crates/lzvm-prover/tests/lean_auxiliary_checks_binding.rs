@@ -1049,7 +1049,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "sound_witness_implies_verifier_core_contract",
         ],
     );
-    for (theorem, body_terms) in [
+    for (theorem, omitted_terms) in [
         (
             "timing_observation_acceptance_core_and_sound",
             [
@@ -1073,11 +1073,19 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
                 "SoundWitness system publicInput proof",
             ],
         );
-        lean_binding::assert_theorem_body_contains(&timing_core_source, theorem, &body_terms);
+        lean_binding::assert_theorem_body_contains(
+            &timing_core_source,
+            theorem,
+            &["ignored_metadata_acceptance_core_and_sound"],
+        );
         lean_binding::assert_theorem_body_omits(
             &timing_core_source,
             theorem,
-            &["sound_witness_implies_verifier_core_contract"],
+            &[
+                omitted_terms[0],
+                omitted_terms[1],
+                "sound_witness_implies_verifier_core_contract",
+            ],
         );
     }
     for theorem in [
