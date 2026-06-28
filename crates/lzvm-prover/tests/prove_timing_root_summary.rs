@@ -372,6 +372,11 @@ fn prove_timing_root_summary_reports_fri_transcript_and_contribution_work() {
     let mut lines = stdout.lines();
     let headers = parse_csv_line(lines.next().expect("summary should include a header"));
     let row = parse_csv_line(lines.next().expect("summary should include a data row"));
+    assert_eq!(
+        headers.len(),
+        row.len(),
+        "summary header and row should have matching column counts"
+    );
     let value = |name: &str| -> &str {
         let index = headers
             .iter()
@@ -398,6 +403,52 @@ fn prove_timing_root_summary_reports_fri_transcript_and_contribution_work() {
     assert_eq!(
         value("final_proof_timing_hint"),
         "profile_final_proof_contribution"
+    );
+}
+
+#[test]
+fn prove_timing_root_summary_reports_final_proof_hint_branches() {
+    let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let script_path = crate_root.join("../../scripts/prove-timing-root-summary.py");
+    let output = Command::new("python3")
+        .env("PYTHONDONTWRITEBYTECODE", "1")
+        .arg("-c")
+        .arg(
+            r#"
+import importlib.util
+import sys
+
+spec = importlib.util.spec_from_file_location("root_summary", sys.argv[1])
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+for case in [
+    (100, 0, 0, 0),
+    (1000, 10, 4, 18),
+    (100, 10, 10, 10),
+    (0, 1, 2, 3),
+]:
+    print(module.final_proof_timing_hint(*case))
+"#,
+        )
+        .arg(&script_path)
+        .output()
+        .expect("prove timing root summary helper should run");
+
+    assert!(
+        output.status.success(),
+        "prove timing root summary helper should pass: stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    let lines = stdout.lines().collect::<Vec<_>>();
+    assert_eq!(
+        lines,
+        [
+            "none",
+            "final_proof_not_dominant",
+            "profile_final_proof_fri_opening",
+            "profile_final_proof_contribution",
+        ]
     );
 }
 
