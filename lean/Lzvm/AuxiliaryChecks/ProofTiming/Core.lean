@@ -1305,6 +1305,31 @@ theorem proof_artifact_finish_timing_acceptance_verifier_core_contract
       proof
       observed
 
+theorem proof_artifact_finish_timing_acceptance_core_and_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : Option ProofArtifactFinishTimingSummary) :
+    forall publicInput proof,
+      ProofArtifactFinishTimingObservedAcceptance system summary publicInput proof ->
+        RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof observed
+  have core :=
+    proof_artifact_finish_timing_acceptance_verifier_core_contract
+      assumptions
+      summary
+      publicInput
+      proof
+      observed
+  have sound :=
+    proof_artifact_finish_timing_acceptance_sound
+      assumptions
+      summary
+      publicInput
+      proof
+      observed
+  exact And.intro core sound
+
 theorem proof_artifact_finish_timing_some_summary_acceptance_sound
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
@@ -1329,6 +1354,31 @@ theorem proof_artifact_finish_timing_some_summary_acceptance_verifier_core_contr
       publicInput
       proof
       observed
+
+theorem proof_artifact_finish_timing_some_summary_acceptance_core_and_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : ProofArtifactFinishTimingSummary) :
+    forall publicInput proof,
+      ProofArtifactFinishTimingObservedAcceptance system (some summary) publicInput proof ->
+        RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof observed
+  have core :=
+    proof_artifact_finish_timing_some_summary_acceptance_verifier_core_contract
+      assumptions
+      summary
+      publicInput
+      proof
+      observed
+  have sound :=
+    proof_artifact_finish_timing_some_summary_acceptance_sound
+      assumptions
+      summary
+      publicInput
+      proof
+      observed
+  exact And.intro core sound
 
 theorem proof_artifact_finish_top_level_timing_acceptance_sound
     {system : VerifierModel}
@@ -1469,6 +1519,105 @@ theorem proof_artifact_finish_top_level_timing_acceptance_verifier_core_contract
       publicInput
       proof
       observed
+
+theorem proof_artifact_finish_top_level_timing_acceptance_core_and_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : ProofArtifactFinishTimingSummary)
+    (queryPlanMilliseconds constantOpeningMilliseconds witnessOpeningMilliseconds
+      friOpeningMilliseconds friOpeningUnitBuildMilliseconds
+      friOpeningLayerTreeMilliseconds friOpeningQueryMilliseconds
+      friOpeningFoldMilliseconds friOpeningUnitCount friOpeningLayerCount
+      friOpeningQueryCount friTranscriptUnitBuildMilliseconds
+      friTranscriptLayerTreeMilliseconds friTranscriptFoldMilliseconds
+      friTranscriptUnitCount friTranscriptLayerCount proofEncodeMilliseconds
+      contributionSegmentMilliseconds contributionVerifyMilliseconds
+      contributionChallengeMilliseconds : Nat) :
+    forall publicInput proof,
+      ProofArtifactFinishTimingObservedAcceptance
+        system
+        (some
+          { summary with
+            finishQueryPlanMilliseconds := queryPlanMilliseconds
+            finishConstantOpeningMilliseconds := constantOpeningMilliseconds
+            finishWitnessOpeningMilliseconds := witnessOpeningMilliseconds
+            finishFriOpeningMilliseconds := friOpeningMilliseconds
+            finishFriOpeningUnitBuildMilliseconds := friOpeningUnitBuildMilliseconds
+            finishFriOpeningLayerTreeMilliseconds := friOpeningLayerTreeMilliseconds
+            finishFriOpeningQueryMilliseconds := friOpeningQueryMilliseconds
+            finishFriOpeningFoldMilliseconds := friOpeningFoldMilliseconds
+            finishFriOpeningUnitCount := friOpeningUnitCount
+            finishFriOpeningLayerCount := friOpeningLayerCount
+            finishFriOpeningQueryCount := friOpeningQueryCount
+            finishFriTranscriptUnitBuildMilliseconds := friTranscriptUnitBuildMilliseconds
+            finishFriTranscriptLayerTreeMilliseconds := friTranscriptLayerTreeMilliseconds
+            finishFriTranscriptFoldMilliseconds := friTranscriptFoldMilliseconds
+            finishFriTranscriptUnitCount := friTranscriptUnitCount
+            finishFriTranscriptLayerCount := friTranscriptLayerCount
+            finishProofEncodeMilliseconds := proofEncodeMilliseconds
+            finishContributionSegmentMilliseconds := contributionSegmentMilliseconds
+            finishContributionVerifyMilliseconds := contributionVerifyMilliseconds
+            finishContributionChallengeMilliseconds := contributionChallengeMilliseconds })
+        publicInput
+        proof ->
+        RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof observed
+  have core :=
+    proof_artifact_finish_top_level_timing_acceptance_verifier_core_contract
+      assumptions
+      summary
+      queryPlanMilliseconds
+      constantOpeningMilliseconds
+      witnessOpeningMilliseconds
+      friOpeningMilliseconds
+      friOpeningUnitBuildMilliseconds
+      friOpeningLayerTreeMilliseconds
+      friOpeningQueryMilliseconds
+      friOpeningFoldMilliseconds
+      friOpeningUnitCount
+      friOpeningLayerCount
+      friOpeningQueryCount
+      friTranscriptUnitBuildMilliseconds
+      friTranscriptLayerTreeMilliseconds
+      friTranscriptFoldMilliseconds
+      friTranscriptUnitCount
+      friTranscriptLayerCount
+      proofEncodeMilliseconds
+      contributionSegmentMilliseconds
+      contributionVerifyMilliseconds
+      contributionChallengeMilliseconds
+      publicInput
+      proof
+      observed
+  have sound :=
+    proof_artifact_finish_top_level_timing_acceptance_sound
+      assumptions
+      summary
+      queryPlanMilliseconds
+      constantOpeningMilliseconds
+      witnessOpeningMilliseconds
+      friOpeningMilliseconds
+      friOpeningUnitBuildMilliseconds
+      friOpeningLayerTreeMilliseconds
+      friOpeningQueryMilliseconds
+      friOpeningFoldMilliseconds
+      friOpeningUnitCount
+      friOpeningLayerCount
+      friOpeningQueryCount
+      friTranscriptUnitBuildMilliseconds
+      friTranscriptLayerTreeMilliseconds
+      friTranscriptFoldMilliseconds
+      friTranscriptUnitCount
+      friTranscriptLayerCount
+      proofEncodeMilliseconds
+      contributionSegmentMilliseconds
+      contributionVerifyMilliseconds
+      contributionChallengeMilliseconds
+      publicInput
+      proof
+      observed
+  exact And.intro core sound
 
 theorem proof_artifact_finish_witness_opening_shape_acceptance_sound
     {system : VerifierModel}
