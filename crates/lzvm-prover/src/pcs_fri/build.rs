@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::time::Instant;
 
 use lzvm_artifacts::pcs_fri_segment::{
@@ -16,31 +17,6 @@ use crate::pcs_transcript::{
     absorb_extension_values, build_pcs_transcript_prefix, PcsTranscriptPrefixInputs,
 };
 use crate::ProveUnitSchedule;
-
-enum CurrentFriLayerValues<'a> {
-    Borrowed(&'a [Ext3]),
-    Owned(Vec<Ext3>),
-}
-
-impl CurrentFriLayerValues<'_> {
-    fn as_slice(&self) -> &[Ext3] {
-        match self {
-            Self::Borrowed(values) => values,
-            Self::Owned(values) => values,
-        }
-    }
-
-    fn replace_with_owned(&mut self, values: Vec<Ext3>) {
-        *self = Self::Owned(values);
-    }
-
-    fn into_vec(self) -> Vec<Ext3> {
-        match self {
-            Self::Borrowed(values) => values.to_vec(),
-            Self::Owned(values) => values,
-        }
-    }
-}
 
 pub fn build_pcs_fri_transcript_commitments(
     schedule: &ProveUnitSchedule,
@@ -85,14 +61,14 @@ pub fn build_pcs_fri_transcript_commitments_with_timing(
 
     let arity = usize::try_from(schedule.merkle_tree_arity)
         .map_err(|_| PcsFriOpeningBuildError::LengthOverflow)?;
-    let mut current = CurrentFriLayerValues::Borrowed(request.polynomial);
+    let mut current = Cow::Borrowed(request.polynomial);
     let mut current_bits = schedule.fri_layers[0].input_bits;
     let expected_initial_len = build_domain_size(current_bits)?;
-    if current.as_slice().len() != expected_initial_len {
+    if current.as_ref().len() != expected_initial_len {
         return Err(PcsFriOpeningBuildError::PolynomialLengthMismatch {
             layer_index: 0,
             expected: expected_initial_len,
-            found: current.as_slice().len(),
+            found: current.as_ref().len(),
         }
         .into());
     }
@@ -131,7 +107,7 @@ pub fn build_pcs_fri_transcript_commitments_with_timing(
         }
 
         let grouped_values =
-            group_fri_layer_values(layer_index, current.as_slice(), output_size, folding_factor)?;
+            group_fri_layer_values(layer_index, current.as_ref(), output_size, folding_factor)?;
         let tree = record_fri_transcript_duration(
             timing.as_deref_mut(),
             |timing, duration| timing.add_transcript_layer_tree(duration),
@@ -167,7 +143,7 @@ pub fn build_pcs_fri_transcript_commitments_with_timing(
             grouped_values,
             tree,
         });
-        current.replace_with_owned(next);
+        current = Cow::Owned(next);
         current_bits = layer.output_bits;
     }
 
@@ -183,7 +159,7 @@ pub fn build_pcs_fri_transcript_commitments_with_timing(
         &mut transcript,
         request.arity,
         request.hash_values,
-        current.as_slice(),
+        current.as_ref(),
     )?;
     let final_query_challenge = transcript.get_field();
     challenges.push(final_query_challenge);
@@ -194,7 +170,7 @@ pub fn build_pcs_fri_transcript_commitments_with_timing(
     Ok(PcsFriTranscriptCommitments {
         challenges,
         layer_roots,
-        final_polynomial: current.into_vec(),
+        final_polynomial: current.into_owned(),
         final_query_challenge,
         layer_materials,
     })
@@ -242,14 +218,14 @@ pub fn build_pcs_fri_opening_unit_with_timing(
 
     let arity = usize::try_from(schedule.merkle_tree_arity)
         .map_err(|_| PcsFriOpeningBuildError::LengthOverflow)?;
-    let mut current = CurrentFriLayerValues::Borrowed(request.polynomial);
+    let mut current = Cow::Borrowed(request.polynomial);
     let mut current_bits = schedule.fri_layers[0].input_bits;
     let expected_initial_len = build_domain_size(current_bits)?;
-    if current.as_slice().len() != expected_initial_len {
+    if current.as_ref().len() != expected_initial_len {
         return Err(PcsFriOpeningBuildError::PolynomialLengthMismatch {
             layer_index: 0,
             expected: expected_initial_len,
-            found: current.as_slice().len(),
+            found: current.as_ref().len(),
         });
     }
 
@@ -283,7 +259,7 @@ pub fn build_pcs_fri_opening_unit_with_timing(
         }
 
         let grouped_values =
-            group_fri_layer_values(layer_index, current.as_slice(), output_size, folding_factor)?;
+            group_fri_layer_values(layer_index, current.as_ref(), output_size, folding_factor)?;
         let tree = record_fri_opening_duration(
             timing.as_deref_mut(),
             |timing, duration| timing.add_layer_tree(duration),
@@ -353,7 +329,7 @@ pub fn build_pcs_fri_opening_unit_with_timing(
                 )
             },
         )?;
-        current.replace_with_owned(next);
+        current = Cow::Owned(next);
         current_bits = layer.output_bits;
     }
 
@@ -369,7 +345,7 @@ pub fn build_pcs_fri_opening_unit_with_timing(
         trace_instance_index: request.trace_instance_index,
         layers,
         final_polynomial: current
-            .as_slice()
+            .as_ref()
             .iter()
             .map(|value| value.to_u64s())
             .collect(),
