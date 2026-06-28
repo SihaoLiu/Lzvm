@@ -62,6 +62,31 @@ theorem timing_observation_acceptance_verifier_core_contract
       proof
       observed
 
+theorem timing_observation_acceptance_core_and_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (observations : List TimingObservation) :
+    forall publicInput proof,
+      TimingObservedAcceptance system observations publicInput proof ->
+        RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof observed
+  have core :=
+    timing_observation_acceptance_verifier_core_contract
+      assumptions
+      observations
+      publicInput
+      proof
+      observed
+  have sound :=
+    timing_observation_acceptance_sound
+      assumptions
+      observations
+      publicInput
+      proof
+      observed
+  exact And.intro core sound
+
 def GuestPcTraceTimingObservedAcceptance
     (system : VerifierModel)
     (summary : Option GuestPcTraceTimingSummary)
@@ -125,5 +150,30 @@ theorem guest_pc_trace_timing_some_summary_acceptance_verifier_core_contract
       publicInput
       proof
       observed
+
+theorem guest_pc_trace_timing_acceptance_core_and_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : Option GuestPcTraceTimingSummary) :
+    forall publicInput proof,
+      GuestPcTraceTimingObservedAcceptance system summary publicInput proof ->
+        RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof observed
+  have core :=
+    guest_pc_trace_timing_acceptance_verifier_core_contract
+      assumptions
+      summary
+      publicInput
+      proof
+      observed
+  have sound :=
+    guest_pc_trace_timing_acceptance_sound
+      assumptions
+      summary
+      publicInput
+      proof
+      observed
+  exact And.intro core sound
 
 end Lzvm
