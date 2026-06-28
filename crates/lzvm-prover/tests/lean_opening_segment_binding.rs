@@ -27,6 +27,12 @@ fn lean_opening_segment_binding_exports_core_contract_projection() {
     let fri_segment_path = crate_root.join("../lzvm-artifacts/src/pcs_fri_segment.rs");
     let fri_segment_source =
         std::fs::read_to_string(&fri_segment_path).expect("FRI segment source should read");
+    let pcs_fri_validation_path = crate_root.join("src/pcs_fri/validation.rs");
+    let pcs_fri_validation_source = std::fs::read_to_string(&pcs_fri_validation_path)
+        .expect("FRI validation source should read");
+    let pcs_fri_tests_path = crate_root.join("tests/pcs_fri.rs");
+    let pcs_fri_tests_source =
+        std::fs::read_to_string(&pcs_fri_tests_path).expect("FRI tests source should read");
     let constant_opening_query_units_body = rust_function_body(
         &constant_opening_source,
         "pub(crate) fn validate_constant_opening_units_match_query_units_from_segment",
@@ -47,6 +53,18 @@ fn lean_opening_segment_binding_exports_core_contract_projection() {
         rust_function_body(&fri_segment_source, "pub fn parse_pcs_fri_opening_segment");
     let fri_validate_body =
         rust_function_body(&fri_segment_source, "fn validate_pcs_fri_opening_segment");
+    let fri_query_validation_body = rust_function_body(
+        &pcs_fri_validation_source,
+        "fn validate_pcs_fri_opening_units",
+    );
+    let fri_fold_validation_body = rust_function_body(
+        &pcs_fri_validation_source,
+        "pub fn validate_pcs_fri_opening_folds_from_units",
+    );
+    let duplicate_query_test_body = rust_function_body(
+        &pcs_fri_tests_source,
+        "fn builds_duplicate_fri_queries_from_cached_rows_without_changing_shape",
+    );
 
     assert!(
         lean_binding::contains_import(&top_level_source, "Lzvm.OpeningSegmentBinding"),
@@ -60,6 +78,8 @@ fn lean_opening_segment_binding_exports_core_contract_projection() {
             && lean_source.contains("RuntimeFriOpeningSegmentParserBoundary")
             && lean_source.contains("RuntimeFriOpeningSegmentParserContract")
             && lean_source.contains("RuntimeFriFoldTraceIdentityContract")
+            && lean_source.contains("RuntimeFriFoldQueryPlanOrderContract")
+            && lean_source.contains("friFoldQueryPlanOrderPreserved")
             && lean_source.contains("openingUnitTraceIdentityCoverageExact")
             && lean_source.contains("RuntimeVerifierCoreContract system publicInput proof")
             && lean_source.contains("SoundWitness system publicInput proof"),
@@ -112,6 +132,16 @@ fn lean_opening_segment_binding_exports_core_contract_projection() {
             && fri_validate_body.contains("PcsFriOpeningSegmentError::SiblingRootNonCanonical"),
         "Rust FRI opening parser should keep version, root, last-level, and field-canonicality checks represented by Lean"
     );
+    assert!(
+        fri_query_validation_body.contains("layer.queries.iter().zip(query_unit.queries.iter())")
+            && fri_query_validation_body
+                .contains("query.row_index != source_row % output_domain_u64")
+            && fri_fold_validation_body.contains("query_rows: &query_unit.queries")
+            && duplicate_query_test_body
+                .contains("validate_pcs_fri_opening_folds_from_units")
+            && duplicate_query_test_body.contains("assert_eq!(layer.queries[0], layer.queries[1])"),
+        "Rust FRI opening validation should preserve query-plan order through duplicate rows and fold checks"
+    );
     lean_binding::assert_theorem_declarations(
         &lean_source,
         &[
@@ -128,6 +158,7 @@ fn lean_opening_segment_binding_exports_core_contract_projection() {
             "runtime_opening_segment_binding_checked_acceptance_bound_contract",
             "runtime_opening_segment_binding_checked_acceptance_fri_opening_checks",
             "runtime_opening_segment_binding_checked_acceptance_fri_fold_trace_identity_contract",
+            "runtime_opening_segment_binding_checked_acceptance_fri_fold_query_plan_order_contract",
             "runtime_opening_segment_binding_checked_acceptance_fri_parser_contract",
             "runtime_opening_segment_binding_checked_acceptance_pcs_and_fri_without_assumptions",
             "runtime_opening_segment_binding_checked_acceptance_pcs_and_fri",
@@ -305,6 +336,29 @@ fn lean_opening_segment_binding_exports_core_contract_projection() {
         &[
             "runtime_opening_segment_binding_checked_acceptance_evidence",
             "runtime_opening_segment_binding_evidence_implies_fri_fold_trace_identity_contract",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_opening_segment_binding_checked_acceptance_fri_fold_query_plan_order_contract",
+        &[
+            "RuntimeOpeningSegmentBindingCheckedAcceptance",
+            "RuntimeFriFoldQueryPlanOrderContract",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_omits(
+        &lean_source,
+        "runtime_opening_segment_binding_checked_acceptance_fri_fold_query_plan_order_contract",
+        &["AssumptionBundle"],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_opening_segment_binding_checked_acceptance_fri_fold_query_plan_order_contract",
+        &[
+            "validation.openingSegmentBindingAcceptedImpliesQueryPlanBound",
+            "validation.openingSegmentBindingAcceptedImpliesTraceIdentitiesMatch",
+            "validation.openingSegmentBindingAcceptedImpliesFriFoldsValid",
+            "validation.openingSegmentBindingAcceptedImpliesFriFoldQueryPlanOrderPreserved",
         ],
     );
     lean_binding::assert_theorem_prefix_contains(
