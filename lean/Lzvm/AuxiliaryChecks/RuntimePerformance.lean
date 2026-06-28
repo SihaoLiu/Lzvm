@@ -601,6 +601,31 @@ theorem runtime_performance_observation_gpu_run_options_acceptance_verifier_core
         proof
         observed)
 
+theorem runtime_performance_observation_gpu_run_options_acceptance_core_and_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : RuntimePerformanceObservationSummary) :
+    forall publicInput proof,
+      RuntimePerformanceObservedAcceptance system summary publicInput proof ->
+        RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof observed
+  have core :=
+    runtime_performance_observation_gpu_run_options_acceptance_verifier_core_contract
+      assumptions
+      summary
+      publicInput
+      proof
+      observed
+  have sound :=
+    runtime_performance_observation_gpu_run_options_acceptance_sound
+      assumptions
+      summary
+      publicInput
+      proof
+      observed
+  exact And.intro core sound
+
 theorem runtime_performance_observation_projects_cuda_backend
     {system : VerifierModel}
     (summary : RuntimePerformanceObservationSummary) :
