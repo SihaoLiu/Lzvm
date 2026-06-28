@@ -1100,6 +1100,25 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
                 "finishWitnessOpeningPathParentHashLaunchesPerStage := launchesPerStage",
             ][..],
         ),
+        (
+            "proof_artifact_finish_row_values_shape_acceptance_core_and_sound",
+            [
+                "proof_artifact_finish_row_values_shape_acceptance_verifier_core_contract",
+                "proof_artifact_finish_row_values_shape_acceptance_sound",
+            ],
+            &[
+                "finishWitnessOpeningRowValuesMilliseconds := rowValuesMilliseconds",
+                "finishWitnessOpeningRowValueSourceExtendMilliseconds := sourceExtendMilliseconds",
+                "finishWitnessOpeningRowValueSourceDownloadMilliseconds := sourceDownloadMilliseconds",
+                "finishWitnessOpeningRowValueDeviceDownloadMilliseconds := deviceDownloadMilliseconds",
+                "finishWitnessOpeningRowValuesDeviceRowCount := deviceRows",
+                "finishWitnessOpeningRowValuesDeviceDownloadBatchCount := deviceDownloadBatches",
+                "finishWitnessOpeningRowValuesDeviceSingleDownloadCount := deviceSingleDownloads",
+                "finishWitnessOpeningRowValuesSourceRowCount := sourceRows",
+                "finishWitnessOpeningRowValuesWordCount := words",
+                "finishWitnessOpeningRowValuesByteCount := bytes",
+            ][..],
+        ),
     ] {
         lean_binding::assert_theorem_prefix_contains(
             &lean_proof_timing_source,
@@ -4634,6 +4653,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "proof_artifact_finish_path_parent_hash_per_unit_shape_acceptance_core_and_sound",
             "proof_artifact_finish_row_values_shape_acceptance_sound",
             "proof_artifact_finish_row_values_shape_acceptance_verifier_core_contract",
+            "proof_artifact_finish_row_values_shape_acceptance_core_and_sound",
             "proof_artifact_finish_external_source_timing_acceptance_sound",
             "proof_artifact_finish_external_source_timing_acceptance_verifier_core_contract",
             "proof_artifact_finish_witness_opening_subtiming_acceptance_sound",

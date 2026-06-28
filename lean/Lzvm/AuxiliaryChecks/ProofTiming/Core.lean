@@ -2504,5 +2504,73 @@ theorem proof_artifact_finish_row_values_shape_acceptance_verifier_core_contract
       proof
       observed
 
+theorem proof_artifact_finish_row_values_shape_acceptance_core_and_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : ProofArtifactFinishTimingSummary)
+    (rowValuesMilliseconds sourceExtendMilliseconds sourceDownloadMilliseconds
+      deviceDownloadMilliseconds deviceRows deviceDownloadBatches deviceSingleDownloads
+      sourceRows words bytes : Nat) :
+    forall publicInput proof,
+      ProofArtifactFinishTimingObservedAcceptance
+        system
+        (some
+          { summary with
+            finishWitnessOpeningRowValuesMilliseconds := rowValuesMilliseconds
+            finishWitnessOpeningRowValueSourceExtendMilliseconds :=
+              sourceExtendMilliseconds
+            finishWitnessOpeningRowValueSourceDownloadMilliseconds :=
+              sourceDownloadMilliseconds
+            finishWitnessOpeningRowValueDeviceDownloadMilliseconds :=
+              deviceDownloadMilliseconds
+            finishWitnessOpeningRowValuesDeviceRowCount := deviceRows
+            finishWitnessOpeningRowValuesDeviceDownloadBatchCount :=
+              deviceDownloadBatches
+            finishWitnessOpeningRowValuesDeviceSingleDownloadCount :=
+              deviceSingleDownloads
+            finishWitnessOpeningRowValuesSourceRowCount := sourceRows
+            finishWitnessOpeningRowValuesWordCount := words
+            finishWitnessOpeningRowValuesByteCount := bytes })
+        publicInput
+        proof ->
+        RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof observed
+  have core :=
+    proof_artifact_finish_row_values_shape_acceptance_verifier_core_contract
+      assumptions
+      summary
+      rowValuesMilliseconds
+      sourceExtendMilliseconds
+      sourceDownloadMilliseconds
+      deviceDownloadMilliseconds
+      deviceRows
+      deviceDownloadBatches
+      deviceSingleDownloads
+      sourceRows
+      words
+      bytes
+      publicInput
+      proof
+      observed
+  have sound :=
+    proof_artifact_finish_row_values_shape_acceptance_sound
+      assumptions
+      summary
+      rowValuesMilliseconds
+      sourceExtendMilliseconds
+      sourceDownloadMilliseconds
+      deviceDownloadMilliseconds
+      deviceRows
+      deviceDownloadBatches
+      deviceSingleDownloads
+      sourceRows
+      words
+      bytes
+      publicInput
+      proof
+      observed
+  exact And.intro core sound
+
 
 end Lzvm
