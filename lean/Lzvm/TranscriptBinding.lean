@@ -18,6 +18,7 @@ structure RuntimeTranscriptBindingValidation (system : VerifierModel) where
   challengeSegmentBound : RuntimeArtifact -> PublicInput -> Proof -> Prop
   queryPlanBound : RuntimeArtifact -> PublicInput -> Proof -> Prop
   transcriptPayloadMatchesProof : RuntimeArtifact -> PublicInput -> Proof -> Prop
+  transcriptExtensionPayloadOrderCanonical : RuntimeArtifact -> PublicInput -> Proof -> Prop
   transcriptAcceptedImpliesArtifactBindingAccepted :
     forall artifact publicInput proof,
       transcriptBindingAccepted artifact publicInput proof ->
@@ -34,6 +35,10 @@ structure RuntimeTranscriptBindingValidation (system : VerifierModel) where
     forall artifact publicInput proof,
       transcriptBindingAccepted artifact publicInput proof ->
         transcriptPayloadMatchesProof artifact publicInput proof
+  transcriptAcceptedImpliesExtensionPayloadOrderCanonical :
+    forall artifact publicInput proof,
+      transcriptBindingAccepted artifact publicInput proof ->
+        transcriptExtensionPayloadOrderCanonical artifact publicInput proof
   transcriptChecksImplyTranscriptBound :
     forall artifact publicInput proof,
       RuntimeProofArtifactBindingEvidence
@@ -45,7 +50,8 @@ structure RuntimeTranscriptBindingValidation (system : VerifierModel) where
         challengeSegmentBound artifact publicInput proof ->
           queryPlanBound artifact publicInput proof ->
             transcriptPayloadMatchesProof artifact publicInput proof ->
-              system.transcriptBound publicInput proof
+              transcriptExtensionPayloadOrderCanonical artifact publicInput proof ->
+                system.transcriptBound publicInput proof
 
 def RuntimeTranscriptBindingEvidence
     (system : VerifierModel)
@@ -62,6 +68,7 @@ def RuntimeTranscriptBindingEvidence
     /\ validation.challengeSegmentBound artifact publicInput proof
     /\ validation.queryPlanBound artifact publicInput proof
     /\ validation.transcriptPayloadMatchesProof artifact publicInput proof
+    /\ validation.transcriptExtensionPayloadOrderCanonical artifact publicInput proof
 
 def RuntimeTranscriptBindingPayloadContract
     (system : VerifierModel)
@@ -72,6 +79,7 @@ def RuntimeTranscriptBindingPayloadContract
   validation.challengeSegmentBound artifact publicInput proof
     /\ validation.queryPlanBound artifact publicInput proof
     /\ validation.transcriptPayloadMatchesProof artifact publicInput proof
+    /\ validation.transcriptExtensionPayloadOrderCanonical artifact publicInput proof
     /\ system.transcriptBound publicInput proof
 
 def RuntimeTranscriptBindingStructuralObligations
@@ -170,11 +178,17 @@ theorem runtime_transcript_binding_checked_acceptance_evidence
             publicInput
             proof
             accepted)
-          (validation.transcriptAcceptedImpliesPayloadMatchesProof
-            artifact
-            publicInput
-            proof
-            accepted)))
+          (And.intro
+            (validation.transcriptAcceptedImpliesPayloadMatchesProof
+              artifact
+              publicInput
+              proof
+              accepted)
+            (validation.transcriptAcceptedImpliesExtensionPayloadOrderCanonical
+              artifact
+              publicInput
+              proof
+              accepted))))
 
 theorem runtime_transcript_binding_evidence_implies_transcript_bound
     {system : VerifierModel}
@@ -196,7 +210,30 @@ theorem runtime_transcript_binding_evidence_implies_transcript_bound
       evidence.left
       evidence.right.left
       evidence.right.right.left
-      evidence.right.right.right
+      evidence.right.right.right.left
+      evidence.right.right.right.right
+
+theorem runtime_transcript_binding_checked_acceptance_extension_payload_order_canonical
+    {system : VerifierModel}
+    (validation : RuntimeTranscriptBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeTranscriptBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        validation.transcriptExtensionPayloadOrderCanonical
+          artifact
+          publicInput
+          proof := by
+  intro artifact publicInput proof accepted
+  exact
+    validation.transcriptAcceptedImpliesExtensionPayloadOrderCanonical
+      artifact
+      publicInput
+      proof
+      accepted
 
 theorem runtime_transcript_binding_evidence_implies_payload_contract
     {system : VerifierModel}
@@ -225,7 +262,8 @@ theorem runtime_transcript_binding_evidence_implies_payload_contract
   exact
     And.intro evidence.right.left
       (And.intro evidence.right.right.left
-        (And.intro evidence.right.right.right transcriptBound))
+        (And.intro evidence.right.right.right.left
+          (And.intro evidence.right.right.right.right transcriptBound)))
 
 theorem runtime_transcript_binding_checked_acceptance_transcript_bound
     {system : VerifierModel}
