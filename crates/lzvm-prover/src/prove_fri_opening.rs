@@ -4,7 +4,7 @@ mod values;
 pub use errors::*;
 pub use values::*;
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use lzvm_artifacts::pcs_evaluation_segment::{
     parse_pcs_evaluation_segment, PcsEvaluationSegment, PcsEvaluationSegmentError,
@@ -17,11 +17,14 @@ use lzvm_artifacts::pcs_material_segment::{
     parse_pcs_material_manifest_segment, PcsMaterialManifestSegment,
     PcsMaterialManifestSegmentError, PCS_MATERIAL_MANIFEST_SEGMENT_ID,
 };
-use lzvm_artifacts::pcs_query_segment::{parse_pcs_query_plan_segment, PCS_QUERY_PLAN_SEGMENT_ID};
+use lzvm_artifacts::pcs_query_segment::{
+    parse_pcs_query_plan_segment, PcsQueryPlanUnit, PCS_QUERY_PLAN_SEGMENT_ID,
+};
 use lzvm_artifacts::proof::ProofSegment;
 use lzvm_artifacts::witness_segment::WitnessCommitmentSegmentIdentity;
 use lzvm_field::{Ext3, Felt, FieldError};
 
+use crate::indexing::index_first_by_key;
 use crate::pcs_fri::{
     build_pcs_fri_opening_unit, build_pcs_fri_opening_unit_from_transcript_commitments_with_timing,
     build_pcs_fri_opening_unit_with_timing, build_pcs_fri_transcript_commitments,
@@ -168,6 +171,12 @@ fn same_segment_data(left: &[u8], right: &[u8]) -> bool {
     (left.len() == right.len() && std::ptr::eq(left.as_ptr(), right.as_ptr())) || left == right
 }
 
+fn query_plan_units_by_identity(
+    units: &[PcsQueryPlanUnit],
+) -> BTreeMap<(u32, u32), &PcsQueryPlanUnit> {
+    index_first_by_key(units, |unit| (unit.unit_index, unit.trace_instance_index))
+}
+
 #[derive(Debug, Clone, Copy)]
 struct PcsFriOpeningValueRef<'a> {
     unit_index: usize,
@@ -229,6 +238,7 @@ fn build_pcs_fri_opening_segment_from_value_refs_with_timing<'a>(
         });
     }
     let query_plan = parse_pcs_query_plan_segment(&query_segment.data)?;
+    let query_units = query_plan_units_by_identity(&query_plan.units);
     let mut seen_units = BTreeSet::new();
     let mut units = Vec::with_capacity(value_count);
     for input in values {
@@ -248,13 +258,9 @@ fn build_pcs_fri_opening_segment_from_value_refs_with_timing<'a>(
                 unit_index: input.unit_index,
             }
         })?;
-        let query_unit = query_plan
-            .units
-            .iter()
-            .find(|unit| {
-                unit.unit_index == unit_index_u32
-                    && unit.trace_instance_index == input.trace_instance_index
-            })
+        let query_unit = query_units
+            .get(&(unit_index_u32, input.trace_instance_index))
+            .copied()
             .ok_or(ProvePcsFriOpeningSegmentError::MissingQueryUnit {
                 unit_index: input.unit_index,
             })?;
@@ -644,6 +650,7 @@ fn build_pcs_fri_opening_segment_from_transcript_values_cached_with_timing(
         });
     }
     let query_plan = parse_pcs_query_plan_segment(&query_segment.data)?;
+    let query_units = query_plan_units_by_identity(&query_plan.units);
     let mut seen_units = BTreeSet::new();
     let mut units = Vec::with_capacity(values.len());
     for input in values {
@@ -663,13 +670,9 @@ fn build_pcs_fri_opening_segment_from_transcript_values_cached_with_timing(
                 unit_index: input.unit_index,
             }
         })?;
-        let query_unit = query_plan
-            .units
-            .iter()
-            .find(|unit| {
-                unit.unit_index == unit_index_u32
-                    && unit.trace_instance_index == input.trace_instance_index
-            })
+        let query_unit = query_units
+            .get(&(unit_index_u32, input.trace_instance_index))
+            .copied()
             .ok_or(ProvePcsFriOpeningSegmentError::MissingQueryUnit {
                 unit_index: input.unit_index,
             })?;
@@ -819,6 +822,47 @@ mod tests {
         PcsMaterialManifestSegment, PcsMaterialManifestUnit,
     };
     use std::cell::Cell;
+
+    #[test]
+    fn query_plan_unit_index_uses_trace_identity_and_first_match() {
+        let units = vec![
+            PcsQueryPlanUnit {
+                unit_index: 0,
+                trace_instance_index: 0,
+                queries: vec![11],
+            },
+            PcsQueryPlanUnit {
+                unit_index: 0,
+                trace_instance_index: 1,
+                queries: vec![22],
+            },
+            PcsQueryPlanUnit {
+                unit_index: 0,
+                trace_instance_index: 0,
+                queries: vec![33],
+            },
+        ];
+
+        let indexed = query_plan_units_by_identity(&units);
+
+        assert_eq!(
+            indexed
+                .get(&(0, 0))
+                .expect("unit should exist")
+                .queries
+                .as_slice(),
+            &[11]
+        );
+        assert_eq!(
+            indexed
+                .get(&(0, 1))
+                .expect("unit should exist")
+                .queries
+                .as_slice(),
+            &[22]
+        );
+        assert!(indexed.get(&(1, 0)).is_none());
+    }
 
     #[test]
     fn material_segment_cache_reuses_identical_data() {

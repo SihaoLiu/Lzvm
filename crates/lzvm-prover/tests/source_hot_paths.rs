@@ -8583,6 +8583,40 @@ fn fri_opening_from_transcript_values_borrows_large_vectors() {
 }
 
 #[test]
+fn fri_opening_builders_index_query_plan_units() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let source_path = crate_root.join("src/prove_fri_opening.rs");
+    let source = std::fs::read_to_string(&source_path).expect("FRI opening source should read");
+
+    let direct_body = function_body(
+        &source,
+        "fn build_pcs_fri_opening_segment_from_value_refs_with_timing",
+        "pub fn build_pcs_fri_transcript_values_from_trace",
+    );
+    let transcript_body = function_body(
+        &source,
+        "fn build_pcs_fri_opening_segment_from_transcript_values_cached_with_timing",
+        "pub fn build_pcs_fri_opening_segment_from_trace",
+    );
+
+    assert!(
+        source.contains("use crate::indexing::index_first_by_key")
+            && source.contains("fn query_plan_units_by_identity")
+            && direct_body
+                .contains("let query_units = query_plan_units_by_identity(&query_plan.units)")
+            && transcript_body
+                .contains("let query_units = query_plan_units_by_identity(&query_plan.units)")
+            && direct_body.contains(".get(&(unit_index_u32, input.trace_instance_index))")
+            && transcript_body.contains(".get(&(unit_index_u32, input.trace_instance_index))")
+            && !direct_body
+                .contains("query_plan\n            .units\n            .iter()\n            .find")
+            && !transcript_body
+                .contains("query_plan\n            .units\n            .iter()\n            .find"),
+        "FRI opening builders should index query-plan units once before per-unit assembly"
+    );
+}
+
+#[test]
 fn fri_opening_from_trace_borrows_challenges() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let source_path = crate_root.join("src/prove_fri_opening.rs");
