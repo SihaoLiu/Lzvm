@@ -496,6 +496,54 @@ theorem guest_pc_trace_report_lower_subtiming_acceptance_verifier_core_contract
       proof
       observed
 
+theorem guest_pc_trace_report_lower_subtiming_acceptance_core_and_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : GuestPcTraceTimingSummary)
+    (singleRowMilliseconds multiRowMilliseconds pendingDmaMilliseconds amoMilliseconds
+      storeConditionalMilliseconds : Nat) :
+    forall publicInput proof,
+      GuestPcTraceTimingObservedAcceptance
+        system
+        (some
+          { summary with
+            guestTraceSingleRowReportLowerMilliseconds := singleRowMilliseconds
+            guestTraceMultiRowReportLowerMilliseconds := multiRowMilliseconds
+            guestTracePendingDmaReportLowerMilliseconds := pendingDmaMilliseconds
+            guestTraceAmoReportLowerMilliseconds := amoMilliseconds
+            guestTraceStoreConditionalReportLowerMilliseconds :=
+              storeConditionalMilliseconds })
+        publicInput
+        proof ->
+        RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof observed
+  have core :=
+    guest_pc_trace_report_lower_subtiming_acceptance_verifier_core_contract
+      assumptions
+      summary
+      singleRowMilliseconds
+      multiRowMilliseconds
+      pendingDmaMilliseconds
+      amoMilliseconds
+      storeConditionalMilliseconds
+      publicInput
+      proof
+      observed
+  have sound :=
+    guest_pc_trace_report_lower_subtiming_acceptance_sound
+      assumptions
+      summary
+      singleRowMilliseconds
+      multiRowMilliseconds
+      pendingDmaMilliseconds
+      amoMilliseconds
+      storeConditionalMilliseconds
+      publicInput
+      proof
+      observed
+  exact And.intro core sound
+
 theorem guest_pc_trace_emit_descriptor_wait_timing_acceptance_sound
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
@@ -640,6 +688,100 @@ theorem guest_pc_trace_emit_descriptor_wait_timing_acceptance_verifier_core_cont
       publicInput
       proof
       observed
+
+theorem guest_pc_trace_emit_descriptor_wait_timing_acceptance_core_and_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : GuestPcTraceTimingSummary)
+    (emitMilliseconds descriptorMilliseconds descriptorRows pendingSendWaitMilliseconds
+      pendingReceiveWaitMilliseconds segmentSendWaitMilliseconds
+      segmentReceiveWaitMilliseconds parallelWorkerCount parallelDispatchedCount
+      parallelReceivedCount parallelEmittedCount parallelMaxReorderCount
+      ownedStreamingLowerSegmentCount
+      parallelStreamStartDispatchWaitMilliseconds
+      parallelStreamChunkDispatchWaitMilliseconds
+      parallelStreamSegmentDispatchWaitMilliseconds
+      parallelStreamFinishDispatchWaitMilliseconds : Nat) :
+    forall publicInput proof,
+      GuestPcTraceTimingObservedAcceptance
+        system
+        (some
+          { summary with
+            guestTraceEmitMilliseconds := emitMilliseconds
+            guestTraceDescriptorMilliseconds := descriptorMilliseconds
+            guestTraceDescriptorRowCount := descriptorRows
+            guestTracePendingSendWaitMilliseconds := pendingSendWaitMilliseconds
+            guestTracePendingReceiveWaitMilliseconds := pendingReceiveWaitMilliseconds
+            guestTraceSegmentSendWaitMilliseconds := segmentSendWaitMilliseconds
+            guestTraceSegmentReceiveWaitMilliseconds := segmentReceiveWaitMilliseconds
+            guestTraceParallelLowerWorkerCount := parallelWorkerCount
+            guestTraceParallelLowerDispatchedCount := parallelDispatchedCount
+            guestTraceParallelLowerReceivedCount := parallelReceivedCount
+            guestTraceParallelLowerEmittedCount := parallelEmittedCount
+            guestTraceParallelLowerMaxReorderCount := parallelMaxReorderCount
+            guestTraceOwnedStreamingLowerSegmentCount := ownedStreamingLowerSegmentCount
+            guestTraceParallelLowerStreamStartDispatchWaitMilliseconds :=
+              parallelStreamStartDispatchWaitMilliseconds
+            guestTraceParallelLowerStreamChunkDispatchWaitMilliseconds :=
+              parallelStreamChunkDispatchWaitMilliseconds
+            guestTraceParallelLowerStreamSegmentDispatchWaitMilliseconds :=
+              parallelStreamSegmentDispatchWaitMilliseconds
+            guestTraceParallelLowerStreamFinishDispatchWaitMilliseconds :=
+              parallelStreamFinishDispatchWaitMilliseconds })
+        publicInput
+        proof ->
+        RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof observed
+  have core :=
+    guest_pc_trace_emit_descriptor_wait_timing_acceptance_verifier_core_contract
+      assumptions
+      summary
+      emitMilliseconds
+      descriptorMilliseconds
+      descriptorRows
+      pendingSendWaitMilliseconds
+      pendingReceiveWaitMilliseconds
+      segmentSendWaitMilliseconds
+      segmentReceiveWaitMilliseconds
+      parallelWorkerCount
+      parallelDispatchedCount
+      parallelReceivedCount
+      parallelEmittedCount
+      parallelMaxReorderCount
+      ownedStreamingLowerSegmentCount
+      parallelStreamStartDispatchWaitMilliseconds
+      parallelStreamChunkDispatchWaitMilliseconds
+      parallelStreamSegmentDispatchWaitMilliseconds
+      parallelStreamFinishDispatchWaitMilliseconds
+      publicInput
+      proof
+      observed
+  have sound :=
+    guest_pc_trace_emit_descriptor_wait_timing_acceptance_sound
+      assumptions
+      summary
+      emitMilliseconds
+      descriptorMilliseconds
+      descriptorRows
+      pendingSendWaitMilliseconds
+      pendingReceiveWaitMilliseconds
+      segmentSendWaitMilliseconds
+      segmentReceiveWaitMilliseconds
+      parallelWorkerCount
+      parallelDispatchedCount
+      parallelReceivedCount
+      parallelEmittedCount
+      parallelMaxReorderCount
+      ownedStreamingLowerSegmentCount
+      parallelStreamStartDispatchWaitMilliseconds
+      parallelStreamChunkDispatchWaitMilliseconds
+      parallelStreamSegmentDispatchWaitMilliseconds
+      parallelStreamFinishDispatchWaitMilliseconds
+      publicInput
+      proof
+      observed
+  exact And.intro core sound
 
 theorem guest_pc_trace_device_source_timing_acceptance_sound
     {system : VerifierModel}
