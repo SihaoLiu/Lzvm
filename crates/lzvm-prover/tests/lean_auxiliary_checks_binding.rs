@@ -751,6 +751,40 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             ],
         );
     }
+    for theorem in ["runtime_performance_observation_acceptance_core_and_sound"] {
+        lean_binding::assert_theorem_prefix_contains(
+            &runtime_performance_source,
+            theorem,
+            &[
+                "RuntimeVerifierCoreContract system publicInput proof",
+                "SoundWitness system publicInput proof",
+            ],
+        );
+        let base_theorem = theorem.strip_suffix("_core_and_sound").expect(
+            "combined runtime-performance theorem name should use the core_and_sound suffix",
+        );
+        let verifier_callee = format!("{base_theorem}_verifier_core_contract");
+        let sound_callee = format!("{base_theorem}_sound");
+        let body_terms = [verifier_callee.as_str(), sound_callee.as_str()];
+        lean_binding::assert_theorem_body_contains(
+            &runtime_performance_source,
+            theorem,
+            &body_terms,
+        );
+        lean_binding::assert_theorem_body_omits(
+            &runtime_performance_source,
+            theorem,
+            &["sound_witness_implies_verifier_core_contract"],
+        );
+        let body = lean_binding::theorem_body(&runtime_performance_source, theorem);
+        for callee in body_terms {
+            let expected_call = format!("{callee} assumptions summary publicInput proof observed");
+            assert!(
+                compact_source_contains(&body, &expected_call),
+                "Lean theorem {theorem} body should call {callee} with ordered runtime arguments"
+            );
+        }
+    }
     assert!(
         runtime_performance_source
             .contains("structure RuntimePerformanceObservationProjectedCoreContracts")
@@ -4757,6 +4791,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "runtime_performance_observed_acceptance_projects_verifier_acceptance",
             "runtime_performance_observation_acceptance_sound",
             "runtime_performance_observation_acceptance_verifier_core_contract",
+            "runtime_performance_observation_acceptance_core_and_sound",
             "runtime_performance_observation_projects_timing_observations",
             "runtime_performance_observation_timing_observations_acceptance_sound",
             "runtime_performance_observation_timing_observations_acceptance_verifier_core_contract",
