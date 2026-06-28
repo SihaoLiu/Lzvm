@@ -8933,6 +8933,36 @@ fn fri_query_path_verifier_reuses_child_digest_buffer() {
 }
 
 #[test]
+fn global_constraints_reuse_entry_scratch_buffers() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let source_path = crate_root.join("src/global_constraints.rs");
+    let source =
+        std::fs::read_to_string(&source_path).expect("global constraints source should read");
+
+    let evaluate_body = function_body(
+        &source,
+        "pub fn evaluate_global_constraints",
+        "pub fn validate_global_constraints",
+    );
+    let entry_body = function_body(&source, "fn evaluate_entry", "#[derive(Debug, Clone, Copy");
+
+    assert!(
+        evaluate_body.contains("let mut tmp1 = Vec::new()")
+            && evaluate_body.contains("let mut tmp3 = Vec::new()")
+            && evaluate_body.contains("&mut tmp1")
+            && evaluate_body.contains("&mut tmp3")
+            && entry_body.contains("tmp1: &mut Vec<Felt>")
+            && entry_body.contains("tmp3: &mut Vec<Felt>")
+            && entry_body.contains("let tmp1 = &mut tmp1[..tmp1_len]")
+            && entry_body.contains("let tmp3 = &mut tmp3[..tmp3_len]")
+            && entry_body.contains("tmp1.fill(Felt::ZERO)")
+            && entry_body.contains("tmp3.fill(Felt::ZERO)")
+            && !entry_body.contains("vec![Felt::ZERO"),
+        "global constraint evaluation should reuse backing scratch buffers across entries"
+    );
+}
+
+#[test]
 fn pcs_transcript_challenges_preallocate_expected_draws() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let transcript_path = crate_root.join("src/pcs_transcript.rs");

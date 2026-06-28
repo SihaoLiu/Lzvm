@@ -200,12 +200,15 @@ pub fn evaluate_global_constraints(
     program: &GlobalConstraintProgram,
     inputs: GlobalConstraintInputs<'_>,
 ) -> Result<Vec<Ext3>, GlobalConstraintEvalError> {
-    program
-        .entries
-        .iter()
-        .enumerate()
-        .map(|(index, entry)| evaluate_entry(index, entry, program, inputs))
-        .collect()
+    let mut residuals = Vec::with_capacity(program.entries.len());
+    let mut tmp1 = Vec::new();
+    let mut tmp3 = Vec::new();
+    for (index, entry) in program.entries.iter().enumerate() {
+        residuals.push(evaluate_entry(
+            index, entry, program, inputs, &mut tmp1, &mut tmp3,
+        )?);
+    }
+    Ok(residuals)
 }
 
 pub fn validate_global_constraints(
@@ -265,11 +268,23 @@ fn evaluate_entry(
     entry: &GlobalConstraintEntry,
     program: &GlobalConstraintProgram,
     inputs: GlobalConstraintInputs<'_>,
+    tmp1: &mut Vec<Felt>,
+    tmp3: &mut Vec<Felt>,
 ) -> Result<Ext3, GlobalConstraintEvalError> {
     let ops = entry_ops(constraint_index, entry, program)?;
     let args = entry_args(constraint_index, entry, program)?;
-    let mut tmp1 = vec![Felt::ZERO; to_usize(entry.temp1_count)?];
-    let mut tmp3 = vec![Felt::ZERO; to_usize(entry.temp3_count)?.saturating_mul(3)];
+    let tmp1_len = to_usize(entry.temp1_count)?;
+    let tmp3_len = to_usize(entry.temp3_count)?.saturating_mul(3);
+    if tmp1.len() < tmp1_len {
+        tmp1.resize(tmp1_len, Felt::ZERO);
+    }
+    if tmp3.len() < tmp3_len {
+        tmp3.resize(tmp3_len, Felt::ZERO);
+    }
+    let tmp1 = &mut tmp1[..tmp1_len];
+    let tmp3 = &mut tmp3[..tmp3_len];
+    tmp1.fill(Felt::ZERO);
+    tmp3.fill(Felt::ZERO);
     let mut cursor = 0usize;
 
     for shape in ops {
@@ -282,21 +297,21 @@ fn evaluate_entry(
                     read_base(
                         op_args.src0_buffer,
                         op_args.src0_offset,
-                        &tmp1,
-                        &tmp3,
+                        tmp1,
+                        tmp3,
                         program,
                         inputs,
                     )?,
                     read_base(
                         op_args.src1_buffer,
                         op_args.src1_offset,
-                        &tmp1,
-                        &tmp3,
+                        tmp1,
+                        tmp3,
                         program,
                         inputs,
                     )?,
                 )?;
-                write_base(&mut tmp1, op_args.destination_offset, value)?;
+                write_base(tmp1, op_args.destination_offset, value)?;
             }
             1 => {
                 let value = apply_ext_op(
@@ -304,21 +319,21 @@ fn evaluate_entry(
                     read_ext(
                         op_args.src0_buffer,
                         op_args.src0_offset,
-                        &tmp1,
-                        &tmp3,
+                        tmp1,
+                        tmp3,
                         program,
                         inputs,
                     )?,
                     scalar_ext(read_base(
                         op_args.src1_buffer,
                         op_args.src1_offset,
-                        &tmp1,
-                        &tmp3,
+                        tmp1,
+                        tmp3,
                         program,
                         inputs,
                     )?),
                 )?;
-                write_ext(&mut tmp3, op_args.destination_offset, value)?;
+                write_ext(tmp3, op_args.destination_offset, value)?;
             }
             2 => {
                 let value = apply_ext_op(
@@ -326,21 +341,21 @@ fn evaluate_entry(
                     read_ext(
                         op_args.src0_buffer,
                         op_args.src0_offset,
-                        &tmp1,
-                        &tmp3,
+                        tmp1,
+                        tmp3,
                         program,
                         inputs,
                     )?,
                     read_ext(
                         op_args.src1_buffer,
                         op_args.src1_offset,
-                        &tmp1,
-                        &tmp3,
+                        tmp1,
+                        tmp3,
                         program,
                         inputs,
                     )?,
                 )?;
-                write_ext(&mut tmp3, op_args.destination_offset, value)?;
+                write_ext(tmp3, op_args.destination_offset, value)?;
             }
             shape => return Err(GlobalConstraintEvalError::UnsupportedOperationShape { shape }),
         }
@@ -354,7 +369,7 @@ fn evaluate_entry(
         });
     }
 
-    read_destination(entry, &tmp1, &tmp3)
+    read_destination(entry, tmp1, tmp3)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
