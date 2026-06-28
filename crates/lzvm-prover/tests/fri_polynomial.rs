@@ -5,7 +5,7 @@ use lzvm_artifacts::{
 use lzvm_field::{Ext3, Felt};
 use lzvm_prover::fri_polynomial::{
     build_fri_domain_points, build_fri_polynomial, derive_opening_xis, FriPolynomialColumnMatrix,
-    FriPolynomialInputs, FriPolynomialStageColumns, FriPolynomialZerofierTable,
+    FriPolynomialError, FriPolynomialInputs, FriPolynomialStageColumns, FriPolynomialZerofierTable,
 };
 
 #[test]
@@ -167,6 +167,54 @@ fn computes_opening_denominator_helpers_from_domain_points_and_opening_xis() {
     .expect("polynomial should build");
 
     assert_eq!(polynomial, vec![expected]);
+}
+
+#[test]
+fn rejects_extra_operation_arguments_before_row_sources() {
+    let program = ExpressionProgram {
+        max_tmp1: 1,
+        max_tmp3: 0,
+        max_args: 9,
+        max_ops: 1,
+        entries: vec![ExpressionEntry {
+            expression_id: 10,
+            destination_dimension: 1,
+            destination_id: 0,
+            stage: 3,
+            temp1_count: 1,
+            temp3_count: 0,
+            ops_count: 1,
+            ops_offset: 0,
+            args_count: 9,
+            args_offset: 0,
+            source_line: "native malformed row".to_owned(),
+        }],
+        ops: vec![0],
+        args: vec![0, 0, 99, 0, 0, 99, 0, 0, 7],
+        numbers: Vec::new(),
+    };
+
+    let error = build_fri_polynomial(
+        &program,
+        10,
+        FriPolynomialInputs {
+            domain_size: 2,
+            stage_count: 1,
+            fixed_columns: FriPolynomialColumnMatrix::default(),
+            opening_point_offsets: &[0],
+            ..FriPolynomialInputs::default()
+        },
+    )
+    .expect_err("extra operation argument should be rejected before row sources");
+
+    assert_eq!(
+        error,
+        FriPolynomialError::ArgumentCountMismatch {
+            expression_id: 10,
+            consumed: 8,
+            declared: 9,
+        }
+    );
 }
 
 #[test]
