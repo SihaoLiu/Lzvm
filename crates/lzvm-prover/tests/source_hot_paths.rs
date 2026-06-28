@@ -3547,6 +3547,48 @@ fn trace_output_opening_rebuilds_external_source_only_when_required() {
 }
 
 #[test]
+fn trace_output_external_source_lookup_uses_ordered_stage_fast_path() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let opening_path = crate_root.join("src/witness_opening.rs");
+    let opening_source =
+        std::fs::read_to_string(&opening_path).expect("witness opening source should read");
+
+    let prepare_body = function_body(
+        &opening_source,
+        "fn prepare_trace_output_opening_unit_work",
+        "fn build_witness_opening_unit_segment",
+    );
+    let fallback_body = function_body(
+        &opening_source,
+        "fn build_witness_opening_unit_segment_from_trace_output",
+        "fn stage_source_device_view_for_stage",
+    );
+    let lookup_body = function_body(
+        &opening_source,
+        "fn stage_source_device_view_for_stage",
+        "fn ensure_guest_pc_external_stage_sources",
+    );
+
+    assert!(
+        prepare_body.contains("stage_source_device_view_for_stage(source_devices, stage_index)")
+            && fallback_body
+                .contains("stage_source_device_view_for_stage(source_devices, stage_index)")
+            && lookup_body.contains("stage_index.checked_sub(1)")
+            && lookup_body.contains(".get(stage_slot)")
+            && lookup_body
+                .contains(".filter(|source_device| source_device.stage_index() == stage_index)")
+            && lookup_body.contains("source_devices[..stage_slot]")
+            && lookup_body
+                .contains(".all(|source_device| source_device.stage_index() != stage_index)")
+            && lookup_body.contains("return Some(source_device.source_view())")
+            && lookup_body
+                .contains(".find(|source_device| source_device.stage_index() == stage_index)")
+            && lookup_body.contains(".map(WitnessStageSourceDevice::source_view)"),
+        "external source-view lookup should use ordered stage slots before first-match fallback"
+    );
+}
+
+#[test]
 fn trace_output_opening_batches_stage_query_rows() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let opening_path = crate_root.join("src/witness_opening.rs");

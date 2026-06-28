@@ -1027,10 +1027,7 @@ fn prepare_trace_output_opening_unit_work<'a>(
                     collect_external_source_timing.then_some(&mut external_source_timing),
                 )?
                 .and_then(|source_devices| {
-                    source_devices
-                        .iter()
-                        .find(|source_device| source_device.stage_index() == stage_index)
-                        .map(|source_device| source_device.source_view())
+                    stage_source_device_view_for_stage(source_devices, stage_index)
                 });
                 if let Some(timing) = timing.as_deref_mut() {
                     let duration = external_source_start.elapsed();
@@ -1215,10 +1212,7 @@ fn build_witness_opening_unit_segment_from_trace_output(
                         collect_external_source_timing.then_some(&mut external_source_timing),
                     )?
                     .and_then(|source_devices| {
-                        source_devices
-                            .iter()
-                            .find(|source_device| source_device.stage_index() == stage_index)
-                            .map(|source_device| source_device.source_view())
+                        stage_source_device_view_for_stage(source_devices, stage_index)
                     });
                     if let Some(timing) = timing.as_deref_mut() {
                         let duration = external_source_start.elapsed();
@@ -1397,6 +1391,31 @@ fn build_witness_opening_unit_segment_from_trace_output(
         trace_instance_index: query_unit.trace_instance_index,
         queries,
     })
+}
+
+#[cfg(feature = "cuda")]
+fn stage_source_device_view_for_stage(
+    source_devices: &[WitnessStageSourceDevice],
+    stage_index: usize,
+) -> Option<WitnessStageSourceDeviceView> {
+    if let Some(stage_slot) = stage_index.checked_sub(1) {
+        if let Some(source_device) = source_devices
+            .get(stage_slot)
+            .filter(|source_device| source_device.stage_index() == stage_index)
+        {
+            if source_devices[..stage_slot]
+                .iter()
+                .all(|source_device| source_device.stage_index() != stage_index)
+            {
+                return Some(source_device.source_view());
+            }
+        }
+    }
+
+    source_devices
+        .iter()
+        .find(|source_device| source_device.stage_index() == stage_index)
+        .map(WitnessStageSourceDevice::source_view)
 }
 
 #[cfg(feature = "cuda")]
