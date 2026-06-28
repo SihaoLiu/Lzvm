@@ -802,70 +802,16 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             &["sound_witness_implies_verifier_core_contract"],
         );
     }
-    for (theorem, body_terms) in [
-        (
-            "proof_timing_batch_acceptance_core_and_sound",
-            [
-                "proof_timing_batch_acceptance_verifier_core_contract",
-                "proof_timing_batch_acceptance_sound",
-            ],
-        ),
-        (
-            "witness_opening_row_value_timing_acceptance_core_and_sound",
-            [
-                "witness_opening_row_value_timing_acceptance_verifier_core_contract",
-                "witness_opening_row_value_timing_acceptance_sound",
-            ],
-        ),
-        (
-            "constant_material_validation_timing_acceptance_core_and_sound",
-            [
-                "constant_material_validation_timing_acceptance_verifier_core_contract",
-                "constant_material_validation_timing_acceptance_sound",
-            ],
-        ),
-        (
-            "prover_gpu_mode_acceptance_core_and_sound",
-            [
-                "prover_gpu_mode_acceptance_verifier_core_contract",
-                "prover_gpu_mode_acceptance_sound",
-            ],
-        ),
-        (
-            "gpu_run_options_acceptance_core_and_sound",
-            [
-                "gpu_run_options_acceptance_verifier_core_contract",
-                "gpu_run_options_acceptance_sound",
-            ],
-        ),
-        (
-            "cuda_backend_acceptance_core_and_sound",
-            [
-                "cuda_backend_acceptance_verifier_core_contract",
-                "cuda_backend_acceptance_sound",
-            ],
-        ),
-        (
-            "cuda_allocator_timing_acceptance_core_and_sound",
-            [
-                "cuda_allocator_timing_acceptance_verifier_core_contract",
-                "cuda_allocator_timing_acceptance_sound",
-            ],
-        ),
-        (
-            "proof_artifact_finish_timing_acceptance_core_and_sound",
-            [
-                "proof_artifact_finish_timing_acceptance_verifier_core_contract",
-                "proof_artifact_finish_timing_acceptance_sound",
-            ],
-        ),
-        (
-            "proof_artifact_finish_timing_some_summary_acceptance_core_and_sound",
-            [
-                "proof_artifact_finish_timing_some_summary_acceptance_verifier_core_contract",
-                "proof_artifact_finish_timing_some_summary_acceptance_sound",
-            ],
-        ),
+    for theorem in [
+        "proof_timing_batch_acceptance_core_and_sound",
+        "witness_opening_row_value_timing_acceptance_core_and_sound",
+        "constant_material_validation_timing_acceptance_core_and_sound",
+        "prover_gpu_mode_acceptance_core_and_sound",
+        "gpu_run_options_acceptance_core_and_sound",
+        "cuda_backend_acceptance_core_and_sound",
+        "cuda_allocator_timing_acceptance_core_and_sound",
+        "proof_artifact_finish_timing_acceptance_core_and_sound",
+        "proof_artifact_finish_timing_some_summary_acceptance_core_and_sound",
     ] {
         lean_binding::assert_theorem_prefix_contains(
             &lean_proof_timing_source,
@@ -875,6 +821,12 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
                 "SoundWitness system publicInput proof",
             ],
         );
+        let base_theorem = theorem
+            .strip_suffix("_core_and_sound")
+            .expect("combined proof-timing theorem name should use the core_and_sound suffix");
+        let verifier_callee = format!("{base_theorem}_verifier_core_contract");
+        let sound_callee = format!("{base_theorem}_sound");
+        let body_terms = [verifier_callee.as_str(), sound_callee.as_str()];
         lean_binding::assert_theorem_body_contains(&lean_proof_timing_source, theorem, &body_terms);
         lean_binding::assert_theorem_body_omits(
             &lean_proof_timing_source,
@@ -882,13 +834,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             &["sound_witness_implies_verifier_core_contract"],
         );
         let body = lean_binding::theorem_body(&lean_proof_timing_source, theorem);
-        let base_theorem = theorem
-            .strip_suffix("_core_and_sound")
-            .expect("combined proof-timing theorem name should use the core_and_sound suffix");
-        for callee in [
-            format!("{base_theorem}_verifier_core_contract"),
-            format!("{base_theorem}_sound"),
-        ] {
+        for callee in body_terms {
             let expected_call = format!("{callee} assumptions summary publicInput proof observed");
             assert!(
                 compact_source_contains(&body, &expected_call),
@@ -896,13 +842,9 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             );
         }
     }
-    for (theorem, body_terms, field_terms) in [
+    for (theorem, field_terms) in [
         (
             "witness_opening_row_value_aggregate_timing_acceptance_core_and_sound",
-            [
-                "witness_opening_row_value_aggregate_timing_acceptance_verifier_core_contract",
-                "witness_opening_row_value_aggregate_timing_acceptance_sound",
-            ],
             &[
                 "rowValueSourceExtendMilliseconds := sourceExtendMilliseconds",
                 "rowValueSourceDownloadMilliseconds := sourceDownloadMilliseconds",
@@ -917,10 +859,6 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         ),
         (
             "constant_material_validation_aggregate_timing_acceptance_core_and_sound",
-            [
-                "constant_material_validation_aggregate_timing_acceptance_verifier_core_contract",
-                "constant_material_validation_aggregate_timing_acceptance_sound",
-            ],
             &[
                 "constantMaterialValidationElapsedMilliseconds := elapsedMilliseconds",
                 "constantMaterialValidationJoinWaitMilliseconds := joinWaitMilliseconds",
@@ -930,10 +868,6 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         ),
         (
             "cuda_allocator_aggregate_timing_acceptance_core_and_sound",
-            [
-                "cuda_allocator_aggregate_timing_acceptance_verifier_core_contract",
-                "cuda_allocator_aggregate_timing_acceptance_sound",
-            ],
             &[
                 "cudaAllocatorMallocCallCount := mallocCalls",
                 "cudaAllocatorMallocByteCount := mallocBytes",
@@ -970,10 +904,6 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         ),
         (
             "cuda_allocator_host_registration_timing_acceptance_core_and_sound",
-            [
-                "cuda_allocator_host_registration_timing_acceptance_verifier_core_contract",
-                "cuda_allocator_host_registration_timing_acceptance_sound",
-            ],
             &[
                 "cudaAllocatorHostRegisterCallCount := hostRegisterCalls",
                 "cudaAllocatorHostRegisterByteCount := hostRegisterBytes",
@@ -986,10 +916,6 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         ),
         (
             "proof_artifact_finish_top_level_timing_acceptance_core_and_sound",
-            [
-                "proof_artifact_finish_top_level_timing_acceptance_verifier_core_contract",
-                "proof_artifact_finish_top_level_timing_acceptance_sound",
-            ],
             &[
                 "finishQueryPlanMilliseconds := queryPlanMilliseconds",
                 "finishConstantOpeningMilliseconds := constantOpeningMilliseconds",
@@ -1015,10 +941,6 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         ),
         (
             "proof_artifact_finish_witness_opening_shape_acceptance_core_and_sound",
-            [
-                "proof_artifact_finish_witness_opening_shape_acceptance_verifier_core_contract",
-                "proof_artifact_finish_witness_opening_shape_acceptance_sound",
-            ],
             &[
                 "finishWitnessOpeningQueryCount := queryCount",
                 "finishWitnessOpeningQueryUnitCount := queryUnitCount",
@@ -1040,10 +962,6 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         ),
         (
             "proof_artifact_finish_leaf_work_shape_acceptance_core_and_sound",
-            [
-                "proof_artifact_finish_leaf_work_shape_acceptance_verifier_core_contract",
-                "proof_artifact_finish_leaf_work_shape_acceptance_sound",
-            ],
             &[
                 "finishWitnessOpeningLeafHashRowCount := leafHashRows",
                 "finishWitnessOpeningLeafHashByteCount := leafHashBytes",
@@ -1066,10 +984,6 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         ),
         (
             "proof_artifact_finish_path_parent_hash_shape_acceptance_core_and_sound",
-            [
-                "proof_artifact_finish_path_parent_hash_shape_acceptance_verifier_core_contract",
-                "proof_artifact_finish_path_parent_hash_shape_acceptance_sound",
-            ],
             &[
                 "finishWitnessOpeningPathParentHashRowCount := parentHashRows",
                 "finishWitnessOpeningPathParentHashByteCount := parentHashBytes",
@@ -1090,10 +1004,6 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         ),
         (
             "proof_artifact_finish_path_parent_hash_per_unit_shape_acceptance_core_and_sound",
-            [
-                "proof_artifact_finish_path_parent_hash_per_unit_shape_acceptance_verifier_core_contract",
-                "proof_artifact_finish_path_parent_hash_per_unit_shape_acceptance_sound",
-            ],
             &[
                 "finishWitnessOpeningPathParentHashRowsPerQuery := rowsPerQuery",
                 "finishWitnessOpeningPathParentHashRowsPerStage := rowsPerStage",
@@ -1102,10 +1012,6 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         ),
         (
             "proof_artifact_finish_row_values_shape_acceptance_core_and_sound",
-            [
-                "proof_artifact_finish_row_values_shape_acceptance_verifier_core_contract",
-                "proof_artifact_finish_row_values_shape_acceptance_sound",
-            ],
             &[
                 "finishWitnessOpeningRowValuesMilliseconds := rowValuesMilliseconds",
                 "finishWitnessOpeningRowValueSourceExtendMilliseconds := sourceExtendMilliseconds",
@@ -1128,6 +1034,12 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
                 "SoundWitness system publicInput proof",
             ],
         );
+        let base_theorem = theorem
+            .strip_suffix("_core_and_sound")
+            .expect("combined proof-timing theorem name should use the core_and_sound suffix");
+        let verifier_callee = format!("{base_theorem}_verifier_core_contract");
+        let sound_callee = format!("{base_theorem}_sound");
+        let body_terms = [verifier_callee.as_str(), sound_callee.as_str()];
         lean_binding::assert_theorem_body_contains(&lean_proof_timing_source, theorem, &body_terms);
         lean_binding::assert_theorem_body_omits(
             &lean_proof_timing_source,
