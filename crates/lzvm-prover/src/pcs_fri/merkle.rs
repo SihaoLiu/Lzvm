@@ -4,8 +4,8 @@ use lzvm_artifacts::pcs_fri_segment::PcsFriOpeningLevelSegment;
 use lzvm_field::{Ext3, Felt, FieldError};
 
 use crate::merkle_hash::{
-    linear_hash, linear_hashes, parent_hash, parent_hashes, root_from_digest_level,
-    MerkleHashError, HASH_WORDS,
+    linear_hash, linear_hashes, linear_hashes_from_row_major_bytes, parent_hash, parent_hashes,
+    root_from_digest_level, MerkleHashError, HASH_WORDS,
 };
 
 use super::errors::PcsFriOpeningBuildError;
@@ -230,11 +230,17 @@ pub(super) fn build_fri_layer_tree(
         });
     }
 
-    let flattened_rows = rows
-        .iter()
-        .map(|row| flatten_extension_values(row))
-        .collect::<Result<Vec<_>, PcsFriMerkleError>>()?;
-    let mut current = linear_hashes(&flattened_rows, arity).map_err(PcsFriMerkleError::from)?;
+    let mut current =
+        if let Some((row_bytes, column_count)) = flatten_extension_rows_to_row_major_bytes(rows)? {
+            linear_hashes_from_row_major_bytes(&row_bytes, rows.len(), column_count, arity)
+                .map_err(PcsFriMerkleError::from)?
+        } else {
+            let flattened_rows = rows
+                .iter()
+                .map(|row| flatten_extension_values(row))
+                .collect::<Result<Vec<_>, PcsFriMerkleError>>()?;
+            linear_hashes(&flattened_rows, arity).map_err(PcsFriMerkleError::from)?
+        };
     let mut levels = Vec::new();
     let mut unpadded_counts = Vec::new();
     loop {
@@ -282,6 +288,38 @@ pub(super) fn build_fri_layer_tree(
         last_level_verification,
         arity,
     })
+}
+
+fn flatten_extension_rows_to_row_major_bytes(
+    rows: &[Vec<Ext3>],
+) -> Result<Option<(Vec<u8>, usize)>, PcsFriMerkleError> {
+    let Some(first_row) = rows.first() else {
+        return Ok(Some((Vec::new(), 0)));
+    };
+    let row_value_count = first_row.len();
+    if rows.iter().any(|row| row.len() != row_value_count) {
+        return Ok(None);
+    }
+    let column_count = row_value_count
+        .checked_mul(3)
+        .ok_or(PcsFriMerkleError::LengthOverflow)?;
+    let byte_count = rows
+        .len()
+        .checked_mul(column_count)
+        .and_then(|word_count| word_count.checked_mul(8))
+        .ok_or(PcsFriMerkleError::LengthOverflow)?;
+    let mut bytes = Vec::new();
+    bytes
+        .try_reserve_exact(byte_count)
+        .map_err(|_| PcsFriMerkleError::LengthOverflow)?;
+    for row in rows {
+        for value in row {
+            bytes.extend_from_slice(&value.c0.to_le_bytes());
+            bytes.extend_from_slice(&value.c1.to_le_bytes());
+            bytes.extend_from_slice(&value.c2.to_le_bytes());
+        }
+    }
+    Ok(Some((bytes, column_count)))
 }
 
 fn flatten_extension_values(values: &[Ext3]) -> Result<Vec<Felt>, PcsFriMerkleError> {

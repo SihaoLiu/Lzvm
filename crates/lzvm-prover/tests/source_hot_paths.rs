@@ -8702,6 +8702,45 @@ fn pcs_transcript_absorbs_extension_values_without_flattening() {
 }
 
 #[test]
+fn fri_layer_tree_hashes_uniform_rows_from_row_major_bytes() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let merkle_path = crate_root.join("src/pcs_fri/merkle.rs");
+    let merkle_source =
+        std::fs::read_to_string(&merkle_path).expect("FRI Merkle source should read");
+    let build_body = function_body(
+        &merkle_source,
+        "pub(super) fn build_fri_layer_tree",
+        "fn flatten_extension_rows_to_row_major_bytes",
+    );
+    let flatten_body = function_body(
+        &merkle_source,
+        "fn flatten_extension_rows_to_row_major_bytes",
+        "fn flatten_extension_values",
+    );
+
+    assert!(
+        merkle_source.contains("linear_hashes_from_row_major_bytes")
+            && build_body.contains("flatten_extension_rows_to_row_major_bytes(rows)?")
+            && build_body.contains(
+                "linear_hashes_from_row_major_bytes(&row_bytes, rows.len(), column_count, arity)"
+            )
+            && build_body.contains("linear_hashes(&flattened_rows, arity)")
+            && build_body
+                .find("flatten_extension_rows_to_row_major_bytes(rows)?")
+                .expect("FRI tree should try the flat row path")
+                < build_body
+                    .find("collect::<Result<Vec<_>, PcsFriMerkleError>>()")
+                    .expect("FRI tree should retain the ragged-row fallback")
+            && flatten_body.contains("if rows.iter().any(|row| row.len() != row_value_count)")
+            && flatten_body.contains(".try_reserve_exact(byte_count)")
+            && flatten_body.contains("value.c0.to_le_bytes()")
+            && flatten_body.contains("value.c1.to_le_bytes()")
+            && flatten_body.contains("value.c2.to_le_bytes()"),
+        "FRI layer trees should hash uniform extension rows from flat row-major bytes"
+    );
+}
+
+#[test]
 fn pcs_transcript_challenges_preallocate_expected_draws() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let transcript_path = crate_root.join("src/pcs_transcript.rs");
