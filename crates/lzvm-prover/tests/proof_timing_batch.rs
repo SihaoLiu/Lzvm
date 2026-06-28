@@ -139,7 +139,15 @@ fn proof_timing_batch_runs_commands_and_appends_stable_log() {
             "timing_finish_fri_opening_fold_ms=1\\n",
             "timing_finish_fri_opening_unit_count=1\\n",
             "timing_finish_fri_opening_layer_count=2\\n",
-            "timing_finish_fri_opening_query_count=3\\n'"
+            "timing_finish_fri_opening_query_count=3\\n",
+            "timing_finish_fri_transcript_unit_build_ms=4\\n",
+            "timing_finish_fri_transcript_layer_tree_ms=2\\n",
+            "timing_finish_fri_transcript_fold_ms=1\\n",
+            "timing_finish_fri_transcript_unit_count=1\\n",
+            "timing_finish_fri_transcript_layer_count=2\\n",
+            "timing_finish_contribution_segment_ms=5\\n",
+            "timing_finish_contribution_verify_ms=6\\n",
+            "timing_finish_contribution_challenge_ms=7\\n'"
         ))
         .arg("--large-command")
         .arg(concat!(
@@ -157,7 +165,15 @@ fn proof_timing_batch_runs_commands_and_appends_stable_log() {
             "timing_finish_fri_opening_fold_ms=1\\n",
             "timing_finish_fri_opening_unit_count=1\\n",
             "timing_finish_fri_opening_layer_count=2\\n",
-            "timing_finish_fri_opening_query_count=3\\n'"
+            "timing_finish_fri_opening_query_count=3\\n",
+            "timing_finish_fri_transcript_unit_build_ms=4\\n",
+            "timing_finish_fri_transcript_layer_tree_ms=2\\n",
+            "timing_finish_fri_transcript_fold_ms=1\\n",
+            "timing_finish_fri_transcript_unit_count=1\\n",
+            "timing_finish_fri_transcript_layer_count=2\\n",
+            "timing_finish_contribution_segment_ms=5\\n",
+            "timing_finish_contribution_verify_ms=6\\n",
+            "timing_finish_contribution_challenge_ms=7\\n'"
         ))
         .arg("--summary")
         .arg("batch timing")
@@ -394,7 +410,15 @@ fn proof_timing_batch_defaults_commit_to_head() {
             "timing_finish_fri_opening_fold_ms=1\\n",
             "timing_finish_fri_opening_unit_count=1\\n",
             "timing_finish_fri_opening_layer_count=2\\n",
-            "timing_finish_fri_opening_query_count=3\\n'"
+            "timing_finish_fri_opening_query_count=3\\n",
+            "timing_finish_fri_transcript_unit_build_ms=4\\n",
+            "timing_finish_fri_transcript_layer_tree_ms=2\\n",
+            "timing_finish_fri_transcript_fold_ms=1\\n",
+            "timing_finish_fri_transcript_unit_count=1\\n",
+            "timing_finish_fri_transcript_layer_count=2\\n",
+            "timing_finish_contribution_segment_ms=5\\n",
+            "timing_finish_contribution_verify_ms=6\\n",
+            "timing_finish_contribution_challenge_ms=7\\n'"
         ))
         .arg("--summary")
         .arg("default commit")
@@ -458,7 +482,15 @@ fn proof_timing_batch_reruns_until_stable_sample_group() {
             "timing_finish_fri_opening_fold_ms=1\\n",
             "timing_finish_fri_opening_unit_count=1\\n",
             "timing_finish_fri_opening_layer_count=2\\n",
-            "timing_finish_fri_opening_query_count=3\\n'"
+            "timing_finish_fri_opening_query_count=3\\n",
+            "timing_finish_fri_transcript_unit_build_ms=4\\n",
+            "timing_finish_fri_transcript_layer_tree_ms=2\\n",
+            "timing_finish_fri_transcript_fold_ms=1\\n",
+            "timing_finish_fri_transcript_unit_count=1\\n",
+            "timing_finish_fri_transcript_layer_count=2\\n",
+            "timing_finish_contribution_segment_ms=5\\n",
+            "timing_finish_contribution_verify_ms=6\\n",
+            "timing_finish_contribution_challenge_ms=7\\n'"
         ))
         .arg("--summary")
         .arg("rerun stable")
@@ -667,7 +699,15 @@ fn proof_timing_batch_removes_failed_per_run_summary_outputs() {
             "timing_finish_fri_opening_fold_ms=1\\n",
             "timing_finish_fri_opening_unit_count=1\\n",
             "timing_finish_fri_opening_layer_count=2\\n",
-            "timing_finish_fri_opening_query_count=3\\n'"
+            "timing_finish_fri_opening_query_count=3\\n",
+            "timing_finish_fri_transcript_unit_build_ms=4\\n",
+            "timing_finish_fri_transcript_layer_tree_ms=2\\n",
+            "timing_finish_fri_transcript_fold_ms=1\\n",
+            "timing_finish_fri_transcript_unit_count=1\\n",
+            "timing_finish_fri_transcript_layer_count=2\\n",
+            "timing_finish_contribution_segment_ms=5\\n",
+            "timing_finish_contribution_verify_ms=6\\n",
+            "timing_finish_contribution_challenge_ms=7\\n'"
         ))
         .arg("--summary")
         .arg("run summary failure")
@@ -763,7 +803,15 @@ fn proof_timing_batch_records_batch_json_when_stable_summary_fails() {
             "timing_finish_fri_opening_fold_ms=1\\n",
             "timing_finish_fri_opening_unit_count=1\\n",
             "timing_finish_fri_opening_layer_count=2\\n",
-            "timing_finish_fri_opening_query_count=3\\n'"
+            "timing_finish_fri_opening_query_count=3\\n",
+            "timing_finish_fri_transcript_unit_build_ms=4\\n",
+            "timing_finish_fri_transcript_layer_tree_ms=2\\n",
+            "timing_finish_fri_transcript_fold_ms=1\\n",
+            "timing_finish_fri_transcript_unit_count=1\\n",
+            "timing_finish_fri_transcript_layer_count=2\\n",
+            "timing_finish_contribution_segment_ms=5\\n",
+            "timing_finish_contribution_verify_ms=6\\n",
+            "timing_finish_contribution_challenge_ms=7\\n'"
         ))
         .arg("--summary")
         .arg("stable summary failure")

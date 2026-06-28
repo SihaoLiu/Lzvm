@@ -10550,7 +10550,7 @@ fn contribution_proof_artifact_timing_reports_segment_verify_and_challenge_work(
 }
 
 #[test]
-fn proof_runner_summary_gates_require_opening_and_fri_duration_shape() {
+fn proof_runner_summary_gates_require_opening_fri_and_contribution_shape() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
 
     for relative_path in [
@@ -10574,6 +10574,14 @@ fn proof_runner_summary_gates_require_opening_and_fri_duration_shape() {
             "timing_finish_fri_opening_unit_count",
             "timing_finish_fri_opening_layer_count",
             "timing_finish_fri_opening_query_count",
+            "timing_finish_fri_transcript_unit_build_ms",
+            "timing_finish_fri_transcript_layer_tree_ms",
+            "timing_finish_fri_transcript_fold_ms",
+            "timing_finish_fri_transcript_unit_count",
+            "timing_finish_fri_transcript_layer_count",
+            "timing_finish_contribution_segment_ms",
+            "timing_finish_contribution_verify_ms",
+            "timing_finish_contribution_challenge_ms",
         ] {
             assert!(
                 required_keys.contains(required),

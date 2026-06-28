@@ -520,6 +520,14 @@ FRI_OPENING_FOLD_MS_KEY = "timing_finish_fri_opening_fold_ms"
 FRI_OPENING_UNIT_COUNT_KEY = "timing_finish_fri_opening_unit_count"
 FRI_OPENING_LAYER_COUNT_KEY = "timing_finish_fri_opening_layer_count"
 FRI_OPENING_QUERY_COUNT_KEY = "timing_finish_fri_opening_query_count"
+FRI_TRANSCRIPT_UNIT_BUILD_MS_KEY = "timing_finish_fri_transcript_unit_build_ms"
+FRI_TRANSCRIPT_LAYER_TREE_MS_KEY = "timing_finish_fri_transcript_layer_tree_ms"
+FRI_TRANSCRIPT_FOLD_MS_KEY = "timing_finish_fri_transcript_fold_ms"
+FRI_TRANSCRIPT_UNIT_COUNT_KEY = "timing_finish_fri_transcript_unit_count"
+FRI_TRANSCRIPT_LAYER_COUNT_KEY = "timing_finish_fri_transcript_layer_count"
+CONTRIBUTION_SEGMENT_MS_KEY = "timing_finish_contribution_segment_ms"
+CONTRIBUTION_VERIFY_MS_KEY = "timing_finish_contribution_verify_ms"
+CONTRIBUTION_CHALLENGE_MS_KEY = "timing_finish_contribution_challenge_ms"
 OPENING_RETAINED_LEAF_COUNT_KEY = (
     "timing_finish_witness_opening_retained_leaf_digest_openings"
 )
@@ -805,6 +813,10 @@ HEADER = (
     "fri_opening_query_ms,fri_opening_fold_ms,"
     "fri_opening_units,fri_opening_layers,fri_opening_queries,"
     "fri_layers_per_unit,fri_queries_per_unit,"
+    "fri_transcript_unit_build_ms,fri_transcript_layer_tree_ms,"
+    "fri_transcript_fold_ms,fri_transcript_units,fri_transcript_layers,"
+    "fri_transcript_layers_per_unit,contribution_segment_ms,"
+    "contribution_verify_ms,contribution_challenge_ms,contribution_total_ms,"
     "opening_source_shape_hint,"
     "source_retention_attempts,source_retention_retained,"
     "source_retention_rejected,source_retention_retained_bytes,"
@@ -1241,6 +1253,14 @@ TIMING_KEYS = {
     FRI_OPENING_UNIT_COUNT_KEY,
     FRI_OPENING_LAYER_COUNT_KEY,
     FRI_OPENING_QUERY_COUNT_KEY,
+    FRI_TRANSCRIPT_UNIT_BUILD_MS_KEY,
+    FRI_TRANSCRIPT_LAYER_TREE_MS_KEY,
+    FRI_TRANSCRIPT_FOLD_MS_KEY,
+    FRI_TRANSCRIPT_UNIT_COUNT_KEY,
+    FRI_TRANSCRIPT_LAYER_COUNT_KEY,
+    CONTRIBUTION_SEGMENT_MS_KEY,
+    CONTRIBUTION_VERIFY_MS_KEY,
+    CONTRIBUTION_CHALLENGE_MS_KEY,
     OPENING_RETAINED_LEAF_COUNT_KEY,
     OPENING_RETAINED_LEAF_ROWS_KEY,
     OPENING_RETAINED_LEAF_ALL_SINGLE_ROW_KEY,
@@ -4717,6 +4737,22 @@ def summarize_profile_values(
     fri_queries_per_unit = (
         fri_opening_queries / fri_opening_units if fri_opening_units else 0.0
     )
+    fri_transcript_unit_build_ms = values.get(FRI_TRANSCRIPT_UNIT_BUILD_MS_KEY, 0)
+    fri_transcript_layer_tree_ms = values.get(FRI_TRANSCRIPT_LAYER_TREE_MS_KEY, 0)
+    fri_transcript_fold_ms = values.get(FRI_TRANSCRIPT_FOLD_MS_KEY, 0)
+    fri_transcript_units = values.get(FRI_TRANSCRIPT_UNIT_COUNT_KEY, 0)
+    fri_transcript_layers = values.get(FRI_TRANSCRIPT_LAYER_COUNT_KEY, 0)
+    fri_transcript_layers_per_unit = (
+        fri_transcript_layers / fri_transcript_units
+        if fri_transcript_units
+        else 0.0
+    )
+    contribution_segment_ms = values.get(CONTRIBUTION_SEGMENT_MS_KEY, 0)
+    contribution_verify_ms = values.get(CONTRIBUTION_VERIFY_MS_KEY, 0)
+    contribution_challenge_ms = values.get(CONTRIBUTION_CHALLENGE_MS_KEY, 0)
+    contribution_total_ms = (
+        contribution_segment_ms + contribution_verify_ms + contribution_challenge_ms
+    )
     fri_opening_unit_build_scope_pct = (
         fri_opening_unit_build_ms * 100.0 / fri_opening_ms
         if fri_opening_ms
@@ -5347,6 +5383,11 @@ def summarize_profile_values(
         f"{fri_opening_query_ms},{fri_opening_fold_ms},"
         f"{fri_opening_units},{fri_opening_layers},{fri_opening_queries},"
         f"{fri_layers_per_unit:.3f},{fri_queries_per_unit:.3f},"
+        f"{fri_transcript_unit_build_ms},{fri_transcript_layer_tree_ms},"
+        f"{fri_transcript_fold_ms},{fri_transcript_units},"
+        f"{fri_transcript_layers},{fri_transcript_layers_per_unit:.3f},"
+        f"{contribution_segment_ms},{contribution_verify_ms},"
+        f"{contribution_challenge_ms},{contribution_total_ms},"
         f"{opening_source_hint},"
         f"{source_retention_attempts},{source_retention_retained},"
         f"{source_retention_rejected},{source_retention_retained_bytes},"

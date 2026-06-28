@@ -320,6 +320,81 @@ fn prove_timing_root_summary_reports_stream_chunk_process_time() {
 }
 
 #[test]
+fn prove_timing_root_summary_reports_fri_transcript_and_contribution_work() {
+    let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let script_path = crate_root.join("../../scripts/prove-timing-root-summary.py");
+    let dir = crate_root.join(format!(
+        "../../temp/prove-timing-final-proof-work-{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("final proof timing fixture dir should be created");
+    let log_path = dir.join("final-proof.log");
+    let input = [
+        "timing_total_ms=1000",
+        "timing_guest_stage_tree_commit_root_count=1",
+        "timing_guest_stage_tree_commit_root_materialization_groups=1",
+        "timing_guest_stage_tree_commit_root_materialization_max_group_size=1",
+        "timing_finish_fri_opening_ms=10",
+        "timing_finish_fri_opening_unit_build_ms=8",
+        "timing_finish_fri_opening_layer_tree_ms=2",
+        "timing_finish_fri_opening_query_ms=3",
+        "timing_finish_fri_opening_fold_ms=1",
+        "timing_finish_fri_opening_unit_count=1",
+        "timing_finish_fri_opening_layer_count=2",
+        "timing_finish_fri_opening_query_count=3",
+        "timing_finish_fri_transcript_unit_build_ms=4",
+        "timing_finish_fri_transcript_layer_tree_ms=2",
+        "timing_finish_fri_transcript_fold_ms=1",
+        "timing_finish_fri_transcript_unit_count=1",
+        "timing_finish_fri_transcript_layer_count=2",
+        "timing_finish_contribution_segment_ms=5",
+        "timing_finish_contribution_verify_ms=6",
+        "timing_finish_contribution_challenge_ms=7",
+    ]
+    .join("\n");
+    std::fs::write(&log_path, input).expect("final proof timing fixture should be written");
+
+    let output = Command::new("python3")
+        .arg(&script_path)
+        .arg(&log_path)
+        .output()
+        .expect("prove timing root summary should finish");
+    let success = output.status.success();
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    let _ = std::fs::remove_dir_all(&dir);
+
+    assert!(
+        success,
+        "prove timing root summary should parse final proof input: stderr={stderr}"
+    );
+    let mut lines = stdout.lines();
+    let headers = parse_csv_line(lines.next().expect("summary should include a header"));
+    let row = parse_csv_line(lines.next().expect("summary should include a data row"));
+    let value = |name: &str| -> &str {
+        let index = headers
+            .iter()
+            .position(|header| header == name)
+            .unwrap_or_else(|| panic!("missing {name} header: {headers:?}"));
+        row.get(index)
+            .map(String::as_str)
+            .unwrap_or_else(|| panic!("missing {name} value: {row:?}"))
+    };
+
+    assert_eq!(value("fri_transcript_unit_build_ms"), "4");
+    assert_eq!(value("fri_transcript_layer_tree_ms"), "2");
+    assert_eq!(value("fri_transcript_fold_ms"), "1");
+    assert_eq!(value("fri_transcript_units"), "1");
+    assert_eq!(value("fri_transcript_layers"), "2");
+    assert_eq!(value("fri_transcript_layers_per_unit"), "2.000");
+    assert_eq!(value("contribution_segment_ms"), "5");
+    assert_eq!(value("contribution_verify_ms"), "6");
+    assert_eq!(value("contribution_challenge_ms"), "7");
+    assert_eq!(value("contribution_total_ms"), "18");
+}
+
+#[test]
 fn prove_timing_root_summary_reports_root_grouping_shape() {
     let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
     let script_path = crate_root.join("../../scripts/prove-timing-root-summary.py");
@@ -589,6 +664,22 @@ fn prove_timing_root_summary_reports_root_grouping_shape() {
         "fri_opening_scope_hint",
         "fri_opening_queries",
         "fri_queries_per_unit",
+        "timing_finish_fri_transcript_unit_build_ms",
+        "timing_finish_fri_transcript_layer_tree_ms",
+        "timing_finish_fri_transcript_fold_ms",
+        "timing_finish_fri_transcript_unit_count",
+        "timing_finish_fri_transcript_layer_count",
+        "fri_transcript_unit_build_ms",
+        "fri_transcript_layer_tree_ms",
+        "fri_transcript_fold_ms",
+        "fri_transcript_layers_per_unit",
+        "timing_finish_contribution_segment_ms",
+        "timing_finish_contribution_verify_ms",
+        "timing_finish_contribution_challenge_ms",
+        "contribution_segment_ms",
+        "contribution_verify_ms",
+        "contribution_challenge_ms",
+        "contribution_total_ms",
     ] {
         assert!(
             source.contains(required),

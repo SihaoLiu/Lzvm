@@ -34,6 +34,14 @@ TIMING_SUMMARY_REQUIRED_KEYS = [
     "timing_finish_fri_opening_unit_count",
     "timing_finish_fri_opening_layer_count",
     "timing_finish_fri_opening_query_count",
+    "timing_finish_fri_transcript_unit_build_ms",
+    "timing_finish_fri_transcript_layer_tree_ms",
+    "timing_finish_fri_transcript_fold_ms",
+    "timing_finish_fri_transcript_unit_count",
+    "timing_finish_fri_transcript_layer_count",
+    "timing_finish_contribution_segment_ms",
+    "timing_finish_contribution_verify_ms",
+    "timing_finish_contribution_challenge_ms",
 ]
 
 
@@ -1194,7 +1202,15 @@ def self_test() -> None:
                     "print('timing_finish_fri_opening_fold_ms=1'); "
                     "print('timing_finish_fri_opening_unit_count=1'); "
                     "print('timing_finish_fri_opening_layer_count=2'); "
-                    "print('timing_finish_fri_opening_query_count=3')"
+                    "print('timing_finish_fri_opening_query_count=3'); "
+                    "print('timing_finish_fri_transcript_unit_build_ms=4'); "
+                    "print('timing_finish_fri_transcript_layer_tree_ms=2'); "
+                    "print('timing_finish_fri_transcript_fold_ms=1'); "
+                    "print('timing_finish_fri_transcript_unit_count=1'); "
+                    "print('timing_finish_fri_transcript_layer_count=2'); "
+                    "print('timing_finish_contribution_segment_ms=5'); "
+                    "print('timing_finish_contribution_verify_ms=6'); "
+                    "print('timing_finish_contribution_challenge_ms=7')"
                 ),
             ],
             "cwd": ".",
@@ -1373,7 +1389,15 @@ def self_test() -> None:
                 "print('timing_finish_fri_opening_fold_ms=1'); "
                 "print('timing_finish_fri_opening_unit_count=1'); "
                 "print('timing_finish_fri_opening_layer_count=2'); "
-                "print('timing_finish_fri_opening_query_count=3')"
+                "print('timing_finish_fri_opening_query_count=3'); "
+                "print('timing_finish_fri_transcript_unit_build_ms=4'); "
+                "print('timing_finish_fri_transcript_layer_tree_ms=2'); "
+                "print('timing_finish_fri_transcript_fold_ms=1'); "
+                "print('timing_finish_fri_transcript_unit_count=1'); "
+                "print('timing_finish_fri_transcript_layer_count=2'); "
+                "print('timing_finish_contribution_segment_ms=5'); "
+                "print('timing_finish_contribution_verify_ms=6'); "
+                "print('timing_finish_contribution_challenge_ms=7')"
             ),
         ]
         duplicate_base["name"] = "self-test-ncu-duplicate-timing"
