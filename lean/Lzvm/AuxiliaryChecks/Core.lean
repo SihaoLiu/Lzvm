@@ -183,6 +183,30 @@ theorem auxiliary_checked_acceptance_verifier_core_contract
           (assumption_bundle_pcs_opening_soundness assumptions publicInput proof checked.left)
           (assumption_bundle_fri_query_soundness assumptions publicInput proof checked.left)))
 
+theorem auxiliary_checked_acceptance_core_and_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    {auxiliaryAccepted : PublicInput -> Proof -> Prop} :
+    forall publicInput proof,
+      system.accepts publicInput proof
+        /\ auxiliaryAccepted publicInput proof ->
+        RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof checked
+  have core :=
+    auxiliary_checked_acceptance_verifier_core_contract
+      assumptions
+      publicInput
+      proof
+      checked
+  have sound :=
+    auxiliary_checked_acceptance_sound_witness
+      assumptions
+      publicInput
+      proof
+      checked
+  exact And.intro core sound
+
 structure TimingObservation where
   label : Nat
   milliseconds : Nat

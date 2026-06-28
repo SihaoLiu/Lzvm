@@ -551,7 +551,10 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
     }
     lean_binding::assert_theorem_declarations(
         &auxiliary_source,
-        &["auxiliary_checked_acceptance_sound_witness"],
+        &[
+            "auxiliary_checked_acceptance_sound_witness",
+            "auxiliary_checked_acceptance_core_and_sound",
+        ],
     );
     lean_binding::assert_theorem_body_contains(
         &auxiliary_source,
@@ -573,6 +576,64 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         "auxiliary_checked_acceptance_sound_witness",
         "sound_witness_implies_verifier_core_contract",
     );
+    lean_binding::assert_theorem_prefix_contains(
+        &auxiliary_source,
+        "auxiliary_checked_acceptance_core_and_sound",
+        &[
+            "RuntimeVerifierCoreContract system publicInput proof",
+            "SoundWitness system publicInput proof",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &auxiliary_source,
+        "auxiliary_checked_acceptance_core_and_sound",
+        &[
+            "auxiliary_checked_acceptance_verifier_core_contract",
+            "auxiliary_checked_acceptance_sound_witness",
+        ],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &auxiliary_source,
+        "auxiliary_checked_acceptance_core_and_sound",
+        &[
+            "abstract_verifier_sound",
+            "sound_witness_implies_verifier_core_contract",
+        ],
+    );
+    for callee in [
+        "auxiliary_checked_acceptance_verifier_core_contract",
+        "auxiliary_checked_acceptance_sound_witness",
+    ] {
+        lean_binding::assert_theorem_body_contains_identifier(
+            &auxiliary_source,
+            "auxiliary_checked_acceptance_core_and_sound",
+            callee,
+        );
+    }
+    for shortcut in [
+        "abstract_verifier_sound",
+        "sound_witness_implies_verifier_core_contract",
+    ] {
+        lean_binding::assert_theorem_body_omits_identifier(
+            &auxiliary_source,
+            "auxiliary_checked_acceptance_core_and_sound",
+            shortcut,
+        );
+    }
+    let auxiliary_checked_body = lean_binding::theorem_body(
+        &auxiliary_source,
+        "auxiliary_checked_acceptance_core_and_sound",
+    );
+    for callee in [
+        "auxiliary_checked_acceptance_verifier_core_contract",
+        "auxiliary_checked_acceptance_sound_witness",
+    ] {
+        let expected_call = format!("{callee} assumptions publicInput proof checked");
+        assert!(
+            compact_source_contains(&auxiliary_checked_body, &expected_call),
+            "Lean theorem auxiliary_checked_acceptance_core_and_sound body should call {callee} with ordered checked-acceptance arguments"
+        );
+    }
     assert_eq!(
         lean_binding::visible_identifier_occurrence_count(
             &auxiliary_source,
@@ -1432,6 +1493,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         &[
             "checked_acceptance_sound_witness",
             "checked_acceptance_verifier_core_contract",
+            "checked_acceptance_core_and_sound",
         ],
     );
     assert_eq!(
@@ -1505,6 +1567,55 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             shortcut,
         );
     }
+    lean_binding::assert_theorem_prefix_contains(
+        &gpu_runtime_source,
+        "checked_acceptance_core_and_sound",
+        &[
+            "RuntimeVerifierCoreContract system publicInput proof",
+            "SoundWitness system publicInput proof",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &gpu_runtime_source,
+        "checked_acceptance_core_and_sound",
+        &["auxiliary_checked_acceptance_core_and_sound"],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &gpu_runtime_source,
+        "checked_acceptance_core_and_sound",
+        &[
+            "checked_acceptance_sound_witness",
+            "checked_acceptance_verifier_core_contract",
+            "abstract_verifier_sound",
+            "sound_witness_implies_verifier_core_contract",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains_identifier(
+        &gpu_runtime_source,
+        "checked_acceptance_core_and_sound",
+        "auxiliary_checked_acceptance_core_and_sound",
+    );
+    for shortcut in [
+        "checked_acceptance_sound_witness",
+        "checked_acceptance_verifier_core_contract",
+        "abstract_verifier_sound",
+        "sound_witness_implies_verifier_core_contract",
+    ] {
+        lean_binding::assert_theorem_body_omits_identifier(
+            &gpu_runtime_source,
+            "checked_acceptance_core_and_sound",
+            shortcut,
+        );
+    }
+    let gpu_runtime_checked_body =
+        lean_binding::theorem_body(&gpu_runtime_source, "checked_acceptance_core_and_sound");
+    assert!(
+        compact_source_contains(
+            &gpu_runtime_checked_body,
+            "auxiliary_checked_acceptance_core_and_sound assumptions publicInput proof checked"
+        ),
+        "Lean theorem checked_acceptance_core_and_sound body should call the auxiliary combined helper with ordered checked-acceptance arguments"
+    );
     for theorem_name in [
         "guest_pc_trace_large_gpu_gate_checked_acceptance_sound",
         "guest_pc_trace_traceless_commitment_input_checked_acceptance_sound",

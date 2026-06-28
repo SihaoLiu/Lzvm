@@ -46,6 +46,23 @@ theorem checked_acceptance_verifier_core_contract
       proof
       checked
 
+theorem checked_acceptance_core_and_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    {auxiliaryAccepted : PublicInput -> Proof -> Prop} :
+    forall publicInput proof,
+      system.accepts publicInput proof
+        /\ auxiliaryAccepted publicInput proof ->
+        RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof checked
+  exact
+    auxiliary_checked_acceptance_core_and_sound
+      assumptions
+      publicInput
+      proof
+      checked
+
 end GpuRuntimeInternal
 
 end Lzvm
