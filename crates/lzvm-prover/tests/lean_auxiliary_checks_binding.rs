@@ -5371,14 +5371,19 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         &gpu_runtime_source,
         "gpu_temporary_buffer_reuse_checked_acceptance_reuse_core_and_sound",
         &[
-            "gpu_temporary_buffer_reuse_checked_acceptance_sound",
-            "gpu_temporary_buffer_reuse_checked_acceptance_verifier_core_contract",
+            "gpu_temporary_buffer_reuse_checked_acceptance_projects_same_request",
+            "gpu_temporary_buffer_reuse_checked_acceptance_projects_pending_reads_complete",
+            "GpuRuntimeInternal.checked_acceptance_core_and_sound",
         ],
     );
     lean_binding::assert_theorem_body_omits(
         &gpu_runtime_source,
         "gpu_temporary_buffer_reuse_checked_acceptance_reuse_core_and_sound",
-        &["sound_witness_implies_verifier_core_contract"],
+        &[
+            "gpu_temporary_buffer_reuse_checked_acceptance_sound",
+            "gpu_temporary_buffer_reuse_checked_acceptance_verifier_core_contract",
+            "sound_witness_implies_verifier_core_contract",
+        ],
     );
     lean_binding::assert_theorem_body_contains(
         &gpu_runtime_source,

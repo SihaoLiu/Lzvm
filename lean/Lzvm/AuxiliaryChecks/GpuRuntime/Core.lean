@@ -505,26 +505,29 @@ theorem gpu_temporary_buffer_reuse_checked_acceptance_reuse_core_and_sound
           /\ RuntimeVerifierCoreContract system publicInput proof
           /\ SoundWitness system publicInput proof := by
   intro publicInput proof checked
-  have sound :=
-    gpu_temporary_buffer_reuse_checked_acceptance_sound
-      assumptions
+  have sameRequest :=
+    gpu_temporary_buffer_reuse_checked_acceptance_projects_same_request
       validation
       previous
       next
       publicInput
       proof
       checked
-  have core :=
-    gpu_temporary_buffer_reuse_checked_acceptance_verifier_core_contract
-      assumptions
+  have pendingComplete :=
+    gpu_temporary_buffer_reuse_checked_acceptance_projects_pending_reads_complete
       validation
       previous
       next
       publicInput
       proof
       checked
-  exact And.intro sound.left
-    (And.intro sound.right.left (And.intro core sound.right.right))
+  have coreAndSound :=
+    GpuRuntimeInternal.checked_acceptance_core_and_sound
+      assumptions
+      publicInput
+      proof
+      checked
+  exact And.intro sameRequest (And.intro pendingComplete coreAndSound)
 
 theorem gpu_allocator_no_wait_bypass_implies_same_request
     (validation : GpuAllocatorNoWaitBypassValidation)
