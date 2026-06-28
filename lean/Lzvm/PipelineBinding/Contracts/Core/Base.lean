@@ -469,13 +469,6 @@ theorem runtime_pipeline_binding_checked_acceptance_sound_from_concrete_nary_mer
             requiresExternalSource
           /\ SoundWitness system publicInput proof := by
   intro artifact publicInput proof requiresExternalSource accepted
-  have traceAccepted :=
-    runtime_pipeline_binding_checked_acceptance_trace
-      validation
-      artifact
-      publicInput
-      proof
-      accepted
   have queryPlanAccepted :=
     runtime_pipeline_binding_checked_acceptance_query_plan
       validation
@@ -491,15 +484,15 @@ theorem runtime_pipeline_binding_checked_acceptance_sound_from_concrete_nary_mer
       publicInput
       proof
       accepted
-  have traceSound :=
-    runtime_trace_constraint_artifact_binding_checked_acceptance_sound
+  have traceArtifactContract :=
+    runtime_pipeline_binding_checked_acceptance_trace_artifact_evidence_core_and_sound
       assumptions
-      validation.traceBindingValidation
+      validation
       artifact
       publicInput
       proof
       requiresExternalSource
-      traceAccepted
+      accepted
   have queryPlanSound :=
     runtime_query_plan_binding_checked_acceptance_sound_from_concrete_nary_merkle
       assumptions
@@ -515,8 +508,9 @@ theorem runtime_pipeline_binding_checked_acceptance_sound_from_concrete_nary_mer
   have ethEvidence := ethFull.left
   have artifactEvidence := ethFull.right.left
   have runtimeArtifactEvidence := ethFull.right.right.right.left
-  have tracePreflightEvidence := traceSound.left
-  have traceConstraintEvidence := traceSound.right.left
+  have tracePreflightEvidence := traceArtifactContract.left
+  have traceConstraintEvidence := traceArtifactContract.right.left
+  have traceCoreContract := traceArtifactContract.right.right.left
   have queryPlanEvidence := queryPlanSound.left
   have challengeEvidence := queryPlanSound.right.left
   have openingSegmentEvidence := queryPlanSound.right.right.left
@@ -524,16 +518,8 @@ theorem runtime_pipeline_binding_checked_acceptance_sound_from_concrete_nary_mer
   have transcriptBound := queryPlanSound.right.right.right.right.left
   have pcsOpeningsValid := queryPlanSound.right.right.right.right.right.left
   have friQueriesValid := queryPlanSound.right.right.right.right.right.right.left
-  have soundWitness := queryPlanSound.right.right.right.right.right.right.right
-  have coreContract :=
-    runtime_pipeline_binding_checked_acceptance_core_obligations
-      assumptions
-      validation
-      artifact
-      publicInput
-      proof
-      accepted
-  rcases coreContract with
+  have soundWitness := traceArtifactContract.right.right.right
+  rcases traceCoreContract with
     ⟨_coreTranscriptBound, corePublicInputBound, _corePcsOpeningsValid, _coreFriQueriesValid⟩
   have publicInputBound : system.publicInputBound publicInput proof :=
     corePublicInputBound
@@ -593,13 +579,6 @@ theorem runtime_pipeline_binding_checked_acceptance_sound_from_hash_concrete_ope
             requiresExternalSource
           /\ SoundWitness system publicInput proof := by
   intro artifact publicInput proof requiresExternalSource accepted
-  have traceAccepted :=
-    runtime_pipeline_binding_checked_acceptance_trace
-      validation
-      artifact
-      publicInput
-      proof
-      accepted
   have queryPlanAccepted :=
     runtime_pipeline_binding_checked_acceptance_query_plan
       validation
@@ -615,15 +594,15 @@ theorem runtime_pipeline_binding_checked_acceptance_sound_from_hash_concrete_ope
       publicInput
       proof
       accepted
-  have traceSound :=
-    runtime_trace_constraint_artifact_binding_checked_acceptance_sound
+  have traceArtifactContract :=
+    runtime_pipeline_binding_checked_acceptance_trace_artifact_evidence_core_and_sound
       assumptions
-      validation.traceBindingValidation
+      validation
       artifact
       publicInput
       proof
       requiresExternalSource
-      traceAccepted
+      accepted
   have queryPlanSound :=
     runtime_query_plan_binding_checked_acceptance_sound_from_hash_concrete_opening
       assumptions
@@ -640,8 +619,9 @@ theorem runtime_pipeline_binding_checked_acceptance_sound_from_hash_concrete_ope
   have ethEvidence := ethFull.left
   have artifactEvidence := ethFull.right.left
   have runtimeArtifactEvidence := ethFull.right.right.right.left
-  have tracePreflightEvidence := traceSound.left
-  have traceConstraintEvidence := traceSound.right.left
+  have tracePreflightEvidence := traceArtifactContract.left
+  have traceConstraintEvidence := traceArtifactContract.right.left
+  have traceCoreContract := traceArtifactContract.right.right.left
   have queryPlanEvidence := queryPlanSound.left
   have challengeEvidence := queryPlanSound.right.left
   have openingSegmentEvidence := queryPlanSound.right.right.left
@@ -649,16 +629,8 @@ theorem runtime_pipeline_binding_checked_acceptance_sound_from_hash_concrete_ope
   have transcriptBound := queryPlanSound.right.right.right.right.left
   have pcsOpeningsValid := queryPlanSound.right.right.right.right.right.left
   have friQueriesValid := queryPlanSound.right.right.right.right.right.right.left
-  have soundWitness := queryPlanSound.right.right.right.right.right.right.right
-  have coreContract :=
-    runtime_pipeline_binding_checked_acceptance_core_obligations
-      assumptions
-      validation
-      artifact
-      publicInput
-      proof
-      accepted
-  rcases coreContract with
+  have soundWitness := traceArtifactContract.right.right.right
+  rcases traceCoreContract with
     ⟨_coreTranscriptBound, corePublicInputBound, _corePcsOpeningsValid, _coreFriQueriesValid⟩
   have publicInputBound : system.publicInputBound publicInput proof :=
     corePublicInputBound

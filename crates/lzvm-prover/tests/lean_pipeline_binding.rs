@@ -359,14 +359,16 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
         "runtime_pipeline_binding_checked_acceptance_sound_from_concrete_nary_merkle",
         &[
             "runtime_pipeline_binding_checked_acceptance_query_plan",
+            "runtime_pipeline_binding_checked_acceptance_trace_artifact_evidence_core_and_sound",
             "runtime_query_plan_binding_checked_acceptance_sound_from_concrete_nary_merkle",
-            "runtime_pipeline_binding_checked_acceptance_core_obligations",
         ],
     );
     lean_binding::assert_theorem_body_omits(
         &lean_source,
         "runtime_pipeline_binding_checked_acceptance_sound_from_concrete_nary_merkle",
         &[
+            "runtime_trace_constraint_artifact_binding_checked_acceptance_sound\n",
+            "runtime_pipeline_binding_checked_acceptance_core_obligations",
             "runtime_query_plan_binding_checked_acceptance_sound\n",
             "runtime_pipeline_binding_checked_acceptance_sound\n",
             "sound_witness_implies_verifier_core_contract",
@@ -391,14 +393,16 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
         "runtime_pipeline_binding_checked_acceptance_sound_from_hash_concrete_opening",
         &[
             "runtime_pipeline_binding_checked_acceptance_query_plan",
+            "runtime_pipeline_binding_checked_acceptance_trace_artifact_evidence_core_and_sound",
             "runtime_query_plan_binding_checked_acceptance_sound_from_hash_concrete_opening",
-            "runtime_pipeline_binding_checked_acceptance_core_obligations",
         ],
     );
     lean_binding::assert_theorem_body_omits(
         &lean_source,
         "runtime_pipeline_binding_checked_acceptance_sound_from_hash_concrete_opening",
         &[
+            "runtime_trace_constraint_artifact_binding_checked_acceptance_sound\n",
+            "runtime_pipeline_binding_checked_acceptance_core_obligations",
             "runtime_query_plan_binding_checked_acceptance_sound\n",
             "runtime_pipeline_binding_checked_acceptance_sound\n",
             "sound_witness_implies_verifier_core_contract",
