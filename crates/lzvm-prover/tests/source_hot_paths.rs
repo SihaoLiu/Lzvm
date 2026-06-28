@@ -10562,6 +10562,36 @@ fn fri_polynomial_evaluator_reuses_row_temporaries() {
 }
 
 #[test]
+fn fri_polynomial_evaluator_decodes_operation_arguments_once() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let source_path = crate_root.join("src/fri_polynomial/eval.rs");
+    let source =
+        std::fs::read_to_string(&source_path).expect("FRI polynomial eval source should read");
+
+    let build_body = function_body(&source, "pub fn build_fri_polynomial", "fn validate_inputs");
+    let evaluate_body = function_body(&source, "fn evaluate_row", "#[derive(Debug, Clone, Copy");
+    let decode_body = function_body(
+        &source,
+        "fn decode_operation_args",
+        "fn read_operation_args",
+    );
+
+    assert!(
+        build_body.contains("let operation_args = decode_operation_args(entry, args, ops.len())?")
+            && build_body.contains("&operation_args")
+            && evaluate_body.contains("operation_args: &[OperationArgs]")
+            && evaluate_body.contains("zip(operation_args.iter().copied())")
+            && !evaluate_body.contains("read_operation_args(")
+            && !evaluate_body.contains("let mut cursor")
+            && decode_body.contains("Vec::with_capacity(op_count)")
+            && decode_body.contains("for _ in 0..op_count")
+            && decode_body.contains("read_operation_args(entry.expression_id, args, cursor)?")
+            && decode_body.contains("cursor != args.len()"),
+        "FRI polynomial row evaluation should reuse decoded operation arguments"
+    );
+}
+
+#[test]
 fn witness_regular_constraints_pass_only_row_major_fixed_device_buffer() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let source_path = crate_root.join("src/witness_execution.rs");

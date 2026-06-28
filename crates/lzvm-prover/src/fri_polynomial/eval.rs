@@ -19,6 +19,7 @@ pub fn build_fri_polynomial(
         .ok_or(FriPolynomialError::MissingExpression { expression_id })?;
     let ops = entry_ops(entry, program)?;
     let args = entry_args(entry, program)?;
+    let operation_args = decode_operation_args(entry, args, ops.len())?;
     let tmp1_len = to_usize(entry.temp1_count)?;
     let tmp3_len = to_usize(entry.temp3_count)?.saturating_mul(3);
     let mut tmp1 = vec![Felt::ZERO; tmp1_len];
@@ -28,7 +29,14 @@ pub fn build_fri_polynomial(
         tmp1.fill(Felt::ZERO);
         tmp3.fill(Felt::ZERO);
         out.push(evaluate_row(
-            row, entry, ops, args, program, inputs, &mut tmp1, &mut tmp3,
+            row,
+            entry,
+            ops,
+            &operation_args,
+            program,
+            inputs,
+            &mut tmp1,
+            &mut tmp3,
         )?);
     }
     Ok(out)
@@ -85,19 +93,16 @@ fn evaluate_row(
     row: usize,
     entry: &ExpressionEntry,
     ops: &[u8],
-    args: &[u16],
+    operation_args: &[OperationArgs],
     program: &ExpressionProgram,
     inputs: FriPolynomialInputs<'_>,
     tmp1: &mut [Felt],
     tmp3: &mut [Felt],
 ) -> Result<Ext3, FriPolynomialError> {
     let layout = BufferLayout::new(inputs);
-    let mut cursor = 0usize;
 
-    for shape in ops {
-        let op_args = read_operation_args(entry.expression_id, args, cursor)?;
-        cursor += 8;
-        match *shape {
+    for (shape, op_args) in ops.iter().copied().zip(operation_args.iter().copied()) {
+        match shape {
             0 => {
                 let value = apply_base_op(
                     op_args.kind,
@@ -132,14 +137,6 @@ fn evaluate_row(
             }
             shape => return Err(FriPolynomialError::UnsupportedOperationShape { shape }),
         }
-    }
-
-    if cursor != args.len() {
-        return Err(FriPolynomialError::ArgumentCountMismatch {
-            expression_id: entry.expression_id,
-            consumed: cursor,
-            declared: args.len(),
-        });
     }
 
     read_destination(entry, tmp1, tmp3)
@@ -192,6 +189,27 @@ fn entry_args<'a>(
         .ok_or(FriPolynomialError::ArgumentSpanOutOfBounds {
             expression_id: entry.expression_id,
         })
+}
+
+fn decode_operation_args(
+    entry: &ExpressionEntry,
+    args: &[u16],
+    op_count: usize,
+) -> Result<Vec<OperationArgs>, FriPolynomialError> {
+    let mut decoded = Vec::with_capacity(op_count);
+    let mut cursor = 0usize;
+    for _ in 0..op_count {
+        decoded.push(read_operation_args(entry.expression_id, args, cursor)?);
+        cursor += 8;
+    }
+    if cursor != args.len() {
+        return Err(FriPolynomialError::ArgumentCountMismatch {
+            expression_id: entry.expression_id,
+            consumed: cursor,
+            declared: args.len(),
+        });
+    }
+    Ok(decoded)
 }
 
 fn read_operation_args(
