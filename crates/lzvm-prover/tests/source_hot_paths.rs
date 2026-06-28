@@ -8785,11 +8785,20 @@ fn fri_opening_fold_verifier_avoids_extension_value_staging() {
         "pub fn verify_fri_opening_folds",
         "fn convert_fold_value_columns",
     );
+    let evaluator_body = function_body(
+        &source,
+        "fn evaluate_fri_fold_columns",
+        "#[cfg(feature = \"cuda\")]",
+    );
 
     assert!(
         source.contains("fn extension_fold_value_columns")
             && source.contains("fn validate_fri_fold_shape")
             && source.contains("fn evaluate_fri_fold_columns")
+            && source.contains("fn evaluate_binary_fri_fold_values")
+            && source.contains("fn evaluate_binary_fold_columns")
+            && source.contains("fn fold_evaluation_point")
+            && source.contains("const TWO_INVERSE")
             && source.contains("fn evaluate_interpolated_fold_columns")
             && source.contains("fn interpolate_fold_column_owned")
             && !source.contains("fn interpolate_fold_values")
@@ -8800,8 +8809,20 @@ fn fri_opening_fold_verifier_avoids_extension_value_staging() {
                 .find("validate_fri_fold_shape")
                 .expect("direct fold verifier should validate shape")
                 < direct_body
+                    .find("evaluate_binary_fri_fold_values(")
+                    .expect("direct fold verifier should take the binary fast path")
+            && direct_body
+                .find("evaluate_binary_fri_fold_values(")
+                .expect("direct fold verifier should take the binary fast path")
+                < direct_body
                     .find("extension_fold_value_columns(values)")
                     .expect("direct fold verifier should build columns")
+            && evaluator_body
+                .find("evaluate_binary_fold_columns")
+                .expect("fold evaluator should take the binary column fast path")
+                < evaluator_body
+                    .find("interpolate_fold_column_owned")
+                    .expect("fold evaluator should transform wider columns")
             && direct_body.contains("extension_fold_value_columns(values)")
             && direct_body.contains("evaluate_fri_fold_columns(")
             && source.contains("fn convert_fold_value_columns")

@@ -5,11 +5,13 @@ use lzvm_accel::cuda_goldilocks_intt;
 use lzvm_artifacts::pcs_fri_segment::{PcsFriOpeningLayerSegment, PcsFriOpeningUnitSegment};
 #[cfg(not(feature = "cuda"))]
 use lzvm_field::intt_in_place;
-use lzvm_field::{DomainError, Ext3, Felt, FieldError, SHIFT};
+use lzvm_field::{DomainError, Ext3, Felt, FieldError, MODULUS, SHIFT};
 
 use super::errors::PcsFriOpeningFoldError;
 use super::requests::PcsFriOpeningFoldRequest;
 use crate::ProveUnitSchedule;
+
+const TWO_INVERSE: u64 = (MODULUS + 1) / 2;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PcsFriFoldError {
@@ -108,6 +110,9 @@ pub fn verify_fri_fold(
     values: &[Ext3],
 ) -> Result<Ext3, PcsFriFoldError> {
     let fold_bits = validate_fri_fold_shape(n_bits_ext, current_bits, prev_bits, values.len())?;
+    if fold_bits == 1 {
+        return evaluate_binary_fri_fold_values(n_bits_ext, prev_bits, challenge, index, values);
+    }
     let (c0, c1, c2) = extension_fold_value_columns(values);
     evaluate_fri_fold_columns(
         n_bits_ext, prev_bits, fold_bits, challenge, index, c0, c1, c2,
@@ -316,9 +321,39 @@ fn evaluate_fri_fold_columns(
     c1: Vec<Felt>,
     c2: Vec<Felt>,
 ) -> Result<Ext3, PcsFriFoldError> {
+    if fold_bits == 1 {
+        let point = fold_evaluation_point(n_bits_ext, prev_bits, challenge, index)?;
+        return Ok(evaluate_binary_fold_columns(&c0, &c1, &c2, point));
+    }
+
     let c0 = interpolate_fold_column_owned(c0, fold_bits as usize)?;
     let c1 = interpolate_fold_column_owned(c1, fold_bits as usize)?;
     let c2 = interpolate_fold_column_owned(c2, fold_bits as usize)?;
+    let point = fold_evaluation_point(n_bits_ext, prev_bits, challenge, index)?;
+    Ok(evaluate_interpolated_fold_columns(&c0, &c1, &c2, point))
+}
+
+fn evaluate_binary_fri_fold_values(
+    n_bits_ext: u32,
+    prev_bits: u32,
+    challenge: Ext3,
+    index: u64,
+    values: &[Ext3],
+) -> Result<Ext3, PcsFriFoldError> {
+    debug_assert_eq!(values.len(), 2);
+    let point = fold_evaluation_point(n_bits_ext, prev_bits, challenge, index)?;
+    let half = Felt::from_u64(TWO_INVERSE);
+    let constant = scale_extension(values[0] + values[1], half);
+    let slope = scale_extension(values[0] - values[1], half);
+    Ok(constant + slope * point)
+}
+
+fn fold_evaluation_point(
+    n_bits_ext: u32,
+    prev_bits: u32,
+    challenge: Ext3,
+    index: u64,
+) -> Result<Ext3, PcsFriFoldError> {
     let shift = fold_shift(n_bits_ext, prev_bits);
     let root = Felt::root_of_unity(prev_bits as usize)
         .ok_or(PcsFriFoldError::UnsupportedRoot { bits: prev_bits })?;
@@ -326,12 +361,7 @@ fn evaluate_fri_fold_columns(
     let inverse = point
         .inverse()
         .ok_or(PcsFriFoldError::ZeroEvaluationPoint)?;
-    Ok(evaluate_interpolated_fold_columns(
-        &c0,
-        &c1,
-        &c2,
-        scale_extension(challenge, inverse),
-    ))
+    Ok(scale_extension(challenge, inverse))
 }
 
 #[cfg(feature = "cuda")]
@@ -366,6 +396,24 @@ fn fold_shift(n_bits_ext: u32, prev_bits: u32) -> Felt {
         shift = shift * shift;
     }
     shift
+}
+
+fn evaluate_binary_fold_columns(c0: &[Felt], c1: &[Felt], c2: &[Felt], point: Ext3) -> Ext3 {
+    debug_assert_eq!(c0.len(), 2);
+    debug_assert_eq!(c1.len(), 2);
+    debug_assert_eq!(c2.len(), 2);
+    let half = Felt::from_u64(TWO_INVERSE);
+    let constant = Ext3::new(
+        (c0[0] + c0[1]) * half,
+        (c1[0] + c1[1]) * half,
+        (c2[0] + c2[1]) * half,
+    );
+    let slope = Ext3::new(
+        (c0[0] - c0[1]) * half,
+        (c1[0] - c1[1]) * half,
+        (c2[0] - c2[1]) * half,
+    );
+    constant + slope * point
 }
 
 fn evaluate_interpolated_fold_columns(c0: &[Felt], c1: &[Felt], c2: &[Felt], point: Ext3) -> Ext3 {
