@@ -1160,6 +1160,139 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             &["sound_witness_implies_verifier_core_contract"],
         );
     }
+    for (theorem, field_terms) in [
+        (
+            "guest_pc_trace_stream_elapsed_timing_acceptance_core_and_sound",
+            &["guestTraceStreamElapsedMilliseconds := elapsedMilliseconds"][..],
+        ),
+        (
+            "guest_pc_trace_descriptor_width_counts_acceptance_core_and_sound",
+            &[
+                "guestTraceDescriptorCompactRowCount := compactRows",
+                "guestTraceDescriptorWideRowCount := wideRows",
+            ][..],
+        ),
+        (
+            "guest_pc_trace_report_timing_acceptance_core_and_sound",
+            &[
+                "guestTraceReportMilliseconds := reportMilliseconds",
+                "guestTraceReportValidationMilliseconds := validationMilliseconds",
+                "guestTraceReportCount := reportCount",
+                "guestTraceReportRowCount := reportRows",
+            ][..],
+        ),
+        (
+            "guest_pc_trace_report_subtiming_acceptance_core_and_sound",
+            &[
+                "guestTraceReportRowValidationMilliseconds := rowValidationMilliseconds",
+                "guestTraceReportSourceValuesMilliseconds := sourceValuesMilliseconds",
+                "guestTraceReportPrecompileMemoryMilliseconds := precompileMemoryMilliseconds",
+                "guestTraceReportInstructionResultMilliseconds := instructionResultMilliseconds",
+                "guestTraceReportNextPcMilliseconds := nextPcMilliseconds",
+                "guestTraceReportRegisterAccessMilliseconds := registerAccessMilliseconds",
+                "guestTraceReportMemoryAccessMilliseconds := memoryAccessMilliseconds",
+                "guestTraceReportStoreApplyMilliseconds := storeApplyMilliseconds",
+                "guestTraceReportVisitMilliseconds := visitMilliseconds",
+            ][..],
+        ),
+        (
+            "guest_pc_trace_report_lower_subtiming_acceptance_core_and_sound",
+            &[
+                "guestTraceSingleRowReportLowerMilliseconds := singleRowMilliseconds",
+                "guestTraceMultiRowReportLowerMilliseconds := multiRowMilliseconds",
+                "guestTracePendingDmaReportLowerMilliseconds := pendingDmaMilliseconds",
+                "guestTraceAmoReportLowerMilliseconds := amoMilliseconds",
+                "guestTraceStoreConditionalReportLowerMilliseconds := storeConditionalMilliseconds",
+            ][..],
+        ),
+        (
+            "guest_pc_trace_emit_descriptor_wait_timing_acceptance_core_and_sound",
+            &[
+                "guestTraceEmitMilliseconds := emitMilliseconds",
+                "guestTraceDescriptorMilliseconds := descriptorMilliseconds",
+                "guestTraceDescriptorRowCount := descriptorRows",
+                "guestTracePendingSendWaitMilliseconds := pendingSendWaitMilliseconds",
+                "guestTracePendingReceiveWaitMilliseconds := pendingReceiveWaitMilliseconds",
+                "guestTraceSegmentSendWaitMilliseconds := segmentSendWaitMilliseconds",
+                "guestTraceSegmentReceiveWaitMilliseconds := segmentReceiveWaitMilliseconds",
+                "guestTraceParallelLowerWorkerCount := parallelWorkerCount",
+                "guestTraceParallelLowerDispatchedCount := parallelDispatchedCount",
+                "guestTraceParallelLowerReceivedCount := parallelReceivedCount",
+                "guestTraceParallelLowerEmittedCount := parallelEmittedCount",
+                "guestTraceParallelLowerMaxReorderCount := parallelMaxReorderCount",
+                "guestTraceOwnedStreamingLowerSegmentCount := ownedStreamingLowerSegmentCount",
+                concat!(
+                    "guestTraceParallelLowerStreamStartDispatchWaitMilliseconds := ",
+                    "parallelStreamStartDispatchWaitMilliseconds"
+                ),
+                concat!(
+                    "guestTraceParallelLowerStreamChunkDispatchWaitMilliseconds := ",
+                    "parallelStreamChunkDispatchWaitMilliseconds"
+                ),
+                concat!(
+                    "guestTraceParallelLowerStreamSegmentDispatchWaitMilliseconds := ",
+                    "parallelStreamSegmentDispatchWaitMilliseconds"
+                ),
+                concat!(
+                    "guestTraceParallelLowerStreamFinishDispatchWaitMilliseconds := ",
+                    "parallelStreamFinishDispatchWaitMilliseconds"
+                ),
+            ][..],
+        ),
+        (
+            "guest_pc_trace_device_source_timing_acceptance_core_and_sound",
+            &[
+                "guestDeviceSourceBuildMilliseconds := buildMilliseconds",
+                "guestDeviceSourceDescriptorUploadMilliseconds := descriptorUploadMilliseconds",
+                "guestDeviceSourceTraceExpandMilliseconds := traceExpandMilliseconds",
+            ][..],
+        ),
+        (
+            "guest_pc_trace_regular_stage_timing_acceptance_core_and_sound",
+            &[
+                "guestRegularConstraintsMilliseconds := regularConstraintsMilliseconds",
+                "guestRegularHintsMilliseconds := regularHintsMilliseconds",
+                "guestStageCommitMilliseconds := stageCommitMilliseconds",
+                "guestStageTraceExtractMilliseconds := stageTraceExtractMilliseconds",
+            ][..],
+        ),
+        (
+            "guest_pc_trace_shape_counts_acceptance_core_and_sound",
+            &[
+                "guestTraceSingleRowReportCount := singleRowReports",
+                "guestTraceMultiRowReportCount := multiRowReports",
+                "guestTracePendingDmaReportCount := pendingDmaReports",
+                "guestTraceAmoReportCount := amoReports",
+                "guestTraceStoreConditionalReportCount := storeConditionalReports",
+                "guestTraceExternalOpRowCount := externalOpRows",
+                "guestTraceCopyRowCount := copyRows",
+                "guestTraceFlagRowCount := flagRows",
+                "guestTracePrecompileRowCount := precompileRows",
+                "guestTraceIndirectMemoryRowCount := indirectMemoryRows",
+                "guestTraceRegisterSourceReadCount := registerSourceReads",
+                "guestTraceMemorySourceReadCount := memorySourceReads",
+                "guestTraceRegisterStoreRowCount := registerStoreRows",
+                "guestTraceMemoryStoreRowCount := memoryStoreRows",
+                "guestTraceNoStoreRowCount := noStoreRows",
+            ][..],
+        ),
+        (
+            "guest_pc_trace_memory_access_shape_acceptance_core_and_sound",
+            &[
+                "guestTraceIndirectMemoryRowCount := indirectMemoryRows",
+                "guestTraceMemorySourceReadCount := memorySourceReads",
+                "guestTraceMemoryStoreRowCount := memoryStoreRows",
+            ][..],
+        ),
+    ] {
+        let prefix = lean_binding::theorem_prefix(&timing_source, theorem);
+        for field_term in field_terms {
+            assert!(
+                compact_source_contains(&prefix, field_term),
+                "Lean theorem {theorem} prefix should wire field {field_term}"
+            );
+        }
+    }
     assert!(
         lean_source.contains("guestStageSourceRetentionRetainedByteCount")
             && lean_source.contains(
@@ -3747,6 +3880,22 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "guest_pc_trace_timing_acceptance_sound",
             "guest_pc_trace_timing_acceptance_verifier_core_contract",
             "guest_pc_trace_timing_acceptance_core_and_sound",
+            "guest_pc_trace_stream_elapsed_timing_acceptance_sound",
+            "guest_pc_trace_stream_elapsed_timing_acceptance_verifier_core_contract",
+            "guest_pc_trace_descriptor_width_counts_acceptance_sound",
+            "guest_pc_trace_descriptor_width_counts_acceptance_verifier_core_contract",
+            "guest_pc_trace_report_timing_acceptance_sound",
+            "guest_pc_trace_report_timing_acceptance_verifier_core_contract",
+            "guest_pc_trace_report_subtiming_acceptance_sound",
+            "guest_pc_trace_report_subtiming_acceptance_verifier_core_contract",
+            "guest_pc_trace_report_lower_subtiming_acceptance_sound",
+            "guest_pc_trace_report_lower_subtiming_acceptance_verifier_core_contract",
+            "guest_pc_trace_emit_descriptor_wait_timing_acceptance_sound",
+            "guest_pc_trace_emit_descriptor_wait_timing_acceptance_verifier_core_contract",
+            "guest_pc_trace_device_source_timing_acceptance_sound",
+            "guest_pc_trace_device_source_timing_acceptance_verifier_core_contract",
+            "guest_pc_trace_regular_stage_timing_acceptance_sound",
+            "guest_pc_trace_regular_stage_timing_acceptance_verifier_core_contract",
             "guest_pc_trace_shape_counts_acceptance_sound",
             "guest_pc_trace_shape_counts_acceptance_verifier_core_contract",
             "guest_pc_trace_stream_elapsed_timing_acceptance_core_and_sound",
