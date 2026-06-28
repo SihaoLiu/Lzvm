@@ -49,6 +49,14 @@ pub fn build_pcs_fri_transcript_commitments_with_timing(
             evaluation_challenge_draws: request.evaluation_challenge_draws,
             binding_segments: request.binding_segments,
         })?;
+    let extra_challenge_capacity = schedule
+        .fri_layers
+        .len()
+        .checked_add(2)
+        .ok_or(PcsFriOpeningBuildError::LengthOverflow)?;
+    challenges
+        .try_reserve_exact(extra_challenge_capacity)
+        .map_err(|_| PcsFriOpeningBuildError::LengthOverflow)?;
     challenges.push(Ext3::ZERO);
 
     let arity = usize::try_from(schedule.merkle_tree_arity)

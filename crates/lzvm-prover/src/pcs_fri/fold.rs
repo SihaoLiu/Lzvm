@@ -306,7 +306,9 @@ fn verify_fri_fold_columns(
     let fold_bits = prev_bits - current_bits;
     let expected_len = 1_usize
         .checked_shl(fold_bits)
-        .ok_or(PcsFriOpeningFoldError::LengthOverflow)?;
+        .ok_or(PcsFriOpeningFoldError::Fold(
+            PcsFriFoldError::LengthOverflow,
+        ))?;
     if c0.len() != expected_len {
         return Err(PcsFriOpeningFoldError::Fold(
             PcsFriFoldError::ValueLengthMismatch {

@@ -64,6 +64,49 @@ fn rejects_fri_fold_values_with_wrong_group_size() {
 }
 
 #[test]
+fn opening_fold_preserves_fold_length_overflow_error_shape() {
+    let mut schedule = sample_validation_unit();
+    schedule.query_count = 1;
+    schedule.extended_domain_bits = usize::BITS;
+    schedule.fri_layers = vec![PcsFriLayer {
+        input_bits: usize::BITS,
+        output_bits: 0,
+        folding_factor: 1,
+    }];
+    let fri = PcsFriOpeningUnitSegment {
+        unit_index: 0,
+        trace_instance_index: 0,
+        layers: vec![PcsFriOpeningLayerSegment {
+            layer_index: 0,
+            root: [1, 2, 3, 4],
+            last_level: Vec::new(),
+            queries: vec![PcsFriOpeningQuerySegment {
+                row_index: 0,
+                values: Vec::new(),
+                siblings: Vec::new(),
+            }],
+        }],
+        final_polynomial: vec![[1, 2, 3]],
+    };
+
+    let error = verify_fri_opening_folds(
+        &schedule,
+        PcsFriOpeningFoldRequest {
+            unit_index: 0,
+            query_rows: &[0],
+            challenges: &[Ext3::ZERO, Ext3::ONE],
+            fri: &fri,
+        },
+    )
+    .expect_err("opening fold should reject unsupported fold width");
+
+    assert_eq!(
+        error,
+        PcsFriOpeningFoldError::Fold(PcsFriFoldError::LengthOverflow)
+    );
+}
+
+#[test]
 fn verifies_fri_query_path_against_root() {
     let values = [
         Ext3::from_u64s([1, 2, 3]),

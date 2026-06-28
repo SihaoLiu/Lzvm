@@ -8707,6 +8707,9 @@ fn pcs_transcript_challenges_preallocate_expected_draws() {
     let transcript_path = crate_root.join("src/pcs_transcript.rs");
     let transcript_source =
         std::fs::read_to_string(&transcript_path).expect("PCS transcript source should read");
+    let fri_build_path = crate_root.join("src/pcs_fri/build.rs");
+    let fri_build_source =
+        std::fs::read_to_string(&fri_build_path).expect("FRI build source should read");
     let full_body = function_body(
         &transcript_source,
         "pub fn derive_pcs_transcript_challenges",
@@ -8716,6 +8719,11 @@ fn pcs_transcript_challenges_preallocate_expected_draws() {
         &transcript_source,
         "pub(crate) fn build_pcs_transcript_prefix",
         "pub fn derive_pcs_final_query_challenge_from_segments",
+    );
+    let fri_commit_body = function_body(
+        &fri_build_source,
+        "pub fn build_pcs_fri_transcript_commitments_with_timing",
+        "fn record_fri_transcript_duration",
     );
 
     assert!(
@@ -8727,6 +8735,13 @@ fn pcs_transcript_challenges_preallocate_expected_draws() {
             && prefix_body.contains("try_reserve_exact(challenge_capacity)")
             && prefix_body.contains("PcsTranscriptError::LengthOverflow"),
         "PCS transcript challenge vectors should fallibly reserve known draw counts"
+    );
+    assert!(
+        fri_commit_body.contains(".fri_layers")
+            && fri_commit_body.contains(".checked_add(2)")
+            && fri_commit_body.contains("try_reserve_exact(extra_challenge_capacity)")
+            && fri_commit_body.contains("PcsFriOpeningBuildError::LengthOverflow"),
+        "FRI transcript commitment challenge vectors should fallibly reserve known draw counts"
     );
 }
 
