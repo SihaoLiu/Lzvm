@@ -9425,6 +9425,13 @@ fn lean_opening_segment_binding_tracks_runtime_opening_checks() {
                 "let identity = (query_unit.unit_index, query_unit.trace_instance_index)"
             )
             && witness_opening_validation.contains(".get(&identity)")
+            && witness_opening_validation.contains("let Some(stage_slot) =")
+            && witness_opening_validation.contains("unit.stage_commit_widths.get(stage_slot)")
+            && compact_source_contains(
+                witness_opening_validation,
+                "witness_segment.witness.stages.get(stage_slot)"
+            )
+            && !witness_opening_validation.contains(".find(|witness_stage|")
             && fri_opening_source.contains("use crate::indexing::index_first_by_key")
             && fri_opening_source.matches("index_first_by_key(").count() == 2
             && fri_opening_units_validation

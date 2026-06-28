@@ -446,10 +446,10 @@ pub fn validate_witness_opening_segments(
             for stage in &query.stages {
                 let stage_index = usize::try_from(stage.stage_index)
                     .map_err(|_| ValidateWitnessOpeningSegmentsError::StageIndexOverflow)?;
-                let Some(width) = stage_index
-                    .checked_sub(1)
-                    .and_then(|index| unit.stage_commit_widths.get(index))
-                else {
+                let Some(stage_slot) = stage_index.checked_sub(1) else {
+                    return Err(ValidateWitnessOpeningSegmentsError::UnitMismatch { unit_index });
+                };
+                let Some(width) = unit.stage_commit_widths.get(stage_slot) else {
                     return Err(ValidateWitnessOpeningSegmentsError::UnitMismatch { unit_index });
                 };
                 if stage.values.len() != *width as usize
@@ -460,8 +460,8 @@ pub fn validate_witness_opening_segments(
                 let Some(witness_stage) = witness_segment
                     .witness
                     .stages
-                    .iter()
-                    .find(|witness_stage| witness_stage.stage_index == stage.stage_index)
+                    .get(stage_slot)
+                    .filter(|witness_stage| witness_stage.stage_index == stage.stage_index)
                 else {
                     return Err(ValidateWitnessOpeningSegmentsError::UnitMismatch { unit_index });
                 };
