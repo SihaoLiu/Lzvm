@@ -3730,20 +3730,27 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "gpu_setup_checked_acceptance_projects_constants_sound",
             "gpu_setup_checked_acceptance_sound",
             "gpu_setup_checked_acceptance_verifier_core_contract",
+            "gpu_setup_checked_acceptance_constants_core_and_sound",
             "gpu_allocation_checked_acceptance_projects_written_contents",
             "gpu_allocation_checked_acceptance_sound",
             "gpu_allocation_checked_acceptance_verifier_core_contract",
+            "gpu_allocation_checked_acceptance_written_contents_core_and_sound",
             "gpu_host_device_copy_round_trip_implies_written_contents",
             "gpu_host_device_copy_round_trip_checked_acceptance_projects_round_trip",
             "gpu_host_device_copy_round_trip_checked_acceptance_projects_written_contents",
             "gpu_host_device_copy_round_trip_checked_acceptance_sound",
             "gpu_host_device_copy_round_trip_checked_acceptance_verifier_core_contract",
+            concat!(
+                "gpu_host_device_copy_round_trip_checked_acceptance_",
+                "written_contents_core_and_sound"
+            ),
             "gpu_temporary_buffer_reuse_implies_same_request",
             "gpu_temporary_buffer_reuse_implies_pending_reads_complete",
             "gpu_temporary_buffer_reuse_checked_acceptance_projects_same_request",
             "gpu_temporary_buffer_reuse_checked_acceptance_projects_pending_reads_complete",
             "gpu_temporary_buffer_reuse_checked_acceptance_sound",
             "gpu_temporary_buffer_reuse_checked_acceptance_verifier_core_contract",
+            "gpu_temporary_buffer_reuse_checked_acceptance_reuse_core_and_sound",
             "gpu_leaf_output_buffer_reuse_implies_canonical_leaf_bytes",
             "gpu_leaf_output_buffer_reuse_checked_acceptance_projects_verifier_acceptance",
             "gpu_leaf_output_buffer_reuse_checked_acceptance_projects_length_match",
@@ -3940,6 +3947,78 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "gpu_temporary_buffer_reuse_checked_acceptance_sound",
             "sound_witness_implies_verifier_core_contract",
         ],
+    );
+    for (theorem, prefix_terms, body_terms) in [
+        (
+            "gpu_setup_checked_acceptance_constants_core_and_sound",
+            [
+                "validation.constantsSoundFor request.device request.requiredBits",
+                "RuntimeVerifierCoreContract system publicInput proof",
+                "SoundWitness system publicInput proof",
+            ],
+            [
+                "gpu_setup_checked_acceptance_sound",
+                "gpu_setup_checked_acceptance_verifier_core_contract",
+            ],
+        ),
+        (
+            "gpu_allocation_checked_acceptance_written_contents_core_and_sound",
+            [
+                "validation.writtenContentsBound allocation publicInput proof",
+                "RuntimeVerifierCoreContract system publicInput proof",
+                "SoundWitness system publicInput proof",
+            ],
+            [
+                "gpu_allocation_checked_acceptance_sound",
+                "gpu_allocation_checked_acceptance_verifier_core_contract",
+            ],
+        ),
+        (
+            concat!(
+                "gpu_host_device_copy_round_trip_checked_acceptance_",
+                "written_contents_core_and_sound"
+            ),
+            [
+                "validation.allocationValidation.writtenContentsBound allocation publicInput proof",
+                "RuntimeVerifierCoreContract system publicInput proof",
+                "SoundWitness system publicInput proof",
+            ],
+            [
+                "gpu_host_device_copy_round_trip_checked_acceptance_sound",
+                "gpu_host_device_copy_round_trip_checked_acceptance_verifier_core_contract",
+            ],
+        ),
+    ] {
+        lean_binding::assert_theorem_prefix_contains(&gpu_runtime_source, theorem, &prefix_terms);
+        lean_binding::assert_theorem_body_contains(&gpu_runtime_source, theorem, &body_terms);
+        lean_binding::assert_theorem_body_omits(
+            &gpu_runtime_source,
+            theorem,
+            &["sound_witness_implies_verifier_core_contract"],
+        );
+    }
+    lean_binding::assert_theorem_prefix_contains(
+        &gpu_runtime_source,
+        "gpu_temporary_buffer_reuse_checked_acceptance_reuse_core_and_sound",
+        &[
+            "GpuAllocationSameRequest previous next",
+            "validation.pendingDeviceReadsComplete previous publicInput proof",
+            "RuntimeVerifierCoreContract system publicInput proof",
+            "SoundWitness system publicInput proof",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &gpu_runtime_source,
+        "gpu_temporary_buffer_reuse_checked_acceptance_reuse_core_and_sound",
+        &[
+            "gpu_temporary_buffer_reuse_checked_acceptance_sound",
+            "gpu_temporary_buffer_reuse_checked_acceptance_verifier_core_contract",
+        ],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &gpu_runtime_source,
+        "gpu_temporary_buffer_reuse_checked_acceptance_reuse_core_and_sound",
+        &["sound_witness_implies_verifier_core_contract"],
     );
     lean_binding::assert_theorem_body_contains(
         &gpu_runtime_source,

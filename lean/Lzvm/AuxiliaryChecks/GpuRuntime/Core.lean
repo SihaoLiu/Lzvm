@@ -66,6 +66,35 @@ theorem gpu_setup_checked_acceptance_verifier_core_contract
       proof
       checked
 
+theorem gpu_setup_checked_acceptance_constants_core_and_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : GpuSetupCacheValidation)
+    (request : GpuSetupRequest) :
+    forall publicInput proof,
+      GpuSetupCheckedAcceptance system validation request publicInput proof ->
+        validation.constantsSoundFor request.device request.requiredBits
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof checked
+  have sound :=
+    gpu_setup_checked_acceptance_sound
+      assumptions
+      validation
+      request
+      publicInput
+      proof
+      checked
+  have core :=
+    gpu_setup_checked_acceptance_verifier_core_contract
+      assumptions
+      validation
+      request
+      publicInput
+      proof
+      checked
+  exact And.intro sound.left (And.intro core sound.right)
+
 theorem gpu_allocation_cache_reuse_preserves_written_contents
     (validation : GpuAllocationCacheValidation)
     (cached fresh : GpuAllocationSource) :
@@ -156,6 +185,35 @@ theorem gpu_allocation_checked_acceptance_verifier_core_contract
       publicInput
       proof
       checked
+
+theorem gpu_allocation_checked_acceptance_written_contents_core_and_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : GpuAllocationCacheValidation)
+    (allocation : GpuAllocationSource) :
+    forall publicInput proof,
+      GpuAllocationCheckedAcceptance system validation allocation publicInput proof ->
+        validation.writtenContentsBound allocation publicInput proof
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof checked
+  have sound :=
+    gpu_allocation_checked_acceptance_sound
+      assumptions
+      validation
+      allocation
+      publicInput
+      proof
+      checked
+  have core :=
+    gpu_allocation_checked_acceptance_verifier_core_contract
+      assumptions
+      validation
+      allocation
+      publicInput
+      proof
+      checked
+  exact And.intro sound.left (And.intro core sound.right)
 
 theorem gpu_host_device_copy_round_trip_implies_written_contents
     (validation : GpuHostDeviceCopyRoundTripValidation)
@@ -261,6 +319,40 @@ theorem gpu_host_device_copy_round_trip_checked_acceptance_verifier_core_contrac
       publicInput
       proof
       checked
+
+theorem gpu_host_device_copy_round_trip_checked_acceptance_written_contents_core_and_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : GpuHostDeviceCopyRoundTripValidation)
+    (allocation : GpuAllocationSource) :
+    forall publicInput proof,
+      GpuHostDeviceCopyRoundTripCheckedAcceptance
+          system
+          validation
+          allocation
+          publicInput
+          proof ->
+        validation.allocationValidation.writtenContentsBound allocation publicInput proof
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof checked
+  have sound :=
+    gpu_host_device_copy_round_trip_checked_acceptance_sound
+      assumptions
+      validation
+      allocation
+      publicInput
+      proof
+      checked
+  have core :=
+    gpu_host_device_copy_round_trip_checked_acceptance_verifier_core_contract
+      assumptions
+      validation
+      allocation
+      publicInput
+      proof
+      checked
+  exact And.intro sound.left (And.intro core sound.right)
 
 theorem gpu_temporary_buffer_reuse_implies_same_request
     (validation : GpuTemporaryBufferReuseValidation)
@@ -401,6 +493,45 @@ theorem gpu_temporary_buffer_reuse_checked_acceptance_verifier_core_contract
       publicInput
       proof
       checked
+
+theorem gpu_temporary_buffer_reuse_checked_acceptance_reuse_core_and_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : GpuTemporaryBufferReuseValidation)
+    (previous next : GpuAllocationSource) :
+    forall publicInput proof,
+      GpuTemporaryBufferReuseCheckedAcceptance
+          system
+          validation
+          previous
+          next
+          publicInput
+          proof ->
+        GpuAllocationSameRequest previous next
+          /\ validation.pendingDeviceReadsComplete previous publicInput proof
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof checked
+  have sound :=
+    gpu_temporary_buffer_reuse_checked_acceptance_sound
+      assumptions
+      validation
+      previous
+      next
+      publicInput
+      proof
+      checked
+  have core :=
+    gpu_temporary_buffer_reuse_checked_acceptance_verifier_core_contract
+      assumptions
+      validation
+      previous
+      next
+      publicInput
+      proof
+      checked
+  exact And.intro sound.left
+    (And.intro sound.right.left (And.intro core sound.right.right))
 
 theorem gpu_allocator_no_wait_bypass_implies_same_request
     (validation : GpuAllocatorNoWaitBypassValidation)
