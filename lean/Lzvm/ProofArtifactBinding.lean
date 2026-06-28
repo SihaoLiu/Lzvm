@@ -884,6 +884,60 @@ theorem runtime_proof_artifact_binding_checked_acceptance_verifier_core_contract
       accepted
   exact obligations.right.right.right
 
+theorem runtime_proof_artifact_binding_checked_acceptance_evidence_core_and_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeProofArtifactBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeProofArtifactBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeProofArtifactBindingEvidence
+            system
+            validation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeProofArtifactBindingStructuralObligations
+            system
+            validation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeArtifactEvidence
+            system
+            validation.runtimeValidation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro artifact publicInput proof accepted
+  have fullContract :=
+    runtime_proof_artifact_binding_checked_acceptance_full_contract
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have coreContract :=
+    runtime_proof_artifact_binding_checked_acceptance_verifier_core_contract
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  exact
+    And.intro fullContract.left
+      (And.intro fullContract.right.left
+        (And.intro fullContract.right.right.left
+          (And.intro coreContract fullContract.right.right.right)))
+
 theorem runtime_proof_artifact_finalized_full_contract
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
@@ -948,5 +1002,59 @@ theorem runtime_proof_artifact_finalized_verifier_core_contract
       publicInput
       proof
       finalized.left
+
+theorem runtime_proof_artifact_finalized_evidence_core_and_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeProofArtifactBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeProofArtifactFinalized
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeProofArtifactBindingEvidence
+            system
+            validation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeProofArtifactBindingStructuralObligations
+            system
+            validation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeArtifactEvidence
+            system
+            validation.runtimeValidation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro artifact publicInput proof finalized
+  have fullContract :=
+    runtime_proof_artifact_finalized_full_contract
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      finalized
+  have coreContract :=
+    runtime_proof_artifact_finalized_verifier_core_contract
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      finalized
+  exact
+    And.intro fullContract.left
+      (And.intro fullContract.right.left
+        (And.intro fullContract.right.right.left
+          (And.intro coreContract fullContract.right.right.right)))
 
 end Lzvm
