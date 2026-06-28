@@ -817,6 +817,8 @@ HEADER = (
     "fri_transcript_fold_ms,fri_transcript_units,fri_transcript_layers,"
     "fri_transcript_layers_per_unit,contribution_segment_ms,"
     "contribution_verify_ms,contribution_challenge_ms,contribution_total_ms,"
+    "fri_opening_total_pct,fri_transcript_unit_build_total_pct,"
+    "contribution_total_pct,final_proof_timing_hint,"
     "opening_source_shape_hint,"
     "source_retention_attempts,source_retention_retained,"
     "source_retention_rejected,source_retention_retained_bytes,"
@@ -3006,6 +3008,28 @@ def fri_opening_scope_action_hint(
     return "fri_opening_balanced"
 
 
+def final_proof_timing_hint(
+    total_ms: int,
+    fri_opening_ms: int,
+    fri_transcript_unit_build_ms: int,
+    contribution_total_ms: int,
+) -> str:
+    scopes = [
+        ("fri_opening", fri_opening_ms),
+        ("fri_transcript", fri_transcript_unit_build_ms),
+        ("contribution", contribution_total_ms),
+    ]
+    scope_name, scope_ms = max(scopes, key=lambda item: item[1])
+    if scope_ms <= 0:
+        return "none"
+    if total_ms <= 0:
+        return f"profile_final_proof_{scope_name}"
+    scope_pct = scope_ms * 100.0 / total_ms
+    if scope_pct < 10.0:
+        return "final_proof_not_dominant"
+    return f"profile_final_proof_{scope_name}"
+
+
 def opening_source_rebuild_hint(
     external_source_count: int,
     retained_source_count: int,
@@ -4753,6 +4777,21 @@ def summarize_profile_values(
     contribution_total_ms = (
         contribution_segment_ms + contribution_verify_ms + contribution_challenge_ms
     )
+    fri_opening_total_pct = (
+        fri_opening_ms * 100.0 / total_ms if total_ms else 0.0
+    )
+    fri_transcript_unit_build_total_pct = (
+        fri_transcript_unit_build_ms * 100.0 / total_ms if total_ms else 0.0
+    )
+    contribution_total_pct = (
+        contribution_total_ms * 100.0 / total_ms if total_ms else 0.0
+    )
+    final_proof_hint = final_proof_timing_hint(
+        total_ms,
+        fri_opening_ms,
+        fri_transcript_unit_build_ms,
+        contribution_total_ms,
+    )
     fri_opening_unit_build_scope_pct = (
         fri_opening_unit_build_ms * 100.0 / fri_opening_ms
         if fri_opening_ms
@@ -5388,6 +5427,8 @@ def summarize_profile_values(
         f"{fri_transcript_layers},{fri_transcript_layers_per_unit:.3f},"
         f"{contribution_segment_ms},{contribution_verify_ms},"
         f"{contribution_challenge_ms},{contribution_total_ms},"
+        f"{fri_opening_total_pct:.3f},{fri_transcript_unit_build_total_pct:.3f},"
+        f"{contribution_total_pct:.3f},{final_proof_hint},"
         f"{opening_source_hint},"
         f"{source_retention_attempts},{source_retention_retained},"
         f"{source_retention_rejected},{source_retention_retained_bytes},"

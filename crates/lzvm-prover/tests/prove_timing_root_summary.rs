@@ -331,7 +331,7 @@ fn prove_timing_root_summary_reports_fri_transcript_and_contribution_work() {
     std::fs::create_dir_all(&dir).expect("final proof timing fixture dir should be created");
     let log_path = dir.join("final-proof.log");
     let input = [
-        "timing_total_ms=1000",
+        "timing_total_ms=100",
         "timing_guest_stage_tree_commit_root_count=1",
         "timing_guest_stage_tree_commit_root_materialization_groups=1",
         "timing_guest_stage_tree_commit_root_materialization_max_group_size=1",
@@ -392,6 +392,13 @@ fn prove_timing_root_summary_reports_fri_transcript_and_contribution_work() {
     assert_eq!(value("contribution_verify_ms"), "6");
     assert_eq!(value("contribution_challenge_ms"), "7");
     assert_eq!(value("contribution_total_ms"), "18");
+    assert_eq!(value("fri_opening_total_pct"), "10.000");
+    assert_eq!(value("fri_transcript_unit_build_total_pct"), "4.000");
+    assert_eq!(value("contribution_total_pct"), "18.000");
+    assert_eq!(
+        value("final_proof_timing_hint"),
+        "profile_final_proof_contribution"
+    );
 }
 
 #[test]
@@ -680,6 +687,10 @@ fn prove_timing_root_summary_reports_root_grouping_shape() {
         "contribution_verify_ms",
         "contribution_challenge_ms",
         "contribution_total_ms",
+        "fri_opening_total_pct",
+        "fri_transcript_unit_build_total_pct",
+        "contribution_total_pct",
+        "final_proof_timing_hint",
     ] {
         assert!(
             source.contains(required),
