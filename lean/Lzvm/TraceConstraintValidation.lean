@@ -997,6 +997,47 @@ theorem runtime_trace_constraint_checked_acceptance_sound
       evidence
   exact And.intro evidence soundWitness
 
+theorem runtime_trace_constraint_checked_acceptance_evidence_core_and_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeTraceConstraintValidation system) :
+    forall artifact publicInput proof requiresExternalSource,
+      RuntimeTraceConstraintCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeTraceConstraintEvidence
+            system
+            validation
+            artifact
+            publicInput
+            proof
+            requiresExternalSource
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro artifact publicInput proof requiresExternalSource accepted
+  have sound :=
+    runtime_trace_constraint_checked_acceptance_sound
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      accepted
+  have core :=
+    runtime_trace_constraint_checked_acceptance_verifier_core_contract
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      accepted
+  exact And.intro sound.left (And.intro core sound.right)
+
 theorem runtime_trace_constraint_required_external_source_sound
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
@@ -1075,6 +1116,58 @@ theorem runtime_trace_constraint_required_external_source_verifier_core_contract
       proof
       requiresExternalSource
       accepted
+
+theorem runtime_trace_constraint_required_external_source_evidence_core_and_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeTraceConstraintValidation system) :
+    forall artifact publicInput proof (requiresExternalSource : Prop),
+      RuntimeTraceConstraintCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        requiresExternalSource ->
+          RuntimeTraceConstraintEvidence
+              system
+              validation
+              artifact
+              publicInput
+              proof
+              requiresExternalSource
+            /\ ExternalSourceOpeningEvidence
+              system
+              validation.openingValidation.runtimeSoundnessValidation.sourceValidation
+              publicInput
+              proof
+            /\ RuntimeVerifierCoreContract system publicInput proof
+            /\ SoundWitness system publicInput proof := by
+  intro artifact publicInput proof requiresExternalSource accepted required
+  have requiredSound :=
+    runtime_trace_constraint_required_external_source_sound
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      accepted
+      required
+  have core :=
+    runtime_trace_constraint_required_external_source_verifier_core_contract
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      accepted
+      required
+  exact
+    And.intro requiredSound.left
+      (And.intro requiredSound.right.left
+        (And.intro core requiredSound.right.right))
 
 theorem runtime_trace_constraint_required_external_source_pcs_sound
     {system : VerifierModel}
