@@ -8878,6 +8878,7 @@ fn fri_opening_fold_verifier_avoids_extension_value_staging() {
             && source.contains("fn evaluate_binary_fold_columns")
             && source.contains("fn convert_binary_fold_values")
             && source.contains("fn is_binary_fold_layer")
+            && source.contains("fn domain_size_with_cache")
             && source.contains("fn fold_evaluation_point")
             && source.contains("const TWO_INVERSE")
             && source.contains("fn evaluate_interpolated_fold_columns")
@@ -8922,6 +8923,10 @@ fn fri_opening_fold_verifier_avoids_extension_value_staging() {
             && body.contains("layer_challenges[layer_index] = Some(challenge)")
             && body.contains("let mut layer_fold_shapes = vec![None; schedule.fri_layers.len()]")
             && body.contains("validate_fri_fold_shape_with_cache(")
+            && body.contains("let mut layer_output_sizes = vec![None; schedule.fri_layers.len()]")
+            && body.matches("domain_size_with_cache(").count() == 2
+            && !body.contains("domain_size(layer_plan.output_bits)")
+            && !body.contains("domain_size(next_plan.output_bits)")
             && body
                 .find("let challenge = if")
                 .expect("opening fold verifier should read layer challenges")

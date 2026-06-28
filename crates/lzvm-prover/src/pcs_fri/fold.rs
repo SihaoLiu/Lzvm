@@ -182,12 +182,16 @@ pub fn verify_fri_opening_folds(
         .and_then(|index| index.checked_sub(1));
     let mut layer_challenges = vec![None; schedule.fri_layers.len()];
     let mut layer_fold_shapes = vec![None; schedule.fri_layers.len()];
+    let mut layer_output_sizes = vec![None; schedule.fri_layers.len()];
 
     for (query_index, query_row) in request.query_rows.iter().enumerate() {
         for (layer_index, (layer_plan, opening_layer)) in
             schedule.fri_layers.iter().zip(layers.iter()).enumerate()
         {
-            let output_size = domain_size(layer_plan.output_bits)?;
+            let output_size = domain_size_with_cache(
+                &mut layer_output_sizes[layer_index],
+                layer_plan.output_bits,
+            )?;
             let expected_row = query_row % output_size;
             let query = &opening_layer.queries[query_index];
             if query.row_index != expected_row {
@@ -262,7 +266,10 @@ pub fn verify_fri_opening_folds(
             };
 
             let target = if let Some(next_plan) = schedule.fri_layers.get(layer_index + 1) {
-                let next_output_size = domain_size(next_plan.output_bits)?;
+                let next_output_size = domain_size_with_cache(
+                    &mut layer_output_sizes[layer_index + 1],
+                    next_plan.output_bits,
+                )?;
                 let value_index = usize::try_from(expected_row / next_output_size)
                     .map_err(|_| PcsFriOpeningFoldError::LengthOverflow)?;
                 let next_layer = layers[layer_index + 1];
@@ -548,6 +555,18 @@ fn domain_size(bits: u32) -> Result<u64, PcsFriOpeningFoldError> {
     1_u64
         .checked_shl(bits)
         .ok_or(PcsFriOpeningFoldError::UnsupportedDomainBits { bits })
+}
+
+fn domain_size_with_cache(
+    cached_size: &mut Option<u64>,
+    bits: u32,
+) -> Result<u64, PcsFriOpeningFoldError> {
+    if let Some(size) = *cached_size {
+        return Ok(size);
+    }
+    let size = domain_size(bits)?;
+    *cached_size = Some(size);
+    Ok(size)
 }
 
 fn convert_ext(values: [u64; 3]) -> Result<Ext3, PcsFriOpeningFoldError> {
