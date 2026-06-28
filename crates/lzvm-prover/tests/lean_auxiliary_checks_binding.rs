@@ -28,6 +28,58 @@ fn assert_theorem_body_omits_identifiers(source: &str, theorem: &str, identifier
     }
 }
 
+fn assert_updated_summary_core_and_sound_wrapper(
+    source: &str,
+    theorem: &str,
+    combined_helper: &str,
+    field_terms: &[&str],
+) {
+    lean_binding::assert_theorem_prefix_contains(
+        source,
+        theorem,
+        &[
+            "RuntimeVerifierCoreContract system publicInput proof",
+            "SoundWitness system publicInput proof",
+        ],
+    );
+    let base_theorem = theorem
+        .strip_suffix("_core_and_sound")
+        .expect("combined theorem name should use the core_and_sound suffix");
+    let verifier_callee = format!("{base_theorem}_verifier_core_contract");
+    let sound_callee = format!("{base_theorem}_sound");
+    lean_binding::assert_theorem_body_contains(source, theorem, &[combined_helper]);
+    lean_binding::assert_theorem_body_omits(
+        source,
+        theorem,
+        &[
+            verifier_callee.as_str(),
+            sound_callee.as_str(),
+            "sound_witness_implies_verifier_core_contract",
+        ],
+    );
+    let prefix = lean_binding::theorem_prefix(source, theorem);
+    let body = lean_binding::theorem_body(source, theorem);
+    for field_term in field_terms {
+        assert!(
+            compact_source_contains(&prefix, field_term),
+            "Lean theorem {theorem} prefix should wire field {field_term}"
+        );
+        assert!(
+            compact_source_contains(&body, field_term),
+            "Lean theorem {theorem} body should pass field {field_term} through the combined helper"
+        );
+    }
+    let helper_summary_prefix = format!("{combined_helper} assumptions {{ summary with");
+    assert!(
+        compact_source_contains(&body, &helper_summary_prefix),
+        "Lean theorem {theorem} body should call the combined helper with the updated summary"
+    );
+    assert!(
+        compact_source_contains(&body, "publicInput proof observed"),
+        "Lean theorem {theorem} body should pass the observed acceptance to the combined helper"
+    );
+}
+
 fn theorem_stems_with_suffix(source: &str, prefix: &str, suffix: &str) -> BTreeSet<String> {
     lean_binding::theorem_names(source)
         .into_iter()
@@ -1405,54 +1457,11 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             ][..],
         ),
     ] {
-        lean_binding::assert_theorem_prefix_contains(
+        assert_updated_summary_core_and_sound_wrapper(
             &lean_proof_timing_source,
             theorem,
-            &[
-                "RuntimeVerifierCoreContract system publicInput proof",
-                "SoundWitness system publicInput proof",
-            ],
-        );
-        let base_theorem = theorem
-            .strip_suffix("_core_and_sound")
-            .expect("combined proof-timing theorem name should use the core_and_sound suffix");
-        let verifier_callee = format!("{base_theorem}_verifier_core_contract");
-        let sound_callee = format!("{base_theorem}_sound");
-        let combined_helper = "proof_artifact_finish_timing_some_summary_acceptance_core_and_sound";
-        lean_binding::assert_theorem_body_contains(
-            &lean_proof_timing_source,
-            theorem,
-            &[combined_helper],
-        );
-        lean_binding::assert_theorem_body_omits(
-            &lean_proof_timing_source,
-            theorem,
-            &[
-                verifier_callee.as_str(),
-                sound_callee.as_str(),
-                "sound_witness_implies_verifier_core_contract",
-            ],
-        );
-        let prefix = lean_binding::theorem_prefix(&lean_proof_timing_source, theorem);
-        let body = lean_binding::theorem_body(&lean_proof_timing_source, theorem);
-        for field_term in field_terms {
-            assert!(
-                compact_source_contains(&prefix, field_term),
-                "Lean theorem {theorem} prefix should wire field {field_term}"
-            );
-            assert!(
-                compact_source_contains(&body, field_term),
-                "Lean theorem {theorem} body should pass field {field_term} through the combined helper"
-            );
-        }
-        let helper_summary_prefix = format!("{combined_helper} assumptions {{ summary with");
-        assert!(
-            compact_source_contains(&body, &helper_summary_prefix),
-            "Lean theorem {theorem} body should call the combined helper with the updated summary"
-        );
-        assert!(
-            compact_source_contains(&body, "publicInput proof observed"),
-            "Lean theorem {theorem} body should pass the observed acceptance to the combined helper"
+            "proof_artifact_finish_timing_some_summary_acceptance_core_and_sound",
+            field_terms,
         );
     }
     let aggregate_finish_theorem =
@@ -1498,56 +1507,11 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         "finishContributionVerifyMilliseconds := contributionVerifyMilliseconds",
         "finishContributionChallengeMilliseconds := contributionChallengeMilliseconds",
     ];
-    lean_binding::assert_theorem_prefix_contains(
+    assert_updated_summary_core_and_sound_wrapper(
         &proof_timing_verifier_source,
         aggregate_finish_theorem,
-        &[
-            "RuntimeVerifierCoreContract system publicInput proof",
-            "SoundWitness system publicInput proof",
-        ],
-    );
-    let aggregate_finish_helper =
-        "proof_artifact_finish_timing_some_summary_acceptance_core_and_sound";
-    lean_binding::assert_theorem_body_contains(
-        &proof_timing_verifier_source,
-        aggregate_finish_theorem,
-        &[aggregate_finish_helper],
-    );
-    lean_binding::assert_theorem_body_omits(
-        &proof_timing_verifier_source,
-        aggregate_finish_theorem,
-        &[
-            "proof_artifact_finish_aggregate_timing_acceptance_verifier_core_contract",
-            "proof_artifact_finish_aggregate_timing_acceptance_sound",
-            "sound_witness_implies_verifier_core_contract",
-        ],
-    );
-    let aggregate_finish_prefix =
-        lean_binding::theorem_prefix(&proof_timing_verifier_source, aggregate_finish_theorem);
-    let aggregate_finish_body =
-        lean_binding::theorem_body(&proof_timing_verifier_source, aggregate_finish_theorem);
-    for field_term in aggregate_finish_field_terms {
-        assert!(
-            compact_source_contains(&aggregate_finish_prefix, field_term),
-            "Lean theorem {aggregate_finish_theorem} prefix should wire field {field_term}"
-        );
-        assert!(
-            compact_source_contains(&aggregate_finish_body, field_term),
-            "Lean theorem {aggregate_finish_theorem} body should pass field {field_term} through the combined helper"
-        );
-    }
-    let aggregate_finish_helper_summary_prefix =
-        format!("{aggregate_finish_helper} assumptions {{ summary with");
-    assert!(
-        compact_source_contains(
-            &aggregate_finish_body,
-            &aggregate_finish_helper_summary_prefix
-        ),
-        "Lean theorem {aggregate_finish_theorem} body should call the combined helper with the updated summary"
-    );
-    assert!(
-        compact_source_contains(&aggregate_finish_body, "publicInput proof observed"),
-        "Lean theorem {aggregate_finish_theorem} body should pass the observed acceptance to the combined helper"
+        "proof_artifact_finish_timing_some_summary_acceptance_core_and_sound",
+        &aggregate_finish_field_terms,
     );
     assert!(
         proof_timing_projected_source.contains("structure ProofTimingProjectedCoreContracts")
