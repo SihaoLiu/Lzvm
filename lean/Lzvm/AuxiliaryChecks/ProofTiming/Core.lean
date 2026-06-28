@@ -69,21 +69,13 @@ theorem proof_timing_batch_acceptance_core_and_sound
         RuntimeVerifierCoreContract system publicInput proof
           /\ SoundWitness system publicInput proof := by
   intro publicInput proof observed
-  have core :=
-    proof_timing_batch_acceptance_verifier_core_contract
+  exact
+    ignored_metadata_acceptance_core_and_sound
       assumptions
       summary
       publicInput
       proof
       observed
-  have sound :=
-    proof_timing_batch_acceptance_sound
-      assumptions
-      summary
-      publicInput
-      proof
-      observed
-  exact And.intro core sound
 
 def WitnessOpeningRowValueTimingObservedAcceptance
     (system : VerifierModel)
@@ -142,21 +134,13 @@ theorem witness_opening_row_value_timing_acceptance_core_and_sound
         RuntimeVerifierCoreContract system publicInput proof
           /\ SoundWitness system publicInput proof := by
   intro publicInput proof observed
-  have core :=
-    witness_opening_row_value_timing_acceptance_verifier_core_contract
+  exact
+    ignored_metadata_acceptance_core_and_sound
       assumptions
       summary
       publicInput
       proof
       observed
-  have sound :=
-    witness_opening_row_value_timing_acceptance_sound
-      assumptions
-      summary
-      publicInput
-      proof
-      observed
-  exact And.intro core sound
 
 theorem witness_opening_row_value_aggregate_timing_acceptance_sound
     {system : VerifierModel}
@@ -358,21 +342,13 @@ theorem constant_material_validation_timing_acceptance_core_and_sound
         RuntimeVerifierCoreContract system publicInput proof
           /\ SoundWitness system publicInput proof := by
   intro publicInput proof observed
-  have core :=
-    constant_material_validation_timing_acceptance_verifier_core_contract
+  exact
+    ignored_metadata_acceptance_core_and_sound
       assumptions
       summary
       publicInput
       proof
       observed
-  have sound :=
-    constant_material_validation_timing_acceptance_sound
-      assumptions
-      summary
-      publicInput
-      proof
-      observed
-  exact And.intro core sound
 
 theorem constant_material_validation_aggregate_timing_acceptance_sound
     {system : VerifierModel}
@@ -536,21 +512,13 @@ theorem prover_gpu_mode_acceptance_core_and_sound
         RuntimeVerifierCoreContract system publicInput proof
           /\ SoundWitness system publicInput proof := by
   intro publicInput proof observed
-  have core :=
-    prover_gpu_mode_acceptance_verifier_core_contract
+  exact
+    ignored_metadata_acceptance_core_and_sound
       assumptions
       summary
       publicInput
       proof
       observed
-  have sound :=
-    prover_gpu_mode_acceptance_sound
-      assumptions
-      summary
-      publicInput
-      proof
-      observed
-  exact And.intro core sound
 
 def GpuRunOptionsObservedAcceptance
     (system : VerifierModel)
@@ -609,21 +577,13 @@ theorem gpu_run_options_acceptance_core_and_sound
         RuntimeVerifierCoreContract system publicInput proof
           /\ SoundWitness system publicInput proof := by
   intro publicInput proof observed
-  have core :=
-    gpu_run_options_acceptance_verifier_core_contract
+  exact
+    ignored_metadata_acceptance_core_and_sound
       assumptions
       summary
       publicInput
       proof
       observed
-  have sound :=
-    gpu_run_options_acceptance_sound
-      assumptions
-      summary
-      publicInput
-      proof
-      observed
-  exact And.intro core sound
 
 def CudaBackendObservedAcceptance
     (system : VerifierModel)
@@ -682,21 +642,13 @@ theorem cuda_backend_acceptance_core_and_sound
         RuntimeVerifierCoreContract system publicInput proof
           /\ SoundWitness system publicInput proof := by
   intro publicInput proof observed
-  have core :=
-    cuda_backend_acceptance_verifier_core_contract
+  exact
+    ignored_metadata_acceptance_core_and_sound
       assumptions
       summary
       publicInput
       proof
       observed
-  have sound :=
-    cuda_backend_acceptance_sound
-      assumptions
-      summary
-      publicInput
-      proof
-      observed
-  exact And.intro core sound
 
 def CudaAllocatorTimingObservedAcceptance
     (system : VerifierModel)
@@ -755,21 +707,13 @@ theorem cuda_allocator_timing_acceptance_core_and_sound
         RuntimeVerifierCoreContract system publicInput proof
           /\ SoundWitness system publicInput proof := by
   intro publicInput proof observed
-  have core :=
-    cuda_allocator_timing_acceptance_verifier_core_contract
+  exact
+    ignored_metadata_acceptance_core_and_sound
       assumptions
       summary
       publicInput
       proof
       observed
-  have sound :=
-    cuda_allocator_timing_acceptance_sound
-      assumptions
-      summary
-      publicInput
-      proof
-      observed
-  exact And.intro core sound
 
 theorem cuda_allocator_aggregate_timing_acceptance_sound
     {system : VerifierModel}
@@ -1314,21 +1258,13 @@ theorem proof_artifact_finish_timing_acceptance_core_and_sound
         RuntimeVerifierCoreContract system publicInput proof
           /\ SoundWitness system publicInput proof := by
   intro publicInput proof observed
-  have core :=
-    proof_artifact_finish_timing_acceptance_verifier_core_contract
+  exact
+    ignored_metadata_acceptance_core_and_sound
       assumptions
       summary
       publicInput
       proof
       observed
-  have sound :=
-    proof_artifact_finish_timing_acceptance_sound
-      assumptions
-      summary
-      publicInput
-      proof
-      observed
-  exact And.intro core sound
 
 theorem proof_artifact_finish_timing_some_summary_acceptance_sound
     {system : VerifierModel}
@@ -1364,21 +1300,13 @@ theorem proof_artifact_finish_timing_some_summary_acceptance_core_and_sound
         RuntimeVerifierCoreContract system publicInput proof
           /\ SoundWitness system publicInput proof := by
   intro publicInput proof observed
-  have core :=
-    proof_artifact_finish_timing_some_summary_acceptance_verifier_core_contract
+  exact
+    ignored_metadata_acceptance_core_and_sound
       assumptions
-      summary
+      (some summary)
       publicInput
       proof
       observed
-  have sound :=
-    proof_artifact_finish_timing_some_summary_acceptance_sound
-      assumptions
-      summary
-      publicInput
-      proof
-      observed
-  exact And.intro core sound
 
 theorem proof_artifact_finish_top_level_timing_acceptance_sound
     {system : VerifierModel}

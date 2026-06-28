@@ -1112,21 +1112,20 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             .expect("combined proof-timing theorem name should use the core_and_sound suffix");
         let verifier_callee = format!("{base_theorem}_verifier_core_contract");
         let sound_callee = format!("{base_theorem}_sound");
-        let body_terms = [verifier_callee.as_str(), sound_callee.as_str()];
-        lean_binding::assert_theorem_body_contains(&lean_proof_timing_source, theorem, &body_terms);
+        lean_binding::assert_theorem_body_contains(
+            &lean_proof_timing_source,
+            theorem,
+            &["ignored_metadata_acceptance_core_and_sound"],
+        );
         lean_binding::assert_theorem_body_omits(
             &lean_proof_timing_source,
             theorem,
-            &["sound_witness_implies_verifier_core_contract"],
+            &[
+                verifier_callee.as_str(),
+                sound_callee.as_str(),
+                "sound_witness_implies_verifier_core_contract",
+            ],
         );
-        let body = lean_binding::theorem_body(&lean_proof_timing_source, theorem);
-        for callee in body_terms {
-            let expected_call = format!("{callee} assumptions summary publicInput proof observed");
-            assert!(
-                compact_source_contains(&body, &expected_call),
-                "Lean theorem {theorem} body should call {callee} with ordered timing arguments"
-            );
-        }
     }
     for (theorem, field_terms) in [
         (
