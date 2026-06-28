@@ -615,6 +615,7 @@ fn builds_fri_opening_unit_from_polynomial_values() {
 fn builds_wide_fri_opening_unit_from_polynomial_values() {
     let query_rows = [1_u64, 6_u64];
     let mut schedule = sample_validation_unit();
+    schedule.merkle_tree_arity = 4;
     schedule.fri_layers = vec![PcsFriLayer {
         input_bits: 3,
         output_bits: 1,
@@ -666,6 +667,39 @@ fn builds_wide_fri_opening_unit_from_polynomial_values() {
             .map(|value| value.to_u64s())
             .collect::<Vec<_>>()
     );
+
+    let layer = &fri.layers[0];
+    let root = digest_from_u64s(layer.root);
+    let last_level = layer
+        .last_level
+        .iter()
+        .copied()
+        .map(digest_from_u64s)
+        .collect::<Vec<_>>();
+    assert!(verify_fri_last_level_root(root, 4, &last_level).expect("last level should verify"));
+    for query in &layer.queries {
+        let values = query
+            .values
+            .iter()
+            .map(|value| Ext3::from_u64s(*value))
+            .collect::<Vec<_>>();
+        let siblings = query
+            .siblings
+            .iter()
+            .map(|level| {
+                level
+                    .siblings
+                    .iter()
+                    .copied()
+                    .map(digest_from_u64s)
+                    .collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>();
+        assert!(
+            verify_fri_query_path(root, &last_level, 4, query.row_index, &values, &siblings)
+                .expect("query path should verify")
+        );
+    }
 }
 
 #[test]
