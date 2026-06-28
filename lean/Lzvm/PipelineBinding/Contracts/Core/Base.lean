@@ -786,6 +786,9 @@ theorem runtime_pipeline_binding_checked_acceptance_proof_system_full_soundness_
               /\ SoundWitness system publicInput proof
               /\ RuntimeFriFoldTraceIdentityContract system
                 validation.queryPlanBindingValidation.openingValidation
+                artifact publicInput proof
+              /\ RuntimeFriFoldQueryPlanOrderContract system
+                validation.queryPlanBindingValidation.openingValidation
                 artifact publicInput proof := by
   intro artifact publicInput proof requiresExternalSource accepted
   have proofSystemSound := abstract_verifier_sound assumptions
@@ -833,6 +836,9 @@ theorem runtime_pipeline_binding_checked_acceptance_audited_proof_system_contrac
                   /\ system.witnessMatchesTrace witness trace)
               /\ SoundWitness system publicInput proof
               /\ RuntimeFriFoldTraceIdentityContract system
+                validation.queryPlanBindingValidation.openingValidation
+                artifact publicInput proof
+              /\ RuntimeFriFoldQueryPlanOrderContract system
                 validation.queryPlanBindingValidation.openingValidation
                 artifact publicInput proof := by
   intro artifact publicInput proof requiresExternalSource accepted
@@ -883,6 +889,9 @@ theorem runtime_pipeline_binding_checked_acceptance_audited_assumption_full_cont
                   /\ system.witnessMatchesTrace witness trace)
               /\ SoundWitness system publicInput proof
               /\ RuntimeFriFoldTraceIdentityContract system
+                validation.queryPlanBindingValidation.openingValidation
+                artifact publicInput proof
+              /\ RuntimeFriFoldQueryPlanOrderContract system
                 validation.queryPlanBindingValidation.openingValidation
                 artifact publicInput proof := by
   intro artifact publicInput proof requiresExternalSource accepted
@@ -949,6 +958,9 @@ theorem runtime_pipeline_binding_checked_acceptance_audited_framed_guest_input_f
               /\ SoundWitness system publicInput proof
               /\ RuntimeFriFoldTraceIdentityContract system
                 validation.queryPlanBindingValidation.openingValidation
+                artifact publicInput proof
+              /\ RuntimeFriFoldQueryPlanOrderContract system
+                validation.queryPlanBindingValidation.openingValidation
                 artifact publicInput proof := by
   intro artifact publicInput proof requiresExternalSource accepted
   have auditedContract :=
@@ -979,7 +991,8 @@ theorem runtime_pipeline_binding_checked_acceptance_audited_framed_guest_input_f
         coreContract,
         executionObligations,
         soundWitness,
-        foldTraceIdentityContract⟩
+        foldTraceIdentityContract,
+        foldQueryPlanOrderContract⟩
   rcases framedContract with
     ⟨framedEvidence,
       framedStructural,
@@ -997,6 +1010,7 @@ theorem runtime_pipeline_binding_checked_acceptance_audited_framed_guest_input_f
         coreContract,
         executionObligations,
         soundWitness,
-        foldTraceIdentityContract⟩
+        foldTraceIdentityContract,
+        foldQueryPlanOrderContract⟩
 
 end Lzvm

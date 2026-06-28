@@ -632,6 +632,12 @@ theorem runtime_pipeline_binding_checked_acceptance_full_soundness_contract
             validation.queryPlanBindingValidation.openingValidation
             artifact
             publicInput
+            proof
+          /\ RuntimeFriFoldQueryPlanOrderContract
+            system
+            validation.queryPlanBindingValidation.openingValidation
+            artifact
+            publicInput
             proof := by
   intro artifact publicInput proof requiresExternalSource accepted
   have sound :=
@@ -674,13 +680,21 @@ theorem runtime_pipeline_binding_checked_acceptance_full_soundness_contract
       publicInput
       proof
       accepted
+  have foldQueryPlanOrderContract :=
+    runtime_pipeline_binding_checked_acceptance_fri_fold_query_plan_order_contract
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
   exact
     ⟨sound.left,
       artifactObligations,
       coreObligations,
       executionObligations,
       sound.right,
-      foldTraceIdentityContract⟩
+      foldTraceIdentityContract,
+      foldQueryPlanOrderContract⟩
 
 set_option linter.style.longLine false in
 theorem runtime_pipeline_binding_checked_acceptance_full_soundness_with_fri_parser_contract
@@ -727,6 +741,12 @@ theorem runtime_pipeline_binding_checked_acceptance_full_soundness_with_fri_pars
             validation.queryPlanBindingValidation.openingValidation
             artifact
             publicInput
+            proof
+          /\ RuntimeFriFoldQueryPlanOrderContract
+            system
+            validation.queryPlanBindingValidation.openingValidation
+            artifact
+            publicInput
             proof := by
   intro artifact publicInput proof requiresExternalSource accepted
   have fullContract :=
@@ -752,14 +772,16 @@ theorem runtime_pipeline_binding_checked_acceptance_full_soundness_with_fri_pars
       coreContract,
       executionObligations,
       soundWitness,
-      foldTraceIdentityContract⟩
+      foldTraceIdentityContract,
+      foldQueryPlanOrderContract⟩
   exact
     And.intro pipelineEvidence
       (And.intro artifactObligations
         (And.intro coreContract
           (And.intro executionObligations
             (And.intro soundWitness
-              (And.intro parserContract foldTraceIdentityContract)))))
+              (And.intro parserContract
+                (And.intro foldTraceIdentityContract foldQueryPlanOrderContract))))))
 
 
 end Lzvm

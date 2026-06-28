@@ -48,6 +48,12 @@ theorem runtime_pipeline_binding_checked_acceptance_accepts_full_soundness_contr
               validation.queryPlanBindingValidation.openingValidation
               artifact
               publicInput
+              proof
+            /\ RuntimeFriFoldQueryPlanOrderContract
+              system
+              validation.queryPlanBindingValidation.openingValidation
+              artifact
+              publicInput
               proof := by
   intro artifact publicInput proof requiresExternalSource accepted
   have verifierAccepts :=

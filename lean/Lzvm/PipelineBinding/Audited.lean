@@ -59,6 +59,12 @@ theorem runtime_pipeline_binding_required_external_source_full_soundness_contrac
                 validation.queryPlanBindingValidation.openingValidation
                 artifact
                 publicInput
+                proof
+              /\ RuntimeFriFoldQueryPlanOrderContract
+                system
+                validation.queryPlanBindingValidation.openingValidation
+                artifact
+                publicInput
                 proof := by
   intro artifact publicInput proof requiresExternalSource accepted required
   have verifierAccepts :=
@@ -99,7 +105,8 @@ theorem runtime_pipeline_binding_required_external_source_full_soundness_contrac
       coreContract,
       executionObligations,
       soundWitness,
-      foldTraceIdentityContract⟩
+      foldTraceIdentityContract,
+      foldQueryPlanOrderContract⟩
   exact
     ⟨verifierAccepts,
       traceExternalEvidence,
@@ -109,7 +116,8 @@ theorem runtime_pipeline_binding_required_external_source_full_soundness_contrac
       coreContract,
       executionObligations,
       soundWitness,
-      foldTraceIdentityContract⟩
+      foldTraceIdentityContract,
+      foldQueryPlanOrderContract⟩
 
 theorem runtime_pipeline_binding_required_external_source_proof_system_full_soundness_contract
     {system : VerifierModel}
@@ -155,6 +163,12 @@ theorem runtime_pipeline_binding_required_external_source_proof_system_full_soun
                   /\ system.witnessMatchesTrace witness trace)
               /\ SoundWitness system publicInput proof
               /\ RuntimeFriFoldTraceIdentityContract
+                system
+                validation.queryPlanBindingValidation.openingValidation
+                artifact
+                publicInput
+                proof
+              /\ RuntimeFriFoldQueryPlanOrderContract
                 system
                 validation.queryPlanBindingValidation.openingValidation
                 artifact
@@ -223,6 +237,12 @@ theorem runtime_pipeline_binding_required_external_source_audited_proof_system_c
                 validation.queryPlanBindingValidation.openingValidation
                 artifact
                 publicInput
+                proof
+              /\ RuntimeFriFoldQueryPlanOrderContract
+                system
+                validation.queryPlanBindingValidation.openingValidation
+                artifact
+                publicInput
                 proof := by
   intro artifact publicInput proof requiresExternalSource accepted required
   have auditedAssumptions :=
@@ -285,6 +305,12 @@ theorem runtime_pipeline_binding_required_external_source_audited_soundness_proo
                   /\ system.witnessMatchesTrace witness trace)
               /\ SoundWitness system publicInput proof
               /\ RuntimeFriFoldTraceIdentityContract
+                system
+                validation.queryPlanBindingValidation.openingValidation
+                artifact
+                publicInput
+                proof
+              /\ RuntimeFriFoldQueryPlanOrderContract
                 system
                 validation.queryPlanBindingValidation.openingValidation
                 artifact

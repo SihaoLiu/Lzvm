@@ -182,6 +182,7 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
             "runtime_pipeline_binding_checked_acceptance_opening_segment_evidence",
             "runtime_pipeline_binding_checked_acceptance_fri_parser_contract",
             "runtime_pipeline_binding_checked_acceptance_fri_fold_trace_identity_contract",
+            "runtime_pipeline_binding_checked_acceptance_fri_fold_query_plan_order_contract",
             "runtime_pipeline_binding_checked_acceptance_opening_segment_bound_contract",
             "runtime_pipeline_binding_checked_acceptance_opening_bound_contract",
             "runtime_pipeline_binding_checked_acceptance_constant_opening_bound_from_concrete_nary_merkle",
@@ -991,6 +992,7 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
             "RuntimeVerifierCoreContract system publicInput proof",
             "SoundWitness system publicInput proof",
             "RuntimeFriFoldTraceIdentityContract",
+            "RuntimeFriFoldQueryPlanOrderContract",
         ],
     );
     lean_binding::assert_theorem_body_contains(
@@ -1315,6 +1317,7 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
             "RuntimePipelineBindingEvidence",
             "RuntimeArtifactSoundnessObligations",
             "RuntimeFriFoldTraceIdentityContract",
+            "RuntimeFriFoldQueryPlanOrderContract",
         ],
     );
     assert!(
@@ -1468,7 +1471,12 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
                 &lean_source,
                 "runtime_pipeline_binding_checked_acceptance_proof_system_full_soundness_contract"
             )
-            .contains("RuntimeFriFoldTraceIdentityContract"),
+            .contains("RuntimeFriFoldTraceIdentityContract")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_pipeline_binding_checked_acceptance_proof_system_full_soundness_contract"
+            )
+            .contains("RuntimeFriFoldQueryPlanOrderContract"),
                     "pipeline checked acceptance should package model soundness with the accepted full soundness contract"
                 );
     assert!(
@@ -1506,7 +1514,12 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
                 &lean_source,
                 "runtime_pipeline_binding_checked_acceptance_audited_proof_system_contract"
             )
-            .contains("RuntimeFriFoldTraceIdentityContract"),
+            .contains("RuntimeFriFoldTraceIdentityContract")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_pipeline_binding_checked_acceptance_audited_proof_system_contract"
+            )
+            .contains("RuntimeFriFoldQueryPlanOrderContract"),
                     "pipeline checked acceptance should package audited crypto assumptions with proof-system soundness"
                 );
     assert!(
@@ -2212,6 +2225,28 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
     );
     lean_binding::assert_theorem_prefix_contains(
         &lean_source,
+        "runtime_pipeline_binding_checked_acceptance_fri_fold_query_plan_order_contract",
+        &[
+            "RuntimePipelineBindingCheckedAcceptance",
+            "RuntimeFriFoldQueryPlanOrderContract",
+            "validation.queryPlanBindingValidation.openingValidation",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_omits(
+        &lean_source,
+        "runtime_pipeline_binding_checked_acceptance_fri_fold_query_plan_order_contract",
+        &["AssumptionBundle"],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_pipeline_binding_checked_acceptance_fri_fold_query_plan_order_contract",
+        &[
+            "runtime_pipeline_binding_checked_acceptance_opening_segment_checked_acceptance",
+            "runtime_opening_segment_binding_checked_acceptance_fri_fold_query_plan_order_contract",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
         "runtime_pipeline_binding_checked_acceptance_full_soundness_contract",
         &[
             "RuntimePipelineBindingCheckedAcceptance",
@@ -2223,6 +2258,7 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
             "system.witnessMatchesTrace witness trace",
             "SoundWitness system publicInput proof",
             "RuntimeFriFoldTraceIdentityContract",
+            "RuntimeFriFoldQueryPlanOrderContract",
         ],
     );
     lean_binding::assert_theorem_body_contains(
@@ -2234,6 +2270,7 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
             "runtime_pipeline_binding_checked_acceptance_core_obligations",
             "runtime_pipeline_binding_checked_acceptance_execution_obligations",
             "runtime_pipeline_binding_checked_acceptance_fri_fold_trace_identity_contract",
+            "runtime_pipeline_binding_checked_acceptance_fri_fold_query_plan_order_contract",
         ],
     );
     lean_binding::assert_theorem_prefix_contains(
@@ -2253,6 +2290,7 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
             "SoundWitness system publicInput proof",
             "RuntimeFriOpeningSegmentParserContract",
             "RuntimeFriFoldTraceIdentityContract",
+            "RuntimeFriFoldQueryPlanOrderContract",
         ],
     );
     lean_binding::assert_theorem_body_contains(
@@ -2262,6 +2300,7 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
             "runtime_pipeline_binding_checked_acceptance_full_soundness_contract",
             "runtime_pipeline_binding_checked_acceptance_fri_parser_contract",
             "foldTraceIdentityContract",
+            "foldQueryPlanOrderContract",
         ],
     );
     lean_binding::assert_theorem_body_omits(
@@ -2552,7 +2591,12 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
                 &lean_source,
                 "runtime_pipeline_binding_required_external_source_full_soundness_contract"
             )
-            .contains("RuntimeFriFoldTraceIdentityContract"),
+            .contains("RuntimeFriFoldTraceIdentityContract")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_pipeline_binding_required_external_source_full_soundness_contract"
+            )
+            .contains("RuntimeFriFoldQueryPlanOrderContract"),
                     "pipeline required external-source projection should expose the accepted full soundness contract"
                 );
     assert!(
@@ -2595,7 +2639,12 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
                 &lean_source,
                 "runtime_pipeline_binding_required_external_source_proof_system_full_soundness_contract"
             )
-            .contains("RuntimeFriFoldTraceIdentityContract"),
+            .contains("RuntimeFriFoldTraceIdentityContract")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_pipeline_binding_required_external_source_proof_system_full_soundness_contract"
+            )
+            .contains("RuntimeFriFoldQueryPlanOrderContract"),
                     "pipeline required external-source projection should package model soundness with the full soundness contract"
                 );
     assert!(
@@ -2633,7 +2682,12 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
                 &lean_source,
                 "runtime_pipeline_binding_required_external_source_audited_proof_system_contract"
             )
-            .contains("RuntimeFriFoldTraceIdentityContract"),
+            .contains("RuntimeFriFoldTraceIdentityContract")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_pipeline_binding_required_external_source_audited_proof_system_contract"
+            )
+            .contains("RuntimeFriFoldQueryPlanOrderContract"),
                     "pipeline required external-source projection should package audited crypto assumptions with proof-system soundness"
                 );
     assert!(
