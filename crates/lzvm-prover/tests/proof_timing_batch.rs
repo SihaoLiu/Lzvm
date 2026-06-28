@@ -204,6 +204,10 @@ fn proof_timing_batch_runs_commands_and_appends_stable_log() {
         "batch output should report stable small timing spread: {stdout}"
     );
     assert!(
+        stdout.contains("small_excluded_runs=0"),
+        "batch output should report that no small runs were excluded: {stdout}"
+    );
+    assert!(
         stdout.contains("small_timing_summaries=3"),
         "batch output should report small timing summary count: {stdout}"
     );
@@ -227,6 +231,10 @@ fn proof_timing_batch_runs_commands_and_appends_stable_log() {
         stdout.contains("large_stable_spread_s=0.002")
             && stdout.contains("large_stable_relative_spread=0.000999"),
         "batch output should report stable large timing spread: {stdout}"
+    );
+    assert!(
+        stdout.contains("large_excluded_runs=0"),
+        "batch output should report that no large runs were excluded: {stdout}"
     );
     assert!(
         stdout.contains("large_timing_summaries=3"),
@@ -261,6 +269,13 @@ fn proof_timing_batch_runs_commands_and_appends_stable_log() {
             && batch_json.contains("\"small_stable_run_count\": 3")
             && batch_json.contains("\"large_stable_run_count\": 3"),
         "batch json should record explicit run counts: {batch_json}"
+    );
+    assert!(
+        batch_json.contains("\"small_excluded_log_count\": 0")
+            && batch_json.contains("\"large_excluded_log_count\": 0")
+            && batch_json.contains("\"small_excluded_run_count\": 0")
+            && batch_json.contains("\"large_excluded_run_count\": 0"),
+        "batch json should record empty excluded run diagnostics: {batch_json}"
     );
     assert!(
         batch_json.contains("\"small_command\": \"printf 'status=ok"),
@@ -520,6 +535,11 @@ fn proof_timing_batch_reruns_until_stable_sample_group() {
             && stdout.contains("small_stable_relative_spread=0.001994"),
         "batch output should report the stable subset spread: {stdout}"
     );
+    assert!(
+        stdout.contains("small_excluded_runs=1")
+            && stdout.contains("small_excluded_timing_s=9.000"),
+        "batch output should report the excluded outlier timing: {stdout}"
+    );
     let batch_dir = stdout
         .lines()
         .find_map(|line| line.strip_prefix("batch_dir="))
@@ -561,6 +581,23 @@ fn proof_timing_batch_reruns_until_stable_sample_group() {
             && stable_logs.contains("small-004.log"),
         "batch json should identify the stable timing subset: {batch_json}"
     );
+    let excluded_logs = batch_json
+        .split("\"small_excluded_logs\": [")
+        .nth(1)
+        .and_then(|tail| tail.split(']').next())
+        .expect("batch json should contain small excluded logs");
+    assert!(
+        excluded_logs.contains("small-001.log")
+            && !excluded_logs.contains("small-002.log")
+            && !excluded_logs.contains("small-003.log")
+            && !excluded_logs.contains("small-004.log"),
+        "batch json should identify the excluded timing log: {batch_json}"
+    );
+    assert!(
+        batch_json.contains("\"small_excluded_log_count\": 1")
+            && batch_json.contains("\"small_excluded_run_count\": 1"),
+        "batch json should count the excluded timing log and parseable sample: {batch_json}"
+    );
     let raw_timings = batch_json
         .split("\"small_timing_s\": [")
         .nth(1)
@@ -584,6 +621,18 @@ fn proof_timing_batch_reruns_until_stable_sample_group() {
             && stable_timings.contains("1.003")
             && stable_timings.contains("1.004"),
         "batch json should keep the stable timing values separate from the outlier: {batch_json}"
+    );
+    let excluded_timings = batch_json
+        .split("\"small_excluded_timing_s\": [")
+        .nth(1)
+        .and_then(|tail| tail.split(']').next())
+        .expect("batch json should contain excluded small timings");
+    assert!(
+        excluded_timings.contains("9.0")
+            && !excluded_timings.contains("1.002")
+            && !excluded_timings.contains("1.003")
+            && !excluded_timings.contains("1.004"),
+        "batch json should keep excluded timing values separate from the stable subset: {batch_json}"
     );
     assert!(
         batch_json.contains("\"small_stable_spread_s\": 0.002")

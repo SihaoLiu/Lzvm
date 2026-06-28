@@ -679,6 +679,11 @@ def excluded_timing_values(all_values: list[float], stable_values: list[float]) 
     return remaining
 
 
+def excluded_log_paths(all_logs: list[Path], stable_logs: list[Path]) -> list[Path]:
+    stable_log_set = set(stable_logs)
+    return [path for path in all_logs if path not in stable_log_set]
+
+
 def timing_average_seconds(values: list[float]) -> float | None:
     if not values:
         return None
@@ -789,6 +794,8 @@ def write_batch_json(
         large_timing_s,
         large_stable_timing_s,
     )
+    small_excluded_logs = excluded_log_paths(small_logs or [], small_stable_logs or [])
+    large_excluded_logs = excluded_log_paths(large_logs or [], large_stable_logs or [])
     small_stable_avg_s = timing_average_seconds(small_stable_timing_s)
     large_stable_avg_s = timing_average_seconds(large_stable_timing_s)
     small_stable_spread_s = timing_spread_seconds(small_stable_timing_s)
@@ -845,6 +852,10 @@ def write_batch_json(
         "large_stable_run_count": len(large_stable_logs or []),
         "small_stable_logs": path_texts(small_stable_logs or []),
         "large_stable_logs": path_texts(large_stable_logs or []),
+        "small_excluded_logs": path_texts(small_excluded_logs),
+        "large_excluded_logs": path_texts(large_excluded_logs),
+        "small_excluded_log_count": len(small_excluded_logs),
+        "large_excluded_log_count": len(large_excluded_logs),
         "small_stable_timing_s": small_stable_timing_s,
         "large_stable_timing_s": large_stable_timing_s,
         "small_excluded_timing_s": small_excluded_timing_s,
