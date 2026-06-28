@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::collections::BTreeSet;
 use std::time::Instant;
 
@@ -948,7 +949,7 @@ pub fn build_witness_contribution_proof_artifact_for_all_units(
         collect_global_proof_values(request.outputs, &request.auxiliary_inputs.proof_values)?;
     let proof_values_segment = build_pcs_proof_values_segment_from_packed_values(
         &request.catalog.layout.global_info,
-        &proof_values,
+        proof_values.as_ref(),
     )
     .map_err(|error| format!("build proof values segment failed: {error}"))?;
 
@@ -975,7 +976,7 @@ pub fn build_witness_contribution_proof_artifact_for_all_units(
             public_values,
             preloaded_contribution_proof_data(
                 &binding_segments,
-                Some(&proof_values),
+                Some(proof_values.as_ref()),
                 Some(&contribution_entries),
             ),
             None,
@@ -1040,8 +1041,8 @@ fn build_witness_proof_artifact_for_all_units_inner(
             &witness_outputs,
             AllUnitsTranscriptProofInputs {
                 binding_segments: binding_segments_slice,
-                proof_values: &proof_values,
-                group_values: &group_values,
+                proof_values: proof_values.as_ref(),
+                group_values: group_values.as_ref(),
                 evaluation_values: &evaluation_values,
                 unit_values: &proof_unit_values,
             },
@@ -1054,8 +1055,8 @@ fn build_witness_proof_artifact_for_all_units_inner(
             public_values_hash,
             &witness_outputs,
             ProofArtifactInputs {
-                proof_values: &proof_values,
-                group_values: &group_values,
+                proof_values: proof_values.as_ref(),
+                group_values: group_values.as_ref(),
                 unit_values: &proof_unit_values,
                 binding_segments: binding_segments_slice,
             },
@@ -1118,7 +1119,7 @@ fn build_witness_proof_artifact_for_all_units_inner(
             public_values,
             preloaded_contribution_proof_data(
                 &binding_segments,
-                Some(&proof_values),
+                Some(proof_values.as_ref()),
                 Some(contribution_entries),
             ),
             timing.as_deref_mut(),
@@ -1903,12 +1904,12 @@ fn collect_evaluation_values_from_segment(
         .collect()
 }
 
-fn collect_global_proof_values(
-    outputs: &[ProveWitnessTraceCommitments],
-    explicit_values: &[Felt],
-) -> Result<Vec<Felt>, String> {
+fn collect_global_proof_values<'a>(
+    outputs: &'a [ProveWitnessTraceCommitments],
+    explicit_values: &'a [Felt],
+) -> Result<Cow<'a, [Felt]>, String> {
     if !explicit_values.is_empty() {
-        return Ok(explicit_values.to_vec());
+        return Ok(Cow::Borrowed(explicit_values));
     }
 
     let mut values: Option<&[Felt]> = None;
@@ -1929,15 +1930,18 @@ fn collect_global_proof_values(
         }
     }
 
-    Ok(values.map_or_else(Vec::new, ToOwned::to_owned))
+    Ok(match values {
+        Some(values) => Cow::Borrowed(values),
+        None => Cow::Borrowed(&[]),
+    })
 }
 
-fn collect_global_group_values(
-    outputs: &[ProveWitnessTraceCommitments],
-    explicit_values: &[Ext3],
-) -> Result<Vec<Ext3>, String> {
+fn collect_global_group_values<'a>(
+    outputs: &'a [ProveWitnessTraceCommitments],
+    explicit_values: &'a [Ext3],
+) -> Result<Cow<'a, [Ext3]>, String> {
     if !explicit_values.is_empty() {
-        return Ok(explicit_values.to_vec());
+        return Ok(Cow::Borrowed(explicit_values));
     }
 
     let mut values: Option<&[Ext3]> = None;
@@ -1958,7 +1962,10 @@ fn collect_global_group_values(
         }
     }
 
-    Ok(values.map_or_else(Vec::new, ToOwned::to_owned))
+    Ok(match values {
+        Some(values) => Cow::Borrowed(values),
+        None => Cow::Borrowed(&[]),
+    })
 }
 
 fn collect_all_units_evaluation_values(

@@ -9389,6 +9389,39 @@ fn all_units_transcript_proof_borrows_auxiliary_vectors() {
         inner_body.contains("canonical_witness_trace_output_refs(request.schedule, request.outputs)"),
         "all-units proof construction should canonicalize output refs before transcript construction"
     );
+    assert!(
+        source.contains("use std::borrow::Cow")
+            && inner_body.contains("proof_values: proof_values.as_ref()")
+            && inner_body.contains("group_values: group_values.as_ref()")
+            && inner_body.contains("Some(proof_values.as_ref())"),
+        "all-units proof construction should pass borrowed global proof and group values through the artifact builders"
+    );
+    let global_proof_values_body = function_body(
+        &source,
+        "fn collect_global_proof_values",
+        "fn collect_global_group_values",
+    );
+    let global_group_values_body = function_body(
+        &source,
+        "fn collect_global_group_values",
+        "fn collect_all_units_evaluation_values",
+    );
+    assert!(
+        global_proof_values_body.contains("Result<Cow<'a, [Felt]>")
+            && global_proof_values_body.contains("Ok(Cow::Borrowed(explicit_values))")
+            && global_proof_values_body.contains("Cow::Borrowed(values)")
+            && !global_proof_values_body.contains("explicit_values.to_vec()")
+            && !global_proof_values_body.contains("ToOwned::to_owned"),
+        "global proof value collection should borrow explicit or output-derived values"
+    );
+    assert!(
+        global_group_values_body.contains("Result<Cow<'a, [Ext3]>")
+            && global_group_values_body.contains("Ok(Cow::Borrowed(explicit_values))")
+            && global_group_values_body.contains("Cow::Borrowed(values)")
+            && !global_group_values_body.contains("explicit_values.to_vec()")
+            && !global_group_values_body.contains("ToOwned::to_owned"),
+        "global group value collection should borrow explicit or output-derived values"
+    );
 
     let fri_source_path = crate_root.join("src/prove_fri_opening.rs");
     let fri_source =
