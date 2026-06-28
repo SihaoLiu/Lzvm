@@ -1088,6 +1088,18 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
                 "finishWitnessOpeningPathParentHashRetainedParentCheckpointSuffixLaunchCount := retainedCheckpointSuffixLaunches",
             ][..],
         ),
+        (
+            "proof_artifact_finish_path_parent_hash_per_unit_shape_acceptance_core_and_sound",
+            [
+                "proof_artifact_finish_path_parent_hash_per_unit_shape_acceptance_verifier_core_contract",
+                "proof_artifact_finish_path_parent_hash_per_unit_shape_acceptance_sound",
+            ],
+            &[
+                "finishWitnessOpeningPathParentHashRowsPerQuery := rowsPerQuery",
+                "finishWitnessOpeningPathParentHashRowsPerStage := rowsPerStage",
+                "finishWitnessOpeningPathParentHashLaunchesPerStage := launchesPerStage",
+            ][..],
+        ),
     ] {
         lean_binding::assert_theorem_prefix_contains(
             &lean_proof_timing_source,
@@ -4619,6 +4631,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "proof_artifact_finish_path_parent_hash_shape_acceptance_core_and_sound",
             "proof_artifact_finish_path_parent_hash_per_unit_shape_acceptance_sound",
             "proof_artifact_finish_path_parent_hash_per_unit_shape_acceptance_verifier_core_contract",
+            "proof_artifact_finish_path_parent_hash_per_unit_shape_acceptance_core_and_sound",
             "proof_artifact_finish_row_values_shape_acceptance_sound",
             "proof_artifact_finish_row_values_shape_acceptance_verifier_core_contract",
             "proof_artifact_finish_external_source_timing_acceptance_sound",

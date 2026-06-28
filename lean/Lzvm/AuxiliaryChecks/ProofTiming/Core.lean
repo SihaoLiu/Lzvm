@@ -2356,6 +2356,46 @@ theorem proof_artifact_finish_path_parent_hash_per_unit_shape_acceptance_verifie
       proof
       observed
 
+theorem proof_artifact_finish_path_parent_hash_per_unit_shape_acceptance_core_and_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : ProofArtifactFinishTimingSummary)
+    (rowsPerQuery rowsPerStage launchesPerStage : Nat) :
+    forall publicInput proof,
+      ProofArtifactFinishTimingObservedAcceptance
+        system
+        (some
+          { summary with
+            finishWitnessOpeningPathParentHashRowsPerQuery := rowsPerQuery
+            finishWitnessOpeningPathParentHashRowsPerStage := rowsPerStage
+            finishWitnessOpeningPathParentHashLaunchesPerStage := launchesPerStage })
+        publicInput
+        proof ->
+        RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof observed
+  have core :=
+    proof_artifact_finish_path_parent_hash_per_unit_shape_acceptance_verifier_core_contract
+      assumptions
+      summary
+      rowsPerQuery
+      rowsPerStage
+      launchesPerStage
+      publicInput
+      proof
+      observed
+  have sound :=
+    proof_artifact_finish_path_parent_hash_per_unit_shape_acceptance_sound
+      assumptions
+      summary
+      rowsPerQuery
+      rowsPerStage
+      launchesPerStage
+      publicInput
+      proof
+      observed
+  exact And.intro core sound
+
 theorem proof_artifact_finish_row_values_shape_acceptance_sound
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
