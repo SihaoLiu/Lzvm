@@ -34,7 +34,7 @@ pub fn theorem_prefix(source: &str, name: &str) -> String {
     let searchable_source = strip_string_literals(&visible_source);
     let theorem_start = find_theorem_declaration(&searchable_source, name)
         .unwrap_or_else(|| panic!("Lean source should contain theorem {name}"));
-    let proof_start = find_proof_marker(&visible_source, theorem_start, name);
+    let proof_start = find_proof_marker(&searchable_source, theorem_start, name);
     visible_source[theorem_start..theorem_start + proof_start].to_owned()
 }
 
@@ -66,7 +66,7 @@ pub fn theorem_body(source: &str, name: &str) -> String {
     let searchable_source = strip_string_literals(&visible_source);
     let theorem_start = find_theorem_declaration(&searchable_source, name)
         .unwrap_or_else(|| panic!("Lean source should contain theorem {name}"));
-    let proof_start = find_proof_marker(&visible_source, theorem_start, name);
+    let proof_start = find_proof_marker(&searchable_source, theorem_start, name);
     let body_start = theorem_start + proof_start + " := by".len();
     let body_end = find_next_theorem_declaration(&searchable_source, body_start)
         .unwrap_or(visible_source.len());
@@ -136,7 +136,12 @@ fn find_theorem_declaration(source: &str, name: &str) -> Option<usize> {
         }
         let rest = rest.trim_start();
         let after_name = rest.strip_prefix(name)?;
-        if !is_lean_identifier_char(after_name.chars().next()) {
+        if after_name
+            .chars()
+            .next()
+            .map(|ch| ch.is_whitespace() || ch == ':')
+            .unwrap_or(true)
+        {
             Some(start)
         } else {
             None

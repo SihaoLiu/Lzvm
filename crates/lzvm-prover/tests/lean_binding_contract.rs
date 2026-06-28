@@ -16,6 +16,9 @@ theorem real_verifier_core_contract
 theorem real_verifier_core_contract_suffix :
     True := by
   trivial
+theorem real_verifier_core_contract.dotted :
+    True := by
+  trivial
 "#;
 
     assert!(lean_binding::contains_theorem_declaration(
@@ -34,6 +37,10 @@ theorem real_verifier_core_contract_suffix :
     assert!(!lean_binding::contains_theorem_declaration(
         source,
         "real_verifier_core_contract_suff"
+    ));
+    assert!(lean_binding::contains_theorem_declaration(
+        source,
+        "real_verifier_core_contract.dotted"
     ));
 }
 
@@ -86,6 +93,23 @@ theorem real_next :
     let body = lean_binding::theorem_body(source, "guarded_body");
     assert!(body.contains("exact True.intro"));
     assert!(!body.contains("theorem real_next"));
+}
+
+#[test]
+fn lean_theorem_prefix_ignores_proof_markers_in_statement_strings() {
+    let source = r#"
+theorem theorem_with_statement_string :
+    let marker := "not the proof := by"
+    True := by
+  exact True.intro
+"#;
+
+    let prefix = lean_binding::theorem_prefix(source, "theorem_with_statement_string");
+    assert!(prefix.contains("True"));
+    assert!(!prefix.contains("exact True.intro"));
+
+    let body = lean_binding::theorem_body(source, "theorem_with_statement_string");
+    assert!(body.contains("exact True.intro"));
 }
 
 #[test]
