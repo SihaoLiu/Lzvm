@@ -19,6 +19,20 @@ pub fn contains_theorem_declaration(source: &str, name: &str) -> bool {
 }
 
 #[allow(dead_code)]
+pub fn theorem_names(source: &str) -> BTreeSet<String> {
+    let source = searchable_source(source);
+    let mut names = BTreeSet::new();
+    let mut offset = 0;
+    while let Some(start) = find_next_theorem_declaration(&source, offset) {
+        if let Some(name) = theorem_name_at(&source, start) {
+            names.insert(name.to_owned());
+        }
+        offset = start + "theorem".len();
+    }
+    names
+}
+
+#[allow(dead_code)]
 pub fn assert_theorem_declarations(source: &str, names: &[&str]) {
     for name in names {
         assert!(
@@ -147,6 +161,14 @@ fn find_theorem_declaration(source: &str, name: &str) -> Option<usize> {
             None
         }
     })
+}
+
+fn theorem_name_at(source: &str, theorem_start: usize) -> Option<&str> {
+    let rest = source[theorem_start + "theorem".len()..].trim_start();
+    let name_end = rest
+        .find(|ch: char| ch.is_whitespace() || ch == ':')
+        .unwrap_or(rest.len());
+    (name_end > 0).then_some(&rest[..name_end])
 }
 
 fn find_proof_marker(source: &str, theorem_start: usize, name: &str) -> usize {
@@ -591,7 +613,7 @@ fn strip_lean_comments(source: &str) -> String {
 mod tests {
     use super::{
         contains_identifier_token, contains_import, strip_string_literals, theorem_body,
-        visible_source,
+        theorem_names, visible_source,
     };
 
     #[test]
@@ -669,5 +691,30 @@ private theorem second : True := by
             !body.contains("private theorem second"),
             "Lean theorem body extraction should stop before a following private theorem"
         );
+    }
+
+    #[test]
+    fn theorem_names_ignore_comments_strings_and_split_signatures() {
+        let source = r#"
+-- theorem commented_out : True := by
+/- theorem block_commented : True := by -/
+def label := "theorem string_literal : True := by"
+
+private theorem private_visible
+    : True := by
+  exact True.intro
+
+theorem public_visible
+    : True := by
+  exact True.intro
+"#;
+
+        let names = theorem_names(source);
+
+        assert!(names.contains("private_visible"));
+        assert!(names.contains("public_visible"));
+        assert!(!names.contains("commented_out"));
+        assert!(!names.contains("block_commented"));
+        assert!(!names.contains("string_literal"));
     }
 }

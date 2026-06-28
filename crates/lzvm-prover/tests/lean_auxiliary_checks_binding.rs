@@ -17,17 +17,13 @@ fn compact_source_contains(source: &str, needle: &str) -> bool {
 }
 
 fn theorem_stems_with_suffix(source: &str, prefix: &str, suffix: &str) -> BTreeSet<String> {
-    source
-        .lines()
-        .filter_map(|line| line.trim().strip_prefix("theorem "))
-        .filter_map(|rest| {
-            let name = rest
-                .split(|ch: char| ch.is_whitespace() || ch == ':')
-                .next()?;
+    lean_binding::theorem_names(source)
+        .into_iter()
+        .filter_map(|name| {
             name.starts_with(prefix)
                 .then_some(name)?
                 .strip_suffix(suffix)
-                .map(str::to_owned)
+                .map(ToOwned::to_owned)
         })
         .collect()
 }
