@@ -8758,15 +8758,21 @@ fn fri_opening_query_assembly_reuses_duplicate_rows() {
 
     assert!(
         source.matches("build_fri_opening_queries(").count() == 3
-            && source.contains("use std::collections::BTreeMap")
-            && helper_body.contains("cached_query_positions.get(&row_index_usize)")
+            && !source.contains("use std::collections::BTreeMap")
+            && helper_body.contains("let mut cached_query_positions: Vec<(usize, usize)>")
+            && helper_body
+                .matches(".try_reserve_exact(query_rows.len())")
+                .count()
+                == 2
+            && helper_body.contains(".find_map(|&(cached_row, query_position)|")
+            && helper_body.contains("(cached_row == row_index_usize).then_some(query_position)")
             && helper_body.contains("let query = queries[query_position].clone()")
             && helper_body.contains("let query_position = queries.len()")
             && helper_body
-                .contains("cached_query_positions.insert(row_index_usize, query_position)")
+                .contains("cached_query_positions.push((row_index_usize, query_position))")
             && !helper_body.contains("query.clone()")
             && helper_body.contains("tree.query_siblings(row_index_usize)"),
-        "FRI opening query assembly should cache repeated layer rows inside one helper"
+        "FRI opening query assembly should cache repeated layer rows without map node allocation"
     );
 }
 

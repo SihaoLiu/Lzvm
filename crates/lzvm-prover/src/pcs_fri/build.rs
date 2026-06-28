@@ -1,4 +1,3 @@
-use std::collections::BTreeMap;
 use std::time::Instant;
 
 use lzvm_artifacts::pcs_fri_segment::{
@@ -526,13 +525,25 @@ fn build_fri_opening_queries(
     grouped_values: &[Vec<Ext3>],
     tree: &merkle::FriLayerTree,
 ) -> Result<Vec<PcsFriOpeningQuerySegment>, PcsFriOpeningBuildError> {
-    let mut cached_query_positions: BTreeMap<usize, usize> = BTreeMap::new();
-    let mut queries: Vec<PcsFriOpeningQuerySegment> = Vec::with_capacity(query_rows.len());
+    let mut cached_query_positions: Vec<(usize, usize)> = Vec::new();
+    cached_query_positions
+        .try_reserve_exact(query_rows.len())
+        .map_err(|_| PcsFriOpeningBuildError::LengthOverflow)?;
+    let mut queries: Vec<PcsFriOpeningQuerySegment> = Vec::new();
+    queries
+        .try_reserve_exact(query_rows.len())
+        .map_err(|_| PcsFriOpeningBuildError::LengthOverflow)?;
     for query_row in query_rows {
         let row_index = *query_row % output_size_u64;
         let row_index_usize =
             usize::try_from(row_index).map_err(|_| PcsFriOpeningBuildError::LengthOverflow)?;
-        if let Some(&query_position) = cached_query_positions.get(&row_index_usize) {
+        if let Some(query_position) =
+            cached_query_positions
+                .iter()
+                .find_map(|&(cached_row, query_position)| {
+                    (cached_row == row_index_usize).then_some(query_position)
+                })
+        {
             let query = queries[query_position].clone();
             queries.push(query);
             continue;
@@ -550,7 +561,7 @@ fn build_fri_opening_queries(
         };
         let query_position = queries.len();
         queries.push(query);
-        cached_query_positions.insert(row_index_usize, query_position);
+        cached_query_positions.push((row_index_usize, query_position));
     }
     Ok(queries)
 }
