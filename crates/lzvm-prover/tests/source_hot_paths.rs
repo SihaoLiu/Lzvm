@@ -8756,6 +8756,28 @@ fn fri_opening_query_assembly_reuses_duplicate_rows() {
 }
 
 #[test]
+fn fri_opening_fold_verifier_avoids_extension_value_staging() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let source_path = crate_root.join("src/pcs_fri/fold.rs");
+    let source = std::fs::read_to_string(&source_path).expect("FRI fold source should read");
+    let body = function_body(
+        &source,
+        "pub fn verify_fri_opening_folds",
+        "fn convert_fold_value_columns",
+    );
+
+    assert!(
+        source.contains("fn convert_fold_value_columns")
+            && source.contains("fn verify_fri_fold_columns")
+            && source.contains("fn interpolate_fold_columns")
+            && body.contains("convert_fold_value_columns(&query.values)")
+            && body.contains("verify_fri_fold_columns(")
+            && !body.contains("collect::<Result<Vec<_>, PcsFriOpeningFoldError>>()"),
+        "FRI opening fold verification should convert serialized query values directly into interpolation columns"
+    );
+}
+
+#[test]
 fn fri_opening_from_trace_borrows_challenges() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let source_path = crate_root.join("src/prove_fri_opening.rs");
