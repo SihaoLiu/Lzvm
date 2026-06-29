@@ -1,5 +1,7 @@
 use super::args::parsed_inputs;
-use super::gpu_preflight::{validate_large_guest_pc_gpu, validate_large_guest_pc_gpu_memory};
+use super::gpu_preflight::{
+    is_large_guest_pc_trace, validate_large_guest_pc_gpu, validate_large_guest_pc_gpu_memory,
+};
 use super::guest_pc_trace::{
     record_guest_stage_root_materialization_shape, record_guest_trace_sampled_duration_counts,
 };
@@ -128,6 +130,14 @@ fn rejects_large_guest_pc_trace_without_gpu_backend() {
     );
     assert!(validate_large_guest_pc_gpu(Some(999_999)).is_ok());
     assert!(validate_large_guest_pc_gpu(None).is_ok());
+}
+
+#[test]
+fn guest_pc_trace_large_gpu_gate_threshold_is_inclusive() {
+    assert!(!is_large_guest_pc_trace(None));
+    assert!(!is_large_guest_pc_trace(Some(999_999)));
+    assert!(is_large_guest_pc_trace(Some(1_000_000)));
+    assert!(is_large_guest_pc_trace(Some(1_000_001)));
 }
 
 #[test]

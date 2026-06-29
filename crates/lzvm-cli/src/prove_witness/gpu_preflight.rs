@@ -28,7 +28,7 @@ pub(super) fn validate_large_guest_pc_runtime_gpu(
     }
 }
 
-fn is_large_guest_pc_trace(instruction_limit: Option<u64>) -> bool {
+pub(super) fn is_large_guest_pc_trace(instruction_limit: Option<u64>) -> bool {
     instruction_limit.unwrap_or(0) >= GUEST_PC_TRACE_GPU_SIZE_THRESHOLD
 }
 
