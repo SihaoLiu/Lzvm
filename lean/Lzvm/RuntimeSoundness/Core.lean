@@ -1424,5 +1424,59 @@ theorem runtime_soundness_checked_acceptance_audited_soundness_finalized_proof_s
       (And.intro auditedContract.right.left
         (And.intro finalizedContract.left auditedContract.right.right))
 
+theorem runtime_soundness_checked_acceptance_audited_finalized_core_sound_witness_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeSoundnessValidation system) :
+    forall artifact publicInput proof requiresExternalSource,
+      RuntimeSoundnessCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof
+          requiresExternalSource ->
+        RequiredCryptographicAssumptionStatements assumptions.crypto
+          /\ RequiredSemanticAssumptionStatements assumptions.semantic
+          /\ RuntimeProofArtifactFinalized
+            system
+            validation.transcriptValidation.artifactBindingValidation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ (exists witness trace constraints,
+            system.traceConsistent publicInput proof trace
+              /\ system.constraintsSatisfied constraints trace
+              /\ system.witnessMatchesTrace witness trace)
+          /\ SoundWitness system publicInput proof := by
+  intro artifact publicInput proof requiresExternalSource checked
+  have finalizedContract :=
+    runtime_soundness_checked_acceptance_audited_soundness_finalized_proof_system_contract
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      checked
+  rcases finalizedContract with
+    ⟨cryptoEvidence,
+      semanticEvidence,
+      artifactFinalized,
+      _proofSystemSound,
+      _verifierAccepts,
+      _soundnessEvidence,
+      _artifactObligations,
+      coreContract,
+      executionObligations,
+      soundWitness⟩
+  exact
+    And.intro cryptoEvidence
+      (And.intro semanticEvidence
+        (And.intro artifactFinalized
+          (And.intro coreContract
+            (And.intro executionObligations soundWitness))))
+
 
 end Lzvm
