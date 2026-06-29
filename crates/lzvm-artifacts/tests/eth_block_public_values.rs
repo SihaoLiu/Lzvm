@@ -113,6 +113,23 @@ fn derives_selected_block_public_metadata_without_reading_unselected_extra_data(
 }
 
 #[test]
+fn rejects_metadata_generation_without_eth_public_value_binding() {
+    let input = sample_block_input();
+    let mut global_info = global_info_with_public("eth_block_hash_u32_be", 8);
+    global_info.n_publics = 0;
+    global_info.publics_map.clear();
+
+    let error =
+        public_values_from_eth_block_input_for_metadata([0x44; 32], &input, &global_info, None)
+            .expect_err("ETH block input should require at least one bound public value");
+
+    assert_eq!(
+        error.to_string(),
+        "missing ETH block public value: eth_block_hash_u32_be"
+    );
+}
+
+#[test]
 fn rejects_selected_extra_data_public_metadata_overflow() {
     let mut input = sample_block_input();
     input.extra_data = vec![0x99; 33];

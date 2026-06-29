@@ -121,11 +121,14 @@ pub fn public_values_from_eth_block_input_for_metadata(
             elements,
         });
     }
-    Ok(PublicValues {
+    let public_values = PublicValues {
         schema_version: 1,
         setup_hash,
         values,
-    })
+    };
+    validate_eth_block_public_values(input, &public_values)?;
+    validate_program_image_cache_public_values(&public_values, program_image_cache)?;
+    Ok(public_values)
 }
 
 pub fn validate_eth_block_public_values(
