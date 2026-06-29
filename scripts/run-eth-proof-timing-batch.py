@@ -1292,6 +1292,9 @@ def check_env(
         ]:
             print(f"{config.label}_{key}={paths[key]}")
     base_parts = next_command_parts(args, root)
+    print(
+        f"next_preflight_command={shell_join([*base_parts, '--check-env', '--check-profile-tools'])}"
+    )
     print(f"next_profile_command={shell_join([*base_parts, '--print-profile-commands'])}")
     print(f"next_run_command={shell_join([*base_parts, '--summary', 'real proof timing'])}")
 

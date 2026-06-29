@@ -815,6 +815,12 @@ fn eth_proof_timing_batch_check_env_reports_ready_paths() {
     assert!(stdout.contains("small_block_input="), "{stdout}");
     assert!(!stdout.contains("small_tmp_dir="), "{stdout}");
     assert!(
+        stdout
+            .contains("next_preflight_command=scripts/run-eth-proof-timing-batch.py --suite small")
+            && stdout.contains("--check-env --check-profile-tools"),
+        "env check should report the next preflight command: {stdout}"
+    );
+    assert!(
         stdout.contains("next_profile_command=scripts/run-eth-proof-timing-batch.py --suite small")
             && stdout.contains("--print-profile-commands"),
         "env check should report the next profile command: {stdout}"
