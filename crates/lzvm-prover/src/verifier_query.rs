@@ -3,7 +3,9 @@ use std::{
     fmt,
 };
 
-use lzvm_artifacts::constant_opening_segment::ConstantOpeningUnitSegment;
+use lzvm_artifacts::constant_opening_segment::{
+    ConstantOpeningQuerySegment, ConstantOpeningUnitSegment,
+};
 use lzvm_artifacts::global_info::{GlobalInfo, NamedStageValue};
 use lzvm_artifacts::pcs_evaluation_segment::PcsEvaluationUnitSegment;
 use lzvm_artifacts::pcs_fri_segment::PcsFriOpeningUnitSegment;
@@ -14,7 +16,7 @@ use lzvm_artifacts::witness_opening_segment::WitnessOpeningUnitSegment;
 use lzvm_field::{Ext3, Felt, FieldError, SHIFT};
 
 use crate::constant_opening::{
-    load_constant_opening_segment_from_segments,
+    constant_opening_required, load_constant_opening_segment_from_segments,
     validate_constant_opening_units_match_query_units_from_segment,
     LoadConstantOpeningSegmentError, LoadConstantOpeningUnitError,
 };
@@ -695,8 +697,17 @@ fn validate_verifier_query_outputs_from_segments_inner(
     request: VerifierFriQueryOutputSegmentsRequest<'_>,
     preloaded_proof_values: Option<&[Ext3]>,
 ) -> Result<(), VerifierFriQueryOutputSegmentsError> {
-    let constant_opening = load_constant_opening_segment_from_segments(request.segments)
-        .map_err(VerifierFriQueryOutputSegmentsError::ConstantOpening)?;
+    let required_constant_query_units =
+        constant_opening_query_units_for_verifier(request.units, request.query_units)?;
+    let constant_opening = match load_constant_opening_segment_from_segments(request.segments) {
+        Ok(opening) => Some(opening),
+        Err(LoadConstantOpeningSegmentError::MissingSegment)
+            if required_constant_query_units.is_empty() =>
+        {
+            None
+        }
+        Err(error) => return Err(VerifierFriQueryOutputSegmentsError::ConstantOpening(error)),
+    };
     let witness_opening = load_witness_opening_segment_from_segments(request.segments)
         .map_err(VerifierFriQueryOutputSegmentsError::WitnessOpening)?;
     let evaluations = load_pcs_evaluation_segment_from_segments(request.segments)
@@ -711,11 +722,13 @@ fn validate_verifier_query_outputs_from_segments_inner(
             &owned_proof_values
         }
     };
-    validate_constant_opening_units_match_query_units_from_segment(
-        request.query_units,
-        &constant_opening,
-    )
-    .map_err(VerifierFriQueryOutputSegmentsError::ConstantOpeningUnit)?;
+    if let Some(constant_opening) = constant_opening.as_ref() {
+        validate_constant_opening_units_match_query_units_from_segment(
+            &required_constant_query_units,
+            constant_opening,
+        )
+        .map_err(VerifierFriQueryOutputSegmentsError::ConstantOpeningUnit)?;
+    }
     validate_witness_opening_units_match_query_units_from_segment(
         request.query_units,
         &witness_opening,
@@ -729,7 +742,10 @@ fn validate_verifier_query_outputs_from_segments_inner(
     )?;
 
     let fri_opening_units = fri_opening_units_by_identity(request.opening_units);
-    let constant_opening_units = constant_opening_units_by_identity(&constant_opening.units);
+    let constant_opening_units = constant_opening
+        .as_ref()
+        .map(|opening| constant_opening_units_by_identity(&opening.units))
+        .unwrap_or_default();
     let witness_opening_units = witness_opening_units_by_identity(&witness_opening.units);
     let transcript_challenges = transcript_challenges_by_identity(request.transcript_challenges);
 
@@ -750,14 +766,20 @@ fn validate_verifier_query_outputs_from_segments_inner(
             .get(&identity)
             .copied()
             .ok_or(VerifierFriQueryOutputSegmentsError::UnitMismatch { unit_index })?;
-        let constant_unit = constant_opening_units
-            .get(&identity)
-            .copied()
-            .ok_or(VerifierFriQueryOutputSegmentsError::UnitMismatch { unit_index })?;
         let witness_unit = witness_opening_units
             .get(&identity)
             .copied()
             .ok_or(VerifierFriQueryOutputSegmentsError::UnitMismatch { unit_index })?;
+        let empty_constant_unit;
+        let constant_unit = if constant_opening_required(unit) {
+            constant_opening_units
+                .get(&identity)
+                .copied()
+                .ok_or(VerifierFriQueryOutputSegmentsError::UnitMismatch { unit_index })?
+        } else {
+            empty_constant_unit = empty_constant_opening_unit(query_unit, witness_unit);
+            &empty_constant_unit
+        };
         let evaluation_unit = load_pcs_evaluation_unit_for_identity_from_parsed_segment(
             unit_index,
             query_unit.trace_instance_index,
@@ -823,6 +845,43 @@ fn verifier_query_unit_identities(
         }
     }
     Ok(identities)
+}
+
+fn constant_opening_query_units_for_verifier(
+    units: &[ProveUnitSchedule],
+    query_units: &[PcsQueryPlanUnit],
+) -> Result<Vec<PcsQueryPlanUnit>, VerifierFriQueryOutputSegmentsError> {
+    let mut required = Vec::new();
+    for query_unit in query_units {
+        let unit_index = usize::try_from(query_unit.unit_index)
+            .map_err(|_| VerifierFriQueryOutputSegmentsError::UnitIndexOverflow)?;
+        let unit = units
+            .get(unit_index)
+            .ok_or(VerifierFriQueryOutputSegmentsError::UnitMismatch { unit_index })?;
+        if constant_opening_required(unit) {
+            required.push(query_unit.clone());
+        }
+    }
+    Ok(required)
+}
+
+fn empty_constant_opening_unit(
+    query_unit: &PcsQueryPlanUnit,
+    witness_unit: &WitnessOpeningUnitSegment,
+) -> ConstantOpeningUnitSegment {
+    ConstantOpeningUnitSegment {
+        unit_index: query_unit.unit_index,
+        trace_instance_index: query_unit.trace_instance_index,
+        queries: witness_unit
+            .queries
+            .iter()
+            .map(|query| ConstantOpeningQuerySegment {
+                row_index: query.row_index,
+                values: Vec::new(),
+                siblings: Vec::new(),
+            })
+            .collect(),
+    }
 }
 
 fn validate_verifier_query_unit_identities_match_query_units(

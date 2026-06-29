@@ -712,6 +712,35 @@ fn validates_verifier_query_outputs_from_proof_segments() {
 }
 
 #[test]
+fn validates_verifier_query_outputs_without_constant_segment_for_zero_width() {
+    let (mut unit, mut code, query_unit, mut fri, challenges, mut segments) =
+        verifier_query_output_segments_fixture(false);
+    unit.constant_width = 0;
+    code.temporary_count = 1;
+    code.operations = vec![operation(
+        VerifierOperationKind::Copy,
+        destination(0),
+        vec![commitment(1, 3)],
+    )];
+    fri.layers[0].queries[0].values[0] = e([201, 203, 211]).to_u64s();
+    fri.layers[0].queries[1].values[1] = e([307, 311, 313]).to_u64s();
+    segments.retain(|segment| segment.id != CONSTANT_OPENING_SEGMENT_ID);
+    let code_refs = [&code];
+
+    validate_verifier_query_outputs_from_segments(VerifierFriQueryOutputSegmentsRequest {
+        units: &[unit],
+        verifier_codes: &code_refs,
+        global_info: &global_info_without_proof_values(),
+        public_values: &[],
+        query_units: std::slice::from_ref(&query_unit),
+        opening_units: std::slice::from_ref(&fri),
+        transcript_challenges: std::slice::from_ref(&challenges),
+        segments: &segments,
+    })
+    .expect("zero-width constants should not require an opening segment");
+}
+
+#[test]
 fn validates_verifier_query_outputs_by_trace_identity() {
     let (unit, code, base_query, base_fri, base_challenges, mut segments) =
         verifier_query_output_segments_fixture(false);

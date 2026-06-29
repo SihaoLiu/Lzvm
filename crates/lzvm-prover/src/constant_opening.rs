@@ -59,6 +59,7 @@ pub enum ProveConstantOpeningSegmentError {
         unit_index: usize,
         row_index: u64,
     },
+    NoConstantOpenings,
     Segment(ConstantOpeningSegmentError),
 }
 
@@ -146,6 +147,10 @@ impl fmt::Display for ProveConstantOpeningSegmentError {
                 f,
                 "prove constant opening root mismatch for unit {unit_index} row {row_index}"
             ),
+            Self::NoConstantOpenings => write!(
+                f,
+                "prove constant opening has no constant-width query units"
+            ),
             Self::Segment(error) => {
                 write!(f, "prove constant opening segment encode failed: {error}")
             }
@@ -166,7 +171,8 @@ impl std::error::Error for ProveConstantOpeningSegmentError {
             | Self::MissingConstantTreeRoot { .. }
             | Self::MissingConstantTreeMaterial { .. }
             | Self::ConstantTreeMaterialMismatch { .. }
-            | Self::OpeningRootMismatch { .. } => None,
+            | Self::OpeningRootMismatch { .. }
+            | Self::NoConstantOpenings => None,
         }
     }
 }
@@ -361,14 +367,20 @@ pub fn validate_constant_opening_segments(
 ) -> Result<(), ValidateConstantOpeningSegmentsError> {
     let query_plan = load_pcs_query_plan_from_segments(segments)
         .map_err(ValidateConstantOpeningSegmentsError::QueryPlan)?;
-    let opening = load_constant_opening_segment_from_segments(segments)
-        .map_err(ValidateConstantOpeningSegmentsError::Opening)?;
-    if opening.units.len() != query_plan.units.len() {
+    let required_query_units = constant_opening_query_units(units, &query_plan.units)?;
+    let opening = match load_constant_opening_segment_from_segments(segments) {
+        Ok(opening) => opening,
+        Err(LoadConstantOpeningSegmentError::MissingSegment) if required_query_units.is_empty() => {
+            return Ok(());
+        }
+        Err(error) => return Err(ValidateConstantOpeningSegmentsError::Opening(error)),
+    };
+    if opening.units.len() != required_query_units.len() {
         return Err(ValidateConstantOpeningSegmentsError::UnitCountMismatch);
     }
 
     let opening_units_by_identity = constant_opening_units_by_identity(&opening);
-    for query_unit in &query_plan.units {
+    for query_unit in required_query_units {
         let unit_index = usize::try_from(query_unit.unit_index)
             .map_err(|_| ValidateConstantOpeningSegmentsError::UnitIndexOverflow)?;
         let unit = units
@@ -455,12 +467,8 @@ pub fn build_constant_opening_segment(
     schedule: &ProveSchedule,
     query_segment: &ProofSegment,
 ) -> Result<ProofSegment, ProveConstantOpeningSegmentError> {
-    build_constant_opening_segment_inner(
-        catalog,
-        schedule,
-        query_segment,
-        ConstantTreeMaterialSource::SummarizeFile,
-    )
+    build_optional_constant_opening_segment(catalog, schedule, query_segment)
+        .and_then(require_constant_opening_segment)
 }
 
 pub fn build_constant_opening_segment_with_material_summaries(
@@ -469,6 +477,43 @@ pub fn build_constant_opening_segment_with_material_summaries(
     query_segment: &ProofSegment,
     constant_tree_material_summaries: &[Option<ConstantTreeFileSummary>],
 ) -> Result<ProofSegment, ProveConstantOpeningSegmentError> {
+    build_optional_constant_opening_segment_with_material_summaries(
+        catalog,
+        schedule,
+        query_segment,
+        constant_tree_material_summaries,
+    )
+    .and_then(require_constant_opening_segment)
+}
+
+pub fn build_constant_opening_segment_with_schedule_material(
+    catalog: &KeyDirectoryCatalog,
+    schedule: &ProveSchedule,
+    query_segment: &ProofSegment,
+) -> Result<ProofSegment, ProveConstantOpeningSegmentError> {
+    build_optional_constant_opening_segment_with_schedule_material(catalog, schedule, query_segment)
+        .and_then(require_constant_opening_segment)
+}
+
+pub(crate) fn build_optional_constant_opening_segment(
+    catalog: &KeyDirectoryCatalog,
+    schedule: &ProveSchedule,
+    query_segment: &ProofSegment,
+) -> Result<Option<ProofSegment>, ProveConstantOpeningSegmentError> {
+    build_constant_opening_segment_inner(
+        catalog,
+        schedule,
+        query_segment,
+        ConstantTreeMaterialSource::SummarizeFile,
+    )
+}
+
+pub(crate) fn build_optional_constant_opening_segment_with_material_summaries(
+    catalog: &KeyDirectoryCatalog,
+    schedule: &ProveSchedule,
+    query_segment: &ProofSegment,
+    constant_tree_material_summaries: &[Option<ConstantTreeFileSummary>],
+) -> Result<Option<ProofSegment>, ProveConstantOpeningSegmentError> {
     build_constant_opening_segment_inner(
         catalog,
         schedule,
@@ -477,11 +522,11 @@ pub fn build_constant_opening_segment_with_material_summaries(
     )
 }
 
-pub fn build_constant_opening_segment_with_schedule_material(
+pub(crate) fn build_optional_constant_opening_segment_with_schedule_material(
     catalog: &KeyDirectoryCatalog,
     schedule: &ProveSchedule,
     query_segment: &ProofSegment,
-) -> Result<ProofSegment, ProveConstantOpeningSegmentError> {
+) -> Result<Option<ProofSegment>, ProveConstantOpeningSegmentError> {
     build_constant_opening_segment_inner(
         catalog,
         schedule,
@@ -521,7 +566,7 @@ fn build_constant_opening_segment_inner(
     schedule: &ProveSchedule,
     query_segment: &ProofSegment,
     material_source: ConstantTreeMaterialSource<'_>,
-) -> Result<ProofSegment, ProveConstantOpeningSegmentError> {
+) -> Result<Option<ProofSegment>, ProveConstantOpeningSegmentError> {
     let query_plan = parse_pcs_query_plan_segment(&query_segment.data)?;
     let mut units = Vec::with_capacity(query_plan.units.len());
     for query_unit in &query_plan.units {
@@ -536,6 +581,9 @@ fn build_constant_opening_segment_inner(
                 unit_count: schedule.units.len(),
             },
         )?;
+        if !constant_opening_required(schedule_unit) {
+            continue;
+        }
         let catalog_unit = catalog.units.get(unit_index).ok_or(
             ProveConstantOpeningSegmentError::UnitIndexOutOfRange {
                 unit_index,
@@ -594,12 +642,21 @@ fn build_constant_opening_segment_inner(
             queries,
         });
     }
+    if units.is_empty() {
+        return Ok(None);
+    }
 
     let segment = ConstantOpeningSegment { units };
-    Ok(ProofSegment {
+    Ok(Some(ProofSegment {
         id: CONSTANT_OPENING_SEGMENT_ID,
         data: encode_constant_opening_segment(&segment)?,
-    })
+    }))
+}
+
+fn require_constant_opening_segment(
+    segment: Option<ProofSegment>,
+) -> Result<ProofSegment, ProveConstantOpeningSegmentError> {
+    segment.ok_or(ProveConstantOpeningSegmentError::NoConstantOpenings)
 }
 
 #[derive(Clone, Copy)]
@@ -617,6 +674,28 @@ fn schedule_unit_has_constant_tree_material(schedule_unit: &ProveUnitSchedule) -
             .is_some()
         || schedule_unit.pcs_material_leaf_byte_count.is_some()
         || schedule_unit.pcs_material_node_byte_count.is_some()
+}
+
+pub(crate) fn constant_opening_required(schedule_unit: &ProveUnitSchedule) -> bool {
+    schedule_unit.constant_width > 0
+}
+
+fn constant_opening_query_units<'a>(
+    units: &[ProveUnitSchedule],
+    query_units: &'a [PcsQueryPlanUnit],
+) -> Result<Vec<&'a PcsQueryPlanUnit>, ValidateConstantOpeningSegmentsError> {
+    let mut required = Vec::new();
+    for query_unit in query_units {
+        let unit_index = usize::try_from(query_unit.unit_index)
+            .map_err(|_| ValidateConstantOpeningSegmentsError::UnitIndexOverflow)?;
+        let unit = units
+            .get(unit_index)
+            .ok_or(ValidateConstantOpeningSegmentsError::UnitMismatch { unit_index })?;
+        if constant_opening_required(unit) {
+            required.push(query_unit);
+        }
+    }
+    Ok(required)
 }
 
 fn validate_constant_tree_material_binding(

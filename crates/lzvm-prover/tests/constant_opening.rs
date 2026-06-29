@@ -140,6 +140,46 @@ fn validates_constant_opening_segments() {
 }
 
 #[test]
+fn validates_missing_constant_opening_segment_for_zero_constant_width() {
+    let (mut unit, mut segments) = valid_constant_opening_segments(2);
+    unit.constant_width = 0;
+    segments.retain(|segment| segment.id != CONSTANT_OPENING_SEGMENT_ID);
+
+    validate_constant_opening_segments(&[unit], &segments)
+        .expect("zero-width constants should not require an opening segment");
+}
+
+#[test]
+fn rejects_missing_constant_opening_segment_for_nonzero_constant_width() {
+    let (unit, mut segments) = valid_constant_opening_segments(2);
+    segments.retain(|segment| segment.id != CONSTANT_OPENING_SEGMENT_ID);
+
+    let error = validate_constant_opening_segments(&[unit], &segments)
+        .expect_err("nonzero constants should require an opening segment");
+
+    assert_eq!(
+        error,
+        ValidateConstantOpeningSegmentsError::Opening(
+            LoadConstantOpeningSegmentError::MissingSegment
+        )
+    );
+}
+
+#[test]
+fn rejects_constant_opening_segment_for_zero_constant_width() {
+    let (mut unit, segments) = valid_constant_opening_segments(2);
+    unit.constant_width = 0;
+
+    let error = validate_constant_opening_segments(&[unit], &segments)
+        .expect_err("zero-width constants should not accept an opening segment");
+
+    assert_eq!(
+        error,
+        ValidateConstantOpeningSegmentsError::UnitCountMismatch
+    );
+}
+
+#[test]
 fn rejects_constant_opening_row_mismatches() {
     let (unit, mut segments) = valid_constant_opening_segments(2);
     let bad_opening = constant_opening_proof_segment(vec![ConstantOpeningUnitSegment {

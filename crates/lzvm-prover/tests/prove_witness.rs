@@ -10,6 +10,7 @@ use std::time::Duration;
 use lzvm_artifacts::challenge_values_segment::{
     encode_challenge_values_segment, ChallengeValuesSegment, CHALLENGE_VALUES_SEGMENT_ID,
 };
+use lzvm_artifacts::constant_opening_segment::CONSTANT_OPENING_SEGMENT_ID;
 use lzvm_artifacts::constant_tree::{
     expected_constant_tree_byte_count, expected_constant_tree_leaf_node_byte_counts,
     read_constant_tree_file,
@@ -3714,6 +3715,59 @@ fn builds_witness_proof_artifact_in_prover() {
     assert_eq!(proof.setup_hash, plan.run_plan.schedule.setup_hash);
     assert_eq!(proof.public_values_hash, public_values_hash);
     assert!(!proof.segments.is_empty());
+}
+
+#[test]
+fn omits_constant_opening_segment_for_zero_constant_width_artifact() {
+    let dir = temp_dir("proof-artifact-zero-constants");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let witness_library = build_shared_library(&dir, "witness", witness_source());
+    let guest_image = dir.join("guest.elf");
+    let input_data = dir.join("input.bin");
+    fs::write(&guest_image, sample_guest_image()).expect("guest image should be written");
+    fs::write(&input_data, [7_u8]).expect("input data should be written");
+
+    let mut unit = sample_unit();
+    unit.metadata.setup.n_constants = 0;
+    unit.metadata.setup.constant_columns.clear();
+    unit.pcs_plan = derive_pcs_setup_plan(&unit.metadata.setup)
+        .expect("zero-constant PCS setup plan should derive");
+    let mut catalog = sample_catalog(unit);
+    catalog.layout.global_info.lattice_size = Some(32);
+    let plan = derive_prove_execution_plan(
+        &catalog,
+        sample_request(dir.join("out"), Some(input_data)),
+        ProveExecutionInputArtifacts {
+            witness_library: Some(witness_library),
+            guest_image,
+            public_inputs: None,
+        },
+    )
+    .expect("execution plan should derive");
+    let witness =
+        run_prove_witness_commitments_with_trace(&plan, 0, ProveWitnessAuxiliaryInputs::default())
+            .expect("witness should run");
+
+    let proof = lzvm_prover::build_witness_proof_core_artifact(
+        &catalog,
+        &plan.run_plan.schedule,
+        [13_u8; 32],
+        &[&witness],
+    )
+    .expect("zero-constant proof artifact should build");
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(plan.run_plan.schedule.units[0].constant_width, 0);
+    assert!(proof
+        .segments
+        .iter()
+        .all(|segment| segment.id != CONSTANT_OPENING_SEGMENT_ID));
+    lzvm_prover::constant_opening::validate_constant_opening_segments(
+        &plan.run_plan.schedule.units,
+        &proof.segments,
+    )
+    .expect("zero-constant artifact should not require constant openings");
 }
 
 #[test]

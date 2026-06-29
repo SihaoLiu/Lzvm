@@ -45,6 +45,10 @@ use self::proof_binding_validation::{
     validate_program_image_cache_binding, ValidatedEthBlockInput, ValidatedFramedGuestInput,
     ValidatedProgramImageCache,
 };
+use crate::constant_opening::{
+    build_optional_constant_opening_segment_with_material_summaries,
+    build_optional_constant_opening_segment_with_schedule_material,
+};
 use crate::proof_values::{
     build_pcs_proof_values_segment_from_packed_values, flatten_pcs_proof_values,
     load_pcs_proof_values_from_segments,
@@ -66,8 +70,6 @@ use crate::witness_opening::{
     build_witness_opening_segment_batch_from_trace_outputs_with_timing,
 };
 use crate::{
-    build_constant_opening_segment_with_material_summaries,
-    build_constant_opening_segment_with_schedule_material,
     build_pcs_evaluation_segment_from_value_refs,
     build_pcs_fri_opening_segment_from_transcript_values, build_pcs_material_manifest_segment,
     build_pcs_query_nonce_segment_with_streams, build_pcs_query_plan_segment,
@@ -135,17 +137,19 @@ fn build_constant_opening_segment_for_request(
     schedule: &ProveSchedule,
     query_segment: &ProofSegment,
     constant_tree_material_summaries: Option<&[Option<ConstantTreeFileSummary>]>,
-) -> Result<ProofSegment, crate::ProveConstantOpeningSegmentError> {
+) -> Result<Option<ProofSegment>, crate::ProveConstantOpeningSegmentError> {
     match constant_tree_material_summaries {
-        Some(summaries) => build_constant_opening_segment_with_material_summaries(
+        Some(summaries) => build_optional_constant_opening_segment_with_material_summaries(
             catalog,
             schedule,
             query_segment,
             summaries,
         ),
-        None => {
-            build_constant_opening_segment_with_schedule_material(catalog, schedule, query_segment)
-        }
+        None => build_optional_constant_opening_segment_with_schedule_material(
+            catalog,
+            schedule,
+            query_segment,
+        ),
     }
 }
 
@@ -229,10 +233,12 @@ fn build_witness_proof_core_artifact_with_bindings_and_material_summaries(
     let mut segments = vec![
         material_segment,
         query_segment,
-        constant_opening_segment,
         opening_segment,
         trace_constraint_segment,
     ];
+    if let Some(segment) = constant_opening_segment {
+        segments.push(segment);
+    }
     segments.extend(witness_segments);
 
     finish_proof_artifact(ProofArtifact {
@@ -402,10 +408,12 @@ fn build_witness_proof_artifact_from_trace_outputs_with_bindings_and_material_su
     let mut segments = vec![
         material_segment,
         query_segment,
-        constant_opening_segment,
         opening_segment,
         trace_constraint_segment,
     ];
+    if let Some(segment) = constant_opening_segment {
+        segments.push(segment);
+    }
     segments.extend(witness_segments);
     if let Some(segment) = proof_values_segment {
         segments.push(segment);
@@ -705,11 +713,13 @@ fn build_witness_proof_artifact_for_unit_inner(
     let mut segments = vec![
         material_segment,
         query_segment,
-        constant_opening_segment,
         opening_segment,
         trace_constraint_segment,
         witness_segment,
     ];
+    if let Some(segment) = constant_opening_segment {
+        segments.push(segment);
+    }
     if let Some((evaluation_segment, transcript_values)) = transcript_values {
         let fri_opening_start = Instant::now();
         let mut fri_build_timing = crate::pcs_fri::PcsFriOpeningBuildTiming::default();
@@ -1817,10 +1827,12 @@ fn build_witness_transcript_proof_artifact_for_all_units(
     let mut segments = vec![
         material_segment,
         query_segment,
-        constant_opening_segment,
         opening_segment,
         trace_constraint_segment,
     ];
+    if let Some(segment) = constant_opening_segment {
+        segments.push(segment);
+    }
     segments.extend(witness_segments);
     segments.push(evaluation_segment);
     segments.push(fri_segment);
