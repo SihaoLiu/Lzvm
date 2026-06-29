@@ -4521,11 +4521,21 @@ struct GuestPcTraceRunnerSeedMode {
 }
 
 impl GuestPcTraceRunnerSeedMode {
-    fn from_env() -> Self {
-        let snapshot = guest_pc_trace_runner_seed_snapshot_enabled();
+    fn from_runtime(instruction_limit: u64) -> Self {
+        Self::from_parallel_lower_enabled(guest_pc_trace_parallel_lower_enabled_for_limit(
+            instruction_limit,
+        ))
+    }
+
+    fn from_parallel_lower_enabled(parallel_lower_enabled: bool) -> Self {
+        let snapshot =
+            guest_pc_trace_runner_seed_snapshot_enabled_with_parallel_lower(parallel_lower_enabled);
         Self {
             snapshot,
-            trusted: snapshot && guest_pc_trace_runner_seed_snapshot_trusted_enabled(),
+            trusted: snapshot
+                && guest_pc_trace_runner_seed_snapshot_trusted_enabled_with_parallel_lower(
+                    parallel_lower_enabled,
+                ),
             validate: snapshot && guest_pc_trace_runner_seed_snapshot_validation_enabled(),
         }
     }
@@ -4544,9 +4554,19 @@ struct GuestPcTraceParallelLowerMode {
 
 impl GuestPcTraceParallelLowerMode {
     fn from_env() -> Self {
+        Self::from_work_units_enabled(guest_pc_trace_parallel_lower_work_units_enabled())
+    }
+
+    fn from_runtime(instruction_limit: u64) -> Self {
+        Self::from_work_units_enabled(guest_pc_trace_parallel_lower_work_units_enabled_for_limit(
+            instruction_limit,
+        ))
+    }
+
+    fn from_work_units_enabled(work_units: bool) -> Self {
         Self {
             replay_snapshot: guest_pc_trace_parallel_lower_replay_snapshot_enabled(),
-            work_units: guest_pc_trace_parallel_lower_work_units_enabled(),
+            work_units,
             traceless_segment_output: guest_pc_trace_traceless_segment_output_selected(),
             #[cfg(feature = "cuda")]
             owned_streaming_lower: guest_pc_trace_owned_streaming_lower_enabled(),
@@ -4778,6 +4798,7 @@ fn produce_guest_pc_trace_segments(
         let lowerer_started = Instant::now();
         let mut timing = GuestPcTraceStreamTiming::default();
         let result = lower_guest_pc_trace_pending_segments(
+            instruction_limit,
             layout,
             pending_receiver,
             expected_proof_values,
@@ -5176,7 +5197,7 @@ fn produce_guest_pc_trace_live_pending_messages(
         GuestPcTracePendingSegmentMessage,
     ) -> Result<(), GuestPcTraceBackendError>,
 ) -> Result<GuestPcTracePendingSliceProduction, GuestPcTraceBackendError> {
-    let seed_mode = GuestPcTraceRunnerSeedMode::from_env();
+    let seed_mode = GuestPcTraceRunnerSeedMode::from_runtime(instruction_limit);
     validate_guest_pc_trace_live_report_chunk_mode(seed_mode)?;
     let layout = context
         .trace_layout
@@ -5451,13 +5472,14 @@ fn produce_guest_pc_trace_pending_slices(
     let mut executed_instructions = 0_u64;
     let mut trace_instance_count = 0_usize;
     let mut timing = GuestPcTraceStreamTiming::default();
-    let seed_mode = GuestPcTraceRunnerSeedMode::from_env();
+    let seed_mode = GuestPcTraceRunnerSeedMode::from_runtime(instruction_limit);
     let runner_seed_snapshot = seed_mode.snapshot;
     let runner_seed_snapshot_trusted = seed_mode.trusted;
     let validate_runner_seed_snapshot = seed_mode.validate;
     let segment_replay = guest_pc_trace_segment_replay_enabled();
     let report_elision = guest_pc_trace_parallel_lower_report_elision_enabled()
-        && guest_pc_trace_parallel_lower_worker_count().is_some_and(|count| count > 1);
+        && guest_pc_trace_parallel_lower_worker_count_for_limit(instruction_limit)
+            .is_some_and(|count| count > 1);
     let carry_replay_snapshot = guest_pc_trace_segment_replay_snapshot_enabled() || report_elision;
     let mut seed_mirror = (guest_pc_trace_seed_mirror_enabled() || runner_seed_snapshot)
         .then(ZiskMainSegmentSeed::new);
@@ -7216,6 +7238,7 @@ fn validate_guest_pc_trace_no_pending_report_chunks(
 }
 
 fn lower_guest_pc_trace_pending_segments(
+    instruction_limit: u64,
     layout: &WitnessTraceLayout,
     pending_receiver: mpsc::Receiver<GuestPcTracePendingSegmentMessage>,
     expected_proof_values: Option<&[WitnessTraceProofValue]>,
@@ -7223,9 +7246,11 @@ fn lower_guest_pc_trace_pending_segments(
     emit: &mut impl FnMut(GuestPcTraceSegmentTrace) -> Result<(), GuestPcTraceBackendError>,
 ) -> Result<GuestPcTraceStreamResult, GuestPcTraceBackendError> {
     if let Some(worker_count) =
-        guest_pc_trace_parallel_lower_worker_count().filter(|count| *count > 1)
+        guest_pc_trace_parallel_lower_worker_count_for_limit(instruction_limit)
+            .filter(|count| *count > 1)
     {
         return lower_guest_pc_trace_pending_segments_parallel(
+            instruction_limit,
             layout,
             pending_receiver,
             expected_proof_values,
@@ -7930,6 +7955,7 @@ fn send_guest_pc_trace_parallel_lower_job_to_worker(
 }
 
 fn lower_guest_pc_trace_pending_segments_parallel(
+    instruction_limit: u64,
     layout: &WitnessTraceLayout,
     pending_receiver: mpsc::Receiver<GuestPcTracePendingSegmentMessage>,
     expected_proof_values: Option<&[WitnessTraceProofValue]>,
@@ -7939,7 +7965,7 @@ fn lower_guest_pc_trace_pending_segments_parallel(
 ) -> Result<GuestPcTraceStreamResult, GuestPcTraceBackendError> {
     thread::scope(|scope| {
         let worker_count = worker_count.max(2);
-        let lower_mode = GuestPcTraceParallelLowerMode::from_env();
+        let lower_mode = GuestPcTraceParallelLowerMode::from_runtime(instruction_limit);
         timing.parallel_lower_worker_count = timing.parallel_lower_worker_count.max(worker_count);
         let (result_sender, result_receiver) = mpsc::sync_channel(
             guest_pc_trace_parallel_lower_result_queue_capacity(worker_count),
@@ -8664,14 +8690,31 @@ fn guest_pc_trace_parallel_lower_report_elision_enabled() -> bool {
     env_flag_enabled("LZVM_GUEST_PC_TRACE_PARALLEL_LOWER_REPLAY_ONLY", false)
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
 fn guest_pc_trace_runner_seed_snapshot_enabled() -> bool {
-    env_flag_enabled("LZVM_GUEST_PC_TRACE_RUNNER_SEED_SNAPSHOT", false)
-        || guest_pc_trace_parallel_lower_enabled()
+    guest_pc_trace_runner_seed_snapshot_enabled_with_parallel_lower(
+        guest_pc_trace_parallel_lower_enabled(),
+    )
 }
 
+fn guest_pc_trace_runner_seed_snapshot_enabled_with_parallel_lower(
+    parallel_lower_enabled: bool,
+) -> bool {
+    env_flag_enabled("LZVM_GUEST_PC_TRACE_RUNNER_SEED_SNAPSHOT", false) || parallel_lower_enabled
+}
+
+#[cfg_attr(not(test), allow(dead_code))]
 fn guest_pc_trace_runner_seed_snapshot_trusted_enabled() -> bool {
+    guest_pc_trace_runner_seed_snapshot_trusted_enabled_with_parallel_lower(
+        guest_pc_trace_parallel_lower_enabled(),
+    )
+}
+
+fn guest_pc_trace_runner_seed_snapshot_trusted_enabled_with_parallel_lower(
+    parallel_lower_enabled: bool,
+) -> bool {
     env_flag_enabled("LZVM_GUEST_PC_TRACE_RUNNER_SEED_SNAPSHOT_TRUSTED", false)
-        || guest_pc_trace_parallel_lower_enabled()
+        || parallel_lower_enabled
 }
 
 fn guest_pc_trace_runner_seed_snapshot_validation_enabled() -> bool {
@@ -8679,8 +8722,16 @@ fn guest_pc_trace_runner_seed_snapshot_validation_enabled() -> bool {
         || env_flag_enabled("LZVM_GUEST_PC_TRACE_RUNNER_SEED_SNAPSHOT_VALIDATE", false)
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
 fn guest_pc_trace_parallel_lower_worker_count() -> Option<usize> {
     if !guest_pc_trace_parallel_lower_enabled() {
+        return None;
+    }
+    Some(guest_pc_trace_parallel_lower_configured_worker_count())
+}
+
+fn guest_pc_trace_parallel_lower_worker_count_for_limit(instruction_limit: u64) -> Option<usize> {
+    if !guest_pc_trace_parallel_lower_enabled_for_limit(instruction_limit) {
         return None;
     }
     Some(guest_pc_trace_parallel_lower_configured_worker_count())
@@ -8725,9 +8776,34 @@ fn guest_pc_trace_parallel_lower_work_units_enabled() -> bool {
     env_flag_enabled("LZVM_GUEST_PC_TRACE_PARALLEL_LOWER_WORK_UNITS", false)
 }
 
+fn guest_pc_trace_parallel_lower_work_units_enabled_for_limit(instruction_limit: u64) -> bool {
+    guest_pc_trace_parallel_lower_work_units_enabled()
+        || guest_pc_trace_auto_parallel_lower_work_units_enabled(instruction_limit)
+}
+
+#[cfg_attr(not(test), allow(dead_code))]
 fn guest_pc_trace_parallel_lower_enabled() -> bool {
     env_flag_enabled("LZVM_GUEST_PC_TRACE_PARALLEL_LOWER", false)
         || guest_pc_trace_parallel_lower_work_units_enabled()
+}
+
+fn guest_pc_trace_parallel_lower_enabled_for_limit(instruction_limit: u64) -> bool {
+    env_flag_enabled("LZVM_GUEST_PC_TRACE_PARALLEL_LOWER", false)
+        || guest_pc_trace_parallel_lower_work_units_enabled_for_limit(instruction_limit)
+}
+
+#[cfg(feature = "cuda")]
+const DEFAULT_GUEST_PC_TRACE_AUTO_PARALLEL_LOWER_MIN_INSTRUCTIONS: u64 = 50_000_000;
+
+#[cfg(feature = "cuda")]
+fn guest_pc_trace_auto_parallel_lower_work_units_enabled(instruction_limit: u64) -> bool {
+    instruction_limit >= DEFAULT_GUEST_PC_TRACE_AUTO_PARALLEL_LOWER_MIN_INSTRUCTIONS
+        && env_flag_enabled("LZVM_GUEST_PC_TRACE_AUTO_PARALLEL_LOWER_WORK_UNITS", true)
+}
+
+#[cfg(not(feature = "cuda"))]
+fn guest_pc_trace_auto_parallel_lower_work_units_enabled(_instruction_limit: u64) -> bool {
+    false
 }
 
 #[cfg(feature = "cuda")]

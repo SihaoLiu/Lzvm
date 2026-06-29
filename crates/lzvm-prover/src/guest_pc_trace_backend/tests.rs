@@ -3419,10 +3419,17 @@ fn live_chunks_before_segment_start_lower_with_traceless_output() {
 
     let mut timing = GuestPcTraceStreamTiming::default();
     let mut emitted = Vec::new();
-    lower_guest_pc_trace_pending_segments(&layout, receiver, None, &mut timing, &mut |segment| {
-        emitted.push(segment);
-        Ok(())
-    })
+    lower_guest_pc_trace_pending_segments(
+        32,
+        &layout,
+        receiver,
+        None,
+        &mut timing,
+        &mut |segment| {
+            emitted.push(segment);
+            Ok(())
+        },
+    )
     .expect("lowerer should accept live chunks sent before segment metadata");
 
     assert_eq!(emitted.len(), 1);
@@ -3678,6 +3685,61 @@ fn parallel_lower_work_units_selects_parallel_lower_without_replay_elision() {
     let mode = GuestPcTraceParallelLowerMode::from_env();
     assert!(mode.work_units);
     assert!(!mode.replay_snapshot);
+}
+
+#[test]
+#[cfg(feature = "cuda")]
+fn large_runtime_auto_work_units_select_parallel_lower() {
+    let _env_lock = GUEST_PC_TRACE_ENV_LOCK
+        .lock()
+        .expect("guest PC trace env lock should not be poisoned");
+    let _parallel_env = TestEnvVarGuard::unset("LZVM_GUEST_PC_TRACE_PARALLEL_LOWER");
+    let _work_units_env = TestEnvVarGuard::unset("LZVM_GUEST_PC_TRACE_PARALLEL_LOWER_WORK_UNITS");
+    let _auto_env = TestEnvVarGuard::unset("LZVM_GUEST_PC_TRACE_AUTO_PARALLEL_LOWER_WORK_UNITS");
+    let _snapshot_env = TestEnvVarGuard::unset("LZVM_GUEST_PC_TRACE_RUNNER_SEED_SNAPSHOT");
+    let _trusted_env = TestEnvVarGuard::unset("LZVM_GUEST_PC_TRACE_RUNNER_SEED_SNAPSHOT_TRUSTED");
+
+    assert!(!guest_pc_trace_parallel_lower_enabled());
+    assert!(!guest_pc_trace_parallel_lower_enabled_for_limit(5_000_000));
+    assert!(!guest_pc_trace_parallel_lower_enabled_for_limit(49_999_999));
+    assert!(guest_pc_trace_parallel_lower_enabled_for_limit(50_000_000));
+    assert!(guest_pc_trace_parallel_lower_work_units_enabled_for_limit(
+        50_000_000
+    ));
+
+    let seed_mode = GuestPcTraceRunnerSeedMode::from_runtime(50_000_000);
+    assert!(seed_mode.snapshot);
+    assert!(seed_mode.trusted);
+
+    let mode = GuestPcTraceParallelLowerMode::from_runtime(50_000_000);
+    assert!(mode.work_units);
+
+    std::env::set_var("LZVM_GUEST_PC_TRACE_AUTO_PARALLEL_LOWER_WORK_UNITS", "0");
+    assert!(!guest_pc_trace_parallel_lower_enabled_for_limit(50_000_000));
+    assert!(!GuestPcTraceParallelLowerMode::from_runtime(50_000_000).work_units);
+}
+
+#[test]
+#[cfg(not(feature = "cuda"))]
+fn large_runtime_auto_work_units_stay_disabled_without_gpu_feature() {
+    let _env_lock = GUEST_PC_TRACE_ENV_LOCK
+        .lock()
+        .expect("guest PC trace env lock should not be poisoned");
+    let _parallel_env = TestEnvVarGuard::unset("LZVM_GUEST_PC_TRACE_PARALLEL_LOWER");
+    let _work_units_env = TestEnvVarGuard::unset("LZVM_GUEST_PC_TRACE_PARALLEL_LOWER_WORK_UNITS");
+    let _auto_env = TestEnvVarGuard::unset("LZVM_GUEST_PC_TRACE_AUTO_PARALLEL_LOWER_WORK_UNITS");
+    let _snapshot_env = TestEnvVarGuard::unset("LZVM_GUEST_PC_TRACE_RUNNER_SEED_SNAPSHOT");
+    let _trusted_env = TestEnvVarGuard::unset("LZVM_GUEST_PC_TRACE_RUNNER_SEED_SNAPSHOT_TRUSTED");
+
+    assert!(!guest_pc_trace_parallel_lower_enabled_for_limit(50_000_000));
+    assert!(!guest_pc_trace_parallel_lower_work_units_enabled_for_limit(
+        50_000_000
+    ));
+
+    let seed_mode = GuestPcTraceRunnerSeedMode::from_runtime(50_000_000);
+    assert!(!seed_mode.snapshot);
+    assert!(!seed_mode.trusted);
+    assert!(!GuestPcTraceParallelLowerMode::from_runtime(50_000_000).work_units);
 }
 
 #[test]

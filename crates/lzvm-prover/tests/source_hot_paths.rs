@@ -6793,7 +6793,7 @@ fn guest_pc_trace_parallel_lowerer_stays_seeded_and_opt_in() {
     assert!(
         backend_source
             .contains("env_flag_enabled(\"LZVM_GUEST_PC_TRACE_PARALLEL_LOWER_WORK_UNITS\", false)"),
-        "work-unit guest PC trace lowering should remain disabled by default"
+        "work-unit guest PC trace lowering should keep the env gate disabled by default"
     );
     assert!(
         backend_source.contains("WorkUnit(Box<GuestPcTraceParallelLowerWorkUnit>)"),
@@ -6807,8 +6807,10 @@ fn guest_pc_trace_parallel_lowerer_stays_seeded_and_opt_in() {
     );
     assert!(
         backend_source
-            .contains("|| guest_pc_trace_parallel_lower_enabled()"),
-        "parallel guest PC trace lowering should enable runner seed snapshots for its pending segments"
+            .contains("guest_pc_trace_runner_seed_snapshot_enabled_with_parallel_lower")
+            && backend_source.contains("GuestPcTraceRunnerSeedMode::from_runtime")
+            && backend_source.contains("guest_pc_trace_parallel_lower_enabled_for_limit"),
+        "parallel guest PC trace lowering should enable runner seed snapshots from the runtime gate"
     );
     let report_elision_body = function_body(
         &backend_source,
@@ -6840,7 +6842,7 @@ fn guest_pc_trace_parallel_lowerer_stays_seeded_and_opt_in() {
     );
     assert!(
         live_pending_body
-            .matches("GuestPcTraceRunnerSeedMode::from_env()")
+            .matches("GuestPcTraceRunnerSeedMode::from_runtime(instruction_limit)")
             .count()
             == 1
             && live_pending_body
@@ -6857,7 +6859,8 @@ fn guest_pc_trace_parallel_lowerer_stays_seeded_and_opt_in() {
         "#[allow(dead_code)]\nfn discover_guest_pc_trace_segment_seeds",
     );
     assert!(
-        pending_slices_body.contains("let seed_mode = GuestPcTraceRunnerSeedMode::from_env();")
+        pending_slices_body
+            .contains("let seed_mode = GuestPcTraceRunnerSeedMode::from_runtime(instruction_limit);")
             && pending_slices_body.contains("let runner_seed_snapshot = seed_mode.snapshot;")
             && pending_slices_body.contains("let runner_seed_snapshot_trusted = seed_mode.trusted;")
             && pending_slices_body.contains("let validate_runner_seed_snapshot = seed_mode.validate;")
@@ -6887,7 +6890,8 @@ fn guest_pc_trace_parallel_lowerer_stays_seeded_and_opt_in() {
         "work-unit guest PC trace lowering should dispatch retained-report work units through the explicit worker job"
     );
     assert!(
-        parallel_body.contains("let lower_mode = GuestPcTraceParallelLowerMode::from_env();")
+        parallel_body
+            .contains("let lower_mode = GuestPcTraceParallelLowerMode::from_runtime(instruction_limit);")
             && parallel_body.contains("lower_mode.work_units")
             && parallel_body.contains("lower_mode.stream_chunks")
             && parallel_body.contains("lower_guest_pc_trace_parallel_pending_job_with_mode")
