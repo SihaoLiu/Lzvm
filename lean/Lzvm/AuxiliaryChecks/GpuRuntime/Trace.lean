@@ -102,6 +102,16 @@ theorem guest_pc_trace_descriptor_buffer_retention_default_disabled_for_parallel
   rcases decision with ⟨_limitPositive, retentionMatches⟩
   simpa [configuredNone, parallelEnabled] using retentionMatches
 
+theorem guest_pc_trace_descriptor_buffer_retention_explicit_override_matches
+    (config : GuestPcTraceDescriptorBufferRetentionConfig)
+    (configured : Bool) :
+    config.configuredDescriptorBufferRetention = some configured ->
+      GuestPcTraceDescriptorBufferRetentionDecisionMatches config ->
+        config.effectiveDescriptorBufferRetention = configured := by
+  intro configuredSome decision
+  rcases decision with ⟨_limitPositive, retentionMatches⟩
+  simpa [configuredSome] using retentionMatches
+
 theorem guest_pc_trace_commit_mode_descriptor_retention_matches
     (config : GuestPcTraceSegmentCommitModeConfig) :
     GuestPcTraceSegmentCommitModeDecisionMatches config ->
