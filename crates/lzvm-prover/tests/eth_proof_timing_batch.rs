@@ -22,6 +22,32 @@ const VERIFY_REQUIRED_TEXTS: &[&str] = &[
     "framed_guest_input_match=ok",
     "pipeline_input_bindings=ok",
 ];
+const EXPECTED_ARTIFACT_HELP_ITEMS: &[(&str, &str)] = &[
+    (
+        "setup",
+        "Use an existing setup key directory, or run: target/release/lzvm setup generate-key [--backend cpu|cuda] <setup-dir>",
+    ),
+    (
+        "block_input",
+        "Write BLOCK_INPUT from block RLP, hex, RPC JSON, and optional receipts: target/release/lzvm eth write-block-input [--hex|--rpc-json] [--receipts <receipts-rlp>|--receipts-rpc-json <receipts-json>] <block> <out>",
+    ),
+    (
+        "public_input_block",
+        "Write BLOCK_INPUT from ETH public input: target/release/lzvm eth write-public-block-input [--allow-trailing] [--receipts-rpc-json <receipts-json>] <public-input> <out>",
+    ),
+    (
+        "program_image_cache",
+        "Write PROGRAM_IMAGE_CACHE: target/release/lzvm setup write-program-image-cache [--backend cpu|cuda] --setup-dir <setup-dir> <program-bin> <guest-image> <root-bin> <trace-rows> <trace-columns> <blowup-factor> <arity> <out-cache>",
+    ),
+    (
+        "input_data",
+        "INPUT_DATA must be framed guest stdin consumed by the guest image.",
+    ),
+    (
+        "guest_image",
+        "GUEST_IMAGE must be the guest executable used to produce the matching framed input.",
+    ),
+];
 
 fn workspace_root() -> &'static std::path::Path {
     std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -123,6 +149,30 @@ fn clear_env(command: &mut Command, prefix: &str) {
         .chain(["BIN", "TMP_DIR", "TRACE_LIMIT"].iter())
     {
         command.env_remove(format!("{prefix}_{}", *suffix));
+    }
+}
+
+fn assert_artifact_help_stderr(stderr: &str) {
+    for (name, text) in EXPECTED_ARTIFACT_HELP_ITEMS {
+        let expected = format!("artifact_help_{name}={text}");
+        assert!(
+            stderr.contains(&expected),
+            "missing artifact help line {expected:?}: stderr={stderr}"
+        );
+    }
+}
+
+fn assert_artifact_template_help(template: &str) {
+    assert!(
+        template.contains("# artifact helpers:"),
+        "template should introduce artifact helpers: {template}"
+    );
+    for (_name, text) in EXPECTED_ARTIFACT_HELP_ITEMS {
+        let expected = format!("# {text}");
+        assert!(
+            template.contains(&expected),
+            "missing artifact template line {expected:?}: template={template}"
+        );
     }
 }
 
@@ -1077,6 +1127,7 @@ fn eth_proof_timing_batch_combined_check_still_validates_proof_env() {
         stderr.contains("small proof environment is incomplete"),
         "combined check should not skip proof env validation: stderr={stderr}"
     );
+    assert_artifact_help_stderr(&stderr);
     assert!(
         !profile_created,
         "combined check should not create profile output directories"
@@ -1675,6 +1726,7 @@ fn eth_proof_timing_batch_prints_env_template_without_config() {
         stdout.contains("# cargo build --release -p lzvm-cli --bin lzvm --features cuda"),
         "env template should include the default binary build command: {stdout}"
     );
+    assert_artifact_template_help(&stdout);
     assert!(
         stdout.contains("export LZVM_REAL_SMALL_PARITY_BIN=target/release/lzvm"),
         "small template should include the default binary path: {stdout}"
@@ -1916,6 +1968,7 @@ fn eth_proof_timing_batch_writes_env_template_under_temp() {
             && template.contains("# run with --large-mode work-units"),
         "template should record selected modes: {template}"
     );
+    assert_artifact_template_help(&template);
     assert!(
         template.contains("# GPU selection captured from the current environment")
             && template.contains("export CUDA_VISIBLE_DEVICES=1,0"),
@@ -1928,7 +1981,8 @@ fn eth_proof_timing_batch_writes_env_template_under_temp() {
     );
     assert!(
         template
-            .matches("# INPUT_DATA must be framed guest stdin")
+            .lines()
+            .filter(|line| *line == "# INPUT_DATA must be framed guest stdin")
             .count()
             == 2,
         "template should explain the guest stdin format for both suites: {template}"
@@ -3216,6 +3270,7 @@ fn eth_proof_timing_batch_check_env_rejects_missing_config() {
         stderr.contains("proof environment is incomplete"),
         "env check should explain missing configuration: stderr={stderr}"
     );
+    assert_artifact_help_stderr(&stderr);
     assert!(
         stderr.contains("next_env_template_command=scripts/run-eth-proof-timing-batch.py --suite small")
             && stderr.contains("--write-env-template temp/real-proof.env"),
@@ -3272,6 +3327,7 @@ fn eth_proof_timing_batch_incomplete_env_file_suggests_sibling_template_path() {
         stderr.contains("proof environment is incomplete"),
         "env-file check should explain missing configuration: stderr={stderr}"
     );
+    assert_artifact_help_stderr(&stderr);
     assert!(
         stderr.contains(&format!("--env-file {env_rel}"))
             && stderr.contains(&format!("--write-env-template {template_rel}"))
@@ -3346,6 +3402,7 @@ fn eth_proof_timing_batch_check_env_reports_template_command_when_no_env_is_avai
         stderr.contains("no proof environments available; missing"),
         "env check should explain that no proof env is available: stderr={stderr}"
     );
+    assert_artifact_help_stderr(&stderr);
     assert!(
         stderr.contains(
             "next_env_template_command=scripts/run-eth-proof-timing-batch.py --suite available"
@@ -3416,6 +3473,7 @@ fn eth_proof_timing_batch_no_available_env_file_suggests_sibling_template_path()
         stderr.contains("no proof environments available; missing"),
         "env-file check should explain that no proof env is available: stderr={stderr}"
     );
+    assert_artifact_help_stderr(&stderr);
     assert!(
         stderr.contains(&format!("--env-file {env_rel}"))
             && stderr.contains(&format!("--write-env-template {template_rel}"))
