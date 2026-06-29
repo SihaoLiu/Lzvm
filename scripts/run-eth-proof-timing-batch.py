@@ -55,6 +55,14 @@ VERIFY_REQUIRED_TEXTS = [
     "framed_guest_input_match=ok",
     "pipeline_input_bindings=ok",
 ]
+ARTIFACT_HELP_LINES = [
+    "artifact_help_setup=Use an existing setup key directory, or run: target/release/lzvm setup generate-key [--backend cuda] <setup-dir>",
+    "artifact_help_block_input=Write BLOCK_INPUT from block RLP or RPC JSON: target/release/lzvm eth write-block-input [--rpc-json] <block> <out>",
+    "artifact_help_public_input_block=Write BLOCK_INPUT from ETH public input: target/release/lzvm eth write-public-block-input [--allow-trailing] [--receipts-rpc-json <receipts-json>] <public-input> <out>",
+    "artifact_help_program_image_cache=Write PROGRAM_IMAGE_CACHE: target/release/lzvm setup write-program-image-cache --setup-dir <setup-dir> <program-bin> <guest-image> <root-bin> <trace-rows> <trace-columns> <blowup-factor> <arity> <out-cache>",
+    "artifact_help_input_data=INPUT_DATA must be framed guest stdin consumed by the guest image.",
+    "artifact_help_guest_image=GUEST_IMAGE must be the guest executable used to produce the matching framed input.",
+]
 
 PIPELINE_ENV_TO_CLEAR = [
     "LZVM_GUEST_PC_TRACE_PARALLEL_LOWER",
@@ -427,6 +435,11 @@ def env_template_text(args: argparse.Namespace, root: Path) -> str:
     lines = [
         "# build default binary first:",
         f"# {DEFAULT_BIN_BUILD_COMMAND}",
+        "",
+        "# artifact helpers:",
+        "# target/release/lzvm eth write-block-input [--rpc-json] <block> <out>",
+        "# target/release/lzvm eth write-public-block-input [--allow-trailing] [--receipts-rpc-json <receipts-json>] <public-input> <out>",
+        "# target/release/lzvm setup write-program-image-cache --setup-dir <setup-dir> <program-bin> <guest-image> <root-bin> <trace-rows> <trace-columns> <blowup-factor> <arity> <out-cache>",
         "",
     ]
     if visible_devices:
@@ -1115,6 +1128,10 @@ def env_template_command_for_missing_config(args: argparse.Namespace, root: Path
     )
 
 
+def artifact_help_text() -> str:
+    return "\n".join(ARTIFACT_HELP_LINES)
+
+
 def selected_envs(args: argparse.Namespace, root: Path) -> list[tuple[ProofEnv, str]]:
     small, large = proof_envs(root)
     requested = {
@@ -1134,6 +1151,8 @@ def selected_envs(args: argparse.Namespace, root: Path) -> list[tuple[ProofEnv, 
         raise SystemExit(
             "no proof environments available; missing "
             + ", ".join(missing)
+            + "\n"
+            + artifact_help_text()
             + "\nnext_env_template_command="
             + env_template_command_for_missing_config(args, root)
         )
@@ -1147,6 +1166,8 @@ def selected_envs(args: argparse.Namespace, root: Path) -> list[tuple[ProofEnv, 
     if missing_configs:
         raise SystemExit(
             "\n".join(missing_configs)
+            + "\n"
+            + artifact_help_text()
             + "\nnext_env_template_command="
             + env_template_command_for_missing_config(args, root)
         )
@@ -1385,6 +1406,10 @@ def self_test() -> None:
         raise SystemExit("self-test missing small environment diagnostic")
     if "large proof environment is incomplete:" not in missing_result.stderr:
         raise SystemExit("self-test missing large environment diagnostic")
+    if "artifact_help_block_input=" not in missing_result.stderr:
+        raise SystemExit("self-test missing block input artifact hint")
+    if "artifact_help_program_image_cache=" not in missing_result.stderr:
+        raise SystemExit("self-test missing program image cache artifact hint")
     fake_bin = work_dir / "fake-prover.py"
     fake_bin.write_text(
         "\n".join(
