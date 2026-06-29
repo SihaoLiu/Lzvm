@@ -687,6 +687,11 @@ fn lean_runtime_soundness_binding_exports_core_contract_projection() {
         .contains("RuntimeSoundnessEvidence"),
         "compact audited runtime acceptance contract should not force callers to unpack full runtime evidence"
     );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_soundness_checked_acceptance_execution_obligations",
+        &["sound_witness_implies_execution_obligations"],
+    );
     assert!(
         theorem_prefix(
             &lean_source,

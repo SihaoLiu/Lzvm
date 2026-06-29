@@ -1002,20 +1002,7 @@ theorem runtime_soundness_checked_acceptance_execution_obligations
       proof
       requiresExternalSource
       checked
-  cases sound.right with
-  | intro witness tail =>
-    cases tail with
-    | intro trace tail =>
-      cases tail with
-      | intro constraints evidence =>
-        exact
-          Exists.intro witness
-            (Exists.intro trace
-              (Exists.intro constraints
-                (And.intro evidence.right.right.right.right.left
-                  (And.intro
-                    evidence.right.right.right.right.right.left
-                    evidence.right.right.right.right.right.right))))
+  exact sound_witness_implies_execution_obligations sound.right
 
 theorem runtime_soundness_checked_acceptance_full_soundness_contract
     {system : VerifierModel}
