@@ -24,6 +24,8 @@ DEFAULT_NCU_TARGET_PROCESSES = "all"
 DEFAULT_NVIDIA_SMI_COMMAND = "nvidia-smi"
 DEFAULT_MIN_GPU_FREE_MIB = 1024
 DEFAULT_EXTRA_RUN_BUDGET = 2
+SECTIONED_HEADER_BYTES = 12
+PROGRAM_IMAGE_CACHE_PAYLOAD_BYTES = 152
 ENV_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 REQUIRED_PATHS = [
@@ -345,9 +347,206 @@ def validate_framed_input_data(path: Path, name: str) -> None:
             offset = next_offset
 
 
+class SectionedSection(NamedTuple):
+    section_id: int
+    offset: int
+    size: int
+
+
+def read_exact(source, count: int, path: Path, name: str, offset: int) -> bytes:
+    data = source.read(count)
+    if len(data) != count:
+        raise SystemExit(
+            f"{name} artifact is invalid: unexpected end of sectioned file at "
+            f"{offset}: needed {count}, available {path.stat().st_size}"
+        )
+    return data
+
+
+def read_u32_le(data: bytes) -> int:
+    return int.from_bytes(data, "little")
+
+
+def read_u64_le(data: bytes) -> int:
+    return int.from_bytes(data, "little")
+
+
+def parse_sectioned_artifact_headers(
+    path: Path,
+    name: str,
+    expected_kind: bytes,
+    expected_version: int,
+) -> list[SectionedSection]:
+    total_size = path.stat().st_size
+    sections: list[SectionedSection] = []
+    with path.open("rb") as source:
+        offset = 0
+        kind = read_exact(source, 4, path, name, offset)
+        offset += 4
+        if kind != expected_kind:
+            raise SystemExit(
+                f"{name} artifact is invalid: expected sectioned kind "
+                f"{expected_kind.decode('ascii')}, found {kind.decode('ascii', 'replace')}"
+            )
+        version = read_u32_le(read_exact(source, 4, path, name, offset))
+        offset += 4
+        if version != expected_version:
+            raise SystemExit(
+                f"{name} artifact is invalid: expected sectioned version "
+                f"{expected_version}, found {version}"
+            )
+        section_count = read_u32_le(read_exact(source, 4, path, name, offset))
+        offset += 4
+        if section_count > (total_size - offset) // SECTIONED_HEADER_BYTES:
+            raise SystemExit(
+                f"{name} artifact is invalid: section count exceeds remaining file size"
+            )
+        for _ in range(section_count):
+            section_id = read_u32_le(read_exact(source, 4, path, name, offset))
+            offset += 4
+            size = read_u64_le(read_exact(source, 8, path, name, offset))
+            offset += 8
+            if size > total_size - offset:
+                raise SystemExit(
+                    f"{name} artifact is invalid: section {section_id} exceeds file size"
+                )
+            sections.append(SectionedSection(section_id, offset, size))
+            source.seek(size, os.SEEK_CUR)
+            offset += size
+        if offset != total_size:
+            raise SystemExit(
+                f"{name} artifact is invalid: unexpected trailing bytes: "
+                f"{total_size - offset}"
+            )
+    return sections
+
+
+def validate_unique_section_ids(
+    sections: list[SectionedSection], name: str
+) -> set[int]:
+    seen: set[int] = set()
+    duplicates: list[int] = []
+    for section in sections:
+        if section.section_id in seen:
+            duplicates.append(section.section_id)
+        seen.add(section.section_id)
+    if duplicates:
+        raise SystemExit(
+            f"{name} artifact is invalid: duplicate section ids: "
+            + ", ".join(str(value) for value in duplicates)
+        )
+    return seen
+
+
+def validate_eth_block_input_artifact(path: Path, name: str) -> None:
+    sections = parse_sectioned_artifact_headers(path, name, b"ethi", 1)
+    section_ids = validate_unique_section_ids(sections, name)
+    invalid = sorted(section_id for section_id in section_ids if not 1 <= section_id <= 6)
+    if invalid:
+        raise SystemExit(
+            f"{name} artifact is invalid: invalid ETH block input section ids: "
+            + ", ".join(str(value) for value in invalid)
+        )
+    required = {1, 2, 3}
+    missing = sorted(required - section_ids)
+    if missing:
+        raise SystemExit(
+            f"{name} artifact is invalid: missing ETH block input section ids: "
+            + ", ".join(str(value) for value in missing)
+        )
+    if (5 in section_ids) != (6 in section_ids):
+        raise SystemExit(
+            f"{name} artifact is invalid: receipt preimages and receipt RLP sections "
+            "must be paired"
+        )
+
+
+def read_section_payload(path: Path, section: SectionedSection) -> bytes:
+    with path.open("rb") as source:
+        source.seek(section.offset)
+        return source.read(section.size)
+
+
+def is_power_of_two(value: int) -> bool:
+    return value > 0 and value & (value - 1) == 0
+
+
+def validate_program_image_cache_artifact(path: Path, name: str) -> None:
+    sections = parse_sectioned_artifact_headers(path, name, b"pimg", 1)
+    if len(sections) != 1:
+        raise SystemExit(
+            f"{name} artifact is invalid: expected one program-image cache section, "
+            f"found {len(sections)}"
+        )
+    section = sections[0]
+    if section.section_id != 1:
+        raise SystemExit(
+            f"{name} artifact is invalid: expected program-image cache section 1, "
+            f"found {section.section_id}"
+        )
+    if section.size != PROGRAM_IMAGE_CACHE_PAYLOAD_BYTES:
+        raise SystemExit(
+            f"{name} artifact is invalid: expected program-image cache payload "
+            f"{PROGRAM_IMAGE_CACHE_PAYLOAD_BYTES} bytes, found {section.size}"
+        )
+    payload = read_section_payload(path, section)
+    trace_rows = read_u64_le(payload[128:136])
+    trace_columns = read_u32_le(payload[136:140])
+    blowup_factor = read_u32_le(payload[140:144])
+    arity = read_u32_le(payload[144:148])
+    gpu_mode = read_u32_le(payload[148:152])
+    if not is_power_of_two(trace_rows):
+        raise SystemExit(
+            f"{name} artifact is invalid: trace rows must be a positive power of two"
+        )
+    if trace_columns == 0:
+        raise SystemExit(f"{name} artifact is invalid: trace columns must be positive")
+    if not is_power_of_two(blowup_factor):
+        raise SystemExit(
+            f"{name} artifact is invalid: blowup factor must be a positive power of two"
+        )
+    if arity not in {2, 4}:
+        raise SystemExit(f"{name} artifact is invalid: merkle tree arity must be 2 or 4")
+    if gpu_mode not in {0, 1}:
+        raise SystemExit(f"{name} artifact is invalid: unsupported GPU mode {gpu_mode}")
+
+
 def framed_input_data(payload: bytes) -> bytes:
     data = len(payload).to_bytes(8, "little") + payload
     return data + b"\0" * ((8 - (len(data) % 8)) % 8)
+
+
+def sectioned_artifact_data(kind: bytes, sections: list[tuple[int, bytes]]) -> bytes:
+    data = bytearray()
+    data.extend(kind)
+    data.extend((1).to_bytes(4, "little"))
+    data.extend(len(sections).to_bytes(4, "little"))
+    for section_id, payload in sections:
+        data.extend(section_id.to_bytes(4, "little"))
+        data.extend(len(payload).to_bytes(8, "little"))
+        data.extend(payload)
+    return bytes(data)
+
+
+def eth_block_input_shell_data() -> bytes:
+    return sectioned_artifact_data(b"ethi", [(1, b""), (2, b""), (3, b"")])
+
+
+def program_image_cache_shell_data() -> bytes:
+    payload = bytearray()
+    payload.extend(bytes([1]) * 32)
+    payload.extend(bytes([2]) * 32)
+    payload.extend(bytes([3]) * 32)
+    for root_word in [11, 12, 13, 14]:
+        payload.extend(root_word.to_bytes(8, "little"))
+    payload.extend((1024).to_bytes(8, "little"))
+    payload.extend((17).to_bytes(4, "little"))
+    payload.extend((8).to_bytes(4, "little"))
+    payload.extend((4).to_bytes(4, "little"))
+    payload.extend((1).to_bytes(4, "little"))
+    if len(payload) != PROGRAM_IMAGE_CACHE_PAYLOAD_BYTES:
+        raise AssertionError("program-image cache shell payload length mismatch")
+    return sectioned_artifact_data(b"pimg", [(1, bytes(payload))])
 
 
 def target_max_avg_s(args: argparse.Namespace, label: str) -> float | None:
@@ -410,6 +609,10 @@ class GpuMemoryRow(NamedTuple):
 
 def configured_paths(config: ProofEnv) -> dict[str, Path]:
     paths = {suffix.lower(): config.path(suffix) for suffix in REQUIRED_SUFFIXES}
+    validate_eth_block_input_artifact(paths["block_input"], config.var("BLOCK_INPUT"))
+    validate_program_image_cache_artifact(
+        paths["program_image_cache"], config.var("PROGRAM_IMAGE_CACHE")
+    )
     validate_framed_input_data(paths["input_data"], config.var("INPUT_DATA"))
     bin_value = os.environ.get(config.var("BIN"))
     bin_path = (
@@ -1524,6 +1727,10 @@ def self_test() -> None:
             path = work_dir / f"{prefix.lower()}-{suffix.lower()}"
             if suffix == "SETUP":
                 path.mkdir()
+            elif suffix == "BLOCK_INPUT":
+                path.write_bytes(eth_block_input_shell_data())
+            elif suffix == "PROGRAM_IMAGE_CACHE":
+                path.write_bytes(program_image_cache_shell_data())
             elif suffix == "INPUT_DATA":
                 path.write_bytes(framed_input_data(b"fixture"))
             else:

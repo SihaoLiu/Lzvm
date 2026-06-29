@@ -110,8 +110,8 @@ impl ProofFixture {
         make_executable(&fake_bin);
         let setup = dir.join("setup");
         std::fs::create_dir_all(&setup).expect("setup dir should be created");
-        let block_input = write_fixture(&dir, "block.input");
-        let cache = write_fixture(&dir, "program-image.cache");
+        let block_input = write_eth_block_input_shell(&dir, "block.input");
+        let cache = write_program_image_cache_shell(&dir, "program-image.cache");
         let input_data = write_framed_fixture(&dir, "input-data.bin", b"fixture");
         let guest = write_fixture(&dir, "guest.elf");
         let shared_tmp_dir = dir.join("tmp");
@@ -3669,6 +3669,63 @@ fn eth_proof_timing_batch_check_env_rejects_wrong_input_types() {
 }
 
 #[test]
+fn eth_proof_timing_batch_check_env_rejects_malformed_block_input() {
+    let fixture = ProofFixture::new("eth-proof-timing-batch-malformed-block-input");
+    std::fs::write(&fixture.block_input, b"not sectioned").expect("block fixture should update");
+    let mut command = Command::new(script_path());
+    command.arg("--suite").arg("small").arg("--check-env");
+    fixture.apply_env(&mut command, SMALL_PREFIX);
+
+    let output = command
+        .output()
+        .expect("ETH proof timing batch env check should run");
+    let success = output.status.success();
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    fixture.cleanup();
+
+    assert!(!success, "env check should reject malformed block input");
+    assert!(
+        !stdout.contains("status=ok"),
+        "failed env check should not report ok: {stdout}"
+    );
+    assert!(
+        stderr.contains("_BLOCK_INPUT artifact is invalid"),
+        "env check should explain malformed block input: stderr={stderr}"
+    );
+}
+
+#[test]
+fn eth_proof_timing_batch_check_env_rejects_malformed_program_image_cache() {
+    let fixture = ProofFixture::new("eth-proof-timing-batch-malformed-program-cache");
+    std::fs::write(&fixture.cache, b"not sectioned").expect("cache fixture should update");
+    let mut command = Command::new(script_path());
+    command.arg("--suite").arg("small").arg("--check-env");
+    fixture.apply_env(&mut command, SMALL_PREFIX);
+
+    let output = command
+        .output()
+        .expect("ETH proof timing batch env check should run");
+    let success = output.status.success();
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    fixture.cleanup();
+
+    assert!(
+        !success,
+        "env check should reject malformed program-image cache"
+    );
+    assert!(
+        !stdout.contains("status=ok"),
+        "failed env check should not report ok: {stdout}"
+    );
+    assert!(
+        stderr.contains("_PROGRAM_IMAGE_CACHE artifact is invalid"),
+        "env check should explain malformed program-image cache: stderr={stderr}"
+    );
+}
+
+#[test]
 fn eth_proof_timing_batch_check_env_rejects_malformed_input_data() {
     let fixture = ProofFixture::new("eth-proof-timing-batch-malformed-input-data");
     std::fs::write(&fixture.input_data, [1_u8, 2, 3]).expect("input fixture should update");
@@ -3897,6 +3954,52 @@ fn write_fixture(dir: &std::path::Path, name: &str) -> std::path::PathBuf {
     let path = dir.join(name);
     std::fs::write(&path, b"fixture").expect("fixture should write");
     path
+}
+
+fn write_sectioned_fixture(
+    dir: &std::path::Path,
+    name: &str,
+    kind: &[u8; 4],
+    sections: &[(u32, Vec<u8>)],
+) -> std::path::PathBuf {
+    let path = dir.join(name);
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(kind);
+    bytes.extend_from_slice(&1_u32.to_le_bytes());
+    bytes.extend_from_slice(&(sections.len() as u32).to_le_bytes());
+    for (section_id, payload) in sections {
+        bytes.extend_from_slice(&section_id.to_le_bytes());
+        bytes.extend_from_slice(&(payload.len() as u64).to_le_bytes());
+        bytes.extend_from_slice(payload);
+    }
+    std::fs::write(&path, bytes).expect("sectioned fixture should write");
+    path
+}
+
+fn write_eth_block_input_shell(dir: &std::path::Path, name: &str) -> std::path::PathBuf {
+    write_sectioned_fixture(
+        dir,
+        name,
+        b"ethi",
+        &[(1, Vec::new()), (2, Vec::new()), (3, Vec::new())],
+    )
+}
+
+fn write_program_image_cache_shell(dir: &std::path::Path, name: &str) -> std::path::PathBuf {
+    let mut payload = Vec::new();
+    payload.extend_from_slice(&[1_u8; 32]);
+    payload.extend_from_slice(&[2_u8; 32]);
+    payload.extend_from_slice(&[3_u8; 32]);
+    for root_word in [11_u64, 12, 13, 14] {
+        payload.extend_from_slice(&root_word.to_le_bytes());
+    }
+    payload.extend_from_slice(&1024_u64.to_le_bytes());
+    payload.extend_from_slice(&17_u32.to_le_bytes());
+    payload.extend_from_slice(&8_u32.to_le_bytes());
+    payload.extend_from_slice(&4_u32.to_le_bytes());
+    payload.extend_from_slice(&1_u32.to_le_bytes());
+    assert_eq!(payload.len(), 152);
+    write_sectioned_fixture(dir, name, b"pimg", &[(1, payload)])
 }
 
 fn write_framed_fixture(dir: &std::path::Path, name: &str, payload: &[u8]) -> std::path::PathBuf {
