@@ -17,6 +17,7 @@ import Lzvm.FramedGuestInputBinding
 import Lzvm.MerklePathSoundness
 import Lzvm.Model
 import Lzvm.OrderedLookup
+import Lzvm.OptionalConstantOpening
 import Lzvm.ProofSegmentIds
 import Lzvm.ProofArtifactBinding
 import Lzvm.ProgramImageCacheBinding
