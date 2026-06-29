@@ -5150,7 +5150,7 @@ fn prints_prove_inputs_from_guest_pc_trace() {
     assert_eq!(
         String::from_utf8(stdout).expect("stdout should be utf-8"),
         format!(
-            "status=ok\npass=full\nunits=4\nfixed_bytes=128\npcs_material_units=4\npcs_material_bytes={material_bytes}\nqueries=4\nmax_extended_domain_bits=2\npartitions=1\npartition_ids=0\nworker=0\ninput_data=none\naggregate=false\nremote_aggregation=false\nfinal_wrap=false\nverify_outputs=true\nsave_outputs=false\nminimal_memory=false\noutput={}\ngpu_preallocate=false\n{CUDA_BACKEND_SUMMARY_LINE}gpu_streams=20\nwitness_thread_pools=32\nstored_witnesses=4\npack_trace=true\nsetup_hash={expected}\nwitness_library=none\nguest_pc_trace_instruction_limit=8\nguest_image={}\nguest_image_bytes={}\nguest_image_machine=243\nguest_image_entry=2147483648\nguest_image_digest={}\npublic_inputs=none\n",
+            "status=ok\npass=full\nunits=4\nfixed_bytes=128\npcs_material_units=4\npcs_material_bytes={material_bytes}\nqueries=4\nmax_extended_domain_bits=2\npartitions=1\npartition_ids=0\nworker=0\ninput_data=none\naggregate=false\nremote_aggregation=false\nfinal_wrap=false\nverify_outputs=true\nsave_outputs=false\nminimal_memory=false\noutput={}\ngpu_preallocate=false\n{CUDA_BACKEND_SUMMARY_LINE}gpu_streams=20\nwitness_thread_pools=32\nstored_witnesses=4\npack_trace=true\nsetup_hash={expected}\nwitness_library=none\nguest_pc_trace_instruction_limit=8\nguest_pc_trace_selected_unit=0\nguest_pc_trace_layout_rows=2\nguest_pc_trace_layout_row_width=2\nguest_pc_trace_layout_instruction_capacity=2\nguest_pc_trace_segmented=false\nguest_image={}\nguest_image_bytes={}\nguest_image_machine=243\nguest_image_entry=2147483648\nguest_image_digest={}\npublic_inputs=none\n",
             output_dir.display(),
             guest_image.display(),
             guest_image_info.byte_len,
@@ -6256,7 +6256,7 @@ fn runs_prove_witness_commitments_from_guest_pc_trace() {
     assert_eq!(
         String::from_utf8(stdout).expect("stdout should be utf-8"),
         format!(
-            "status=ok\npass=full\nunits=4\nfixed_bytes=128\npcs_material_units=4\npcs_material_bytes={material_bytes}\nqueries=4\nmax_extended_domain_bits=2\npartitions=1\npartition_ids=0\nworker=0\ninput_data=none\naggregate=false\nremote_aggregation=false\nfinal_wrap=false\nverify_outputs=true\nsave_outputs=false\nminimal_memory=false\noutput={}\ngpu_preallocate=false\n{CUDA_BACKEND_SUMMARY_LINE}gpu_streams=20\nwitness_thread_pools=32\nstored_witnesses=4\npack_trace=true\nsetup_hash={setup_hash}\nunit_index=0\ninput_bytes=0\ntrace_rows=2\ntrace_columns=2\nstage_count=2\n{}",
+            "status=ok\npass=full\nunits=4\nfixed_bytes=128\npcs_material_units=4\npcs_material_bytes={material_bytes}\nqueries=4\nmax_extended_domain_bits=2\npartitions=1\npartition_ids=0\nworker=0\ninput_data=none\naggregate=false\nremote_aggregation=false\nfinal_wrap=false\nverify_outputs=true\nsave_outputs=false\nminimal_memory=false\noutput={}\ngpu_preallocate=false\n{CUDA_BACKEND_SUMMARY_LINE}gpu_streams=20\nwitness_thread_pools=32\nstored_witnesses=4\npack_trace=true\nsetup_hash={setup_hash}\nguest_pc_trace_instruction_limit=8\nguest_pc_trace_selected_unit=0\nguest_pc_trace_layout_rows=2\nguest_pc_trace_layout_row_width=2\nguest_pc_trace_layout_instruction_capacity=2\nguest_pc_trace_segmented=false\nunit_index=0\ninput_bytes=0\ntrace_rows=2\ntrace_columns=2\nstage_count=2\n{}",
             output_dir.display(),
             expected_stages
         )
@@ -6302,6 +6302,30 @@ fn runs_prove_witness_commitments_from_segmented_guest_pc_trace() {
     assert!(stderr.is_empty());
     let stdout = String::from_utf8(stdout).expect("stdout should be utf-8");
     assert_eq!(stdout.matches("unit_index=0\n").count(), 2, "{stdout}");
+    assert!(
+        stdout.contains("guest_pc_trace_instruction_limit=16\n"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("guest_pc_trace_selected_unit=0\n"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("guest_pc_trace_layout_rows=2\n"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("guest_pc_trace_layout_row_width=41\n"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("guest_pc_trace_layout_instruction_capacity=2\n"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("guest_pc_trace_segmented=true\n"),
+        "{stdout}"
+    );
     assert!(stdout.contains("trace_instance_index=0\n"), "{stdout}");
     assert!(stdout.contains("trace_instance_index=1\n"), "{stdout}");
     assert_eq!(stdout.matches("trace_rows=2\n").count(), 2, "{stdout}");

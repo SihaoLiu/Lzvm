@@ -15,8 +15,7 @@ use lzvm_artifacts::public_values::{public_values_digest, read_public_values_fil
 use lzvm_artifacts::trace_bundle::{parse_trace_bundle_ref, read_trace_bundle_file_bytes};
 use lzvm_field::{Ext3, Felt};
 use lzvm_prover::guest_pc_trace_backend::{
-    is_guest_pc_trace_layout_supported, is_guest_pc_trace_segmented_layout_supported,
-    GuestPcTraceBackend,
+    is_guest_pc_trace_segmented_layout_supported, GuestPcTraceBackend,
 };
 use lzvm_prover::unit_values::ProveUnitValues;
 use lzvm_prover::witness_layout::derive_witness_trace_layout;
@@ -36,8 +35,9 @@ use lzvm_prover::{
 use crate::eth_block_prove_input::{write_eth_block_input_summary, EthBlockInputSummary};
 use crate::program_image_cache::write_program_image_cache_summary;
 use crate::prove_plan::{
-    prepare_requested_gpu_setup, read_prove_setup_catalog, set_default_input_data,
-    validate_all_unit_stored_witness_limit, write_run_plan_summary, write_source_companion_summary,
+    prepare_requested_gpu_setup, read_prove_setup_catalog, selected_guest_pc_trace_unit_index,
+    set_default_input_data, validate_all_unit_stored_witness_limit,
+    write_guest_pc_trace_capacity_summary, write_run_plan_summary, write_source_companion_summary,
     ParseError,
 };
 use crate::trace_input_shape::validate_trace_input_shapes;
@@ -696,6 +696,17 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
 
     write_run_plan_summary(stdout, &plan.run_plan);
     write_source_companion_summary(stdout, &catalog);
+    if let Some(instruction_limit) = parsed.guest_pc_trace_instruction_limit {
+        if let Err(message) = write_guest_pc_trace_capacity_summary(
+            stdout,
+            &plan,
+            single_unit_index,
+            instruction_limit,
+        ) {
+            let _ = writeln!(stderr, "prove witness failed: {message}");
+            return 1;
+        }
+    }
     if let Some(path) = &plan.inputs.public_inputs {
         let _ = writeln!(stdout, "public_inputs={}", path.display());
     }
@@ -789,25 +800,6 @@ fn selected_single_unit_index(
         return selected_guest_pc_trace_unit_index(plan);
     }
     Ok(0)
-}
-
-fn selected_guest_pc_trace_unit_index(plan: &ProveExecutionPlan) -> Result<usize, String> {
-    let mut fallback = None;
-    for (unit_index, unit) in plan.run_plan.schedule.units.iter().enumerate() {
-        let layout = derive_witness_trace_layout(unit).map_err(|error| {
-            format!("guest PC trace unit layout failed for unit {unit_index}: {error}")
-        })?;
-        if is_guest_pc_trace_layout_supported(&layout) {
-            if unit.unit_name.as_deref() == Some("Main") {
-                return Ok(unit_index);
-            }
-            fallback.get_or_insert(unit_index);
-        }
-    }
-    fallback.ok_or_else(|| {
-        "no prove witness unit exposes guest PC trace columns; use a setup with a compatible guest trace layout"
-            .to_owned()
-    })
 }
 
 #[derive(Clone, Copy)]
@@ -1146,6 +1138,10 @@ fn finish_all_units_witness_run(
 
     write_run_plan_summary(stdout, &plan.run_plan);
     write_source_companion_summary(stdout, catalog);
+    if let Some(instruction_limit) = parsed.guest_pc_trace_instruction_limit {
+        let unit_index = selected_single_unit_index(plan, parsed)?;
+        write_guest_pc_trace_capacity_summary(stdout, plan, unit_index, instruction_limit)?;
+    }
     if let Some(path) = &plan.inputs.public_inputs {
         let _ = writeln!(stdout, "public_inputs={}", path.display());
     }

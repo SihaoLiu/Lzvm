@@ -24,7 +24,8 @@ use crate::eth_block_prove_input::{
 use crate::program_image_cache::write_program_image_cache_summary;
 use crate::prove_plan::{
     format_hash, parse_run_args, prepare_requested_gpu_setup, read_prove_setup_catalog,
-    required_option_value, set_default_input_data, validate_all_unit_stored_witness_limit,
+    required_option_value, selected_guest_pc_trace_unit_index, set_default_input_data,
+    validate_all_unit_stored_witness_limit, write_guest_pc_trace_capacity_summary,
     write_run_plan_summary, ParseError, ParsedRunArgs, GUEST_PC_TRACE_WITNESS_THREAD_POOLS,
 };
 use crate::trace_input_shape::validate_trace_input_shapes;
@@ -189,10 +190,19 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
         let _ = writeln!(stdout, "trace_bundle_bytes={}", bundle_len);
     }
     if let Some(instruction_limit) = parsed.guest_pc_trace_instruction_limit {
-        let _ = writeln!(
-            stdout,
-            "guest_pc_trace_instruction_limit={instruction_limit}"
-        );
+        let unit_index = match selected_guest_pc_trace_unit_index(&plan) {
+            Ok(unit_index) => unit_index,
+            Err(message) => {
+                let _ = writeln!(stderr, "prove inputs failed: {message}");
+                return 1;
+            }
+        };
+        if let Err(message) =
+            write_guest_pc_trace_capacity_summary(stdout, &plan, unit_index, instruction_limit)
+        {
+            let _ = writeln!(stderr, "prove inputs failed: {message}");
+            return 1;
+        }
     }
     let _ = writeln!(stdout, "guest_image={}", plan.inputs.guest_image.display());
     let _ = writeln!(

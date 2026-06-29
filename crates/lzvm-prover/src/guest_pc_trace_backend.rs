@@ -1608,6 +1608,24 @@ pub fn is_guest_pc_trace_layout_supported(layout: &WitnessTraceLayout) -> bool {
     layout_trace_capacity(Some(layout)).is_ok()
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct GuestPcTraceLayoutCapacity {
+    pub row_count: usize,
+    pub row_width: usize,
+    pub instruction_limit: u64,
+}
+
+pub fn guest_pc_trace_layout_capacity(
+    layout: &WitnessTraceLayout,
+) -> Option<GuestPcTraceLayoutCapacity> {
+    let capacity = layout_trace_capacity(Some(layout)).ok().flatten()?;
+    Some(GuestPcTraceLayoutCapacity {
+        row_count: capacity.row_count,
+        row_width: capacity.row_width,
+        instruction_limit: capacity.instruction_limit,
+    })
+}
+
 pub fn is_guest_pc_trace_segmented_layout_supported(layout: &WitnessTraceLayout) -> bool {
     matches!(zisk_main_trace_columns(layout), Ok(Some(_)))
 }

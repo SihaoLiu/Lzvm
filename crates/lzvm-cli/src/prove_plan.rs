@@ -8,7 +8,12 @@ use lzvm_artifacts::key_directory::{
 use lzvm_artifacts::setup_manifest::{
     read_setup_directory_manifest_file, SetupDirectoryManifestError, SETUP_DIRECTORY_MANIFEST_FILE,
 };
+use lzvm_prover::guest_pc_trace_backend::{
+    guest_pc_trace_layout_capacity, is_guest_pc_trace_layout_supported,
+    is_guest_pc_trace_segmented_layout_supported,
+};
 use lzvm_prover::setup_preflight::validate_setup_directory_manifest_if_present;
+use lzvm_prover::witness_layout::derive_witness_trace_layout;
 use lzvm_prover::{
     derive_prove_run_plan, GpuRunOptions, ProveExecutionPlan, ProvePartitionPlan, ProvePassKind,
     ProvePassRequest, ProveRunOptions, ProveRunPlan, ProveRunRequest,
@@ -438,6 +443,69 @@ pub(crate) fn write_run_plan_summary(stdout: &mut dyn Write, plan: &ProveRunPlan
         "setup_hash={}",
         format_hash(&plan.schedule.setup_hash)
     );
+}
+
+pub(crate) fn selected_guest_pc_trace_unit_index(
+    plan: &ProveExecutionPlan,
+) -> Result<usize, String> {
+    let mut fallback = None;
+    for (unit_index, unit) in plan.run_plan.schedule.units.iter().enumerate() {
+        let layout = derive_witness_trace_layout(unit).map_err(|error| {
+            format!("guest PC trace unit layout failed for unit {unit_index}: {error}")
+        })?;
+        if is_guest_pc_trace_layout_supported(&layout) {
+            if unit.unit_name.as_deref() == Some("Main") {
+                return Ok(unit_index);
+            }
+            fallback.get_or_insert(unit_index);
+        }
+    }
+    fallback.ok_or_else(|| {
+        "no prove witness unit exposes guest PC trace columns; use a setup with a compatible guest trace layout"
+            .to_owned()
+    })
+}
+
+pub(crate) fn write_guest_pc_trace_capacity_summary(
+    stdout: &mut dyn Write,
+    plan: &ProveExecutionPlan,
+    unit_index: usize,
+    instruction_limit: u64,
+) -> Result<(), String> {
+    let unit = plan
+        .run_plan
+        .schedule
+        .units
+        .get(unit_index)
+        .ok_or_else(|| format!("unit index out of range: {unit_index}"))?;
+    let layout = derive_witness_trace_layout(unit).map_err(|error| {
+        format!("guest PC trace unit layout failed for unit {unit_index}: {error}")
+    })?;
+    let capacity = guest_pc_trace_layout_capacity(&layout).ok_or_else(|| {
+        format!("guest PC trace unit {unit_index} layout does not expose supported guest trace capacity")
+    })?;
+    let _ = writeln!(
+        stdout,
+        "guest_pc_trace_instruction_limit={instruction_limit}"
+    );
+    let _ = writeln!(stdout, "guest_pc_trace_selected_unit={unit_index}");
+    let _ = writeln!(stdout, "guest_pc_trace_layout_rows={}", capacity.row_count);
+    let _ = writeln!(
+        stdout,
+        "guest_pc_trace_layout_row_width={}",
+        capacity.row_width
+    );
+    let _ = writeln!(
+        stdout,
+        "guest_pc_trace_layout_instruction_capacity={}",
+        capacity.instruction_limit
+    );
+    let _ = writeln!(
+        stdout,
+        "guest_pc_trace_segmented={}",
+        is_guest_pc_trace_segmented_layout_supported(&layout)
+    );
+    Ok(())
 }
 
 pub(crate) fn write_source_companion_summary(
