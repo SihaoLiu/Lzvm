@@ -3044,6 +3044,8 @@ enum GuestPcTraceBackendError {
     TraceCapacityExceeded {
         rows: usize,
         row_width: usize,
+        layout_instruction_limit: u64,
+        requested_instruction_limit: u64,
         required_rows: usize,
         required_trace_instances: usize,
     },
@@ -3115,11 +3117,13 @@ impl fmt::Display for GuestPcTraceBackendError {
             Self::TraceCapacityExceeded {
                 rows,
                 row_width,
+                layout_instruction_limit,
+                requested_instruction_limit,
                 required_rows,
                 required_trace_instances,
             } => write!(
                 f,
-                "guest PC trace backend exceeded trace layout capacity: rows {rows}, row width {row_width}, required rows at least {required_rows}, required same-capacity trace instances at least {required_trace_instances}"
+                "guest PC trace backend exceeded trace layout capacity: rows {rows}, row width {row_width}, layout instruction capacity {layout_instruction_limit}, requested instruction limit {requested_instruction_limit}, required rows at least {required_rows}, required same-capacity trace instances at least {required_trace_instances}"
             ),
             Self::OutputOverflow {
                 produced_len,
@@ -3195,9 +3199,12 @@ fn compute_guest_pc_trace(
     let trace = match trace {
         Ok(trace) => trace,
         Err(error) => {
-            if let Some(error) =
-                layout_capacity_error(layout_capacity, run_instruction_limit, &error)
-            {
+            if let Some(error) = layout_capacity_error(
+                layout_capacity,
+                instruction_limit,
+                run_instruction_limit,
+                &error,
+            ) {
                 return Err(error);
             }
             return Err(GuestPcTraceBackendError::GuestRun(error));
@@ -8588,6 +8595,7 @@ fn layout_trace_capacity(
 
 fn layout_capacity_error(
     capacity: Option<LayoutTraceCapacity>,
+    requested_instruction_limit: u64,
     run_instruction_limit: u64,
     error: &GuestMachineRunError,
 ) -> Option<GuestPcTraceBackendError> {
@@ -8602,6 +8610,8 @@ fn layout_capacity_error(
             Some(GuestPcTraceBackendError::TraceCapacityExceeded {
                 rows: capacity.row_count,
                 row_width: capacity.row_width,
+                layout_instruction_limit: capacity.instruction_limit,
+                requested_instruction_limit,
                 required_rows,
                 required_trace_instances: required_trace_instances(
                     required_rows,

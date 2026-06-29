@@ -1827,7 +1827,7 @@ fn guest_pc_trace_backend_reports_layout_capacity_before_larger_instruction_limi
     match result.expect_err("layout capacity should reject") {
         WitnessTraceRunError::Call(WitnessCallError::Backend { message }) => assert_eq!(
             message,
-            "guest PC trace backend exceeded trace layout capacity: rows 2, row width 2, required rows at least 3, required same-capacity trace instances at least 2"
+            "guest PC trace backend exceeded trace layout capacity: rows 2, row width 2, layout instruction capacity 2, requested instruction limit 16, required rows at least 3, required same-capacity trace instances at least 2"
         ),
         other => panic!("unexpected layout capacity result: {other:?}"),
     }
@@ -2542,7 +2542,7 @@ fn guest_pc_trace_backend_single_zisk_main_output_reports_capacity() {
     match result.expect_err("single Zisk Main output should still report capacity") {
         WitnessTraceRunError::Call(WitnessCallError::Backend { message }) => assert_eq!(
             message,
-            "guest PC trace backend exceeded trace layout capacity: rows 2, row width 40, required rows at least 3, required same-capacity trace instances at least 2"
+            "guest PC trace backend exceeded trace layout capacity: rows 2, row width 40, layout instruction capacity 2, requested instruction limit 16, required rows at least 3, required same-capacity trace instances at least 2"
         ),
         other => panic!("unexpected single Zisk Main capacity result: {other:?}"),
     }
