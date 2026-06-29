@@ -3135,7 +3135,7 @@ fn guest_pc_trace_device_material_builds_stage_sources_without_host_trace() {
         "fn build_guest_pc_trace_stage_source_devices(\n",
     );
     assert!(
-        device_body.contains("CudaDeviceBuffer::from_zisk_main_trace_descriptors_device"),
+        device_body.contains("CudaDeviceBuffer::from_main_trace_descriptors_device_with_layout"),
         "device descriptor material should expand descriptors into a CUDA trace buffer without host reupload"
     );
     assert!(
