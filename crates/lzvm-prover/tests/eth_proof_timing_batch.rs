@@ -814,6 +814,16 @@ fn eth_proof_timing_batch_check_env_reports_ready_paths() {
     assert!(stdout.contains("small_trace_limit=120000000\n"), "{stdout}");
     assert!(stdout.contains("small_block_input="), "{stdout}");
     assert!(!stdout.contains("small_tmp_dir="), "{stdout}");
+    assert!(
+        stdout.contains("next_profile_command=scripts/run-eth-proof-timing-batch.py --suite small")
+            && stdout.contains("--print-profile-commands"),
+        "env check should report the next profile command: {stdout}"
+    );
+    assert!(
+        stdout.contains("next_run_command=scripts/run-eth-proof-timing-batch.py --suite small")
+            && stdout.contains("--summary 'real proof timing'"),
+        "env check should report the next timing command: {stdout}"
+    );
 }
 
 #[test]
