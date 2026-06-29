@@ -19,6 +19,7 @@ import Lzvm.MerklePathSoundness
 import Lzvm.Model
 import Lzvm.OrderedLookup
 import Lzvm.OptionalConstantOpening
+import Lzvm.ParallelSegmentReexecution
 import Lzvm.ProofSegmentIds
 import Lzvm.ProofArtifactBinding
 import Lzvm.ProgramImageCacheBinding
