@@ -517,7 +517,7 @@ impl GuestMachinePreparedInstruction {
 }
 
 #[derive(Debug)]
-struct GuestInstructionCache {
+pub(crate) struct GuestInstructionCache {
     entries: Box<[GuestInstructionCacheEntry]>,
     generation: u32,
 }
@@ -555,7 +555,7 @@ impl Default for GuestInstructionCache {
 }
 
 impl GuestInstructionCache {
-    fn prepare(
+    pub(crate) fn prepare(
         &mut self,
         memory: &GuestMachineMemory,
         address: u64,
@@ -573,7 +573,7 @@ impl GuestInstructionCache {
         Ok(prepared)
     }
 
-    fn clear(&mut self) {
+    pub(crate) fn clear(&mut self) {
         match self.generation.checked_add(1) {
             Some(next) => self.generation = next,
             None => {
@@ -585,7 +585,7 @@ impl GuestInstructionCache {
         }
     }
 
-    fn invalidate_report(&mut self, report: &GuestMachineReport) {
+    pub(crate) fn invalidate_report(&mut self, report: &GuestMachineReport) {
         for access in report
             .memory_accesses
             .iter()
@@ -937,7 +937,7 @@ fn run_guest_machine_inner(
     }
 }
 
-fn instruction_clears_instruction_cache(
+pub(crate) fn instruction_clears_instruction_cache(
     state: &GuestMachineState,
     instruction: RiscvInstruction,
 ) -> bool {
@@ -1065,13 +1065,6 @@ fn advance_guest_machine_prepared_inner_with_report_shape(
         },
         shape,
     })
-}
-
-pub(crate) fn decode_current_guest_instruction(
-    memory: &GuestMachineMemory,
-    address: u64,
-) -> Result<RiscvInstruction, GuestMachineError> {
-    Ok(prepare_current_guest_instruction(memory, address)?.instruction)
 }
 
 fn fetch_decode_guest_instruction(

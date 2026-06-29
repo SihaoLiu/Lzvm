@@ -14,13 +14,13 @@ use crate::guest_instruction::{
     RiscvOpKind, RiscvPrecompileKind,
 };
 use crate::guest_machine::{
-    advance_guest_machine_with_prepared_fcalls_report_shape, decode_current_guest_instruction,
-    prepare_current_guest_instruction, run_guest_machine_trace_with_fcalls,
-    run_guest_machine_with_fcalls, GuestDmaProofValueFlags, GuestFcallHandler, GuestMachineHalt,
-    GuestMachineMemory, GuestMachineMemoryOverlaySnapshot, GuestMachineReport,
-    GuestMachineReportShape, GuestMachineRunError, GuestMachineState, GuestMachineTraceSliceStatus,
-    GuestMemoryAccess, GuestMemoryAccessKind, GuestMemoryAccessList,
-    GuestPrecompileMemoryAccessList, GuestRegisterWrite, GuestRegisterWriteList,
+    advance_guest_machine_with_prepared_fcalls_report_shape, instruction_clears_instruction_cache,
+    run_guest_machine_trace_with_fcalls, run_guest_machine_with_fcalls, GuestDmaProofValueFlags,
+    GuestFcallHandler, GuestInstructionCache, GuestMachineHalt, GuestMachineMemory,
+    GuestMachineMemoryOverlaySnapshot, GuestMachineReport, GuestMachineReportShape,
+    GuestMachineRunError, GuestMachineState, GuestMachineTraceSliceStatus, GuestMemoryAccess,
+    GuestMemoryAccessKind, GuestMemoryAccessList, GuestPrecompileMemoryAccessList,
+    GuestRegisterWrite, GuestRegisterWriteList,
 };
 use crate::guest_memory::{load_guest_memory_image, GuestMemoryError};
 use crate::witness_layout::{ResolvedTraceColumn, WitnessTraceBuildError, WitnessTraceLayout};
@@ -3510,9 +3510,11 @@ fn run_guest_pc_trace_segment_slice_with_live_report_chunks(
     let mut report_count = 0_usize;
     let mut executed_instructions = 0_u64;
     let mut trace_rows = 0_usize;
+    let mut instruction_cache = GuestInstructionCache::default();
     loop {
         let pc = state.pc();
-        let prepared = prepare_current_guest_instruction(memory, pc)
+        let prepared = instruction_cache
+            .prepare(memory, pc)
             .map_err(GuestMachineRunError::from)
             .map_err(GuestPcTraceBackendError::GuestRun)?;
         let current = prepared.instruction();
@@ -3579,11 +3581,17 @@ fn run_guest_pc_trace_segment_slice_with_live_report_chunks(
                 last_report_shape,
             );
         }
+        let clear_instruction_cache = instruction_clears_instruction_cache(state, current);
         let advanced = advance_guest_machine_with_prepared_fcalls_report_shape(
             memory, state, handler, prepared,
         )
         .map_err(GuestMachineRunError::from)
         .map_err(GuestPcTraceBackendError::GuestRun)?;
+        if clear_instruction_cache {
+            instruction_cache.clear();
+        } else {
+            instruction_cache.invalidate_report(&advanced.report);
+        }
         let report_rows =
             zisk_main_report_row_count_from_report_shape(report_count, advanced.shape)?;
         let next_trace_rows = trace_rows.checked_add(report_rows).ok_or_else(|| {
@@ -3612,7 +3620,9 @@ fn run_guest_pc_trace_segment_slice_with_live_report_chunks(
         executed_instructions += 1;
         if trace_rows == row_limit {
             let pc = state.pc();
-            let current = decode_current_guest_instruction(memory, pc)
+            let current = instruction_cache
+                .prepare(memory, pc)
+                .map(|prepared| prepared.instruction())
                 .map_err(GuestMachineRunError::from)
                 .map_err(GuestPcTraceBackendError::GuestRun)?;
             let lookahead_instruction = (current != RiscvInstruction::Ecall).then_some(current);
@@ -3706,10 +3716,12 @@ fn run_guest_pc_trace_segment_slice_with_streaming_device_material(
     let mut next_report_index = 0_usize;
     let mut executed_instructions = 0_u64;
     let mut trace_rows = 0_usize;
+    let mut instruction_cache = GuestInstructionCache::default();
 
     loop {
         let pc = state.pc();
-        let prepared = prepare_current_guest_instruction(memory, pc)
+        let prepared = instruction_cache
+            .prepare(memory, pc)
             .map_err(GuestMachineRunError::from)
             .map_err(GuestPcTraceBackendError::GuestRun)?;
         let current = prepared.instruction();
@@ -3778,11 +3790,17 @@ fn run_guest_pc_trace_segment_slice_with_streaming_device_material(
             )
             .map(Some);
         }
+        let clear_instruction_cache = instruction_clears_instruction_cache(state, current);
         let advanced = advance_guest_machine_with_prepared_fcalls_report_shape(
             memory, state, handler, prepared,
         )
         .map_err(GuestMachineRunError::from)
         .map_err(GuestPcTraceBackendError::GuestRun)?;
+        if clear_instruction_cache {
+            instruction_cache.clear();
+        } else {
+            instruction_cache.invalidate_report(&advanced.report);
+        }
         let report_rows =
             zisk_main_report_row_count_from_report_shape(reports.len(), advanced.shape)?;
         let next_trace_rows = trace_rows.checked_add(report_rows).ok_or_else(|| {
@@ -3808,7 +3826,9 @@ fn run_guest_pc_trace_segment_slice_with_streaming_device_material(
         executed_instructions += 1;
         if trace_rows == row_limit {
             let pc = state.pc();
-            let current = decode_current_guest_instruction(memory, pc)
+            let current = instruction_cache
+                .prepare(memory, pc)
+                .map(|prepared| prepared.instruction())
                 .map_err(GuestMachineRunError::from)
                 .map_err(GuestPcTraceBackendError::GuestRun)?;
             let lookahead_instruction = (current != RiscvInstruction::Ecall).then_some(current);
@@ -3976,9 +3996,11 @@ fn run_guest_pc_trace_segment_slice_inner<
     let mut report_count = 0_usize;
     let mut executed_instructions = 0_u64;
     let mut trace_rows = 0_usize;
+    let mut instruction_cache = GuestInstructionCache::default();
     loop {
         let pc = state.pc();
-        let prepared = prepare_current_guest_instruction(memory, pc)
+        let prepared = instruction_cache
+            .prepare(memory, pc)
             .map_err(GuestMachineRunError::from)
             .map_err(GuestPcTraceBackendError::GuestRun)?;
         let current = prepared.instruction();
@@ -4051,11 +4073,17 @@ fn run_guest_pc_trace_segment_slice_inner<
                 },
             ));
         }
+        let clear_instruction_cache = instruction_clears_instruction_cache(state, current);
         let advanced = advance_guest_machine_with_prepared_fcalls_report_shape(
             memory, state, handler, prepared,
         )
         .map_err(GuestMachineRunError::from)
         .map_err(GuestPcTraceBackendError::GuestRun)?;
+        if clear_instruction_cache {
+            instruction_cache.clear();
+        } else {
+            instruction_cache.invalidate_report(&advanced.report);
+        }
         let report_rows =
             zisk_main_report_row_count_from_report_shape(report_count, advanced.shape)?;
         let next_trace_rows = trace_rows.checked_add(report_rows).ok_or_else(|| {
@@ -4086,7 +4114,9 @@ fn run_guest_pc_trace_segment_slice_inner<
         executed_instructions += 1;
         if trace_rows == row_limit {
             let pc = state.pc();
-            let current = decode_current_guest_instruction(memory, pc)
+            let current = instruction_cache
+                .prepare(memory, pc)
+                .map(|prepared| prepared.instruction())
                 .map_err(GuestMachineRunError::from)
                 .map_err(GuestPcTraceBackendError::GuestRun)?;
             let lookahead_instruction = (current != RiscvInstruction::Ecall).then_some(current);
