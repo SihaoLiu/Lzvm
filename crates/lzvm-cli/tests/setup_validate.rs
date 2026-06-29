@@ -6177,6 +6177,7 @@ fn runs_prove_witness_commitments_from_trace_bytes() {
     let timing_output = &stdout[expected_prefix.len()..];
     assert!(timing_output.contains("timing_catalog_ms="));
     assert!(timing_output.contains("timing_framed_guest_input_ms="));
+    assert!(timing_output.contains("timing_gpu_memory_preflight_ms="));
     assert!(timing_output.contains("timing_witness_ms="));
     assert!(timing_output.contains("timing_total_ms="));
     assert!(stderr.is_empty());
@@ -6348,6 +6349,10 @@ fn segmented_guest_pc_trace_timings_report_internal_aggregates() {
     let stdout = String::from_utf8(stdout).expect("stdout should be utf-8");
     assert!(
         stdout.contains("timing_guest_trace_stream_elapsed_ms="),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("timing_gpu_memory_preflight_ms="),
         "{stdout}"
     );
     assert!(stdout.contains("timing_guest_trace_stream_ms="), "{stdout}");

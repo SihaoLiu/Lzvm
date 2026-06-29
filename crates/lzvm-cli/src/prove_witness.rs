@@ -158,6 +158,7 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
         let _ = writeln!(stderr, "prove witness failed: {message}");
         return 1;
     }
+    timings.mark("gpu_memory_preflight");
     if let Err(error) = prepare_requested_gpu_setup(&plan) {
         let _ = writeln!(stderr, "prove witness failed: {error}");
         return 1;

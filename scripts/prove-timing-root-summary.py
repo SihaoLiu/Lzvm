@@ -17,6 +17,7 @@ ETH_INPUT_MS_KEY = "timing_eth_input_ms"
 PUBLIC_INPUTS_MS_KEY = "timing_public_inputs_ms"
 PLAN_MS_KEY = "timing_plan_ms"
 FRAMED_GUEST_INPUT_MS_KEY = "timing_framed_guest_input_ms"
+GPU_MEMORY_PREFLIGHT_MS_KEY = "timing_gpu_memory_preflight_ms"
 GPU_SETUP_MS_KEY = "timing_gpu_setup_ms"
 AUXILIARY_INPUTS_MS_KEY = "timing_auxiliary_inputs_ms"
 TRACE_INPUTS_MS_KEY = "timing_trace_inputs_ms"
@@ -736,9 +737,9 @@ NSYS_CPU_MEMCPY_ACTION_HINT_BLOCK = "cpu_trace_memcpy_action_hints"
 
 HEADER = (
     "profile,input_bytes,total_ms,catalog_ms,eth_input_ms,public_inputs_ms,"
-    "plan_ms,framed_guest_input_ms,gpu_setup_ms,auxiliary_inputs_ms,"
+    "plan_ms,framed_guest_input_ms,gpu_memory_preflight_ms,gpu_setup_ms,auxiliary_inputs_ms,"
     "trace_inputs_ms,witness_ms,proof_ms,output_write_ms,summary_ms,"
-    "top_level_unattributed_ms,gpu_setup_pct,top_level_bottleneck,"
+    "top_level_unattributed_ms,gpu_memory_preflight_pct,gpu_setup_pct,top_level_bottleneck,"
     "constant_material_validation_elapsed_ms,"
     "constant_material_validation_join_wait_ms,constant_material_validation_overlap_hint,"
     "runner_ms,lowerer_ms,trace_lower_ms,trace_report_ms,"
@@ -1046,6 +1047,7 @@ TIMING_KEYS = {
     PUBLIC_INPUTS_MS_KEY,
     PLAN_MS_KEY,
     FRAMED_GUEST_INPUT_MS_KEY,
+    GPU_MEMORY_PREFLIGHT_MS_KEY,
     GPU_SETUP_MS_KEY,
     AUXILIARY_INPUTS_MS_KEY,
     TRACE_INPUTS_MS_KEY,
@@ -1904,6 +1906,7 @@ def top_level_bottleneck(
     public_inputs_ms: int,
     plan_ms: int,
     framed_guest_input_ms: int,
+    gpu_memory_preflight_ms: int,
     gpu_setup_ms: int,
     auxiliary_inputs_ms: int,
     trace_inputs_ms: int,
@@ -1919,6 +1922,7 @@ def top_level_bottleneck(
         ("public_inputs", public_inputs_ms),
         ("plan", plan_ms),
         ("framed_guest_input", framed_guest_input_ms),
+        ("gpu_memory_preflight", gpu_memory_preflight_ms),
         ("gpu_setup", gpu_setup_ms),
         ("auxiliary_inputs", auxiliary_inputs_ms),
         ("trace_inputs", trace_inputs_ms),
@@ -3979,6 +3983,7 @@ def summarize_profile_values(
     public_inputs_ms = values.get(PUBLIC_INPUTS_MS_KEY, 0)
     plan_ms = values.get(PLAN_MS_KEY, 0)
     framed_guest_input_ms = values.get(FRAMED_GUEST_INPUT_MS_KEY, 0)
+    gpu_memory_preflight_ms = values.get(GPU_MEMORY_PREFLIGHT_MS_KEY, 0)
     gpu_setup_ms = values.get(GPU_SETUP_MS_KEY, 0)
     auxiliary_inputs_ms = values.get(AUXILIARY_INPUTS_MS_KEY, 0)
     trace_inputs_ms = values.get(TRACE_INPUTS_MS_KEY, 0)
@@ -3992,6 +3997,7 @@ def summarize_profile_values(
         + public_inputs_ms
         + plan_ms
         + framed_guest_input_ms
+        + gpu_memory_preflight_ms
         + gpu_setup_ms
         + auxiliary_inputs_ms
         + trace_inputs_ms
@@ -4001,6 +4007,9 @@ def summarize_profile_values(
         + summary_ms
     )
     top_level_unattributed_ms = max(total_ms - accounted_top_level_ms, 0)
+    gpu_memory_preflight_pct = (
+        gpu_memory_preflight_ms * 100.0 / total_ms if total_ms else 0.0
+    )
     gpu_setup_pct = gpu_setup_ms * 100.0 / total_ms if total_ms else 0.0
     top_level_hint = top_level_bottleneck(
         total_ms,
@@ -4009,6 +4018,7 @@ def summarize_profile_values(
         public_inputs_ms,
         plan_ms,
         framed_guest_input_ms,
+        gpu_memory_preflight_ms,
         gpu_setup_ms,
         auxiliary_inputs_ms,
         trace_inputs_ms,
@@ -5423,10 +5433,10 @@ def summarize_profile_values(
     return (
         f"{csv_cell(label)},{input_bytes},{total_ms},"
         f"{catalog_ms},{eth_input_ms},{public_inputs_ms},"
-        f"{plan_ms},{framed_guest_input_ms},{gpu_setup_ms},"
+        f"{plan_ms},{framed_guest_input_ms},{gpu_memory_preflight_ms},{gpu_setup_ms},"
         f"{auxiliary_inputs_ms},{trace_inputs_ms},{witness_ms},"
         f"{proof_ms},{output_write_ms},{summary_ms},"
-        f"{top_level_unattributed_ms},{gpu_setup_pct:.3f},{top_level_hint},"
+        f"{top_level_unattributed_ms},{gpu_memory_preflight_pct:.3f},{gpu_setup_pct:.3f},{top_level_hint},"
         f"{constant_material_elapsed_ms},{constant_material_join_wait_ms},"
         f"{constant_material_hint},{runner_ms},{lowerer_ms},"
         f"{trace_lower_ms},{trace_report_ms},"
