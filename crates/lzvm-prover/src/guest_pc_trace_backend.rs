@@ -12406,11 +12406,11 @@ fn write_zisk_main_report_columns(
             write_zisk_main_row_columns(builder, output_row, values, columns)
         },
     )
-    .inspect(|written_rows| {
+    .inspect(|_written_rows| {
         #[cfg(feature = "cuda")]
         if let Some(timing) = timing.as_mut() {
             if device_trace_descriptors.is_some() {
-                timing.trace_descriptor_row_count += *written_rows;
+                timing.trace_descriptor_row_count += *_written_rows;
             }
         }
     })
