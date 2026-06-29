@@ -1111,6 +1111,26 @@ theorem guest_pc_trace_large_gpu_gate_memory_check_passes_projects_observed_floo
           simpa [GuestPcTraceLargeGpuGateMemoryCheckPasses, hObserved] using memoryCheck
         exact of_decide_eq_true decided
 
+theorem guest_pc_trace_large_gpu_gate_decision_allows_unrequested
+    (config : GuestPcTraceLargeGpuGateConfig)
+    (decision : GuestPcTraceLargeGpuGateDecisionMatches config)
+    (unrequested : config.requestedInstructionLimit = none) :
+    config.largeTraceAllowed = true := by
+  rcases decision with ⟨_thresholdMatches, _minMemoryMatches, allowedDecision⟩
+  simpa [unrequested] using allowedDecision
+
+theorem guest_pc_trace_large_gpu_gate_decision_allows_below_threshold
+    (config : GuestPcTraceLargeGpuGateConfig)
+    {limit : Nat}
+    (decision : GuestPcTraceLargeGpuGateDecisionMatches config)
+    (requested : config.requestedInstructionLimit = some limit)
+    (small : limit < config.defaultLargeTraceInstructionThreshold) :
+    config.largeTraceAllowed = true := by
+  rcases decision with ⟨_thresholdMatches, _minMemoryMatches, allowedDecision⟩
+  rw [requested] at allowedDecision
+  rw [allowedDecision]
+  simp [small]
+
 theorem guest_pc_trace_large_gpu_gate_decision_requires_runtime_memory_for_large_allowed
     (config : GuestPcTraceLargeGpuGateConfig)
     {limit : Nat}
@@ -1156,6 +1176,59 @@ theorem guest_pc_trace_large_gpu_gate_decision_projects_observed_memory_floor_fo
     guest_pc_trace_large_gpu_gate_memory_check_passes_projects_observed_floor
       config
       runtimeMemory.right
+
+theorem guest_pc_trace_large_gpu_gate_checked_acceptance_allows_unrequested
+    {system : VerifierModel}
+    (validation : GuestPcTraceLargeGpuGateValidation)
+    (config : GuestPcTraceLargeGpuGateConfig)
+    (unrequested : config.requestedInstructionLimit = none) :
+    forall publicInput proof,
+      GuestPcTraceLargeGpuGateCheckedAcceptance
+          system
+          validation
+          config
+          publicInput
+          proof ->
+        config.largeTraceAllowed = true := by
+  intro publicInput proof checked
+  exact
+    guest_pc_trace_large_gpu_gate_decision_allows_unrequested
+      config
+      (guest_pc_trace_large_gpu_gate_checked_acceptance_projects_decision
+        validation
+        config
+        publicInput
+        proof
+        checked)
+      unrequested
+
+theorem guest_pc_trace_large_gpu_gate_checked_acceptance_allows_below_threshold
+    {system : VerifierModel}
+    (validation : GuestPcTraceLargeGpuGateValidation)
+    (config : GuestPcTraceLargeGpuGateConfig)
+    {limit : Nat}
+    (requested : config.requestedInstructionLimit = some limit)
+    (small : limit < config.defaultLargeTraceInstructionThreshold) :
+    forall publicInput proof,
+      GuestPcTraceLargeGpuGateCheckedAcceptance
+          system
+          validation
+          config
+          publicInput
+          proof ->
+        config.largeTraceAllowed = true := by
+  intro publicInput proof checked
+  exact
+    guest_pc_trace_large_gpu_gate_decision_allows_below_threshold
+      config
+      (guest_pc_trace_large_gpu_gate_checked_acceptance_projects_decision
+        validation
+        config
+        publicInput
+        proof
+        checked)
+      requested
+      small
 
 theorem guest_pc_trace_large_gpu_gate_checked_acceptance_requires_runtime_memory_for_large_allowed
     {system : VerifierModel}

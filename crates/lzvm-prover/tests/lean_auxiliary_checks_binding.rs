@@ -2383,6 +2383,14 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             && lean_source.contains("GuestPcTraceLargeGpuGateDecisionMatches")
             && lean_source.contains("largeGpuGateConfigAccepted")
             && lean_source.contains("largeGpuGateConfigImpliesDecisionMatches")
+            && lean_source.contains("guest_pc_trace_large_gpu_gate_decision_allows_unrequested")
+            && lean_source.contains("guest_pc_trace_large_gpu_gate_decision_allows_below_threshold")
+            && lean_source.contains(
+                "guest_pc_trace_large_gpu_gate_checked_acceptance_allows_unrequested"
+            )
+            && lean_source.contains(
+                "guest_pc_trace_large_gpu_gate_checked_acceptance_allows_below_threshold"
+            )
             && lean_source.contains(
                 "guest_pc_trace_large_gpu_gate_checked_acceptance_requires_runtime_memory_for_large_allowed"
             )
@@ -5096,6 +5104,10 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "guest_pc_trace_segment_queue_checked_acceptance_sound",
             "guest_pc_trace_segment_queue_checked_acceptance_verifier_core_contract",
             "guest_pc_trace_segment_queue_checked_acceptance_core_and_sound",
+            "guest_pc_trace_large_gpu_gate_decision_allows_unrequested",
+            "guest_pc_trace_large_gpu_gate_decision_allows_below_threshold",
+            "guest_pc_trace_large_gpu_gate_checked_acceptance_allows_unrequested",
+            "guest_pc_trace_large_gpu_gate_checked_acceptance_allows_below_threshold",
             "guest_pc_trace_cross_root_materialization_checked_acceptance_projects_decision",
             concat!(
                 "guest_pc_trace_cross_root_materialization_decision_",
@@ -5594,6 +5606,41 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         lean_binding::assert_theorem_body_contains(&gpu_runtime_source, theorem, body_terms);
         lean_binding::assert_theorem_body_omits(&gpu_runtime_source, theorem, omitted_terms);
     }
+    lean_binding::assert_theorem_prefix_contains(
+        &gpu_runtime_source,
+        "guest_pc_trace_large_gpu_gate_checked_acceptance_allows_unrequested",
+        &[
+            "config.requestedInstructionLimit = none",
+            "GuestPcTraceLargeGpuGateCheckedAcceptance",
+            "config.largeTraceAllowed = true",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &gpu_runtime_source,
+        "guest_pc_trace_large_gpu_gate_checked_acceptance_allows_unrequested",
+        &[
+            "guest_pc_trace_large_gpu_gate_decision_allows_unrequested",
+            "guest_pc_trace_large_gpu_gate_checked_acceptance_projects_decision",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &gpu_runtime_source,
+        "guest_pc_trace_large_gpu_gate_checked_acceptance_allows_below_threshold",
+        &[
+            "config.requestedInstructionLimit = some limit",
+            "limit < config.defaultLargeTraceInstructionThreshold",
+            "GuestPcTraceLargeGpuGateCheckedAcceptance",
+            "config.largeTraceAllowed = true",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &gpu_runtime_source,
+        "guest_pc_trace_large_gpu_gate_checked_acceptance_allows_below_threshold",
+        &[
+            "guest_pc_trace_large_gpu_gate_decision_allows_below_threshold",
+            "guest_pc_trace_large_gpu_gate_checked_acceptance_projects_decision",
+        ],
+    );
     for (theorem, prefix_terms, body_terms, omitted_terms) in [
         (
             "guest_pc_trace_traceless_commitment_input_checked_acceptance_core_and_sound",
