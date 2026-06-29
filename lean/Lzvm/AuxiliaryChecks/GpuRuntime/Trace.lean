@@ -110,6 +110,31 @@ theorem guest_pc_trace_parallel_lower_work_units_keeps_replay_snapshot_separate
   simpa [replayOnlyDisabled, replaySnapshotDisabled] using
     replaySnapshotMatches
 
+theorem guest_pc_trace_parallel_lower_checked_acceptance_explicit_selects_parallel_lower
+    {system : VerifierModel}
+    (validation : GuestPcTraceParallelLowerValidation)
+    (config : GuestPcTraceParallelLowerConfig) :
+    config.configuredParallelLower = true ->
+      forall publicInput proof,
+        GuestPcTraceParallelLowerCheckedAcceptance
+            system
+            validation
+            config
+            publicInput
+            proof ->
+          config.effectiveParallelLower = true := by
+  intro parallelLowerEnabled publicInput proof checked
+  exact
+    guest_pc_trace_parallel_lower_explicit_selects_parallel_lower
+      config
+      parallelLowerEnabled
+      (guest_pc_trace_parallel_lower_checked_acceptance_projects_decision
+        validation
+        config
+        publicInput
+        proof
+        checked)
+
 theorem guest_pc_trace_parallel_lower_checked_acceptance_work_units_selects_parallel_lower
     {system : VerifierModel}
     (validation : GuestPcTraceParallelLowerValidation)
@@ -128,6 +153,81 @@ theorem guest_pc_trace_parallel_lower_checked_acceptance_work_units_selects_para
     guest_pc_trace_parallel_lower_work_units_selects_parallel_lower
       config
       workUnitsEnabled
+      (guest_pc_trace_parallel_lower_checked_acceptance_projects_decision
+        validation
+        config
+        publicInput
+        proof
+        checked)
+
+theorem guest_pc_trace_parallel_lower_checked_acceptance_replay_only_selects_replay_only
+    {system : VerifierModel}
+    (validation : GuestPcTraceParallelLowerValidation)
+    (config : GuestPcTraceParallelLowerConfig) :
+    config.configuredReplayOnly = true ->
+      forall publicInput proof,
+        GuestPcTraceParallelLowerCheckedAcceptance
+            system
+            validation
+            config
+            publicInput
+            proof ->
+          config.effectiveReplayOnly = true := by
+  intro replayOnlyEnabled publicInput proof checked
+  exact
+    guest_pc_trace_parallel_lower_replay_only_selects_replay_only
+      config
+      replayOnlyEnabled
+      (guest_pc_trace_parallel_lower_checked_acceptance_projects_decision
+        validation
+        config
+        publicInput
+        proof
+        checked)
+
+theorem guest_pc_trace_parallel_lower_checked_acceptance_replay_only_selects_replay_snapshot
+    {system : VerifierModel}
+    (validation : GuestPcTraceParallelLowerValidation)
+    (config : GuestPcTraceParallelLowerConfig) :
+    config.configuredReplayOnly = true ->
+      forall publicInput proof,
+        GuestPcTraceParallelLowerCheckedAcceptance
+            system
+            validation
+            config
+            publicInput
+            proof ->
+          config.effectiveReplaySnapshot = true := by
+  intro replayOnlyEnabled publicInput proof checked
+  exact
+    guest_pc_trace_parallel_lower_replay_only_selects_replay_snapshot
+      config
+      replayOnlyEnabled
+      (guest_pc_trace_parallel_lower_checked_acceptance_projects_decision
+        validation
+        config
+        publicInput
+        proof
+        checked)
+
+theorem guest_pc_trace_parallel_lower_checked_acceptance_replay_snapshot_selects_replay_snapshot
+    {system : VerifierModel}
+    (validation : GuestPcTraceParallelLowerValidation)
+    (config : GuestPcTraceParallelLowerConfig) :
+    config.configuredReplaySnapshot = true ->
+      forall publicInput proof,
+        GuestPcTraceParallelLowerCheckedAcceptance
+            system
+            validation
+            config
+            publicInput
+            proof ->
+          config.effectiveReplaySnapshot = true := by
+  intro replaySnapshotEnabled publicInput proof checked
+  exact
+    guest_pc_trace_parallel_lower_replay_snapshot_selects_replay_snapshot
+      config
+      replaySnapshotEnabled
       (guest_pc_trace_parallel_lower_checked_acceptance_projects_decision
         validation
         config
