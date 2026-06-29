@@ -2373,9 +2373,15 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
     assert!(
         lean_source.contains("GuestPcTraceLargeGpuGateInstructionThreshold")
             && lean_source.contains(": Nat := 1000000")
+            && lean_source.contains("GuestPcTraceLargeGpuGateMinFreeGpuMemoryBytes")
+            && lean_source.contains(": Nat := 1024 * 1024 * 1024")
             && lean_source.contains("defaultLargeTraceInstructionThreshold")
+            && lean_source.contains("defaultMinFreeGpuMemoryBytes")
             && lean_source.contains(
                 "config.defaultLargeTraceInstructionThreshold =\n    GuestPcTraceLargeGpuGateInstructionThreshold"
+            )
+            && lean_source.contains(
+                "config.defaultMinFreeGpuMemoryBytes =\n      GuestPcTraceLargeGpuGateMinFreeGpuMemoryBytes"
             )
             && lean_source.contains("requestedInstructionLimit")
             && lean_source.contains("gpuBackendAvailable")
@@ -2424,10 +2430,16 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             && gpu_preflight_source.contains("fn validate_large_guest_pc_gpu")
             && gpu_preflight_source.contains("fn validate_large_guest_pc_runtime_gpu")
             && gpu_preflight_source.contains("const GUEST_PC_TRACE_GPU_SIZE_THRESHOLD: u64 = 1_000_000")
+            && gpu_preflight_source.contains(
+                "const LARGE_GUEST_PC_TRACE_MIN_FREE_GPU_BYTES: usize = 1024 * 1024 * 1024"
+            )
             && gpu_preflight_source
                 .contains("instruction_limit.unwrap_or(0) >= GUEST_PC_TRACE_GPU_SIZE_THRESHOLD")
             && gpu_preflight_source.contains("lzvm_prover::gpu_setup_available()")
             && gpu_preflight_source.contains("lzvm_prover::gpu_memory_info()")
+            && gpu_preflight_source.contains(
+                "validate_large_guest_pc_gpu_memory(info, LARGE_GUEST_PC_TRACE_MIN_FREE_GPU_BYTES)"
+            )
             && gpu_preflight_source.contains("validate_large_guest_pc_gpu_memory"),
         "Lean auxiliary checks should bind the large guest trace GPU gate to the Rust runtime guard and memory preflight"
     );

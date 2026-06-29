@@ -1,6 +1,7 @@
 use super::args::parsed_inputs;
 use super::gpu_preflight::{
     is_large_guest_pc_trace, validate_large_guest_pc_gpu, validate_large_guest_pc_gpu_memory,
+    LARGE_GUEST_PC_TRACE_MIN_FREE_GPU_BYTES,
 };
 use super::guest_pc_trace::{
     record_guest_stage_root_materialization_shape, record_guest_trace_sampled_duration_counts,
@@ -147,7 +148,7 @@ fn rejects_large_guest_pc_trace_when_free_gpu_memory_is_too_low() {
         total_bytes: 32_607 * 1024 * 1024,
     };
 
-    let error = validate_large_guest_pc_gpu_memory(info, 1024 * 1024 * 1024)
+    let error = validate_large_guest_pc_gpu_memory(info, LARGE_GUEST_PC_TRACE_MIN_FREE_GPU_BYTES)
         .expect_err("low free GPU memory should fail the preflight");
 
     assert_eq!(
@@ -159,11 +160,11 @@ fn rejects_large_guest_pc_trace_when_free_gpu_memory_is_too_low() {
 #[test]
 fn accepts_large_guest_pc_trace_when_free_gpu_memory_meets_floor() {
     let info = lzvm_prover::GpuMemoryInfo {
-        free_bytes: 1024 * 1024 * 1024,
+        free_bytes: LARGE_GUEST_PC_TRACE_MIN_FREE_GPU_BYTES,
         total_bytes: 32_607 * 1024 * 1024,
     };
 
-    validate_large_guest_pc_gpu_memory(info, 1024 * 1024 * 1024)
+    validate_large_guest_pc_gpu_memory(info, LARGE_GUEST_PC_TRACE_MIN_FREE_GPU_BYTES)
         .expect("GPU memory at the floor should pass");
 }
 

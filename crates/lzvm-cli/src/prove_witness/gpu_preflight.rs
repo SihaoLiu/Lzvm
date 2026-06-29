@@ -1,5 +1,5 @@
-#[cfg(feature = "cuda")]
-const LARGE_GUEST_PC_TRACE_MIN_FREE_GPU_BYTES: usize = 1024 * 1024 * 1024;
+#[cfg(any(test, feature = "cuda"))]
+pub(super) const LARGE_GUEST_PC_TRACE_MIN_FREE_GPU_BYTES: usize = 1024 * 1024 * 1024;
 const GUEST_PC_TRACE_GPU_SIZE_THRESHOLD: u64 = 1_000_000;
 
 pub(super) fn validate_large_guest_pc_gpu(
