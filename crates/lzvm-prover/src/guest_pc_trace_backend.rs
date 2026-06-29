@@ -3715,6 +3715,7 @@ fn run_guest_pc_trace_segment_slice_with_live_report_chunks(
         trace_rows = next_trace_rows;
         last_report_shape = Some(advanced.shape);
         if let Some(snapshot) = boundary_snapshot.as_deref_mut() {
+            snapshot.record_report_shape_state(advanced.shape);
             record_zisk_main_runner_amo_scratch_snapshot(snapshot, &advanced.report)?;
         }
         if let Some(previous) = pending_report.replace(advanced.report) {
@@ -4208,6 +4209,7 @@ fn run_guest_pc_trace_segment_slice_inner<
         last_report_shape = Some(advanced.shape);
         if TRACK_BOUNDARY {
             if let Some(snapshot) = boundary_snapshot.as_deref_mut() {
+                snapshot.record_report_shape_state(advanced.shape);
                 record_zisk_main_runner_amo_scratch_snapshot(snapshot, &advanced.report)?;
             }
         }
@@ -5438,9 +5440,26 @@ fn produce_guest_pc_trace_live_pending_messages(
                 }
             };
             if runner_next_seed != *expected_next_seed {
+                let boundary_snapshot = runner_boundary_snapshot.as_ref().ok_or_else(|| {
+                    GuestPcTraceBackendError::InvalidPcTraceLayout {
+                        message: "guest PC trace live runner boundary snapshot missing".to_owned(),
+                    }
+                })?;
                 return Err(GuestPcTraceBackendError::InvalidPcTraceLayout {
-                    message: format!(
-                        "guest PC trace live runner seed snapshot mismatch after segment {trace_instance_index}"
+                    message: main_segment_seed_pair_mismatch_message_with_tail(
+                        trace_instance_index,
+                        "guest PC trace live runner seed snapshot mismatch after segment",
+                        &runner_next_seed,
+                        expected_next_seed,
+                        ZiskMainRunnerBoundarySeedInput {
+                            reports: &[],
+                            report_count: emitted.report_count,
+                            last_report_shape: emitted.last_report_shape,
+                            lookahead_instruction: emitted.lookahead_instruction,
+                            runner_state: &state,
+                            current_seed,
+                            boundary_snapshot,
+                        },
                     ),
                 });
             }
@@ -5765,9 +5784,26 @@ fn produce_guest_pc_trace_pending_slices(
                 }
             };
             if runner_next_seed != *expected_next_seed {
+                let boundary_snapshot = runner_boundary_snapshot.as_ref().ok_or_else(|| {
+                    GuestPcTraceBackendError::InvalidPcTraceLayout {
+                        message: "guest PC trace runner boundary snapshot missing".to_owned(),
+                    }
+                })?;
                 return Err(GuestPcTraceBackendError::InvalidPcTraceLayout {
-                    message: format!(
-                        "guest PC trace runner seed snapshot mismatch after segment {trace_instance_index}"
+                    message: main_segment_seed_pair_mismatch_message_with_tail(
+                        trace_instance_index,
+                        "guest PC trace runner seed snapshot mismatch after segment",
+                        &runner_next_seed,
+                        expected_next_seed,
+                        ZiskMainRunnerBoundarySeedInput {
+                            reports: &slice.reports,
+                            report_count: slice.report_count,
+                            last_report_shape: slice.last_report_shape,
+                            lookahead_instruction,
+                            runner_state: &state,
+                            current_seed,
+                            boundary_snapshot,
+                        },
                     ),
                 });
             }
@@ -8677,13 +8713,117 @@ fn validate_guest_pc_trace_pending_segment_seed(
         return Ok(());
     };
     if seed.previous_c != previous_c || seed.initial_state != *trace_state {
+        let expected_seed = ZiskMainSegmentSeed {
+            initial_state: trace_state.clone(),
+            previous_c,
+        };
         return Err(GuestPcTraceBackendError::InvalidPcTraceLayout {
-            message: format!(
-                "guest PC trace seed mirror mismatch at segment {trace_instance_index}"
+            message: main_segment_seed_pair_mismatch_message(
+                trace_instance_index,
+                "guest PC trace seed mirror mismatch at segment",
+                seed,
+                &expected_seed,
             ),
         });
     }
     Ok(())
+}
+
+fn main_segment_seed_pair_mismatch_message(
+    trace_instance_index: u32,
+    prefix: &str,
+    actual: &ZiskMainSegmentSeed,
+    expected: &ZiskMainSegmentSeed,
+) -> String {
+    let mut details = Vec::new();
+    if actual.previous_c != expected.previous_c {
+        details.push(format!(
+            "previous_c actual={} expected={}",
+            actual.previous_c, expected.previous_c
+        ));
+    }
+    main_trace_state_mismatch_details(&mut details, &actual.initial_state, &expected.initial_state);
+    if details.is_empty() {
+        format!("{prefix} {trace_instance_index}")
+    } else {
+        format!("{prefix} {trace_instance_index}: {}", details.join(", "))
+    }
+}
+
+fn main_segment_seed_pair_mismatch_message_with_tail(
+    trace_instance_index: u32,
+    prefix: &str,
+    actual: &ZiskMainSegmentSeed,
+    expected: &ZiskMainSegmentSeed,
+    input: ZiskMainRunnerBoundarySeedInput<'_>,
+) -> String {
+    let mut message =
+        main_segment_seed_pair_mismatch_message(trace_instance_index, prefix, actual, expected);
+    message.push_str(&format!(
+        "; last_report_shape={:?}; lookahead_instruction={:?}",
+        input.last_report_shape(),
+        input.lookahead_instruction
+    ));
+    message
+}
+
+fn main_trace_state_mismatch_details(
+    details: &mut Vec<String>,
+    actual: &ZiskMainTraceState,
+    expected: &ZiskMainTraceState,
+) {
+    if actual.next_pc != expected.next_pc {
+        details.push(format!(
+            "next_pc actual={} expected={}",
+            actual.next_pc, expected.next_pc
+        ));
+    }
+    if actual.last_c != expected.last_c {
+        details.push(format!(
+            "last_c actual={} expected={}",
+            actual.last_c, expected.last_c
+        ));
+    }
+    if actual.pending_dma != expected.pending_dma {
+        details.push(format!(
+            "pending_dma actual={:?} expected={:?}",
+            actual.pending_dma, expected.pending_dma
+        ));
+    }
+    if actual.internal_memory != expected.internal_memory {
+        details.push(format!(
+            "internal_memory actual={:?} expected={:?}",
+            actual.internal_memory, expected.internal_memory
+        ));
+    }
+    if let Some((index, actual, expected)) =
+        first_main_trace_u64_array_mismatch(&actual.registers, &expected.registers)
+    {
+        details.push(format!(
+            "register x{index} actual={actual} expected={expected}"
+        ));
+    }
+    if let Some((index, actual, expected)) = first_main_trace_u64_array_mismatch(
+        &actual.register_mem_steps,
+        &expected.register_mem_steps,
+    ) {
+        details.push(format!(
+            "register_mem_step x{index} actual={actual} expected={expected}"
+        ));
+    }
+}
+
+fn first_main_trace_u64_array_mismatch(
+    actual: &[u64; 32],
+    expected: &[u64; 32],
+) -> Option<(usize, u64, u64)> {
+    actual
+        .iter()
+        .zip(expected)
+        .enumerate()
+        .find_map(|(index, (actual, expected))| {
+            (*actual != *expected).then_some((index, *actual, *expected))
+        })
 }
 
 fn guest_pc_trace_seed_mirror_enabled() -> bool {
@@ -9163,6 +9303,8 @@ impl ZiskMainSegmentSeed {
 struct ZiskMainRunnerBoundarySnapshot {
     internal_memory: ZiskMainInternalMemory,
     last_report_context: Option<(u64, u8)>,
+    last_report_pending_dma: bool,
+    next_report_pending_dma: bool,
 }
 
 impl ZiskMainRunnerBoundarySnapshot {
@@ -9170,11 +9312,18 @@ impl ZiskMainRunnerBoundarySnapshot {
         Self {
             internal_memory: seed.initial_state.internal_memory,
             last_report_context: None,
+            last_report_pending_dma: false,
+            next_report_pending_dma: seed.initial_state.pending_dma.is_some(),
         }
     }
 
     fn record_report_context(&mut self, address: u64, instruction_byte_len: u8) {
         self.last_report_context = Some((address, instruction_byte_len));
+    }
+
+    fn record_report_shape_state(&mut self, shape: GuestMachineReportShape) {
+        self.last_report_pending_dma = self.next_report_pending_dma;
+        self.next_report_pending_dma = main_pending_dma_from_shape(shape).is_some();
     }
 
     #[cfg(test)]
@@ -9184,6 +9333,7 @@ impl ZiskMainRunnerBoundarySnapshot {
         next_instruction: Option<RiscvInstruction>,
         registers: &[u64; 32],
     ) -> Result<(), GuestPcTraceBackendError> {
+        self.record_report_shape_state(guest_machine_report_shape_from_report(report));
         self.record_report_context(report.address, report.instruction_byte_len);
         record_zisk_main_runner_scratch_update(
             &mut self.internal_memory,
@@ -9201,6 +9351,7 @@ impl ZiskMainRunnerBoundarySnapshot {
         next_instruction: Option<RiscvInstruction>,
         registers: &[u64; 32],
     ) -> Result<(), GuestPcTraceBackendError> {
+        self.record_report_shape_state(shape);
         record_zisk_main_runner_scratch_update_from_shape(
             &mut self.internal_memory,
             registers,
@@ -11010,6 +11161,16 @@ fn zisk_main_pending_dma_from_report_shape(
     shape: GuestMachineReportShape,
 ) -> Option<ZiskMainPendingDma> {
     zisk_main_pending_dma_from_instruction(shape.instruction)
+}
+
+fn main_pending_dma_from_shape(shape: GuestMachineReportShape) -> Option<ZiskMainPendingDma> {
+    match shape.instruction {
+        RiscvInstruction::ZiskDmaPrepare { kind, rs1 } => Some(ZiskMainPendingDma {
+            kind,
+            first_arg_reg: rs1,
+        }),
+        _ => None,
+    }
 }
 
 fn zisk_main_pending_dma_from_instruction(
@@ -13458,6 +13619,9 @@ fn direct_zisk_main_segment_boundary_c_from_tail(
 fn direct_zisk_main_segment_boundary_c_from_runner_snapshot(
     input: ZiskMainRunnerBoundarySeedInput<'_>,
 ) -> Result<Result<u64, ZiskMainDirectSeedLiftMissReason>, GuestPcTraceBackendError> {
+    if input.boundary_snapshot.last_report_pending_dma {
+        return Ok(Err(ZiskMainDirectSeedLiftMissReason::BoundaryCUnavailable));
+    }
     let direct = direct_zisk_main_segment_boundary_c_from_tail(ZiskMainDirectBoundaryTailInput {
         report_count: input.report_count(),
         last_report: input.last_report(),
