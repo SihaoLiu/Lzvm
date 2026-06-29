@@ -47,6 +47,7 @@ fn lean_program_image_cache_binding_exports_core_contract_projection() {
             "runtime_program_image_cache_binding_checked_acceptance_structural_obligations",
             "runtime_program_image_cache_binding_checked_acceptance_full_contract",
             "runtime_program_image_cache_binding_checked_acceptance_evidence_core_and_sound",
+            "runtime_program_image_cache_binding_audited_finalized_core_sound_witness_contract",
             "runtime_program_image_cache_binding_checked_acceptance_unit_values_trace_identity_coverage",
         ],
     );
@@ -226,5 +227,46 @@ fn lean_program_image_cache_binding_exports_core_contract_projection() {
         &lean_source,
         "runtime_program_image_cache_binding_checked_acceptance_evidence_core_and_sound",
         &["sound_witness_implies_verifier_core_contract"],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_program_image_cache_binding_audited_finalized_core_sound_witness_contract",
+        &[
+            "RequiredCryptographicAssumptionStatements assumptions.crypto",
+            "RequiredSemanticAssumptionStatements assumptions.semantic",
+            "RuntimeProgramImageCacheBindingEvidence",
+            "RuntimeProofArtifactFinalized",
+            "RuntimeVerifierCoreContract system publicInput proof",
+            "system.traceConsistent publicInput proof trace",
+            "SoundWitness system publicInput proof",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_omits(
+        &lean_source,
+        "runtime_program_image_cache_binding_audited_finalized_core_sound_witness_contract",
+        &[
+            "RuntimeProofArtifactBindingEvidence",
+            "RuntimeProgramImageCacheBindingStructuralObligations",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_program_image_cache_binding_audited_finalized_core_sound_witness_contract",
+        &[
+            "runtime_program_image_cache_binding_checked_acceptance_evidence",
+            "runtime_program_image_cache_binding_checked_acceptance_artifact_finalized",
+            "runtime_program_image_cache_binding_checked_acceptance_artifact_binding",
+            "runtime_proof_artifact_binding_checked_acceptance_runtime_accepted",
+            "runtime_artifact_checked_acceptance_implies_verifier_accepts",
+            "accepted_proof_audited_core_and_sound_witness",
+        ],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &lean_source,
+        "runtime_program_image_cache_binding_audited_finalized_core_sound_witness_contract",
+        &[
+            "runtime_program_image_cache_binding_checked_acceptance_evidence_core_and_sound",
+            "runtime_program_image_cache_binding_checked_acceptance_full_contract",
+        ],
     );
 }
