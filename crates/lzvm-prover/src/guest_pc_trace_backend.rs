@@ -2,6 +2,7 @@ use std::any::Any;
 use std::collections::BTreeMap;
 use std::fmt;
 use std::mem::size_of;
+use std::path::Path;
 use std::sync::mpsc;
 #[cfg(feature = "cuda")]
 use std::sync::Arc;
@@ -35,6 +36,7 @@ use crate::zisk_main::{
 };
 #[cfg(feature = "cuda")]
 use lzvm_accel::{CudaDeviceBuffer, CudaStream};
+use lzvm_artifacts::guest_image::GuestImageInfo;
 use lzvm_field::{Felt, FieldError};
 
 use crate::zisk_fcalls::{ZiskInputFcallError, ZiskInputFcallHandler, ZISK_INPUT_ADDRESS};
@@ -1624,6 +1626,78 @@ pub fn guest_pc_trace_layout_capacity(
         row_width: capacity.row_width,
         instruction_limit: capacity.instruction_limit,
     })
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GuestPcTraceRunStatus {
+    Halted,
+    InstructionLimitExceeded,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GuestPcTraceRunSummary {
+    pub status: GuestPcTraceRunStatus,
+    pub executed_instructions: u64,
+    pub terminal_pc: u64,
+    pub input_data_was_mapped: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GuestPcTraceRunSummaryError {
+    message: String,
+}
+
+impl fmt::Display for GuestPcTraceRunSummaryError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.message)
+    }
+}
+
+impl std::error::Error for GuestPcTraceRunSummaryError {}
+
+impl From<GuestPcTraceBackendError> for GuestPcTraceRunSummaryError {
+    fn from(error: GuestPcTraceBackendError) -> Self {
+        Self {
+            message: error.to_string(),
+        }
+    }
+}
+
+pub fn summarize_guest_pc_trace_run(
+    guest_image: &Path,
+    guest_image_info: &GuestImageInfo,
+    input: &[u8],
+    instruction_limit: u64,
+) -> Result<GuestPcTraceRunSummary, GuestPcTraceRunSummaryError> {
+    let context = WitnessComputeContext {
+        guest_image: Some(guest_image),
+        guest_image_info: Some(guest_image_info),
+        trace_layout: None,
+    };
+    let (mut memory, mut state, mut fcall_handler) = load_guest_pc_trace_machine(context, input)?;
+    match run_guest_machine_with_fcalls(
+        &mut memory,
+        &mut state,
+        &mut fcall_handler,
+        instruction_limit,
+    ) {
+        Ok(run) => Ok(GuestPcTraceRunSummary {
+            status: GuestPcTraceRunStatus::Halted,
+            executed_instructions: run.executed_instructions,
+            terminal_pc: guest_machine_halt_pc(&run.halt),
+            input_data_was_mapped: fcall_handler.input_data_was_mapped(),
+        }),
+        Err(GuestMachineRunError::InstructionLimitExceeded {
+            instruction_limit,
+            pc,
+        }) => Ok(GuestPcTraceRunSummary {
+            status: GuestPcTraceRunStatus::InstructionLimitExceeded,
+            executed_instructions: instruction_limit,
+            terminal_pc: pc,
+            input_data_was_mapped: fcall_handler.input_data_was_mapped(),
+        }),
+        Err(error) => Err(GuestPcTraceBackendError::GuestRun(error).into()),
+    }
 }
 
 pub fn is_guest_pc_trace_segmented_layout_supported(layout: &WitnessTraceLayout) -> bool {

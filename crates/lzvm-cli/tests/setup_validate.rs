@@ -5160,6 +5160,76 @@ fn prints_prove_inputs_from_guest_pc_trace() {
     assert!(stderr.is_empty());
 }
 
+#[test]
+fn prove_guest_run_reports_halted_count() {
+    let dir = temp_dir("prove-guest-run-halted");
+    let _ = fs::remove_dir_all(&dir);
+    let guest_image = dir.join("guest.elf");
+    let guest_image_bytes = sample_guest_pc_trace_image();
+    let guest_image_info = parse_guest_image(&guest_image_bytes).expect("guest image should parse");
+    write_bytes(&guest_image, &guest_image_bytes);
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "prove",
+            "guest-run",
+            "8",
+            guest_image.to_str().expect("guest path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 0);
+    assert_eq!(
+        String::from_utf8(stdout).expect("stdout should be utf-8"),
+        format!(
+            "status=ok\nguest_image={}\nguest_image_bytes={}\ninput_data=none\ninput_bytes=0\nguest_run_instruction_limit=8\nguest_run_status=halted\nguest_run_executed_instructions=2\nguest_run_terminal_pc=2147483656\nguest_run_input_data_was_mapped=false\n",
+            guest_image.display(),
+            guest_image_info.byte_len,
+        )
+    );
+    assert!(stderr.is_empty());
+}
+
+#[test]
+fn prove_guest_run_reports_limit_count() {
+    let dir = temp_dir("prove-guest-run-limit");
+    let _ = fs::remove_dir_all(&dir);
+    let guest_image = dir.join("guest.elf");
+    let guest_image_bytes = sample_guest_pc_trace_image();
+    let guest_image_info = parse_guest_image(&guest_image_bytes).expect("guest image should parse");
+    write_bytes(&guest_image, &guest_image_bytes);
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "prove",
+            "guest-run",
+            "1",
+            guest_image.to_str().expect("guest path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 0);
+    assert_eq!(
+        String::from_utf8(stdout).expect("stdout should be utf-8"),
+        format!(
+            "status=ok\nguest_image={}\nguest_image_bytes={}\ninput_data=none\ninput_bytes=0\nguest_run_instruction_limit=1\nguest_run_status=instruction_limit_exceeded\nguest_run_executed_instructions=1\nguest_run_terminal_pc=2147483652\nguest_run_input_data_was_mapped=false\n",
+            guest_image.display(),
+            guest_image_info.byte_len,
+        )
+    );
+    assert!(stderr.is_empty());
+}
+
 #[cfg(not(feature = "cuda"))]
 #[test]
 fn prove_inputs_rejects_gpu_preallocate_without_cuda() {

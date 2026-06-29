@@ -26,6 +26,7 @@ mod pil_fixed_file_manifest;
 mod pil_graph;
 mod pil_summary;
 mod program_image_cache;
+mod prove_guest_run;
 mod prove_inputs;
 mod prove_plan;
 mod prove_witness;
@@ -73,6 +74,7 @@ pub fn run_cli(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) ->
         ["pil", "graph", rest @ ..] => pil_graph::run(rest, stdout, stderr),
         ["pil", "summary", rest @ ..] => pil_summary::run(rest, stdout, stderr),
         ["prove", "inputs", rest @ ..] => prove_inputs::run(rest, stdout, stderr),
+        ["prove", "guest-run", rest @ ..] => prove_guest_run::run(rest, stdout, stderr),
         ["prove", "plan", rest @ ..] => prove_plan::run(rest, stdout, stderr),
         ["prove", "schedule", setup_dir] => prove_schedule(setup_dir, stdout, stderr),
         ["prove", "schedule", ..] => write_prove_schedule_usage(stderr),
@@ -573,7 +575,7 @@ fn write_top_level_usage(writer: &mut dyn Write, code: i32) -> i32 {
     let _ = writeln!(writer, "  pil     PIL archive, summary, and graph helpers");
     let _ = writeln!(
         writer,
-        "  prove   plan, inputs, witness, and schedule commands"
+        "  prove   plan, inputs, witness, guest-run, and schedule commands"
     );
     let _ = writeln!(
         writer,
