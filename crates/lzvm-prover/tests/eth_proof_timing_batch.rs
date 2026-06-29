@@ -106,7 +106,7 @@ impl ProofFixture {
         let dir = test_dir(name);
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).expect("fixture dir should be created");
-        let fake_bin = write_fixture(&dir, "lzvm");
+        let fake_bin = write_fake_lzvm(&dir, "lzvm");
         make_executable(&fake_bin);
         let setup = dir.join("setup");
         std::fs::create_dir_all(&setup).expect("setup dir should be created");
@@ -3726,6 +3726,98 @@ fn eth_proof_timing_batch_check_env_rejects_malformed_program_image_cache() {
 }
 
 #[test]
+fn eth_proof_timing_batch_check_env_rejects_block_input_semantic_summary_failure() {
+    let fixture = ProofFixture::new("eth-proof-timing-batch-block-summary-failure");
+    std::fs::write(
+        &fixture.fake_bin,
+        r#"#!/usr/bin/env python3
+import sys
+args = sys.argv[1:]
+if args[:2] == ["eth", "block-input-summary"]:
+    sys.stderr.write("canonical block parse failed\n")
+    sys.exit(1)
+if args[:2] == ["setup", "program-image-cache-summary"]:
+    print("status=ok")
+    sys.exit(0)
+sys.exit(0)
+"#,
+    )
+    .expect("semantic failure fake should write");
+    make_executable(&fixture.fake_bin);
+    let mut command = Command::new(script_path());
+    command.arg("--suite").arg("small").arg("--check-env");
+    fixture.apply_env(&mut command, SMALL_PREFIX);
+
+    let output = command
+        .output()
+        .expect("ETH proof timing batch env check should run");
+    let success = output.status.success();
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    fixture.cleanup();
+
+    assert!(
+        !success,
+        "env check should reject block input semantic summary failures"
+    );
+    assert!(
+        !stdout.contains("status=ok"),
+        "failed env check should not report ok: {stdout}"
+    );
+    assert!(
+        stderr.contains("_BLOCK_INPUT artifact is invalid: semantic summary failed")
+            && stderr.contains("canonical block parse failed"),
+        "env check should explain block semantic summary failure: stderr={stderr}"
+    );
+}
+
+#[test]
+fn eth_proof_timing_batch_check_env_rejects_program_cache_semantic_summary_failure() {
+    let fixture = ProofFixture::new("eth-proof-timing-batch-cache-summary-failure");
+    std::fs::write(
+        &fixture.fake_bin,
+        r#"#!/usr/bin/env python3
+import sys
+args = sys.argv[1:]
+if args[:2] == ["eth", "block-input-summary"]:
+    print("status=ok")
+    sys.exit(0)
+if args[:2] == ["setup", "program-image-cache-summary"]:
+    sys.stderr.write("canonical cache parse failed\n")
+    sys.exit(1)
+sys.exit(0)
+"#,
+    )
+    .expect("semantic failure fake should write");
+    make_executable(&fixture.fake_bin);
+    let mut command = Command::new(script_path());
+    command.arg("--suite").arg("small").arg("--check-env");
+    fixture.apply_env(&mut command, SMALL_PREFIX);
+
+    let output = command
+        .output()
+        .expect("ETH proof timing batch env check should run");
+    let success = output.status.success();
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    fixture.cleanup();
+
+    assert!(
+        !success,
+        "env check should reject program cache semantic summary failures"
+    );
+    assert!(
+        !stdout.contains("status=ok"),
+        "failed env check should not report ok: {stdout}"
+    );
+    assert!(
+        stderr.contains("_PROGRAM_IMAGE_CACHE artifact is invalid: semantic summary failed")
+            && stderr.contains("canonical cache parse failed"),
+        "env check should explain cache semantic summary failure: stderr={stderr}"
+    );
+}
+
+#[test]
 fn eth_proof_timing_batch_check_env_rejects_malformed_input_data() {
     let fixture = ProofFixture::new("eth-proof-timing-batch-malformed-input-data");
     std::fs::write(&fixture.input_data, [1_u8, 2, 3]).expect("input fixture should update");
@@ -3953,6 +4045,45 @@ fn eth_proof_timing_batch_available_suite_uses_only_configured_large_env() {
 fn write_fixture(dir: &std::path::Path, name: &str) -> std::path::PathBuf {
     let path = dir.join(name);
     std::fs::write(&path, b"fixture").expect("fixture should write");
+    path
+}
+
+fn write_fake_lzvm(dir: &std::path::Path, name: &str) -> std::path::PathBuf {
+    let path = dir.join(name);
+    std::fs::write(
+        &path,
+        r#"#!/usr/bin/env python3
+import pathlib
+import sys
+
+args = sys.argv[1:]
+if args[:2] in (["eth", "block-input-summary"], ["setup", "program-image-cache-summary"]):
+    print("status=ok")
+    sys.exit(0)
+if args[:2] == ["verify", "proof"]:
+    print("status=ok")
+    print("verify_proof_status=ok")
+    print("artifact_public_input_match=ok")
+    print("artifact_proof_match=ok")
+    print("eth_block_input_match=ok")
+    print("program_image_cache_match=ok")
+    print("framed_guest_input_match=ok")
+    print("pipeline_input_bindings=ok")
+    sys.exit(0)
+if args[:2] == ["prove", "witness"] and len(args) >= 2:
+    output_dir = pathlib.Path(args[-2])
+    output_dir.mkdir(parents=True, exist_ok=True)
+    (output_dir / "proof.bin").write_bytes(b"proof")
+    (output_dir / "eth-block-public-values.bin").write_bytes(b"public")
+    print("status=ok")
+    print("verify_outputs=true")
+    print("timing_total_ms=1000")
+    sys.exit(0)
+sys.stderr.write("unsupported fake lzvm command\n")
+sys.exit(2)
+"#,
+    )
+    .expect("fake lzvm fixture should write");
     path
 }
 

@@ -1,12 +1,61 @@
 use std::io::Write;
+use std::path::Path;
 
-use lzvm_artifacts::program_image::{ProgramImageCommitmentCache, ProgramImageGpuMode};
+use lzvm_artifacts::program_image::{
+    read_program_image_commitment_cache_file, ProgramImageCommitmentCache, ProgramImageGpuMode,
+};
 use lzvm_artifacts::program_image_segment::{
     encode_program_image_cache_segment, program_image_cache_segment_digest,
 };
 use lzvm_prover::ProveProgramImageCache;
 
 use crate::prove_plan::format_hash;
+
+pub(crate) fn run_summary(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32 {
+    match args {
+        [cache_path] => summarize_program_image_cache(cache_path, stdout, stderr),
+        _ => write_summary_usage(stderr),
+    }
+}
+
+fn summarize_program_image_cache(
+    cache_path: &str,
+    stdout: &mut dyn Write,
+    stderr: &mut dyn Write,
+) -> i32 {
+    let path = Path::new(cache_path);
+    let byte_count = match std::fs::metadata(path) {
+        Ok(metadata) => metadata.len(),
+        Err(error) => {
+            let _ = writeln!(
+                stderr,
+                "program-image cache summary failed: read input failed: {cache_path}: {error}"
+            );
+            return 1;
+        }
+    };
+    let cache = match read_program_image_commitment_cache_file(path) {
+        Ok(cache) => cache,
+        Err(error) => {
+            let _ = writeln!(stderr, "program-image cache summary failed: {error}");
+            return 1;
+        }
+    };
+
+    let _ = writeln!(stdout, "status=ok");
+    let _ = writeln!(stdout, "program_image_cache={}", path.display());
+    let _ = writeln!(stdout, "bytes={byte_count}");
+    write_program_image_cache_fields(stdout, &cache);
+    0
+}
+
+fn write_summary_usage(stderr: &mut dyn Write) -> i32 {
+    let _ = writeln!(
+        stderr,
+        "usage: lzvm setup program-image-cache-summary <cache-bin>"
+    );
+    2
+}
 
 pub(crate) fn write_program_image_cache_summary(
     stdout: &mut dyn Write,

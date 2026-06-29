@@ -511,6 +511,44 @@ def validate_program_image_cache_artifact(path: Path, name: str) -> None:
         raise SystemExit(f"{name} artifact is invalid: unsupported GPU mode {gpu_mode}")
 
 
+def subprocess_diagnostic(result: subprocess.CompletedProcess[str]) -> str:
+    text = "\n".join(
+        part.strip() for part in [result.stderr, result.stdout] if part.strip()
+    )
+    if not text:
+        return f"exit code {result.returncode}"
+    lines = text.splitlines()
+    return "; ".join(lines[:8])
+
+
+def validate_artifact_with_cli_summary(
+    bin_path: Path,
+    artifact_path: Path,
+    name: str,
+    command_args: list[str],
+    root: Path,
+) -> None:
+    result = subprocess.run(
+        [str(bin_path), *command_args, str(artifact_path)],
+        cwd=root,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    if result.returncode != 0:
+        diagnostic = subprocess_diagnostic(result)
+        if "usage: lzvm <group> <command> [args]" in diagnostic:
+            diagnostic += f"; rebuild binary with: {DEFAULT_BIN_BUILD_COMMAND}"
+        raise SystemExit(
+            f"{name} artifact is invalid: semantic summary failed: "
+            f"{diagnostic}"
+        )
+    if "status=ok" not in result.stdout.splitlines():
+        raise SystemExit(
+            f"{name} artifact is invalid: semantic summary did not report status=ok"
+        )
+
+
 def framed_input_data(payload: bytes) -> bytes:
     data = len(payload).to_bytes(8, "little") + payload
     return data + b"\0" * ((8 - (len(data) % 8)) % 8)
@@ -630,6 +668,20 @@ def configured_paths(config: ProofEnv) -> dict[str, Path]:
     if not os.access(bin_path, os.X_OK):
         raise SystemExit(f"{config.var('BIN')} must be executable: {bin_path}")
     paths["bin"] = bin_path
+    validate_artifact_with_cli_summary(
+        bin_path,
+        paths["block_input"],
+        config.var("BLOCK_INPUT"),
+        ["eth", "block-input-summary"],
+        config.root,
+    )
+    validate_artifact_with_cli_summary(
+        bin_path,
+        paths["program_image_cache"],
+        config.var("PROGRAM_IMAGE_CACHE"),
+        ["setup", "program-image-cache-summary"],
+        config.root,
+    )
     return paths
 
 
@@ -1666,6 +1718,9 @@ def self_test() -> None:
                 "import pathlib",
                 "import sys",
                 "args = sys.argv[1:]",
+                "if args[:2] in (['eth', 'block-input-summary'], ['setup', 'program-image-cache-summary']):",
+                "    print('status=ok')",
+                "    sys.exit(0)",
                 "if args[:2] == ['verify', 'proof']:",
                 "    proof = pathlib.Path(args[-2])",
                 "    public_values = pathlib.Path(args[-1])",
@@ -1673,6 +1728,7 @@ def self_test() -> None:
                 "        sys.stderr.write('missing proof outputs for verify\\n')",
                 "        sys.exit(8)",
                 "    print('status=ok')",
+                "    print('verify_proof_status=ok')",
                 "    print('artifact_public_input_match=ok')",
                 "    print('artifact_proof_match=ok')",
                 "    print('eth_block_input_match=ok')",

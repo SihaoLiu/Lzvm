@@ -231,6 +231,9 @@ pub fn run_cli(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) ->
             )
         }
         ["setup", "write-program-image-cache", ..] => write_program_image_cache_usage(stderr),
+        ["setup", "program-image-cache-summary", rest @ ..] => {
+            program_image_cache::run_summary(rest, stdout, stderr)
+        }
         ["setup", "write-fixed-source", rest @ ..] => setup_fixed_source::run(rest, stdout, stderr),
         ["setup", "write-fixed-native", setup_info_bin, columns_bin, out_const] => {
             write_fixed_columns_native(setup_info_bin, columns_bin, out_const, stdout, stderr)

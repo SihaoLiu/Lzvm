@@ -2,7 +2,11 @@ use std::fs;
 use std::path::PathBuf;
 
 use lzvm_artifacts::program_image::{
-    read_program_image_commitment_cache_file, ProgramImageGpuMode,
+    encode_program_image_commitment_cache, read_program_image_commitment_cache_file,
+    ProgramImageCommitmentCache, ProgramImageGpuMode,
+};
+use lzvm_artifacts::program_image_segment::{
+    encode_program_image_cache_segment, program_image_cache_segment_digest,
 };
 use lzvm_artifacts::verification_key::{encode_verification_key_binary, VerificationKeyRoot};
 use lzvm_cli::run_cli;
@@ -107,6 +111,88 @@ fn writes_program_image_commitment_cache_from_cli_inputs() {
         )
     );
     assert!(stderr.is_empty());
+}
+
+#[test]
+fn summarizes_program_image_commitment_cache_from_cli() {
+    let dir = temp_dir("summary");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let output_path = dir.join("unit.commit.bin");
+    let cache = ProgramImageCommitmentCache {
+        program_digest: [0x11; 32],
+        source_image_digest: [0x22; 32],
+        constraint_system_digest: [0x33; 32],
+        tree_root: [11, 12, 13, 14],
+        trace_row_count: 1024,
+        trace_column_count: 17,
+        blowup_factor: 8,
+        merkle_tree_arity: 4,
+        gpu_mode: ProgramImageGpuMode::Cuda,
+    };
+    let encoded =
+        encode_program_image_commitment_cache(&cache).expect("cache fixture should encode");
+    let segment = encode_program_image_cache_segment(&cache).expect("cache segment should encode");
+    let segment_hash = format_hash(&program_image_cache_segment_digest(&segment));
+    fs::write(&output_path, &encoded).expect("cache fixture should write");
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "setup",
+            "program-image-cache-summary",
+            output_path.to_str().expect("cache path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 0);
+    assert!(stderr.is_empty());
+    assert_eq!(
+        String::from_utf8(stdout).expect("stdout should be utf-8"),
+        format!(
+            "status=ok\nprogram_image_cache={}\nbytes={}\nprogram_image_cache_segment_hash={}\nprogram_image_cache_program_digest={}\nprogram_image_cache_source_image_digest={}\nprogram_image_cache_constraint_system_digest={}\nprogram_image_cache_tree_root=11,12,13,14\nprogram_image_cache_trace_rows=1024\nprogram_image_cache_trace_columns=17\nprogram_image_cache_blowup_factor=8\nprogram_image_cache_arity=4\nprogram_image_cache_gpu_mode=cuda\n",
+            output_path.display(),
+            encoded.len(),
+            segment_hash,
+            format_hash(&cache.program_digest),
+            format_hash(&cache.source_image_digest),
+            format_hash(&cache.constraint_system_digest)
+        )
+    );
+}
+
+#[test]
+fn program_image_commitment_cache_summary_rejects_malformed_cache() {
+    let dir = temp_dir("summary-malformed");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let output_path = dir.join("unit.commit.bin");
+    fs::write(&output_path, b"not a cache").expect("cache fixture should write");
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "setup",
+            "program-image-cache-summary",
+            output_path.to_str().expect("cache path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 1);
+    assert!(stdout.is_empty());
+    assert!(String::from_utf8(stderr)
+        .expect("stderr should be utf-8")
+        .contains("program-image cache summary failed:"));
 }
 
 #[test]
