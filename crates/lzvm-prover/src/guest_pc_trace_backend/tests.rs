@@ -3702,14 +3702,17 @@ fn large_runtime_auto_work_units_select_parallel_lower() {
     assert!(!guest_pc_trace_parallel_lower_enabled());
     assert!(!guest_pc_trace_parallel_lower_enabled_for_limit(5_000_000));
     assert!(!guest_pc_trace_parallel_lower_enabled_for_limit(49_999_999));
+    assert!(!guest_pc_trace_parallel_lower_enabled_for_limit(50_000_000));
+
+    std::env::set_var("LZVM_GUEST_PC_TRACE_AUTO_PARALLEL_LOWER_WORK_UNITS", "1");
     assert!(guest_pc_trace_parallel_lower_enabled_for_limit(50_000_000));
     assert!(guest_pc_trace_parallel_lower_work_units_enabled_for_limit(
         50_000_000
     ));
 
     let seed_mode = GuestPcTraceRunnerSeedMode::from_runtime(50_000_000);
-    assert!(seed_mode.snapshot);
-    assert!(seed_mode.trusted);
+    assert!(!seed_mode.snapshot);
+    assert!(!seed_mode.trusted);
 
     let mode = GuestPcTraceParallelLowerMode::from_runtime(50_000_000);
     assert!(mode.work_units);

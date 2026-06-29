@@ -6806,11 +6806,10 @@ fn guest_pc_trace_parallel_lowerer_stays_seeded_and_opt_in() {
         "parallel guest PC trace lower mode should cache trace-output mode with the other flags"
     );
     assert!(
-        backend_source
-            .contains("guest_pc_trace_runner_seed_snapshot_enabled_with_parallel_lower")
+        backend_source.contains("guest_pc_trace_runner_seed_snapshot_enabled_with_parallel_lower")
             && backend_source.contains("GuestPcTraceRunnerSeedMode::from_runtime")
             && backend_source.contains("guest_pc_trace_parallel_lower_enabled_for_limit"),
-        "parallel guest PC trace lowering should enable runner seed snapshots from the runtime gate"
+        "parallel guest PC trace lowering should keep runtime-aware seed policy helpers"
     );
     let report_elision_body = function_body(
         &backend_source,
@@ -6861,6 +6860,12 @@ fn guest_pc_trace_parallel_lowerer_stays_seeded_and_opt_in() {
     assert!(
         pending_slices_body
             .contains("let seed_mode = GuestPcTraceRunnerSeedMode::from_runtime(instruction_limit);")
+            && pending_slices_body.contains(
+                "let runtime_parallel_lower = guest_pc_trace_parallel_lower_enabled_for_limit(instruction_limit);"
+            )
+            && pending_slices_body.contains(
+                "guest_pc_trace_seed_mirror_enabled() || runner_seed_snapshot || runtime_parallel_lower"
+            )
             && pending_slices_body.contains("let runner_seed_snapshot = seed_mode.snapshot;")
             && pending_slices_body.contains("let runner_seed_snapshot_trusted = seed_mode.trusted;")
             && pending_slices_body.contains("let validate_runner_seed_snapshot = seed_mode.validate;")

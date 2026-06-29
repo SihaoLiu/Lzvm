@@ -4521,10 +4521,8 @@ struct GuestPcTraceRunnerSeedMode {
 }
 
 impl GuestPcTraceRunnerSeedMode {
-    fn from_runtime(instruction_limit: u64) -> Self {
-        Self::from_parallel_lower_enabled(guest_pc_trace_parallel_lower_enabled_for_limit(
-            instruction_limit,
-        ))
+    fn from_runtime(_instruction_limit: u64) -> Self {
+        Self::from_parallel_lower_enabled(guest_pc_trace_parallel_lower_enabled())
     }
 
     fn from_parallel_lower_enabled(parallel_lower_enabled: bool) -> Self {
@@ -5481,8 +5479,10 @@ fn produce_guest_pc_trace_pending_slices(
         && guest_pc_trace_parallel_lower_worker_count_for_limit(instruction_limit)
             .is_some_and(|count| count > 1);
     let carry_replay_snapshot = guest_pc_trace_segment_replay_snapshot_enabled() || report_elision;
-    let mut seed_mirror = (guest_pc_trace_seed_mirror_enabled() || runner_seed_snapshot)
-        .then(ZiskMainSegmentSeed::new);
+    let runtime_parallel_lower = guest_pc_trace_parallel_lower_enabled_for_limit(instruction_limit);
+    let mut seed_mirror =
+        (guest_pc_trace_seed_mirror_enabled() || runner_seed_snapshot || runtime_parallel_lower)
+            .then(ZiskMainSegmentSeed::new);
     loop {
         let remaining_limit = instruction_limit.saturating_sub(executed_instructions);
         let replay_snapshot = if segment_replay || carry_replay_snapshot {
@@ -8798,7 +8798,7 @@ const DEFAULT_GUEST_PC_TRACE_AUTO_PARALLEL_LOWER_MIN_INSTRUCTIONS: u64 = 50_000_
 #[cfg(feature = "cuda")]
 fn guest_pc_trace_auto_parallel_lower_work_units_enabled(instruction_limit: u64) -> bool {
     instruction_limit >= DEFAULT_GUEST_PC_TRACE_AUTO_PARALLEL_LOWER_MIN_INSTRUCTIONS
-        && env_flag_enabled("LZVM_GUEST_PC_TRACE_AUTO_PARALLEL_LOWER_WORK_UNITS", true)
+        && env_flag_enabled("LZVM_GUEST_PC_TRACE_AUTO_PARALLEL_LOWER_WORK_UNITS", false)
 }
 
 #[cfg(not(feature = "cuda"))]
