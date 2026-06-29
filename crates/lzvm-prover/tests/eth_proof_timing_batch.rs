@@ -110,8 +110,8 @@ impl ProofFixture {
         make_executable(&fake_bin);
         let setup = dir.join("setup");
         std::fs::create_dir_all(&setup).expect("setup dir should be created");
-        let block_input = write_eth_block_input_shell(&dir, "block.input");
-        let cache = write_program_image_cache_shell(&dir, "program-image.cache");
+        let block_input = write_fixture(&dir, "block.input");
+        let cache = write_fixture(&dir, "program-image.cache");
         let input_data = write_framed_fixture(&dir, "input-data.bin", b"fixture");
         let guest = write_fixture(&dir, "guest.elf");
         let shared_tmp_dir = dir.join("tmp");
@@ -3671,7 +3671,8 @@ fn eth_proof_timing_batch_check_env_rejects_wrong_input_types() {
 #[test]
 fn eth_proof_timing_batch_check_env_rejects_malformed_block_input() {
     let fixture = ProofFixture::new("eth-proof-timing-batch-malformed-block-input");
-    std::fs::write(&fixture.block_input, b"not sectioned").expect("block fixture should update");
+    std::fs::write(&fixture.block_input, b"malformed fixture")
+        .expect("block fixture should update");
     std::fs::write(
         &fixture.fake_bin,
         r#"#!/usr/bin/env python3
@@ -3679,7 +3680,7 @@ import pathlib
 import sys
 args = sys.argv[1:]
 if args[:2] == ["eth", "block-input-summary"]:
-    if pathlib.Path(args[-1]).read_bytes() == b"not sectioned":
+    if pathlib.Path(args[-1]).read_bytes() == b"malformed fixture":
         sys.stderr.write("canonical block parser rejected malformed input\n")
         sys.exit(1)
     print("status=ok")
@@ -3719,7 +3720,7 @@ sys.exit(0)
 #[test]
 fn eth_proof_timing_batch_check_env_rejects_malformed_program_image_cache() {
     let fixture = ProofFixture::new("eth-proof-timing-batch-malformed-program-cache");
-    std::fs::write(&fixture.cache, b"not sectioned").expect("cache fixture should update");
+    std::fs::write(&fixture.cache, b"malformed fixture").expect("cache fixture should update");
     std::fs::write(
         &fixture.fake_bin,
         r#"#!/usr/bin/env python3
@@ -3730,7 +3731,7 @@ if args[:2] == ["eth", "block-input-summary"]:
     print("status=ok")
     sys.exit(0)
 if args[:2] == ["setup", "program-image-cache-summary"]:
-    if pathlib.Path(args[-1]).read_bytes() == b"not sectioned":
+    if pathlib.Path(args[-1]).read_bytes() == b"malformed fixture":
         sys.stderr.write("canonical cache parser rejected malformed input\n")
         sys.exit(1)
     print("status=ok")
@@ -4127,52 +4128,6 @@ sys.exit(2)
     )
     .expect("fake lzvm fixture should write");
     path
-}
-
-fn write_sectioned_fixture(
-    dir: &std::path::Path,
-    name: &str,
-    kind: &[u8; 4],
-    sections: &[(u32, Vec<u8>)],
-) -> std::path::PathBuf {
-    let path = dir.join(name);
-    let mut bytes = Vec::new();
-    bytes.extend_from_slice(kind);
-    bytes.extend_from_slice(&1_u32.to_le_bytes());
-    bytes.extend_from_slice(&(sections.len() as u32).to_le_bytes());
-    for (section_id, payload) in sections {
-        bytes.extend_from_slice(&section_id.to_le_bytes());
-        bytes.extend_from_slice(&(payload.len() as u64).to_le_bytes());
-        bytes.extend_from_slice(payload);
-    }
-    std::fs::write(&path, bytes).expect("sectioned fixture should write");
-    path
-}
-
-fn write_eth_block_input_shell(dir: &std::path::Path, name: &str) -> std::path::PathBuf {
-    write_sectioned_fixture(
-        dir,
-        name,
-        b"ethi",
-        &[(1, Vec::new()), (2, Vec::new()), (3, Vec::new())],
-    )
-}
-
-fn write_program_image_cache_shell(dir: &std::path::Path, name: &str) -> std::path::PathBuf {
-    let mut payload = Vec::new();
-    payload.extend_from_slice(&[1_u8; 32]);
-    payload.extend_from_slice(&[2_u8; 32]);
-    payload.extend_from_slice(&[3_u8; 32]);
-    for root_word in [11_u64, 12, 13, 14] {
-        payload.extend_from_slice(&root_word.to_le_bytes());
-    }
-    payload.extend_from_slice(&1024_u64.to_le_bytes());
-    payload.extend_from_slice(&17_u32.to_le_bytes());
-    payload.extend_from_slice(&8_u32.to_le_bytes());
-    payload.extend_from_slice(&4_u32.to_le_bytes());
-    payload.extend_from_slice(&1_u32.to_le_bytes());
-    assert_eq!(payload.len(), 152);
-    write_sectioned_fixture(dir, name, b"pimg", &[(1, payload)])
 }
 
 fn write_framed_fixture(dir: &std::path::Path, name: &str, payload: &[u8]) -> std::path::PathBuf {
