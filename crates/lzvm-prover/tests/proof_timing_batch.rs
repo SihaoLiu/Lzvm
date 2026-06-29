@@ -394,6 +394,90 @@ fn proof_timing_batch_runs_commands_and_appends_stable_log() {
 }
 
 #[test]
+fn proof_timing_batch_summarizes_runs_without_guest_root_shape_counts() {
+    let script_path = batch_script_path();
+    let dir = test_dir("proof-timing-batch-no-root-shape");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("fixture dir should be created");
+    let log_path = dir.join("improve-log.csv");
+
+    let output = Command::new(&script_path)
+        .arg("--work-dir")
+        .arg(&dir)
+        .arg("--path")
+        .arg(&log_path)
+        .arg("--commit")
+        .arg("test")
+        .arg("--runs")
+        .arg("3")
+        .arg("--small-command")
+        .arg(concat!(
+            "printf 'timing_total_ms=100{run}\\n",
+            "timing_finish_witness_opening_row_dedup_input_rows=0\\n",
+            "timing_finish_witness_opening_row_dedup_unique_rows=0\\n",
+            "timing_finish_witness_opening_row_dedup_elided_rows=0\\n",
+            "timing_finish_fri_opening_ms=10\\n",
+            "timing_finish_fri_opening_unit_build_ms=8\\n",
+            "timing_finish_fri_opening_layer_tree_ms=2\\n",
+            "timing_finish_fri_opening_query_ms=3\\n",
+            "timing_finish_fri_opening_fold_ms=1\\n",
+            "timing_finish_fri_opening_unit_count=1\\n",
+            "timing_finish_fri_opening_layer_count=2\\n",
+            "timing_finish_fri_opening_query_count=3\\n",
+            "timing_finish_fri_transcript_unit_build_ms=4\\n",
+            "timing_finish_fri_transcript_layer_tree_ms=2\\n",
+            "timing_finish_fri_transcript_fold_ms=1\\n",
+            "timing_finish_fri_transcript_unit_count=1\\n",
+            "timing_finish_fri_transcript_layer_count=2\\n",
+            "timing_finish_contribution_segment_ms=5\\n",
+            "timing_finish_contribution_verify_ms=6\\n",
+            "timing_finish_contribution_challenge_ms=7\\n'"
+        ))
+        .arg("--summary")
+        .arg("root shape absent")
+        .output()
+        .expect("proof timing batch should run");
+
+    let success = output.status.success();
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    let batch_dir = single_batch_dir(&dir);
+    let small_status =
+        std::fs::read_to_string(batch_dir.join("small-001.status")).expect("status should read");
+    let small_summary =
+        std::fs::read_to_string(batch_dir.join("small-001.proof-timing-summary.csv"))
+            .expect("small timing summary should read");
+    let stable_summary =
+        std::fs::read_to_string(batch_dir.join("small-stable.proof-timing-summary.csv"))
+            .expect("stable timing summary should read");
+    let _ = std::fs::remove_dir_all(&dir);
+
+    assert!(
+        success,
+        "proof timing batch should summarize logs without optional root-shape counters: stderr={stderr}"
+    );
+    assert!(
+        stdout.contains("small_timing_summaries=3")
+            && stdout.contains("small_stable_timing_summary="),
+        "batch output should report generated timing summaries: {stdout}"
+    );
+    assert!(
+        small_status.contains("proof_timing_summary=")
+            && small_status.contains("small-001.proof-timing-summary.csv"),
+        "status should record the per-run summary: {small_status}"
+    );
+    assert!(
+        small_summary.contains(",0,0,0,0.000,no,none,"),
+        "missing root-shape counters should default to zero in per-run CSV: {small_summary}"
+    );
+    assert!(
+        stable_summary.contains("aggregate,total_count,valid_total_count")
+            && stable_summary.contains("aggregate,3,3,1001"),
+        "stable summary should still aggregate runs without root-shape counters: {stable_summary}"
+    );
+}
+
+#[test]
 fn proof_timing_batch_defaults_commit_to_head() {
     let script_path = batch_script_path();
     let dir = test_dir("proof-timing-batch-default-commit");

@@ -3909,14 +3909,6 @@ def summarize_profile_values(
     values: dict[str, int],
     perf_hotspots: dict[str, float] | None = None,
 ) -> str:
-    missing = [
-        key
-        for key in [ROOT_COUNT_KEY, ROOT_GROUPS_KEY, ROOT_MAX_GROUP_KEY]
-        if key not in values
-    ]
-    if missing:
-        raise SystemExit(f"{label}: missing timing fields: {', '.join(missing)}")
-
     input_bytes = values.get(INPUT_BYTES_KEY, 0)
     total_ms = values.get(TOTAL_MS_KEY, 0)
     constant_material_elapsed_ms = values.get(
@@ -4972,9 +4964,9 @@ def summarize_profile_values(
         opening_row_value_device_single_max_stage,
         opening_row_value_device_cross_unit_batch_savings,
     ) = opening_device_single_stage_shape(values)
-    root_count = values[ROOT_COUNT_KEY]
-    groups = values[ROOT_GROUPS_KEY]
-    max_group_size = values[ROOT_MAX_GROUP_KEY]
+    root_count = values.get(ROOT_COUNT_KEY, 0)
+    groups = values.get(ROOT_GROUPS_KEY, 0)
+    max_group_size = values.get(ROOT_MAX_GROUP_KEY, 0)
     roots_per_group = root_count / groups if groups else 0.0
     needs_cross_segment_root_pipeline = (
         "yes" if root_count > 1 and groups >= root_count and max_group_size <= 1 else "no"

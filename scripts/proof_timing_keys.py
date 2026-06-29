@@ -1,8 +1,5 @@
 TIMING_SUMMARY_REQUIRED_KEYS = (
     "timing_total_ms",
-    "timing_guest_stage_tree_commit_root_count",
-    "timing_guest_stage_tree_commit_root_materialization_groups",
-    "timing_guest_stage_tree_commit_root_materialization_max_group_size",
     "timing_finish_witness_opening_row_dedup_input_rows",
     "timing_finish_witness_opening_row_dedup_unique_rows",
     "timing_finish_witness_opening_row_dedup_elided_rows",
