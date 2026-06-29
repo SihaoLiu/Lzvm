@@ -3132,9 +3132,10 @@ fn eth_proof_timing_batch_check_env_rejects_missing_config() {
 }
 
 #[test]
-fn eth_proof_timing_batch_incomplete_env_file_suggests_same_template_path() {
+fn eth_proof_timing_batch_incomplete_env_file_suggests_sibling_template_path() {
     let fixture = ProofFixture::new("eth-proof-timing-batch-incomplete-env-file");
     let env_path = fixture.dir.join("real-proof.env.next");
+    let template_path = fixture.dir.join("real-proof.env.template.next");
     std::fs::write(
         &env_path,
         format!(
@@ -3145,6 +3146,11 @@ fn eth_proof_timing_batch_incomplete_env_file_suggests_same_template_path() {
     let env_rel = env_path
         .strip_prefix(workspace_root())
         .expect("env path should be under workspace")
+        .display()
+        .to_string();
+    let template_rel = template_path
+        .strip_prefix(workspace_root())
+        .expect("template path should be under workspace")
         .display()
         .to_string();
     let mut command = Command::new(script_path());
@@ -3176,9 +3182,10 @@ fn eth_proof_timing_batch_incomplete_env_file_suggests_same_template_path() {
     );
     assert!(
         stderr.contains(&format!("--env-file {env_rel}"))
-            && stderr.contains(&format!("--write-env-template {env_rel}"))
+            && stderr.contains(&format!("--write-env-template {template_rel}"))
+            && !stderr.contains(&format!("--write-env-template {env_rel}"))
             && !stderr.contains("--write-env-template temp/real-proof.env"),
-        "env-file check should suggest refreshing the checked env file: stderr={stderr}"
+        "env-file check should suggest a sibling template path without overwriting the checked env file: stderr={stderr}"
     );
 }
 

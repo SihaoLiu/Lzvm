@@ -1079,7 +1079,16 @@ def print_profile_commands(args: argparse.Namespace, root: Path) -> None:
 
 
 def env_template_command_for_missing_config(args: argparse.Namespace, root: Path) -> str:
-    template_value = args.env_file if args.env_file is not None else DEFAULT_ENV_TEMPLATE_PATH
+    if args.env_file is None:
+        template_value = DEFAULT_ENV_TEMPLATE_PATH
+    else:
+        env_path = resolve_workspace_path(args.env_file, root)
+        if env_path.suffix:
+            template_value = env_path.with_name(
+                f"{env_path.stem}.template{env_path.suffix}"
+            )
+        else:
+            template_value = env_path.with_name(env_path.name + ".template.env")
     template_path = require_workspace_temp_path(
         resolve_workspace_path(template_value, root),
         root,
