@@ -11386,9 +11386,20 @@ fn apply_zisk_main_register_access_values(
     if a_index.is_none() && b_index.is_none() && store_index.is_none() {
         return Ok(values);
     }
+    let max_register_offset = if store_index.is_some() {
+        ZISK_MAIN_STORE_MEM_STEP_OFFSET
+    } else if b_index.is_some() {
+        ZISK_MAIN_B_MEM_STEP_OFFSET
+    } else {
+        ZISK_MAIN_A_MEM_STEP_OFFSET
+    };
+    if row_mem_step_base.checked_add(max_register_offset).is_none() {
+        return Err(GuestPcTraceBackendError::InvalidPcTraceLayout {
+            message: "Zisk Main memory step is too large".to_owned(),
+        });
+    }
     if let Some(index) = a_index {
-        let next_step =
-            zisk_main_mem_step_from_base(row_mem_step_base, ZISK_MAIN_A_MEM_STEP_OFFSET)?;
+        let next_step = row_mem_step_base + ZISK_MAIN_A_MEM_STEP_OFFSET;
         values.a_prev_mem_step = Some(read_then_update_register_mem_step(
             &mut state.register_mem_steps,
             index,
@@ -11396,8 +11407,7 @@ fn apply_zisk_main_register_access_values(
         ));
     }
     if let Some(index) = b_index {
-        let next_step =
-            zisk_main_mem_step_from_base(row_mem_step_base, ZISK_MAIN_B_MEM_STEP_OFFSET)?;
+        let next_step = row_mem_step_base + ZISK_MAIN_B_MEM_STEP_OFFSET;
         values.b_prev_mem_step = Some(read_then_update_register_mem_step(
             &mut state.register_mem_steps,
             index,
@@ -11406,8 +11416,7 @@ fn apply_zisk_main_register_access_values(
     }
     if let Some(index) = store_index {
         values.store_prev_value = Some(state.registers[usize::from(index)]);
-        let next_step =
-            zisk_main_mem_step_from_base(row_mem_step_base, ZISK_MAIN_STORE_MEM_STEP_OFFSET)?;
+        let next_step = row_mem_step_base + ZISK_MAIN_STORE_MEM_STEP_OFFSET;
         values.store_prev_mem_step = Some(read_then_update_register_mem_step(
             &mut state.register_mem_steps,
             index,
@@ -11503,6 +11512,7 @@ fn zisk_main_row_mem_step_base_from_segment_base(
         })
 }
 
+#[cfg(test)]
 fn zisk_main_mem_step_from_base(base: u64, offset: u64) -> Result<u64, GuestPcTraceBackendError> {
     base.checked_add(offset)
         .ok_or_else(|| GuestPcTraceBackendError::InvalidPcTraceLayout {

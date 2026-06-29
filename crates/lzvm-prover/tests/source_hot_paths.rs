@@ -8174,6 +8174,10 @@ fn guest_pc_trace_register_mem_steps_use_single_lookup_updates() {
             && !register_access_body.contains("let mut row_mem_step = |offset|"),
         "register access lowering should receive one row mem-step base instead of using a per-row closure"
     );
+    assert!(
+        !register_access_body.contains(&format!("{}_main_mem_step_from_base", concat!("zi", "sk"))),
+        "register access lowering should avoid per-access mem-step helper calls"
+    );
 }
 
 #[test]
