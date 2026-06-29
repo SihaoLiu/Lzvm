@@ -145,15 +145,26 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         crate_root.join("../../lean/Lzvm/AuxiliaryChecks/GpuRuntime/Core.lean");
     let gpu_runtime_core_source = std::fs::read_to_string(&gpu_runtime_core_path)
         .expect("Lean GPU runtime core checks should read");
+    let gpu_runtime_trace_gate_path =
+        crate_root.join("../../lean/Lzvm/AuxiliaryChecks/GpuRuntime/TraceGate.lean");
+    let gpu_runtime_trace_gate_source = std::fs::read_to_string(&gpu_runtime_trace_gate_path)
+        .expect("Lean GPU runtime trace gate checks should read");
     let gpu_runtime_trace_path =
         crate_root.join("../../lean/Lzvm/AuxiliaryChecks/GpuRuntime/Trace.lean");
     let gpu_runtime_trace_source = std::fs::read_to_string(&gpu_runtime_trace_path)
         .expect("Lean GPU runtime trace checks should read");
+    let gpu_runtime_fixed_column_cache_path =
+        crate_root.join("../../lean/Lzvm/AuxiliaryChecks/GpuRuntime/FixedColumnCache.lean");
+    let gpu_runtime_fixed_column_cache_source =
+        std::fs::read_to_string(&gpu_runtime_fixed_column_cache_path)
+            .expect("Lean GPU runtime fixed column cache checks should read");
     let gpu_runtime_source = [
         gpu_runtime_wrapper_source.as_str(),
         gpu_runtime_common_source.as_str(),
         gpu_runtime_core_source.as_str(),
+        gpu_runtime_trace_gate_source.as_str(),
         gpu_runtime_trace_source.as_str(),
+        gpu_runtime_fixed_column_cache_source.as_str(),
     ]
     .join("\n");
     let timing_core_path = crate_root.join("../../lean/Lzvm/AuxiliaryChecks/TimingCore.lean");
@@ -299,11 +310,23 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             )
             && lean_binding::contains_import(
                 &gpu_runtime_wrapper_source,
+                "Lzvm.AuxiliaryChecks.GpuRuntime.TraceGate",
+            )
+            && lean_binding::contains_import(
+                &gpu_runtime_wrapper_source,
                 "Lzvm.AuxiliaryChecks.GpuRuntime.Trace",
+            )
+            && lean_binding::contains_import(
+                &gpu_runtime_wrapper_source,
+                "Lzvm.AuxiliaryChecks.GpuRuntime.FixedColumnCache",
             )
             && lean_binding::contains_import(
                 &gpu_runtime_core_source,
                 "Lzvm.AuxiliaryChecks.GpuRuntime.Common",
+            )
+            && lean_binding::contains_import(
+                &gpu_runtime_trace_source,
+                "Lzvm.AuxiliaryChecks.GpuRuntime.TraceGate",
             ),
         "Lean auxiliary aggregate wrappers should re-export split core and runtime modules"
     );

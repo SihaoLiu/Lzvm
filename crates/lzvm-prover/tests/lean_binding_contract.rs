@@ -289,9 +289,17 @@ fn gpu_runtime_checked_acceptance_helpers_use_identifier_body_pins() {
         )
         .expect("Lean GPU runtime core checks source should read"),
         std::fs::read_to_string(
+            crate_root.join("../../lean/Lzvm/AuxiliaryChecks/GpuRuntime/TraceGate.lean"),
+        )
+        .expect("Lean GPU runtime trace gate checks source should read"),
+        std::fs::read_to_string(
             crate_root.join("../../lean/Lzvm/AuxiliaryChecks/GpuRuntime/Trace.lean"),
         )
         .expect("Lean GPU runtime trace checks source should read"),
+        std::fs::read_to_string(
+            crate_root.join("../../lean/Lzvm/AuxiliaryChecks/GpuRuntime/FixedColumnCache.lean"),
+        )
+        .expect("Lean GPU runtime fixed column cache checks source should read"),
     ]
     .join("\n");
     let binding_source =

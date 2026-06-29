@@ -12,7 +12,9 @@ fn lean_gpu_allocation_reuse_exports_cached_written_contents_projection() {
             "../../lean/Lzvm/AuxiliaryChecks/GpuRuntime.lean",
             "../../lean/Lzvm/AuxiliaryChecks/GpuRuntime/Common.lean",
             "../../lean/Lzvm/AuxiliaryChecks/GpuRuntime/Core.lean",
+            "../../lean/Lzvm/AuxiliaryChecks/GpuRuntime/TraceGate.lean",
             "../../lean/Lzvm/AuxiliaryChecks/GpuRuntime/Trace.lean",
+            "../../lean/Lzvm/AuxiliaryChecks/GpuRuntime/FixedColumnCache.lean",
         ],
     );
 
