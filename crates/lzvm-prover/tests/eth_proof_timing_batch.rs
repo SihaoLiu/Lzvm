@@ -3271,6 +3271,73 @@ fn eth_proof_timing_batch_check_env_reports_template_command_when_no_env_is_avai
 }
 
 #[test]
+fn eth_proof_timing_batch_no_available_env_file_suggests_sibling_template_path() {
+    let fixture = ProofFixture::new("eth-proof-timing-batch-no-available-env-file");
+    let env_path = fixture.dir.join("real-proof.resolved.env");
+    let template_path = fixture.dir.join("real-proof.resolved.template.env");
+    std::fs::write(
+        &env_path,
+        format!(
+            "export {SMALL_PREFIX}_TRACE_LIMIT=120000000\nexport {LARGE_PREFIX}_TRACE_LIMIT=600000000\n"
+        ),
+    )
+    .expect("env file should write");
+    let env_rel = env_path
+        .strip_prefix(workspace_root())
+        .expect("env path should be under workspace")
+        .display()
+        .to_string();
+    let template_rel = template_path
+        .strip_prefix(workspace_root())
+        .expect("template path should be under workspace")
+        .display()
+        .to_string();
+    let mut command = Command::new(script_path());
+    command
+        .arg("--suite")
+        .arg("available")
+        .arg("--check-env")
+        .arg("--env-file")
+        .arg(&env_path)
+        .arg("--skip-targets");
+    clear_env(&mut command, SMALL_PREFIX);
+    clear_env(&mut command, LARGE_PREFIX);
+
+    let output = command
+        .output()
+        .expect("ETH proof timing batch env-file check should run");
+    let success = output.status.success();
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    let template_created = template_path.exists();
+    fixture.cleanup();
+
+    assert!(
+        !success,
+        "env-file check should fail when no proof env is available"
+    );
+    assert!(
+        !stdout.contains("status=ok\n"),
+        "failed env-file check should not report proof readiness: {stdout}"
+    );
+    assert!(
+        stderr.contains("no proof environments available; missing"),
+        "env-file check should explain that no proof env is available: stderr={stderr}"
+    );
+    assert!(
+        stderr.contains(&format!("--env-file {env_rel}"))
+            && stderr.contains(&format!("--write-env-template {template_rel}"))
+            && !stderr.contains(&format!("--write-env-template {env_rel}"))
+            && !stderr.contains("--write-env-template temp/real-proof.env"),
+        "env-file check should suggest a sibling template path without overwriting the checked env file: stderr={stderr}"
+    );
+    assert!(
+        !template_created,
+        "check-env should not create the suggested env template"
+    );
+}
+
+#[test]
 fn eth_proof_timing_batch_check_env_rejects_missing_bin() {
     let fixture = ProofFixture::new("eth-proof-timing-batch-missing-bin");
     let mut command = Command::new(script_path());
