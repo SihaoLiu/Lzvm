@@ -1111,6 +1111,33 @@ theorem guest_pc_trace_large_gpu_gate_memory_check_passes_projects_observed_floo
           simpa [GuestPcTraceLargeGpuGateMemoryCheckPasses, hObserved] using memoryCheck
         exact of_decide_eq_true decided
 
+theorem guest_pc_trace_large_gpu_gate_memory_check_passes_of_observed_floor
+    (config : GuestPcTraceLargeGpuGateConfig)
+    {freeBytes : Nat}
+    (observed : config.observedFreeGpuMemoryBytes = some freeBytes)
+    (floor : config.defaultMinFreeGpuMemoryBytes <= freeBytes) :
+    GuestPcTraceLargeGpuGateMemoryCheckPasses config = true := by
+  have decided :
+      decide (config.defaultMinFreeGpuMemoryBytes <= freeBytes) = true :=
+    decide_eq_true floor
+  simpa [GuestPcTraceLargeGpuGateMemoryCheckPasses, observed] using decided
+
+theorem guest_pc_trace_large_gpu_gate_memory_check_passes_iff_observed_floor
+    (config : GuestPcTraceLargeGpuGateConfig) :
+    GuestPcTraceLargeGpuGateMemoryCheckPasses config = true
+      <-> exists freeBytes,
+        config.observedFreeGpuMemoryBytes = some freeBytes
+          /\ config.defaultMinFreeGpuMemoryBytes <= freeBytes := by
+  constructor
+  · exact guest_pc_trace_large_gpu_gate_memory_check_passes_projects_observed_floor config
+  · intro observedFloor
+    rcases observedFloor with ⟨freeBytes, observed, floor⟩
+    exact
+      guest_pc_trace_large_gpu_gate_memory_check_passes_of_observed_floor
+        config
+        observed
+        floor
+
 theorem guest_pc_trace_large_gpu_gate_memory_check_fails_without_observation
     (config : GuestPcTraceLargeGpuGateConfig)
     (missing : config.observedFreeGpuMemoryBytes = none) :
@@ -1286,6 +1313,43 @@ theorem guest_pc_trace_large_gpu_gate_decision_projects_observed_memory_floor_fo
     guest_pc_trace_large_gpu_gate_memory_check_passes_projects_observed_floor
       config
       runtimeMemory.right
+
+theorem guest_pc_trace_large_gpu_gate_decision_allows_large_iff_backend_and_observed_floor
+    (config : GuestPcTraceLargeGpuGateConfig)
+    {limit : Nat}
+    (decision : GuestPcTraceLargeGpuGateDecisionMatches config)
+    (requested : config.requestedInstructionLimit = some limit)
+    (large : config.defaultLargeTraceInstructionThreshold <= limit) :
+    config.largeTraceAllowed = true
+      <-> config.gpuBackendAvailable = true
+        /\ exists freeBytes,
+          config.observedFreeGpuMemoryBytes = some freeBytes
+            /\ config.defaultMinFreeGpuMemoryBytes <= freeBytes := by
+  constructor
+  · intro allowed
+    have runtimeMemory :=
+      (guest_pc_trace_large_gpu_gate_decision_allows_large_iff_runtime_memory
+        config
+        decision
+        requested
+        large).mp allowed
+    exact
+      And.intro
+        runtimeMemory.left
+        (guest_pc_trace_large_gpu_gate_memory_check_passes_projects_observed_floor
+          config
+          runtimeMemory.right)
+  · intro observedRuntime
+    have memoryCheck :=
+      (guest_pc_trace_large_gpu_gate_memory_check_passes_iff_observed_floor
+        config).mpr observedRuntime.right
+    exact
+      (guest_pc_trace_large_gpu_gate_decision_allows_large_iff_runtime_memory
+        config
+        decision
+        requested
+        large).mpr
+        (And.intro observedRuntime.left memoryCheck)
 
 theorem guest_pc_trace_large_gpu_gate_checked_acceptance_allows_unrequested
     {system : VerifierModel}
@@ -1482,6 +1546,38 @@ theorem guest_pc_trace_large_gpu_gate_checked_acceptance_allows_large_iff_runtim
   intro publicInput proof checked
   exact
     guest_pc_trace_large_gpu_gate_decision_allows_large_iff_runtime_memory
+      config
+      (guest_pc_trace_large_gpu_gate_checked_acceptance_projects_decision
+        validation
+        config
+        publicInput
+        proof
+        checked)
+      requested
+      large
+
+theorem guest_pc_trace_large_gpu_gate_checked_acceptance_allows_large_iff_backend_and_observed_floor
+    {system : VerifierModel}
+    (validation : GuestPcTraceLargeGpuGateValidation)
+    (config : GuestPcTraceLargeGpuGateConfig)
+    {limit : Nat}
+    (requested : config.requestedInstructionLimit = some limit)
+    (large : config.defaultLargeTraceInstructionThreshold <= limit) :
+    forall publicInput proof,
+      GuestPcTraceLargeGpuGateCheckedAcceptance
+          system
+          validation
+          config
+          publicInput
+          proof ->
+        (config.largeTraceAllowed = true
+          <-> config.gpuBackendAvailable = true
+            /\ exists freeBytes,
+              config.observedFreeGpuMemoryBytes = some freeBytes
+                /\ config.defaultMinFreeGpuMemoryBytes <= freeBytes) := by
+  intro publicInput proof checked
+  exact
+    guest_pc_trace_large_gpu_gate_decision_allows_large_iff_backend_and_observed_floor
       config
       (guest_pc_trace_large_gpu_gate_checked_acceptance_projects_decision
         validation
