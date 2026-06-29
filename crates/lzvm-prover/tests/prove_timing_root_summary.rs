@@ -1934,6 +1934,8 @@ fn prove_timing_root_summary_reports_seed_direct_lift_miss_reasons() {
         "timing_guest_trace_seed_direct_lift_store_conditional_boundaries=4",
         "timing_guest_trace_seed_direct_lift_dma_prepare_missing_lookaheads=5",
         "timing_guest_trace_seed_direct_lift_boundary_c_unavailable=6",
+        "timing_guest_trace_seed_direct_lift_ms=7",
+        "timing_guest_trace_seed_full_advance_ms=123",
         "timing_guest_trace_seed_full_advances=6",
         "timing_guest_stage_tree_commit_root_count=1",
         "timing_guest_stage_tree_commit_root_materialization_groups=1",
@@ -2009,6 +2011,8 @@ fn prove_timing_root_summary_reports_seed_direct_lift_miss_reasons() {
         "5"
     );
     assert_eq!(value("seed_direct_lift_boundary_c_unavailable"), "6");
+    assert_eq!(value("seed_direct_lift_ms"), "7");
+    assert_eq!(value("seed_full_advance_ms"), "123");
 }
 
 #[test]

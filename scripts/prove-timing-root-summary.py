@@ -510,6 +510,8 @@ SEED_DIRECT_LIFT_DMA_PREPARE_MISSING_LOOKAHEADS_KEY = (
 SEED_DIRECT_LIFT_BOUNDARY_C_UNAVAILABLE_KEY = (
     "timing_guest_trace_seed_direct_lift_boundary_c_unavailable"
 )
+SEED_DIRECT_LIFT_MS_KEY = "timing_guest_trace_seed_direct_lift_ms"
+SEED_FULL_ADVANCE_MS_KEY = "timing_guest_trace_seed_full_advance_ms"
 SEED_FULL_ADVANCES_KEY = "timing_guest_trace_seed_full_advances"
 FINISH_OPENING_MS_KEY = "timing_finish_witness_opening_ms"
 OPENING_QUERY_COUNT_KEY = "timing_finish_witness_opening_query_count"
@@ -848,7 +850,8 @@ HEADER = (
     "seed_direct_lift_pending_dma_single_reports,seed_direct_lift_amo_boundaries,"
     "seed_direct_lift_store_conditional_boundaries,"
     "seed_direct_lift_dma_prepare_missing_lookaheads,"
-    "seed_direct_lift_boundary_c_unavailable,seed_full_advances,"
+    "seed_direct_lift_boundary_c_unavailable,seed_direct_lift_ms,"
+    "seed_full_advance_ms,seed_full_advances,"
     "seed_snapshot_runtime_hint,"
     "finish_opening_ms,opening_query_units,opening_single_query_units,"
     "opening_queries,opening_max_queries_per_unit,opening_stage_count,"
@@ -1294,6 +1297,8 @@ TIMING_KEYS = {
     SEED_DIRECT_LIFT_STORE_CONDITIONAL_BOUNDARIES_KEY,
     SEED_DIRECT_LIFT_DMA_PREPARE_MISSING_LOOKAHEADS_KEY,
     SEED_DIRECT_LIFT_BOUNDARY_C_UNAVAILABLE_KEY,
+    SEED_DIRECT_LIFT_MS_KEY,
+    SEED_FULL_ADVANCE_MS_KEY,
     SEED_FULL_ADVANCES_KEY,
     FINISH_OPENING_MS_KEY,
     OPENING_QUERY_COUNT_KEY,
@@ -4911,6 +4916,8 @@ def summarize_profile_values(
         seed_direct_lift_dominant_miss,
         trace_pipeline_hint,
     )
+    seed_direct_lift_ms = values.get(SEED_DIRECT_LIFT_MS_KEY, 0)
+    seed_full_advance_ms = values.get(SEED_FULL_ADVANCE_MS_KEY, 0)
     seed_full_advances = values.get(SEED_FULL_ADVANCES_KEY, 0)
     seed_snapshot_runtime = seed_snapshot_runtime_hint(
         seed_direct_lift_action,
@@ -5645,7 +5652,8 @@ def summarize_profile_values(
         f"{seed_direct_lift_amo_boundaries},"
         f"{seed_direct_lift_store_conditional_boundaries},"
         f"{seed_direct_lift_dma_prepare_missing_lookaheads},"
-        f"{seed_direct_lift_boundary_c_unavailable},{seed_full_advances},"
+        f"{seed_direct_lift_boundary_c_unavailable},{seed_direct_lift_ms},"
+        f"{seed_full_advance_ms},{seed_full_advances},"
         f"{seed_snapshot_runtime},"
         f"{finish_opening_ms},{opening_query_units},{opening_single_query_units},"
         f"{opening_queries},{opening_max_queries_per_unit},{opening_stage_count},"
