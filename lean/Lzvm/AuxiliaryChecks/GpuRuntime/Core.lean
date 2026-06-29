@@ -1111,6 +1111,22 @@ theorem guest_pc_trace_large_gpu_gate_memory_check_passes_projects_observed_floo
           simpa [GuestPcTraceLargeGpuGateMemoryCheckPasses, hObserved] using memoryCheck
         exact of_decide_eq_true decided
 
+theorem guest_pc_trace_large_gpu_gate_memory_check_fails_without_observation
+    (config : GuestPcTraceLargeGpuGateConfig)
+    (missing : config.observedFreeGpuMemoryBytes = none) :
+    GuestPcTraceLargeGpuGateMemoryCheckPasses config = false := by
+  simp [GuestPcTraceLargeGpuGateMemoryCheckPasses, missing]
+
+theorem guest_pc_trace_large_gpu_gate_memory_check_fails_below_floor
+    (config : GuestPcTraceLargeGpuGateConfig)
+    {freeBytes : Nat}
+    (observed : config.observedFreeGpuMemoryBytes = some freeBytes)
+    (below : freeBytes < config.defaultMinFreeGpuMemoryBytes) :
+    GuestPcTraceLargeGpuGateMemoryCheckPasses config = false := by
+  have notEnough : ¬ config.defaultMinFreeGpuMemoryBytes <= freeBytes :=
+    Nat.not_le_of_gt below
+  simp [GuestPcTraceLargeGpuGateMemoryCheckPasses, observed, notEnough]
+
 theorem guest_pc_trace_large_gpu_gate_decision_allows_unrequested
     (config : GuestPcTraceLargeGpuGateConfig)
     (decision : GuestPcTraceLargeGpuGateDecisionMatches config)
@@ -1160,6 +1176,44 @@ theorem guest_pc_trace_large_gpu_gate_decision_rejects_large_without_memory
   have notSmall : ¬ limit < config.defaultLargeTraceInstructionThreshold :=
     Nat.not_lt.mpr large
   simp [notSmall, memoryCheckFailed]
+
+theorem guest_pc_trace_large_gpu_gate_decision_rejects_large_without_observed_memory
+    (config : GuestPcTraceLargeGpuGateConfig)
+    {limit : Nat}
+    (decision : GuestPcTraceLargeGpuGateDecisionMatches config)
+    (requested : config.requestedInstructionLimit = some limit)
+    (large : config.defaultLargeTraceInstructionThreshold <= limit)
+    (missing : config.observedFreeGpuMemoryBytes = none) :
+    config.largeTraceAllowed = false := by
+  exact
+    guest_pc_trace_large_gpu_gate_decision_rejects_large_without_memory
+      config
+      decision
+      requested
+      large
+      (guest_pc_trace_large_gpu_gate_memory_check_fails_without_observation
+        config
+        missing)
+
+theorem guest_pc_trace_large_gpu_gate_decision_rejects_large_below_memory_floor
+    (config : GuestPcTraceLargeGpuGateConfig)
+    {limit freeBytes : Nat}
+    (decision : GuestPcTraceLargeGpuGateDecisionMatches config)
+    (requested : config.requestedInstructionLimit = some limit)
+    (large : config.defaultLargeTraceInstructionThreshold <= limit)
+    (observed : config.observedFreeGpuMemoryBytes = some freeBytes)
+    (below : freeBytes < config.defaultMinFreeGpuMemoryBytes) :
+    config.largeTraceAllowed = false := by
+  exact
+    guest_pc_trace_large_gpu_gate_decision_rejects_large_without_memory
+      config
+      decision
+      requested
+      large
+      (guest_pc_trace_large_gpu_gate_memory_check_fails_below_floor
+        config
+        observed
+        below)
 
 theorem guest_pc_trace_large_gpu_gate_decision_requires_runtime_memory_for_large_allowed
     (config : GuestPcTraceLargeGpuGateConfig)
@@ -1345,6 +1399,68 @@ theorem guest_pc_trace_large_gpu_gate_checked_acceptance_rejects_large_without_m
       requested
       large
       memoryCheckFailed
+
+theorem guest_pc_trace_large_gpu_gate_checked_acceptance_rejects_large_without_observed_memory
+    {system : VerifierModel}
+    (validation : GuestPcTraceLargeGpuGateValidation)
+    (config : GuestPcTraceLargeGpuGateConfig)
+    {limit : Nat}
+    (requested : config.requestedInstructionLimit = some limit)
+    (large : config.defaultLargeTraceInstructionThreshold <= limit)
+    (missing : config.observedFreeGpuMemoryBytes = none) :
+    forall publicInput proof,
+      GuestPcTraceLargeGpuGateCheckedAcceptance
+          system
+          validation
+          config
+          publicInput
+          proof ->
+        config.largeTraceAllowed = false := by
+  intro publicInput proof checked
+  exact
+    guest_pc_trace_large_gpu_gate_decision_rejects_large_without_observed_memory
+      config
+      (guest_pc_trace_large_gpu_gate_checked_acceptance_projects_decision
+        validation
+        config
+        publicInput
+        proof
+        checked)
+      requested
+      large
+      missing
+
+theorem guest_pc_trace_large_gpu_gate_checked_acceptance_rejects_large_below_memory_floor
+    {system : VerifierModel}
+    (validation : GuestPcTraceLargeGpuGateValidation)
+    (config : GuestPcTraceLargeGpuGateConfig)
+    {limit freeBytes : Nat}
+    (requested : config.requestedInstructionLimit = some limit)
+    (large : config.defaultLargeTraceInstructionThreshold <= limit)
+    (observed : config.observedFreeGpuMemoryBytes = some freeBytes)
+    (below : freeBytes < config.defaultMinFreeGpuMemoryBytes) :
+    forall publicInput proof,
+      GuestPcTraceLargeGpuGateCheckedAcceptance
+          system
+          validation
+          config
+          publicInput
+          proof ->
+        config.largeTraceAllowed = false := by
+  intro publicInput proof checked
+  exact
+    guest_pc_trace_large_gpu_gate_decision_rejects_large_below_memory_floor
+      config
+      (guest_pc_trace_large_gpu_gate_checked_acceptance_projects_decision
+        validation
+        config
+        publicInput
+        proof
+        checked)
+      requested
+      large
+      observed
+      below
 
 theorem guest_pc_trace_large_gpu_gate_checked_acceptance_allows_large_iff_runtime_memory
     {system : VerifierModel}

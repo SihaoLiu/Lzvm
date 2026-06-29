@@ -2398,6 +2398,12 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
                 "guest_pc_trace_large_gpu_gate_decision_rejects_large_without_memory"
             )
             && lean_source.contains(
+                "guest_pc_trace_large_gpu_gate_decision_rejects_large_without_observed_memory"
+            )
+            && lean_source.contains(
+                "guest_pc_trace_large_gpu_gate_decision_rejects_large_below_memory_floor"
+            )
+            && lean_source.contains(
                 "guest_pc_trace_large_gpu_gate_checked_acceptance_allows_unrequested"
             )
             && lean_source.contains(
@@ -2408,6 +2414,12 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             )
             && lean_source.contains(
                 "guest_pc_trace_large_gpu_gate_checked_acceptance_rejects_large_without_memory"
+            )
+            && lean_source.contains(
+                "guest_pc_trace_large_gpu_gate_checked_acceptance_rejects_large_without_observed_memory"
+            )
+            && lean_source.contains(
+                "guest_pc_trace_large_gpu_gate_checked_acceptance_rejects_large_below_memory_floor"
             )
             && lean_source.contains(
                 "guest_pc_trace_large_gpu_gate_checked_acceptance_requires_runtime_memory_for_large_allowed"
@@ -5139,6 +5151,10 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "guest_pc_trace_large_gpu_gate_decision_rejects_large_without_gpu",
             "guest_pc_trace_large_gpu_gate_decision_rejects_large_without_memory",
             "guest_pc_trace_large_gpu_gate_memory_check_passes_projects_observed_floor",
+            "guest_pc_trace_large_gpu_gate_memory_check_fails_without_observation",
+            "guest_pc_trace_large_gpu_gate_memory_check_fails_below_floor",
+            "guest_pc_trace_large_gpu_gate_decision_rejects_large_without_observed_memory",
+            "guest_pc_trace_large_gpu_gate_decision_rejects_large_below_memory_floor",
             "guest_pc_trace_large_gpu_gate_decision_requires_runtime_memory_for_large_allowed",
             "guest_pc_trace_large_gpu_gate_decision_allows_large_iff_runtime_memory",
             "guest_pc_trace_large_gpu_gate_decision_projects_observed_memory_floor_for_large_allowed",
@@ -5146,6 +5162,8 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "guest_pc_trace_large_gpu_gate_checked_acceptance_allows_below_threshold",
             "guest_pc_trace_large_gpu_gate_checked_acceptance_rejects_large_without_gpu",
             "guest_pc_trace_large_gpu_gate_checked_acceptance_rejects_large_without_memory",
+            "guest_pc_trace_large_gpu_gate_checked_acceptance_rejects_large_without_observed_memory",
+            "guest_pc_trace_large_gpu_gate_checked_acceptance_rejects_large_below_memory_floor",
             "guest_pc_trace_large_gpu_gate_checked_acceptance_allows_large_iff_runtime_memory",
             "guest_pc_trace_large_gpu_gate_checked_acceptance_requires_runtime_memory_for_large_allowed",
             "guest_pc_trace_cross_root_materialization_checked_acceptance_projects_decision",
@@ -5716,6 +5734,84 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         "guest_pc_trace_large_gpu_gate_checked_acceptance_rejects_large_without_memory",
         &[
             "guest_pc_trace_large_gpu_gate_decision_rejects_large_without_memory",
+            "guest_pc_trace_large_gpu_gate_checked_acceptance_projects_decision",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &gpu_runtime_source,
+        "guest_pc_trace_large_gpu_gate_decision_rejects_large_without_observed_memory",
+        &[
+            "GuestPcTraceLargeGpuGateDecisionMatches config",
+            "config.requestedInstructionLimit = some limit",
+            "config.defaultLargeTraceInstructionThreshold <= limit",
+            "config.observedFreeGpuMemoryBytes = none",
+            "config.largeTraceAllowed = false",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &gpu_runtime_source,
+        "guest_pc_trace_large_gpu_gate_decision_rejects_large_without_observed_memory",
+        &[
+            "guest_pc_trace_large_gpu_gate_decision_rejects_large_without_memory",
+            "guest_pc_trace_large_gpu_gate_memory_check_fails_without_observation",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &gpu_runtime_source,
+        "guest_pc_trace_large_gpu_gate_decision_rejects_large_below_memory_floor",
+        &[
+            "GuestPcTraceLargeGpuGateDecisionMatches config",
+            "config.requestedInstructionLimit = some limit",
+            "config.defaultLargeTraceInstructionThreshold <= limit",
+            "config.observedFreeGpuMemoryBytes = some freeBytes",
+            "freeBytes < config.defaultMinFreeGpuMemoryBytes",
+            "config.largeTraceAllowed = false",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &gpu_runtime_source,
+        "guest_pc_trace_large_gpu_gate_decision_rejects_large_below_memory_floor",
+        &[
+            "guest_pc_trace_large_gpu_gate_decision_rejects_large_without_memory",
+            "guest_pc_trace_large_gpu_gate_memory_check_fails_below_floor",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &gpu_runtime_source,
+        "guest_pc_trace_large_gpu_gate_checked_acceptance_rejects_large_without_observed_memory",
+        &[
+            "config.requestedInstructionLimit = some limit",
+            "config.defaultLargeTraceInstructionThreshold <= limit",
+            "config.observedFreeGpuMemoryBytes = none",
+            "GuestPcTraceLargeGpuGateCheckedAcceptance",
+            "config.largeTraceAllowed = false",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &gpu_runtime_source,
+        "guest_pc_trace_large_gpu_gate_checked_acceptance_rejects_large_without_observed_memory",
+        &[
+            "guest_pc_trace_large_gpu_gate_decision_rejects_large_without_observed_memory",
+            "guest_pc_trace_large_gpu_gate_checked_acceptance_projects_decision",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &gpu_runtime_source,
+        "guest_pc_trace_large_gpu_gate_checked_acceptance_rejects_large_below_memory_floor",
+        &[
+            "config.requestedInstructionLimit = some limit",
+            "config.defaultLargeTraceInstructionThreshold <= limit",
+            "config.observedFreeGpuMemoryBytes = some freeBytes",
+            "freeBytes < config.defaultMinFreeGpuMemoryBytes",
+            "GuestPcTraceLargeGpuGateCheckedAcceptance",
+            "config.largeTraceAllowed = false",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &gpu_runtime_source,
+        "guest_pc_trace_large_gpu_gate_checked_acceptance_rejects_large_below_memory_floor",
+        &[
+            "guest_pc_trace_large_gpu_gate_decision_rejects_large_below_memory_floor",
             "guest_pc_trace_large_gpu_gate_checked_acceptance_projects_decision",
         ],
     );
