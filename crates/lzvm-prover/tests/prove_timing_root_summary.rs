@@ -475,6 +475,21 @@ fn prove_timing_root_summary_reports_root_grouping_shape() {
         "timing_cuda_direct_copy_d2h_hot_wait_ns",
         "direct_d2h_hot_wait_pct",
         "direct_d2h_action_hint",
+        "timing_cuda_setup_init_calls",
+        "timing_cuda_setup_init_wait_ns",
+        "timing_cuda_setup_init_max_wait_ns",
+        "timing_cuda_setup_cache_hits",
+        "timing_cuda_setup_cache_hit_wait_ns",
+        "timing_cuda_setup_cache_hit_max_wait_ns",
+        "timing_cuda_setup_native_init_calls",
+        "timing_cuda_setup_native_init_wait_ns",
+        "timing_cuda_setup_native_init_max_wait_ns",
+        "timing_cuda_current_device_calls",
+        "timing_cuda_current_device_wait_ns",
+        "timing_cuda_current_device_max_wait_ns",
+        "timing_cuda_memory_info_calls",
+        "timing_cuda_memory_info_wait_ns",
+        "timing_cuda_memory_info_max_wait_ns",
         "timing_cuda_allocator_malloc_calls",
         "timing_cuda_allocator_malloc_wait_ns",
         "timing_cuda_allocator_malloc_max_wait_ns",
@@ -600,6 +615,8 @@ fn prove_timing_root_summary_reports_root_grouping_shape() {
         "timing_guest_stage_source_retention_max_retained_bytes",
         "timing_guest_stage_source_retention_max_rejected_bytes",
         "timing_guest_stage_source_retention_limit_bytes",
+        "timing_guest_stage_source_upload_ms",
+        "timing_guest_retained_trace_artifact_ms",
         "opening_source_rebuild_hint",
         "timing_finish_witness_opening_row_values_device_rows",
         "timing_finish_witness_opening_row_values_source_rows",
@@ -653,6 +670,9 @@ fn prove_timing_root_summary_reports_root_grouping_shape() {
         "dominant_trace_pipeline_action_hint",
         "trace_pipeline_action_consensus",
         "cuda_host_register_wait_ms",
+        "cuda_setup_init_calls",
+        "cuda_setup_native_init_wait_ms",
+        "cuda_memory_info_wait_ms",
         "cuda_allocator_malloc_calls",
         "cuda_allocator_malloc_max_wait_ms",
         "cuda_h2d_bytes",
@@ -908,6 +928,8 @@ fn prove_timing_root_summary_reports_source_retention_rebuild_shape() {
         "timing_guest_stage_source_retention_max_retained_bytes=0",
         "timing_guest_stage_source_retention_max_rejected_bytes=1308622848",
         "timing_guest_stage_source_retention_limit_bytes=0",
+        "timing_guest_stage_source_upload_ms=128",
+        "timing_guest_retained_trace_artifact_ms=3",
         "timing_guest_segment_commit_cuda_memory_total_bytes=33711521792",
         "timing_cuda_allocator_copy_h2d_bytes=88120305952",
         "timing_cuda_allocator_copy_h2d_wait_ns=7040040536",
@@ -954,6 +976,8 @@ fn prove_timing_root_summary_reports_source_retention_rebuild_shape() {
     assert_eq!(value("source_retention_max_retained_bytes"), "0");
     assert_eq!(value("source_retention_max_rejected_bytes"), "1308622848");
     assert_eq!(value("source_retention_limit_bytes"), "0");
+    assert_eq!(value("stage_source_upload_ms"), "128");
+    assert_eq!(value("retained_trace_artifact_ms"), "3");
     assert_eq!(
         value("source_retention_rejected_total_exceeds_device_memory"),
         "yes"
@@ -2991,6 +3015,21 @@ fn prove_timing_root_summary_reports_allocator_d2h_wait_shape() {
         "timing_cuda_allocator_copy_d2h_hot_bytes=304",
         "timing_cuda_allocator_copy_d2h_hot_count=120",
         "timing_cuda_allocator_copy_d2h_hot_wait_ns=3409364047",
+        "timing_cuda_setup_init_calls=3",
+        "timing_cuda_setup_init_wait_ns=70123000",
+        "timing_cuda_setup_init_max_wait_ns=61000000",
+        "timing_cuda_setup_cache_hits=2",
+        "timing_cuda_setup_cache_hit_wait_ns=9000",
+        "timing_cuda_setup_cache_hit_max_wait_ns=5000",
+        "timing_cuda_setup_native_init_calls=1",
+        "timing_cuda_setup_native_init_wait_ns=61000000",
+        "timing_cuda_setup_native_init_max_wait_ns=61000000",
+        "timing_cuda_current_device_calls=3",
+        "timing_cuda_current_device_wait_ns=9230000",
+        "timing_cuda_current_device_max_wait_ns=9000000",
+        "timing_cuda_memory_info_calls=1",
+        "timing_cuda_memory_info_wait_ns=127000000",
+        "timing_cuda_memory_info_max_wait_ns=127000000",
         "timing_cuda_allocator_malloc_calls=24",
         "timing_cuda_allocator_malloc_wait_ns=61289905",
         "timing_cuda_allocator_malloc_max_wait_ns=61156723",
@@ -3036,6 +3075,21 @@ fn prove_timing_root_summary_reports_allocator_d2h_wait_shape() {
     };
 
     assert_eq!(value("cuda_allocator_d2h_bytes"), "291360");
+    assert_eq!(value("cuda_setup_init_calls"), "3");
+    assert_eq!(value("cuda_setup_init_wait_ms"), "70.123");
+    assert_eq!(value("cuda_setup_init_max_wait_ms"), "61.000");
+    assert_eq!(value("cuda_setup_cache_hits"), "2");
+    assert_eq!(value("cuda_setup_cache_hit_wait_ms"), "0.009");
+    assert_eq!(value("cuda_setup_cache_hit_max_wait_ms"), "0.005");
+    assert_eq!(value("cuda_setup_native_init_calls"), "1");
+    assert_eq!(value("cuda_setup_native_init_wait_ms"), "61.000");
+    assert_eq!(value("cuda_setup_native_init_max_wait_ms"), "61.000");
+    assert_eq!(value("cuda_current_device_calls"), "3");
+    assert_eq!(value("cuda_current_device_wait_ms"), "9.230");
+    assert_eq!(value("cuda_current_device_max_wait_ms"), "9.000");
+    assert_eq!(value("cuda_memory_info_calls"), "1");
+    assert_eq!(value("cuda_memory_info_wait_ms"), "127.000");
+    assert_eq!(value("cuda_memory_info_max_wait_ms"), "127.000");
     assert_eq!(value("cuda_allocator_malloc_calls"), "24");
     assert_eq!(value("cuda_allocator_malloc_wait_ms"), "61.290");
     assert_eq!(value("cuda_allocator_malloc_max_wait_ms"), "61.157");

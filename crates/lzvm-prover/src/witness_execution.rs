@@ -609,6 +609,7 @@ pub struct ProveWitnessGuestPcTraceTiming {
     guest_device_source_descriptor_upload_row_count: usize,
     guest_device_source_descriptor_stream_ingress_count: usize,
     guest_device_source_trace_expand_duration: Duration,
+    guest_stage_source_upload_duration: Duration,
     guest_stage_source_retention_attempt_count: usize,
     guest_stage_source_retention_retained_count: usize,
     guest_stage_source_retention_rejected_count: usize,
@@ -623,6 +624,7 @@ pub struct ProveWitnessGuestPcTraceTiming {
     guest_descriptor_buffer_retention_retained_byte_count: usize,
     guest_descriptor_buffer_retention_rejected_byte_count: usize,
     guest_descriptor_buffer_retention_limit_byte_count: usize,
+    guest_retained_trace_artifact_duration: Duration,
     guest_regular_constraint_duration: Duration,
     guest_regular_hint_duration: Duration,
     guest_stage_commit_duration: Duration,
@@ -1019,6 +1021,7 @@ impl ProveWitnessGuestPcTraceTiming {
                 .device_source_descriptor_stream_ingress_count,
             guest_device_source_trace_expand_duration: trace_timing
                 .device_source_trace_expand_duration,
+            guest_stage_source_upload_duration: trace_timing.stage_source_upload_duration,
             guest_stage_source_retention_attempt_count: trace_timing
                 .stage_source_retention_attempt_count,
             guest_stage_source_retention_retained_count: trace_timing
@@ -1047,6 +1050,7 @@ impl ProveWitnessGuestPcTraceTiming {
                 .descriptor_buffer_retention_rejected_byte_count,
             guest_descriptor_buffer_retention_limit_byte_count: trace_timing
                 .descriptor_buffer_retention_limit_byte_count,
+            guest_retained_trace_artifact_duration: trace_timing.retained_trace_artifact_duration,
             guest_regular_constraint_duration: trace_timing.regular_constraint_duration,
             guest_regular_hint_duration: trace_timing.regular_hint_duration,
             guest_stage_commit_duration: trace_timing.stage_commit_duration,
@@ -1864,6 +1868,10 @@ impl ProveWitnessGuestPcTraceTiming {
         self.guest_device_source_trace_expand_duration
     }
 
+    pub fn guest_stage_source_upload_duration(&self) -> Duration {
+        self.guest_stage_source_upload_duration
+    }
+
     pub fn guest_stage_source_retention_attempt_count(&self) -> usize {
         self.guest_stage_source_retention_attempt_count
     }
@@ -1918,6 +1926,10 @@ impl ProveWitnessGuestPcTraceTiming {
 
     pub fn guest_descriptor_buffer_retention_limit_byte_count(&self) -> usize {
         self.guest_descriptor_buffer_retention_limit_byte_count
+    }
+
+    pub fn guest_retained_trace_artifact_duration(&self) -> Duration {
+        self.guest_retained_trace_artifact_duration
     }
 
     pub fn guest_regular_constraint_duration(&self) -> Duration {
@@ -2439,6 +2451,7 @@ struct ProveWitnessTraceTimingAccumulator {
     device_source_descriptor_upload_row_count: usize,
     device_source_descriptor_stream_ingress_count: usize,
     device_source_trace_expand_duration: Duration,
+    stage_source_upload_duration: Duration,
     stage_source_retention_attempt_count: usize,
     stage_source_retention_retained_count: usize,
     stage_source_retention_rejected_count: usize,
@@ -2453,6 +2466,7 @@ struct ProveWitnessTraceTimingAccumulator {
     descriptor_buffer_retention_retained_byte_count: usize,
     descriptor_buffer_retention_rejected_byte_count: usize,
     descriptor_buffer_retention_limit_byte_count: usize,
+    retained_trace_artifact_duration: Duration,
     regular_constraint_duration: Duration,
     regular_hint_duration: Duration,
     stage_commit_duration: Duration,
@@ -2527,6 +2541,7 @@ impl ProveWitnessTraceTimingAccumulator {
         self.device_source_descriptor_stream_ingress_count +=
             other.device_source_descriptor_stream_ingress_count;
         self.device_source_trace_expand_duration += other.device_source_trace_expand_duration;
+        self.stage_source_upload_duration += other.stage_source_upload_duration;
         self.stage_source_retention_attempt_count += other.stage_source_retention_attempt_count;
         self.stage_source_retention_retained_count += other.stage_source_retention_retained_count;
         self.stage_source_retention_rejected_count += other.stage_source_retention_rejected_count;
@@ -2556,6 +2571,7 @@ impl ProveWitnessTraceTimingAccumulator {
         self.descriptor_buffer_retention_limit_byte_count = self
             .descriptor_buffer_retention_limit_byte_count
             .max(other.descriptor_buffer_retention_limit_byte_count);
+        self.retained_trace_artifact_duration += other.retained_trace_artifact_duration;
         self.regular_constraint_duration += other.regular_constraint_duration;
         self.regular_hint_duration += other.regular_hint_duration;
         self.stage_commit_duration += other.stage_commit_duration;
@@ -3861,6 +3877,38 @@ pub fn run_prove_witness_commitments_with_trace_backend<B: WitnessBackend + ?Siz
     auxiliary_inputs: ProveWitnessAuxiliaryInputs,
     backend: &B,
 ) -> Result<ProveWitnessTraceCommitments, ProveWitnessCommitmentError> {
+    run_prove_witness_commitments_with_trace_backend_optional_timings(
+        plan,
+        unit_index,
+        auxiliary_inputs,
+        backend,
+        None,
+    )
+}
+
+pub fn run_prove_witness_commitments_with_trace_backend_with_timings<B: WitnessBackend + ?Sized>(
+    plan: &ProveExecutionPlan,
+    unit_index: usize,
+    auxiliary_inputs: ProveWitnessAuxiliaryInputs,
+    backend: &B,
+    timing_observer: &mut dyn FnMut(ProveWitnessGuestPcTraceTiming),
+) -> Result<ProveWitnessTraceCommitments, ProveWitnessCommitmentError> {
+    run_prove_witness_commitments_with_trace_backend_optional_timings(
+        plan,
+        unit_index,
+        auxiliary_inputs,
+        backend,
+        Some(timing_observer),
+    )
+}
+
+fn run_prove_witness_commitments_with_trace_backend_optional_timings<B: WitnessBackend + ?Sized>(
+    plan: &ProveExecutionPlan,
+    unit_index: usize,
+    auxiliary_inputs: ProveWitnessAuxiliaryInputs,
+    backend: &B,
+    timing_observer: Option<&mut dyn FnMut(ProveWitnessGuestPcTraceTiming)>,
+) -> Result<ProveWitnessTraceCommitments, ProveWitnessCommitmentError> {
     let mut source_lookup_balance = SourceLookupBalance::default();
     validate_witness_unit_index(plan, unit_index)?;
     let shared_inputs = load_witness_shared_inputs(plan)?;
@@ -3874,6 +3922,7 @@ pub fn run_prove_witness_commitments_with_trace_backend<B: WitnessBackend + ?Siz
             Arc::clone(&auxiliary_inputs),
             backend,
             WitnessRegularHintMode::AssignmentsOnly,
+            timing_observer,
         )?
     } else {
         let output = run_prove_witness_commitments_with_trace_backend_inner(
@@ -3883,6 +3932,7 @@ pub fn run_prove_witness_commitments_with_trace_backend<B: WitnessBackend + ?Siz
             Arc::clone(&auxiliary_inputs),
             backend,
             WitnessRegularHintMode::Balanced(&mut source_lookup_balance),
+            timing_observer,
         )?;
         accumulate_witness_global_hints(
             plan,
@@ -3902,6 +3952,38 @@ pub fn run_prove_witness_commitments_with_guest_pc_trace_segments(
     auxiliary_inputs: ProveWitnessAuxiliaryInputs,
     instruction_limit: u64,
 ) -> Result<Vec<ProveWitnessTraceCommitments>, ProveWitnessCommitmentError> {
+    run_prove_witness_commitments_with_guest_pc_trace_segments_optional_timings(
+        plan,
+        unit_index,
+        auxiliary_inputs,
+        instruction_limit,
+        None,
+    )
+}
+
+pub fn run_prove_witness_commitments_with_guest_pc_trace_segments_with_timings(
+    plan: &ProveExecutionPlan,
+    unit_index: usize,
+    auxiliary_inputs: ProveWitnessAuxiliaryInputs,
+    instruction_limit: u64,
+    timing_observer: &mut dyn FnMut(ProveWitnessGuestPcTraceTiming),
+) -> Result<Vec<ProveWitnessTraceCommitments>, ProveWitnessCommitmentError> {
+    run_prove_witness_commitments_with_guest_pc_trace_segments_optional_timings(
+        plan,
+        unit_index,
+        auxiliary_inputs,
+        instruction_limit,
+        Some(timing_observer),
+    )
+}
+
+fn run_prove_witness_commitments_with_guest_pc_trace_segments_optional_timings(
+    plan: &ProveExecutionPlan,
+    unit_index: usize,
+    auxiliary_inputs: ProveWitnessAuxiliaryInputs,
+    instruction_limit: u64,
+    timing_observer: Option<&mut dyn FnMut(ProveWitnessGuestPcTraceTiming)>,
+) -> Result<Vec<ProveWitnessTraceCommitments>, ProveWitnessCommitmentError> {
     let mut source_lookup_balance = SourceLookupBalance::default();
     validate_witness_unit_index(plan, unit_index)?;
     let shared_inputs = load_witness_shared_inputs(plan)?;
@@ -3915,6 +3997,7 @@ pub fn run_prove_witness_commitments_with_guest_pc_trace_segments(
             Arc::clone(&auxiliary_inputs),
             instruction_limit,
             None,
+            timing_observer,
         )?
     } else {
         let outputs = run_prove_witness_commitments_with_guest_pc_trace_segments_inner(
@@ -3924,6 +4007,7 @@ pub fn run_prove_witness_commitments_with_guest_pc_trace_segments(
             Arc::clone(&auxiliary_inputs),
             instruction_limit,
             Some(&mut source_lookup_balance),
+            timing_observer,
         )?;
         let global_auxiliary_inputs =
             global_auxiliary_inputs_from_outputs(auxiliary_inputs.as_ref(), &outputs)?;
@@ -4228,6 +4312,7 @@ fn run_prove_witness_commitments_with_trace_backend_inner<B: WitnessBackend + ?S
     auxiliary_inputs: Arc<ProveWitnessAuxiliaryInputs>,
     backend: &B,
     regular_hint_mode: WitnessRegularHintMode<'_>,
+    timing_observer: Option<&mut dyn FnMut(ProveWitnessGuestPcTraceTiming)>,
 ) -> Result<ProveWitnessTraceCommitments, ProveWitnessCommitmentError> {
     let unit_count = plan.run_plan.schedule.units.len();
     let unit = plan.run_plan.schedule.units.get(unit_index).ok_or(
@@ -4237,6 +4322,9 @@ fn run_prove_witness_commitments_with_trace_backend_inner<B: WitnessBackend + ?S
         },
     )?;
     let layout = derive_witness_trace_layout(unit)?;
+    let collect_timing = timing_observer.is_some();
+    let guest_trace_started = collect_timing.then(Instant::now);
+    let trace_started = collect_timing.then(Instant::now);
     let trace_output = run_witness_trace_output_with_context(
         backend,
         WitnessComputeContext {
@@ -4246,6 +4334,9 @@ fn run_prove_witness_commitments_with_trace_backend_inner<B: WitnessBackend + ?S
         },
         layout.request(&shared_inputs.input[..]),
     )?;
+    let guest_trace_stream_duration = trace_started
+        .map(|started| started.elapsed())
+        .unwrap_or(Duration::ZERO);
     let auxiliary_inputs = merge_backend_unit_values(
         unit_index,
         unit,
@@ -4259,7 +4350,9 @@ fn run_prove_witness_commitments_with_trace_backend_inner<B: WitnessBackend + ?S
         trace_output.proof_values(),
     )?;
     let trace = trace_output.into_trace();
-    run_prove_witness_commitments_from_trace_inner(
+    let mut trace_timing = collect_timing.then(ProveWitnessTraceTimingAccumulator::default);
+    let commit_started = collect_timing.then(Instant::now);
+    let output = run_prove_witness_commitments_from_trace_inner(
         plan,
         unit_index,
         shared_inputs,
@@ -4284,9 +4377,37 @@ fn run_prove_witness_commitments_with_trace_backend_inner<B: WitnessBackend + ?S
             leaf_workspace_cache: None,
             #[cfg(feature = "cuda")]
             trace_cuda_run_config: None,
-            timing: None,
+            timing: trace_timing.as_mut(),
         },
-    )
+    )?;
+    let guest_segment_commit_duration = commit_started
+        .map(|started| started.elapsed())
+        .unwrap_or(Duration::ZERO);
+    if let (Some(observer), Some(trace_timing), Some(started)) =
+        (timing_observer, trace_timing, guest_trace_started)
+    {
+        observer(ProveWitnessGuestPcTraceTiming::new(
+            GuestPcTraceRunTiming {
+                segment_count: 1,
+                guest_trace_stream_elapsed_duration: started.elapsed(),
+                guest_trace_stream_duration,
+                guest_trace_proof_value_prerun_duration: Duration::ZERO,
+                guest_segment_commit_duration,
+                segment_commit_worker_timing: GuestPcTraceSegmentCommitWorkerTiming {
+                    initial_worker_count: 0,
+                    effective_worker_count: 0,
+                    pool_timing: GuestPcTraceSegmentCommitPoolTiming::default(),
+                    oom_retry_count: 0,
+                    attempt_duration: guest_segment_commit_duration,
+                    oom_retry_duration: Duration::ZERO,
+                    memory_timing: GuestPcTraceSegmentCommitMemoryTiming::default(),
+                },
+            },
+            GuestPcTraceStreamTiming::default(),
+            trace_timing,
+        ));
+    }
+    Ok(output)
 }
 
 #[cfg(feature = "cuda")]
@@ -4413,6 +4534,7 @@ fn run_prove_witness_commitments_with_guest_pc_trace_segments_inner(
     auxiliary_inputs: Arc<ProveWitnessAuxiliaryInputs>,
     instruction_limit: u64,
     source_lookup_balance: Option<&mut SourceLookupBalance>,
+    timing_observer: Option<&mut dyn FnMut(ProveWitnessGuestPcTraceTiming)>,
 ) -> Result<Vec<ProveWitnessTraceCommitments>, ProveWitnessCommitmentError> {
     let unit_count = plan.run_plan.schedule.units.len();
     let unit = plan.run_plan.schedule.units.get(unit_index).ok_or(
@@ -4423,6 +4545,9 @@ fn run_prove_witness_commitments_with_guest_pc_trace_segments_inner(
     )?;
     let layout = derive_witness_trace_layout(unit)?;
     let backend = GuestPcTraceBackend::new(instruction_limit);
+    let collect_timing = timing_observer.is_some();
+    let guest_trace_started = collect_timing.then(Instant::now);
+    let segment_collect_started = collect_timing.then(Instant::now);
     let trace_outputs = run_guest_pc_trace_segments_with_context(
         &backend,
         WitnessComputeContext {
@@ -4432,6 +4557,10 @@ fn run_prove_witness_commitments_with_guest_pc_trace_segments_inner(
         },
         layout.request(&shared_inputs.input[..]),
     )?;
+    let guest_trace_segment_collect_duration = segment_collect_started
+        .map(|started| started.elapsed())
+        .unwrap_or(Duration::ZERO);
+    let segment_count = trace_outputs.len();
     let mut outputs = Vec::with_capacity(trace_outputs.len());
     let mut source_lookup_balance = source_lookup_balance;
     let mut fixed_columns_cache = WitnessFixedColumnsCache::new();
@@ -4440,13 +4569,24 @@ fn run_prove_witness_commitments_with_guest_pc_trace_segments_inner(
     let traceless_commitment_input = guest_pc_trace_traceless_commitment_input_selected();
     #[cfg(feature = "cuda")]
     let trace_cuda_run_config = WitnessTraceCudaRunConfig::from_input(shared_inputs.input.len());
+    let mut trace_timing = collect_timing.then(ProveWitnessTraceTimingAccumulator::default);
+    let mut guest_segment_commit_duration = Duration::ZERO;
     for segment_output in trace_outputs {
+        let segment_commit_started = collect_timing.then(Instant::now);
         let trace_instance_index = segment_output.trace_instance_index();
         #[cfg(feature = "cuda")]
         let trace_source_prefix_rows = segment_output.trace_source_prefix_rows();
         #[cfg(feature = "cuda")]
-        let preloaded_stage_source_devices =
-            build_preloaded_guest_pc_trace_stage_source_devices(&layout, &segment_output, None)?;
+        let preloaded_stage_source_devices = match trace_timing.as_mut() {
+            Some(timing) => build_preloaded_guest_pc_trace_stage_source_devices(
+                &layout,
+                &segment_output,
+                Some(timing),
+            )?,
+            None => {
+                build_preloaded_guest_pc_trace_stage_source_devices(&layout, &segment_output, None)?
+            }
+        };
         #[cfg(feature = "cuda")]
         let has_preloaded_stage_source_devices = preloaded_stage_source_devices.is_some();
         #[cfg(feature = "cuda")]
@@ -4507,11 +4647,38 @@ fn run_prove_witness_commitments_with_guest_pc_trace_segments_inner(
                 leaf_workspace_cache: Some(&mut leaf_workspace_cache),
                 #[cfg(feature = "cuda")]
                 trace_cuda_run_config: Some(trace_cuda_run_config),
-                timing: None,
+                timing: trace_timing.as_mut(),
             },
         )?;
+        if let Some(started) = segment_commit_started {
+            guest_segment_commit_duration += started.elapsed();
+        }
         output.commitments.identity.trace_instance_index = trace_instance_index;
         outputs.push(output);
+    }
+    if let (Some(observer), Some(trace_timing), Some(started)) =
+        (timing_observer, trace_timing, guest_trace_started)
+    {
+        observer(ProveWitnessGuestPcTraceTiming::new(
+            GuestPcTraceRunTiming {
+                segment_count,
+                guest_trace_stream_elapsed_duration: started.elapsed(),
+                guest_trace_stream_duration: guest_trace_segment_collect_duration,
+                guest_trace_proof_value_prerun_duration: Duration::ZERO,
+                guest_segment_commit_duration,
+                segment_commit_worker_timing: GuestPcTraceSegmentCommitWorkerTiming {
+                    initial_worker_count: 0,
+                    effective_worker_count: 0,
+                    pool_timing: GuestPcTraceSegmentCommitPoolTiming::default(),
+                    oom_retry_count: 0,
+                    attempt_duration: guest_segment_commit_duration,
+                    oom_retry_duration: Duration::ZERO,
+                    memory_timing: GuestPcTraceSegmentCommitMemoryTiming::default(),
+                },
+            },
+            GuestPcTraceStreamTiming::default(),
+            trace_timing,
+        ));
     }
     Ok(outputs)
 }
@@ -6134,13 +6301,15 @@ fn run_prove_witness_commitments_from_trace_pending_inner(
         || stage_source_devices.is_some()
         || guest_pc_device_segment_material.is_some();
 
-    stage_source_device_cache.upload_from_trace_or_preloaded_if_empty(
-        &layout,
-        trace_ref,
-        stage_source_devices,
-        terminal_trace_source_prefix_rows,
-        Some(trace_cuda_run_config),
-    )?;
+    record_optional_duration(Some(&mut timing.stage_source_upload_duration), || {
+        stage_source_device_cache.upload_from_trace_or_preloaded_if_empty(
+            &layout,
+            trace_ref,
+            stage_source_devices,
+            terminal_trace_source_prefix_rows,
+            Some(trace_cuda_run_config),
+        )
+    })?;
     {
         let mut regular_inputs = WitnessRegularTraceInputs {
             layout: &layout,
@@ -6199,11 +6368,13 @@ fn run_prove_witness_commitments_from_trace_pending_inner(
     )?;
     let stage_commit_duration_before_root_materialization = stage_commit_started.elapsed();
 
+    let retained_artifact_started = Instant::now();
     let retained_artifacts = retained_trace_cuda_run_artifacts(
         &stage_source_device_cache,
         trace_cuda_run_config,
         Some(&mut *timing),
     );
+    timing.retained_trace_artifact_duration += retained_artifact_started.elapsed();
     Ok(ProveWitnessTracePendingCommitments {
         identity: ProveTraceIdentity::new(unit_index, 0),
         input_byte_count,
@@ -6285,12 +6456,19 @@ fn run_prove_witness_commitments_from_trace_inner(
     let external_source_commitment_required = guest_pc_device_segment_material.is_some();
     #[cfg(feature = "cuda")]
     {
-        stage_source_device_cache.upload_from_trace_or_preloaded_if_empty(
-            &layout,
-            trace_ref,
-            stage_source_devices,
-            terminal_trace_source_prefix_rows,
-            Some(trace_cuda_run_config),
+        record_optional_duration(
+            timing
+                .as_deref_mut()
+                .map(|timing| &mut timing.stage_source_upload_duration),
+            || {
+                stage_source_device_cache.upload_from_trace_or_preloaded_if_empty(
+                    &layout,
+                    trace_ref,
+                    stage_source_devices,
+                    terminal_trace_source_prefix_rows,
+                    Some(trace_cuda_run_config),
+                )
+            },
         )?;
     }
     {
@@ -6554,11 +6732,23 @@ fn run_prove_witness_commitments_from_trace_inner(
     };
 
     #[cfg(feature = "cuda")]
-    let retained_artifacts = retained_trace_cuda_run_artifacts(
-        &stage_source_device_cache,
-        trace_cuda_run_config,
-        timing,
-    );
+    let retained_artifacts = match timing {
+        Some(ref mut timing) => {
+            let started = Instant::now();
+            let artifacts = retained_trace_cuda_run_artifacts(
+                &stage_source_device_cache,
+                trace_cuda_run_config,
+                Some(&mut **timing),
+            );
+            timing.retained_trace_artifact_duration += started.elapsed();
+            artifacts
+        }
+        None => retained_trace_cuda_run_artifacts(
+            &stage_source_device_cache,
+            trace_cuda_run_config,
+            None,
+        ),
+    };
     Ok(ProveWitnessTraceCommitments {
         commitments,
         trace,
@@ -6709,6 +6899,7 @@ pub fn run_prove_witness_commitments_for_all_units(
             Arc::clone(&auxiliary_inputs),
             backend,
             WitnessRegularHintMode::Balanced(&mut source_lookup_balance),
+            None,
         )
         .map_err(|error| {
             format!("run witness commitments failed for unit {unit_index}: {error}")

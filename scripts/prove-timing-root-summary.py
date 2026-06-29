@@ -617,6 +617,21 @@ DIRECT_D2H_WAIT_NS_KEY = "timing_cuda_direct_copy_d2h_wait_ns"
 DIRECT_D2H_HOT_BYTES_KEY = "timing_cuda_direct_copy_d2h_hot_bytes"
 DIRECT_D2H_HOT_COUNT_KEY = "timing_cuda_direct_copy_d2h_hot_count"
 DIRECT_D2H_HOT_WAIT_NS_KEY = "timing_cuda_direct_copy_d2h_hot_wait_ns"
+CUDA_SETUP_INIT_CALLS_KEY = "timing_cuda_setup_init_calls"
+CUDA_SETUP_INIT_WAIT_NS_KEY = "timing_cuda_setup_init_wait_ns"
+CUDA_SETUP_INIT_MAX_WAIT_NS_KEY = "timing_cuda_setup_init_max_wait_ns"
+CUDA_SETUP_CACHE_HITS_KEY = "timing_cuda_setup_cache_hits"
+CUDA_SETUP_CACHE_HIT_WAIT_NS_KEY = "timing_cuda_setup_cache_hit_wait_ns"
+CUDA_SETUP_CACHE_HIT_MAX_WAIT_NS_KEY = "timing_cuda_setup_cache_hit_max_wait_ns"
+CUDA_SETUP_NATIVE_INIT_CALLS_KEY = "timing_cuda_setup_native_init_calls"
+CUDA_SETUP_NATIVE_INIT_WAIT_NS_KEY = "timing_cuda_setup_native_init_wait_ns"
+CUDA_SETUP_NATIVE_INIT_MAX_WAIT_NS_KEY = "timing_cuda_setup_native_init_max_wait_ns"
+CUDA_CURRENT_DEVICE_CALLS_KEY = "timing_cuda_current_device_calls"
+CUDA_CURRENT_DEVICE_WAIT_NS_KEY = "timing_cuda_current_device_wait_ns"
+CUDA_CURRENT_DEVICE_MAX_WAIT_NS_KEY = "timing_cuda_current_device_max_wait_ns"
+CUDA_MEMORY_INFO_CALLS_KEY = "timing_cuda_memory_info_calls"
+CUDA_MEMORY_INFO_WAIT_NS_KEY = "timing_cuda_memory_info_wait_ns"
+CUDA_MEMORY_INFO_MAX_WAIT_NS_KEY = "timing_cuda_memory_info_max_wait_ns"
 CUDA_MALLOC_CALLS_KEY = "timing_cuda_allocator_malloc_calls"
 CUDA_MALLOC_WAIT_NS_KEY = "timing_cuda_allocator_malloc_wait_ns"
 CUDA_MALLOC_MAX_WAIT_NS_KEY = "timing_cuda_allocator_malloc_max_wait_ns"
@@ -643,6 +658,8 @@ SOURCE_RETENTION_MAX_REJECTED_BYTES_KEY = (
     "timing_guest_stage_source_retention_max_rejected_bytes"
 )
 SOURCE_RETENTION_LIMIT_BYTES_KEY = "timing_guest_stage_source_retention_limit_bytes"
+STAGE_SOURCE_UPLOAD_MS_KEY = "timing_guest_stage_source_upload_ms"
+RETAINED_TRACE_ARTIFACT_MS_KEY = "timing_guest_retained_trace_artifact_ms"
 DESCRIPTOR_RETENTION_ATTEMPTS_KEY = "timing_guest_descriptor_buffer_retention_attempts"
 DESCRIPTOR_RETENTION_RETAINED_KEY = "timing_guest_descriptor_buffer_retention_retained"
 DESCRIPTOR_RETENTION_REJECTED_KEY = "timing_guest_descriptor_buffer_retention_rejected"
@@ -846,6 +863,7 @@ HEADER = (
     "fri_opening_total_pct,fri_transcript_unit_build_total_pct,"
     "contribution_total_pct,final_proof_timing_hint,"
     "opening_source_shape_hint,"
+    "stage_source_upload_ms,retained_trace_artifact_ms,"
     "source_retention_attempts,source_retention_retained,"
     "source_retention_rejected,source_retention_retained_bytes,"
     "source_retention_rejected_bytes,source_retention_max_retained_bytes,"
@@ -971,6 +989,15 @@ HEADER = (
     "trace_report_visit_residual_pct,"
     "direct_d2h_hot_bytes,direct_d2h_hot_count,direct_d2h_hot_wait_ms,"
     "direct_d2h_hot_wait_pct,direct_d2h_action_hint,"
+    "cuda_setup_init_calls,cuda_setup_init_wait_ms,"
+    "cuda_setup_init_max_wait_ms,cuda_setup_cache_hits,"
+    "cuda_setup_cache_hit_wait_ms,cuda_setup_cache_hit_max_wait_ms,"
+    "cuda_setup_native_init_calls,cuda_setup_native_init_wait_ms,"
+    "cuda_setup_native_init_max_wait_ms,"
+    "cuda_current_device_calls,cuda_current_device_wait_ms,"
+    "cuda_current_device_max_wait_ms,"
+    "cuda_memory_info_calls,cuda_memory_info_wait_ms,"
+    "cuda_memory_info_max_wait_ms,"
     "cuda_allocator_malloc_calls,cuda_allocator_malloc_wait_ms,"
     "cuda_allocator_malloc_max_wait_ms,"
     "cuda_allocator_d2h_bytes,cuda_allocator_d2h_wait_ms,"
@@ -1286,6 +1313,8 @@ TIMING_KEYS = {
     SOURCE_RETENTION_MAX_RETAINED_BYTES_KEY,
     SOURCE_RETENTION_MAX_REJECTED_BYTES_KEY,
     SOURCE_RETENTION_LIMIT_BYTES_KEY,
+    STAGE_SOURCE_UPLOAD_MS_KEY,
+    RETAINED_TRACE_ARTIFACT_MS_KEY,
     OPENING_ROW_VALUE_DEVICE_ROWS_KEY,
     OPENING_ROW_VALUE_SOURCE_ROWS_KEY,
     OPENING_ROW_VALUE_SOURCE_EXTEND_MS_KEY,
@@ -1339,6 +1368,21 @@ TIMING_KEYS = {
     DIRECT_D2H_HOT_BYTES_KEY,
     DIRECT_D2H_HOT_COUNT_KEY,
     DIRECT_D2H_HOT_WAIT_NS_KEY,
+    CUDA_SETUP_INIT_CALLS_KEY,
+    CUDA_SETUP_INIT_WAIT_NS_KEY,
+    CUDA_SETUP_INIT_MAX_WAIT_NS_KEY,
+    CUDA_SETUP_CACHE_HITS_KEY,
+    CUDA_SETUP_CACHE_HIT_WAIT_NS_KEY,
+    CUDA_SETUP_CACHE_HIT_MAX_WAIT_NS_KEY,
+    CUDA_SETUP_NATIVE_INIT_CALLS_KEY,
+    CUDA_SETUP_NATIVE_INIT_WAIT_NS_KEY,
+    CUDA_SETUP_NATIVE_INIT_MAX_WAIT_NS_KEY,
+    CUDA_CURRENT_DEVICE_CALLS_KEY,
+    CUDA_CURRENT_DEVICE_WAIT_NS_KEY,
+    CUDA_CURRENT_DEVICE_MAX_WAIT_NS_KEY,
+    CUDA_MEMORY_INFO_CALLS_KEY,
+    CUDA_MEMORY_INFO_WAIT_NS_KEY,
+    CUDA_MEMORY_INFO_MAX_WAIT_NS_KEY,
     CUDA_MALLOC_CALLS_KEY,
     CUDA_MALLOC_WAIT_NS_KEY,
     CUDA_MALLOC_MAX_WAIT_NS_KEY,
@@ -4983,6 +5027,8 @@ def summarize_profile_values(
         SOURCE_RETENTION_MAX_REJECTED_BYTES_KEY, 0
     )
     source_retention_limit_bytes = values.get(SOURCE_RETENTION_LIMIT_BYTES_KEY, 0)
+    stage_source_upload_ms = values.get(STAGE_SOURCE_UPLOAD_MS_KEY, 0)
+    retained_trace_artifact_ms = values.get(RETAINED_TRACE_ARTIFACT_MS_KEY, 0)
     opening_row_value_device_rows = values.get(OPENING_ROW_VALUE_DEVICE_ROWS_KEY, 0)
     opening_row_value_source_rows = values.get(OPENING_ROW_VALUE_SOURCE_ROWS_KEY, 0)
     opening_row_value_source_extend_ms = values.get(
@@ -5130,6 +5176,39 @@ def summarize_profile_values(
         direct_d2h_hot_wait_ms * 100.0 / direct_d2h_wait_ms
         if direct_d2h_wait_ms
         else 0.0
+    )
+    cuda_setup_init_calls = values.get(CUDA_SETUP_INIT_CALLS_KEY, 0)
+    cuda_setup_init_wait_ms = values.get(CUDA_SETUP_INIT_WAIT_NS_KEY, 0) / 1_000_000.0
+    cuda_setup_init_max_wait_ms = (
+        values.get(CUDA_SETUP_INIT_MAX_WAIT_NS_KEY, 0) / 1_000_000.0
+    )
+    cuda_setup_cache_hits = values.get(CUDA_SETUP_CACHE_HITS_KEY, 0)
+    cuda_setup_cache_hit_wait_ms = (
+        values.get(CUDA_SETUP_CACHE_HIT_WAIT_NS_KEY, 0) / 1_000_000.0
+    )
+    cuda_setup_cache_hit_max_wait_ms = (
+        values.get(CUDA_SETUP_CACHE_HIT_MAX_WAIT_NS_KEY, 0) / 1_000_000.0
+    )
+    cuda_setup_native_init_calls = values.get(CUDA_SETUP_NATIVE_INIT_CALLS_KEY, 0)
+    cuda_setup_native_init_wait_ms = (
+        values.get(CUDA_SETUP_NATIVE_INIT_WAIT_NS_KEY, 0) / 1_000_000.0
+    )
+    cuda_setup_native_init_max_wait_ms = (
+        values.get(CUDA_SETUP_NATIVE_INIT_MAX_WAIT_NS_KEY, 0) / 1_000_000.0
+    )
+    cuda_current_device_calls = values.get(CUDA_CURRENT_DEVICE_CALLS_KEY, 0)
+    cuda_current_device_wait_ms = (
+        values.get(CUDA_CURRENT_DEVICE_WAIT_NS_KEY, 0) / 1_000_000.0
+    )
+    cuda_current_device_max_wait_ms = (
+        values.get(CUDA_CURRENT_DEVICE_MAX_WAIT_NS_KEY, 0) / 1_000_000.0
+    )
+    cuda_memory_info_calls = values.get(CUDA_MEMORY_INFO_CALLS_KEY, 0)
+    cuda_memory_info_wait_ms = (
+        values.get(CUDA_MEMORY_INFO_WAIT_NS_KEY, 0) / 1_000_000.0
+    )
+    cuda_memory_info_max_wait_ms = (
+        values.get(CUDA_MEMORY_INFO_MAX_WAIT_NS_KEY, 0) / 1_000_000.0
     )
     cuda_allocator_malloc_calls = values.get(CUDA_MALLOC_CALLS_KEY, 0)
     cuda_allocator_malloc_wait_ms = values.get(CUDA_MALLOC_WAIT_NS_KEY, 0) / 1_000_000.0
@@ -5573,6 +5652,7 @@ def summarize_profile_values(
         f"{fri_opening_total_pct:.3f},{fri_transcript_unit_build_total_pct:.3f},"
         f"{contribution_total_pct:.3f},{final_proof_hint},"
         f"{opening_source_hint},"
+        f"{stage_source_upload_ms},{retained_trace_artifact_ms},"
         f"{source_retention_attempts},{source_retention_retained},"
         f"{source_retention_rejected},{source_retention_retained_bytes},"
         f"{source_retention_rejected_bytes},{source_retention_max_retained_bytes},"
@@ -5713,6 +5793,16 @@ def summarize_profile_values(
         f"{direct_d2h_hot_bytes},{direct_d2h_hot_count},"
         f"{direct_d2h_hot_wait_ms:.3f},{direct_d2h_hot_wait_pct:.3f},"
         f"{direct_d2h_hint},"
+        f"{cuda_setup_init_calls},{cuda_setup_init_wait_ms:.3f},"
+        f"{cuda_setup_init_max_wait_ms:.3f},{cuda_setup_cache_hits},"
+        f"{cuda_setup_cache_hit_wait_ms:.3f},"
+        f"{cuda_setup_cache_hit_max_wait_ms:.3f},"
+        f"{cuda_setup_native_init_calls},{cuda_setup_native_init_wait_ms:.3f},"
+        f"{cuda_setup_native_init_max_wait_ms:.3f},"
+        f"{cuda_current_device_calls},{cuda_current_device_wait_ms:.3f},"
+        f"{cuda_current_device_max_wait_ms:.3f},"
+        f"{cuda_memory_info_calls},{cuda_memory_info_wait_ms:.3f},"
+        f"{cuda_memory_info_max_wait_ms:.3f},"
         f"{cuda_allocator_malloc_calls},{cuda_allocator_malloc_wait_ms:.3f},"
         f"{cuda_allocator_malloc_max_wait_ms:.3f},"
         f"{cuda_allocator_d2h_bytes},{cuda_allocator_d2h_wait_ms:.3f},"

@@ -27,6 +27,7 @@ use lzvm_prover::{
     run_prove_witness_commitments_for_all_units,
     run_prove_witness_commitments_for_all_units_with_trace_bundle,
     run_prove_witness_commitments_with_trace_backend,
+    run_prove_witness_commitments_with_trace_backend_with_timings,
     run_prove_witness_commitments_with_trace_bytes, ProveExecutionPlan,
     ProveExecutionUnitArtifacts, ProvePassKind, ProvePassRequest, ProveRunRequest, ProveSchedule,
     ProveWitnessAuxiliaryInputs, ProveWitnessCommitments, ProveWitnessTraceCommitments,
@@ -541,18 +542,37 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
             }
         } else {
             let backend = GuestPcTraceBackend::new(instruction_limit);
-            match run_prove_witness_commitments_with_trace_backend(
-                &plan,
-                single_unit_index,
-                auxiliary_inputs,
-                &backend,
-            ) {
+            let mut timing = None;
+            let output = if parsed.timings {
+                let mut observe_timing = |observed| {
+                    timing = Some(observed);
+                };
+                run_prove_witness_commitments_with_trace_backend_with_timings(
+                    &plan,
+                    single_unit_index,
+                    auxiliary_inputs,
+                    &backend,
+                    &mut observe_timing,
+                )
+            } else {
+                run_prove_witness_commitments_with_trace_backend(
+                    &plan,
+                    single_unit_index,
+                    auxiliary_inputs,
+                    &backend,
+                )
+            };
+            let output = match output {
                 Ok(output) => output,
                 Err(error) => {
                     let _ = writeln!(stderr, "prove witness failed: {error}");
                     return 1;
                 }
+            };
+            if let Some(timing) = timing {
+                record_guest_pc_trace_timing(&mut timings, timing);
             }
+            output
         }
     } else if let Some(bundle) = &trace_bundle {
         let selected_unit_u32 = match u32::try_from(single_unit_index) {

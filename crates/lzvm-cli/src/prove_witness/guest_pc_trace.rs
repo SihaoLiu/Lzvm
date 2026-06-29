@@ -1,7 +1,8 @@
 use lzvm_prover::{
     run_prove_witness_commitments_with_guest_pc_trace_segment_commitments,
     run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_with_timings,
-    run_prove_witness_commitments_with_guest_pc_trace_segments, ProveExecutionPlan,
+    run_prove_witness_commitments_with_guest_pc_trace_segments,
+    run_prove_witness_commitments_with_guest_pc_trace_segments_with_timings, ProveExecutionPlan,
     ProveWitnessAuxiliaryInputs, ProveWitnessCommitmentError, ProveWitnessGuestPcTraceTiming,
     ProveWitnessTraceCommitments,
 };
@@ -63,12 +64,25 @@ pub(super) fn run_guest_pc_trace_witness(
             )?
         }
     } else {
-        run_prove_witness_commitments_with_guest_pc_trace_segments(
-            plan,
-            unit_index,
-            auxiliary_inputs,
-            instruction_limit,
-        )?
+        if timings_enabled {
+            let mut observe_timing = |observed| {
+                timing = Some(observed);
+            };
+            run_prove_witness_commitments_with_guest_pc_trace_segments_with_timings(
+                plan,
+                unit_index,
+                auxiliary_inputs,
+                instruction_limit,
+                &mut observe_timing,
+            )?
+        } else {
+            run_prove_witness_commitments_with_guest_pc_trace_segments(
+                plan,
+                unit_index,
+                auxiliary_inputs,
+                instruction_limit,
+            )?
+        }
     };
     Ok(GuestPcTraceWitnessRun { outputs, timing })
 }
@@ -775,6 +789,10 @@ pub(super) fn record_guest_pc_trace_timing(
         "guest_device_source_trace_expand",
         timing.guest_device_source_trace_expand_duration(),
     );
+    timings.record(
+        "guest_stage_source_upload",
+        timing.guest_stage_source_upload_duration(),
+    );
     timings.record_count(
         "guest_stage_source_retention_attempts",
         timing.guest_stage_source_retention_attempt_count(),
@@ -830,6 +848,10 @@ pub(super) fn record_guest_pc_trace_timing(
     timings.record_count(
         "guest_descriptor_buffer_retention_limit_bytes",
         timing.guest_descriptor_buffer_retention_limit_byte_count(),
+    );
+    timings.record(
+        "guest_retained_trace_artifact",
+        timing.guest_retained_trace_artifact_duration(),
     );
     timings.record(
         "guest_regular_constraints",

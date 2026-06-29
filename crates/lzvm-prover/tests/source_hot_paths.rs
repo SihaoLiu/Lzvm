@@ -7640,12 +7640,33 @@ fn cuda_allocator_timing_reports_pending_wait_shape() {
         "lzvm-accel should export CUDA allocator stats for CLI timing"
     );
     assert!(
+        accel_lib_source.contains("cuda_setup_stats")
+            && accel_lib_source.contains("CudaSetupStats"),
+        "lzvm-accel should export CUDA setup stats for CLI timing"
+    );
+    assert!(
         cli_source.contains("record_cuda_allocator_timing")
             && cli_source.contains("cuda_allocator_stats()")
+            && cli_source.contains("cuda_setup_stats()")
             && cli_source.contains("record_average_wait_ns"),
-        "prove witness should record allocator stats and average wait metrics before writing timing summaries"
+        "prove witness should record CUDA stats and average wait metrics before writing timing summaries"
     );
     for line_name in [
+        "\"cuda_setup_init_calls\"",
+        "\"cuda_setup_init_wait_ns\"",
+        "\"cuda_setup_init_max_wait_ns\"",
+        "\"cuda_setup_cache_hits\"",
+        "\"cuda_setup_cache_hit_wait_ns\"",
+        "\"cuda_setup_cache_hit_max_wait_ns\"",
+        "\"cuda_setup_native_init_calls\"",
+        "\"cuda_setup_native_init_wait_ns\"",
+        "\"cuda_setup_native_init_max_wait_ns\"",
+        "\"cuda_current_device_calls\"",
+        "\"cuda_current_device_wait_ns\"",
+        "\"cuda_current_device_max_wait_ns\"",
+        "\"cuda_memory_info_calls\"",
+        "\"cuda_memory_info_wait_ns\"",
+        "\"cuda_memory_info_max_wait_ns\"",
         "\"cuda_allocator_malloc_calls\"",
         "\"cuda_allocator_malloc_bytes\"",
         "\"cuda_allocator_malloc_wait_ns\"",

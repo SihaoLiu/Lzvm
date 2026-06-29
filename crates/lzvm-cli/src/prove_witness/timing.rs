@@ -112,6 +112,7 @@ fn record_cuda_allocator_timing(timings: &mut TimingRecorder) {
     }
     let copy_site_stats = lzvm_prover::cuda_copy_site_stats_snapshot();
     record_cuda_copy_site_timing_entries(timings, &copy_site_stats);
+    record_cuda_setup_timing_entries(timings, lzvm_prover::cuda_setup_stats());
 
     let Ok(stats) = lzvm_prover::cuda_allocator_stats() else {
         return;
@@ -402,6 +403,49 @@ fn record_cuda_allocator_timing(timings: &mut TimingRecorder) {
     timings.record_count(
         "cuda_allocator_no_wait_bypass_bytes",
         stats.no_wait_bypass_bytes,
+    );
+}
+
+#[cfg(feature = "cuda")]
+fn record_cuda_setup_timing_entries(
+    timings: &mut TimingRecorder,
+    stats: lzvm_prover::CudaSetupStats,
+) {
+    timings.record_count("cuda_setup_init_calls", stats.setup_init_calls);
+    timings.record_count("cuda_setup_init_wait_ns", stats.setup_init_wait_ns);
+    timings.record_count("cuda_setup_init_max_wait_ns", stats.setup_init_max_wait_ns);
+    timings.record_count("cuda_setup_cache_hits", stats.setup_cache_hits);
+    timings.record_count(
+        "cuda_setup_cache_hit_wait_ns",
+        stats.setup_cache_hit_wait_ns,
+    );
+    timings.record_count(
+        "cuda_setup_cache_hit_max_wait_ns",
+        stats.setup_cache_hit_max_wait_ns,
+    );
+    timings.record_count(
+        "cuda_setup_native_init_calls",
+        stats.setup_native_init_calls,
+    );
+    timings.record_count(
+        "cuda_setup_native_init_wait_ns",
+        stats.setup_native_init_wait_ns,
+    );
+    timings.record_count(
+        "cuda_setup_native_init_max_wait_ns",
+        stats.setup_native_init_max_wait_ns,
+    );
+    timings.record_count("cuda_current_device_calls", stats.current_device_calls);
+    timings.record_count("cuda_current_device_wait_ns", stats.current_device_wait_ns);
+    timings.record_count(
+        "cuda_current_device_max_wait_ns",
+        stats.current_device_max_wait_ns,
+    );
+    timings.record_count("cuda_memory_info_calls", stats.memory_info_calls);
+    timings.record_count("cuda_memory_info_wait_ns", stats.memory_info_wait_ns);
+    timings.record_count(
+        "cuda_memory_info_max_wait_ns",
+        stats.memory_info_max_wait_ns,
     );
 }
 

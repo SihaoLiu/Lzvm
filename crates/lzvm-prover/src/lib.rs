@@ -35,7 +35,7 @@ use crate::setup_preflight::{validate_public_values_metadata, SetupPreflightErro
 #[cfg(feature = "cuda")]
 pub use lzvm_accel::{
     cuda_allocator_stats, cuda_copy_site_stats_clear, cuda_copy_site_stats_snapshot,
-    CudaAllocatorStats, CudaCopyDirection, CudaCopySiteStat,
+    cuda_setup_stats, CudaAllocatorStats, CudaCopyDirection, CudaCopySiteStat, CudaSetupStats,
 };
 
 #[cfg(test)]
@@ -143,7 +143,9 @@ pub use witness_execution::{
     run_prove_witness_commitments_with_guest_pc_trace_segment_commitments,
     run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_with_timings,
     run_prove_witness_commitments_with_guest_pc_trace_segments,
+    run_prove_witness_commitments_with_guest_pc_trace_segments_with_timings,
     run_prove_witness_commitments_with_trace, run_prove_witness_commitments_with_trace_backend,
+    run_prove_witness_commitments_with_trace_backend_with_timings,
     run_prove_witness_commitments_with_trace_bytes, ProveWitnessAuxiliaryInputs,
     ProveWitnessCommitmentError, ProveWitnessCommitments, ProveWitnessGuestPcTraceTiming,
     ProveWitnessTraceCommitments, ProveWitnessTraceConstraintEvidence,

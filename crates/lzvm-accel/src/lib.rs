@@ -1,6 +1,8 @@
 use std::fmt;
 #[cfg(feature = "cuda")]
 use std::sync::{Arc, Mutex, OnceLock};
+#[cfg(feature = "cuda")]
+use std::time::Instant;
 
 #[cfg(all(test, feature = "cuda"))]
 static CUDA_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
@@ -56,7 +58,7 @@ pub use cuda_row_selected::{
     cuda_goldilocks_coset_extend_row_major_columns_strided_selected_rows_device,
 };
 #[cfg(feature = "cuda")]
-pub use cuda_setup::cuda_setup_init;
+pub use cuda_setup::{cuda_setup_init, cuda_setup_stats, CudaSetupStats};
 #[cfg(feature = "cuda")]
 pub use cuda_stream::{CudaEvent, CudaGraph, CudaGraphCapture, CudaGraphExec, CudaStream};
 
@@ -870,8 +872,10 @@ fn row_weight_cache() -> &'static Mutex<Vec<RowWeightCacheEntry>> {
 
 #[cfg(feature = "cuda")]
 fn current_cuda_device() -> Result<i32, AccelError> {
+    let started = Instant::now();
     let mut device = 0_i32;
     let code = unsafe { lzvm_cuda_current_device(&mut device) };
+    cuda_setup::record_cuda_current_device_duration(started.elapsed());
     cuda_status(code)?;
     Ok(device)
 }
