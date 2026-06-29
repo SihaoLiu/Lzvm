@@ -3672,6 +3672,26 @@ fn eth_proof_timing_batch_check_env_rejects_wrong_input_types() {
 fn eth_proof_timing_batch_check_env_rejects_malformed_block_input() {
     let fixture = ProofFixture::new("eth-proof-timing-batch-malformed-block-input");
     std::fs::write(&fixture.block_input, b"not sectioned").expect("block fixture should update");
+    std::fs::write(
+        &fixture.fake_bin,
+        r#"#!/usr/bin/env python3
+import pathlib
+import sys
+args = sys.argv[1:]
+if args[:2] == ["eth", "block-input-summary"]:
+    if pathlib.Path(args[-1]).read_bytes() == b"not sectioned":
+        sys.stderr.write("canonical block parser rejected malformed input\n")
+        sys.exit(1)
+    print("status=ok")
+    sys.exit(0)
+if args[:2] == ["setup", "program-image-cache-summary"]:
+    print("status=ok")
+    sys.exit(0)
+sys.exit(0)
+"#,
+    )
+    .expect("malformed block fake should write");
+    make_executable(&fixture.fake_bin);
     let mut command = Command::new(script_path());
     command.arg("--suite").arg("small").arg("--check-env");
     fixture.apply_env(&mut command, SMALL_PREFIX);
@@ -3690,7 +3710,8 @@ fn eth_proof_timing_batch_check_env_rejects_malformed_block_input() {
         "failed env check should not report ok: {stdout}"
     );
     assert!(
-        stderr.contains("_BLOCK_INPUT artifact is invalid"),
+        stderr.contains("_BLOCK_INPUT artifact is invalid: semantic summary failed")
+            && stderr.contains("canonical block parser rejected malformed input"),
         "env check should explain malformed block input: stderr={stderr}"
     );
 }
@@ -3699,6 +3720,26 @@ fn eth_proof_timing_batch_check_env_rejects_malformed_block_input() {
 fn eth_proof_timing_batch_check_env_rejects_malformed_program_image_cache() {
     let fixture = ProofFixture::new("eth-proof-timing-batch-malformed-program-cache");
     std::fs::write(&fixture.cache, b"not sectioned").expect("cache fixture should update");
+    std::fs::write(
+        &fixture.fake_bin,
+        r#"#!/usr/bin/env python3
+import pathlib
+import sys
+args = sys.argv[1:]
+if args[:2] == ["eth", "block-input-summary"]:
+    print("status=ok")
+    sys.exit(0)
+if args[:2] == ["setup", "program-image-cache-summary"]:
+    if pathlib.Path(args[-1]).read_bytes() == b"not sectioned":
+        sys.stderr.write("canonical cache parser rejected malformed input\n")
+        sys.exit(1)
+    print("status=ok")
+    sys.exit(0)
+sys.exit(0)
+"#,
+    )
+    .expect("malformed cache fake should write");
+    make_executable(&fixture.fake_bin);
     let mut command = Command::new(script_path());
     command.arg("--suite").arg("small").arg("--check-env");
     fixture.apply_env(&mut command, SMALL_PREFIX);
@@ -3720,7 +3761,8 @@ fn eth_proof_timing_batch_check_env_rejects_malformed_program_image_cache() {
         "failed env check should not report ok: {stdout}"
     );
     assert!(
-        stderr.contains("_PROGRAM_IMAGE_CACHE artifact is invalid"),
+        stderr.contains("_PROGRAM_IMAGE_CACHE artifact is invalid: semantic summary failed")
+            && stderr.contains("canonical cache parser rejected malformed input"),
         "env check should explain malformed program-image cache: stderr={stderr}"
     );
 }
