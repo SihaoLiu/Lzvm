@@ -5460,6 +5460,88 @@ fn ordered_memory_access_value_returns_value_after_order_validation() {
 }
 
 #[test]
+fn copy_indirect_register_store_fast_path_preserves_row_effects() {
+    let accesses = [memory_read(0x108, 0xaa55)];
+    let writes = [GuestRegisterWrite {
+        index: 3,
+        value: 0xaa55,
+    }];
+    let lowered = ZiskMainLoweredReportRow {
+        instruction: ZiskMainInstruction {
+            pc: 0x8000_0000,
+            a: ZiskMainSource::Register(2),
+            b: ZiskMainSource::Indirect(8),
+            op: ZiskMainOp::CopyB,
+            store: ZiskMainStore::Register(3),
+            store_pc: false,
+            set_pc: false,
+            jmp_offset1: 4,
+            jmp_offset2: 4,
+            ind_width: 8,
+            m32: false,
+            is_external_op: false,
+            is_precompiled: false,
+        },
+        effects: ZiskMainReportEffects {
+            register_writes: &writes,
+            memory_accesses: &accesses,
+            precompile_memory_accesses: &[],
+            precompile_result: None,
+        },
+        expected_next_pc: 0x8000_0004,
+    };
+    let mut state = ZiskMainTraceState::new();
+    state.registers[2] = 0x100;
+    state.registers[3] = 0x77;
+    state.register_mem_steps[2] = 33;
+    state.register_mem_steps[3] = 44;
+    let mut context = ZiskMainReportValidationContext::new(
+        None,
+        16,
+        ZiskMainTraceSegmentInfo {
+            trace_instance_index: 0,
+            is_last_segment: false,
+            previous_c: 0,
+        },
+    )
+    .expect("context should initialize");
+    let mut visited = None;
+    apply_copy_indirect_register_store_fast_path(
+        3,
+        lowered.instruction,
+        lowered.effects,
+        lowered.expected_next_pc,
+        2,
+        8,
+        3,
+        &mut state,
+        &mut context,
+        &mut |row, values, timing| {
+            assert_eq!(row, 3);
+            assert!(timing.is_none());
+            visited = Some(values);
+            Ok(())
+        },
+    )
+    .expect("dominant row shape should take fast path");
+
+    assert_eq!(state.registers[3], 0xaa55);
+    assert_eq!(state.last_c, 0xaa55);
+    assert_eq!(state.next_pc, 0x8000_0004);
+    assert_eq!(state.register_mem_steps[2], 13);
+    assert_eq!(state.register_mem_steps[3], 15);
+    let values = visited.expect("fast path should emit row values");
+    assert_eq!(values.a, 0x100);
+    assert_eq!(values.b, 0xaa55);
+    assert_eq!(values.c, 0xaa55);
+    assert!(!values.flag);
+    assert_eq!(values.register_accesses.a_prev_mem_step, Some(33));
+    assert_eq!(values.register_accesses.b_prev_mem_step, None);
+    assert_eq!(values.register_accesses.store_prev_mem_step, Some(44));
+    assert_eq!(values.register_accesses.store_prev_value, Some(0x77));
+}
+
+#[test]
 fn zisk_main_source_value_reports_memory_access_count() {
     let accesses = [memory_read(64, 96), memory_read(104, 13)];
     let effects = ZiskMainReportEffects {
