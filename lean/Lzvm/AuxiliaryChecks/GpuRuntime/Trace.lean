@@ -36,6 +36,16 @@ theorem guest_pc_trace_commit_worker_default_disabled_override_serial
       configuredDisabled]
   simpa [selectedFalse] using defaultMatches
 
+theorem guest_pc_trace_parallel_lower_explicit_selects_parallel_lower
+    (config : GuestPcTraceParallelLowerConfig) :
+    config.configuredParallelLower = true ->
+      GuestPcTraceParallelLowerDecisionMatches config ->
+        config.effectiveParallelLower = true := by
+  intro parallelLowerEnabled decision
+  rcases decision with ⟨parallelMatches, _replayOnlyMatches,
+    _replaySnapshotMatches⟩
+  simpa [parallelLowerEnabled] using parallelMatches
+
 theorem guest_pc_trace_parallel_lower_work_units_selects_parallel_lower
     (config : GuestPcTraceParallelLowerConfig) :
     config.configuredWorkUnits = true ->
@@ -45,6 +55,36 @@ theorem guest_pc_trace_parallel_lower_work_units_selects_parallel_lower
   rcases decision with ⟨parallelMatches, _replayOnlyMatches,
     _replaySnapshotMatches⟩
   simpa [workUnitsEnabled] using parallelMatches
+
+theorem guest_pc_trace_parallel_lower_replay_only_selects_replay_only
+    (config : GuestPcTraceParallelLowerConfig) :
+    config.configuredReplayOnly = true ->
+      GuestPcTraceParallelLowerDecisionMatches config ->
+        config.effectiveReplayOnly = true := by
+  intro replayOnlyEnabled decision
+  rcases decision with ⟨_parallelMatches, replayOnlyMatches,
+    _replaySnapshotMatches⟩
+  simpa [replayOnlyEnabled] using replayOnlyMatches
+
+theorem guest_pc_trace_parallel_lower_replay_only_selects_replay_snapshot
+    (config : GuestPcTraceParallelLowerConfig) :
+    config.configuredReplayOnly = true ->
+      GuestPcTraceParallelLowerDecisionMatches config ->
+        config.effectiveReplaySnapshot = true := by
+  intro replayOnlyEnabled decision
+  rcases decision with ⟨_parallelMatches, _replayOnlyMatches,
+    replaySnapshotMatches⟩
+  simpa [replayOnlyEnabled] using replaySnapshotMatches
+
+theorem guest_pc_trace_parallel_lower_replay_snapshot_selects_replay_snapshot
+    (config : GuestPcTraceParallelLowerConfig) :
+    config.configuredReplaySnapshot = true ->
+      GuestPcTraceParallelLowerDecisionMatches config ->
+        config.effectiveReplaySnapshot = true := by
+  intro replaySnapshotEnabled decision
+  rcases decision with ⟨_parallelMatches, _replayOnlyMatches,
+    replaySnapshotMatches⟩
+  simpa [replaySnapshotEnabled] using replaySnapshotMatches
 
 theorem guest_pc_trace_parallel_lower_work_units_keeps_replay_only_separate
     (config : GuestPcTraceParallelLowerConfig) :

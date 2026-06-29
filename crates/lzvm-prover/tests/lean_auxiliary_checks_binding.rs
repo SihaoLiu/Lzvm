@@ -2522,8 +2522,17 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             && gpu_runtime_source
                 .contains("guest_pc_trace_commit_worker_default_disabled_override_serial")
             && gpu_runtime_source.contains(
+                "guest_pc_trace_parallel_lower_explicit_selects_parallel_lower"
+            )
+            && gpu_runtime_source.contains(
                 "guest_pc_trace_parallel_lower_work_units_selects_parallel_lower"
             )
+            && gpu_runtime_source
+                .contains("guest_pc_trace_parallel_lower_replay_only_selects_replay_only")
+            && gpu_runtime_source
+                .contains("guest_pc_trace_parallel_lower_replay_only_selects_replay_snapshot")
+            && gpu_runtime_source
+                .contains("guest_pc_trace_parallel_lower_replay_snapshot_selects_replay_snapshot")
             && gpu_runtime_source.contains(
                 "guest_pc_trace_parallel_lower_work_units_keeps_replay_only_separate"
             )
@@ -5100,7 +5109,11 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "guest_pc_trace_commit_mode_checked_acceptance_projects_decision",
             "guest_pc_trace_commit_mode_effective_worker_positive",
             "guest_pc_trace_commit_mode_async_requires_single_worker",
+            "guest_pc_trace_parallel_lower_explicit_selects_parallel_lower",
             "guest_pc_trace_parallel_lower_work_units_selects_parallel_lower",
+            "guest_pc_trace_parallel_lower_replay_only_selects_replay_only",
+            "guest_pc_trace_parallel_lower_replay_only_selects_replay_snapshot",
+            "guest_pc_trace_parallel_lower_replay_snapshot_selects_replay_snapshot",
             "guest_pc_trace_parallel_lower_work_units_keeps_replay_only_separate",
             "guest_pc_trace_parallel_lower_work_units_keeps_replay_snapshot_separate",
             concat!(
@@ -5708,6 +5721,20 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
     );
     lean_binding::assert_theorem_prefix_contains(
         &gpu_runtime_source,
+        "guest_pc_trace_parallel_lower_explicit_selects_parallel_lower",
+        &[
+            "config.configuredParallelLower = true",
+            "GuestPcTraceParallelLowerDecisionMatches config",
+            "config.effectiveParallelLower = true",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &gpu_runtime_source,
+        "guest_pc_trace_parallel_lower_explicit_selects_parallel_lower",
+        &["parallelLowerEnabled", "parallelMatches"],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &gpu_runtime_source,
         "guest_pc_trace_parallel_lower_work_units_selects_parallel_lower",
         &[
             "config.configuredWorkUnits = true",
@@ -5719,6 +5746,48 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         &gpu_runtime_source,
         "guest_pc_trace_parallel_lower_work_units_selects_parallel_lower",
         &["workUnitsEnabled", "parallelMatches"],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &gpu_runtime_source,
+        "guest_pc_trace_parallel_lower_replay_only_selects_replay_only",
+        &[
+            "config.configuredReplayOnly = true",
+            "GuestPcTraceParallelLowerDecisionMatches config",
+            "config.effectiveReplayOnly = true",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &gpu_runtime_source,
+        "guest_pc_trace_parallel_lower_replay_only_selects_replay_only",
+        &["replayOnlyEnabled", "replayOnlyMatches"],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &gpu_runtime_source,
+        "guest_pc_trace_parallel_lower_replay_only_selects_replay_snapshot",
+        &[
+            "config.configuredReplayOnly = true",
+            "GuestPcTraceParallelLowerDecisionMatches config",
+            "config.effectiveReplaySnapshot = true",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &gpu_runtime_source,
+        "guest_pc_trace_parallel_lower_replay_only_selects_replay_snapshot",
+        &["replayOnlyEnabled", "replaySnapshotMatches"],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &gpu_runtime_source,
+        "guest_pc_trace_parallel_lower_replay_snapshot_selects_replay_snapshot",
+        &[
+            "config.configuredReplaySnapshot = true",
+            "GuestPcTraceParallelLowerDecisionMatches config",
+            "config.effectiveReplaySnapshot = true",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &gpu_runtime_source,
+        "guest_pc_trace_parallel_lower_replay_snapshot_selects_replay_snapshot",
+        &["replaySnapshotEnabled", "replaySnapshotMatches"],
     );
     lean_binding::assert_theorem_prefix_contains(
         &gpu_runtime_source,
