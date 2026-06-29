@@ -147,6 +147,7 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
             return 1;
         }
     };
+    timings.mark("framed_guest_input");
     if let Err(message) = validate_large_guest_pc_gpu(parsed.guest_pc_trace_instruction_limit) {
         let _ = writeln!(stderr, "prove witness failed: {message}");
         return 1;

@@ -742,6 +742,8 @@ fn prove_timing_root_summary_reports_root_grouping_shape() {
         "fri_transcript_unit_build_total_pct",
         "contribution_total_pct",
         "final_proof_timing_hint",
+        "timing_framed_guest_input_ms",
+        "framed_guest_input_ms",
         "timing_gpu_setup_ms",
         "gpu_setup_ms",
         "top_level_unattributed_ms",
@@ -811,6 +813,7 @@ fn prove_timing_root_summary_reports_top_level_proof_phase_fields() {
             "timing_eth_input_ms=2",
             "timing_public_inputs_ms=3",
             "timing_plan_ms=4",
+            "timing_framed_guest_input_ms=20",
             "timing_gpu_setup_ms=100",
             "timing_auxiliary_inputs_ms=5",
             "timing_trace_inputs_ms=6",
@@ -855,9 +858,10 @@ fn prove_timing_root_summary_reports_top_level_proof_phase_fields() {
             .unwrap_or_else(|| panic!("summary should expose {name}: stdout={stdout}"));
         values[index]
     };
+    assert_eq!(field("framed_guest_input_ms"), "20");
     assert_eq!(field("gpu_setup_ms"), "100");
     assert_eq!(field("witness_ms"), "7");
-    assert_eq!(field("top_level_unattributed_ms"), "45");
+    assert_eq!(field("top_level_unattributed_ms"), "25");
     assert_eq!(field("gpu_setup_pct"), "50.000");
     assert_eq!(field("top_level_bottleneck"), "gpu_setup");
 }

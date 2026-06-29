@@ -6176,6 +6176,7 @@ fn runs_prove_witness_commitments_from_trace_bytes() {
     assert!(stdout.starts_with(&expected_prefix));
     let timing_output = &stdout[expected_prefix.len()..];
     assert!(timing_output.contains("timing_catalog_ms="));
+    assert!(timing_output.contains("timing_framed_guest_input_ms="));
     assert!(timing_output.contains("timing_witness_ms="));
     assert!(timing_output.contains("timing_total_ms="));
     assert!(stderr.is_empty());
