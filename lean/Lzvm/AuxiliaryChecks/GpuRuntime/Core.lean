@@ -1131,6 +1131,36 @@ theorem guest_pc_trace_large_gpu_gate_decision_allows_below_threshold
   rw [allowedDecision]
   simp [small]
 
+theorem guest_pc_trace_large_gpu_gate_decision_rejects_large_without_gpu
+    (config : GuestPcTraceLargeGpuGateConfig)
+    {limit : Nat}
+    (decision : GuestPcTraceLargeGpuGateDecisionMatches config)
+    (requested : config.requestedInstructionLimit = some limit)
+    (large : config.defaultLargeTraceInstructionThreshold <= limit)
+    (gpuUnavailable : config.gpuBackendAvailable = false) :
+    config.largeTraceAllowed = false := by
+  rcases decision with ⟨_thresholdMatches, _minMemoryMatches, allowedDecision⟩
+  rw [requested] at allowedDecision
+  rw [allowedDecision]
+  have notSmall : ¬ limit < config.defaultLargeTraceInstructionThreshold :=
+    Nat.not_lt.mpr large
+  simp [notSmall, gpuUnavailable]
+
+theorem guest_pc_trace_large_gpu_gate_decision_rejects_large_without_memory
+    (config : GuestPcTraceLargeGpuGateConfig)
+    {limit : Nat}
+    (decision : GuestPcTraceLargeGpuGateDecisionMatches config)
+    (requested : config.requestedInstructionLimit = some limit)
+    (large : config.defaultLargeTraceInstructionThreshold <= limit)
+    (memoryCheckFailed : GuestPcTraceLargeGpuGateMemoryCheckPasses config = false) :
+    config.largeTraceAllowed = false := by
+  rcases decision with ⟨_thresholdMatches, _minMemoryMatches, allowedDecision⟩
+  rw [requested] at allowedDecision
+  rw [allowedDecision]
+  have notSmall : ¬ limit < config.defaultLargeTraceInstructionThreshold :=
+    Nat.not_lt.mpr large
+  simp [notSmall, memoryCheckFailed]
+
 theorem guest_pc_trace_large_gpu_gate_decision_requires_runtime_memory_for_large_allowed
     (config : GuestPcTraceLargeGpuGateConfig)
     {limit : Nat}
@@ -1229,6 +1259,66 @@ theorem guest_pc_trace_large_gpu_gate_checked_acceptance_allows_below_threshold
         checked)
       requested
       small
+
+theorem guest_pc_trace_large_gpu_gate_checked_acceptance_rejects_large_without_gpu
+    {system : VerifierModel}
+    (validation : GuestPcTraceLargeGpuGateValidation)
+    (config : GuestPcTraceLargeGpuGateConfig)
+    {limit : Nat}
+    (requested : config.requestedInstructionLimit = some limit)
+    (large : config.defaultLargeTraceInstructionThreshold <= limit)
+    (gpuUnavailable : config.gpuBackendAvailable = false) :
+    forall publicInput proof,
+      GuestPcTraceLargeGpuGateCheckedAcceptance
+          system
+          validation
+          config
+          publicInput
+          proof ->
+        config.largeTraceAllowed = false := by
+  intro publicInput proof checked
+  exact
+    guest_pc_trace_large_gpu_gate_decision_rejects_large_without_gpu
+      config
+      (guest_pc_trace_large_gpu_gate_checked_acceptance_projects_decision
+        validation
+        config
+        publicInput
+        proof
+        checked)
+      requested
+      large
+      gpuUnavailable
+
+theorem guest_pc_trace_large_gpu_gate_checked_acceptance_rejects_large_without_memory
+    {system : VerifierModel}
+    (validation : GuestPcTraceLargeGpuGateValidation)
+    (config : GuestPcTraceLargeGpuGateConfig)
+    {limit : Nat}
+    (requested : config.requestedInstructionLimit = some limit)
+    (large : config.defaultLargeTraceInstructionThreshold <= limit)
+    (memoryCheckFailed : GuestPcTraceLargeGpuGateMemoryCheckPasses config = false) :
+    forall publicInput proof,
+      GuestPcTraceLargeGpuGateCheckedAcceptance
+          system
+          validation
+          config
+          publicInput
+          proof ->
+        config.largeTraceAllowed = false := by
+  intro publicInput proof checked
+  exact
+    guest_pc_trace_large_gpu_gate_decision_rejects_large_without_memory
+      config
+      (guest_pc_trace_large_gpu_gate_checked_acceptance_projects_decision
+        validation
+        config
+        publicInput
+        proof
+        checked)
+      requested
+      large
+      memoryCheckFailed
 
 theorem guest_pc_trace_large_gpu_gate_checked_acceptance_requires_runtime_memory_for_large_allowed
     {system : VerifierModel}
