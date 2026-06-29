@@ -72,6 +72,12 @@ SEGMENT_COMMIT_CUDA_MEMORY_EFFECTIVE_FREE_BYTES_KEY = (
 SEGMENT_COMMIT_CUDA_MEMORY_MIN_FREE_BYTES_KEY = (
     "timing_guest_segment_commit_cuda_memory_min_free_bytes"
 )
+SEGMENT_COMMIT_CUDA_MEMORY_SAMPLE_MS_KEY = (
+    "timing_guest_segment_commit_cuda_memory_sample_ms"
+)
+SEGMENT_COMMIT_CUDA_MEMORY_SAMPLE_COUNT_KEY = (
+    "timing_guest_segment_commit_cuda_memory_samples"
+)
 SEGMENT_COMMIT_CUDA_ALLOCATOR_INITIAL_CACHED_BYTES_KEY = (
     "timing_guest_segment_commit_cuda_allocator_initial_cached_bytes"
 )
@@ -611,6 +617,9 @@ DIRECT_D2H_WAIT_NS_KEY = "timing_cuda_direct_copy_d2h_wait_ns"
 DIRECT_D2H_HOT_BYTES_KEY = "timing_cuda_direct_copy_d2h_hot_bytes"
 DIRECT_D2H_HOT_COUNT_KEY = "timing_cuda_direct_copy_d2h_hot_count"
 DIRECT_D2H_HOT_WAIT_NS_KEY = "timing_cuda_direct_copy_d2h_hot_wait_ns"
+CUDA_MALLOC_CALLS_KEY = "timing_cuda_allocator_malloc_calls"
+CUDA_MALLOC_WAIT_NS_KEY = "timing_cuda_allocator_malloc_wait_ns"
+CUDA_MALLOC_MAX_WAIT_NS_KEY = "timing_cuda_allocator_malloc_max_wait_ns"
 CUDA_HOST_REGISTER_WAIT_NS_KEY = "timing_cuda_allocator_host_register_wait_ns"
 CUDA_COPY_H2D_BYTES_KEY = "timing_cuda_allocator_copy_h2d_bytes"
 CUDA_COPY_H2D_WAIT_NS_KEY = "timing_cuda_allocator_copy_h2d_wait_ns"
@@ -962,6 +971,8 @@ HEADER = (
     "trace_report_visit_residual_pct,"
     "direct_d2h_hot_bytes,direct_d2h_hot_count,direct_d2h_hot_wait_ms,"
     "direct_d2h_hot_wait_pct,direct_d2h_action_hint,"
+    "cuda_allocator_malloc_calls,cuda_allocator_malloc_wait_ms,"
+    "cuda_allocator_malloc_max_wait_ms,"
     "cuda_allocator_d2h_bytes,cuda_allocator_d2h_wait_ms,"
     "cuda_allocator_d2h_hot_bytes,cuda_allocator_d2h_hot_count,"
     "cuda_allocator_d2h_hot_wait_ms,cuda_allocator_d2h_hot_wait_pct,"
@@ -986,6 +997,8 @@ HEADER = (
     "segment_commit_cuda_memory_initial_free_bytes,"
     "segment_commit_cuda_memory_effective_free_bytes,"
     "segment_commit_cuda_memory_min_free_bytes,"
+    "segment_commit_cuda_memory_sample_ms,"
+    "segment_commit_cuda_memory_sample_count,"
     "segment_commit_cuda_allocator_initial_cached_bytes,"
     "segment_commit_cuda_allocator_effective_cached_bytes,"
     "segment_commit_cuda_memory_min_free_pct,"
@@ -1080,6 +1093,8 @@ TIMING_KEYS = {
     SEGMENT_COMMIT_CUDA_MEMORY_INITIAL_FREE_BYTES_KEY,
     SEGMENT_COMMIT_CUDA_MEMORY_EFFECTIVE_FREE_BYTES_KEY,
     SEGMENT_COMMIT_CUDA_MEMORY_MIN_FREE_BYTES_KEY,
+    SEGMENT_COMMIT_CUDA_MEMORY_SAMPLE_MS_KEY,
+    SEGMENT_COMMIT_CUDA_MEMORY_SAMPLE_COUNT_KEY,
     SEGMENT_COMMIT_CUDA_ALLOCATOR_INITIAL_CACHED_BYTES_KEY,
     SEGMENT_COMMIT_CUDA_ALLOCATOR_EFFECTIVE_CACHED_BYTES_KEY,
     SEGMENT_RECEIVE_WAIT_MS_KEY,
@@ -1324,6 +1339,9 @@ TIMING_KEYS = {
     DIRECT_D2H_HOT_BYTES_KEY,
     DIRECT_D2H_HOT_COUNT_KEY,
     DIRECT_D2H_HOT_WAIT_NS_KEY,
+    CUDA_MALLOC_CALLS_KEY,
+    CUDA_MALLOC_WAIT_NS_KEY,
+    CUDA_MALLOC_MAX_WAIT_NS_KEY,
     CUDA_HOST_REGISTER_WAIT_NS_KEY,
     CUDA_COPY_H2D_BYTES_KEY,
     CUDA_COPY_H2D_WAIT_NS_KEY,
@@ -4103,6 +4121,12 @@ def summarize_profile_values(
     segment_commit_cuda_memory_min_free_bytes = values.get(
         SEGMENT_COMMIT_CUDA_MEMORY_MIN_FREE_BYTES_KEY, 0
     )
+    segment_commit_cuda_memory_sample_ms = values.get(
+        SEGMENT_COMMIT_CUDA_MEMORY_SAMPLE_MS_KEY, 0
+    )
+    segment_commit_cuda_memory_sample_count = values.get(
+        SEGMENT_COMMIT_CUDA_MEMORY_SAMPLE_COUNT_KEY, 0
+    )
     segment_commit_cuda_allocator_initial_cached_bytes = values.get(
         SEGMENT_COMMIT_CUDA_ALLOCATOR_INITIAL_CACHED_BYTES_KEY, 0
     )
@@ -5107,6 +5131,11 @@ def summarize_profile_values(
         if direct_d2h_wait_ms
         else 0.0
     )
+    cuda_allocator_malloc_calls = values.get(CUDA_MALLOC_CALLS_KEY, 0)
+    cuda_allocator_malloc_wait_ms = values.get(CUDA_MALLOC_WAIT_NS_KEY, 0) / 1_000_000.0
+    cuda_allocator_malloc_max_wait_ms = (
+        values.get(CUDA_MALLOC_MAX_WAIT_NS_KEY, 0) / 1_000_000.0
+    )
     cuda_allocator_d2h_bytes = values.get(CUDA_COPY_D2H_BYTES_KEY, 0)
     cuda_allocator_d2h_wait_ms = (
         values.get(CUDA_COPY_D2H_WAIT_NS_KEY, 0) / 1_000_000.0
@@ -5684,6 +5713,8 @@ def summarize_profile_values(
         f"{direct_d2h_hot_bytes},{direct_d2h_hot_count},"
         f"{direct_d2h_hot_wait_ms:.3f},{direct_d2h_hot_wait_pct:.3f},"
         f"{direct_d2h_hint},"
+        f"{cuda_allocator_malloc_calls},{cuda_allocator_malloc_wait_ms:.3f},"
+        f"{cuda_allocator_malloc_max_wait_ms:.3f},"
         f"{cuda_allocator_d2h_bytes},{cuda_allocator_d2h_wait_ms:.3f},"
         f"{cuda_allocator_d2h_hot_bytes},{cuda_allocator_d2h_hot_count},"
         f"{cuda_allocator_d2h_hot_wait_ms:.3f},"
@@ -5710,6 +5741,8 @@ def summarize_profile_values(
         f"{segment_commit_cuda_memory_initial_free_bytes},"
         f"{segment_commit_cuda_memory_effective_free_bytes},"
         f"{segment_commit_cuda_memory_min_free_bytes},"
+        f"{segment_commit_cuda_memory_sample_ms},"
+        f"{segment_commit_cuda_memory_sample_count},"
         f"{segment_commit_cuda_allocator_initial_cached_bytes},"
         f"{segment_commit_cuda_allocator_effective_cached_bytes},"
         f"{segment_commit_cuda_memory_min_free_pct:.3f},"

@@ -207,6 +207,11 @@ pub(super) fn record_guest_pc_trace_timing(
         "guest_segment_commit_cuda_memory_min_free_bytes",
         guest_segment_commit_cuda_memory_min_free_byte_count
     );
+    record_duration!(guest_segment_commit_cuda_memory_sample_duration);
+    record_count!(
+        "guest_segment_commit_cuda_memory_samples",
+        guest_segment_commit_cuda_memory_sample_count
+    );
     record_count!(
         "guest_segment_commit_cuda_allocator_initial_cached_bytes",
         guest_segment_commit_cuda_allocator_initial_cached_byte_count

@@ -475,6 +475,10 @@ fn prove_timing_root_summary_reports_root_grouping_shape() {
         "timing_cuda_direct_copy_d2h_hot_wait_ns",
         "direct_d2h_hot_wait_pct",
         "direct_d2h_action_hint",
+        "timing_cuda_allocator_malloc_calls",
+        "timing_cuda_allocator_malloc_wait_ns",
+        "timing_cuda_allocator_malloc_max_wait_ns",
+        "cuda_allocator_malloc_wait_ms",
         "timing_cuda_allocator_host_register_wait_ns",
         "timing_cuda_allocator_copy_h2d_bytes",
         "timing_cuda_allocator_copy_h2d_wait_ns",
@@ -649,6 +653,8 @@ fn prove_timing_root_summary_reports_root_grouping_shape() {
         "dominant_trace_pipeline_action_hint",
         "trace_pipeline_action_consensus",
         "cuda_host_register_wait_ms",
+        "cuda_allocator_malloc_calls",
+        "cuda_allocator_malloc_max_wait_ms",
         "cuda_h2d_bytes",
         "cuda_transfer_action_hint",
         "dominant_cuda_transfer_action_hint",
@@ -2985,6 +2991,9 @@ fn prove_timing_root_summary_reports_allocator_d2h_wait_shape() {
         "timing_cuda_allocator_copy_d2h_hot_bytes=304",
         "timing_cuda_allocator_copy_d2h_hot_count=120",
         "timing_cuda_allocator_copy_d2h_hot_wait_ns=3409364047",
+        "timing_cuda_allocator_malloc_calls=24",
+        "timing_cuda_allocator_malloc_wait_ns=61289905",
+        "timing_cuda_allocator_malloc_max_wait_ns=61156723",
     ]
     .join("\n");
 
@@ -3027,6 +3036,9 @@ fn prove_timing_root_summary_reports_allocator_d2h_wait_shape() {
     };
 
     assert_eq!(value("cuda_allocator_d2h_bytes"), "291360");
+    assert_eq!(value("cuda_allocator_malloc_calls"), "24");
+    assert_eq!(value("cuda_allocator_malloc_wait_ms"), "61.290");
+    assert_eq!(value("cuda_allocator_malloc_max_wait_ms"), "61.157");
     assert_eq!(value("cuda_allocator_d2h_wait_ms"), "3429.157");
     assert_eq!(value("cuda_allocator_d2h_hot_bytes"), "304");
     assert_eq!(value("cuda_allocator_d2h_hot_count"), "120");
@@ -3153,6 +3165,8 @@ fn prove_timing_root_summary_reports_segment_commit_memory_margin() {
         "timing_guest_segment_commit_cuda_memory_initial_free_bytes=12025908428",
         "timing_guest_segment_commit_cuda_memory_effective_free_bytes=12025908428",
         "timing_guest_segment_commit_cuda_memory_min_free_bytes=1717986918",
+        "timing_guest_segment_commit_cuda_memory_sample_ms=73",
+        "timing_guest_segment_commit_cuda_memory_samples=2",
         "timing_guest_segment_commit_cuda_allocator_initial_cached_bytes=0",
         "timing_guest_segment_commit_cuda_allocator_effective_cached_bytes=0",
         "timing_guest_stage_tree_commit_root_count=120",
@@ -3190,6 +3204,8 @@ fn prove_timing_root_summary_reports_segment_commit_memory_margin() {
             "12025908428",
         ),
         ("segment_commit_cuda_memory_min_free_bytes", "1717986918"),
+        ("segment_commit_cuda_memory_sample_ms", "73"),
+        ("segment_commit_cuda_memory_sample_count", "2"),
         ("segment_commit_cuda_allocator_initial_cached_bytes", "0"),
         ("segment_commit_cuda_allocator_effective_cached_bytes", "0"),
         ("segment_commit_worker_submits", "120"),
