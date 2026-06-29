@@ -40,12 +40,7 @@ pub fn assert_gpu_runtime_source_paths_cover_directory(crate_root: &Path) {
     let mut expected = BTreeSet::from([canonical_lean_path(
         &crate_root.join(GPU_RUNTIME_WRAPPER_SOURCE_PATH),
     )]);
-    for entry in std::fs::read_dir(&runtime_dir).expect("Lean GPU runtime directory should read") {
-        let path = entry.expect("Lean GPU runtime entry should read").path();
-        if path.extension().and_then(|extension| extension.to_str()) == Some("lean") {
-            expected.insert(canonical_lean_path(&path));
-        }
-    }
+    collect_lean_source_paths(&runtime_dir, &mut expected);
     let actual = GPU_RUNTIME_SOURCE_PATHS
         .iter()
         .map(|relative_path| canonical_lean_path(&crate_root.join(relative_path)))
@@ -55,6 +50,19 @@ pub fn assert_gpu_runtime_source_paths_cover_directory(crate_root: &Path) {
         actual, expected,
         "Lean GPU runtime source list should cover the wrapper and every split module"
     );
+}
+
+fn collect_lean_source_paths(dir: &Path, paths: &mut BTreeSet<PathBuf>) {
+    for entry in std::fs::read_dir(dir).expect("Lean GPU runtime directory should read") {
+        let path = entry.expect("Lean GPU runtime entry should read").path();
+        if path.is_dir() {
+            collect_lean_source_paths(&path, paths);
+            continue;
+        }
+        if path.extension().and_then(|extension| extension.to_str()) == Some("lean") {
+            paths.insert(canonical_lean_path(&path));
+        }
+    }
 }
 
 fn canonical_lean_path(path: &Path) -> PathBuf {

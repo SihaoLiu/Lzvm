@@ -2,7 +2,7 @@ use std::io::Write;
 use std::path::Path;
 
 use lzvm_artifacts::program_image::{
-    read_program_image_commitment_cache_file, ProgramImageCommitmentCache, ProgramImageGpuMode,
+    parse_program_image_commitment_cache, ProgramImageCommitmentCache, ProgramImageGpuMode,
 };
 use lzvm_artifacts::program_image_segment::{
     encode_program_image_cache_segment, program_image_cache_segment_digest,
@@ -24,8 +24,8 @@ fn summarize_program_image_cache(
     stderr: &mut dyn Write,
 ) -> i32 {
     let path = Path::new(cache_path);
-    let byte_count = match std::fs::metadata(path) {
-        Ok(metadata) => metadata.len(),
+    let bytes = match std::fs::read(path) {
+        Ok(bytes) => bytes,
         Err(error) => {
             let _ = writeln!(
                 stderr,
@@ -34,7 +34,7 @@ fn summarize_program_image_cache(
             return 1;
         }
     };
-    let cache = match read_program_image_commitment_cache_file(path) {
+    let cache = match parse_program_image_commitment_cache(&bytes) {
         Ok(cache) => cache,
         Err(error) => {
             let _ = writeln!(stderr, "program-image cache summary failed: {error}");
@@ -44,7 +44,7 @@ fn summarize_program_image_cache(
 
     let _ = writeln!(stdout, "status=ok");
     let _ = writeln!(stdout, "program_image_cache={}", path.display());
-    let _ = writeln!(stdout, "bytes={byte_count}");
+    let _ = writeln!(stdout, "bytes={}", bytes.len());
     write_program_image_cache_fields(stdout, &cache);
     0
 }
