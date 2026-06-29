@@ -1332,6 +1332,15 @@ def GuestPcTraceSegmentQueueCheckedAcceptance
   system.accepts publicInput proof
     /\ validation.segmentQueueConfigAccepted config publicInput proof
 
+def GuestPcTraceParallelLowerCheckedAcceptance
+    (system : VerifierModel)
+    (validation : GuestPcTraceParallelLowerValidation)
+    (config : GuestPcTraceParallelLowerConfig)
+    (publicInput : PublicInput)
+    (proof : Proof) : Prop :=
+  system.accepts publicInput proof
+    /\ validation.parallelLowerConfigAccepted config publicInput proof
+
 def GuestPcTraceLargeGpuGateCheckedAcceptance
     (system : VerifierModel)
     (validation : GuestPcTraceLargeGpuGateValidation)

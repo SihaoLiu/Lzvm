@@ -870,6 +870,107 @@ theorem gpu_allocator_no_wait_limit_checked_acceptance_core_and_sound
       checked
   exact And.intro decision coreAndSound
 
+theorem guest_pc_trace_parallel_lower_checked_acceptance_projects_decision
+    {system : VerifierModel}
+    (validation : GuestPcTraceParallelLowerValidation)
+    (config : GuestPcTraceParallelLowerConfig) :
+    forall publicInput proof,
+      GuestPcTraceParallelLowerCheckedAcceptance
+          system
+          validation
+          config
+          publicInput
+          proof ->
+        GuestPcTraceParallelLowerDecisionMatches config := by
+  intro publicInput proof checked
+  exact
+    validation.parallelLowerConfigImpliesDecisionMatches
+      config
+      publicInput
+      proof
+      checked.right
+
+theorem guest_pc_trace_parallel_lower_checked_acceptance_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : GuestPcTraceParallelLowerValidation)
+    (config : GuestPcTraceParallelLowerConfig) :
+    forall publicInput proof,
+      GuestPcTraceParallelLowerCheckedAcceptance
+          system
+          validation
+          config
+          publicInput
+          proof ->
+        GuestPcTraceParallelLowerDecisionMatches config
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof checked
+  exact
+    And.intro
+      (guest_pc_trace_parallel_lower_checked_acceptance_projects_decision
+        validation
+        config
+        publicInput
+        proof
+        checked)
+      (GpuRuntimeInternal.checked_acceptance_sound_witness
+        assumptions
+        publicInput
+        proof
+        checked)
+
+theorem guest_pc_trace_parallel_lower_checked_acceptance_verifier_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : GuestPcTraceParallelLowerValidation)
+    (config : GuestPcTraceParallelLowerConfig) :
+    forall publicInput proof,
+      GuestPcTraceParallelLowerCheckedAcceptance
+          system
+          validation
+          config
+          publicInput
+          proof ->
+        RuntimeVerifierCoreContract system publicInput proof := by
+  intro publicInput proof checked
+  exact
+    GpuRuntimeInternal.checked_acceptance_verifier_core_contract
+      assumptions
+      publicInput
+      proof
+      checked
+
+theorem guest_pc_trace_parallel_lower_checked_acceptance_core_and_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : GuestPcTraceParallelLowerValidation)
+    (config : GuestPcTraceParallelLowerConfig) :
+    forall publicInput proof,
+      GuestPcTraceParallelLowerCheckedAcceptance
+          system
+          validation
+          config
+          publicInput
+          proof ->
+        GuestPcTraceParallelLowerDecisionMatches config
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof checked
+  have decision :=
+    guest_pc_trace_parallel_lower_checked_acceptance_projects_decision
+      validation
+      config
+      publicInput
+      proof
+      checked
+  have coreAndSound :=
+    GpuRuntimeInternal.checked_acceptance_core_and_sound
+      assumptions
+      publicInput
+      proof
+      checked
+  exact And.intro decision coreAndSound
+
 theorem guest_pc_trace_segment_queue_checked_acceptance_projects_decision
     {system : VerifierModel}
     (validation : GuestPcTraceSegmentQueueValidation)
