@@ -1704,6 +1704,84 @@ pub fn is_guest_pc_trace_segmented_layout_supported(layout: &WitnessTraceLayout)
     matches!(zisk_main_trace_columns(layout), Ok(Some(_)))
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct GuestPcTraceSegmentedLayoutRequirements {
+    pub has_a_memory_source_columns: bool,
+    pub has_b_memory_source_columns: bool,
+    pub has_memory_store_columns: bool,
+    pub has_indirect_memory_columns: bool,
+}
+
+impl GuestPcTraceSegmentedLayoutRequirements {
+    pub fn is_complete(self) -> bool {
+        self.has_a_memory_source_columns
+            && self.has_b_memory_source_columns
+            && self.has_memory_store_columns
+            && self.has_indirect_memory_columns
+    }
+}
+
+pub fn guest_pc_trace_segmented_layout_requirements(
+    layout: &WitnessTraceLayout,
+) -> Option<GuestPcTraceSegmentedLayoutRequirements> {
+    required_vector_trace_column_target(layout, "a", 2).ok()?;
+    required_vector_trace_column_target(layout, "b", 2).ok()?;
+    required_vector_trace_column_target(layout, "c", 2).ok()?;
+    required_trace_column_target(layout, "flag").ok()?;
+    required_trace_column_target(layout, "pc").ok()?;
+    required_trace_column_target(layout, "op").ok()?;
+    Some(GuestPcTraceSegmentedLayoutRequirements {
+        has_a_memory_source_columns: trace_column_target(layout, "a_src_mem")
+            .ok()
+            .flatten()
+            .is_some()
+            && trace_column_target(layout, "a_offset_imm0")
+                .ok()
+                .flatten()
+                .is_some(),
+        has_b_memory_source_columns: trace_column_target(layout, "b_src_mem")
+            .ok()
+            .flatten()
+            .is_some()
+            && trace_column_target(layout, "b_offset_imm0")
+                .ok()
+                .flatten()
+                .is_some(),
+        has_memory_store_columns: trace_column_target(layout, "store_mem")
+            .ok()
+            .flatten()
+            .is_some()
+            && trace_column_target(layout, "store_offset")
+                .ok()
+                .flatten()
+                .is_some(),
+        has_indirect_memory_columns: trace_column_target(layout, "b_src_ind")
+            .ok()
+            .flatten()
+            .is_some()
+            && trace_column_target(layout, "b_offset_imm0")
+                .ok()
+                .flatten()
+                .is_some()
+            && trace_column_target(layout, "ind_width")
+                .ok()
+                .flatten()
+                .is_some()
+            && trace_column_target(layout, "store_ind")
+                .ok()
+                .flatten()
+                .is_some()
+            && trace_column_target(layout, "store_offset")
+                .ok()
+                .flatten()
+                .is_some()
+            && trace_column_target(layout, "store_mem")
+                .ok()
+                .flatten()
+                .is_some(),
+    })
+}
+
 #[cfg(feature = "cuda")]
 #[derive(Debug, Clone)]
 pub(crate) struct GuestPcTraceDeviceTraceBuilder {

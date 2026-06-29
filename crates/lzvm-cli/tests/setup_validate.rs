@@ -6396,6 +6396,26 @@ fn runs_prove_witness_commitments_from_segmented_guest_pc_trace() {
         stdout.contains("guest_pc_trace_segmented=true\n"),
         "{stdout}"
     );
+    assert!(
+        stdout.contains("guest_pc_trace_segmented_layout_complete=false\n"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("guest_pc_trace_segmented_a_memory_source_columns=false\n"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("guest_pc_trace_segmented_b_memory_source_columns=false\n"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("guest_pc_trace_segmented_memory_store_columns=true\n"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("guest_pc_trace_segmented_indirect_memory_columns=true\n"),
+        "{stdout}"
+    );
     assert!(stdout.contains("trace_instance_index=0\n"), "{stdout}");
     assert!(stdout.contains("trace_instance_index=1\n"), "{stdout}");
     assert_eq!(stdout.matches("trace_rows=2\n").count(), 2, "{stdout}");

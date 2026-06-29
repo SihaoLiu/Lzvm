@@ -9,8 +9,8 @@ use lzvm_artifacts::setup_manifest::{
     read_setup_directory_manifest_file, SetupDirectoryManifestError, SETUP_DIRECTORY_MANIFEST_FILE,
 };
 use lzvm_prover::guest_pc_trace_backend::{
-    guest_pc_trace_layout_capacity, is_guest_pc_trace_layout_supported,
-    is_guest_pc_trace_segmented_layout_supported,
+    guest_pc_trace_layout_capacity, guest_pc_trace_segmented_layout_requirements,
+    is_guest_pc_trace_layout_supported, is_guest_pc_trace_segmented_layout_supported,
 };
 use lzvm_prover::setup_preflight::validate_setup_directory_manifest_if_present;
 use lzvm_prover::witness_layout::derive_witness_trace_layout;
@@ -505,6 +505,33 @@ pub(crate) fn write_guest_pc_trace_capacity_summary(
         "guest_pc_trace_segmented={}",
         is_guest_pc_trace_segmented_layout_supported(&layout)
     );
+    if let Some(requirements) = guest_pc_trace_segmented_layout_requirements(&layout) {
+        let _ = writeln!(
+            stdout,
+            "guest_pc_trace_segmented_layout_complete={}",
+            requirements.is_complete()
+        );
+        let _ = writeln!(
+            stdout,
+            "guest_pc_trace_segmented_a_memory_source_columns={}",
+            requirements.has_a_memory_source_columns
+        );
+        let _ = writeln!(
+            stdout,
+            "guest_pc_trace_segmented_b_memory_source_columns={}",
+            requirements.has_b_memory_source_columns
+        );
+        let _ = writeln!(
+            stdout,
+            "guest_pc_trace_segmented_memory_store_columns={}",
+            requirements.has_memory_store_columns
+        );
+        let _ = writeln!(
+            stdout,
+            "guest_pc_trace_segmented_indirect_memory_columns={}",
+            requirements.has_indirect_memory_columns
+        );
+    }
     Ok(())
 }
 
