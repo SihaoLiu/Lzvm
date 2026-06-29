@@ -14,13 +14,14 @@ use crate::guest_instruction::{
     RiscvOpKind, RiscvPrecompileKind,
 };
 use crate::guest_machine::{
-    advance_guest_machine_with_prepared_fcalls_report_shape, instruction_clears_instruction_cache,
-    run_guest_machine_trace_with_fcalls, run_guest_machine_with_fcalls, GuestDmaProofValueFlags,
-    GuestFcallHandler, GuestInstructionCache, GuestMachineHalt, GuestMachineMemory,
-    GuestMachineMemoryOverlaySnapshot, GuestMachineReport, GuestMachineReportShape,
-    GuestMachineRunError, GuestMachineState, GuestMachineTraceSliceStatus, GuestMemoryAccess,
-    GuestMemoryAccessKind, GuestMemoryAccessList, GuestPrecompileMemoryAccessList,
-    GuestRegisterWrite, GuestRegisterWriteList,
+    advance_guest_machine_with_prepared_fcalls_report_shape,
+    advance_guest_machine_with_prepared_fcalls_report_shape_into,
+    instruction_clears_instruction_cache, run_guest_machine_trace_with_fcalls,
+    run_guest_machine_with_fcalls, GuestDmaProofValueFlags, GuestFcallHandler,
+    GuestInstructionCache, GuestMachineHalt, GuestMachineMemory, GuestMachineMemoryOverlaySnapshot,
+    GuestMachineReport, GuestMachineReportShape, GuestMachineRunError, GuestMachineState,
+    GuestMachineTraceSliceStatus, GuestMemoryAccess, GuestMemoryAccessKind, GuestMemoryAccessList,
+    GuestPrecompileMemoryAccessList, GuestRegisterWrite, GuestRegisterWriteList,
 };
 use crate::guest_memory::{load_guest_memory_image, GuestMemoryError};
 use crate::witness_layout::{ResolvedTraceColumn, WitnessTraceBuildError, WitnessTraceLayout};
@@ -4171,6 +4172,24 @@ fn run_guest_pc_trace_segment_slice_inner<
     let mut report_count = 0_usize;
     let mut executed_instructions = 0_u64;
     let mut trace_rows = 0_usize;
+    enum GuestMachineAdvancedReportStorage<'a> {
+        Borrowed(&'a GuestMachineReport),
+        Owned(GuestMachineReport),
+    }
+    impl<'a> std::ops::Deref for GuestMachineAdvancedReportStorage<'a> {
+        type Target = GuestMachineReport;
+
+        fn deref(&self) -> &Self::Target {
+            match self {
+                Self::Borrowed(report) => report,
+                Self::Owned(report) => report,
+            }
+        }
+    }
+    struct GuestMachineAdvancedReportRef<'a> {
+        report: GuestMachineAdvancedReportStorage<'a>,
+        shape: GuestMachineReportShape,
+    }
     loop {
         let pc = state.pc();
         let prepared = instruction_cache
@@ -4248,11 +4267,46 @@ fn run_guest_pc_trace_segment_slice_inner<
             ));
         }
         let clear_instruction_cache = instruction_clears_instruction_cache(state, current);
-        let advanced = advance_guest_machine_with_prepared_fcalls_report_shape(
-            memory, state, handler, prepared,
-        )
-        .map_err(GuestMachineRunError::from)
-        .map_err(GuestPcTraceBackendError::GuestRun)?;
+        let advanced = if RETAIN_REPORTS {
+            reports.reserve(1);
+            let report_index = reports.len();
+            let shape = {
+                let report_slot = reports.spare_capacity_mut().first_mut().ok_or_else(|| {
+                    GuestPcTraceBackendError::InvalidPcTraceLayout {
+                        message: "guest PC trace retained report buffer has no spare capacity"
+                            .to_owned(),
+                    }
+                })?;
+                advance_guest_machine_with_prepared_fcalls_report_shape_into(
+                    memory,
+                    state,
+                    handler,
+                    prepared,
+                    report_slot,
+                )
+                .map_err(GuestMachineRunError::from)
+                .map_err(GuestPcTraceBackendError::GuestRun)?
+            };
+            // SAFETY: the advance call above wrote one complete report into the spare slot.
+            unsafe {
+                reports.set_len(report_index + 1);
+            }
+            GuestMachineAdvancedReportRef {
+                report: GuestMachineAdvancedReportStorage::Borrowed(&reports[report_index]),
+                shape,
+            }
+        } else {
+            let advanced = advance_guest_machine_with_prepared_fcalls_report_shape(
+                memory, state, handler, prepared,
+            )
+            .map_err(GuestMachineRunError::from)
+            .map_err(GuestPcTraceBackendError::GuestRun)?;
+            let shape = advanced.shape;
+            GuestMachineAdvancedReportRef {
+                report: GuestMachineAdvancedReportStorage::Owned(advanced.report),
+                shape,
+            }
+        };
         if clear_instruction_cache {
             instruction_cache.clear();
         } else {
@@ -4277,9 +4331,6 @@ fn run_guest_pc_trace_segment_slice_inner<
                 snapshot.record_report_shape_state(advanced.shape);
                 record_zisk_main_runner_amo_scratch_snapshot(snapshot, &advanced.report)?;
             }
-        }
-        if RETAIN_REPORTS {
-            reports.push(advanced.report);
         }
         report_count = report_count.checked_add(1).ok_or_else(|| {
             GuestPcTraceBackendError::InvalidPcTraceLayout {

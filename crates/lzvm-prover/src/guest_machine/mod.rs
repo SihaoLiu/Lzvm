@@ -1,5 +1,6 @@
 use std::collections::VecDeque;
 use std::fmt;
+use std::mem::MaybeUninit;
 
 use smallvec::SmallVec;
 
@@ -989,6 +990,22 @@ pub(crate) fn advance_guest_machine_with_prepared_fcalls_report_shape(
     advance_guest_machine_prepared_inner_with_report_shape(memory, state, Some(handler), prepared)
 }
 
+pub(crate) fn advance_guest_machine_with_prepared_fcalls_report_shape_into(
+    memory: &mut GuestMachineMemory,
+    state: &mut GuestMachineState,
+    handler: &mut dyn GuestFcallHandler,
+    prepared: GuestMachinePreparedInstruction,
+    report: &mut MaybeUninit<GuestMachineReport>,
+) -> Result<GuestMachineReportShape, GuestMachineError> {
+    advance_guest_machine_prepared_inner_report_shape_into(
+        memory,
+        state,
+        Some(handler),
+        prepared,
+        report,
+    )
+}
+
 fn advance_guest_machine_inner(
     memory: &mut GuestMachineMemory,
     state: &mut GuestMachineState,
@@ -1017,6 +1034,29 @@ fn advance_guest_machine_prepared_inner_with_report_shape(
     handler: Option<&mut dyn GuestFcallHandler>,
     prepared: GuestMachinePreparedInstruction,
 ) -> Result<GuestMachineAdvanceReport, GuestMachineError> {
+    let mut report = MaybeUninit::uninit();
+    let shape = advance_guest_machine_prepared_inner_report_shape_into(
+        memory,
+        state,
+        handler,
+        prepared,
+        &mut report,
+    )?;
+    Ok(GuestMachineAdvanceReport {
+        // SAFETY: advance_guest_machine_prepared_inner_report_shape_into only returns Ok after
+        // writing a complete GuestMachineReport into the output slot.
+        report: unsafe { report.assume_init() },
+        shape,
+    })
+}
+
+fn advance_guest_machine_prepared_inner_report_shape_into(
+    memory: &mut GuestMachineMemory,
+    state: &mut GuestMachineState,
+    handler: Option<&mut dyn GuestFcallHandler>,
+    prepared: GuestMachinePreparedInstruction,
+    report: &mut MaybeUninit<GuestMachineReport>,
+) -> Result<GuestMachineReportShape, GuestMachineError> {
     let address = state.pc();
     if prepared.address != address {
         return Err(GuestMachineError::PreparedInstructionPcMismatch {
@@ -1050,21 +1090,19 @@ fn advance_guest_machine_prepared_inner_with_report_shape(
     let next_pc = state.pc();
     let shape = effects.report_shape(instruction);
 
-    Ok(GuestMachineAdvanceReport {
-        report: GuestMachineReport {
-            address,
-            instruction_byte_len: guest_instruction_byte_len(byte_len),
-            instruction,
-            next_pc,
-            register_writes: effects.register_writes,
-            memory_accesses: effects.memory_accesses,
-            precompile_effects: GuestPrecompileReportEffects::from_parts(
-                effects.precompile_memory_accesses.into_boxed_slice(),
-                effects.precompile_result,
-            ),
-        },
-        shape,
-    })
+    report.write(GuestMachineReport {
+        address,
+        instruction_byte_len: guest_instruction_byte_len(byte_len),
+        instruction,
+        next_pc,
+        register_writes: effects.register_writes,
+        memory_accesses: effects.memory_accesses,
+        precompile_effects: GuestPrecompileReportEffects::from_parts(
+            effects.precompile_memory_accesses.into_boxed_slice(),
+            effects.precompile_result,
+        ),
+    });
+    Ok(shape)
 }
 
 fn fetch_decode_guest_instruction(
