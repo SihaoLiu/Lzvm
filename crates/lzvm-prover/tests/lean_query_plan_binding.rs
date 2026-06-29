@@ -136,6 +136,7 @@ fn lean_query_plan_binding_exports_opening_segment_projections() {
             "runtime_query_plan_binding_checked_acceptance_seeded_opening_and_core_contract",
             "runtime_query_plan_binding_checked_acceptance_seeded_concrete_opening_and_core_contract",
             "runtime_query_plan_binding_checked_acceptance_seeded_hash_concrete_opening_and_core_contract",
+            "runtime_query_plan_binding_audited_finalized_core_sound_witness_contract",
         ],
     );
     lean_binding::assert_theorem_prefix_contains(
@@ -336,6 +337,56 @@ fn lean_query_plan_binding_exports_opening_segment_projections() {
         &lean_source,
         "runtime_query_plan_binding_checked_acceptance_full_soundness_contract",
         &["runtime_opening_segment_binding_checked_acceptance_full_soundness_contract"],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_query_plan_binding_audited_finalized_core_sound_witness_contract",
+        &[
+            "RuntimeQueryPlanBindingCheckedAcceptance",
+            "RequiredCryptographicAssumptionStatements assumptions.crypto",
+            "RequiredSemanticAssumptionStatements assumptions.semantic",
+            "RuntimeQueryPlanBindingEvidence",
+            "RuntimeProofArtifactFinalized",
+            "validation.queryPlanSeedBindsWitnessTreeDigests artifact publicInput proof",
+            "validation.queryPlanSeededFriOpeningRequirementsChecked",
+            "RuntimeVerifierCoreContract system publicInput proof",
+            "system.traceConsistent publicInput proof trace",
+            "SoundWitness system publicInput proof",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_omits(
+        &lean_source,
+        "runtime_query_plan_binding_audited_finalized_core_sound_witness_contract",
+        &[
+            "RuntimeOpeningEvidence",
+            "RuntimeOpeningSegmentBindingEvidence",
+            "requiresExternalSource",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_query_plan_binding_audited_finalized_core_sound_witness_contract",
+        &[
+            "runtime_query_plan_binding_checked_acceptance_evidence",
+            "runtime_query_plan_binding_checked_acceptance_artifact_finalized",
+            "runtime_query_plan_binding_checked_acceptance_seed_binds_witness_tree_digests",
+            "runtime_query_plan_binding_checked_acceptance_seeded_fri_opening_requirements_checked",
+            "runtime_query_plan_binding_checked_acceptance_challenge",
+            "runtime_challenge_segment_binding_checked_acceptance_transcript",
+            "runtime_proof_artifact_binding_checked_acceptance_runtime_accepted",
+            "runtime_artifact_checked_acceptance_implies_verifier_accepts",
+            "accepted_proof_audited_core_and_sound_witness",
+        ],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &lean_source,
+        "runtime_query_plan_binding_audited_finalized_core_sound_witness_contract",
+        &[
+            "runtime_query_plan_binding_checked_acceptance_evidence_core_and_sound",
+            "runtime_query_plan_binding_checked_acceptance_full_soundness_contract",
+            "runtime_query_plan_binding_checked_acceptance_verifier_core_contract",
+            "runtime_opening_segment_binding_checked_acceptance_full_soundness_contract",
+        ],
     );
     lean_binding::assert_theorem_prefix_contains(
         &lean_source,

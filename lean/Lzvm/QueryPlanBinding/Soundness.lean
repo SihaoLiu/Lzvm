@@ -921,4 +921,146 @@ theorem runtime_query_plan_binding_checked_acceptance_seeded_hash_concrete_openi
                       (And.intro publicInputBound
                         (And.intro corePcsOpeningsValid coreFriQueriesValid))))))))))
 
+theorem runtime_query_plan_binding_audited_finalized_core_sound_witness_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeQueryPlanBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeQueryPlanBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RequiredCryptographicAssumptionStatements assumptions.crypto
+          /\ RequiredSemanticAssumptionStatements assumptions.semantic
+          /\ RuntimeQueryPlanBindingEvidence
+            system
+            validation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeProofArtifactFinalized
+            system
+            validation.challengeValidation.transcriptValidation.artifactBindingValidation
+            artifact
+            publicInput
+            proof
+          /\ validation.queryPlanSeedBindsWitnessTreeDigests artifact publicInput proof
+          /\ validation.queryPlanSeededFriOpeningRequirementsChecked
+            artifact
+            publicInput
+            proof
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ (exists witness trace constraints,
+            system.traceConsistent publicInput proof trace
+              /\ system.constraintsSatisfied constraints trace
+              /\ system.witnessMatchesTrace witness trace)
+          /\ SoundWitness system publicInput proof := by
+  intro artifact publicInput proof accepted
+  let transcriptValidation := validation.challengeValidation.transcriptValidation
+  let artifactValidation := transcriptValidation.artifactBindingValidation
+  have queryPlanEvidence :=
+    runtime_query_plan_binding_checked_acceptance_evidence
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have artifactFinalized :=
+    runtime_query_plan_binding_checked_acceptance_artifact_finalized
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have seedBinds :=
+    runtime_query_plan_binding_checked_acceptance_seed_binds_witness_tree_digests
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have seededFriOpeningChecked :=
+    runtime_query_plan_binding_checked_acceptance_seeded_fri_opening_requirements_checked
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have challengeAccepted :=
+    runtime_query_plan_binding_checked_acceptance_challenge
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have transcriptAccepted :=
+    runtime_challenge_segment_binding_checked_acceptance_transcript
+      validation.challengeValidation
+      artifact
+      publicInput
+      proof
+      challengeAccepted
+  have artifactAccepted :=
+    transcriptValidation.transcriptAcceptedImpliesArtifactBindingAccepted
+      artifact
+      publicInput
+      proof
+      transcriptAccepted
+  have runtimeAccepted :=
+    runtime_proof_artifact_binding_checked_acceptance_runtime_accepted
+      artifactValidation
+      artifact
+      publicInput
+      proof
+      artifactAccepted
+  have verifierAccepts :=
+    runtime_artifact_checked_acceptance_implies_verifier_accepts
+      artifactValidation.runtimeValidation
+      artifact
+      publicInput
+      proof
+      runtimeAccepted
+  have auditedCoreSound :=
+    accepted_proof_audited_core_and_sound_witness
+      assumptions
+      publicInput
+      proof
+      verifierAccepts
+  rcases auditedCoreSound with
+    ⟨cryptoEvidence, semanticEvidence, coreContract, soundWitness⟩
+  have executionObligations :
+      exists witness trace constraints,
+        system.traceConsistent publicInput proof trace
+          /\ system.constraintsSatisfied constraints trace
+          /\ system.witnessMatchesTrace witness trace := by
+    rcases soundWitness with
+      ⟨witness,
+        trace,
+        constraints,
+        _transcriptBound,
+        _publicInputBound,
+        _pcsOpenings,
+        _friQueries,
+        traceConsistent,
+        constraintsSatisfied,
+        witnessMatchesTrace⟩
+    exact
+      ⟨witness,
+        trace,
+        constraints,
+        traceConsistent,
+        constraintsSatisfied,
+        witnessMatchesTrace⟩
+  exact
+    And.intro cryptoEvidence
+      (And.intro semanticEvidence
+        (And.intro queryPlanEvidence
+          (And.intro artifactFinalized
+            (And.intro seedBinds
+              (And.intro seededFriOpeningChecked
+                (And.intro coreContract
+                  (And.intro executionObligations soundWitness)))))))
+
 end Lzvm
