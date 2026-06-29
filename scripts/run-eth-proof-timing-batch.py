@@ -626,6 +626,25 @@ def shell_join(parts: list[str | Path]) -> str:
     return " ".join(shell_arg(part) for part in parts)
 
 
+def next_followup_commands(
+    args: argparse.Namespace,
+    root: Path,
+    env_file: Path | str | None = None,
+) -> dict[str, str]:
+    base_parts = next_command_parts(args, root, env_file=env_file)
+    return {
+        "next_check_command": shell_join([*base_parts, "--check-env"]),
+        "next_profile_tool_check_command": shell_join(
+            [*base_parts, "--check-profile-tools"]
+        ),
+        "next_preflight_command": shell_join(
+            [*base_parts, "--check-env", "--check-profile-tools"]
+        ),
+        "next_profile_command": shell_join([*base_parts, "--print-profile-commands"]),
+        "next_run_command": shell_join([*base_parts, "--summary", "real proof timing"]),
+    }
+
+
 def write_env_template(args: argparse.Namespace, root: Path) -> None:
     path = require_workspace_temp_path(
         resolve_workspace_path(args.write_env_template, root),
@@ -633,22 +652,20 @@ def write_env_template(args: argparse.Namespace, root: Path) -> None:
         "--write-env-template",
     )
     env_path = display_path_for_shell(path, root)
-    base_parts = next_command_parts(args, root, env_file=path)
-    check_command = shell_join([*base_parts, "--check-env"])
-    profile_tool_check_command = shell_join([*base_parts, "--check-profile-tools"])
-    preflight_command = shell_join([*base_parts, "--check-env", "--check-profile-tools"])
-    profile_command = shell_join([*base_parts, "--print-profile-commands"])
-    run_command = shell_join([*base_parts, "--summary", "real proof timing"])
+    followup_commands = next_followup_commands(args, root, env_file=path)
     path.parent.mkdir(parents=True, exist_ok=True)
     reject_symlinked_output_path(path, "--write-env-template")
     write_text_no_follow(path, env_template_text(args, root))
 
     print(f"env_template={env_path}")
-    print(f"next_check_command={check_command}")
-    print(f"next_profile_tool_check_command={profile_tool_check_command}")
-    print(f"next_preflight_command={preflight_command}")
-    print(f"next_profile_command={profile_command}")
-    print(f"next_run_command={run_command}")
+    for key in [
+        "next_check_command",
+        "next_profile_tool_check_command",
+        "next_preflight_command",
+        "next_profile_command",
+        "next_run_command",
+    ]:
+        print(f"{key}={followup_commands[key]}")
 
 
 def append_cleared_pipeline_env(parts: list[str]) -> None:
@@ -1291,12 +1308,13 @@ def check_env(
             "guest_image",
         ]:
             print(f"{config.label}_{key}={paths[key]}")
-    base_parts = next_command_parts(args, root)
-    print(
-        f"next_preflight_command={shell_join([*base_parts, '--check-env', '--check-profile-tools'])}"
-    )
-    print(f"next_profile_command={shell_join([*base_parts, '--print-profile-commands'])}")
-    print(f"next_run_command={shell_join([*base_parts, '--summary', 'real proof timing'])}")
+    followup_commands = next_followup_commands(args, root)
+    for key in [
+        "next_preflight_command",
+        "next_profile_command",
+        "next_run_command",
+    ]:
+        print(f"{key}={followup_commands[key]}")
 
 
 def self_test() -> None:

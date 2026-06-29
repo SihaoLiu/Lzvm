@@ -814,20 +814,28 @@ fn eth_proof_timing_batch_check_env_reports_ready_paths() {
     assert!(stdout.contains("small_trace_limit=120000000\n"), "{stdout}");
     assert!(stdout.contains("small_block_input="), "{stdout}");
     assert!(!stdout.contains("small_tmp_dir="), "{stdout}");
+    let expected_next_base = concat!(
+        "scripts/run-eth-proof-timing-batch.py --suite small --small-mode combined ",
+        "--large-mode combined --runs 3 --max-runs 5 --small-timeout 60.0 ",
+        "--large-timeout 180.0 --max-relative-spread 0.1 ",
+        "--work-dir temp/proof-timing-batch --path temp/improve-log.csv"
+    );
     assert!(
-        stdout
-            .contains("next_preflight_command=scripts/run-eth-proof-timing-batch.py --suite small")
-            && stdout.contains("--check-env --check-profile-tools"),
+        stdout.contains(&format!(
+            "next_preflight_command={expected_next_base} --check-env --check-profile-tools\n"
+        )),
         "env check should report the next preflight command: {stdout}"
     );
     assert!(
-        stdout.contains("next_profile_command=scripts/run-eth-proof-timing-batch.py --suite small")
-            && stdout.contains("--print-profile-commands"),
+        stdout.contains(&format!(
+            "next_profile_command={expected_next_base} --print-profile-commands\n"
+        )),
         "env check should report the next profile command: {stdout}"
     );
     assert!(
-        stdout.contains("next_run_command=scripts/run-eth-proof-timing-batch.py --suite small")
-            && stdout.contains("--summary 'real proof timing'"),
+        stdout.contains(&format!(
+            "next_run_command={expected_next_base} --summary 'real proof timing'\n"
+        )),
         "env check should report the next timing command: {stdout}"
     );
 }
@@ -1565,6 +1573,75 @@ fn eth_proof_timing_batch_check_env_fails_when_gpu_memory_is_low() {
     assert!(
         stderr.contains("GPU memory preflight failed"),
         "env check should explain the preflight failure: stderr={stderr}"
+    );
+}
+
+#[test]
+fn eth_proof_timing_batch_check_env_gpu_memory_ready_preserves_next_commands() {
+    let fixture = ProofFixture::new("eth-proof-timing-batch-check-env-gpu-memory-ready");
+    let smi_path = write_executable_script(
+        &fixture.dir,
+        "nvidia-smi-ready",
+        "#!/usr/bin/env python3\nprint('0, GPU-free, 24576, 4096, 20480')\n",
+    );
+    let smi_rel = smi_path
+        .strip_prefix(workspace_root())
+        .expect("smi path should be under workspace")
+        .display()
+        .to_string();
+    let mut command = Command::new(script_path());
+    command
+        .arg("--suite")
+        .arg("small")
+        .arg("--check-env")
+        .arg("--check-gpu-memory")
+        .arg("--min-gpu-free-mib")
+        .arg("2048")
+        .arg("--nvidia-smi-command")
+        .arg(&smi_path)
+        .arg("--skip-targets");
+    command.env_remove("CUDA_VISIBLE_DEVICES");
+    fixture.apply_env(&mut command, SMALL_PREFIX);
+
+    let output = command
+        .output()
+        .expect("ETH proof timing batch env GPU memory check should run");
+    let success = output.status.success();
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    let preflight_line = stdout
+        .lines()
+        .find(|line| line.starts_with("next_preflight_command="))
+        .unwrap_or("");
+    let profile_line = stdout
+        .lines()
+        .find(|line| line.starts_with("next_profile_command="))
+        .unwrap_or("");
+    let run_line = stdout
+        .lines()
+        .find(|line| line.starts_with("next_run_command="))
+        .unwrap_or("");
+    fixture.cleanup();
+
+    assert!(
+        success,
+        "env check should pass when GPU memory meets the configured floor: stderr={stderr}"
+    );
+    assert!(
+        stdout.contains("gpu_memory_status=ready\n") && stdout.contains("status=ok\n"),
+        "env check should report ready GPU memory and proof env status: {stdout}"
+    );
+    for line in [preflight_line, profile_line, run_line] {
+        assert!(
+            line.contains("--check-gpu-memory")
+                && line.contains("--min-gpu-free-mib 2048")
+                && line.contains(&format!("--nvidia-smi-command {smi_rel}")),
+            "next command should preserve GPU memory preflight flags: {stdout}"
+        );
+    }
+    assert!(
+        preflight_line.contains("--check-env --check-profile-tools"),
+        "preflight command should keep the combined env and profile-tool checks: {stdout}"
     );
 }
 
