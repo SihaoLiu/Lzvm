@@ -3508,6 +3508,25 @@ fn run_guest_pc_trace_segment_slice(
     instruction_limit: u64,
     row_limit: usize,
 ) -> Result<GuestPcTraceSegmentSlice, GuestPcTraceBackendError> {
+    let mut instruction_cache = GuestInstructionCache::default();
+    run_guest_pc_trace_segment_slice_with_cache(
+        memory,
+        state,
+        handler,
+        instruction_limit,
+        row_limit,
+        &mut instruction_cache,
+    )
+}
+
+fn run_guest_pc_trace_segment_slice_with_cache(
+    memory: &mut GuestMachineMemory,
+    state: &mut GuestMachineState,
+    handler: &mut dyn GuestFcallHandler,
+    instruction_limit: u64,
+    row_limit: usize,
+    instruction_cache: &mut GuestInstructionCache,
+) -> Result<GuestPcTraceSegmentSlice, GuestPcTraceBackendError> {
     run_guest_pc_trace_segment_slice_inner::<false, true>(
         memory,
         state,
@@ -3515,6 +3534,7 @@ fn run_guest_pc_trace_segment_slice(
         instruction_limit,
         row_limit,
         None,
+        instruction_cache,
     )
 }
 
@@ -3567,6 +3587,7 @@ fn replay_guest_pc_trace_segment_reports_for_seed_advance(
     Ok(replay.slice.reports)
 }
 
+#[allow(dead_code)]
 fn run_guest_pc_trace_segment_slice_with_boundary_snapshot(
     memory: &mut GuestMachineMemory,
     state: &mut GuestMachineState,
@@ -3575,6 +3596,27 @@ fn run_guest_pc_trace_segment_slice_with_boundary_snapshot(
     row_limit: usize,
     boundary_snapshot: &mut ZiskMainRunnerBoundarySnapshot,
 ) -> Result<GuestPcTraceSegmentSlice, GuestPcTraceBackendError> {
+    let mut instruction_cache = GuestInstructionCache::default();
+    run_guest_pc_trace_segment_slice_with_boundary_snapshot_and_cache(
+        memory,
+        state,
+        handler,
+        instruction_limit,
+        row_limit,
+        boundary_snapshot,
+        &mut instruction_cache,
+    )
+}
+
+fn run_guest_pc_trace_segment_slice_with_boundary_snapshot_and_cache(
+    memory: &mut GuestMachineMemory,
+    state: &mut GuestMachineState,
+    handler: &mut dyn GuestFcallHandler,
+    instruction_limit: u64,
+    row_limit: usize,
+    boundary_snapshot: &mut ZiskMainRunnerBoundarySnapshot,
+    instruction_cache: &mut GuestInstructionCache,
+) -> Result<GuestPcTraceSegmentSlice, GuestPcTraceBackendError> {
     run_guest_pc_trace_segment_slice_inner::<true, true>(
         memory,
         state,
@@ -3582,6 +3624,7 @@ fn run_guest_pc_trace_segment_slice_with_boundary_snapshot(
         instruction_limit,
         row_limit,
         Some(boundary_snapshot),
+        instruction_cache,
     )
 }
 
@@ -3593,6 +3636,27 @@ fn run_guest_pc_trace_segment_slice_with_elided_reports_and_boundary_snapshot(
     row_limit: usize,
     boundary_snapshot: &mut ZiskMainRunnerBoundarySnapshot,
 ) -> Result<GuestPcTraceSegmentSlice, GuestPcTraceBackendError> {
+    let mut instruction_cache = GuestInstructionCache::default();
+    run_guest_pc_trace_segment_slice_with_elided_reports_and_boundary_snapshot_and_cache(
+        memory,
+        state,
+        handler,
+        instruction_limit,
+        row_limit,
+        boundary_snapshot,
+        &mut instruction_cache,
+    )
+}
+
+fn run_guest_pc_trace_segment_slice_with_elided_reports_and_boundary_snapshot_and_cache(
+    memory: &mut GuestMachineMemory,
+    state: &mut GuestMachineState,
+    handler: &mut dyn GuestFcallHandler,
+    instruction_limit: u64,
+    row_limit: usize,
+    boundary_snapshot: &mut ZiskMainRunnerBoundarySnapshot,
+    instruction_cache: &mut GuestInstructionCache,
+) -> Result<GuestPcTraceSegmentSlice, GuestPcTraceBackendError> {
     run_guest_pc_trace_segment_slice_inner::<true, false>(
         memory,
         state,
@@ -3600,6 +3664,7 @@ fn run_guest_pc_trace_segment_slice_with_elided_reports_and_boundary_snapshot(
         instruction_limit,
         row_limit,
         Some(boundary_snapshot),
+        instruction_cache,
     )
 }
 
@@ -3610,6 +3675,7 @@ fn run_guest_pc_trace_segment_slice_with_live_report_chunks(
     handler: &mut dyn GuestFcallHandler,
     instruction_limit: u64,
     row_limit: usize,
+    instruction_cache: &mut GuestInstructionCache,
     mut boundary_snapshot: Option<&mut ZiskMainRunnerBoundarySnapshot>,
     mut emit_report: impl FnMut(GuestMachineReport) -> Result<(), GuestPcTraceBackendError>,
 ) -> Result<GuestPcTraceSegmentSlice, GuestPcTraceBackendError> {
@@ -3618,7 +3684,6 @@ fn run_guest_pc_trace_segment_slice_with_live_report_chunks(
     let mut report_count = 0_usize;
     let mut executed_instructions = 0_u64;
     let mut trace_rows = 0_usize;
-    let mut instruction_cache = GuestInstructionCache::default();
     loop {
         let pc = state.pc();
         let prepared = instruction_cache
@@ -4099,13 +4164,13 @@ fn run_guest_pc_trace_segment_slice_inner<
     instruction_limit: u64,
     row_limit: usize,
     mut boundary_snapshot: Option<&mut ZiskMainRunnerBoundarySnapshot>,
+    instruction_cache: &mut GuestInstructionCache,
 ) -> Result<GuestPcTraceSegmentSlice, GuestPcTraceBackendError> {
     let mut reports = Vec::new();
     let mut last_report_shape = None;
     let mut report_count = 0_usize;
     let mut executed_instructions = 0_u64;
     let mut trace_rows = 0_usize;
-    let mut instruction_cache = GuestInstructionCache::default();
     loop {
         let pc = state.pc();
         let prepared = instruction_cache
@@ -5067,6 +5132,7 @@ fn emit_guest_pc_trace_live_pending_segment_messages(
     seed: Option<Box<ZiskMainSegmentSeed>>,
     replay_snapshot: Option<&GuestPcTraceSegmentReplaySnapshot>,
     boundary_snapshot: Option<&mut ZiskMainRunnerBoundarySnapshot>,
+    instruction_cache: &mut GuestInstructionCache,
     emit_stream_start_before_chunks: bool,
     report_chunk_capacity: usize,
     mut emit_message: impl FnMut(
@@ -5094,6 +5160,7 @@ fn emit_guest_pc_trace_live_pending_segment_messages(
         handler,
         runner_remaining_instruction_limit,
         row_count,
+        instruction_cache,
         boundary_snapshot,
         |report| {
             chunk_reports.push(report);
@@ -5241,6 +5308,7 @@ fn produce_guest_pc_trace_live_pending_messages(
     let emit_stream_start_before_chunks = guest_pc_trace_live_stream_start_enabled();
     let validate_runner_seed_snapshot = seed_mode.validate;
     let mut seed_mirror = runner_seed_snapshot.then(ZiskMainSegmentSeed::new);
+    let mut instruction_cache = GuestInstructionCache::default();
     loop {
         let remaining_limit = instruction_limit.saturating_sub(executed_instructions);
         let trace_instance_index = u32::try_from(trace_instance_count).map_err(|_| {
@@ -5272,6 +5340,7 @@ fn produce_guest_pc_trace_live_pending_messages(
             seed.clone().map(Box::new),
             replay_snapshot.as_ref(),
             runner_boundary_snapshot.as_mut(),
+            &mut instruction_cache,
             emit_stream_start_before_chunks,
             report_chunk_capacity,
             &mut emit_message,
@@ -5519,6 +5588,7 @@ fn produce_guest_pc_trace_pending_slices(
     let mut executed_instructions = 0_u64;
     let mut trace_instance_count = 0_usize;
     let mut timing = GuestPcTraceStreamTiming::default();
+    let mut instruction_cache = GuestInstructionCache::default();
     let seed_mode = GuestPcTraceRunnerSeedMode::from_runtime(instruction_limit);
     let runner_seed_snapshot = seed_mode.snapshot;
     let runner_seed_snapshot_trusted = seed_mode.trusted;
@@ -5558,31 +5628,34 @@ fn produce_guest_pc_trace_pending_slices(
         };
         let slice = if let Some(snapshot) = runner_boundary_snapshot.as_mut() {
             if report_elision {
-                run_guest_pc_trace_segment_slice_with_elided_reports_and_boundary_snapshot(
+                run_guest_pc_trace_segment_slice_with_elided_reports_and_boundary_snapshot_and_cache(
                     &mut memory,
                     &mut state,
                     &mut fcall_handler,
                     remaining_limit,
                     row_count,
                     snapshot,
+                    &mut instruction_cache,
                 )?
             } else {
-                run_guest_pc_trace_segment_slice_with_boundary_snapshot(
+                run_guest_pc_trace_segment_slice_with_boundary_snapshot_and_cache(
                     &mut memory,
                     &mut state,
                     &mut fcall_handler,
                     remaining_limit,
                     row_count,
                     snapshot,
+                    &mut instruction_cache,
                 )?
             }
         } else {
-            run_guest_pc_trace_segment_slice(
+            run_guest_pc_trace_segment_slice_with_cache(
                 &mut memory,
                 &mut state,
                 &mut fcall_handler,
                 remaining_limit,
                 row_count,
+                &mut instruction_cache,
             )?
         };
         timing.trace_runner_report_buffer_capacity += slice.report_capacity;

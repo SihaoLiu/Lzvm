@@ -11205,16 +11205,16 @@ fn guest_pc_trace_slice_reuses_prepared_instruction_for_advance() {
     let source = std::fs::read_to_string(&source_path).expect("guest PC trace source should read");
     let body = function_body(
         &source,
-        "fn run_guest_pc_trace_segment_slice",
+        "fn run_guest_pc_trace_segment_slice_inner",
         "fn zisk_main_instruction_max_rows",
     );
 
     assert!(
-        body.contains("prepare_current_guest_instruction(memory, pc)"),
+        body.contains("let prepared = instruction_cache") && body.contains(".prepare(memory, pc)"),
         "guest PC trace slices should keep the fetched instruction for row planning"
     );
     assert!(
-        body.contains("advance_guest_machine_with_prepared_fcalls"),
+        body.contains("advance_guest_machine_with_prepared_fcalls_report_shape"),
         "guest PC trace slices should advance with the prepared instruction instead of fetching it again"
     );
     assert!(
@@ -11242,7 +11242,7 @@ fn guest_pc_trace_paused_slice_carries_boundary_lookahead() {
 
     let run_slice_body = function_body(
         &backend_source,
-        "fn run_guest_pc_trace_segment_slice",
+        "fn run_guest_pc_trace_segment_slice_inner",
         "fn zisk_main_instruction_max_rows",
     );
     assert!(

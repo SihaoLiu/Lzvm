@@ -2050,12 +2050,14 @@ fn live_report_chunk_runner_matches_serial_slice_without_returning_reports() {
     )
     .expect("serial segment should run");
     let mut live_reports = Vec::new();
+    let mut instruction_cache = GuestInstructionCache::default();
     let live = run_guest_pc_trace_segment_slice_with_live_report_chunks(
         &mut live_memory,
         &mut live_state,
         &mut live_fcall_handler,
         32,
         layout.row_count(),
+        &mut instruction_cache,
         None,
         |report| {
             live_reports.push(report);
@@ -2116,6 +2118,7 @@ fn live_pending_segment_messages_reassemble_to_serial_lower_output() {
     let (mut live_memory, mut live_state, mut live_fcall_handler) =
         load_guest_pc_trace_machine(context, &[]).expect("live guest trace machine should load");
     let mut messages = Vec::new();
+    let mut instruction_cache = GuestInstructionCache::default();
     let emitted = emit_guest_pc_trace_live_pending_segment_messages(
         &mut live_memory,
         &mut live_state,
@@ -2126,6 +2129,7 @@ fn live_pending_segment_messages_reassemble_to_serial_lower_output() {
         expected.seed.clone(),
         None,
         None,
+        &mut instruction_cache,
         false,
         1,
         |message| {
@@ -2295,6 +2299,7 @@ fn live_pending_segment_boundary_snapshot_lifts_next_seed_without_retained_repor
         load_guest_pc_trace_machine(context, &[]).expect("live guest trace machine should load");
     let mut boundary_snapshot = ZiskMainRunnerBoundarySnapshot::new(&current_seed);
     let mut messages = Vec::new();
+    let mut instruction_cache = GuestInstructionCache::default();
     let emitted = emit_guest_pc_trace_live_pending_segment_messages(
         &mut live_memory,
         &mut live_state,
@@ -2305,6 +2310,7 @@ fn live_pending_segment_boundary_snapshot_lifts_next_seed_without_retained_repor
         expected.seed.clone(),
         None,
         Some(&mut boundary_snapshot),
+        &mut instruction_cache,
         false,
         1,
         |message| {
@@ -2394,6 +2400,7 @@ fn live_pending_segment_can_emit_stream_start_before_chunks() {
     let (mut live_memory, mut live_state, mut live_fcall_handler) =
         load_guest_pc_trace_machine(context, &[]).expect("live guest trace machine should load");
     let mut messages = Vec::new();
+    let mut instruction_cache = GuestInstructionCache::default();
     emit_guest_pc_trace_live_pending_segment_messages(
         &mut live_memory,
         &mut live_state,
@@ -2404,6 +2411,7 @@ fn live_pending_segment_can_emit_stream_start_before_chunks() {
         expected.seed.clone(),
         None,
         None,
+        &mut instruction_cache,
         true,
         1,
         |message| {
