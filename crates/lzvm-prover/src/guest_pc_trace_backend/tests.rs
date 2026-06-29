@@ -3395,6 +3395,7 @@ fn live_chunks_before_segment_start_lower_with_traceless_output() {
 
     let (mut live_memory, mut live_state, mut live_fcall_handler) =
         load_guest_pc_trace_machine(context, &[]).expect("live guest trace machine should load");
+    let mut instruction_cache = GuestInstructionCache::default();
     let (sender, receiver) = mpsc::sync_channel(8);
     emit_guest_pc_trace_live_pending_segment_messages(
         &mut live_memory,
@@ -3406,6 +3407,7 @@ fn live_chunks_before_segment_start_lower_with_traceless_output() {
         Some(Box::new(seed.clone())),
         None,
         None,
+        &mut instruction_cache,
         false,
         1,
         |message| {

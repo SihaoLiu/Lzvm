@@ -9873,7 +9873,6 @@ impl ZiskMainStreamingDeviceSegmentBuilder {
             .as_ref()
             .filter(|_| report_detail_timing)
             .map(|_| Instant::now());
-        let descriptor_rows_before = self.device_trace_descriptors.descriptor_rows();
         let pending_report = self.state.pending_dma.is_some();
         let report_apply_started = timing
             .as_ref()
@@ -9926,10 +9925,7 @@ impl ZiskMainStreamingDeviceSegmentBuilder {
         if let Some(timing) = timing {
             timing.trace_report_count += 1;
             timing.trace_report_row_count += written_rows;
-            timing.trace_descriptor_row_count += self
-                .device_trace_descriptors
-                .descriptor_rows()
-                .saturating_sub(descriptor_rows_before);
+            timing.trace_descriptor_row_count += written_rows;
             if timing_config.shape_timing {
                 record_trace_report_shape(timing, report, pending_report, written_rows);
             }
@@ -12366,11 +12362,6 @@ fn write_zisk_main_report_columns(
     _detail_timing: bool,
     shape_timing: bool,
 ) -> Result<usize, GuestPcTraceBackendError> {
-    #[cfg(feature = "cuda")]
-    let descriptor_rows_before = device_trace_descriptors
-        .as_ref()
-        .map(ZiskMainDeviceTraceDescriptors::descriptor_rows)
-        .unwrap_or(0);
     let mut context = ZiskMainReportValidationContext::new(Some(columns), row_count, segment)?;
     validate_and_apply_zisk_main_report(
         row,
@@ -12405,16 +12396,12 @@ fn write_zisk_main_report_columns(
             write_zisk_main_row_columns(builder, output_row, values, columns)
         },
     )
-    .inspect(|_| {
+    .inspect(|written_rows| {
         #[cfg(feature = "cuda")]
         if let Some(timing) = timing.as_mut() {
-            let timing = &mut **timing;
-            let descriptor_rows_after = device_trace_descriptors
-                .as_ref()
-                .map(ZiskMainDeviceTraceDescriptors::descriptor_rows)
-                .unwrap_or(0);
-            timing.trace_descriptor_row_count +=
-                descriptor_rows_after.saturating_sub(descriptor_rows_before);
+            if device_trace_descriptors.is_some() {
+                timing.trace_descriptor_row_count += *written_rows;
+            }
         }
     })
 }
