@@ -450,12 +450,24 @@ def env_template_text(args: argparse.Namespace, root: Path) -> str:
             lines.append("")
         lines.append(f"# {config.label} suite")
         lines.append(f"# run with --{config.label}-mode {mode}")
-        lines.append(shell_export(config.var("BIN"), DEFAULT_BIN_RELATIVE))
+        lines.append(
+            shell_export(
+                config.var("BIN"),
+                os.environ.get(config.var("BIN"), DEFAULT_BIN_RELATIVE),
+            )
+        )
         for suffix in REQUIRED_SUFFIXES:
             if suffix == "INPUT_DATA":
                 lines.append("# INPUT_DATA must be framed guest stdin")
-            lines.append(shell_export(config.var(suffix), ""))
-        lines.append(shell_export(config.var("TRACE_LIMIT"), config.default_trace_limit))
+            lines.append(
+                shell_export(config.var(suffix), os.environ.get(config.var(suffix), ""))
+            )
+        lines.append(
+            shell_export(
+                config.var("TRACE_LIMIT"),
+                os.environ.get(config.var("TRACE_LIMIT"), config.default_trace_limit),
+            )
+        )
     return "\n".join(lines) + "\n"
 
 
@@ -1243,6 +1255,13 @@ def run(args: argparse.Namespace) -> int:
         raise SystemExit("--skip-targets conflicts with --enforce-targets")
     if effective_max_runs(args) < args.runs:
         raise SystemExit("--max-runs must be at least --runs")
+    if (
+        args.env_file is not None
+        and (args.print_env_template or args.write_env_template is not None)
+    ):
+        env_file_path = resolve_workspace_path(args.env_file, root)
+        if env_file_path.exists():
+            load_env_file(env_file_path, root)
     if args.print_env_template:
         print_env_template(args, root)
     if args.write_env_template is not None:

@@ -1940,6 +1940,98 @@ fn eth_proof_timing_batch_writes_env_template_under_temp() {
 }
 
 #[test]
+fn eth_proof_timing_batch_env_template_reuses_existing_env_file_values() {
+    let fixture = ProofFixture::new("eth proof timing batch env template prefill");
+    let env_path = fixture.dir.join("partial.env");
+    let template_path = fixture.dir.join("partial.template.env");
+    std::fs::write(
+        &env_path,
+        format!(
+            "export {SMALL_PREFIX}_BIN='{}'\nexport {SMALL_PREFIX}_SETUP='{}'\nexport {SMALL_PREFIX}_TRACE_LIMIT=42\n",
+            fixture.fake_bin.display(),
+            fixture.setup.display(),
+        ),
+    )
+    .expect("partial env file should write");
+    let expected_bin = format!("export {SMALL_PREFIX}_BIN='{}'", fixture.fake_bin.display());
+    let expected_setup = format!("export {SMALL_PREFIX}_SETUP='{}'", fixture.setup.display());
+    let expected_trace_limit = format!("export {SMALL_PREFIX}_TRACE_LIMIT=42");
+    let mut print_command = Command::new(script_path());
+    print_command
+        .arg("--suite")
+        .arg("small")
+        .arg("--env-file")
+        .arg(&env_path)
+        .arg("--print-env-template");
+    clear_env(&mut print_command, SMALL_PREFIX);
+    clear_env(&mut print_command, LARGE_PREFIX);
+
+    let print_output = print_command
+        .output()
+        .expect("ETH proof timing batch env template should print");
+    let print_success = print_output.status.success();
+    let print_stdout = String::from_utf8(print_output.stdout).expect("stdout should be utf-8");
+    let print_stderr = String::from_utf8_lossy(&print_output.stderr).into_owned();
+
+    let mut command = Command::new(script_path());
+    command
+        .arg("--suite")
+        .arg("small")
+        .arg("--env-file")
+        .arg(&env_path)
+        .arg("--write-env-template")
+        .arg(&template_path);
+    clear_env(&mut command, SMALL_PREFIX);
+    clear_env(&mut command, LARGE_PREFIX);
+
+    let output = command
+        .output()
+        .expect("ETH proof timing batch env template should write");
+    let success = output.status.success();
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    let template = std::fs::read_to_string(&template_path).expect("env template should be written");
+    fixture.cleanup();
+
+    assert!(
+        success,
+        "env template should write from a partial env file: stderr={stderr}"
+    );
+    assert!(
+        stdout.contains("next_check_command="),
+        "env template write should still report follow-up commands: {stdout}"
+    );
+    assert!(
+        print_success,
+        "env template should print from a partial env file: stderr={print_stderr}"
+    );
+    assert!(
+        print_stdout.contains(&expected_bin)
+            && print_stdout.contains(&expected_setup)
+            && print_stdout.contains(&expected_trace_limit),
+        "printed env template should keep values already present in the env file: {print_stdout}"
+    );
+    assert!(
+        print_stderr.is_empty(),
+        "env template print should not warn: {print_stderr}"
+    );
+    assert!(
+        template.contains(&expected_bin)
+            && template.contains(&expected_setup)
+            && template.contains(&expected_trace_limit),
+        "env template should keep values already present in the env file: {template}"
+    );
+    assert!(
+        template.contains(&format!("export {SMALL_PREFIX}_BLOCK_INPUT=\n"))
+            && template.contains(&format!("export {SMALL_PREFIX}_PROGRAM_IMAGE_CACHE=\n"))
+            && template.contains(&format!("export {SMALL_PREFIX}_INPUT_DATA=\n"))
+            && template.contains(&format!("export {SMALL_PREFIX}_GUEST_IMAGE=\n")),
+        "env template should leave missing required paths blank: {template}"
+    );
+    assert!(stderr.is_empty(), "env template should not warn: {stderr}");
+}
+
+#[test]
 fn eth_proof_timing_batch_missing_env_file_suggests_template_command() {
     let fixture = ProofFixture::new("eth proof timing batch missing env file");
     let env_path = fixture.dir.join("missing.env");
