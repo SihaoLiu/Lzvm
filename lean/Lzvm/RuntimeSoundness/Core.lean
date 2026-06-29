@@ -736,6 +736,45 @@ theorem runtime_soundness_checked_acceptance_audited_core_contract
       (And.intro audited.right.left
         (And.intro coreContract audited.right.right))
 
+theorem runtime_soundness_checked_acceptance_audited_soundness_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeSoundnessValidation system) :
+    forall artifact publicInput proof requiresExternalSource,
+      RuntimeSoundnessCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof
+          requiresExternalSource ->
+        RequiredCryptographicAssumptionStatements assumptions.crypto
+          /\ RequiredSemanticAssumptionStatements assumptions.semantic
+          /\ RuntimeSoundnessEvidence
+            system
+            validation
+            artifact
+            publicInput
+            proof
+            requiresExternalSource
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro artifact publicInput proof requiresExternalSource checked
+  have coreContract :=
+    runtime_soundness_checked_acceptance_audited_core_contract
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      checked
+  have auditedAssumptions :=
+    assumption_bundle_carries_required_evidence assumptions
+  exact
+    And.intro auditedAssumptions.left
+      (And.intro auditedAssumptions.right coreContract.right)
+
 theorem runtime_soundness_checked_acceptance_verifier_sound_witness
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
