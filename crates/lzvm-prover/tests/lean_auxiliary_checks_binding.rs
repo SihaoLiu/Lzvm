@@ -2474,6 +2474,10 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
     );
     assert!(
         lean_source.contains("GuestPcTraceSegmentCommitModeConfig")
+            && lean_source.contains("GuestPcTraceSegmentCommitWorkerDefaultConfig")
+            && lean_source.contains("configuredCommitPipeline")
+            && lean_source.contains("autoCommitPipelineInputByteThreshold")
+            && lean_source.contains("GuestPcTraceSegmentCommitWorkerDefaultDecisionMatches")
             && lean_source.contains("configuredWorkerCount")
             && lean_source.contains("effectiveWorkerCount")
             && lean_source.contains("configuredAsyncSingleWorker")
@@ -2495,6 +2499,9 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
                 .contains("guest_pc_trace_commit_mode_checked_acceptance_core_and_sound")
             && gpu_runtime_source
                 .contains("guest_pc_trace_commit_mode_async_requires_single_worker")
+            && gpu_runtime_source.contains("guest_pc_trace_commit_worker_default_positive")
+            && gpu_runtime_source
+                .contains("guest_pc_trace_commit_worker_default_disabled_override_serial")
             && gpu_runtime_source.contains(
                 "guest_pc_trace_commit_mode_checked_acceptance_projects_descriptor_retention"
             )
@@ -2505,6 +2512,15 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             && witness_execution_source.contains("fn from_input(")
             && witness_execution_source
                 .contains("guest_pc_trace_segment_commit_worker_count_for_input_with_override")
+            && witness_execution_source.contains(
+                "const DEFAULT_GUEST_PC_TRACE_AUTO_COMMIT_PIPELINE_INPUT_BYTES: usize = 1024 * 1024"
+            )
+            && witness_execution_source.contains(
+                "guest_pc_trace_segment_commit_pipeline_env_override()"
+            )
+            && witness_execution_source.contains(
+                "input_byte_count >= DEFAULT_GUEST_PC_TRACE_AUTO_COMMIT_PIPELINE_INPUT_BYTES"
+            )
             && witness_execution_source
                 .contains("guest_pc_trace_segment_commit_async_single_worker_enabled")
             && witness_execution_source

@@ -869,6 +869,32 @@ def GuestPcTraceDescriptorBufferRetentionDecisionMatches
             decide (config.parallelLowerEnabledForDescriptorRetention = false
               /\ config.inputByteCount < config.supportedInputByteLimit)
 
+structure GuestPcTraceSegmentCommitWorkerDefaultConfig where
+  configuredCommitPipeline : Option Bool
+  inputByteCount : Nat
+  autoCommitPipelineInputByteThreshold : Nat
+  pipelineWorkerCount : Nat
+  defaultWorkerCount : Nat
+deriving DecidableEq, Repr
+
+def GuestPcTraceSegmentCommitWorkerDefaultPipelineSelected
+    (config : GuestPcTraceSegmentCommitWorkerDefaultConfig) : Bool :=
+  match config.configuredCommitPipeline with
+    | some configured =>
+        configured
+    | none =>
+        decide (config.autoCommitPipelineInputByteThreshold <= config.inputByteCount)
+
+def GuestPcTraceSegmentCommitWorkerDefaultDecisionMatches
+    (config : GuestPcTraceSegmentCommitWorkerDefaultConfig) : Prop :=
+  0 < config.autoCommitPipelineInputByteThreshold
+    /\ 0 < config.pipelineWorkerCount
+    /\ config.defaultWorkerCount =
+      if GuestPcTraceSegmentCommitWorkerDefaultPipelineSelected config then
+        config.pipelineWorkerCount
+      else
+        1
+
 structure GuestPcTraceSegmentCommitModeConfig where
   defaultWorkerCount : Nat
   configuredWorkerCount : Option Nat

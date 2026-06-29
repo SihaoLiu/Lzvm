@@ -11,6 +11,31 @@ GPU trace, retained-source, and retained-cache auxiliary runtime contracts.
 -/
 
 namespace Lzvm
+
+theorem guest_pc_trace_commit_worker_default_positive
+    (config : GuestPcTraceSegmentCommitWorkerDefaultConfig) :
+    GuestPcTraceSegmentCommitWorkerDefaultDecisionMatches config ->
+      0 < config.defaultWorkerCount := by
+  intro decision
+  rcases decision with
+    ⟨_thresholdPositive, pipelinePositive, defaultMatches⟩
+  cases selected : GuestPcTraceSegmentCommitWorkerDefaultPipelineSelected config <;>
+    simp [defaultMatches, selected, pipelinePositive]
+
+theorem guest_pc_trace_commit_worker_default_disabled_override_serial
+    (config : GuestPcTraceSegmentCommitWorkerDefaultConfig) :
+    config.configuredCommitPipeline = some false ->
+      GuestPcTraceSegmentCommitWorkerDefaultDecisionMatches config ->
+        config.defaultWorkerCount = 1 := by
+  intro configuredDisabled decision
+  rcases decision with
+    ⟨_thresholdPositive, _pipelinePositive, defaultMatches⟩
+  have selectedFalse :
+      GuestPcTraceSegmentCommitWorkerDefaultPipelineSelected config = false := by
+    simp [GuestPcTraceSegmentCommitWorkerDefaultPipelineSelected,
+      configuredDisabled]
+  simpa [selectedFalse] using defaultMatches
+
 theorem guest_pc_trace_commit_mode_checked_acceptance_projects_decision
     {system : VerifierModel}
     (validation : GuestPcTraceSegmentCommitModeValidation)

@@ -4880,9 +4880,10 @@ impl<'scope, 'env> GuestPcTraceSegmentCommitWorkerPool<'scope, 'env> {
 
 const GUEST_PC_TRACE_COMMIT_PIPELINE_ENV: &str = "LZVM_GUEST_PC_TRACE_COMMIT_PIPELINE";
 const DEFAULT_GUEST_PC_TRACE_COMMIT_PIPELINE_WORKERS: usize = 2;
+const DEFAULT_GUEST_PC_TRACE_AUTO_COMMIT_PIPELINE_INPUT_BYTES: usize = 1024 * 1024;
 
-fn default_guest_pc_trace_segment_commit_worker_count_for_input(_input_byte_count: usize) -> usize {
-    if guest_pc_trace_segment_commit_pipeline_enabled() {
+fn default_guest_pc_trace_segment_commit_worker_count_for_input(input_byte_count: usize) -> usize {
+    if guest_pc_trace_segment_commit_pipeline_selected(input_byte_count) {
         DEFAULT_GUEST_PC_TRACE_COMMIT_PIPELINE_WORKERS
     } else {
         1
@@ -4913,8 +4914,15 @@ fn guest_pc_trace_segment_commit_async_single_worker_enabled() -> bool {
     env_flag_present_and_enabled(ENV_NAME)
 }
 
-fn guest_pc_trace_segment_commit_pipeline_enabled() -> bool {
-    env_flag_present_and_enabled(GUEST_PC_TRACE_COMMIT_PIPELINE_ENV)
+fn guest_pc_trace_segment_commit_pipeline_selected(input_byte_count: usize) -> bool {
+    guest_pc_trace_segment_commit_pipeline_env_override().unwrap_or_else(|| {
+        input_byte_count >= DEFAULT_GUEST_PC_TRACE_AUTO_COMMIT_PIPELINE_INPUT_BYTES
+    })
+}
+
+fn guest_pc_trace_segment_commit_pipeline_env_override() -> Option<bool> {
+    std::env::var_os(GUEST_PC_TRACE_COMMIT_PIPELINE_ENV)
+        .map(|value| !matches!(value.to_str(), Some("0" | "false" | "no" | "off" | "")))
 }
 
 fn next_guest_pc_segment_commit_worker_count_after_oom(
@@ -8007,7 +8015,7 @@ mod tests {
     }
 
     #[test]
-    fn guest_pc_segment_commit_worker_count_uses_single_worker_default() {
+    fn guest_pc_segment_commit_worker_count_uses_thresholded_default() {
         let commit_workers_env = TestEnvVarGuard::new("LZVM_GUEST_PC_TRACE_SEGMENT_COMMIT_WORKERS");
         commit_workers_env.unset();
         let commit_pipeline_env =
@@ -8019,12 +8027,40 @@ mod tests {
             1
         );
         assert_eq!(
-            default_guest_pc_trace_segment_commit_worker_count_for_input(8 * 1024 * 1024),
+            default_guest_pc_trace_segment_commit_worker_count_for_input(
+                DEFAULT_GUEST_PC_TRACE_AUTO_COMMIT_PIPELINE_INPUT_BYTES - 1
+            ),
             1
         );
         assert_eq!(
-            default_guest_pc_trace_segment_commit_worker_count_for_input(usize::MAX),
+            default_guest_pc_trace_segment_commit_worker_count_for_input(
+                DEFAULT_GUEST_PC_TRACE_AUTO_COMMIT_PIPELINE_INPUT_BYTES
+            ),
+            2
+        );
+        assert_eq!(
+            default_guest_pc_trace_segment_commit_worker_count_for_input(8 * 1024 * 1024),
+            2
+        );
+    }
+
+    #[test]
+    fn guest_pc_segment_commit_pipeline_env_override_controls_threshold() {
+        let commit_workers_env = TestEnvVarGuard::new("LZVM_GUEST_PC_TRACE_SEGMENT_COMMIT_WORKERS");
+        commit_workers_env.unset();
+        let commit_pipeline_env =
+            TestEnvVarUnlockedGuard::new("LZVM_GUEST_PC_TRACE_COMMIT_PIPELINE");
+
+        commit_pipeline_env.set("0");
+        assert_eq!(
+            guest_pc_trace_segment_commit_worker_count_for_input(8 * 1024 * 1024),
             1
+        );
+
+        commit_pipeline_env.set("1");
+        assert_eq!(
+            guest_pc_trace_segment_commit_worker_count_for_input(0),
+            DEFAULT_GUEST_PC_TRACE_COMMIT_PIPELINE_WORKERS
         );
     }
 
@@ -8036,10 +8072,7 @@ mod tests {
             TestEnvVarUnlockedGuard::new("LZVM_GUEST_PC_TRACE_COMMIT_PIPELINE");
 
         commit_pipeline_env.set("1");
-        assert_eq!(
-            guest_pc_trace_segment_commit_worker_count_for_input(8 * 1024 * 1024),
-            2
-        );
+        assert_eq!(guest_pc_trace_segment_commit_worker_count_for_input(0), 2);
 
         commit_pipeline_env.set("0");
         assert_eq!(
