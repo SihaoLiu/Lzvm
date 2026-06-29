@@ -6,17 +6,7 @@ mod lean_binding;
 #[test]
 fn lean_gpu_allocation_reuse_exports_cached_written_contents_projection() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let lean_source = lean_binding::read_lean_sources(
-        crate_root,
-        &[
-            "../../lean/Lzvm/AuxiliaryChecks/GpuRuntime.lean",
-            "../../lean/Lzvm/AuxiliaryChecks/GpuRuntime/Common.lean",
-            "../../lean/Lzvm/AuxiliaryChecks/GpuRuntime/Core.lean",
-            "../../lean/Lzvm/AuxiliaryChecks/GpuRuntime/TraceGate.lean",
-            "../../lean/Lzvm/AuxiliaryChecks/GpuRuntime/Trace.lean",
-            "../../lean/Lzvm/AuxiliaryChecks/GpuRuntime/FixedColumnCache.lean",
-        ],
-    );
+    let lean_source = lean_binding::read_gpu_runtime_sources(crate_root);
 
     lean_binding::assert_theorem_declarations(
         &lean_source,

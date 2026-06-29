@@ -2,13 +2,49 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 #[allow(dead_code)]
+pub const GPU_RUNTIME_WRAPPER_SOURCE_PATH: &str = "../../lean/Lzvm/AuxiliaryChecks/GpuRuntime.lean";
+#[allow(dead_code)]
+pub const GPU_RUNTIME_COMMON_SOURCE_PATH: &str =
+    "../../lean/Lzvm/AuxiliaryChecks/GpuRuntime/Common.lean";
+#[allow(dead_code)]
+pub const GPU_RUNTIME_CORE_SOURCE_PATH: &str =
+    "../../lean/Lzvm/AuxiliaryChecks/GpuRuntime/Core.lean";
+#[allow(dead_code)]
+pub const GPU_RUNTIME_TRACE_GATE_SOURCE_PATH: &str =
+    "../../lean/Lzvm/AuxiliaryChecks/GpuRuntime/TraceGate.lean";
+#[allow(dead_code)]
+pub const GPU_RUNTIME_TRACE_SOURCE_PATH: &str =
+    "../../lean/Lzvm/AuxiliaryChecks/GpuRuntime/Trace.lean";
+#[allow(dead_code)]
+pub const GPU_RUNTIME_FIXED_COLUMN_CACHE_SOURCE_PATH: &str =
+    "../../lean/Lzvm/AuxiliaryChecks/GpuRuntime/FixedColumnCache.lean";
+
+#[allow(dead_code)]
+pub const GPU_RUNTIME_SOURCE_PATHS: &[&str] = &[
+    GPU_RUNTIME_WRAPPER_SOURCE_PATH,
+    GPU_RUNTIME_COMMON_SOURCE_PATH,
+    GPU_RUNTIME_CORE_SOURCE_PATH,
+    GPU_RUNTIME_TRACE_GATE_SOURCE_PATH,
+    GPU_RUNTIME_TRACE_SOURCE_PATH,
+    GPU_RUNTIME_FIXED_COLUMN_CACHE_SOURCE_PATH,
+];
+
+#[allow(dead_code)]
+pub fn read_gpu_runtime_sources(crate_root: &Path) -> String {
+    read_lean_sources(crate_root, GPU_RUNTIME_SOURCE_PATHS)
+}
+
+#[allow(dead_code)]
+pub fn read_lean_source(crate_root: &Path, relative_path: &str) -> String {
+    std::fs::read_to_string(crate_root.join(relative_path))
+        .unwrap_or_else(|err| panic!("Lean source {relative_path} should read: {err}"))
+}
+
+#[allow(dead_code)]
 pub fn read_lean_sources(crate_root: &Path, relative_paths: &[&str]) -> String {
     relative_paths
         .iter()
-        .map(|relative_path| {
-            std::fs::read_to_string(crate_root.join(relative_path))
-                .unwrap_or_else(|err| panic!("Lean source {relative_path} should read: {err}"))
-        })
+        .map(|relative_path| read_lean_source(crate_root, relative_path))
         .collect::<Vec<_>>()
         .join("\n")
 }

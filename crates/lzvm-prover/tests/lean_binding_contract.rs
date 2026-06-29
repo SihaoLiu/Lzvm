@@ -277,31 +277,7 @@ fn auxiliary_checked_acceptance_chokepoints_use_identifier_body_pins() {
 #[test]
 fn gpu_runtime_checked_acceptance_helpers_use_identifier_body_pins() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let gpu_runtime_source = [
-        std::fs::read_to_string(crate_root.join("../../lean/Lzvm/AuxiliaryChecks/GpuRuntime.lean"))
-            .expect("Lean GPU runtime auxiliary checks source should read"),
-        std::fs::read_to_string(
-            crate_root.join("../../lean/Lzvm/AuxiliaryChecks/GpuRuntime/Common.lean"),
-        )
-        .expect("Lean GPU runtime common checks source should read"),
-        std::fs::read_to_string(
-            crate_root.join("../../lean/Lzvm/AuxiliaryChecks/GpuRuntime/Core.lean"),
-        )
-        .expect("Lean GPU runtime core checks source should read"),
-        std::fs::read_to_string(
-            crate_root.join("../../lean/Lzvm/AuxiliaryChecks/GpuRuntime/TraceGate.lean"),
-        )
-        .expect("Lean GPU runtime trace gate checks source should read"),
-        std::fs::read_to_string(
-            crate_root.join("../../lean/Lzvm/AuxiliaryChecks/GpuRuntime/Trace.lean"),
-        )
-        .expect("Lean GPU runtime trace checks source should read"),
-        std::fs::read_to_string(
-            crate_root.join("../../lean/Lzvm/AuxiliaryChecks/GpuRuntime/FixedColumnCache.lean"),
-        )
-        .expect("Lean GPU runtime fixed column cache checks source should read"),
-    ]
-    .join("\n");
+    let gpu_runtime_source = lean_binding::read_gpu_runtime_sources(crate_root);
     let binding_source =
         std::fs::read_to_string(crate_root.join("tests/lean_auxiliary_checks_binding.rs"))
             .expect("Lean auxiliary checks binding test source should read");

@@ -133,40 +133,13 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
     let auxiliary_all_path = crate_root.join("../../lean/Lzvm/AuxiliaryChecks/All.lean");
     let auxiliary_all_source = std::fs::read_to_string(&auxiliary_all_path)
         .expect("Lean auxiliary checks aggregate should read");
-    let gpu_runtime_wrapper_path =
-        crate_root.join("../../lean/Lzvm/AuxiliaryChecks/GpuRuntime.lean");
-    let gpu_runtime_wrapper_source = std::fs::read_to_string(&gpu_runtime_wrapper_path)
-        .expect("Lean GPU runtime checks wrapper should read");
-    let gpu_runtime_common_path =
-        crate_root.join("../../lean/Lzvm/AuxiliaryChecks/GpuRuntime/Common.lean");
-    let gpu_runtime_common_source = std::fs::read_to_string(&gpu_runtime_common_path)
-        .expect("Lean GPU runtime common checks should read");
-    let gpu_runtime_core_path =
-        crate_root.join("../../lean/Lzvm/AuxiliaryChecks/GpuRuntime/Core.lean");
-    let gpu_runtime_core_source = std::fs::read_to_string(&gpu_runtime_core_path)
-        .expect("Lean GPU runtime core checks should read");
-    let gpu_runtime_trace_gate_path =
-        crate_root.join("../../lean/Lzvm/AuxiliaryChecks/GpuRuntime/TraceGate.lean");
-    let gpu_runtime_trace_gate_source = std::fs::read_to_string(&gpu_runtime_trace_gate_path)
-        .expect("Lean GPU runtime trace gate checks should read");
-    let gpu_runtime_trace_path =
-        crate_root.join("../../lean/Lzvm/AuxiliaryChecks/GpuRuntime/Trace.lean");
-    let gpu_runtime_trace_source = std::fs::read_to_string(&gpu_runtime_trace_path)
-        .expect("Lean GPU runtime trace checks should read");
-    let gpu_runtime_fixed_column_cache_path =
-        crate_root.join("../../lean/Lzvm/AuxiliaryChecks/GpuRuntime/FixedColumnCache.lean");
-    let gpu_runtime_fixed_column_cache_source =
-        std::fs::read_to_string(&gpu_runtime_fixed_column_cache_path)
-            .expect("Lean GPU runtime fixed column cache checks should read");
-    let gpu_runtime_source = [
-        gpu_runtime_wrapper_source.as_str(),
-        gpu_runtime_common_source.as_str(),
-        gpu_runtime_core_source.as_str(),
-        gpu_runtime_trace_gate_source.as_str(),
-        gpu_runtime_trace_source.as_str(),
-        gpu_runtime_fixed_column_cache_source.as_str(),
-    ]
-    .join("\n");
+    let gpu_runtime_source = lean_binding::read_gpu_runtime_sources(crate_root);
+    let gpu_runtime_wrapper_source =
+        lean_binding::read_lean_source(crate_root, lean_binding::GPU_RUNTIME_WRAPPER_SOURCE_PATH);
+    let gpu_runtime_core_source =
+        lean_binding::read_lean_source(crate_root, lean_binding::GPU_RUNTIME_CORE_SOURCE_PATH);
+    let gpu_runtime_trace_source =
+        lean_binding::read_lean_source(crate_root, lean_binding::GPU_RUNTIME_TRACE_SOURCE_PATH);
     let timing_core_path = crate_root.join("../../lean/Lzvm/AuxiliaryChecks/TimingCore.lean");
     let timing_core_source =
         std::fs::read_to_string(&timing_core_path).expect("Lean timing core checks should read");
