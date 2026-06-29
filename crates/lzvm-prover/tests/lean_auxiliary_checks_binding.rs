@@ -3592,6 +3592,18 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "guest_segment_commit_oom_retry_count()",
         ),
         (
+            "\"guest_segment_input_gap\"",
+            "guest_segment_input_gap_duration()",
+        ),
+        (
+            "\"guest_segment_input_gap_max\"",
+            "guest_segment_input_gap_max_duration()",
+        ),
+        (
+            "\"guest_segment_input_gap_count\"",
+            "guest_segment_input_gap_count()",
+        ),
+        (
             "\"guest_segment_commit_attempt\"",
             "guest_segment_commit_attempt_duration()",
         ),

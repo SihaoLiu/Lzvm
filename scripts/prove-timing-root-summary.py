@@ -40,6 +40,9 @@ STREAM_WORKER_MS_KEY = "timing_guest_trace_stream_ms"
 SEGMENT_COMMIT_MS_KEY = "timing_guest_segment_commit_ms"
 SEGMENT_COMMIT_ATTEMPT_MS_KEY = "timing_guest_segment_commit_attempt_ms"
 SEGMENT_COMMIT_OOM_RETRY_MS_KEY = "timing_guest_segment_commit_oom_retry_ms"
+SEGMENT_INPUT_GAP_MS_KEY = "timing_guest_segment_input_gap_ms"
+SEGMENT_INPUT_GAP_MAX_MS_KEY = "timing_guest_segment_input_gap_max_ms"
+SEGMENT_INPUT_GAP_COUNT_KEY = "timing_guest_segment_input_gap_count"
 SEGMENT_COMMIT_INITIAL_WORKERS_KEY = "timing_guest_segment_commit_initial_workers"
 SEGMENT_COMMIT_EFFECTIVE_WORKERS_KEY = "timing_guest_segment_commit_effective_workers"
 SEGMENT_COMMIT_WORKER_SUBMITS_KEY = "timing_guest_segment_commit_worker_submits"
@@ -784,6 +787,8 @@ HEADER = (
     "segment_commit_worker_pressure_hint,"
     "segment_commit_oom_retries,"
     "segment_commit_attempt_ms,segment_commit_oom_retry_ms,"
+    "segment_input_gap_ms,segment_input_gap_max_ms,"
+    "segment_input_gap_count,segment_input_gap_avg_ms,"
     "stream_commit_residual_ms,segment_receive_wait_ms,"
     "pending_receive_wait_ms,pending_send_wait_ms,parallel_lower_workers,"
     "parallel_lower_dispatched,parallel_lower_received,parallel_lower_emitted,"
@@ -1109,6 +1114,9 @@ TIMING_KEYS = {
     SEGMENT_COMMIT_MS_KEY,
     SEGMENT_COMMIT_ATTEMPT_MS_KEY,
     SEGMENT_COMMIT_OOM_RETRY_MS_KEY,
+    SEGMENT_INPUT_GAP_MS_KEY,
+    SEGMENT_INPUT_GAP_MAX_MS_KEY,
+    SEGMENT_INPUT_GAP_COUNT_KEY,
     SEGMENT_COMMIT_INITIAL_WORKERS_KEY,
     SEGMENT_COMMIT_EFFECTIVE_WORKERS_KEY,
     SEGMENT_COMMIT_WORKER_SUBMITS_KEY,
@@ -4138,6 +4146,14 @@ def summarize_profile_values(
     segment_commit_ms = values.get(SEGMENT_COMMIT_MS_KEY, 0)
     segment_commit_attempt_ms = values.get(SEGMENT_COMMIT_ATTEMPT_MS_KEY, 0)
     segment_commit_oom_retry_ms = values.get(SEGMENT_COMMIT_OOM_RETRY_MS_KEY, 0)
+    segment_input_gap_ms = values.get(SEGMENT_INPUT_GAP_MS_KEY, 0)
+    segment_input_gap_max_ms = values.get(SEGMENT_INPUT_GAP_MAX_MS_KEY, 0)
+    segment_input_gap_count = values.get(SEGMENT_INPUT_GAP_COUNT_KEY, 0)
+    segment_input_gap_avg_ms = (
+        segment_input_gap_ms / segment_input_gap_count
+        if segment_input_gap_count > 0
+        else 0.0
+    )
     segment_commit_initial_workers = values.get(SEGMENT_COMMIT_INITIAL_WORKERS_KEY, 0)
     segment_commit_effective_workers = values.get(SEGMENT_COMMIT_EFFECTIVE_WORKERS_KEY, 0)
     segment_commit_worker_submits = values.get(SEGMENT_COMMIT_WORKER_SUBMITS_KEY, 0)
@@ -5577,6 +5593,8 @@ def summarize_profile_values(
         f"{segment_commit_worker_hint},"
         f"{segment_commit_oom_retries},"
         f"{segment_commit_attempt_ms},{segment_commit_oom_retry_ms},"
+        f"{segment_input_gap_ms},{segment_input_gap_max_ms},"
+        f"{segment_input_gap_count},{segment_input_gap_avg_ms:.3f},"
         f"{stream_commit_residual_ms},{segment_receive_wait_ms},"
         f"{pending_receive_wait_ms},{pending_send_wait_ms},"
         f"{parallel_lower_workers},{parallel_lower_dispatched},"
@@ -6059,6 +6077,9 @@ def self_test() -> None:
                         f"{SEGMENT_COMMIT_INITIAL_WORKERS_KEY}=2",
                         f"{SEGMENT_COMMIT_EFFECTIVE_WORKERS_KEY}=2",
                         f"{SEGMENT_COMMIT_OOM_RETRIES_KEY}=0",
+                        f"{SEGMENT_INPUT_GAP_MS_KEY}=1234",
+                        f"{SEGMENT_INPUT_GAP_MAX_MS_KEY}=800",
+                        f"{SEGMENT_INPUT_GAP_COUNT_KEY}=22",
                         f"{SEGMENT_RECEIVE_WAIT_MS_KEY}=6000",
                         f"{PENDING_RECEIVE_WAIT_MS_KEY}=1200",
                         f"{PENDING_SEND_WAIT_MS_KEY}=345",

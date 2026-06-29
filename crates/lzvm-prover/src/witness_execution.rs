@@ -436,6 +436,9 @@ pub struct ProveWitnessGuestPcTraceTiming {
     guest_trace_stream_duration: Duration,
     guest_trace_proof_value_prerun_duration: Duration,
     guest_segment_commit_duration: Duration,
+    guest_segment_input_gap_duration: Duration,
+    guest_segment_input_gap_max_duration: Duration,
+    guest_segment_input_gap_count: usize,
     guest_segment_commit_attempt_duration: Duration,
     guest_segment_commit_oom_retry_duration: Duration,
     guest_segment_commit_initial_worker_count: usize,
@@ -676,12 +679,38 @@ pub struct ProveWitnessGuestPcTraceTiming {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct GuestPcTraceSegmentInputGapTiming {
+    duration: Duration,
+    max_duration: Duration,
+    count: usize,
+}
+
+impl Default for GuestPcTraceSegmentInputGapTiming {
+    fn default() -> Self {
+        Self {
+            duration: Duration::ZERO,
+            max_duration: Duration::ZERO,
+            count: 0,
+        }
+    }
+}
+
+impl GuestPcTraceSegmentInputGapTiming {
+    fn record(&mut self, gap: Duration) {
+        self.duration += gap;
+        self.max_duration = self.max_duration.max(gap);
+        self.count += 1;
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct GuestPcTraceRunTiming {
     segment_count: usize,
     guest_trace_stream_elapsed_duration: Duration,
     guest_trace_stream_duration: Duration,
     guest_trace_proof_value_prerun_duration: Duration,
     guest_segment_commit_duration: Duration,
+    segment_input_gap_timing: GuestPcTraceSegmentInputGapTiming,
     segment_commit_worker_timing: GuestPcTraceSegmentCommitWorkerTiming,
 }
 
@@ -698,6 +727,9 @@ impl ProveWitnessGuestPcTraceTiming {
             guest_trace_proof_value_prerun_duration: run_timing
                 .guest_trace_proof_value_prerun_duration,
             guest_segment_commit_duration: run_timing.guest_segment_commit_duration,
+            guest_segment_input_gap_duration: run_timing.segment_input_gap_timing.duration,
+            guest_segment_input_gap_max_duration: run_timing.segment_input_gap_timing.max_duration,
+            guest_segment_input_gap_count: run_timing.segment_input_gap_timing.count,
             guest_segment_commit_attempt_duration: run_timing
                 .segment_commit_worker_timing
                 .attempt_duration,
@@ -1165,6 +1197,18 @@ impl ProveWitnessGuestPcTraceTiming {
 
     pub fn guest_segment_commit_duration(&self) -> Duration {
         self.guest_segment_commit_duration
+    }
+
+    pub fn guest_segment_input_gap_duration(&self) -> Duration {
+        self.guest_segment_input_gap_duration
+    }
+
+    pub fn guest_segment_input_gap_max_duration(&self) -> Duration {
+        self.guest_segment_input_gap_max_duration
+    }
+
+    pub fn guest_segment_input_gap_count(&self) -> usize {
+        self.guest_segment_input_gap_count
     }
 
     pub fn guest_segment_commit_attempt_duration(&self) -> Duration {
@@ -4462,6 +4506,7 @@ fn run_prove_witness_commitments_with_trace_backend_inner<B: WitnessBackend + ?S
                 guest_trace_stream_duration,
                 guest_trace_proof_value_prerun_duration: Duration::ZERO,
                 guest_segment_commit_duration,
+                segment_input_gap_timing: GuestPcTraceSegmentInputGapTiming::default(),
                 segment_commit_worker_timing: GuestPcTraceSegmentCommitWorkerTiming {
                     initial_worker_count: 0,
                     effective_worker_count: 0,
@@ -4735,6 +4780,7 @@ fn run_prove_witness_commitments_with_guest_pc_trace_segments_inner(
                 guest_trace_stream_duration: guest_trace_segment_collect_duration,
                 guest_trace_proof_value_prerun_duration: Duration::ZERO,
                 guest_segment_commit_duration,
+                segment_input_gap_timing: GuestPcTraceSegmentInputGapTiming::default(),
                 segment_commit_worker_timing: GuestPcTraceSegmentCommitWorkerTiming {
                     initial_worker_count: 0,
                     effective_worker_count: 0,
@@ -5365,6 +5411,8 @@ struct GuestPcTraceSegmentCommitDriver<'scope, 'env, 'b> {
     #[cfg(feature = "cuda")]
     pending_segment_results: Vec<GuestPcTraceSegmentCommitResult>,
     guest_segment_commit_duration: Duration,
+    segment_input_gap_timing: GuestPcTraceSegmentInputGapTiming,
+    last_segment_input_at: Option<Instant>,
     trace_timing: ProveWitnessTraceTimingAccumulator,
     segment_count: usize,
     worker_pool: GuestPcTraceSegmentCommitWorkerPool<'scope, 'env>,
@@ -5375,6 +5423,7 @@ struct GuestPcTraceSegmentCommitDriver<'scope, 'env, 'b> {
 struct GuestPcTraceSegmentCommitDriverOutput {
     outputs: Vec<ProveWitnessTraceCommitments>,
     guest_segment_commit_duration: Duration,
+    segment_input_gap_timing: GuestPcTraceSegmentInputGapTiming,
     trace_timing: ProveWitnessTraceTimingAccumulator,
     segment_count: usize,
     worker_pool_timing: GuestPcTraceSegmentCommitPoolTiming,
@@ -5401,6 +5450,8 @@ impl<'scope, 'env, 'b> GuestPcTraceSegmentCommitDriver<'scope, 'env, 'b> {
             #[cfg(feature = "cuda")]
             pending_segment_results: Vec::new(),
             guest_segment_commit_duration: Duration::ZERO,
+            segment_input_gap_timing: GuestPcTraceSegmentInputGapTiming::default(),
+            last_segment_input_at: None,
             trace_timing: ProveWitnessTraceTimingAccumulator::default(),
             segment_count: 0,
             worker_pool: GuestPcTraceSegmentCommitWorkerPool::new(scope, segment_commit_mode),
@@ -5413,6 +5464,7 @@ impl<'scope, 'env, 'b> GuestPcTraceSegmentCommitDriver<'scope, 'env, 'b> {
         &mut self,
         segment_output: GuestPcTraceSegmentRunOutput,
     ) -> Result<(), ProveWitnessCommitmentError> {
+        self.record_segment_input_gap();
         let ready_results = self.worker_pool.submit_segment(
             self.context,
             Arc::clone(&self.auxiliary_inputs),
@@ -5424,6 +5476,17 @@ impl<'scope, 'env, 'b> GuestPcTraceSegmentCommitDriver<'scope, 'env, 'b> {
             self.collect_committed_segment_result(result)?;
         }
         Ok(())
+    }
+
+    fn record_segment_input_gap(&mut self) {
+        if !self.collect_timing {
+            return;
+        }
+        let now = Instant::now();
+        if let Some(previous) = self.last_segment_input_at.replace(now) {
+            self.segment_input_gap_timing
+                .record(now.saturating_duration_since(previous));
+        }
     }
 
     fn collect_committed_segment_result(
@@ -5487,6 +5550,7 @@ impl<'scope, 'env, 'b> GuestPcTraceSegmentCommitDriver<'scope, 'env, 'b> {
         Ok(GuestPcTraceSegmentCommitDriverOutput {
             outputs: self.output_collector.finish()?,
             guest_segment_commit_duration: self.guest_segment_commit_duration,
+            segment_input_gap_timing: self.segment_input_gap_timing,
             trace_timing: self.trace_timing,
             segment_count: self.segment_count,
             worker_pool_timing: self.worker_pool.timing(),
@@ -5925,6 +5989,7 @@ fn run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_inner(
                             guest_trace_proof_value_prerun_duration: Duration::ZERO,
                             guest_segment_commit_duration: commit_output
                                 .guest_segment_commit_duration,
+                            segment_input_gap_timing: commit_output.segment_input_gap_timing,
                             segment_commit_worker_timing: segment_commit_worker_timing
                                 .with_pool_timing(commit_output.worker_pool_timing),
                         },
@@ -5997,6 +6062,7 @@ fn run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_inner(
                         guest_trace_stream_duration,
                         guest_trace_proof_value_prerun_duration,
                         guest_segment_commit_duration: commit_output.guest_segment_commit_duration,
+                        segment_input_gap_timing: commit_output.segment_input_gap_timing,
                         segment_commit_worker_timing: segment_commit_worker_timing
                             .with_pool_timing(commit_output.worker_pool_timing),
                     },
@@ -7904,6 +7970,18 @@ mod tests {
             next_guest_pc_segment_commit_worker_count_after_oom(3, &error),
             Some(2)
         );
+    }
+
+    #[test]
+    fn segment_input_gap_timing_tracks_total_max_and_count() {
+        let mut timing = GuestPcTraceSegmentInputGapTiming::default();
+        timing.record(Duration::from_millis(7));
+        timing.record(Duration::from_millis(3));
+        timing.record(Duration::from_millis(11));
+
+        assert_eq!(timing.duration, Duration::from_millis(21));
+        assert_eq!(timing.max_duration, Duration::from_millis(11));
+        assert_eq!(timing.count, 3);
     }
 
     #[cfg(feature = "cuda")]

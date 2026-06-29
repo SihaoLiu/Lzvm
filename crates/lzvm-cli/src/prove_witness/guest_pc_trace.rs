@@ -113,6 +113,8 @@ pub(super) fn record_guest_pc_trace_timing(
     record_duration!(guest_trace_stream_duration);
     record_duration!(guest_trace_proof_value_prerun_duration);
     record_duration!(guest_segment_commit_duration);
+    record_duration!(guest_segment_input_gap_duration);
+    record_duration!(guest_segment_input_gap_max_duration);
     record_duration!(guest_segment_commit_attempt_duration);
     record_duration!(guest_segment_commit_oom_retry_duration);
     record_duration!(guest_segment_commit_worker_backpressure_join_duration);
@@ -204,6 +206,10 @@ pub(super) fn record_guest_pc_trace_timing(
     record_count!(
         "guest_segment_commit_oom_retries",
         guest_segment_commit_oom_retry_count
+    );
+    record_count!(
+        "guest_segment_input_gap_count",
+        guest_segment_input_gap_count
     );
     record_count!(
         "guest_segment_commit_cuda_memory_total_bytes",
