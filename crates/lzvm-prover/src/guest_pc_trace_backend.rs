@@ -1213,35 +1213,41 @@ fn reborrow_trace_timing<'a>(
     }
 }
 
+#[inline(always)]
 fn detail_duration_started(
     timing: &Option<&mut GuestPcTraceStreamTiming>,
     detail_timing: bool,
 ) -> Option<Instant> {
-    timing
-        .as_ref()
-        .filter(|_| detail_timing)
-        .map(|_| Instant::now())
+    if !detail_timing || timing.is_none() {
+        return None;
+    }
+    Some(Instant::now())
 }
 
+#[inline(always)]
 fn record_detail_duration(
     started: Option<Instant>,
     timing: &mut Option<&mut GuestPcTraceStreamTiming>,
     target: fn(&mut GuestPcTraceStreamTiming) -> &mut Duration,
 ) {
-    if let (Some(started), Some(timing)) = (started, timing.as_mut()) {
+    let Some(started) = started else {
+        return;
+    };
+    if let Some(timing) = timing.as_deref_mut() {
         *target(timing) += started.elapsed();
     }
 }
 
+#[inline(always)]
 fn record_row_validation_detail_duration(
     started: Option<Instant>,
     timing: &mut Option<&mut GuestPcTraceStreamTiming>,
     target: fn(&mut GuestPcTraceStreamTiming) -> &mut Duration,
 ) {
-    let record_started = timing
-        .as_ref()
-        .filter(|_| started.is_some())
-        .map(|_| Instant::now());
+    if started.is_none() {
+        return;
+    }
+    let record_started = timing.as_ref().map(|_| Instant::now());
     record_detail_duration(started, timing, target);
     record_detail_duration(record_started, timing, |timing| {
         &mut timing.trace_report_row_validation_timer_bookkeeping_duration
