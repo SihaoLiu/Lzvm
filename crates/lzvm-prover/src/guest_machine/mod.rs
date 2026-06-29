@@ -17,6 +17,7 @@ pub(crate) use memory::GuestMachineMemoryOverlaySnapshot;
 use precompile::execute_precompile;
 
 const GUEST_REGISTER_COUNT: usize = 32;
+const GUEST_INSTRUCTION_CACHE_ENTRY_COUNT: usize = 1 << 16;
 const RV64IMAC_MISA: u64 = (2_u64 << 62) | 1_u64 | (1_u64 << 2) | (1_u64 << 8) | (1_u64 << 12);
 pub const ZISK_ARCHITECTURE_ID: u64 = 0x0fff_eeee;
 
@@ -515,6 +516,119 @@ impl GuestMachinePreparedInstruction {
     }
 }
 
+#[derive(Debug)]
+struct GuestInstructionCache {
+    entries: Box<[GuestInstructionCacheEntry]>,
+    generation: u32,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct GuestInstructionCacheEntry {
+    generation: u32,
+    prepared: GuestMachinePreparedInstruction,
+}
+
+impl Default for GuestInstructionCacheEntry {
+    fn default() -> Self {
+        Self {
+            generation: 0,
+            prepared: GuestMachinePreparedInstruction {
+                address: 0,
+                byte_len: 2,
+                instruction: RiscvInstruction::Ecall,
+            },
+        }
+    }
+}
+
+impl Default for GuestInstructionCache {
+    fn default() -> Self {
+        Self {
+            entries: vec![
+                GuestInstructionCacheEntry::default();
+                GUEST_INSTRUCTION_CACHE_ENTRY_COUNT
+            ]
+            .into_boxed_slice(),
+            generation: 1,
+        }
+    }
+}
+
+impl GuestInstructionCache {
+    fn prepare(
+        &mut self,
+        memory: &GuestMachineMemory,
+        address: u64,
+    ) -> Result<GuestMachinePreparedInstruction, GuestMachineError> {
+        let index = self.index(address);
+        let entry = self.entries[index];
+        if entry.generation == self.generation && entry.prepared.address == address {
+            return Ok(entry.prepared);
+        }
+        let prepared = prepare_current_guest_instruction(memory, address)?;
+        self.entries[index] = GuestInstructionCacheEntry {
+            generation: self.generation,
+            prepared,
+        };
+        Ok(prepared)
+    }
+
+    fn clear(&mut self) {
+        match self.generation.checked_add(1) {
+            Some(next) => self.generation = next,
+            None => {
+                self.generation = 1;
+                self.entries
+                    .iter_mut()
+                    .for_each(|entry| entry.generation = 0);
+            }
+        }
+    }
+
+    fn invalidate_report(&mut self, report: &GuestMachineReport) {
+        for access in report
+            .memory_accesses
+            .iter()
+            .chain(report.precompile_memory_accesses())
+        {
+            if access.kind == GuestMemoryAccessKind::Write {
+                self.invalidate_range(access.address, usize::from(access.byte_len));
+            }
+        }
+    }
+
+    fn invalidate_range(&mut self, address: u64, byte_len: usize) {
+        if byte_len == 0 {
+            return;
+        }
+        let Some(end) = address.checked_add(byte_len as u64) else {
+            self.clear();
+            return;
+        };
+        let mut pc = address.saturating_sub(2) & !1;
+        while pc < end {
+            self.invalidate_address(pc);
+            let Some(next) = pc.checked_add(2) else {
+                break;
+            };
+            pc = next;
+        }
+    }
+
+    fn invalidate_address(&mut self, address: u64) {
+        let index = self.index(address);
+        if self.entries[index].generation == self.generation
+            && self.entries[index].prepared.address == address
+        {
+            self.entries[index].generation = 0;
+        }
+    }
+
+    fn index(&self, address: u64) -> usize {
+        ((address >> 1) as usize) & (GUEST_INSTRUCTION_CACHE_ENTRY_COUNT - 1)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GuestMachineRunReport {
     pub executed_instructions: u64,
@@ -786,8 +900,9 @@ fn run_guest_machine_inner(
     mut reports: Option<&mut Vec<GuestMachineReport>>,
 ) -> Result<GuestMachineRunReport, GuestMachineRunError> {
     let mut executed_instructions = 0_u64;
+    let mut instruction_cache = GuestInstructionCache::default();
     loop {
-        let prepared = prepare_current_guest_instruction(memory, state.pc())?;
+        let prepared = instruction_cache.prepare(memory, state.pc())?;
         if prepared.instruction == RiscvInstruction::Ecall {
             return Ok(GuestMachineRunReport {
                 executed_instructions,
@@ -802,17 +917,40 @@ fn run_guest_machine_inner(
                 pc: state.pc(),
             });
         }
+        let clear_instruction_cache =
+            instruction_clears_instruction_cache(state, prepared.instruction);
         let report = match handler.as_deref_mut() {
             Some(handler) => {
                 advance_guest_machine_prepared_inner(memory, state, Some(handler), prepared)?
             }
             None => advance_guest_machine_prepared_inner(memory, state, None, prepared)?,
         };
+        if clear_instruction_cache {
+            instruction_cache.clear();
+        } else {
+            instruction_cache.invalidate_report(&report);
+        }
         if let Some(reports) = reports.as_deref_mut() {
             reports.push(report);
         }
         executed_instructions += 1;
     }
+}
+
+fn instruction_clears_instruction_cache(
+    state: &GuestMachineState,
+    instruction: RiscvInstruction,
+) -> bool {
+    if matches!(instruction, RiscvInstruction::ZiskFcallInvoke { .. }) {
+        return true;
+    }
+    matches!(
+        state.pending_dma,
+        Some(GuestDmaPrepare {
+            kind: RiscvDmaKind::Memcpy | RiscvDmaKind::Memset | RiscvDmaKind::Inputcpy,
+            ..
+        })
+    )
 }
 
 pub fn advance_guest_machine(
@@ -1880,6 +2018,26 @@ mod tests {
             | 0x13
     }
 
+    fn sw(rs2: u8, rs1: u8, immediate: i16) -> u32 {
+        let immediate = (immediate as i32 as u32) & 0x0fff;
+        ((immediate >> 5) << 25)
+            | (u32::from(rs2) << 20)
+            | (u32::from(rs1) << 15)
+            | (0x2 << 12)
+            | ((immediate & 0x1f) << 7)
+            | 0x23
+    }
+
+    fn jal(rd: u8, offset: i32) -> u32 {
+        let offset = offset as u32;
+        ((offset >> 20) & 0x1) << 31
+            | ((offset >> 1) & 0x03ff) << 21
+            | ((offset >> 11) & 0x1) << 20
+            | ((offset >> 12) & 0x00ff) << 12
+            | (u32::from(rd) << 7)
+            | 0x6f
+    }
+
     #[test]
     fn reads_high_counter_csr_halves() {
         let retired_instructions = (3_u64 << 32) | 17;
@@ -1917,6 +2075,28 @@ mod tests {
         assert_eq!(actual, expected);
         assert_eq!(prepared_state, regular_state);
         assert_eq!(prepared_memory, regular_memory);
+    }
+
+    #[test]
+    fn run_cache_invalidates_stored_instruction() {
+        let mut memory =
+            guest_machine_memory_with_words(&[addi(1, 0, 0x73), sw(1, 2, 0), jal(0, -8)]);
+        let mut state = GuestMachineState::new(memory.entry_address());
+        state
+            .set_register(2, TEST_ENTRY)
+            .expect("test register should be writable");
+
+        let run = run_guest_machine(&mut memory, &mut state, 16).expect("run should halt");
+
+        assert_eq!(
+            run,
+            GuestMachineRunReport {
+                executed_instructions: 3,
+                halt: GuestMachineHalt::Ecall {
+                    address: TEST_ENTRY,
+                },
+            }
+        );
     }
 
     #[test]
