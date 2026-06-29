@@ -8300,8 +8300,11 @@ mod tests {
     fn guest_pc_segment_commit_mode_caches_descriptor_buffer_retention() {
         let descriptor_env = TestEnvVarGuard::new("LZVM_CUDA_RETAINED_DESCRIPTOR_BYTES");
         let parallel_env = TestEnvVarUnlockedGuard::new("LZVM_GUEST_PC_TRACE_PARALLEL_LOWER");
+        let work_units_env =
+            TestEnvVarUnlockedGuard::new("LZVM_GUEST_PC_TRACE_PARALLEL_LOWER_WORK_UNITS");
         descriptor_env.unset();
         parallel_env.unset();
+        work_units_env.unset();
 
         let small_input_mode = GuestPcTraceSegmentCommitMode::from_input(1024, None);
         assert!(
@@ -9138,7 +9141,12 @@ mod tests {
     #[cfg(feature = "cuda")]
     fn descriptor_buffer_retention_gate_defaults_to_small_inputs() {
         let env = TestEnvVarGuard::new("LZVM_CUDA_RETAINED_DESCRIPTOR_BYTES");
+        let parallel_env = TestEnvVarUnlockedGuard::new("LZVM_GUEST_PC_TRACE_PARALLEL_LOWER");
+        let work_units_env =
+            TestEnvVarUnlockedGuard::new("LZVM_GUEST_PC_TRACE_PARALLEL_LOWER_WORK_UNITS");
         env.unset();
+        parallel_env.unset();
+        work_units_env.unset();
 
         assert!(guest_pc_descriptor_buffer_retention_enabled(0));
         assert!(guest_pc_descriptor_buffer_retention_enabled(
