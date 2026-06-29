@@ -2407,6 +2407,12 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
                 "guest_pc_trace_large_gpu_gate_checked_acceptance_requires_runtime_memory_for_large_allowed"
             )
             && lean_source.contains(
+                "guest_pc_trace_large_gpu_gate_decision_allows_large_iff_runtime_memory"
+            )
+            && lean_source.contains(
+                "guest_pc_trace_large_gpu_gate_checked_acceptance_allows_large_iff_runtime_memory"
+            )
+            && lean_source.contains(
                 "guest_pc_trace_large_gpu_gate_decision_projects_observed_memory_floor_for_large_allowed"
             )
             && lean_source.contains("guest_pc_trace_large_gpu_gate_checked_acceptance_sound")
@@ -5122,11 +5128,13 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "guest_pc_trace_large_gpu_gate_decision_rejects_large_without_memory",
             "guest_pc_trace_large_gpu_gate_memory_check_passes_projects_observed_floor",
             "guest_pc_trace_large_gpu_gate_decision_requires_runtime_memory_for_large_allowed",
+            "guest_pc_trace_large_gpu_gate_decision_allows_large_iff_runtime_memory",
             "guest_pc_trace_large_gpu_gate_decision_projects_observed_memory_floor_for_large_allowed",
             "guest_pc_trace_large_gpu_gate_checked_acceptance_allows_unrequested",
             "guest_pc_trace_large_gpu_gate_checked_acceptance_allows_below_threshold",
             "guest_pc_trace_large_gpu_gate_checked_acceptance_rejects_large_without_gpu",
             "guest_pc_trace_large_gpu_gate_checked_acceptance_rejects_large_without_memory",
+            "guest_pc_trace_large_gpu_gate_checked_acceptance_allows_large_iff_runtime_memory",
             "guest_pc_trace_large_gpu_gate_checked_acceptance_requires_runtime_memory_for_large_allowed",
             "guest_pc_trace_cross_root_materialization_checked_acceptance_projects_decision",
             concat!(
@@ -5696,6 +5704,47 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         "guest_pc_trace_large_gpu_gate_checked_acceptance_rejects_large_without_memory",
         &[
             "guest_pc_trace_large_gpu_gate_decision_rejects_large_without_memory",
+            "guest_pc_trace_large_gpu_gate_checked_acceptance_projects_decision",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &gpu_runtime_source,
+        "guest_pc_trace_large_gpu_gate_decision_allows_large_iff_runtime_memory",
+        &[
+            "GuestPcTraceLargeGpuGateDecisionMatches config",
+            "config.requestedInstructionLimit = some limit",
+            "config.defaultLargeTraceInstructionThreshold <= limit",
+            "config.largeTraceAllowed = true",
+            "config.gpuBackendAvailable = true",
+            "GuestPcTraceLargeGpuGateMemoryCheckPasses config = true",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &gpu_runtime_source,
+        "guest_pc_trace_large_gpu_gate_decision_allows_large_iff_runtime_memory",
+        &[
+            "guest_pc_trace_large_gpu_gate_decision_requires_runtime_memory_for_large_allowed",
+            "runtimeMemory.left",
+            "runtimeMemory.right",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &gpu_runtime_source,
+        "guest_pc_trace_large_gpu_gate_checked_acceptance_allows_large_iff_runtime_memory",
+        &[
+            "config.requestedInstructionLimit = some limit",
+            "config.defaultLargeTraceInstructionThreshold <= limit",
+            "GuestPcTraceLargeGpuGateCheckedAcceptance",
+            "config.largeTraceAllowed = true",
+            "config.gpuBackendAvailable = true",
+            "GuestPcTraceLargeGpuGateMemoryCheckPasses config = true",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &gpu_runtime_source,
+        "guest_pc_trace_large_gpu_gate_checked_acceptance_allows_large_iff_runtime_memory",
+        &[
+            "guest_pc_trace_large_gpu_gate_decision_allows_large_iff_runtime_memory",
             "guest_pc_trace_large_gpu_gate_checked_acceptance_projects_decision",
         ],
     );
