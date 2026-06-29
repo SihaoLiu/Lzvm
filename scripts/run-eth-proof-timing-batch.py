@@ -55,13 +55,31 @@ VERIFY_REQUIRED_TEXTS = [
     "framed_guest_input_match=ok",
     "pipeline_input_bindings=ok",
 ]
-ARTIFACT_HELP_LINES = [
-    "artifact_help_setup=Use an existing setup key directory, or run: target/release/lzvm setup generate-key [--backend cuda] <setup-dir>",
-    "artifact_help_block_input=Write BLOCK_INPUT from block RLP or RPC JSON: target/release/lzvm eth write-block-input [--rpc-json] <block> <out>",
-    "artifact_help_public_input_block=Write BLOCK_INPUT from ETH public input: target/release/lzvm eth write-public-block-input [--allow-trailing] [--receipts-rpc-json <receipts-json>] <public-input> <out>",
-    "artifact_help_program_image_cache=Write PROGRAM_IMAGE_CACHE: target/release/lzvm setup write-program-image-cache --setup-dir <setup-dir> <program-bin> <guest-image> <root-bin> <trace-rows> <trace-columns> <blowup-factor> <arity> <out-cache>",
-    "artifact_help_input_data=INPUT_DATA must be framed guest stdin consumed by the guest image.",
-    "artifact_help_guest_image=GUEST_IMAGE must be the guest executable used to produce the matching framed input.",
+ARTIFACT_HELP_ITEMS = [
+    (
+        "setup",
+        "Use an existing setup key directory, or run: target/release/lzvm setup generate-key [--backend cpu|cuda] <setup-dir>",
+    ),
+    (
+        "block_input",
+        "Write BLOCK_INPUT from block RLP, hex, RPC JSON, and optional receipts: target/release/lzvm eth write-block-input [--hex|--rpc-json] [--receipts <receipts-rlp>|--receipts-rpc-json <receipts-json>] <block> <out>",
+    ),
+    (
+        "public_input_block",
+        "Write BLOCK_INPUT from ETH public input: target/release/lzvm eth write-public-block-input [--allow-trailing] [--receipts-rpc-json <receipts-json>] <public-input> <out>",
+    ),
+    (
+        "program_image_cache",
+        "Write PROGRAM_IMAGE_CACHE: target/release/lzvm setup write-program-image-cache [--backend cpu|cuda] --setup-dir <setup-dir> <program-bin> <guest-image> <root-bin> <trace-rows> <trace-columns> <blowup-factor> <arity> <out-cache>",
+    ),
+    (
+        "input_data",
+        "INPUT_DATA must be framed guest stdin consumed by the guest image.",
+    ),
+    (
+        "guest_image",
+        "GUEST_IMAGE must be the guest executable used to produce the matching framed input.",
+    ),
 ]
 
 PIPELINE_ENV_TO_CLEAR = [
@@ -436,11 +454,7 @@ def env_template_text(args: argparse.Namespace, root: Path) -> str:
         "# build default binary first:",
         f"# {DEFAULT_BIN_BUILD_COMMAND}",
         "",
-        "# artifact helpers:",
-        "# target/release/lzvm eth write-block-input [--rpc-json] <block> <out>",
-        "# target/release/lzvm eth write-public-block-input [--allow-trailing] [--receipts-rpc-json <receipts-json>] <public-input> <out>",
-        "# target/release/lzvm setup write-program-image-cache --setup-dir <setup-dir> <program-bin> <guest-image> <root-bin> <trace-rows> <trace-columns> <blowup-factor> <arity> <out-cache>",
-        "",
+        *artifact_template_help_lines(),
     ]
     if visible_devices:
         lines.extend(
@@ -1129,7 +1143,17 @@ def env_template_command_for_missing_config(args: argparse.Namespace, root: Path
 
 
 def artifact_help_text() -> str:
-    return "\n".join(ARTIFACT_HELP_LINES)
+    return "\n".join(
+        f"artifact_help_{name}={text}" for name, text in ARTIFACT_HELP_ITEMS
+    )
+
+
+def artifact_template_help_lines() -> list[str]:
+    return [
+        "# artifact helpers:",
+        *(f"# {text}" for _name, text in ARTIFACT_HELP_ITEMS),
+        "",
+    ]
 
 
 def selected_envs(args: argparse.Namespace, root: Path) -> list[tuple[ProofEnv, str]]:
@@ -1406,10 +1430,30 @@ def self_test() -> None:
         raise SystemExit("self-test missing small environment diagnostic")
     if "large proof environment is incomplete:" not in missing_result.stderr:
         raise SystemExit("self-test missing large environment diagnostic")
-    if "artifact_help_block_input=" not in missing_result.stderr:
-        raise SystemExit("self-test missing block input artifact hint")
-    if "artifact_help_program_image_cache=" not in missing_result.stderr:
-        raise SystemExit("self-test missing program image cache artifact hint")
+    for artifact_name, _text in ARTIFACT_HELP_ITEMS:
+        if f"artifact_help_{artifact_name}=" not in missing_result.stderr:
+            raise SystemExit(f"self-test missing {artifact_name} artifact hint")
+    template_result = subprocess.run(
+        [
+            sys.executable,
+            str(Path(__file__).resolve()),
+            "--suite",
+            "small",
+            "--env-file",
+            str(empty_env),
+            "--print-env-template",
+        ],
+        cwd=root,
+        env=inherited_env,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    if template_result.returncode != 0:
+        raise SystemExit("self-test env template print should succeed")
+    for line in artifact_template_help_lines():
+        if line and line not in template_result.stdout:
+            raise SystemExit(f"self-test env template missing artifact hint: {line}")
     fake_bin = work_dir / "fake-prover.py"
     fake_bin.write_text(
         "\n".join(
