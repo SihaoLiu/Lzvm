@@ -3023,6 +3023,13 @@ def performance_focus_hint(
         == "retained_parent_checkpoint_path_time_secondary"
     ):
         return "trace_pipeline_over_secondary_opening_launches"
+    if (
+        trace_pipeline_hint in trace_pipeline_hints
+        and trace_pipeline_hint != "seed_direct_lift_before_parallel_reexecution"
+        and seed_direct_lift_action_hint.startswith("profile_")
+        and seed_direct_lift_action_hint != "profile_runner_seed_snapshot"
+    ):
+        return seed_direct_lift_action_hint
     if trace_pipeline_hint in trace_pipeline_hints:
         return trace_pipeline_hint
     if (
