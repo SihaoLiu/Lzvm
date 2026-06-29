@@ -3603,6 +3603,7 @@ fn guest_pc_trace_default_runner_seed_snapshot_stays_disabled() {
     let _snapshot_env = TestEnvVarGuard::unset("LZVM_GUEST_PC_TRACE_RUNNER_SEED_SNAPSHOT");
     let _trusted_env = TestEnvVarGuard::unset("LZVM_GUEST_PC_TRACE_RUNNER_SEED_SNAPSHOT_TRUSTED");
     let _parallel_env = TestEnvVarGuard::unset("LZVM_GUEST_PC_TRACE_PARALLEL_LOWER");
+    let _work_units_env = TestEnvVarGuard::unset("LZVM_GUEST_PC_TRACE_PARALLEL_LOWER_WORK_UNITS");
     let dir = repo_temp_dir("guest-pc-default-runner-seed-snapshot");
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).expect("fixture directory should be created");
@@ -3685,6 +3686,7 @@ fn commit_pipeline_does_not_enable_parallel_lower() {
         .lock()
         .expect("guest PC trace env lock should not be poisoned");
     let _parallel_env = TestEnvVarGuard::unset("LZVM_GUEST_PC_TRACE_PARALLEL_LOWER");
+    let _work_units_env = TestEnvVarGuard::unset("LZVM_GUEST_PC_TRACE_PARALLEL_LOWER_WORK_UNITS");
     let _pipeline_env = TestEnvVarGuard::set("LZVM_GUEST_PC_TRACE_COMMIT_PIPELINE", "1");
 
     assert!(!guest_pc_trace_parallel_lower_enabled());

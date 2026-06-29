@@ -5359,6 +5359,7 @@ fn guest_pc_descriptor_buffer_retention_enabled(input_byte_count: usize) -> bool
 #[cfg(feature = "cuda")]
 fn guest_pc_parallel_lower_enabled_for_descriptor_retention() -> bool {
     env_flag_present_and_enabled("LZVM_GUEST_PC_TRACE_PARALLEL_LOWER")
+        || env_flag_present_and_enabled("LZVM_GUEST_PC_TRACE_PARALLEL_LOWER_WORK_UNITS")
 }
 
 fn env_flag_present_and_enabled(name: &str) -> bool {
@@ -9170,6 +9171,9 @@ mod tests {
         let descriptor_env = TestEnvVarGuard::new("LZVM_CUDA_RETAINED_DESCRIPTOR_BYTES");
         descriptor_env.unset();
         let parallel_env = TestEnvVarUnlockedGuard::new("LZVM_GUEST_PC_TRACE_PARALLEL_LOWER");
+        let work_units_env =
+            TestEnvVarUnlockedGuard::new("LZVM_GUEST_PC_TRACE_PARALLEL_LOWER_WORK_UNITS");
+        work_units_env.unset();
         parallel_env.set("1");
 
         assert!(!guest_pc_descriptor_buffer_retention_enabled(0));
@@ -9180,11 +9184,35 @@ mod tests {
 
     #[test]
     #[cfg(feature = "cuda")]
+    fn descriptor_buffer_retention_stays_off_for_parallel_lower_work_units() {
+        let descriptor_env = TestEnvVarGuard::new("LZVM_CUDA_RETAINED_DESCRIPTOR_BYTES");
+        descriptor_env.unset();
+        let parallel_env = TestEnvVarUnlockedGuard::new("LZVM_GUEST_PC_TRACE_PARALLEL_LOWER");
+        parallel_env.unset();
+        let work_units_env =
+            TestEnvVarUnlockedGuard::new("LZVM_GUEST_PC_TRACE_PARALLEL_LOWER_WORK_UNITS");
+        work_units_env.set("1");
+
+        assert!(!guest_pc_descriptor_buffer_retention_enabled(0));
+
+        work_units_env.set("0");
+        assert!(guest_pc_descriptor_buffer_retention_enabled(0));
+
+        descriptor_env.set("1048576");
+        work_units_env.set("1");
+        assert!(guest_pc_descriptor_buffer_retention_enabled(0));
+    }
+
+    #[test]
+    #[cfg(feature = "cuda")]
     fn descriptor_buffer_retention_stays_on_for_commit_pipeline_opt_in() {
         let descriptor_env = TestEnvVarGuard::new("LZVM_CUDA_RETAINED_DESCRIPTOR_BYTES");
         descriptor_env.unset();
         let parallel_env = TestEnvVarUnlockedGuard::new("LZVM_GUEST_PC_TRACE_PARALLEL_LOWER");
         parallel_env.unset();
+        let work_units_env =
+            TestEnvVarUnlockedGuard::new("LZVM_GUEST_PC_TRACE_PARALLEL_LOWER_WORK_UNITS");
+        work_units_env.unset();
         let pipeline_env = TestEnvVarUnlockedGuard::new("LZVM_GUEST_PC_TRACE_COMMIT_PIPELINE");
         pipeline_env.set("1");
 

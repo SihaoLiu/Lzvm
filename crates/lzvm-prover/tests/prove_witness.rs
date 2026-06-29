@@ -2281,6 +2281,7 @@ fn guest_pc_descriptor_stream_ingress_matches_default_proof_bytes() {
     const STREAM_ENV: &str = "LZVM_CUDA_GUEST_PC_DESCRIPTOR_STREAM_INGRESS";
     const CHUNKS_ENV: &str = "LZVM_GUEST_PC_TRACE_REPORT_CHUNKS";
     const PARALLEL_LOWER_ENV: &str = "LZVM_GUEST_PC_TRACE_PARALLEL_LOWER";
+    const WORK_UNITS_ENV: &str = "LZVM_GUEST_PC_TRACE_PARALLEL_LOWER_WORK_UNITS";
     const PIPELINE_ENV: &str = "LZVM_GUEST_PC_TRACE_COMMIT_PIPELINE";
     const PIPELINE_WORKERS_ENV: &str = "LZVM_GUEST_PC_TRACE_PARALLEL_LOWER_WORKERS";
     const REPLAY_ENV: &str = "LZVM_GUEST_PC_TRACE_SEGMENT_REPLAY";
@@ -2347,6 +2348,7 @@ fn guest_pc_descriptor_stream_ingress_matches_default_proof_bytes() {
     let _stream_guard = TestEnvVarGuard::unset(STREAM_ENV);
     let _chunks_guard = TestEnvVarGuard::unset(CHUNKS_ENV);
     let _parallel_lower_guard = TestEnvVarGuard::unset(PARALLEL_LOWER_ENV);
+    let _work_units_guard = TestEnvVarGuard::unset(WORK_UNITS_ENV);
     let _pipeline_guard = TestEnvVarGuard::unset(PIPELINE_ENV);
     let _pipeline_workers_guard = TestEnvVarGuard::unset(PIPELINE_WORKERS_ENV);
     let _replay_guard = TestEnvVarGuard::unset(REPLAY_ENV);
