@@ -781,5 +781,72 @@ theorem runtime_soundness_required_external_source_audited_proof_system_core_con
                       (And.intro executionObligations
                         compactContract.right.right.right.right.right.right.right)))))))))
 
+theorem runtime_soundness_required_external_source_audited_finalized_core_sound_witness_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeSoundnessValidation system) :
+    forall artifact publicInput proof (requiresExternalSource : Prop),
+      RuntimeSoundnessCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof
+          requiresExternalSource ->
+        requiresExternalSource ->
+          RequiredCryptographicAssumptionStatements assumptions.crypto
+            /\ RequiredSemanticAssumptionStatements assumptions.semantic
+            /\ RuntimeProofArtifactFinalized
+              system
+              validation.transcriptValidation.artifactBindingValidation
+              artifact
+              publicInput
+              proof
+            /\ ExternalSourceOpeningEvidence
+              system
+              validation.sourceValidation
+              publicInput
+              proof
+            /\ RuntimeVerifierCoreContract system publicInput proof
+            /\ (exists witness trace constraints,
+              system.traceConsistent publicInput proof trace
+                /\ system.constraintsSatisfied constraints trace
+                /\ system.witnessMatchesTrace witness trace)
+            /\ SoundWitness system publicInput proof := by
+  intro artifact publicInput proof requiresExternalSource checked required
+  have finalizedContract :=
+    runtime_soundness_checked_acceptance_audited_finalized_core_sound_witness_contract
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      checked
+  have requiredSound :=
+    runtime_soundness_required_external_source_sound
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      checked
+      required
+  rcases finalizedContract with
+    ⟨cryptoEvidence,
+      semanticEvidence,
+      artifactFinalized,
+      coreContract,
+      executionObligations,
+      soundWitness⟩
+  exact
+    And.intro cryptoEvidence
+      (And.intro semanticEvidence
+        (And.intro artifactFinalized
+          (And.intro requiredSound.right.left
+            (And.intro coreContract
+              (And.intro executionObligations soundWitness)))))
+
 
 end Lzvm

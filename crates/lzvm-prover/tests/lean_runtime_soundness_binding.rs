@@ -106,6 +106,7 @@ fn lean_runtime_soundness_binding_exports_core_contract_projection() {
             "runtime_soundness_required_external_source_audited_pcs_accepts_sound_witness_contract",
             "runtime_soundness_required_external_source_audited_pcs_fri_witness_contract",
             "runtime_soundness_required_external_source_audited_pcs_fri_core_witness_contract",
+            "runtime_soundness_required_external_source_audited_finalized_core_sound_witness_contract",
             "runtime_soundness_checked_acceptance_audited_binding_pcs_fri_core_witness_contract",
             "runtime_soundness_checked_acceptance_artifact_segment_ids_contract",
             "runtime_soundness_checked_acceptance_concrete_artifact_segment_ids_contract",
@@ -1386,6 +1387,36 @@ fn lean_runtime_soundness_binding_exports_core_contract_projection() {
         )
         .contains("RuntimeSoundnessEvidence"),
         "compact required external-source runtime PCS/FRI core contract should not force callers to unpack full runtime evidence"
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_soundness_required_external_source_audited_finalized_core_sound_witness_contract",
+        &[
+            "requiresExternalSource ->",
+            "RequiredCryptographicAssumptionStatements assumptions.crypto",
+            "RequiredSemanticAssumptionStatements assumptions.semantic",
+            "RuntimeProofArtifactFinalized",
+            "ExternalSourceOpeningEvidence",
+            "RuntimeVerifierCoreContract system publicInput proof",
+            "system.traceConsistent publicInput proof trace",
+            "SoundWitness system publicInput proof",
+        ],
+    );
+    assert!(
+        !theorem_prefix(
+            &lean_source,
+            "runtime_soundness_required_external_source_audited_finalized_core_sound_witness_contract"
+        )
+        .contains("RuntimeSoundnessEvidence"),
+        "compact required external-source finalized core contract should not force callers to unpack full runtime evidence"
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_soundness_required_external_source_audited_finalized_core_sound_witness_contract",
+        &[
+            "runtime_soundness_checked_acceptance_audited_finalized_core_sound_witness_contract",
+            "runtime_soundness_required_external_source_sound",
+        ],
     );
     assert!(
         theorem_prefix(
