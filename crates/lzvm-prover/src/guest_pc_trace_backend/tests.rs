@@ -3652,6 +3652,34 @@ fn parallel_lower_implies_trusted_runner_seed_snapshot() {
 }
 
 #[test]
+fn parallel_lower_work_units_selects_parallel_lower_without_replay_elision() {
+    let _env_lock = GUEST_PC_TRACE_ENV_LOCK
+        .lock()
+        .expect("guest PC trace env lock should not be poisoned");
+    let _parallel_env = TestEnvVarGuard::unset("LZVM_GUEST_PC_TRACE_PARALLEL_LOWER");
+    let _work_units_env =
+        TestEnvVarGuard::set("LZVM_GUEST_PC_TRACE_PARALLEL_LOWER_WORK_UNITS", "1");
+    let _workers_env = TestEnvVarGuard::set("LZVM_GUEST_PC_TRACE_PARALLEL_LOWER_WORKERS", "2");
+    let _replay_only_env = TestEnvVarGuard::unset("LZVM_GUEST_PC_TRACE_PARALLEL_LOWER_REPLAY_ONLY");
+    let _replay_snapshot_env =
+        TestEnvVarGuard::unset("LZVM_GUEST_PC_TRACE_PARALLEL_LOWER_REPLAY_SNAPSHOT");
+    let _snapshot_env = TestEnvVarGuard::unset("LZVM_GUEST_PC_TRACE_RUNNER_SEED_SNAPSHOT");
+    let _trusted_env = TestEnvVarGuard::unset("LZVM_GUEST_PC_TRACE_RUNNER_SEED_SNAPSHOT_TRUSTED");
+
+    assert!(guest_pc_trace_parallel_lower_work_units_enabled());
+    assert!(guest_pc_trace_parallel_lower_enabled());
+    assert_eq!(guest_pc_trace_parallel_lower_worker_count(), Some(2));
+    assert!(guest_pc_trace_runner_seed_snapshot_enabled());
+    assert!(guest_pc_trace_runner_seed_snapshot_trusted_enabled());
+    assert!(!guest_pc_trace_parallel_lower_report_elision_enabled());
+    assert!(!guest_pc_trace_parallel_lower_replay_snapshot_enabled());
+
+    let mode = GuestPcTraceParallelLowerMode::from_env();
+    assert!(mode.work_units);
+    assert!(!mode.replay_snapshot);
+}
+
+#[test]
 fn commit_pipeline_does_not_enable_parallel_lower() {
     let _env_lock = GUEST_PC_TRACE_ENV_LOCK
         .lock()
