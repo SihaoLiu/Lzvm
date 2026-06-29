@@ -2212,6 +2212,18 @@ def trace_pipeline_action_hint_from_values(values: dict[str, int]) -> str:
     if parallel_lower_live_stream_segment_serial_bound_from_values(values):
         return "parallel_lower_live_stream_segment_serial_bound"
     stream_elapsed_ms = values.get(STREAM_ELAPSED_MS_KEY, 0)
+    segment_input_gap_ms = values.get(SEGMENT_INPUT_GAP_MS_KEY, 0)
+    if (
+        values.get(TOTAL_MS_KEY, 0) > PROOF_TARGET_MS
+        and values.get(PARALLEL_LOWER_WORKERS_KEY, 0) <= 1
+        and stream_elapsed_ms > 0
+        and segment_input_gap_ms >= stream_elapsed_ms * 0.75
+        and values.get(SEGMENT_INPUT_GAP_COUNT_KEY, 0) > 1
+        and values.get(SEGMENT_RECEIVE_WAIT_MS_KEY, 0) >= stream_elapsed_ms * 0.75
+        and values.get(SEGMENT_COMMIT_WORKER_BACKPRESSURE_JOIN_MS_KEY, 0)
+        <= max(10, int(stream_elapsed_ms * 0.01))
+    ):
+        return "trace_producer_input_gap_dominant"
     seed_attempts = values.get(SEED_DIRECT_LIFT_ATTEMPTS_KEY, 0)
     if (
         values.get(TOTAL_MS_KEY, 0) > PROOF_TARGET_MS
@@ -2961,6 +2973,7 @@ def performance_focus_hint(
         "commit_trace_overlap_candidate",
         "segment_commit_candidate",
         "trace_queue_backpressure_candidate",
+        "trace_producer_input_gap_dominant",
     }
     if trace_pipeline_hint in {
         "avoid_segment_commit_worker_oom_fallback",
