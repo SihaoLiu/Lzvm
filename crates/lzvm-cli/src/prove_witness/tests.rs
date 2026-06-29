@@ -148,7 +148,7 @@ fn rejects_large_guest_pc_trace_when_free_gpu_memory_is_too_low() {
         total_bytes: 32_607 * 1024 * 1024,
     };
 
-    let error = validate_large_guest_pc_gpu_memory(info, LARGE_GUEST_PC_TRACE_MIN_FREE_GPU_BYTES)
+    let error = validate_large_guest_pc_gpu_memory(info)
         .expect_err("low free GPU memory should fail the preflight");
 
     assert_eq!(
@@ -164,8 +164,7 @@ fn accepts_large_guest_pc_trace_when_free_gpu_memory_meets_floor() {
         total_bytes: 32_607 * 1024 * 1024,
     };
 
-    validate_large_guest_pc_gpu_memory(info, LARGE_GUEST_PC_TRACE_MIN_FREE_GPU_BYTES)
-        .expect("GPU memory at the floor should pass");
+    validate_large_guest_pc_gpu_memory(info).expect("GPU memory at the floor should pass");
 }
 
 #[test]

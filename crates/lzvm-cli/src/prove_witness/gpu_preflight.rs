@@ -20,7 +20,7 @@ pub(super) fn validate_large_guest_pc_runtime_gpu(
     #[cfg(feature = "cuda")]
     {
         let info = lzvm_prover::gpu_memory_info().map_err(large_guest_pc_gpu_memory_query_error)?;
-        validate_large_guest_pc_gpu_memory(info, LARGE_GUEST_PC_TRACE_MIN_FREE_GPU_BYTES)
+        validate_large_guest_pc_gpu_memory(info)
     }
     #[cfg(not(feature = "cuda"))]
     {
@@ -43,14 +43,13 @@ fn large_guest_pc_gpu_memory_query_error(error: lzvm_prover::GpuSetupError) -> S
 #[cfg(any(test, feature = "cuda"))]
 pub(super) fn validate_large_guest_pc_gpu_memory(
     info: lzvm_prover::GpuMemoryInfo,
-    min_free_bytes: usize,
 ) -> Result<(), String> {
-    if info.free_bytes >= min_free_bytes {
+    if info.free_bytes >= LARGE_GUEST_PC_TRACE_MIN_FREE_GPU_BYTES {
         return Ok(());
     }
     Err(format!(
         "large --guest-pc-trace requires at least {} MiB free CUDA memory: free {} MiB of {} MiB",
-        bytes_to_mib_ceil(min_free_bytes),
+        bytes_to_mib_ceil(LARGE_GUEST_PC_TRACE_MIN_FREE_GPU_BYTES),
         bytes_to_mib_floor(info.free_bytes),
         bytes_to_mib_floor(info.total_bytes)
     ))

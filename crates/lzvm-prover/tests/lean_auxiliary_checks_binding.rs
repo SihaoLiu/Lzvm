@@ -2455,9 +2455,9 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
                 .contains("instruction_limit.unwrap_or(0) >= GUEST_PC_TRACE_GPU_SIZE_THRESHOLD")
             && gpu_preflight_source.contains("lzvm_prover::gpu_setup_available()")
             && gpu_preflight_source.contains("lzvm_prover::gpu_memory_info()")
-            && gpu_preflight_source.contains(
-                "validate_large_guest_pc_gpu_memory(info, LARGE_GUEST_PC_TRACE_MIN_FREE_GPU_BYTES)"
-            )
+            && gpu_preflight_source.contains("validate_large_guest_pc_gpu_memory(info)")
+            && gpu_preflight_source
+                .contains("info.free_bytes >= LARGE_GUEST_PC_TRACE_MIN_FREE_GPU_BYTES")
             && gpu_preflight_source.contains("validate_large_guest_pc_gpu_memory"),
         "Lean auxiliary checks should bind the large guest trace GPU gate to the Rust runtime guard and memory preflight"
     );
