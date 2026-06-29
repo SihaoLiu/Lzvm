@@ -956,8 +956,29 @@ pub(crate) fn linear_hashes_from_row_major_bytes(
 
     #[cfg(not(feature = "cuda"))]
     {
-        cpu_linear_hashes_from_row_major_bytes(bytes, row_count, column_count, arity)
+        linear_hashes_from_row_major_bytes_on_host(bytes, row_count, column_count, arity)
     }
+}
+
+pub(crate) fn linear_hashes_from_row_major_bytes_on_host(
+    bytes: &[u8],
+    row_count: usize,
+    column_count: usize,
+    arity: usize,
+) -> Result<Vec<[Felt; HASH_WORDS]>, MerkleHashError> {
+    validate_arity(arity)?;
+    let expected = row_major_byte_count(row_count, column_count)?;
+    if bytes.len() != expected {
+        return Err(MerkleHashError::LengthOverflow);
+    }
+    if row_count == 0 {
+        return Ok(Vec::new());
+    }
+    if column_count <= HASH_WORDS {
+        return padded_digests_from_row_major_bytes(bytes, row_count, column_count);
+    }
+
+    cpu_linear_hashes_from_row_major_bytes(bytes, row_count, column_count, arity)
 }
 
 #[cfg(feature = "cuda")]
@@ -1236,7 +1257,17 @@ pub(crate) fn parent_levels_from_digest_level(
     }
 }
 
-#[cfg(any(test, not(feature = "cuda")))]
+pub(crate) fn parent_levels_from_digest_level_on_host(
+    level: &[[Felt; HASH_WORDS]],
+    arity: usize,
+) -> Result<Vec<MerkleParentLevel>, MerkleHashError> {
+    validate_arity(arity)?;
+    if level.is_empty() {
+        return Ok(Vec::new());
+    }
+    parent_levels_from_digest_level_on_cpu(level, arity)
+}
+
 fn parent_levels_from_digest_level_on_cpu(
     level: &[[Felt; HASH_WORDS]],
     arity: usize,
@@ -1470,7 +1501,6 @@ fn padded_digests_from_row_major_bytes(
     Ok(out)
 }
 
-#[cfg(not(feature = "cuda"))]
 fn cpu_linear_hashes_from_row_major_bytes(
     bytes: &[u8],
     row_count: usize,

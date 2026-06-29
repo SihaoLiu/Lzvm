@@ -20,8 +20,7 @@ type WitnessStageSourceDeviceRef<'a> = &'a WitnessStageSourceDevice;
 #[cfg(not(feature = "cuda"))]
 type WitnessStageSourceDeviceRef<'a> = &'a ();
 
-#[cfg(not(feature = "cuda"))]
-use super::commit_witness_stage_leaves_owned;
+use super::commit_witness_stage_leaves_owned_on_host;
 #[cfg(feature = "cuda")]
 use super::{
     begin_compact_witness_stage_leaf_hash_level_from_source_device_view_on_stream_timing,
@@ -41,8 +40,9 @@ use super::{
     WitnessStageSourceDeviceView, WitnessStageTreeCommitTiming, WORD_BYTES,
 };
 use super::{
-    decode_witness_stage_leaf_values, extend_witness_stage_leaves, WitnessStageExtendedValues,
-    WitnessStageLeafExtendTiming, WitnessTraceCommitmentError, WitnessTraceCommitments,
+    decode_witness_stage_leaf_values, extend_witness_stage_leaves,
+    extend_witness_stage_leaves_on_host, WitnessStageExtendedValues, WitnessStageLeafExtendTiming,
+    WitnessTraceCommitmentError, WitnessTraceCommitments,
 };
 
 #[cfg(feature = "cuda")]
@@ -617,6 +617,78 @@ pub fn commit_witness_trace_stages_with_workers(
             .map(|(_, commitment)| commitment)
             .collect(),
     ))
+}
+
+pub(crate) fn commit_witness_trace_stages_with_host_workers(
+    trace: &WitnessTraceBuffer,
+    unit: &ProveUnitSchedule,
+    worker_count: usize,
+) -> Result<WitnessTraceCommitments, WitnessTraceCommitmentError> {
+    let worker_count = worker_count.max(1);
+    if worker_count == 1 || unit.stage_commit_widths.len() <= 1 {
+        return commit_witness_trace_stages_on_host(trace, unit);
+    }
+
+    let layout = derive_witness_trace_layout(unit)?;
+    let params = WitnessStageCommitParams::from_unit(unit)?;
+    let stage_indices = layout
+        .stages()
+        .iter()
+        .map(|stage| stage.stage_index)
+        .collect::<Vec<_>>();
+    let worker_count = worker_count.min(stage_indices.len());
+    let chunk_size = stage_indices.len().div_ceil(worker_count);
+
+    let mut commitments = Vec::with_capacity(stage_indices.len());
+    thread::scope(|scope| {
+        let mut handles = Vec::new();
+        for chunk in stage_indices.chunks(chunk_size) {
+            let chunk = chunk.to_vec();
+            let layout = &layout;
+            handles.push(scope.spawn(move || {
+                let mut out = Vec::with_capacity(chunk.len());
+                for stage_index in chunk {
+                    let stage = layout.stage_trace(trace, stage_index)?;
+                    let commitment = commit_extended_witness_stage_on_host(&stage, params, None)?;
+                    out.push((stage_index, commitment));
+                }
+                Ok::<_, WitnessTraceCommitmentError>(out)
+            }));
+        }
+
+        for handle in handles {
+            let chunk = handle
+                .join()
+                .map_err(|_| WitnessTraceCommitmentError::WorkerPanic)??;
+            commitments.extend(chunk);
+        }
+        Ok::<(), WitnessTraceCommitmentError>(())
+    })?;
+
+    commitments.sort_by_key(|(stage_index, _)| *stage_index);
+    Ok(WitnessTraceCommitments::new(
+        commitments
+            .into_iter()
+            .map(|(_, commitment)| commitment)
+            .collect(),
+    ))
+}
+
+fn commit_witness_trace_stages_on_host(
+    trace: &WitnessTraceBuffer,
+    unit: &ProveUnitSchedule,
+) -> Result<WitnessTraceCommitments, WitnessTraceCommitmentError> {
+    let layout = derive_witness_trace_layout(unit)?;
+    let params = WitnessStageCommitParams::from_unit(unit)?;
+
+    let mut commitments = Vec::with_capacity(layout.stage_count());
+    for stage_info in layout.stages() {
+        let stage = layout.stage_trace(trace, stage_info.stage_index)?;
+        let commitment = commit_extended_witness_stage_on_host(&stage, params, None)?;
+        commitments.push(commitment);
+    }
+
+    Ok(WitnessTraceCommitments::new(commitments))
 }
 
 #[cfg_attr(feature = "cuda", allow(dead_code))]
@@ -1792,8 +1864,6 @@ fn commit_extended_witness_stage(
     timing: Option<&mut WitnessStageCommitTiming>,
 ) -> Result<super::WitnessStageCommitment, WitnessTraceCommitmentError> {
     #[cfg(not(feature = "cuda"))]
-    let mut timing = timing;
-    #[cfg(not(feature = "cuda"))]
     let _ = source_device;
 
     #[cfg(feature = "cuda")]
@@ -1809,25 +1879,33 @@ fn commit_extended_witness_stage(
 
     #[cfg(not(feature = "cuda"))]
     {
-        let leaves = record_optional_duration(
-            timing
-                .as_mut()
-                .map(|timing| &mut timing.leaf_extend_duration),
-            || {
-                extend_witness_stage_leaves(stage, params.source_bits, params.target_bits)
-                    .map_err(WitnessTraceCommitmentError::from)
-            },
-        )?;
-        record_optional_duration(
-            timing
-                .as_mut()
-                .map(|timing| &mut timing.tree_commit_duration),
-            || {
-                commit_witness_stage_leaves_owned(leaves, params.arity)
-                    .map_err(WitnessTraceCommitmentError::from)
-            },
-        )
+        commit_extended_witness_stage_on_host(stage, params, timing)
     }
+}
+
+fn commit_extended_witness_stage_on_host(
+    stage: &WitnessTraceStageValues,
+    params: WitnessStageCommitParams,
+    mut timing: Option<&mut WitnessStageCommitTiming>,
+) -> Result<super::WitnessStageCommitment, WitnessTraceCommitmentError> {
+    let leaves = record_optional_duration(
+        timing
+            .as_mut()
+            .map(|timing| &mut timing.leaf_extend_duration),
+        || {
+            extend_witness_stage_leaves_on_host(stage, params.source_bits, params.target_bits)
+                .map_err(WitnessTraceCommitmentError::from)
+        },
+    )?;
+    record_optional_duration(
+        timing
+            .as_mut()
+            .map(|timing| &mut timing.tree_commit_duration),
+        || {
+            commit_witness_stage_leaves_owned_on_host(leaves, params.arity)
+                .map_err(WitnessTraceCommitmentError::from)
+        },
+    )
 }
 
 #[cfg(feature = "cuda")]

@@ -794,6 +794,10 @@ pub(super) fn record_guest_pc_trace_timing(
         timing.guest_stage_source_upload_duration(),
     );
     timings.record_count(
+        "guest_stage_source_cpu_fast_path_count",
+        timing.guest_stage_source_cpu_fast_path_count(),
+    );
+    timings.record_count(
         "guest_stage_source_retention_attempts",
         timing.guest_stage_source_retention_attempt_count(),
     );

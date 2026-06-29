@@ -80,8 +80,9 @@ use crate::witness_commitment::{
     commit_witness_stage_values_with_workers_and_indexed_timing,
 };
 use crate::witness_commitment::{
-    commit_witness_trace_stages_with_workers, WitnessIndexedStageCommitTiming,
-    WitnessStageCommitTiming, WitnessTraceCommitmentError, WitnessTraceCommitments,
+    commit_witness_trace_stages_with_host_workers, commit_witness_trace_stages_with_workers,
+    WitnessIndexedStageCommitTiming, WitnessStageCommitTiming, WitnessTraceCommitmentError,
+    WitnessTraceCommitments,
 };
 use crate::witness_layout::{
     derive_witness_trace_layout, WitnessTraceLayout, WitnessTraceLayoutError,
@@ -610,6 +611,7 @@ pub struct ProveWitnessGuestPcTraceTiming {
     guest_device_source_descriptor_stream_ingress_count: usize,
     guest_device_source_trace_expand_duration: Duration,
     guest_stage_source_upload_duration: Duration,
+    guest_stage_source_cpu_fast_path_count: usize,
     guest_stage_source_retention_attempt_count: usize,
     guest_stage_source_retention_retained_count: usize,
     guest_stage_source_retention_rejected_count: usize,
@@ -1022,6 +1024,7 @@ impl ProveWitnessGuestPcTraceTiming {
             guest_device_source_trace_expand_duration: trace_timing
                 .device_source_trace_expand_duration,
             guest_stage_source_upload_duration: trace_timing.stage_source_upload_duration,
+            guest_stage_source_cpu_fast_path_count: trace_timing.stage_source_cpu_fast_path_count,
             guest_stage_source_retention_attempt_count: trace_timing
                 .stage_source_retention_attempt_count,
             guest_stage_source_retention_retained_count: trace_timing
@@ -1872,6 +1875,10 @@ impl ProveWitnessGuestPcTraceTiming {
         self.guest_stage_source_upload_duration
     }
 
+    pub fn guest_stage_source_cpu_fast_path_count(&self) -> usize {
+        self.guest_stage_source_cpu_fast_path_count
+    }
+
     pub fn guest_stage_source_retention_attempt_count(&self) -> usize {
         self.guest_stage_source_retention_attempt_count
     }
@@ -2452,6 +2459,7 @@ struct ProveWitnessTraceTimingAccumulator {
     device_source_descriptor_stream_ingress_count: usize,
     device_source_trace_expand_duration: Duration,
     stage_source_upload_duration: Duration,
+    stage_source_cpu_fast_path_count: usize,
     stage_source_retention_attempt_count: usize,
     stage_source_retention_retained_count: usize,
     stage_source_retention_rejected_count: usize,
@@ -2542,6 +2550,7 @@ impl ProveWitnessTraceTimingAccumulator {
             other.device_source_descriptor_stream_ingress_count;
         self.device_source_trace_expand_duration += other.device_source_trace_expand_duration;
         self.stage_source_upload_duration += other.stage_source_upload_duration;
+        self.stage_source_cpu_fast_path_count += other.stage_source_cpu_fast_path_count;
         self.stage_source_retention_attempt_count += other.stage_source_retention_attempt_count;
         self.stage_source_retention_retained_count += other.stage_source_retention_retained_count;
         self.stage_source_retention_rejected_count += other.stage_source_retention_rejected_count;
@@ -3322,6 +3331,16 @@ struct WitnessRetainedTraceCudaRunArtifacts {
 }
 
 #[cfg(feature = "cuda")]
+impl WitnessRetainedTraceCudaRunArtifacts {
+    fn empty() -> Self {
+        Self {
+            stage_source_devices: Vec::new(),
+            guest_pc_device_descriptor_buffer: None,
+        }
+    }
+}
+
+#[cfg(feature = "cuda")]
 impl WitnessTraceCudaRunConfig {
     fn from_input(input_byte_count: usize) -> Self {
         let stage_source_retention = retain_fri_stage_source_devices();
@@ -3344,6 +3363,56 @@ fn selected_trace_cuda_run_config(
 ) -> WitnessTraceCudaRunConfig {
     cached_trace_cuda_run_config
         .unwrap_or_else(|| WitnessTraceCudaRunConfig::from_input(input_byte_count))
+}
+
+#[cfg(feature = "cuda")]
+const TINY_HOST_TRACE_CPU_MAX_CELLS_DEFAULT: usize = 4096;
+
+#[cfg(feature = "cuda")]
+fn tiny_host_trace_cpu_max_cells() -> usize {
+    std::env::var("LZVM_CUDA_TINY_HOST_TRACE_CPU_MAX_CELLS")
+        .ok()
+        .and_then(|value| value.parse::<usize>().ok())
+        .unwrap_or(TINY_HOST_TRACE_CPU_MAX_CELLS_DEFAULT)
+}
+
+#[cfg(feature = "cuda")]
+fn tiny_host_trace_cpu_commitment_selected(
+    host_trace_available: bool,
+    preloaded_stage_sources_available: bool,
+    external_source_commitment_required: bool,
+    row_count: usize,
+    column_count: usize,
+) -> bool {
+    tiny_host_trace_cpu_commitment_allowed(
+        host_trace_available,
+        preloaded_stage_sources_available,
+        external_source_commitment_required,
+        row_count,
+        column_count,
+        tiny_host_trace_cpu_max_cells(),
+    )
+}
+
+#[cfg(feature = "cuda")]
+fn tiny_host_trace_cpu_commitment_allowed(
+    host_trace_available: bool,
+    preloaded_stage_sources_available: bool,
+    external_source_commitment_required: bool,
+    row_count: usize,
+    column_count: usize,
+    max_cells: usize,
+) -> bool {
+    if !host_trace_available
+        || preloaded_stage_sources_available
+        || external_source_commitment_required
+        || max_cells == 0
+    {
+        return false;
+    }
+    row_count
+        .checked_mul(column_count)
+        .is_some_and(|cell_count| cell_count <= max_cells)
 }
 
 #[cfg(feature = "cuda")]
@@ -6455,21 +6524,37 @@ fn run_prove_witness_commitments_from_trace_inner(
     #[cfg(feature = "cuda")]
     let external_source_commitment_required = guest_pc_device_segment_material.is_some();
     #[cfg(feature = "cuda")]
+    let use_host_trace_cpu_commitment = tiny_host_trace_cpu_commitment_selected(
+        trace_ref.is_some(),
+        stage_source_devices.is_some(),
+        external_source_commitment_required,
+        layout.row_count(),
+        layout.column_count(),
+    );
+    #[cfg(not(feature = "cuda"))]
+    let use_host_trace_cpu_commitment = false;
+    #[cfg(feature = "cuda")]
     {
-        record_optional_duration(
-            timing
-                .as_deref_mut()
-                .map(|timing| &mut timing.stage_source_upload_duration),
-            || {
-                stage_source_device_cache.upload_from_trace_or_preloaded_if_empty(
-                    &layout,
-                    trace_ref,
-                    stage_source_devices,
-                    terminal_trace_source_prefix_rows,
-                    Some(trace_cuda_run_config),
-                )
-            },
-        )?;
+        if use_host_trace_cpu_commitment {
+            if let Some(timing) = timing.as_deref_mut() {
+                timing.stage_source_cpu_fast_path_count += 1;
+            }
+        } else {
+            record_optional_duration(
+                timing
+                    .as_deref_mut()
+                    .map(|timing| &mut timing.stage_source_upload_duration),
+                || {
+                    stage_source_device_cache.upload_from_trace_or_preloaded_if_empty(
+                        &layout,
+                        trace_ref,
+                        stage_source_devices,
+                        terminal_trace_source_prefix_rows,
+                        Some(trace_cuda_run_config),
+                    )
+                },
+            )?;
+        }
     }
     {
         let mut regular_inputs = WitnessRegularTraceInputs {
@@ -6478,7 +6563,8 @@ fn run_prove_witness_commitments_from_trace_inner(
             fixed_columns: WitnessFixedColumnsSource::Cache(fixed_columns),
             stage_traces: &mut stage_trace_cache,
             #[cfg(feature = "cuda")]
-            stage_source_devices: Some(&stage_source_device_cache),
+            stage_source_devices: (!use_host_trace_cpu_commitment)
+                .then_some(&stage_source_device_cache),
         };
         record_optional_duration(
             timing
@@ -6527,84 +6613,96 @@ fn run_prove_witness_commitments_from_trace_inner(
         let (stage_commitments, stage_timing, stage_timings) = (|| {
             let mut stage_timing = WitnessStageCommitTiming::default();
             #[cfg(feature = "cuda")]
-            let source_devices = stage_source_device_cache.descriptors();
-            #[cfg(feature = "cuda")]
-            let (stage_commitments, stage_timings) = if stage_trace_cache.is_extracted() {
-                let stage_traces = record_optional_duration(
-                    Some(&mut timing.stage_trace_extract_duration),
-                    || {
-                        stage_trace_cache.get_or_extract_optional(
-                            &layout,
-                            trace_ref,
-                            "timed extracted CUDA stage commitment",
-                        )
-                    },
+            let (stage_commitments, stage_timings) = if use_host_trace_cpu_commitment {
+                let trace =
+                    require_host_trace(trace_ref, "timed tiny host-trace CPU stage commitment")?;
+                let commitments = commit_witness_trace_stages_with_host_workers(
+                    trace,
+                    unit,
+                    plan.run_plan.gpu.witness_thread_pools,
                 )?;
-                if let Some(reuse_cache) = observers.stage_commitment_reuse_cache.as_mut() {
-                    commit_witness_stage_values_with_source_devices_reusing_cached_stages_and_indexed_timing(
-                        stage_traces,
-                        unit,
-                        &source_devices,
-                        reuse_cache,
-                        &mut stage_timing,
-                    )?
-                } else {
-                    commit_witness_stage_values_with_source_devices_and_indexed_timing(
-                        stage_traces,
-                        unit,
-                        plan.run_plan.gpu.witness_thread_pools,
-                        &source_devices,
-                        &mut stage_timing,
-                    )?
-                }
+                (commitments, Vec::new())
             } else {
-                let source_commit_result = if external_source_commitment_required {
-                    commit_witness_stage_source_devices_and_indexed_timing_external_source_with_leaf_workspace_cache(
-                        &source_devices,
-                        unit,
-                        &mut stage_timing,
-                        observers.leaf_workspace_cache.as_deref_mut(),
-                    )
-                } else {
-                    commit_witness_stage_source_devices_and_indexed_timing_with_leaf_workspace_cache(
-                        &source_devices,
-                        unit,
-                        &mut stage_timing,
-                        observers.leaf_workspace_cache.as_deref_mut(),
-                    )
-                };
-                match source_commit_result {
-                    Ok(result) => result,
-                    Err(error) if source_device_retention_unavailable(&error) => {
-                        let stage_traces = record_optional_duration(
-                            Some(&mut timing.stage_trace_extract_duration),
-                            || {
-                                stage_trace_cache.get_or_extract_optional(
-                                    &layout,
-                                    trace_ref,
-                                    "timed CUDA source-device retention fallback",
-                                )
-                            },
-                        )?;
-                        if let Some(reuse_cache) = observers.stage_commitment_reuse_cache.as_mut() {
-                            commit_witness_stage_values_with_source_devices_reusing_cached_stages_and_indexed_timing(
-                                stage_traces,
-                                unit,
-                                &source_devices,
-                                reuse_cache,
-                                &mut stage_timing,
-                            )?
-                        } else {
-                            commit_witness_stage_values_with_source_devices_and_indexed_timing(
-                                stage_traces,
-                                unit,
-                                plan.run_plan.gpu.witness_thread_pools,
-                                &source_devices,
-                                &mut stage_timing,
-                            )?
-                        }
+                let source_devices = stage_source_device_cache.descriptors();
+                if stage_trace_cache.is_extracted() {
+                    let stage_traces = record_optional_duration(
+                        Some(&mut timing.stage_trace_extract_duration),
+                        || {
+                            stage_trace_cache.get_or_extract_optional(
+                                &layout,
+                                trace_ref,
+                                "timed extracted CUDA stage commitment",
+                            )
+                        },
+                    )?;
+                    if let Some(reuse_cache) = observers.stage_commitment_reuse_cache.as_mut() {
+                        commit_witness_stage_values_with_source_devices_reusing_cached_stages_and_indexed_timing(
+                            stage_traces,
+                            unit,
+                            &source_devices,
+                            reuse_cache,
+                            &mut stage_timing,
+                        )?
+                    } else {
+                        commit_witness_stage_values_with_source_devices_and_indexed_timing(
+                            stage_traces,
+                            unit,
+                            plan.run_plan.gpu.witness_thread_pools,
+                            &source_devices,
+                            &mut stage_timing,
+                        )?
                     }
-                    Err(error) => return Err(ProveWitnessCommitmentError::from(error)),
+                } else {
+                    let source_commit_result = if external_source_commitment_required {
+                        commit_witness_stage_source_devices_and_indexed_timing_external_source_with_leaf_workspace_cache(
+                            &source_devices,
+                            unit,
+                            &mut stage_timing,
+                            observers.leaf_workspace_cache.as_deref_mut(),
+                        )
+                    } else {
+                        commit_witness_stage_source_devices_and_indexed_timing_with_leaf_workspace_cache(
+                            &source_devices,
+                            unit,
+                            &mut stage_timing,
+                            observers.leaf_workspace_cache.as_deref_mut(),
+                        )
+                    };
+                    match source_commit_result {
+                        Ok(result) => result,
+                        Err(error) if source_device_retention_unavailable(&error) => {
+                            let stage_traces = record_optional_duration(
+                                Some(&mut timing.stage_trace_extract_duration),
+                                || {
+                                    stage_trace_cache.get_or_extract_optional(
+                                        &layout,
+                                        trace_ref,
+                                        "timed CUDA source-device retention fallback",
+                                    )
+                                },
+                            )?;
+                            if let Some(reuse_cache) =
+                                observers.stage_commitment_reuse_cache.as_mut()
+                            {
+                                commit_witness_stage_values_with_source_devices_reusing_cached_stages_and_indexed_timing(
+                                    stage_traces,
+                                    unit,
+                                    &source_devices,
+                                    reuse_cache,
+                                    &mut stage_timing,
+                                )?
+                            } else {
+                                commit_witness_stage_values_with_source_devices_and_indexed_timing(
+                                    stage_traces,
+                                    unit,
+                                    plan.run_plan.gpu.witness_thread_pools,
+                                    &source_devices,
+                                    &mut stage_timing,
+                                )?
+                            }
+                        }
+                        Err(error) => return Err(ProveWitnessCommitmentError::from(error)),
+                    }
                 }
             };
             #[cfg(not(feature = "cuda"))]
@@ -6635,6 +6733,13 @@ fn run_prove_witness_commitments_from_trace_inner(
             stage_timings,
         );
         stage_commitments
+    } else if use_host_trace_cpu_commitment {
+        let trace = require_host_trace(trace_ref, "tiny host-trace CPU stage commitment")?;
+        commit_witness_trace_stages_with_host_workers(
+            trace,
+            unit,
+            plan.run_plan.gpu.witness_thread_pools,
+        )?
     } else if stage_trace_cache.is_extracted() {
         let stage_traces = stage_trace_cache.get_or_extract_optional(
             &layout,
@@ -6732,22 +6837,28 @@ fn run_prove_witness_commitments_from_trace_inner(
     };
 
     #[cfg(feature = "cuda")]
-    let retained_artifacts = match timing {
-        Some(ref mut timing) => {
-            let started = Instant::now();
-            let artifacts = retained_trace_cuda_run_artifacts(
-                &stage_source_device_cache,
-                trace_cuda_run_config,
-                Some(&mut **timing),
-            );
-            timing.retained_trace_artifact_duration += started.elapsed();
-            artifacts
+    let retained_artifacts = {
+        if use_host_trace_cpu_commitment {
+            WitnessRetainedTraceCudaRunArtifacts::empty()
+        } else {
+            match timing {
+                Some(ref mut timing) => {
+                    let started = Instant::now();
+                    let artifacts = retained_trace_cuda_run_artifacts(
+                        &stage_source_device_cache,
+                        trace_cuda_run_config,
+                        Some(&mut **timing),
+                    );
+                    timing.retained_trace_artifact_duration += started.elapsed();
+                    artifacts
+                }
+                None => retained_trace_cuda_run_artifacts(
+                    &stage_source_device_cache,
+                    trace_cuda_run_config,
+                    None,
+                ),
+            }
         }
-        None => retained_trace_cuda_run_artifacts(
-            &stage_source_device_cache,
-            trace_cuda_run_config,
-            None,
-        ),
     };
     Ok(ProveWitnessTraceCommitments {
         commitments,
@@ -8529,6 +8640,63 @@ mod tests {
         assert!(!current_config.sparse_trace_source);
         assert_eq!(current_config.sparse_trace_source_max_percent, 33);
         assert!(!current_config.debug_sparse_trace_source);
+    }
+
+    #[cfg(feature = "cuda")]
+    #[test]
+    fn tiny_host_trace_cpu_commitment_policy_requires_host_only_input() {
+        assert!(tiny_host_trace_cpu_commitment_allowed(
+            true, false, false, 8, 8, 64
+        ));
+        assert!(!tiny_host_trace_cpu_commitment_allowed(
+            false, false, false, 8, 8, 64
+        ));
+        assert!(!tiny_host_trace_cpu_commitment_allowed(
+            true, true, false, 8, 8, 64
+        ));
+        assert!(!tiny_host_trace_cpu_commitment_allowed(
+            true, false, true, 8, 8, 64
+        ));
+        assert!(!tiny_host_trace_cpu_commitment_allowed(
+            true, false, false, 8, 9, 64
+        ));
+        assert!(!tiny_host_trace_cpu_commitment_allowed(
+            true,
+            false,
+            false,
+            usize::MAX,
+            2,
+            usize::MAX,
+        ));
+        assert!(!tiny_host_trace_cpu_commitment_allowed(
+            true, false, false, 1, 1, 0
+        ));
+    }
+
+    #[cfg(feature = "cuda")]
+    #[test]
+    fn tiny_host_trace_cpu_commitment_policy_reads_env_limit() {
+        let env = TestEnvVarGuard::new("LZVM_CUDA_TINY_HOST_TRACE_CPU_MAX_CELLS");
+        env.unset();
+        assert!(tiny_host_trace_cpu_commitment_selected(
+            true, false, false, 64, 64
+        ));
+        assert!(!tiny_host_trace_cpu_commitment_selected(
+            true, false, false, 65, 64
+        ));
+
+        env.set("16");
+        assert!(tiny_host_trace_cpu_commitment_selected(
+            true, false, false, 4, 4
+        ));
+        assert!(!tiny_host_trace_cpu_commitment_selected(
+            true, false, false, 4, 5
+        ));
+
+        env.set("0");
+        assert!(!tiny_host_trace_cpu_commitment_selected(
+            true, false, false, 1, 1
+        ));
     }
 
     #[cfg(feature = "cuda")]

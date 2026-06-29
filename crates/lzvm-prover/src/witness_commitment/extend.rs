@@ -18,9 +18,7 @@ use lzvm_accel::{
     cuda_goldilocks_validate_canonical_words_device, AccelError, CudaCanonicalCheck,
     CudaDeviceBuffer, CudaEvent, CudaRowMajorColumnView, CudaStream,
 };
-#[cfg(not(feature = "cuda"))]
-use lzvm_field::coset_extend_evaluations;
-use lzvm_field::Felt;
+use lzvm_field::{coset_extend_evaluations, Felt};
 
 #[cfg(feature = "cuda")]
 use crate::gpu_setup::prepare_gpu_setup;
@@ -522,6 +520,30 @@ pub fn extend_witness_stage_leaves(
     let rows = stage.row_count();
     let bytes =
         extend_witness_stage_row_major_bytes(stage.values(), columns, source_bits, target_bits)?;
+    let extended_rows = extended_row_count_from_bytes(bytes.len(), columns)?;
+
+    Ok(WitnessStageLeaves::new(
+        stage.stage_index(),
+        rows,
+        extended_rows,
+        columns,
+        bytes,
+    ))
+}
+
+pub(crate) fn extend_witness_stage_leaves_on_host(
+    stage: &WitnessTraceStageValues,
+    source_bits: usize,
+    target_bits: usize,
+) -> Result<WitnessStageLeaves, WitnessStageLeafError> {
+    let columns = stage.column_count();
+    let rows = stage.row_count();
+    let bytes = extend_witness_stage_row_major_bytes_on_host(
+        stage.values(),
+        columns,
+        source_bits,
+        target_bits,
+    )?;
     let extended_rows = extended_row_count_from_bytes(bytes.len(), columns)?;
 
     Ok(WitnessStageLeaves::new(
@@ -1623,8 +1645,21 @@ fn extend_witness_stage_row_major_bytes(
     source_bits: usize,
     target_bits: usize,
 ) -> Result<Vec<u8>, WitnessStageLeafError> {
-    let extended_values =
-        extend_witness_stage_row_major_values(values, column_count, source_bits, target_bits)?;
+    extend_witness_stage_row_major_bytes_on_host(values, column_count, source_bits, target_bits)
+}
+
+fn extend_witness_stage_row_major_bytes_on_host(
+    values: &[Felt],
+    column_count: usize,
+    source_bits: usize,
+    target_bits: usize,
+) -> Result<Vec<u8>, WitnessStageLeafError> {
+    let extended_values = extend_witness_stage_row_major_values_on_host(
+        values,
+        column_count,
+        source_bits,
+        target_bits,
+    )?;
     let byte_count = extended_values
         .len()
         .checked_mul(WORD_BYTES)
@@ -1636,8 +1671,7 @@ fn extend_witness_stage_row_major_bytes(
     Ok(bytes)
 }
 
-#[cfg(not(feature = "cuda"))]
-fn extend_witness_stage_row_major_values(
+fn extend_witness_stage_row_major_values_on_host(
     values: &[Felt],
     column_count: usize,
     source_bits: usize,

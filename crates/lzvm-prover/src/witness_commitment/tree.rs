@@ -10,7 +10,8 @@ use std::time::{Duration, Instant};
 #[cfg(feature = "cuda")]
 use super::PendingCanonicalCudaDigestLevel;
 use crate::merkle_hash::{
-    linear_hash, linear_hashes_from_row_major_bytes, parent_hash, parent_levels_from_digest_level,
+    linear_hash, linear_hashes_from_row_major_bytes, linear_hashes_from_row_major_bytes_on_host,
+    parent_hash, parent_levels_from_digest_level, parent_levels_from_digest_level_on_host,
 };
 #[cfg(feature = "cuda")]
 use crate::merkle_hash::{
@@ -366,6 +367,7 @@ pub fn commit_witness_stage_leaves(
     )
 }
 
+#[cfg_attr(not(feature = "cuda"), allow(dead_code))]
 #[cfg_attr(feature = "cuda", allow(dead_code))]
 pub(crate) fn commit_witness_stage_leaves_owned(
     leaves: WitnessStageLeaves,
@@ -378,6 +380,26 @@ pub(crate) fn commit_witness_stage_leaves_owned(
     let out = leaves.into_bytes();
 
     commit_validated_witness_stage_bytes(
+        stage_index,
+        extended_row_count,
+        column_count,
+        arity,
+        expected_leaf_bytes,
+        out,
+    )
+}
+
+pub(crate) fn commit_witness_stage_leaves_owned_on_host(
+    leaves: WitnessStageLeaves,
+    arity: usize,
+) -> Result<WitnessStageCommitment, WitnessStageCommitmentError> {
+    let expected_leaf_bytes = validate_witness_stage_leaves(&leaves, arity)?;
+    let stage_index = leaves.stage_index();
+    let extended_row_count = leaves.extended_row_count();
+    let column_count = leaves.column_count();
+    let out = leaves.into_bytes();
+
+    commit_validated_witness_stage_bytes_on_host(
         stage_index,
         extended_row_count,
         column_count,
@@ -1056,6 +1078,30 @@ fn commit_validated_witness_stage_bytes(
     )
 }
 
+fn commit_validated_witness_stage_bytes_on_host(
+    stage_index: usize,
+    extended_row_count: usize,
+    column_count: usize,
+    arity: usize,
+    leaf_byte_count: usize,
+    out: Vec<u8>,
+) -> Result<WitnessStageCommitment, WitnessStageCommitmentError> {
+    let level = linear_hashes_from_row_major_bytes_on_host(
+        &out[..leaf_byte_count],
+        extended_row_count,
+        column_count,
+        arity,
+    )?;
+    commit_validated_witness_stage_bytes_with_leaf_hashes_on_host(
+        stage_index,
+        extended_row_count,
+        column_count,
+        arity,
+        out,
+        level,
+    )
+}
+
 fn commit_validated_witness_stage_bytes_with_leaf_hashes(
     stage_index: usize,
     extended_row_count: usize,
@@ -1068,6 +1114,22 @@ fn commit_validated_witness_stage_bytes_with_leaf_hashes(
         expected_witness_stage_commitment_tree_byte_count(extended_row_count, column_count, arity)?;
     out.reserve_exact(tree_byte_count.saturating_sub(out.len()));
     let root = append_digest_tree_bytes(&mut out, level, arity)?;
+
+    Ok(WitnessStageCommitment::new(stage_index, arity, root, out))
+}
+
+fn commit_validated_witness_stage_bytes_with_leaf_hashes_on_host(
+    stage_index: usize,
+    extended_row_count: usize,
+    column_count: usize,
+    arity: usize,
+    mut out: Vec<u8>,
+    level: Vec<[Felt; HASH_WORDS]>,
+) -> Result<WitnessStageCommitment, WitnessStageCommitmentError> {
+    let tree_byte_count =
+        expected_witness_stage_commitment_tree_byte_count(extended_row_count, column_count, arity)?;
+    out.reserve_exact(tree_byte_count.saturating_sub(out.len()));
+    let root = append_digest_tree_bytes_on_host(&mut out, level, arity)?;
 
     Ok(WitnessStageCommitment::new(stage_index, arity, root, out))
 }
@@ -1085,6 +1147,32 @@ fn append_digest_tree_bytes(
     }
 
     for parent_level in parent_levels_from_digest_level(&level, arity)? {
+        for _ in 0..parent_level.padding_count {
+            append_digest(out, [Felt::ZERO; HASH_WORDS]);
+        }
+
+        for digest in &parent_level.parents {
+            append_digest(out, *digest);
+        }
+        level = parent_level.parents;
+    }
+
+    Ok(level[0])
+}
+
+fn append_digest_tree_bytes_on_host(
+    out: &mut Vec<u8>,
+    mut level: Vec<[Felt; HASH_WORDS]>,
+    arity: usize,
+) -> Result<[Felt; HASH_WORDS], WitnessStageCommitmentError> {
+    if level.is_empty() {
+        return Err(WitnessStageCommitmentError::EmptyStage);
+    }
+    for digest in &level {
+        append_digest(out, *digest);
+    }
+
+    for parent_level in parent_levels_from_digest_level_on_host(&level, arity)? {
         for _ in 0..parent_level.padding_count {
             append_digest(out, [Felt::ZERO; HASH_WORDS]);
         }
@@ -1962,11 +2050,12 @@ mod tests {
     };
     use super::{
         commit_witness_stage_leaves, commit_witness_stage_leaves_compact_with_leaf_hashes,
-        commit_witness_stage_leaves_owned, commit_witness_stage_leaves_owned_with_leaf_hashes,
-        commit_witness_stage_zero_compact, open_witness_stage_commitment,
-        open_witness_stage_commitments, unique_witness_stage_opening_rows,
-        verify_witness_stage_opening_root, WitnessStageCommitmentError, WitnessStageLeaves,
-        DUPLICATE_QUERY_ROW_PRESCAN_LIMIT, WORD_BYTES,
+        commit_witness_stage_leaves_owned, commit_witness_stage_leaves_owned_on_host,
+        commit_witness_stage_leaves_owned_with_leaf_hashes, commit_witness_stage_zero_compact,
+        open_witness_stage_commitment, open_witness_stage_commitments,
+        unique_witness_stage_opening_rows, verify_witness_stage_opening_root,
+        WitnessStageCommitmentError, WitnessStageLeaves, DUPLICATE_QUERY_ROW_PRESCAN_LIMIT,
+        WORD_BYTES,
     };
     #[cfg(feature = "cuda")]
     use crate::witness_commitment::compact_witness_stage_leaf_hash_level_from_source_device_view_timing;
@@ -2261,6 +2350,31 @@ mod tests {
             .expect("stage row should open");
         assert!(verify_witness_stage_opening_root(owned.root(), 4, &opening)
             .expect("opening root check should run"));
+    }
+
+    #[test]
+    fn host_owned_witness_stage_commitment_matches_borrowed_commitment() {
+        let row_count = 5;
+        let column_count = 6;
+        let mut bytes = Vec::new();
+        for row in 0..row_count {
+            for column in 0..column_count {
+                let value = Felt::from_u64((row * 100 + column + 1) as u64);
+                bytes.extend_from_slice(&value.to_le_bytes());
+            }
+        }
+        let leaves = WitnessStageLeaves::new(7, row_count, row_count, column_count, bytes.clone());
+        let owned_leaves = WitnessStageLeaves::new(7, row_count, row_count, column_count, bytes);
+
+        let borrowed =
+            commit_witness_stage_leaves(&leaves, 4).expect("stage commitment should build");
+        let host_owned = commit_witness_stage_leaves_owned_on_host(owned_leaves, 4)
+            .expect("stage commitment should build");
+
+        assert_eq!(host_owned.stage_index(), borrowed.stage_index());
+        assert_eq!(host_owned.arity(), borrowed.arity());
+        assert_eq!(host_owned.root(), borrowed.root());
+        assert_eq!(host_owned.tree_bytes(), borrowed.tree_bytes());
     }
 
     #[test]
