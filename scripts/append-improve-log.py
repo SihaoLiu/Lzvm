@@ -154,8 +154,8 @@ def parse_run_times(raw: str, label: str) -> list[float]:
             parsed = float(value)
         except ValueError as error:
             raise SystemExit(f"{label}: invalid run time {value!r}") from error
-        if not math.isfinite(parsed) or parsed <= 0.0:
-            raise SystemExit(f"{label}: run time must be a positive finite value: {value!r}")
+        if not math.isfinite(parsed) or parsed < 0.0:
+            raise SystemExit(f"{label}: run time must be a nonnegative finite value: {value!r}")
         values.append(parsed)
     return values
 
@@ -187,13 +187,23 @@ def stable_average_field(
             candidate = ordered[start:end]
             median = candidate[len(candidate) // 2]
             if median == 0.0:
-                continue
-            relative_spread = (candidate[-1] - candidate[0]) / median
+                relative_spread = 0.0 if candidate[0] == candidate[-1] else math.inf
+            else:
+                relative_spread = (candidate[-1] - candidate[0]) / median
             if relative_spread <= max_relative_spread:
                 if best is None or len(candidate) > len(best):
                     best = candidate
                 elif best is not None and len(candidate) == len(best):
-                    best_spread = (best[-1] - best[0]) / best[len(best) // 2]
+                    best_median = best[len(best) // 2]
+                    best_spread = (
+                        0.0
+                        if best_median == 0.0 and best[0] == best[-1]
+                        else (
+                            math.inf
+                            if best_median == 0.0
+                            else (best[-1] - best[0]) / best_median
+                        )
+                    )
                     if relative_spread < best_spread:
                         best = candidate
 
@@ -271,8 +281,8 @@ def timing_field_average_seconds(field: str, label: str) -> float:
         raise SystemExit(
             f"{label}: cannot parse timing average from {field!r}"
         ) from error
-    if not math.isfinite(value) or value <= 0.0:
-        raise SystemExit(f"{label}: timing average must be positive and finite")
+    if not math.isfinite(value) or value < 0.0:
+        raise SystemExit(f"{label}: timing average must be nonnegative and finite")
     return value
 
 
