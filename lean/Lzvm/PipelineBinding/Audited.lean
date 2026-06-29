@@ -627,6 +627,105 @@ theorem runtime_pipeline_binding_required_external_source_audited_pcs_fri_core_w
       verifierCore,
       soundWitness⟩
 
+theorem runtime_pipeline_required_external_source_audited_finalized_core_sound_witness_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimePipelineBindingValidation system) :
+    forall artifact publicInput proof (requiresExternalSource : Prop),
+      RuntimePipelineBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        requiresExternalSource ->
+          let queryPlanValidation := validation.queryPlanBindingValidation
+          let artifactValidation :=
+            queryPlanValidation.challengeValidation.transcriptValidation.artifactBindingValidation
+          RequiredCryptographicAssumptionStatements assumptions.crypto
+            /\ RequiredSemanticAssumptionStatements assumptions.semantic
+            /\ RuntimeProofArtifactFinalized
+              system
+              artifactValidation
+              artifact
+              publicInput
+              proof
+            /\ ExternalSourceOpeningEvidence
+              system
+              (runtime_pipeline_trace_source_validation validation)
+              publicInput
+              proof
+            /\ ExternalSourceOpeningEvidence
+              system
+              (runtime_pipeline_opening_source_validation validation)
+              publicInput
+              proof
+            /\ validation.queryPlanBindingValidation.queryPlanSeedBindsWitnessTreeDigests
+              artifact
+              publicInput
+              proof
+            /\ validation.queryPlanBindingValidation.queryPlanSeededFriOpeningRequirementsChecked
+              artifact
+              publicInput
+              proof
+            /\ RuntimeVerifierCoreContract system publicInput proof
+            /\ (exists witness trace constraints,
+              system.traceConsistent publicInput proof trace
+                /\ system.constraintsSatisfied constraints trace
+                /\ system.witnessMatchesTrace witness trace)
+            /\ SoundWitness system publicInput proof := by
+  intro artifact publicInput proof requiresExternalSource accepted required
+  have compactCore :=
+    runtime_pipeline_binding_required_external_source_audited_pcs_fri_core_witness_contract
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      accepted
+      required
+  have auditedAssumptions :=
+    assumption_bundle_carries_required_evidence assumptions
+  have artifactFinalized :=
+    runtime_pipeline_binding_checked_acceptance_artifact_finalized
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have executionObligations :=
+    runtime_pipeline_binding_checked_acceptance_execution_obligations
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  rcases compactCore with
+    ⟨cryptoEvidence,
+      _proofSystemSound,
+      _verifierAccepts,
+      traceExternalEvidence,
+      openingExternalEvidence,
+      _pcsOpenings,
+      _friQueries,
+      seedBinds,
+      seededFriOpeningChecked,
+      verifierCore,
+      soundWitness⟩
+  exact
+    ⟨cryptoEvidence,
+      auditedAssumptions.right,
+      artifactFinalized,
+      traceExternalEvidence,
+      openingExternalEvidence,
+      seedBinds,
+      seededFriOpeningChecked,
+      verifierCore,
+      executionObligations,
+      soundWitness⟩
+
 theorem runtime_pipeline_binding_required_external_source_audited_seeded_query_requirements_contract
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)

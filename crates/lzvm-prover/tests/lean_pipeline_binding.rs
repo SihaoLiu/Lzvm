@@ -244,6 +244,7 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
             "runtime_pipeline_binding_required_external_source_audited_pcs_accepts_sound_witness_contract",
             "runtime_pipeline_binding_required_external_source_audited_pcs_fri_witness_contract",
             "runtime_pipeline_binding_required_external_source_audited_pcs_fri_core_witness_contract",
+            "runtime_pipeline_required_external_source_audited_finalized_core_sound_witness_contract",
             "runtime_pipeline_binding_required_external_source_audited_segment_ids_contract",
             "runtime_pipeline_binding_required_external_source_audited_concrete_segment_ids_contract",
             "runtime_pipeline_binding_required_external_source_audited_seeded_query_requirements_contract",
@@ -3382,6 +3383,42 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
         )
         .contains("RuntimePipelineBindingEvidence"),
         "compact required external-source pipeline PCS/FRI core contract should not force callers to unpack full pipeline evidence"
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_pipeline_required_external_source_audited_finalized_core_sound_witness_contract",
+        &[
+            "(requiresExternalSource : Prop)",
+            "RuntimePipelineBindingCheckedAcceptance",
+            "proof ->\n        requiresExternalSource ->",
+            "let queryPlanValidation := validation.queryPlanBindingValidation",
+            "queryPlanValidation.challengeValidation.transcriptValidation.artifactBindingValidation",
+            "RequiredCryptographicAssumptionStatements assumptions.crypto",
+            "RequiredSemanticAssumptionStatements assumptions.semantic",
+            "RuntimeProofArtifactFinalized",
+            "ExternalSourceOpeningEvidence",
+            "runtime_pipeline_trace_source_validation validation",
+            "runtime_pipeline_opening_source_validation validation",
+            "validation.queryPlanBindingValidation.queryPlanSeedBindsWitnessTreeDigests",
+            "validation.queryPlanBindingValidation.queryPlanSeededFriOpeningRequirementsChecked",
+            "RuntimeVerifierCoreContract system publicInput proof",
+            "SoundWitness system publicInput proof",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_pipeline_required_external_source_audited_finalized_core_sound_witness_contract",
+        &[
+            "runtime_pipeline_binding_required_external_source_audited_pcs_fri_core_witness_contract",
+            "assumption_bundle_carries_required_evidence",
+            "runtime_pipeline_binding_checked_acceptance_artifact_finalized",
+            "runtime_pipeline_binding_checked_acceptance_execution_obligations",
+        ],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &lean_source,
+        "runtime_pipeline_required_external_source_audited_finalized_core_sound_witness_contract",
+        &["RuntimePipelineBindingEvidence"],
     );
     assert!(
         theorem_prefix(
