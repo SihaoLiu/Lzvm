@@ -742,6 +742,11 @@ fn prove_timing_root_summary_reports_root_grouping_shape() {
         "fri_transcript_unit_build_total_pct",
         "contribution_total_pct",
         "final_proof_timing_hint",
+        "timing_gpu_setup_ms",
+        "gpu_setup_ms",
+        "top_level_unattributed_ms",
+        "gpu_setup_pct",
+        "top_level_bottleneck",
     ] {
         assert!(
             source.contains(required),
@@ -770,7 +775,7 @@ fn prove_timing_root_summary_reports_root_grouping_shape() {
         "aggregate,3,3,9050,12066.667,9050.000,18100,100.000,no,yes",
     ] {
         let required = if required.starts_with("profile,input_bytes,total_ms") {
-            "profile,input_bytes,total_ms,constant_material_validation_elapsed_ms"
+            "profile,input_bytes,total_ms,catalog_ms"
         } else if required.starts_with("single-root-groups,") {
             "single-root-groups,2758032,9050"
         } else if required.starts_with("batched-roots,") {
@@ -785,6 +790,76 @@ fn prove_timing_root_summary_reports_root_grouping_shape() {
             "prove timing root summary should print {required}"
         );
     }
+}
+
+#[test]
+fn prove_timing_root_summary_reports_top_level_proof_phase_fields() {
+    let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let script_path = crate_root.join("../../scripts/prove-timing-root-summary.py");
+    let dir = crate_root.join(format!(
+        "../../temp/prove-timing-top-level-phases-{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("summary fixture dir should be created");
+    let log_path = dir.join("proof.log");
+    std::fs::write(
+        &log_path,
+        [
+            "timing_total_ms=200",
+            "timing_catalog_ms=1",
+            "timing_eth_input_ms=2",
+            "timing_public_inputs_ms=3",
+            "timing_plan_ms=4",
+            "timing_gpu_setup_ms=100",
+            "timing_auxiliary_inputs_ms=5",
+            "timing_trace_inputs_ms=6",
+            "timing_witness_ms=7",
+            "timing_proof_ms=8",
+            "timing_output_write_ms=9",
+            "timing_summary_ms=10",
+        ]
+        .join("\n")
+            + "\n",
+    )
+    .expect("summary fixture log should write");
+
+    let output = Command::new("python3")
+        .arg(&script_path)
+        .arg(&log_path)
+        .output()
+        .expect("prove timing root summary should run");
+    let success = output.status.success();
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    let _ = std::fs::remove_dir_all(&dir);
+
+    assert!(
+        success,
+        "prove timing root summary should pass: stderr={stderr}"
+    );
+    let mut lines = stdout.lines();
+    let header = lines.next().expect("summary should print a header");
+    let row = lines.next().expect("summary should print one row");
+    let headers = header.split(',').collect::<Vec<_>>();
+    let values = row.split(',').collect::<Vec<_>>();
+    assert_eq!(
+        headers.len(),
+        values.len(),
+        "summary header and row should have matching column counts: stdout={stdout}"
+    );
+    let field = |name: &str| {
+        let index = headers
+            .iter()
+            .position(|header| *header == name)
+            .unwrap_or_else(|| panic!("summary should expose {name}: stdout={stdout}"));
+        values[index]
+    };
+    assert_eq!(field("gpu_setup_ms"), "100");
+    assert_eq!(field("witness_ms"), "7");
+    assert_eq!(field("top_level_unattributed_ms"), "45");
+    assert_eq!(field("gpu_setup_pct"), "50.000");
+    assert_eq!(field("top_level_bottleneck"), "gpu_setup");
 }
 
 #[test]
@@ -8046,14 +8121,27 @@ fn prove_timing_root_summary_reports_constant_material_overlap() {
         String::from_utf8_lossy(&output.stderr)
     );
     let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
-    assert!(
-        stdout.contains(
-            "profile,input_bytes,total_ms,constant_material_validation_elapsed_ms,constant_material_validation_join_wait_ms,constant_material_validation_overlap_hint,"
-        ),
-        "prove timing root summary should expose constant material overlap columns: stdout={stdout}"
+    let mut lines = stdout.lines();
+    let header = lines.next().expect("summary should print a header");
+    let row = lines.next().expect("summary should print one row");
+    let headers = header.split(',').collect::<Vec<_>>();
+    let values = row.split(',').collect::<Vec<_>>();
+    assert_eq!(
+        headers.len(),
+        values.len(),
+        "summary header and row should have matching column counts: stdout={stdout}"
     );
-    assert!(
-        stdout.contains("stdin,0,10000,9000,125,mostly_overlapped,"),
-        "prove timing root summary should classify background validation overlap: stdout={stdout}"
+    let value = |name: &str| {
+        let index = headers
+            .iter()
+            .position(|header| *header == name)
+            .unwrap_or_else(|| panic!("summary should expose {name}: stdout={stdout}"));
+        values[index]
+    };
+    assert_eq!(value("constant_material_validation_elapsed_ms"), "9000");
+    assert_eq!(value("constant_material_validation_join_wait_ms"), "125");
+    assert_eq!(
+        value("constant_material_validation_overlap_hint"),
+        "mostly_overlapped"
     );
 }

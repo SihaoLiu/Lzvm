@@ -12,6 +12,17 @@ ROOT_COUNT_KEY = "timing_guest_stage_tree_commit_root_count"
 ROOT_GROUPS_KEY = "timing_guest_stage_tree_commit_root_materialization_groups"
 ROOT_MAX_GROUP_KEY = "timing_guest_stage_tree_commit_root_materialization_max_group_size"
 TOTAL_MS_KEY = "timing_total_ms"
+CATALOG_MS_KEY = "timing_catalog_ms"
+ETH_INPUT_MS_KEY = "timing_eth_input_ms"
+PUBLIC_INPUTS_MS_KEY = "timing_public_inputs_ms"
+PLAN_MS_KEY = "timing_plan_ms"
+GPU_SETUP_MS_KEY = "timing_gpu_setup_ms"
+AUXILIARY_INPUTS_MS_KEY = "timing_auxiliary_inputs_ms"
+TRACE_INPUTS_MS_KEY = "timing_trace_inputs_ms"
+WITNESS_MS_KEY = "timing_witness_ms"
+PROOF_MS_KEY = "timing_proof_ms"
+OUTPUT_WRITE_MS_KEY = "timing_output_write_ms"
+SUMMARY_MS_KEY = "timing_summary_ms"
 CONSTANT_MATERIAL_VALIDATION_ELAPSED_MS_KEY = (
     "timing_constant_material_validation_elapsed_ms"
 )
@@ -723,7 +734,11 @@ NSYS_CPU_HOTSPOT_BLOCKS = {
 NSYS_CPU_MEMCPY_ACTION_HINT_BLOCK = "cpu_trace_memcpy_action_hints"
 
 HEADER = (
-    "profile,input_bytes,total_ms,constant_material_validation_elapsed_ms,"
+    "profile,input_bytes,total_ms,catalog_ms,eth_input_ms,public_inputs_ms,"
+    "plan_ms,gpu_setup_ms,auxiliary_inputs_ms,trace_inputs_ms,witness_ms,"
+    "proof_ms,output_write_ms,summary_ms,top_level_unattributed_ms,"
+    "gpu_setup_pct,top_level_bottleneck,"
+    "constant_material_validation_elapsed_ms,"
     "constant_material_validation_join_wait_ms,constant_material_validation_overlap_hint,"
     "runner_ms,lowerer_ms,trace_lower_ms,trace_report_ms,"
     "trace_report_apply_ms,trace_unit_summary_ms,trace_non_report_ms,"
@@ -1025,6 +1040,17 @@ OUTLIER_RATIO_THRESHOLD = 1.5
 TIMING_KEYS = {
     INPUT_BYTES_KEY,
     TOTAL_MS_KEY,
+    CATALOG_MS_KEY,
+    ETH_INPUT_MS_KEY,
+    PUBLIC_INPUTS_MS_KEY,
+    PLAN_MS_KEY,
+    GPU_SETUP_MS_KEY,
+    AUXILIARY_INPUTS_MS_KEY,
+    TRACE_INPUTS_MS_KEY,
+    WITNESS_MS_KEY,
+    PROOF_MS_KEY,
+    OUTPUT_WRITE_MS_KEY,
+    SUMMARY_MS_KEY,
     CONSTANT_MATERIAL_VALIDATION_ELAPSED_MS_KEY,
     CONSTANT_MATERIAL_VALIDATION_JOIN_WAIT_MS_KEY,
     RUNNER_MS_KEY,
@@ -1867,6 +1893,39 @@ def primary_bottleneck(
     ]
     name, value = max(candidates, key=lambda item: item[1])
     return name if value > 0.0 else "total" if total_ms > 0 else "unknown"
+
+
+def top_level_bottleneck(
+    total_ms: int,
+    catalog_ms: int,
+    eth_input_ms: int,
+    public_inputs_ms: int,
+    plan_ms: int,
+    gpu_setup_ms: int,
+    auxiliary_inputs_ms: int,
+    trace_inputs_ms: int,
+    witness_ms: int,
+    proof_ms: int,
+    output_write_ms: int,
+    summary_ms: int,
+    top_level_unattributed_ms: int,
+) -> str:
+    candidates = [
+        ("catalog", catalog_ms),
+        ("eth_input", eth_input_ms),
+        ("public_inputs", public_inputs_ms),
+        ("plan", plan_ms),
+        ("gpu_setup", gpu_setup_ms),
+        ("auxiliary_inputs", auxiliary_inputs_ms),
+        ("trace_inputs", trace_inputs_ms),
+        ("witness", witness_ms),
+        ("proof", proof_ms),
+        ("output_write", output_write_ms),
+        ("summary", summary_ms),
+        ("top_level_unattributed", top_level_unattributed_ms),
+    ]
+    name, value = max(candidates, key=lambda item: item[1])
+    return name if value > 0 else "total" if total_ms > 0 else "unknown"
 
 
 def proof_target_gap_hint(
@@ -3911,6 +3970,47 @@ def summarize_profile_values(
 ) -> str:
     input_bytes = values.get(INPUT_BYTES_KEY, 0)
     total_ms = values.get(TOTAL_MS_KEY, 0)
+    catalog_ms = values.get(CATALOG_MS_KEY, 0)
+    eth_input_ms = values.get(ETH_INPUT_MS_KEY, 0)
+    public_inputs_ms = values.get(PUBLIC_INPUTS_MS_KEY, 0)
+    plan_ms = values.get(PLAN_MS_KEY, 0)
+    gpu_setup_ms = values.get(GPU_SETUP_MS_KEY, 0)
+    auxiliary_inputs_ms = values.get(AUXILIARY_INPUTS_MS_KEY, 0)
+    trace_inputs_ms = values.get(TRACE_INPUTS_MS_KEY, 0)
+    witness_ms = values.get(WITNESS_MS_KEY, 0)
+    proof_ms = values.get(PROOF_MS_KEY, 0)
+    output_write_ms = values.get(OUTPUT_WRITE_MS_KEY, 0)
+    summary_ms = values.get(SUMMARY_MS_KEY, 0)
+    accounted_top_level_ms = (
+        catalog_ms
+        + eth_input_ms
+        + public_inputs_ms
+        + plan_ms
+        + gpu_setup_ms
+        + auxiliary_inputs_ms
+        + trace_inputs_ms
+        + witness_ms
+        + proof_ms
+        + output_write_ms
+        + summary_ms
+    )
+    top_level_unattributed_ms = max(total_ms - accounted_top_level_ms, 0)
+    gpu_setup_pct = gpu_setup_ms * 100.0 / total_ms if total_ms else 0.0
+    top_level_hint = top_level_bottleneck(
+        total_ms,
+        catalog_ms,
+        eth_input_ms,
+        public_inputs_ms,
+        plan_ms,
+        gpu_setup_ms,
+        auxiliary_inputs_ms,
+        trace_inputs_ms,
+        witness_ms,
+        proof_ms,
+        output_write_ms,
+        summary_ms,
+        top_level_unattributed_ms,
+    )
     constant_material_elapsed_ms = values.get(
         CONSTANT_MATERIAL_VALIDATION_ELAPSED_MS_KEY, 0
     )
@@ -5315,6 +5415,10 @@ def summarize_profile_values(
     runner_hint = cpu_runner_hotspot_hint(perf_hotspots)
     return (
         f"{csv_cell(label)},{input_bytes},{total_ms},"
+        f"{catalog_ms},{eth_input_ms},{public_inputs_ms},"
+        f"{plan_ms},{gpu_setup_ms},{auxiliary_inputs_ms},{trace_inputs_ms},"
+        f"{witness_ms},{proof_ms},{output_write_ms},{summary_ms},"
+        f"{top_level_unattributed_ms},{gpu_setup_pct:.3f},{top_level_hint},"
         f"{constant_material_elapsed_ms},{constant_material_join_wait_ms},"
         f"{constant_material_hint},{runner_ms},{lowerer_ms},"
         f"{trace_lower_ms},{trace_report_ms},"
