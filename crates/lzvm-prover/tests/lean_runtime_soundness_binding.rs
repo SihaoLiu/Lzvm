@@ -85,10 +85,12 @@ fn lean_runtime_soundness_binding_exports_core_contract_projection() {
             "runtime_soundness_checked_acceptance_accepts_core_sound_witness",
             "runtime_soundness_checked_acceptance_proof_system_sound",
             "runtime_soundness_checked_acceptance_full_soundness_contract",
+            "runtime_soundness_checked_acceptance_finalized_full_soundness_contract",
             "runtime_soundness_checked_acceptance_accepts_full_soundness_contract",
             "runtime_soundness_checked_acceptance_proof_system_full_soundness_contract",
             "runtime_soundness_checked_acceptance_audited_proof_system_contract",
             "runtime_soundness_checked_acceptance_audited_soundness_proof_system_contract",
+            "runtime_soundness_checked_acceptance_audited_soundness_finalized_proof_system_contract",
             "runtime_soundness_checked_acceptance_audited_accepts_sound_witness_contract",
             "runtime_soundness_required_external_source_pcs_sound",
             "runtime_soundness_required_external_source_verifier_core_contract",
@@ -762,6 +764,25 @@ fn lean_runtime_soundness_binding_exports_core_contract_projection() {
             .contains("SoundWitness system publicInput proof"),
         "checked runtime soundness should package model soundness with the accepted full soundness contract"
     );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_soundness_checked_acceptance_finalized_full_soundness_contract",
+        &[
+            "RuntimeProofArtifactFinalized",
+            "RuntimeSoundnessEvidence",
+            "RuntimeArtifactSoundnessObligations",
+            "RuntimeVerifierCoreContract system publicInput proof",
+            "SoundWitness system publicInput proof",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_soundness_checked_acceptance_finalized_full_soundness_contract",
+        &[
+            "runtime_transcript_binding_checked_acceptance_artifact_finalized",
+            "runtime_soundness_checked_acceptance_full_soundness_contract",
+        ],
+    );
     assert!(
         theorem_prefix(
             &lean_source,
@@ -834,6 +855,30 @@ fn lean_runtime_soundness_binding_exports_core_contract_projection() {
         &[
             "runtime_soundness_checked_acceptance_audited_proof_system_contract",
             "assumption_bundle_carries_required_evidence",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_soundness_checked_acceptance_audited_soundness_finalized_proof_system_contract",
+        &[
+            "RequiredCryptographicAssumptionStatements assumptions.crypto",
+            "RequiredSemanticAssumptionStatements assumptions.semantic",
+            "RuntimeProofArtifactFinalized",
+            "ProofSystemSound system",
+            "system.accepts publicInput proof",
+            "RuntimeSoundnessEvidence",
+            "RuntimeArtifactSoundnessObligations",
+            "RuntimeVerifierCoreContract system publicInput proof",
+            "system.traceConsistent publicInput proof trace",
+            "SoundWitness system publicInput proof",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_soundness_checked_acceptance_audited_soundness_finalized_proof_system_contract",
+        &[
+            "runtime_soundness_checked_acceptance_finalized_full_soundness_contract",
+            "runtime_soundness_checked_acceptance_audited_soundness_proof_system_contract",
         ],
     );
     assert!(

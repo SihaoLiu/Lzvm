@@ -1359,5 +1359,70 @@ theorem runtime_soundness_checked_acceptance_audited_soundness_proof_system_cont
     And.intro auditedAssumptions.left
       (And.intro auditedAssumptions.right auditedContract.right)
 
+theorem runtime_soundness_checked_acceptance_audited_soundness_finalized_proof_system_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeSoundnessValidation system) :
+    forall artifact publicInput proof requiresExternalSource,
+      RuntimeSoundnessCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof
+          requiresExternalSource ->
+        RequiredCryptographicAssumptionStatements assumptions.crypto
+          /\ RequiredSemanticAssumptionStatements assumptions.semantic
+          /\ RuntimeProofArtifactFinalized
+            system
+            validation.transcriptValidation.artifactBindingValidation
+            artifact
+            publicInput
+            proof
+          /\ ProofSystemSound system
+          /\ system.accepts publicInput proof
+          /\ RuntimeSoundnessEvidence
+            system
+            validation
+            artifact
+            publicInput
+            proof
+            requiresExternalSource
+          /\ RuntimeArtifactSoundnessObligations
+            system
+            validation.transcriptValidation.artifactBindingValidation.runtimeValidation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ (exists witness trace constraints,
+            system.traceConsistent publicInput proof trace
+              /\ system.constraintsSatisfied constraints trace
+              /\ system.witnessMatchesTrace witness trace)
+          /\ SoundWitness system publicInput proof := by
+  intro artifact publicInput proof requiresExternalSource checked
+  have finalizedContract :=
+    runtime_soundness_checked_acceptance_finalized_full_soundness_contract
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      checked
+  have auditedContract :=
+    runtime_soundness_checked_acceptance_audited_soundness_proof_system_contract
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      checked
+  exact
+    And.intro auditedContract.left
+      (And.intro auditedContract.right.left
+        (And.intro finalizedContract.left auditedContract.right.right))
+
 
 end Lzvm
