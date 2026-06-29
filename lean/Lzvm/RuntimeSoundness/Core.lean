@@ -1451,26 +1451,52 @@ theorem runtime_soundness_checked_acceptance_audited_finalized_core_sound_witnes
               /\ system.witnessMatchesTrace witness trace)
           /\ SoundWitness system publicInput proof := by
   intro artifact publicInput proof requiresExternalSource checked
-  have finalizedContract :=
-    runtime_soundness_checked_acceptance_audited_soundness_finalized_proof_system_contract
-      assumptions
+  have artifactFinalized :=
+    runtime_transcript_binding_checked_acceptance_artifact_finalized
+      validation.transcriptValidation
+      artifact
+      publicInput
+      proof
+      checked.left
+  have verifierAccepts :=
+    runtime_soundness_checked_acceptance_verifier_accepts
       validation
       artifact
       publicInput
       proof
       requiresExternalSource
       checked
-  rcases finalizedContract with
-    ⟨cryptoEvidence,
-      semanticEvidence,
-      artifactFinalized,
-      _proofSystemSound,
-      _verifierAccepts,
-      _soundnessEvidence,
-      _artifactObligations,
-      coreContract,
-      executionObligations,
-      soundWitness⟩
+  have auditedCoreSound :=
+    accepted_proof_audited_core_and_sound_witness
+      assumptions
+      publicInput
+      proof
+      verifierAccepts
+  rcases auditedCoreSound with
+    ⟨cryptoEvidence, semanticEvidence, coreContract, soundWitness⟩
+  have executionObligations :
+      exists witness trace constraints,
+        system.traceConsistent publicInput proof trace
+          /\ system.constraintsSatisfied constraints trace
+          /\ system.witnessMatchesTrace witness trace := by
+    rcases soundWitness with
+      ⟨witness,
+        trace,
+        constraints,
+        _transcriptBound,
+        _publicInputBound,
+        _pcsOpenings,
+        _friQueries,
+        traceConsistent,
+        constraintsSatisfied,
+        witnessMatchesTrace⟩
+    exact
+      ⟨witness,
+        trace,
+        constraints,
+        traceConsistent,
+        constraintsSatisfied,
+        witnessMatchesTrace⟩
   exact
     And.intro cryptoEvidence
       (And.intro semanticEvidence

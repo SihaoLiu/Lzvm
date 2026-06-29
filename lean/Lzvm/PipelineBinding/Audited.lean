@@ -675,8 +675,21 @@ theorem runtime_pipeline_required_external_source_audited_finalized_core_sound_w
                 /\ system.witnessMatchesTrace witness trace)
             /\ SoundWitness system publicInput proof := by
   intro artifact publicInput proof requiresExternalSource accepted required
-  have compactCore :=
-    runtime_pipeline_binding_required_external_source_audited_pcs_fri_core_witness_contract
+  have verifierAccepts :=
+    runtime_pipeline_binding_checked_acceptance_verifier_accepts
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have auditedCoreSound :=
+    accepted_proof_audited_core_and_sound_witness
+      assumptions
+      publicInput
+      proof
+      verifierAccepts
+  have requiredCore :=
+    runtime_pipeline_binding_required_external_source_verifier_core_contract
       assumptions
       validation
       artifact
@@ -685,8 +698,6 @@ theorem runtime_pipeline_required_external_source_audited_finalized_core_sound_w
       requiresExternalSource
       accepted
       required
-  have auditedAssumptions :=
-    assumption_bundle_carries_required_evidence assumptions
   have artifactFinalized :=
     runtime_pipeline_binding_checked_acceptance_artifact_finalized
       validation
@@ -694,29 +705,50 @@ theorem runtime_pipeline_required_external_source_audited_finalized_core_sound_w
       publicInput
       proof
       accepted
-  have executionObligations :=
-    runtime_pipeline_binding_checked_acceptance_execution_obligations
-      assumptions
+  have seedBinds :=
+    runtime_pipeline_binding_checked_acceptance_seed_binds_witness_tree_digests
       validation
       artifact
       publicInput
       proof
       accepted
-  rcases compactCore with
-    ⟨cryptoEvidence,
-      _proofSystemSound,
-      _verifierAccepts,
-      traceExternalEvidence,
-      openingExternalEvidence,
-      _pcsOpenings,
-      _friQueries,
-      seedBinds,
-      seededFriOpeningChecked,
-      verifierCore,
-      soundWitness⟩
+  have seededFriOpeningChecked :=
+    runtime_pipeline_binding_checked_acceptance_seeded_fri_opening_requirements_checked
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  rcases auditedCoreSound with
+    ⟨cryptoEvidence, semanticEvidence, verifierCore, soundWitness⟩
+  rcases requiredCore with
+    ⟨traceExternalEvidence, openingExternalEvidence, _requiredVerifierCore⟩
+  have executionObligations :
+      exists witness trace constraints,
+        system.traceConsistent publicInput proof trace
+          /\ system.constraintsSatisfied constraints trace
+          /\ system.witnessMatchesTrace witness trace := by
+    rcases soundWitness with
+      ⟨witness,
+        trace,
+        constraints,
+        _transcriptBound,
+        _publicInputBound,
+        _pcsOpenings,
+        _friQueries,
+        traceConsistent,
+        constraintsSatisfied,
+        witnessMatchesTrace⟩
+    exact
+      ⟨witness,
+        trace,
+        constraints,
+        traceConsistent,
+        constraintsSatisfied,
+        witnessMatchesTrace⟩
   exact
     ⟨cryptoEvidence,
-      auditedAssumptions.right,
+      semanticEvidence,
       artifactFinalized,
       traceExternalEvidence,
       openingExternalEvidence,

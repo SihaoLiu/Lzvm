@@ -823,15 +823,13 @@ theorem runtime_soundness_required_external_source_audited_finalized_core_sound_
       proof
       requiresExternalSource
       checked
-  have requiredSound :=
-    runtime_soundness_required_external_source_sound
-      assumptions
-      validation
-      artifact
+  have externalEvidence :=
+    external_source_opening_requirement_implies_evidence
+      validation.sourceValidation
       publicInput
       proof
       requiresExternalSource
-      checked
+      checked.right
       required
   rcases finalizedContract with
     ⟨cryptoEvidence,
@@ -844,7 +842,7 @@ theorem runtime_soundness_required_external_source_audited_finalized_core_sound_
     And.intro cryptoEvidence
       (And.intro semanticEvidence
         (And.intro artifactFinalized
-          (And.intro requiredSound.right.left
+          (And.intro externalEvidence
             (And.intro coreContract
               (And.intro executionObligations soundWitness)))))
 
