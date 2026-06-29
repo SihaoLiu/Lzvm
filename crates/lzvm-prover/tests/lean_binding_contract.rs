@@ -340,6 +340,13 @@ fn lean_soundness_sources_stay_modular() {
 }
 
 #[test]
+fn lean_gpu_runtime_source_list_covers_split_modules() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+
+    lean_binding::assert_gpu_runtime_source_paths_cover_directory(crate_root);
+}
+
+#[test]
 fn lean_soundness_sources_do_not_use_uncontrolled_placeholders() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let lean_workspace = crate_root.join("../../lean");

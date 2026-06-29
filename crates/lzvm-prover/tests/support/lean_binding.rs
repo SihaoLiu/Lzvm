@@ -35,6 +35,34 @@ pub fn read_gpu_runtime_sources(crate_root: &Path) -> String {
 }
 
 #[allow(dead_code)]
+pub fn assert_gpu_runtime_source_paths_cover_directory(crate_root: &Path) {
+    let runtime_dir = crate_root.join("../../lean/Lzvm/AuxiliaryChecks/GpuRuntime");
+    let mut expected = BTreeSet::from([canonical_lean_path(
+        &crate_root.join(GPU_RUNTIME_WRAPPER_SOURCE_PATH),
+    )]);
+    for entry in std::fs::read_dir(&runtime_dir).expect("Lean GPU runtime directory should read") {
+        let path = entry.expect("Lean GPU runtime entry should read").path();
+        if path.extension().and_then(|extension| extension.to_str()) == Some("lean") {
+            expected.insert(canonical_lean_path(&path));
+        }
+    }
+    let actual = GPU_RUNTIME_SOURCE_PATHS
+        .iter()
+        .map(|relative_path| canonical_lean_path(&crate_root.join(relative_path)))
+        .collect::<BTreeSet<_>>();
+
+    assert_eq!(
+        actual, expected,
+        "Lean GPU runtime source list should cover the wrapper and every split module"
+    );
+}
+
+fn canonical_lean_path(path: &Path) -> PathBuf {
+    std::fs::canonicalize(path)
+        .unwrap_or_else(|err| panic!("Lean source path {} should resolve: {err}", path.display()))
+}
+
+#[allow(dead_code)]
 pub fn read_lean_source(crate_root: &Path, relative_path: &str) -> String {
     std::fs::read_to_string(crate_root.join(relative_path))
         .unwrap_or_else(|err| panic!("Lean source {relative_path} should read: {err}"))
