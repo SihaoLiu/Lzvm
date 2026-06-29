@@ -738,6 +738,32 @@ structure GuestPcTraceSegmentQueueValidation where
       segmentQueueConfigAccepted config publicInput proof ->
         GuestPcTraceSegmentQueueDecisionMatches config
 
+structure GuestPcTraceParallelLowerConfig where
+  configuredParallelLower : Bool
+  configuredWorkUnits : Bool
+  configuredReplayOnly : Bool
+  configuredReplaySnapshot : Bool
+  effectiveParallelLower : Bool
+  effectiveReplayOnly : Bool
+  effectiveReplaySnapshot : Bool
+deriving DecidableEq, Repr
+
+def GuestPcTraceParallelLowerDecisionMatches
+    (config : GuestPcTraceParallelLowerConfig) : Prop :=
+  config.effectiveParallelLower =
+      (config.configuredParallelLower || config.configuredWorkUnits)
+    /\ config.effectiveReplayOnly = config.configuredReplayOnly
+    /\ config.effectiveReplaySnapshot =
+      (config.configuredReplaySnapshot || config.configuredReplayOnly)
+
+structure GuestPcTraceParallelLowerValidation where
+  parallelLowerConfigAccepted :
+    GuestPcTraceParallelLowerConfig -> PublicInput -> Proof -> Prop
+  parallelLowerConfigImpliesDecisionMatches :
+    forall config publicInput proof,
+      parallelLowerConfigAccepted config publicInput proof ->
+        GuestPcTraceParallelLowerDecisionMatches config
+
 structure GuestPcTraceLargeGpuGateConfig where
   defaultLargeTraceInstructionThreshold : Nat
   defaultMinFreeGpuMemoryBytes : Nat

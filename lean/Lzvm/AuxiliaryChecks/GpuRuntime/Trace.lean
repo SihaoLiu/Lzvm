@@ -36,6 +36,40 @@ theorem guest_pc_trace_commit_worker_default_disabled_override_serial
       configuredDisabled]
   simpa [selectedFalse] using defaultMatches
 
+theorem guest_pc_trace_parallel_lower_work_units_selects_parallel_lower
+    (config : GuestPcTraceParallelLowerConfig) :
+    config.configuredWorkUnits = true ->
+      GuestPcTraceParallelLowerDecisionMatches config ->
+        config.effectiveParallelLower = true := by
+  intro workUnitsEnabled decision
+  rcases decision with ⟨parallelMatches, _replayOnlyMatches,
+    _replaySnapshotMatches⟩
+  simpa [workUnitsEnabled] using parallelMatches
+
+theorem guest_pc_trace_parallel_lower_work_units_keeps_replay_only_separate
+    (config : GuestPcTraceParallelLowerConfig) :
+    config.configuredWorkUnits = true ->
+      config.configuredReplayOnly = false ->
+        GuestPcTraceParallelLowerDecisionMatches config ->
+          config.effectiveReplayOnly = false := by
+  intro _workUnitsEnabled replayOnlyDisabled decision
+  rcases decision with ⟨_parallelMatches, replayOnlyMatches,
+    _replaySnapshotMatches⟩
+  simpa [replayOnlyDisabled] using replayOnlyMatches
+
+theorem guest_pc_trace_parallel_lower_work_units_keeps_replay_snapshot_separate
+    (config : GuestPcTraceParallelLowerConfig) :
+    config.configuredWorkUnits = true ->
+      config.configuredReplayOnly = false ->
+        config.configuredReplaySnapshot = false ->
+          GuestPcTraceParallelLowerDecisionMatches config ->
+            config.effectiveReplaySnapshot = false := by
+  intro _workUnitsEnabled replayOnlyDisabled replaySnapshotDisabled decision
+  rcases decision with ⟨_parallelMatches, _replayOnlyMatches,
+    replaySnapshotMatches⟩
+  simpa [replayOnlyDisabled, replaySnapshotDisabled] using
+    replaySnapshotMatches
+
 theorem guest_pc_trace_commit_mode_checked_acceptance_projects_decision
     {system : VerifierModel}
     (validation : GuestPcTraceSegmentCommitModeValidation)
