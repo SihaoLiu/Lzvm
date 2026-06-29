@@ -669,16 +669,6 @@ def timing_seconds_values(paths: list[Path]) -> tuple[list[float], int]:
     return values, failed
 
 
-def excluded_timing_values(all_values: list[float], stable_values: list[float]) -> list[float]:
-    remaining = list(all_values)
-    for stable in stable_values:
-        try:
-            remaining.remove(stable)
-        except ValueError:
-            pass
-    return remaining
-
-
 def excluded_log_paths(all_logs: list[Path], stable_logs: list[Path]) -> list[Path]:
     stable_log_set = set(stable_logs)
     return [path for path in all_logs if path not in stable_log_set]
@@ -728,9 +718,8 @@ def print_stable_timing(label: str, logs: list[Path]) -> None:
 
 
 def print_excluded_timing(label: str, all_logs: list[Path], stable_logs: list[Path]) -> None:
-    all_values, _failed = timing_seconds_values(all_logs)
-    stable_values, _stable_failed = timing_seconds_values(stable_logs)
-    excluded = excluded_timing_values(all_values, stable_values)
+    excluded_logs = excluded_log_paths(all_logs, stable_logs)
+    excluded, _failed = timing_seconds_values(excluded_logs)
     print(f"{label}_excluded_runs={len(excluded)}")
     if excluded:
         joined = ";".join(f"{value:.3f}" for value in excluded)
@@ -786,16 +775,10 @@ def write_batch_json(
     large_stable_timing_s, large_stable_timing_parse_failed_count = timing_seconds_values(
         large_stable_logs or []
     )
-    small_excluded_timing_s = excluded_timing_values(
-        small_timing_s,
-        small_stable_timing_s,
-    )
-    large_excluded_timing_s = excluded_timing_values(
-        large_timing_s,
-        large_stable_timing_s,
-    )
     small_excluded_logs = excluded_log_paths(small_logs or [], small_stable_logs or [])
     large_excluded_logs = excluded_log_paths(large_logs or [], large_stable_logs or [])
+    small_excluded_timing_s, _ = timing_seconds_values(small_excluded_logs)
+    large_excluded_timing_s, _ = timing_seconds_values(large_excluded_logs)
     small_stable_avg_s = timing_average_seconds(small_stable_timing_s)
     large_stable_avg_s = timing_average_seconds(large_stable_timing_s)
     small_stable_spread_s = timing_spread_seconds(small_stable_timing_s)
