@@ -9,6 +9,21 @@ const ZISK_MAIN_TRACE_SPARSE_DESCRIPTOR_WORDS: usize = 9;
 const ZISK_MAIN_TRACE_WIDE_DESCRIPTOR_WORDS: usize = 14;
 const ZISK_MAIN_TRACE_WIDTH_WORDS: usize = 39;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MainTraceDeviceLayout {
+    Legacy,
+    WithStoreAddress,
+}
+
+impl MainTraceDeviceLayout {
+    fn raw(self) -> u32 {
+        match self {
+            Self::Legacy => 0,
+            Self::WithStoreAddress => 1,
+        }
+    }
+}
+
 unsafe extern "C" {
     fn lzvm_cuda_pinned_host_alloc(out: *mut *mut c_void, bytes: usize) -> i32;
     fn lzvm_cuda_pinned_host_free(ptr: *mut c_void);
@@ -184,6 +199,38 @@ unsafe extern "C" {
         row_width_words: usize,
         terminal_pc: u64,
     ) -> i32;
+    fn lzvm_cuda_expand_main_trace_descriptors_layout(
+        dst: *mut u64,
+        descriptors: *const u64,
+        descriptor_words: usize,
+        descriptor_count: usize,
+        row_count: usize,
+        row_width_words: usize,
+        terminal_pc: u64,
+        layout_kind: u32,
+    ) -> i32;
+    fn lzvm_cuda_expand_main_trace_descriptors_layout_on_stream(
+        dst: *mut u64,
+        descriptors: *const u64,
+        descriptor_words: usize,
+        descriptor_count: usize,
+        row_count: usize,
+        row_width_words: usize,
+        terminal_pc: u64,
+        layout_kind: u32,
+        stream: *mut c_void,
+    ) -> i32;
+    fn lzvm_cuda_expand_sparse_main_trace_descriptors_layout(
+        dst: *mut u64,
+        descriptors: *const u64,
+        high_words: *const u64,
+        high_word_count: usize,
+        descriptor_count: usize,
+        row_count: usize,
+        row_width_words: usize,
+        terminal_pc: u64,
+        layout_kind: u32,
+    ) -> i32;
 }
 
 #[cfg(not(target_endian = "little"))]
@@ -198,6 +245,50 @@ fn u64_words_to_bytes(words: &[u64]) -> Vec<u8> {
 fn zisk_main_trace_descriptor_words_supported(descriptor_words: usize) -> bool {
     descriptor_words == ZISK_MAIN_TRACE_COMPACT_DESCRIPTOR_WORDS
         || descriptor_words == ZISK_MAIN_TRACE_WIDE_DESCRIPTOR_WORDS
+}
+
+fn main_trace_descriptor_words_supported(descriptor_words: usize) -> bool {
+    descriptor_words == ZISK_MAIN_TRACE_COMPACT_DESCRIPTOR_WORDS
+        || descriptor_words == ZISK_MAIN_TRACE_WIDE_DESCRIPTOR_WORDS
+}
+
+fn validate_main_trace_descriptor_device_shape(
+    descriptor_byte_len: usize,
+    descriptor_words: usize,
+    descriptor_count: usize,
+    row_count: usize,
+    row_width_words: usize,
+) -> Result<usize, AccelError> {
+    if !main_trace_descriptor_words_supported(descriptor_words)
+        || row_width_words != ZISK_MAIN_TRACE_WIDTH_WORDS
+        || descriptor_count > row_count
+    {
+        return Err(AccelError::InvalidDomain {
+            bits: descriptor_words,
+            len: descriptor_count,
+        });
+    }
+    let expected_descriptor_words =
+        descriptor_count
+            .checked_mul(descriptor_words)
+            .ok_or(AccelError::InvalidDomain {
+                bits: descriptor_words,
+                len: descriptor_count,
+            })?;
+    let expected_descriptor_len = u64_word_byte_len(expected_descriptor_words)?;
+    if descriptor_byte_len != expected_descriptor_len {
+        return Err(AccelError::LengthMismatch {
+            lhs: descriptor_byte_len,
+            rhs: expected_descriptor_len,
+        });
+    }
+    let output_words = row_count
+        .checked_mul(row_width_words)
+        .ok_or(AccelError::InvalidDomain {
+            bits: row_width_words,
+            len: row_count,
+        })?;
+    u64_word_byte_len(output_words)
 }
 
 fn validate_zisk_main_trace_descriptor_device_shape(
@@ -240,6 +331,70 @@ fn validate_zisk_main_trace_descriptor_device_shape(
 }
 
 fn validate_sparse_zisk_main_trace_descriptors(
+    descriptors: &[u64],
+    high_words: &[u64],
+    descriptor_count: usize,
+    row_count: usize,
+    row_width_words: usize,
+) -> Result<usize, AccelError> {
+    if row_width_words != ZISK_MAIN_TRACE_WIDTH_WORDS || descriptor_count > row_count {
+        return Err(AccelError::InvalidDomain {
+            bits: row_width_words,
+            len: row_count,
+        });
+    }
+    let expected_descriptor_words = descriptor_count
+        .checked_mul(ZISK_MAIN_TRACE_SPARSE_DESCRIPTOR_WORDS)
+        .ok_or(AccelError::InvalidDomain {
+            bits: ZISK_MAIN_TRACE_SPARSE_DESCRIPTOR_WORDS,
+            len: descriptor_count,
+        })?;
+    if descriptors.len() != expected_descriptor_words {
+        return Err(AccelError::LengthMismatch {
+            lhs: descriptors.len(),
+            rhs: expected_descriptor_words,
+        });
+    }
+    let mut required_high_words = 0usize;
+    for descriptor in descriptors.chunks_exact(ZISK_MAIN_TRACE_SPARSE_DESCRIPTOR_WORDS) {
+        let high_mask = descriptor[7] >> 32;
+        if high_mask & !0x7f != 0 {
+            return Err(AccelError::InvalidDomain {
+                bits: high_mask as usize,
+                len: descriptor_count,
+            });
+        }
+        let high_words_for_row = (high_mask.count_ones() as usize).div_ceil(2);
+        let high_offset =
+            usize::try_from(descriptor[8]).map_err(|_| AccelError::InvalidDomain {
+                bits: ZISK_MAIN_TRACE_SPARSE_DESCRIPTOR_WORDS,
+                len: descriptor_count,
+            })?;
+        let row_required_high_words =
+            high_offset
+                .checked_add(high_words_for_row)
+                .ok_or(AccelError::InvalidDomain {
+                    bits: ZISK_MAIN_TRACE_SPARSE_DESCRIPTOR_WORDS,
+                    len: descriptor_count,
+                })?;
+        required_high_words = required_high_words.max(row_required_high_words);
+    }
+    if high_words.len() != required_high_words {
+        return Err(AccelError::LengthMismatch {
+            lhs: high_words.len(),
+            rhs: required_high_words,
+        });
+    }
+    let output_words = row_count
+        .checked_mul(row_width_words)
+        .ok_or(AccelError::InvalidDomain {
+            bits: row_width_words,
+            len: row_count,
+        })?;
+    u64_word_byte_len(output_words)
+}
+
+fn validate_sparse_main_trace_descriptors_layout(
     descriptors: &[u64],
     high_words: &[u64],
     descriptor_count: usize,
@@ -1174,6 +1329,76 @@ impl CudaDeviceBuffer {
         )
     }
 
+    #[allow(clippy::too_many_arguments)]
+    pub fn from_main_trace_descriptors_with_layout(
+        descriptors: &[u64],
+        descriptor_words: usize,
+        descriptor_count: usize,
+        row_count: usize,
+        row_width_words: usize,
+        terminal_pc: u64,
+        layout: MainTraceDeviceLayout,
+    ) -> Result<Self, AccelError> {
+        let descriptor_byte_len = u64_word_byte_len(descriptors.len())?;
+        validate_main_trace_descriptor_device_shape(
+            descriptor_byte_len,
+            descriptor_words,
+            descriptor_count,
+            row_count,
+            row_width_words,
+        )?;
+        let descriptor_buffer = Self::from_u64_words(descriptors)?;
+        Self::from_main_trace_descriptors_device_with_layout(
+            &descriptor_buffer,
+            descriptor_words,
+            descriptor_count,
+            row_count,
+            row_width_words,
+            terminal_pc,
+            layout,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn from_sparse_main_trace_descriptors_with_layout(
+        descriptors: &[u64],
+        high_words: &[u64],
+        descriptor_count: usize,
+        row_count: usize,
+        row_width_words: usize,
+        terminal_pc: u64,
+        layout: MainTraceDeviceLayout,
+    ) -> Result<Self, AccelError> {
+        let output_byte_len = validate_sparse_main_trace_descriptors_layout(
+            descriptors,
+            high_words,
+            descriptor_count,
+            row_count,
+            row_width_words,
+        )?;
+        let descriptor_buffer = Self::from_u64_words(descriptors)?;
+        let high_buffer = Self::from_u64_words(high_words)?;
+        let buffer = Self::new(output_byte_len)?;
+        if row_count == 0 {
+            return Ok(buffer);
+        }
+        let code = unsafe {
+            lzvm_cuda_expand_sparse_main_trace_descriptors_layout(
+                buffer.ptr.cast(),
+                descriptor_buffer.ptr.cast(),
+                high_buffer.ptr.cast(),
+                high_words.len(),
+                descriptor_count,
+                row_count,
+                row_width_words,
+                terminal_pc,
+                layout.raw(),
+            )
+        };
+        cuda_status(code)?;
+        Ok(buffer)
+    }
+
     pub fn from_zisk_main_trace_descriptors_device(
         descriptors: &Self,
         descriptor_words: usize,
@@ -1202,6 +1427,43 @@ impl CudaDeviceBuffer {
                 row_count,
                 row_width_words,
                 terminal_pc,
+            )
+        };
+        cuda_status(code)?;
+        Ok(buffer)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn from_main_trace_descriptors_device_with_layout(
+        descriptors: &Self,
+        descriptor_words: usize,
+        descriptor_count: usize,
+        row_count: usize,
+        row_width_words: usize,
+        terminal_pc: u64,
+        layout: MainTraceDeviceLayout,
+    ) -> Result<Self, AccelError> {
+        let output_byte_len = validate_main_trace_descriptor_device_shape(
+            descriptors.len(),
+            descriptor_words,
+            descriptor_count,
+            row_count,
+            row_width_words,
+        )?;
+        let buffer = Self::new(output_byte_len)?;
+        if row_count == 0 {
+            return Ok(buffer);
+        }
+        let code = unsafe {
+            lzvm_cuda_expand_main_trace_descriptors_layout(
+                buffer.ptr.cast(),
+                descriptors.ptr.cast(),
+                descriptor_words,
+                descriptor_count,
+                row_count,
+                row_width_words,
+                terminal_pc,
+                layout.raw(),
             )
         };
         cuda_status(code)?;
@@ -1338,6 +1600,45 @@ impl CudaDeviceBuffer {
         Ok(buffer)
     }
 
+    #[allow(clippy::too_many_arguments)]
+    pub unsafe fn from_main_trace_descriptors_device_on_stream_with_layout(
+        descriptors: &Self,
+        descriptor_words: usize,
+        descriptor_count: usize,
+        row_count: usize,
+        row_width_words: usize,
+        terminal_pc: u64,
+        layout: MainTraceDeviceLayout,
+        stream: &CudaStream,
+    ) -> Result<Self, AccelError> {
+        let output_byte_len = validate_main_trace_descriptor_device_shape(
+            descriptors.len(),
+            descriptor_words,
+            descriptor_count,
+            row_count,
+            row_width_words,
+        )?;
+        let buffer = Self::new(output_byte_len)?;
+        if row_count == 0 {
+            return Ok(buffer);
+        }
+        let code = unsafe {
+            lzvm_cuda_expand_main_trace_descriptors_layout_on_stream(
+                buffer.ptr.cast(),
+                descriptors.ptr.cast(),
+                descriptor_words,
+                descriptor_count,
+                row_count,
+                row_width_words,
+                terminal_pc,
+                layout.raw(),
+                stream.as_raw(),
+            )
+        };
+        cuda_status(code)?;
+        Ok(buffer)
+    }
+
     /// Enqueues host descriptor upload followed by descriptor expansion on `stream`.
     ///
     /// # Safety
@@ -1375,6 +1676,47 @@ impl CudaDeviceBuffer {
                 row_count,
                 row_width_words,
                 terminal_pc,
+                stream,
+            )?
+        };
+        Ok(CudaPendingTraceDescriptorExpansion {
+            descriptor_buffer,
+            output_buffer,
+        })
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub unsafe fn begin_trace_descriptor_expansion_on_stream_with_layout(
+        descriptors: &[u64],
+        descriptor_words: usize,
+        descriptor_count: usize,
+        row_count: usize,
+        row_width_words: usize,
+        terminal_pc: u64,
+        layout: MainTraceDeviceLayout,
+        stream: &CudaStream,
+    ) -> Result<CudaPendingTraceDescriptorExpansion, AccelError> {
+        let descriptor_byte_len = u64_word_byte_len(descriptors.len())?;
+        validate_main_trace_descriptor_device_shape(
+            descriptor_byte_len,
+            descriptor_words,
+            descriptor_count,
+            row_count,
+            row_width_words,
+        )?;
+        let mut descriptor_buffer = Self::new(descriptor_byte_len)?;
+        unsafe {
+            descriptor_buffer.copy_from_u64_words_on_stream(descriptors, stream)?;
+        }
+        let output_buffer = unsafe {
+            Self::from_main_trace_descriptors_device_on_stream_with_layout(
+                &descriptor_buffer,
+                descriptor_words,
+                descriptor_count,
+                row_count,
+                row_width_words,
+                terminal_pc,
+                layout,
                 stream,
             )?
         };

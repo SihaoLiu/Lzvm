@@ -35,7 +35,7 @@ use crate::zisk_main::{
     ZiskMainStore, ZISK_EXTRA_PARAMS_ADDRESS,
 };
 #[cfg(feature = "cuda")]
-use lzvm_accel::{CudaDeviceBuffer, CudaStream};
+use lzvm_accel::{CudaDeviceBuffer, CudaStream, MainTraceDeviceLayout};
 use lzvm_artifacts::guest_image::GuestImageInfo;
 use lzvm_field::{Felt, FieldError};
 
@@ -1831,6 +1831,7 @@ impl GuestPcDeviceSourceBuildTiming {
 #[cfg(feature = "cuda")]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ZiskMainDeviceTraceDescriptors {
+    device_layout: MainTraceDeviceLayout,
     descriptor_words: usize,
     descriptor_rows: usize,
     unpaired_value_count: usize,
@@ -1900,6 +1901,7 @@ impl ZiskMainDeviceTraceDescriptors {
         );
         let word_capacity = row_count.checked_mul(descriptor_words).unwrap_or(0);
         Self {
+            device_layout: MainTraceDeviceLayout::Legacy,
             descriptor_words,
             descriptor_rows: 0,
             unpaired_value_count: 0,
@@ -1919,6 +1921,10 @@ impl ZiskMainDeviceTraceDescriptors {
 
     pub(crate) fn descriptor_rows(&self) -> usize {
         self.descriptor_rows
+    }
+
+    pub(crate) fn device_layout(&self) -> MainTraceDeviceLayout {
+        self.device_layout
     }
 
     pub(crate) fn descriptor_word_count(&self) -> usize {
@@ -2049,17 +2055,18 @@ fn main_device_trace_descriptors(
     terminal_pc: u64,
     segment: ZiskMainTraceSegmentInfo,
 ) -> Option<ZiskMainDeviceTraceDescriptors> {
-    if !guest_pc_device_trace_source_enabled()
-        || !main_device_trace_layout_supported(layout, columns)
-    {
+    if !guest_pc_device_trace_source_enabled() {
         return None;
     }
-    Some(ZiskMainDeviceTraceDescriptors::new_with_descriptor_words(
+    let device_layout = main_device_trace_layout(layout, columns)?;
+    let mut descriptors = ZiskMainDeviceTraceDescriptors::new_with_descriptor_words(
         layout.row_count(),
         layout.column_count(),
         terminal_pc,
         main_segment_descriptor_words(layout.row_count(), segment.trace_instance_index),
-    ))
+    );
+    descriptors.device_layout = device_layout;
+    Some(descriptors)
 }
 
 #[cfg(feature = "cuda")]
@@ -2103,11 +2110,11 @@ fn main_segment_mem_steps_fit_compact(row_count: usize, trace_instance_index: u3
 }
 
 #[cfg(feature = "cuda")]
-fn main_device_trace_layout_supported(
+fn main_device_trace_layout(
     layout: &WitnessTraceLayout,
     columns: &ZiskMainTraceColumns<'_>,
-) -> bool {
-    layout.column_count() == ZISK_MAIN_DEVICE_TRACE_COLUMNS
+) -> Option<MainTraceDeviceLayout> {
+    let common = layout.column_count() == ZISK_MAIN_DEVICE_TRACE_COLUMNS
         && trace_target_at(&columns.a, 0)
         && trace_target_at(&columns.b, 2)
         && trace_target_at(&columns.c, 4)
@@ -2134,8 +2141,11 @@ fn main_device_trace_layout_supported(
         && optional_trace_target_at(&columns.jmp_offset1, 26)
         && optional_trace_target_at(&columns.jmp_offset2, 27)
         && optional_trace_target_at(&columns.m32, 28)
-        && optional_trace_target_at(&columns.addr1, 29)
-        && optional_trace_target_at(&columns.a_reg_prev_mem_step, 30)
+        && optional_trace_target_at(&columns.addr1, 29);
+    if !common {
+        return None;
+    }
+    if optional_trace_target_at(&columns.a_reg_prev_mem_step, 30)
         && optional_trace_target_at(&columns.b_reg_prev_mem_step, 31)
         && optional_trace_target_at(&columns.store_reg_prev_mem_step, 32)
         && optional_trace_target_at(&columns.store_reg_prev_value, 33)
@@ -2143,6 +2153,21 @@ fn main_device_trace_layout_supported(
         && optional_trace_target_at(&columns.b_src_reg, 36)
         && optional_trace_target_at(&columns.store_reg, 37)
         && columns.addr2.is_none()
+    {
+        return Some(MainTraceDeviceLayout::Legacy);
+    }
+    if optional_trace_target_at(&columns.addr2, 30)
+        && optional_trace_target_at(&columns.a_reg_prev_mem_step, 31)
+        && optional_trace_target_at(&columns.b_reg_prev_mem_step, 32)
+        && optional_trace_target_at(&columns.store_reg_prev_mem_step, 33)
+        && optional_trace_target_at(&columns.store_reg_prev_value, 34)
+        && optional_trace_target_at(&columns.a_src_reg, 36)
+        && optional_trace_target_at(&columns.b_src_reg, 37)
+        && optional_trace_target_at(&columns.store_reg, 38)
+    {
+        return Some(MainTraceDeviceLayout::WithStoreAddress);
+    }
+    None
 }
 
 #[cfg(feature = "cuda")]
@@ -2702,13 +2727,14 @@ pub(crate) fn build_guest_pc_trace_stage_source_devices_from_device_material_tim
                 .as_mut()
                 .map(|timing| &mut timing.descriptor_upload_duration),
             || {
-                CudaDeviceBuffer::from_sparse_zisk_main_trace_descriptors(
+                CudaDeviceBuffer::from_sparse_main_trace_descriptors_with_layout(
                     descriptors.words(),
                     descriptors.sparse_high_words(),
                     descriptors.descriptor_rows(),
                     descriptors.row_count(),
                     descriptors.column_count(),
                     descriptors.terminal_pc(),
+                    descriptors.device_layout(),
                 )
                 .map_err(|error| {
                     guest_pc_device_trace_source_error(format!(
@@ -2743,13 +2769,14 @@ pub(crate) fn build_guest_pc_trace_stage_source_devices_from_device_material_tim
                 .as_mut()
                 .map(|timing| &mut timing.descriptor_upload_duration),
             || unsafe {
-                CudaDeviceBuffer::begin_trace_descriptor_expansion_on_stream(
+                CudaDeviceBuffer::begin_trace_descriptor_expansion_on_stream_with_layout(
                     descriptors.words(),
                     descriptors.descriptor_word_count(),
                     descriptors.descriptor_rows(),
                     descriptors.row_count(),
                     descriptors.column_count(),
                     descriptors.terminal_pc(),
+                    descriptors.device_layout(),
                     &stream,
                 )
                 .map_err(|error| {
@@ -2885,13 +2912,14 @@ pub(crate) fn build_guest_pc_trace_stage_source_devices_from_device_descriptors_
     let trace_device = record_device_source_build_duration(
         timing.map(|timing| &mut timing.trace_expand_duration),
         || {
-            CudaDeviceBuffer::from_zisk_main_trace_descriptors_device(
+            CudaDeviceBuffer::from_main_trace_descriptors_device_with_layout(
                 device_trace_descriptor_buffer,
                 descriptors.descriptor_word_count(),
                 descriptors.descriptor_rows(),
                 descriptors.row_count(),
                 descriptors.column_count(),
                 descriptors.terminal_pc(),
+                descriptors.device_layout(),
             )
             .map_err(|error| {
                 guest_pc_device_trace_source_error(format!(
@@ -2940,13 +2968,14 @@ pub(crate) fn build_guest_pc_trace_stage_source_devices(
             ));
         }
         let trace_device = if descriptors.is_sparse() {
-            CudaDeviceBuffer::from_sparse_zisk_main_trace_descriptors(
+            CudaDeviceBuffer::from_sparse_main_trace_descriptors_with_layout(
                 descriptors.words(),
                 descriptors.sparse_high_words(),
                 descriptors.descriptor_rows(),
                 descriptors.row_count(),
                 descriptors.column_count(),
                 descriptors.terminal_pc(),
+                descriptors.device_layout(),
             )
             .map_err(|error| {
                 guest_pc_device_trace_source_error(format!(
@@ -2954,13 +2983,14 @@ pub(crate) fn build_guest_pc_trace_stage_source_devices(
                 ))
             })?
         } else {
-            CudaDeviceBuffer::from_zisk_main_trace_descriptors(
+            CudaDeviceBuffer::from_main_trace_descriptors_with_layout(
                 descriptors.words(),
                 descriptors.descriptor_word_count(),
                 descriptors.descriptor_rows(),
                 descriptors.row_count(),
                 descriptors.column_count(),
                 descriptors.terminal_pc(),
+                descriptors.device_layout(),
             )
             .map_err(|error| {
                 guest_pc_device_trace_source_error(format!(

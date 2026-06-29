@@ -47,7 +47,7 @@ use lzvm_accel::{
     cuda_poseidon2_width8_merkle_digest_selected_parent_device,
     cuda_poseidon2_width8_merkle_opening_path_device, cuda_poseidon2_width8_merkle_parent_device,
     cuda_poseidon2_width8_merkle_root_device, cuda_setup_init, AccelError, CudaDeviceBuffer,
-    CudaRowMajorColumnView, CudaStream,
+    CudaRowMajorColumnView, CudaStream, MainTraceDeviceLayout,
 };
 #[cfg(feature = "cuda")]
 use lzvm_crypto::keccak256;
@@ -361,6 +361,100 @@ fn cuda_expands_zisk_main_trace_descriptors() {
         expected[base + 13] = 1;
         expected[base + 20] = 1;
     }
+
+    assert_same_words(&actual, &expected);
+}
+
+#[test]
+#[cfg(feature = "cuda")]
+fn cuda_expands_main_trace_descriptors_with_store_address_layout() {
+    const WORDS_PER_DESCRIPTOR: usize = 11;
+    const KIND_REGISTER: u64 = 3;
+    const KIND_INDIRECT: u64 = 4;
+    const STORE_INDIRECT: u64 = 3;
+    const A_KIND_SHIFT: u64 = 32;
+    const B_KIND_SHIFT: u64 = 35;
+    const STORE_KIND_SHIFT: u64 = 38;
+
+    fn signed_word(value: i64) -> u64 {
+        value as u64
+    }
+
+    fn signed_field(value: i64) -> u64 {
+        if value >= 0 {
+            value as u64
+        } else {
+            MODULUS - value.unsigned_abs()
+        }
+    }
+
+    fn packed_u32_pair(lhs: u32, rhs: u32) -> u64 {
+        u64::from(lhs) | (u64::from(rhs) << 32)
+    }
+
+    fn packed_i32_pair(lhs: i32, rhs: i32) -> u64 {
+        u64::from(lhs as u32) | (u64::from(rhs as u32) << 32)
+    }
+
+    let control = 0x0b
+        | (8 << 16)
+        | (KIND_REGISTER << A_KIND_SHIFT)
+        | (KIND_INDIRECT << B_KIND_SHIFT)
+        | (STORE_INDIRECT << STORE_KIND_SHIFT);
+    let descriptors = [
+        1000,
+        7,
+        9,
+        5,
+        signed_word(-3),
+        signed_word(-20),
+        control,
+        packed_u32_pair(0x2000, 33),
+        packed_i32_pair(-4, 6),
+        packed_u32_pair(31, 32),
+        (14_u64 << 32) | 13,
+    ];
+
+    let buffer = CudaDeviceBuffer::from_main_trace_descriptors_with_layout(
+        &descriptors,
+        WORDS_PER_DESCRIPTOR,
+        1,
+        2,
+        39,
+        0x3000,
+        MainTraceDeviceLayout::WithStoreAddress,
+    )
+    .expect("descriptor expansion should run");
+    let actual = buffer
+        .to_u64_words()
+        .expect("expanded trace should download");
+
+    let mut expected = vec![0_u64; 2 * 39];
+    expected[0] = 1000;
+    expected[2] = 7;
+    expected[4] = 9;
+    expected[7] = 0x2000;
+    expected[10] = 5;
+    expected[15] = signed_field(-3);
+    expected[17] = 1;
+    expected[18] = 8;
+    expected[20] = 0x0b;
+    expected[23] = 1;
+    expected[24] = signed_field(-20);
+    expected[26] = signed_field(-4);
+    expected[27] = 6;
+    expected[29] = 997;
+    expected[30] = 980;
+    expected[31] = 31;
+    expected[32] = 32;
+    expected[33] = 33;
+    expected[34] = 13;
+    expected[35] = 14;
+    expected[36] = 1;
+    expected[39 + 7] = 0x3000;
+    expected[39 + 8] = 1;
+    expected[39 + 13] = 1;
+    expected[39 + 20] = 1;
 
     assert_same_words(&actual, &expected);
 }

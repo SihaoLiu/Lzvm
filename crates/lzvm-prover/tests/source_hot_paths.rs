@@ -3030,8 +3030,10 @@ fn guest_pc_trace_device_material_skips_redundant_row_column_validation() {
         "#[cfg(feature = \"cuda\")]\nfn main_segment_descriptor_words",
     );
     assert!(
-        descriptor_factory.contains("main_device_trace_layout_supported(layout, columns)"),
-        "device material descriptors should only exist after the supported layout check"
+        descriptor_factory
+            .contains("let device_layout = main_device_trace_layout(layout, columns)?;")
+            && descriptor_factory.contains("descriptors.device_layout = device_layout;"),
+        "device material descriptors should capture the supported layout before expansion"
     );
 
     let device_material_body = function_body(
