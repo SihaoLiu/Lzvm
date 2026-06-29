@@ -1724,14 +1724,16 @@ def parse_timing_log(text: str) -> dict[str, int | str]:
             and OPENING_STAGE_ROW_VALUE_DEVICE_SINGLE_DOWNLOAD_RE.match(key) is None
         ):
             continue
-        if key in values:
-            raise SystemExit(f"duplicate timing field: {key}")
         try:
             parsed_value = int(value.strip())
         except ValueError:
             raise SystemExit(f"invalid timing field: {key}")
         if parsed_value < 0:
             raise SystemExit(f"negative timing field: {key}")
+        if key in values:
+            if values[key] == parsed_value:
+                continue
+            raise SystemExit(f"duplicate timing field: {key}")
         values[key] = parsed_value
     if ncu_top_kernel is not None and ncu_top_kernel in ncu_top_kernel_limits:
         values[NCU_TOP_KERNEL_LIMITING_FACTORS_KEY] = ncu_top_kernel_limits[ncu_top_kernel]

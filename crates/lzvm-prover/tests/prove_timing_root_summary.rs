@@ -61,7 +61,7 @@ fn prove_timing_root_summary_script_is_directly_executable() {
 }
 
 #[test]
-fn prove_timing_root_summary_rejects_duplicate_timing_fields() {
+fn prove_timing_root_summary_rejects_conflicting_duplicate_timing_fields() {
     let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
     let script_path = crate_root.join("../../scripts/prove-timing-root-summary.py");
     let dir = crate_root.join(format!(
@@ -90,10 +90,64 @@ fn prove_timing_root_summary_rejects_duplicate_timing_fields() {
     let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
     let _ = std::fs::remove_dir_all(&dir);
 
-    assert!(!success, "duplicate timing fields should be rejected");
+    assert!(
+        !success,
+        "conflicting duplicate timing fields should be rejected"
+    );
     assert!(
         stderr.contains("duplicate timing field: timing_total_ms"),
         "duplicate timing rejection should name the repeated field: stderr={stderr}"
+    );
+}
+
+#[test]
+fn prove_timing_root_summary_accepts_identical_duplicate_timing_fields() {
+    let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let script_path = crate_root.join("../../scripts/prove-timing-root-summary.py");
+    let input = [
+        "timing_total_ms=1000",
+        "timing_total_ms=1000",
+        "timing_guest_stage_tree_commit_root_count=1",
+        "timing_guest_stage_tree_commit_root_materialization_groups=1",
+        "timing_guest_stage_tree_commit_root_materialization_max_group_size=1",
+    ]
+    .join("\n");
+
+    let mut child = Command::new("python3")
+        .arg(&script_path)
+        .arg("-")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("prove timing root summary should spawn");
+    child
+        .stdin
+        .as_mut()
+        .expect("stdin should be open")
+        .write_all(input.as_bytes())
+        .expect("stdin should write");
+    let output = child
+        .wait_with_output()
+        .expect("prove timing root summary should run");
+
+    assert!(
+        output.status.success(),
+        "identical duplicate timing fields should be accepted: stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    let mut lines = stdout.lines();
+    let header = parse_csv_line(lines.next().expect("summary should print a header"));
+    let row = parse_csv_line(lines.next().expect("summary should print one row"));
+    let total_ms_index = header
+        .iter()
+        .position(|field| field == "total_ms")
+        .expect("summary should include total_ms");
+    assert_eq!(
+        row.get(total_ms_index),
+        Some(&"1000".to_owned()),
+        "summary should preserve the duplicated timing value once: stdout={stdout}"
     );
 }
 
