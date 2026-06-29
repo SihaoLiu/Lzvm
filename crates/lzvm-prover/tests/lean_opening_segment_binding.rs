@@ -771,6 +771,7 @@ fn lean_opening_segment_binding_exports_core_contract_projection() {
             "openingAcceptedImpliesRuntimeSoundnessAccepted",
             "runtime_soundness_checked_acceptance_verifier_accepts",
             "accepted_proof_audited_core_and_sound_witness",
+            "sound_witness_implies_execution_obligations",
         ],
     );
     lean_binding::assert_theorem_body_omits(

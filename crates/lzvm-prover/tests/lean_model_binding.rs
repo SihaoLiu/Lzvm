@@ -35,6 +35,9 @@ fn lean_model_exports_verifier_core_contract() {
     );
     lean_binding::assert_theorem_declarations(
         &model_source,
-        &["sound_witness_implies_verifier_core_contract"],
+        &[
+            "sound_witness_implies_verifier_core_contract",
+            "sound_witness_implies_execution_obligations",
+        ],
     );
 }

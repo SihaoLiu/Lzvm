@@ -3415,6 +3415,7 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
             "runtime_pipeline_binding_checked_acceptance_artifact_finalized",
             "runtime_pipeline_binding_checked_acceptance_seed_binds_witness_tree_digests",
             "runtime_pipeline_binding_checked_acceptance_seeded_fri_opening_requirements_checked",
+            "sound_witness_implies_execution_obligations",
         ],
     );
     lean_binding::assert_theorem_body_omits(

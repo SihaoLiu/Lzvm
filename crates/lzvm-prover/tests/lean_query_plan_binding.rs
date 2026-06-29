@@ -376,6 +376,7 @@ fn lean_query_plan_binding_exports_opening_segment_projections() {
             "runtime_proof_artifact_binding_checked_acceptance_runtime_accepted",
             "runtime_artifact_checked_acceptance_implies_verifier_accepts",
             "accepted_proof_audited_core_and_sound_witness",
+            "sound_witness_implies_execution_obligations",
         ],
     );
     lean_binding::assert_theorem_body_omits(

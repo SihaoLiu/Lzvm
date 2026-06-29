@@ -259,6 +259,7 @@ fn lean_program_image_cache_binding_exports_core_contract_projection() {
             "runtime_proof_artifact_binding_checked_acceptance_runtime_accepted",
             "runtime_artifact_checked_acceptance_implies_verifier_accepts",
             "accepted_proof_audited_core_and_sound_witness",
+            "sound_witness_implies_execution_obligations",
         ],
     );
     lean_binding::assert_theorem_body_omits(

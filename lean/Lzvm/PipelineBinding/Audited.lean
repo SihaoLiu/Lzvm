@@ -723,29 +723,8 @@ theorem runtime_pipeline_required_external_source_audited_finalized_core_sound_w
     ⟨cryptoEvidence, semanticEvidence, verifierCore, soundWitness⟩
   rcases requiredCore with
     ⟨traceExternalEvidence, openingExternalEvidence, _requiredVerifierCore⟩
-  have executionObligations :
-      exists witness trace constraints,
-        system.traceConsistent publicInput proof trace
-          /\ system.constraintsSatisfied constraints trace
-          /\ system.witnessMatchesTrace witness trace := by
-    rcases soundWitness with
-      ⟨witness,
-        trace,
-        constraints,
-        _transcriptBound,
-        _publicInputBound,
-        _pcsOpenings,
-        _friQueries,
-        traceConsistent,
-        constraintsSatisfied,
-        witnessMatchesTrace⟩
-    exact
-      ⟨witness,
-        trace,
-        constraints,
-        traceConsistent,
-        constraintsSatisfied,
-        witnessMatchesTrace⟩
+  have executionObligations :=
+    sound_witness_implies_execution_obligations soundWitness
   exact
     ⟨cryptoEvidence,
       semanticEvidence,

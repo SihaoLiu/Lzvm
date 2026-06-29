@@ -1474,29 +1474,8 @@ theorem runtime_soundness_checked_acceptance_audited_finalized_core_sound_witnes
       verifierAccepts
   rcases auditedCoreSound with
     ⟨cryptoEvidence, semanticEvidence, coreContract, soundWitness⟩
-  have executionObligations :
-      exists witness trace constraints,
-        system.traceConsistent publicInput proof trace
-          /\ system.constraintsSatisfied constraints trace
-          /\ system.witnessMatchesTrace witness trace := by
-    rcases soundWitness with
-      ⟨witness,
-        trace,
-        constraints,
-        _transcriptBound,
-        _publicInputBound,
-        _pcsOpenings,
-        _friQueries,
-        traceConsistent,
-        constraintsSatisfied,
-        witnessMatchesTrace⟩
-    exact
-      ⟨witness,
-        trace,
-        constraints,
-        traceConsistent,
-        constraintsSatisfied,
-        witnessMatchesTrace⟩
+  have executionObligations :=
+    sound_witness_implies_execution_obligations soundWitness
   exact
     And.intro cryptoEvidence
       (And.intro semanticEvidence
