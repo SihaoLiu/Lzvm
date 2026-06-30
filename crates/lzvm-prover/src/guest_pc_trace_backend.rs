@@ -10454,6 +10454,18 @@ fn apply_zisk_main_lowered_report_row(
         }
     }
     if !detail_timing && !shape_timing {
+        if let Some(parts) = no_memory_copy_fast_path_parts(&instruction, effects) {
+            return apply_no_memory_fast_path(
+                output_row,
+                instruction,
+                effects,
+                expected_next_pc,
+                parts,
+                state,
+                context,
+                visit,
+            );
+        }
         if let Some((a_index, b_offset, store_index)) =
             sign_extend_indirect_register_store_fast_path_parts(&instruction, effects)
         {
@@ -10471,7 +10483,7 @@ fn apply_zisk_main_lowered_report_row(
             );
         }
         if let Some(parts) = no_memory_external_fast_path_parts(&instruction, effects) {
-            return apply_no_memory_external_fast_path(
+            return apply_no_memory_fast_path(
                 output_row,
                 instruction,
                 effects,
@@ -10932,6 +10944,28 @@ fn sign_extend_indirect_register_store_fast_path_parts(
 }
 
 #[inline(always)]
+fn no_memory_copy_fast_path_parts(
+    instruction: &ZiskMainInstruction,
+    effects: ZiskMainReportEffects<'_>,
+) -> Option<ZiskMainNoMemoryFastPathParts> {
+    if !matches!(instruction.op, ZiskMainOp::CopyB)
+        || instruction.is_external_op
+        || instruction.is_precompiled
+        || instruction.store_pc
+        || instruction.set_pc
+        || !effects.memory_accesses.is_empty()
+        || !effects.precompile_memory_accesses.is_empty()
+    {
+        return None;
+    }
+    Some(ZiskMainNoMemoryFastPathParts {
+        a_index: no_memory_fast_path_source_index(instruction.a)?,
+        b_index: no_memory_fast_path_source_index(instruction.b)?,
+        store_index: no_memory_fast_path_store_index(instruction.store)?,
+    })
+}
+
+#[inline(always)]
 fn no_memory_external_fast_path_parts(
     instruction: &ZiskMainInstruction,
     effects: ZiskMainReportEffects<'_>,
@@ -11137,7 +11171,7 @@ fn apply_copy_indirect_register_store_fast_path(
 
 #[allow(clippy::too_many_arguments)]
 #[inline(always)]
-fn apply_no_memory_external_fast_path(
+fn apply_no_memory_fast_path(
     output_row: usize,
     instruction: ZiskMainInstruction,
     effects: ZiskMainReportEffects<'_>,
