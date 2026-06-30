@@ -474,6 +474,17 @@ impl GuestPrecompileReportEffects {
             }))
         }
     }
+
+    pub fn from_vec(
+        memory_accesses: Vec<GuestMemoryAccess>,
+        result: Option<u64>,
+    ) -> Option<Box<Self>> {
+        if memory_accesses.is_empty() && result.is_none() {
+            None
+        } else {
+            Self::from_parts(memory_accesses.into_boxed_slice(), result)
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -1188,8 +1199,8 @@ fn advance_guest_machine_prepared_inner_report_shape_into(
         next_pc,
         register_writes: effects.register_writes,
         memory_accesses: effects.memory_accesses,
-        precompile_effects: GuestPrecompileReportEffects::from_parts(
-            effects.precompile_memory_accesses.into_boxed_slice(),
+        precompile_effects: GuestPrecompileReportEffects::from_vec(
+            effects.precompile_memory_accesses,
             effects.precompile_result,
         ),
     });

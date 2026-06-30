@@ -8762,6 +8762,11 @@ fn guest_machine_reports_inline_common_effect_storage() {
         "guest machine reports should keep rare precompile data in an out-of-line effects record"
     );
     assert!(
+        source.contains("pub fn from_vec(")
+            && source.contains("GuestPrecompileReportEffects::from_vec("),
+        "guest machine reports should skip boxing empty precompile access vectors"
+    );
+    assert!(
         report_body.contains("precompile_effects: Option<Box<GuestPrecompileReportEffects>>"),
         "guest machine reports should store only a thin optional precompile-effects pointer"
     );
