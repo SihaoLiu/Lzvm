@@ -1509,6 +1509,85 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         "proof_artifact_finish_timing_some_summary_acceptance_core_and_sound",
         &aggregate_finish_field_terms,
     );
+    lean_binding::assert_theorem_declarations(
+        &proof_timing_verifier_source,
+        &[
+            "proof_artifact_finish_verifier_descriptor_upload_shape_acceptance_verifier_core_contract",
+            "proof_artifact_finish_verifier_descriptor_upload_shape_acceptance_core_and_sound",
+        ],
+    );
+    let verifier_descriptor_upload_field_terms = [
+        "finishWitnessExternalSourceDescriptorUploadByteCount := byteCount",
+        "finishWitnessExternalSourceDescriptorUploadWordCount := wordCount",
+        "finishWitnessExternalSourceDescriptorUploadRowCount := rowCount",
+    ];
+    let verifier_descriptor_upload_verifier_theorem =
+        "proof_artifact_finish_verifier_descriptor_upload_shape_acceptance_verifier_core_contract";
+    let verifier_descriptor_upload_combined_theorem =
+        "proof_artifact_finish_verifier_descriptor_upload_shape_acceptance_core_and_sound";
+    lean_binding::assert_theorem_prefix_contains(
+        &proof_timing_verifier_source,
+        verifier_descriptor_upload_verifier_theorem,
+        &["RuntimeVerifierCoreContract system publicInput proof"],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &proof_timing_verifier_source,
+        verifier_descriptor_upload_verifier_theorem,
+        &["proof_artifact_finish_descriptor_upload_shape_acceptance_verifier_core_contract"],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &proof_timing_verifier_source,
+        verifier_descriptor_upload_verifier_theorem,
+        &[
+            "proof_artifact_finish_descriptor_upload_shape_acceptance_sound",
+            "sound_witness_implies_verifier_core_contract",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &proof_timing_verifier_source,
+        verifier_descriptor_upload_combined_theorem,
+        &[
+            "RuntimeVerifierCoreContract system publicInput proof",
+            "SoundWitness system publicInput proof",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &proof_timing_verifier_source,
+        verifier_descriptor_upload_combined_theorem,
+        &["proof_artifact_finish_descriptor_upload_shape_acceptance_core_and_sound"],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &proof_timing_verifier_source,
+        verifier_descriptor_upload_combined_theorem,
+        &[
+            "proof_artifact_finish_descriptor_upload_shape_acceptance_sound",
+            "sound_witness_implies_verifier_core_contract",
+        ],
+    );
+    for theorem in [
+        verifier_descriptor_upload_verifier_theorem,
+        verifier_descriptor_upload_combined_theorem,
+    ] {
+        for field_term in verifier_descriptor_upload_field_terms {
+            lean_binding::assert_theorem_prefix_contains(
+                &proof_timing_verifier_source,
+                theorem,
+                &[field_term],
+            );
+        }
+        lean_binding::assert_theorem_body_contains(
+            &proof_timing_verifier_source,
+            theorem,
+            &[
+                "byteCount",
+                "wordCount",
+                "rowCount",
+                "publicInput",
+                "proof",
+                "observed",
+            ],
+        );
+    }
     assert!(
         proof_timing_projected_source.contains("structure ProofTimingProjectedCoreContracts")
             && proof_timing_projected_source.contains("witnessOpeningRowValueTiming :")
