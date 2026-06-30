@@ -151,17 +151,20 @@ fn guest_trace_detail_timing_sample_stride_uses_positive_env_values() {
     shape_env.set("17");
     assert_eq!(guest_pc_trace_shape_timing_sample_stride(), Some(17));
 
-    let timing_config = ZiskMainTraceLowerTimingConfig::from_env();
-    assert!(timing_config.row_timing_enabled);
-    assert!(timing_config.shape_timing_for_report(0));
-    assert!(!timing_config.shape_timing_for_report(16));
-    assert!(timing_config.shape_timing_for_report(17));
+    #[cfg(feature = "cuda")]
+    {
+        let timing_config = ZiskMainTraceLowerTimingConfig::from_env();
+        assert!(timing_config.row_timing_enabled);
+        assert!(timing_config.shape_timing_for_report(0));
+        assert!(!timing_config.shape_timing_for_report(16));
+        assert!(timing_config.shape_timing_for_report(17));
 
-    full_shape_env.set("1");
-    let full_timing_config = ZiskMainTraceLowerTimingConfig::from_env();
-    assert!(full_timing_config.shape_timing);
-    assert_eq!(full_timing_config.shape_sample_stride, None);
-    assert!(full_timing_config.shape_timing_for_report(16));
+        full_shape_env.set("1");
+        let full_timing_config = ZiskMainTraceLowerTimingConfig::from_env();
+        assert!(full_timing_config.shape_timing);
+        assert_eq!(full_timing_config.shape_sample_stride, None);
+        assert!(full_timing_config.shape_timing_for_report(16));
+    }
 
     env.clear();
     shape_env.clear();
