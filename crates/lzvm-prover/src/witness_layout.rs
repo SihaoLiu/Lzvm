@@ -412,6 +412,35 @@ impl WitnessTraceBuilder<'_> {
         Ok(())
     }
 
+    pub(crate) fn write_trusted_resolved_scalar_value_for_valid_row(
+        &mut self,
+        row: usize,
+        column: &ResolvedTraceColumn<'_>,
+        value: Felt,
+    ) -> Result<(), WitnessTraceBuildError> {
+        debug_assert!(row < self.layout.rows);
+        debug_assert!(std::ptr::eq(column.layout, self.layout));
+        debug_assert_eq!(column.dimension, 1);
+        let (start, _) = self.resolved_column_bounds_for_valid_row(row, column)?;
+        self.values[start] = value;
+        Ok(())
+    }
+
+    pub(crate) fn write_trusted_resolved_pair_values_for_valid_row(
+        &mut self,
+        row: usize,
+        column: &ResolvedTraceColumn<'_>,
+        values: [Felt; 2],
+    ) -> Result<(), WitnessTraceBuildError> {
+        debug_assert!(row < self.layout.rows);
+        debug_assert!(std::ptr::eq(column.layout, self.layout));
+        debug_assert_eq!(column.dimension, 2);
+        let (start, _) = self.resolved_column_bounds_for_valid_row(row, column)?;
+        self.values[start] = values[0];
+        self.values[start + 1] = values[1];
+        Ok(())
+    }
+
     fn write_resolved_column_values_for_valid_row(
         &mut self,
         row: usize,
