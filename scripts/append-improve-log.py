@@ -18,6 +18,25 @@ HEADER = [
 
 TIMING_TOTAL_RE = re.compile(r"^timing_total_ms=(\d+)\s*$")
 AVG_FIELD_RE = re.compile(r"(?:^|\s)avg=([0-9]+(?:\.[0-9]+)?)\b")
+LEGACY_AVG_FIELD_RE = re.compile(
+    r"(?:^|\s)[A-Za-z0-9_]*_avg=([0-9]+(?:\.[0-9]+)?)\b"
+)
+LEGACY_PROBE_FIELD_RE = re.compile(
+    r"(?:^|\s)(?:[A-Za-z0-9_]*probe[A-Za-z0-9_]*|large_full)="
+    r"([0-9]+(?:\.[0-9]+)?)\b"
+)
+LEGACY_SINGLE_FIELD_RE = re.compile(
+    r"(?:^|\s)(?:single|[A-Za-z0-9_]+_single|window[0-9]+|queue[0-9]+)="
+    r"([0-9]+(?:\.[0-9]+)?)\b"
+)
+TIMEOUT_FIELD_RE = re.compile(r"(?:^|\s)timeout>([0-9]+(?:\.[0-9]+)?)\b")
+AVERAGE_FIELD_PATTERNS = [
+    AVG_FIELD_RE,
+    LEGACY_AVG_FIELD_RE,
+    LEGACY_PROBE_FIELD_RE,
+    LEGACY_SINGLE_FIELD_RE,
+    TIMEOUT_FIELD_RE,
+]
 
 
 def workspace_root() -> Path:
@@ -273,8 +292,12 @@ def resolve_timing_field(
 def timing_field_average_seconds(field: str, label: str) -> float:
     if not field:
         raise SystemExit(f"{label}: no timing field available for max average check")
-    match = AVG_FIELD_RE.search(field)
-    raw_value = match.group(1) if match is not None else field
+    raw_value = field
+    for pattern in AVERAGE_FIELD_PATTERNS:
+        match = pattern.search(field)
+        if match is not None:
+            raw_value = match.group(1)
+            break
     try:
         value = float(raw_value)
     except ValueError as error:

@@ -127,6 +127,50 @@ fn improve_log_check_accepts_quoted_timing_fields_with_commas() {
 }
 
 #[test]
+fn improve_log_check_accepts_legacy_probe_timing_labels() {
+    let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let workspace_root = crate_root
+        .parent()
+        .and_then(std::path::Path::parent)
+        .expect("workspace root should resolve");
+    let script_path = workspace_root.join("scripts/append-improve-log.py");
+    let log_path = workspace_root.join(format!(
+        "temp/improve-log-legacy-probes-{}.csv",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_file(&log_path);
+    std::fs::write(
+        &log_path,
+        concat!(
+            "timestamp,commit,small_proof_time_s,large_proof_time_s,summary\n",
+            "\"2026-06-19T05:55:00-0700\",\"testcase\",\"probe_5m=1.44\",",
+            "\"probe_50m=11.92\",\"Legacy probe labels\"\n",
+            "\"2026-06-19T06:55:00-0700\",\"testcase\",\"\",",
+            "\"copy_gate_avg=42.166 samples=42.136;42.313;42.049\",\"Legacy named average\"\n",
+            "\"2026-06-19T07:55:00-0700\",\"testcase\",\"\",",
+            "\"regressed single=43.34\",\"Legacy single run\"\n",
+            "\"2026-06-19T08:55:00-0700\",\"testcase\",\"\",",
+            "\"timeout>180\",\"Legacy timeout marker\"\n",
+        ),
+    )
+    .expect("temporary improve log should write");
+
+    let output = Command::new(&script_path)
+        .arg("--path")
+        .arg(&log_path)
+        .arg("--check")
+        .output()
+        .expect("improve-log writer check should run");
+    let _ = std::fs::remove_file(&log_path);
+
+    assert!(
+        output.status.success(),
+        "improve-log check should accept legacy timing labels: stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
 fn improve_log_writer_averages_stable_run_samples() {
     let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
     let workspace_root = crate_root
