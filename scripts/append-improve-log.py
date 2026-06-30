@@ -31,7 +31,7 @@ LEGACY_SINGLE_FIELD_RE = re.compile(
 )
 TIMEOUT_FIELD_RE = re.compile(r"(?:^|\s)timeout>([0-9]+(?:\.[0-9]+)?)\b")
 SAMPLES_FIELD_RE = re.compile(
-    r"(?:^|\s)samples=([0-9]+(?:\.[0-9]+)?(?:;[0-9]+(?:\.[0-9]+)?)*)\b"
+    r"(?:^|\s)samples=([0-9]+(?:\.[0-9]+)?(?:;[0-9]+(?:\.[0-9]+)?)*)(?=\s|$)"
 )
 AVERAGE_FIELD_PATTERNS = [
     AVG_FIELD_RE,

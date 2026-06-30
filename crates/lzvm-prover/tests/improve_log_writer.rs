@@ -232,6 +232,54 @@ fn improve_log_check_accepts_manual_sample_only_rejection_rows() {
 }
 
 #[test]
+fn improve_log_check_rejects_malformed_sample_only_fields() {
+    let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let workspace_root = crate_root
+        .parent()
+        .and_then(std::path::Path::parent)
+        .expect("workspace root should resolve");
+    let script_path = workspace_root.join("scripts/append-improve-log.py");
+
+    for (case_index, sample_field) in ["samples=1;bad", "samples=1;", "samples=1;;2"]
+        .into_iter()
+        .enumerate()
+    {
+        let log_path = workspace_root.join(format!(
+            "temp/improve-log-malformed-samples-{}-{}.csv",
+            std::process::id(),
+            case_index
+        ));
+        let _ = std::fs::remove_file(&log_path);
+        std::fs::write(
+            &log_path,
+            format!(
+                concat!(
+                    "timestamp,commit,small_proof_time_s,large_proof_time_s,summary\n",
+                    "\"2026-06-19T05:55:00-0700\",\"testcase\",\"\",",
+                    "\"{} no_stable_group rejected baseline=35.585\",",
+                    "\"Malformed manual row\"\n",
+                ),
+                sample_field
+            ),
+        )
+        .expect("temporary improve log should write");
+
+        let check_output = Command::new(&script_path)
+            .arg("--path")
+            .arg(&log_path)
+            .arg("--check")
+            .output()
+            .expect("improve-log check should run");
+        let _ = std::fs::remove_file(&log_path);
+
+        assert!(
+            !check_output.status.success(),
+            "malformed sample field {sample_field:?} should fail validation"
+        );
+    }
+}
+
+#[test]
 fn improve_log_writer_averages_stable_run_samples() {
     let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
     let workspace_root = crate_root

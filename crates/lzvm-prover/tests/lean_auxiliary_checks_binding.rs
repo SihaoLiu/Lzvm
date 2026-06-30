@@ -1564,9 +1564,15 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "sound_witness_implies_verifier_core_contract",
         ],
     );
-    for theorem in [
-        verifier_descriptor_upload_verifier_theorem,
-        verifier_descriptor_upload_combined_theorem,
+    for (theorem, helper) in [
+        (
+            verifier_descriptor_upload_verifier_theorem,
+            "proof_artifact_finish_descriptor_upload_shape_acceptance_verifier_core_contract",
+        ),
+        (
+            verifier_descriptor_upload_combined_theorem,
+            "proof_artifact_finish_descriptor_upload_shape_acceptance_core_and_sound",
+        ),
     ] {
         for field_term in verifier_descriptor_upload_field_terms {
             lean_binding::assert_theorem_prefix_contains(
@@ -1586,6 +1592,14 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
                 "proof",
                 "observed",
             ],
+        );
+        let body = lean_binding::theorem_body(&proof_timing_verifier_source, theorem);
+        assert!(
+            compact_source_contains(
+                &body,
+                &format!("{helper} assumptions summary byteCount wordCount rowCount publicInput proof observed")
+            ),
+            "Lean theorem {theorem} should forward descriptor upload dimensions in order"
         );
     }
     assert!(

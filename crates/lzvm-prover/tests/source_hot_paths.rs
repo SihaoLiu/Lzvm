@@ -7915,7 +7915,8 @@ fn guest_pc_trace_lower_reports_internal_work_timing() {
         "guest PC lower shape timing should be explicitly gated"
     );
     assert!(
-        timing_config_body.contains("row_timing_enabled: detail_timing || shape_timing,"),
+        timing_config_body
+            .contains("row_timing_enabled: detail_timing || shape_timing || shape_sample_stride.is_some(),"),
         "guest PC device material lowerer should skip per-row timing plumbing unless row timing is enabled"
     );
     assert!(
@@ -7971,6 +7972,10 @@ fn guest_pc_trace_lower_reports_internal_work_timing() {
             && compact_source_contains(
                 &host_segment_body,
                 "let shape_timing = timing_enabled && guest_pc_trace_shape_timing_enabled();"
+            )
+            && compact_source_contains(
+                &host_segment_body,
+                "let shape_sample_stride = if timing_enabled && !shape_timing"
             ),
         "guest PC host lowerer should skip diagnostic timing env reads when timing is absent"
     );

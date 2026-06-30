@@ -13485,10 +13485,10 @@ fn build_layout_zisk_main_trace_segment(
     } else {
         1
     };
-    let shape_sample_stride = if shape_timing {
-        None
-    } else {
+    let shape_sample_stride = if timing_enabled && !shape_timing {
         guest_pc_trace_shape_timing_sample_stride()
+    } else {
+        None
     };
     let aggregate_report_started = timing.as_ref().map(|_| Instant::now());
     for (report_index, report) in reports.iter().enumerate() {
