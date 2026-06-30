@@ -5794,6 +5794,82 @@ fn copy_register_indirect_store_fast_path_preserves_row_effects() {
 }
 
 #[test]
+fn copy_immediate_indirect_store_fast_path_preserves_row_effects() {
+    let accesses = [memory_write(0x108, 0x1122_3344_5566_7788)];
+    let effects = ZiskMainReportEffects {
+        register_writes: &[],
+        memory_accesses: &accesses,
+        precompile_memory_accesses: &[],
+        precompile_result: None,
+    };
+    let instruction = ZiskMainInstruction {
+        pc: 0x8000_0000,
+        a: ZiskMainSource::Register(2),
+        b: ZiskMainSource::Immediate(0x1122_3344_5566_7788),
+        op: ZiskMainOp::CopyB,
+        store: ZiskMainStore::Indirect(8),
+        store_pc: false,
+        set_pc: false,
+        jmp_offset1: 4,
+        jmp_offset2: 4,
+        ind_width: 8,
+        m32: false,
+        is_external_op: false,
+        is_precompiled: false,
+    };
+    let parts = copy_immediate_indirect_store_fast_path_parts(&instruction, effects)
+        .expect("immediate store through register base should match");
+    assert_eq!(parts, (2, 0x1122_3344_5566_7788, 8));
+
+    let mut state = ZiskMainTraceState::new();
+    state.registers[2] = 0x100;
+    state.register_mem_steps[2] = 33;
+    let mut context = ZiskMainReportValidationContext::new(
+        None,
+        16,
+        ZiskMainTraceSegmentInfo {
+            trace_instance_index: 0,
+            is_last_segment: false,
+            previous_c: 0,
+        },
+    )
+    .expect("context should initialize");
+    let mut visited = None;
+    apply_copy_immediate_indirect_store_fast_path(
+        3,
+        instruction,
+        effects,
+        0x8000_0004,
+        2,
+        0x1122_3344_5566_7788,
+        8,
+        &mut state,
+        &mut context,
+        &mut |row, values, timing| {
+            assert_eq!(row, 3);
+            assert!(timing.is_none());
+            visited = Some(values);
+            Ok(())
+        },
+    )
+    .expect("immediate store row should take fast path");
+
+    assert_eq!(state.registers[2], 0x100);
+    assert_eq!(state.last_c, 0x1122_3344_5566_7788);
+    assert_eq!(state.next_pc, 0x8000_0004);
+    assert_eq!(state.register_mem_steps[2], 13);
+    let values = visited.expect("fast path should emit row values");
+    assert_eq!(values.a, 0x100);
+    assert_eq!(values.b, 0x1122_3344_5566_7788);
+    assert_eq!(values.c, 0x1122_3344_5566_7788);
+    assert!(!values.flag);
+    assert_eq!(values.register_accesses.a_prev_mem_step, Some(33));
+    assert_eq!(values.register_accesses.b_prev_mem_step, None);
+    assert_eq!(values.register_accesses.store_prev_mem_step, None);
+    assert_eq!(values.register_accesses.store_prev_value, None);
+}
+
+#[test]
 fn simple_copy_fast_path_parts_match_generic_lowering() {
     let reports = [
         GuestMachineReport {

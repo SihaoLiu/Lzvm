@@ -10452,6 +10452,22 @@ fn apply_zisk_main_lowered_report_row(
                 visit,
             );
         }
+        if let Some((a_index, b, store_offset)) =
+            copy_immediate_indirect_store_fast_path_parts(&instruction, effects)
+        {
+            return apply_copy_immediate_indirect_store_fast_path(
+                output_row,
+                instruction,
+                effects,
+                expected_next_pc,
+                a_index,
+                b,
+                store_offset,
+                state,
+                context,
+                visit,
+            );
+        }
     }
     if !detail_timing && !shape_timing {
         if let Some(parts) = no_memory_copy_fast_path_parts(&instruction, effects) {
@@ -10914,6 +10930,29 @@ fn copy_indirect_register_store_fast_path_parts(
         && !instruction.is_precompiled
         && effects.precompile_memory_accesses.is_empty())
     .then_some((a_index, b_offset, store_index))
+}
+
+#[inline(always)]
+fn copy_immediate_indirect_store_fast_path_parts(
+    instruction: &ZiskMainInstruction,
+    effects: ZiskMainReportEffects<'_>,
+) -> Option<(u8, u64, i64)> {
+    let (a_index, b, store_offset) = match (instruction.a, instruction.b, instruction.store) {
+        (
+            ZiskMainSource::Register(a_index),
+            ZiskMainSource::Immediate(b),
+            ZiskMainStore::Indirect(store_offset),
+        ) => (a_index, b, store_offset),
+        _ => return None,
+    };
+    (matches!(instruction.op, ZiskMainOp::CopyB)
+        && !instruction.store_pc
+        && !instruction.set_pc
+        && !instruction.m32
+        && !instruction.is_external_op
+        && !instruction.is_precompiled
+        && effects.precompile_memory_accesses.is_empty())
+    .then_some((a_index, b, store_offset))
 }
 
 #[inline(always)]
@@ -11695,6 +11734,108 @@ fn apply_copy_register_indirect_store_fast_path(
             register_accesses: ZiskMainRegisterAccessValues {
                 a_prev_mem_step: Some(a_prev_mem_step),
                 b_prev_mem_step: Some(b_prev_mem_step),
+                store_prev_mem_step: None,
+                store_prev_value: None,
+            },
+        },
+        None,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+#[inline(always)]
+fn apply_copy_immediate_indirect_store_fast_path(
+    output_row: usize,
+    instruction: ZiskMainInstruction,
+    effects: ZiskMainReportEffects<'_>,
+    expected_next_pc: u64,
+    a_index: u8,
+    b: u64,
+    store_offset: i64,
+    state: &mut ZiskMainTraceState,
+    context: &mut ZiskMainReportValidationContext<'_>,
+    visit: &mut impl FnMut(
+        usize,
+        ZiskMainReportTraceValues,
+        Option<&mut GuestPcTraceStreamTiming>,
+    ) -> Result<(), GuestPcTraceBackendError>,
+) -> Result<(), GuestPcTraceBackendError> {
+    if !context.indirect_memory_columns_available() {
+        return Err(GuestPcTraceBackendError::InvalidPcTraceLayout {
+            message: format!(
+                "Zisk Main memory rows require b_src_ind, b_offset_imm0, ind_width, store_ind, store_offset, and store_mem columns at row {output_row}"
+            ),
+        });
+    }
+    if !(ZISK_MAIN_REGISTER_START..ZISK_MAIN_REGISTER_START + ZISK_MAIN_REGISTER_COUNT)
+        .contains(&usize::from(a_index))
+    {
+        return Err(GuestPcTraceBackendError::UnsupportedZiskMainSource { row: output_row });
+    }
+    let byte_len = usize::try_from(instruction.ind_width)
+        .map_err(|_| GuestPcTraceBackendError::UnsupportedZiskMainStore { row: output_row })?;
+    let a = state.registers[usize::from(a_index)];
+    let c = b;
+    let flag = false;
+    let computed_next_pc = instruction.pc.wrapping_add_signed(instruction.jmp_offset2);
+    if expected_next_pc != computed_next_pc {
+        return Err(GuestPcTraceBackendError::ZiskMainEffectMismatch {
+            row: output_row,
+            message: format!("expected next pc {computed_next_pc}, found {expected_next_pc}"),
+        });
+    }
+    if !effects.register_writes.is_empty() {
+        return Err(GuestPcTraceBackendError::ZiskMainEffectMismatch {
+            row: output_row,
+            message: "store indirect row reported register writes".to_owned(),
+        });
+    }
+    let [write] = effects.memory_accesses else {
+        return Err(GuestPcTraceBackendError::ZiskMainEffectMismatch {
+            row: output_row,
+            message: format!(
+                "expected 1 memory accesses, found {}",
+                effects.memory_accesses.len()
+            ),
+        });
+    };
+    validate_memory_access_fields(
+        output_row,
+        write,
+        GuestMemoryAccessKind::Write,
+        a.wrapping_add_signed(store_offset),
+        byte_len,
+        low_bytes_value(c, byte_len),
+    )?;
+
+    let row_mem_step_base = context.row_mem_step_base(output_row)?;
+    if row_mem_step_base
+        .checked_add(ZISK_MAIN_A_MEM_STEP_OFFSET)
+        .is_none()
+    {
+        return Err(GuestPcTraceBackendError::InvalidPcTraceLayout {
+            message: "Zisk Main memory step is too large".to_owned(),
+        });
+    }
+    let a_prev_mem_step = read_then_update_register_mem_step(
+        &mut state.register_mem_steps,
+        a_index,
+        row_mem_step_base + ZISK_MAIN_A_MEM_STEP_OFFSET,
+    );
+    state.last_c = c;
+    state.next_pc = expected_next_pc;
+
+    visit(
+        output_row,
+        ZiskMainReportTraceValues {
+            instruction,
+            a,
+            b,
+            c,
+            flag,
+            register_accesses: ZiskMainRegisterAccessValues {
+                a_prev_mem_step: Some(a_prev_mem_step),
+                b_prev_mem_step: None,
                 store_prev_mem_step: None,
                 store_prev_value: None,
             },
