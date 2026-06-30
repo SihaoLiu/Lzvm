@@ -5547,6 +5547,104 @@ fn load_copy_fast_path_parts_fall_back_for_non_dominant_loads() {
 }
 
 #[test]
+fn load_sign_extend_fast_path_parts_match_generic_lowering() {
+    let mut access = memory_read(0x108, 0xffff_ff80);
+    access.byte_len = 4;
+    let report = GuestMachineReport {
+        address: 0x8000_0000,
+        instruction_byte_len: 4,
+        instruction: RiscvInstruction::Load {
+            kind: RiscvLoadKind::Lw,
+            rd: 3,
+            rs1: 2,
+            offset: 8,
+        },
+        next_pc: 0x8000_0004,
+        register_writes: vec![GuestRegisterWrite {
+            index: 3,
+            value: 0xffff_ffff_ffff_ff80,
+        }]
+        .into(),
+        memory_accesses: vec![access].into(),
+        precompile_effects: None,
+    };
+
+    let (instruction, a_index, b_offset, store_index) =
+        load_sign_extend_indirect_register_store_fast_path_parts(3, &report)
+            .expect("fast path detection should succeed")
+            .expect("signed load from register base into register should match");
+
+    assert_eq!(a_index, 2);
+    assert_eq!(b_offset, 8);
+    assert_eq!(store_index, 3);
+    assert_eq!(
+        instruction,
+        lower_guest_report(&report).expect("generic lowering should match")
+    );
+    assert_eq!(
+        sign_extend_indirect_register_store_fast_path_parts(
+            &instruction,
+            ZiskMainReportEffects::from_report(&report),
+        ),
+        Some((2, 8, 3))
+    );
+}
+
+#[test]
+fn load_sign_extend_fast_path_parts_fall_back_for_non_dominant_loads() {
+    let mut access = memory_read(0x108, 0xaa55);
+    access.byte_len = 4;
+    let mut report = GuestMachineReport {
+        address: 0x8000_0000,
+        instruction_byte_len: 4,
+        instruction: RiscvInstruction::Load {
+            kind: RiscvLoadKind::Lwu,
+            rd: 3,
+            rs1: 2,
+            offset: 8,
+        },
+        next_pc: 0x8000_0004,
+        register_writes: vec![GuestRegisterWrite {
+            index: 3,
+            value: 0xaa55,
+        }]
+        .into(),
+        memory_accesses: vec![access].into(),
+        precompile_effects: None,
+    };
+    assert!(
+        load_sign_extend_indirect_register_store_fast_path_parts(3, &report)
+            .expect("unsigned load should fall back")
+            .is_none()
+    );
+
+    report.instruction = RiscvInstruction::Load {
+        kind: RiscvLoadKind::Lw,
+        rd: 0,
+        rs1: 2,
+        offset: 8,
+    };
+    assert!(
+        load_sign_extend_indirect_register_store_fast_path_parts(3, &report)
+            .expect("zero destination should fall back")
+            .is_none()
+    );
+
+    report.instruction = RiscvInstruction::Load {
+        kind: RiscvLoadKind::Lw,
+        rd: 3,
+        rs1: 2,
+        offset: 8,
+    };
+    report.next_pc = 0x8000_0008;
+    assert!(
+        load_sign_extend_indirect_register_store_fast_path_parts(3, &report)
+            .expect("non-sequential load should fall back")
+            .is_none()
+    );
+}
+
+#[test]
 fn store_copy_fast_path_parts_match_generic_lowering() {
     let report = GuestMachineReport {
         address: 0x8000_0000,
@@ -5883,6 +5981,90 @@ fn simple_copy_register_store_fast_path_preserves_row_effects() {
     assert_eq!(values.register_accesses.b_prev_mem_step, Some(44));
     assert_eq!(values.register_accesses.store_prev_mem_step, Some(14));
     assert_eq!(values.register_accesses.store_prev_value, Some(0xaa55));
+}
+
+#[test]
+fn sign_extend_indirect_register_store_fast_path_preserves_row_effects() {
+    let accesses = [GuestMemoryAccess {
+        kind: GuestMemoryAccessKind::Read,
+        address: 0x108,
+        byte_len: 4,
+        value: 0xffff_ff80,
+    }];
+    let writes = [GuestRegisterWrite {
+        index: 3,
+        value: 0xffff_ffff_ffff_ff80,
+    }];
+    let effects = ZiskMainReportEffects {
+        register_writes: &writes,
+        memory_accesses: &accesses,
+        precompile_memory_accesses: &[],
+        precompile_result: None,
+    };
+    let instruction = ZiskMainInstruction {
+        pc: 0x8000_0000,
+        a: ZiskMainSource::Register(2),
+        b: ZiskMainSource::Indirect(8),
+        op: ZiskMainOp::SignExtendW,
+        store: ZiskMainStore::Register(3),
+        store_pc: false,
+        set_pc: false,
+        jmp_offset1: 4,
+        jmp_offset2: 4,
+        ind_width: 4,
+        m32: false,
+        is_external_op: true,
+        is_precompiled: false,
+    };
+    let mut state = ZiskMainTraceState::new();
+    state.registers[2] = 0x100;
+    state.registers[3] = 0x77;
+    state.register_mem_steps[2] = 33;
+    state.register_mem_steps[3] = 44;
+    let mut context = ZiskMainReportValidationContext::new(
+        None,
+        16,
+        ZiskMainTraceSegmentInfo {
+            trace_instance_index: 0,
+            is_last_segment: false,
+            previous_c: 0,
+        },
+    )
+    .expect("context should initialize");
+    let mut visited = None;
+    apply_sign_extend_indirect_register_store_fast_path(
+        3,
+        instruction,
+        effects,
+        0x8000_0004,
+        2,
+        8,
+        3,
+        &mut state,
+        &mut context,
+        &mut |row, values, timing| {
+            assert_eq!(row, 3);
+            assert!(timing.is_none());
+            visited = Some(values);
+            Ok(())
+        },
+    )
+    .expect("signed load row should take fast path");
+
+    assert_eq!(state.registers[3], 0xffff_ffff_ffff_ff80);
+    assert_eq!(state.last_c, 0xffff_ffff_ffff_ff80);
+    assert_eq!(state.next_pc, 0x8000_0004);
+    assert_eq!(state.register_mem_steps[2], 13);
+    assert_eq!(state.register_mem_steps[3], 15);
+    let values = visited.expect("fast path should emit row values");
+    assert_eq!(values.a, 0x100);
+    assert_eq!(values.b, 0xffff_ff80);
+    assert_eq!(values.c, 0xffff_ffff_ffff_ff80);
+    assert!(!values.flag);
+    assert_eq!(values.register_accesses.a_prev_mem_step, Some(33));
+    assert_eq!(values.register_accesses.b_prev_mem_step, None);
+    assert_eq!(values.register_accesses.store_prev_mem_step, Some(44));
+    assert_eq!(values.register_accesses.store_prev_value, Some(0x77));
 }
 
 #[test]
