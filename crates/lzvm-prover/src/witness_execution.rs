@@ -5022,7 +5022,7 @@ impl GuestPcTraceSegmentCommitMode {
             guest_pc_cross_segment_root_materialization_selected(input_byte_count);
         #[cfg(feature = "cuda")]
         let pending_root_materialization_window = if cross_segment_root_materialization {
-            guest_pc_cross_segment_root_materialization_window()
+            guest_pc_cross_segment_root_materialization_window(input_byte_count)
         } else {
             1
         };
@@ -5645,6 +5645,18 @@ impl<'scope, 'env, 'b> GuestPcTraceSegmentCommitDriver<'scope, 'env, 'b> {
 }
 
 #[cfg(feature = "cuda")]
+const GUEST_PC_SMALL_INPUT_BYTE_LIMIT: usize = 8 * 1024 * 1024;
+#[cfg(feature = "cuda")]
+const GUEST_PC_ROOT_MATERIALIZATION_SUPPORTED_INPUT_BYTE_LIMIT: usize = 2 * 1024 * 1024 * 1024;
+#[cfg(feature = "cuda")]
+const GUEST_PC_ROOT_MATERIALIZATION_DEFAULT_SMALL_INPUT_WINDOW: usize = 24;
+#[cfg(feature = "cuda")]
+const GUEST_PC_ROOT_MATERIALIZATION_DEFAULT_LARGE_INPUT_WINDOW: usize = 4;
+#[cfg(feature = "cuda")]
+const GUEST_PC_DESCRIPTOR_RETENTION_DEFAULT_INPUT_BYTE_LIMIT: usize =
+    GUEST_PC_SMALL_INPUT_BYTE_LIMIT;
+
+#[cfg(feature = "cuda")]
 fn guest_pc_cross_segment_root_materialization_enabled() -> bool {
     !matches!(
         std::env::var("LZVM_CUDA_GUEST_PC_CROSS_SEGMENT_ROOTS").as_deref(),
@@ -5653,20 +5665,30 @@ fn guest_pc_cross_segment_root_materialization_enabled() -> bool {
 }
 
 #[cfg(feature = "cuda")]
-fn guest_pc_cross_segment_root_materialization_window() -> usize {
+fn guest_pc_cross_segment_root_materialization_default_window(input_byte_count: usize) -> usize {
+    if input_byte_count < GUEST_PC_SMALL_INPUT_BYTE_LIMIT {
+        GUEST_PC_ROOT_MATERIALIZATION_DEFAULT_SMALL_INPUT_WINDOW
+    } else {
+        GUEST_PC_ROOT_MATERIALIZATION_DEFAULT_LARGE_INPUT_WINDOW
+    }
+}
+
+#[cfg(feature = "cuda")]
+fn guest_pc_cross_segment_root_materialization_window(input_byte_count: usize) -> usize {
     std::env::var("LZVM_CUDA_GUEST_PC_CROSS_SEGMENT_ROOT_WINDOW")
         .ok()
         .and_then(|value| value.parse::<usize>().ok())
         .filter(|window| *window > 0)
-        .unwrap_or(24)
+        .unwrap_or_else(|| {
+            guest_pc_cross_segment_root_materialization_default_window(input_byte_count)
+        })
 }
 
 #[cfg(feature = "cuda")]
 fn guest_pc_cross_segment_root_materialization_supported_for_input(
     input_byte_count: usize,
 ) -> bool {
-    const SUPPORTED_INPUT_BYTE_LIMIT: usize = 8 * 1024 * 1024;
-    input_byte_count < SUPPORTED_INPUT_BYTE_LIMIT
+    input_byte_count < GUEST_PC_ROOT_MATERIALIZATION_SUPPORTED_INPUT_BYTE_LIMIT
 }
 
 fn guest_pc_cross_segment_root_materialization_selected(input_byte_count: usize) -> bool {
@@ -5683,6 +5705,13 @@ fn guest_pc_cross_segment_root_materialization_selected(input_byte_count: usize)
 }
 
 #[cfg(feature = "cuda")]
+fn guest_pc_descriptor_buffer_retention_default_supported_for_input(
+    input_byte_count: usize,
+) -> bool {
+    input_byte_count < GUEST_PC_DESCRIPTOR_RETENTION_DEFAULT_INPUT_BYTE_LIMIT
+}
+
+#[cfg(feature = "cuda")]
 fn guest_pc_descriptor_buffer_retention_enabled(input_byte_count: usize) -> bool {
     match std::env::var("LZVM_CUDA_RETAINED_DESCRIPTOR_BYTES") {
         Ok(value) => {
@@ -5696,7 +5725,9 @@ fn guest_pc_descriptor_buffer_retention_enabled(input_byte_count: usize) -> bool
         }
         Err(_) => {
             !guest_pc_parallel_lower_enabled_for_descriptor_retention()
-                && guest_pc_cross_segment_root_materialization_supported_for_input(input_byte_count)
+                && guest_pc_descriptor_buffer_retention_default_supported_for_input(
+                    input_byte_count,
+                )
         }
     }
 }
@@ -8582,7 +8613,17 @@ mod tests {
         assert!(enabled_mode.cross_segment_root_materialization);
         assert_eq!(enabled_mode.pending_root_materialization_window, 7);
 
-        let unsupported_mode = GuestPcTraceSegmentCommitMode::from_input(8 * 1024 * 1024, None);
+        window_env.unset();
+        let small_default_mode = GuestPcTraceSegmentCommitMode::from_input(1024, None);
+        assert!(small_default_mode.cross_segment_root_materialization);
+        assert_eq!(small_default_mode.pending_root_materialization_window, 24);
+
+        let large_default_mode = GuestPcTraceSegmentCommitMode::from_input(8 * 1024 * 1024, None);
+        assert!(large_default_mode.cross_segment_root_materialization);
+        assert_eq!(large_default_mode.pending_root_materialization_window, 4);
+
+        let unsupported_mode =
+            GuestPcTraceSegmentCommitMode::from_input(2 * 1024 * 1024 * 1024, None);
         assert!(!unsupported_mode.cross_segment_root_materialization);
         assert_eq!(unsupported_mode.pending_root_materialization_window, 1);
     }

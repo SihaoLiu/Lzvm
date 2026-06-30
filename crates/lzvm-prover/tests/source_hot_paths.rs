@@ -3910,8 +3910,12 @@ fn guest_pc_segment_commit_can_gate_cross_segment_pending_roots() {
     );
     assert!(
         window_body.contains("LZVM_CUDA_GUEST_PC_CROSS_SEGMENT_ROOT_WINDOW")
-            && window_body.contains("unwrap_or(24)"),
-        "cross-segment root batching should expose a conservative default window"
+            && window_body.contains("guest_pc_cross_segment_root_materialization_default_window")
+            && execution_source
+                .contains("GUEST_PC_ROOT_MATERIALIZATION_DEFAULT_SMALL_INPUT_WINDOW")
+            && execution_source
+                .contains("GUEST_PC_ROOT_MATERIALIZATION_DEFAULT_LARGE_INPUT_WINDOW"),
+        "cross-segment root batching should expose conservative input-sized default windows"
     );
 
     let segment_result_body = function_body(
@@ -6494,8 +6498,9 @@ fn guest_pc_descriptor_buffer_retention_defaults_to_small_inputs_only() {
     assert!(
         gate_body.contains("LZVM_CUDA_RETAINED_DESCRIPTOR_BYTES")
             && gate_body.contains("guest_pc_parallel_lower_enabled_for_descriptor_retention()")
-            && gate_body.contains(
-                "guest_pc_cross_segment_root_materialization_supported_for_input(input_byte_count)"
+            && compact_source_contains(
+                gate_body,
+                "guest_pc_descriptor_buffer_retention_default_supported_for_input(input_byte_count,)"
             ),
         "descriptor buffer retention should default to the small-input policy while allowing an explicit env override"
     );

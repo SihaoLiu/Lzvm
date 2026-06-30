@@ -2539,7 +2539,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
                 "guest_pc_cross_segment_root_materialization_supported_for_input(input_byte_count)"
             )
             && witness_execution_source.contains(
-                "const SUPPORTED_INPUT_BYTE_LIMIT: usize = 8 * 1024 * 1024"
+                "const GUEST_PC_ROOT_MATERIALIZATION_SUPPORTED_INPUT_BYTE_LIMIT: usize = 2 * 1024 * 1024 * 1024"
             ),
         "Lean auxiliary checks should bind cross-segment root materialization to the Rust runtime guard and input-size limit"
     );

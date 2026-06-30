@@ -858,7 +858,7 @@ deriving DecidableEq, Repr
 
 def GuestPcTraceCrossSegmentRootMaterializationDecisionMatches
     (config : GuestPcTraceCrossSegmentRootMaterializationConfig) : Prop :=
-  config.supportedInputByteLimit = 8 * 1024 * 1024
+  config.supportedInputByteLimit = 2 * 1024 * 1024 * 1024
     /\ match config.configuredCrossSegmentRootMaterialization with
       | some configured =>
           config.effectiveCrossSegmentRootMaterialization =
