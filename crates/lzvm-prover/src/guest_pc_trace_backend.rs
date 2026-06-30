@@ -12265,6 +12265,7 @@ fn build_layout_zisk_main_trace_segment(
         main_device_trace_descriptors(layout, &columns, terminal_pc, segment);
     let mut state = initial_state.clone();
     let mut output_row = 0_usize;
+    let mut unit_value_summary = ZiskMainSegmentUnitValueSummary::new();
     let timing_enabled = timing.is_some();
     let detail_timing = timing_enabled && guest_pc_trace_lower_detail_timing_enabled();
     let shape_timing = timing_enabled && guest_pc_trace_shape_timing_enabled();
@@ -12325,6 +12326,7 @@ fn build_layout_zisk_main_trace_segment(
                 );
             }
         }
+        unit_value_summary.push_report(report);
         output_row = output_row.checked_add(written_rows).ok_or_else(|| {
             GuestPcTraceBackendError::InvalidPcTraceLayout {
                 message: "Zisk Main row index overflow".to_owned(),
@@ -12358,7 +12360,7 @@ fn build_layout_zisk_main_trace_segment(
                 output_len: usize::MAX,
             })?;
     let continuation_state = zisk_main_continuation_state(layout.row_count(), &state, segment)?;
-    let unit_values = ZiskMainSegmentUnitValueSummary::from_reports(reports).unit_values(
+    let unit_values = unit_value_summary.unit_values(
         layout.row_count(),
         output_row,
         terminal_pc,
@@ -12429,14 +12431,6 @@ struct ZiskMainSegmentUnitValueSummary {
 impl ZiskMainSegmentUnitValueSummary {
     fn new() -> Self {
         Self::default()
-    }
-
-    fn from_reports(reports: &[GuestMachineReport]) -> Self {
-        let mut summary = Self::new();
-        for report in reports {
-            summary.push_report(report);
-        }
-        summary
     }
 
     fn push_report(&mut self, report: &GuestMachineReport) {
