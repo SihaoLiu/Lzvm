@@ -3089,6 +3089,12 @@ fn guest_pc_trace_device_material_skips_redundant_row_column_validation() {
         "device material lowering should not recompute the validation context per report"
     );
     assert!(
+        builder_impl_body.contains("trace_report_count += self.report_count")
+            && !push_report_body.contains("trace_report_count += 1")
+            && !push_report_body.contains("trace_report_row_count += written_rows"),
+        "device material lowering should aggregate report timing counts per segment"
+    );
+    assert!(
         device_material_body.contains("for report in reports")
             && device_material_body.contains("feeder.push_report")
             && device_material_body.contains("feeder.finish"),
@@ -3124,6 +3130,12 @@ fn guest_pc_trace_device_material_skips_redundant_row_column_validation() {
         host_segment_body.contains("unit_value_summary.push_report(report)")
             && !host_segment_body.contains("from_reports(reports)"),
         "host trace lowering should update unit-value summary during the report pass"
+    );
+    assert!(
+        host_segment_body.contains("trace_report_count += reports.len()")
+            && !host_segment_body.contains("trace_report_count += 1")
+            && !host_segment_body.contains("trace_report_row_count += written_rows"),
+        "host trace lowering should aggregate report timing counts per segment"
     );
     assert!(
         host_write_body.contains("context: &mut ZiskMainReportValidationContext")

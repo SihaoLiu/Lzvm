@@ -9663,6 +9663,7 @@ struct ZiskMainStreamingDeviceSegmentBuilder {
     device_trace_descriptors: ZiskMainDeviceTraceDescriptors,
     state: ZiskMainTraceState,
     output_row: usize,
+    report_count: usize,
 }
 
 #[cfg(feature = "cuda")]
@@ -9855,6 +9856,7 @@ impl ZiskMainStreamingDeviceSegmentBuilder {
             device_trace_descriptors,
             state: initial_state.clone(),
             output_row: 0,
+            report_count: 0,
         }))
     }
 
@@ -9922,24 +9924,23 @@ impl ZiskMainStreamingDeviceSegmentBuilder {
         if let (Some(timing), Some(started)) = (timing.as_deref_mut(), unit_summary_started) {
             timing.trace_unit_summary_duration += started.elapsed();
         }
-        if let Some(timing) = timing {
-            timing.trace_report_count += 1;
-            timing.trace_report_row_count += written_rows;
-            timing.trace_descriptor_row_count += written_rows;
-            if timing_config.shape_timing {
-                record_trace_report_shape(timing, report, pending_report, written_rows);
-            }
-            if let Some(started) = report_started {
-                timing.trace_report_detail_sample_count += 1;
-                let duration = started.elapsed();
-                timing.trace_report_sample_duration += duration;
-                record_trace_report_duration(
-                    timing,
-                    report,
-                    pending_report,
-                    written_rows,
-                    duration,
-                );
+        if timing_config.shape_timing || report_started.is_some() {
+            if let Some(timing) = timing {
+                if timing_config.shape_timing {
+                    record_trace_report_shape(timing, report, pending_report, written_rows);
+                }
+                if let Some(started) = report_started {
+                    timing.trace_report_detail_sample_count += 1;
+                    let duration = started.elapsed();
+                    timing.trace_report_sample_duration += duration;
+                    record_trace_report_duration(
+                        timing,
+                        report,
+                        pending_report,
+                        written_rows,
+                        duration,
+                    );
+                }
             }
         }
         self.output_row = self.output_row.checked_add(written_rows).ok_or_else(|| {
@@ -9947,6 +9948,7 @@ impl ZiskMainStreamingDeviceSegmentBuilder {
                 message: "Zisk Main row index overflow".to_owned(),
             }
         })?;
+        self.report_count += 1;
         Ok(written_rows)
     }
 
@@ -9956,6 +9958,11 @@ impl ZiskMainStreamingDeviceSegmentBuilder {
         mut timing: Option<&mut GuestPcTraceStreamTiming>,
     ) -> Result<GuestPcTraceDeviceSegmentBuild, GuestPcTraceBackendError> {
         self.device_trace_descriptors.terminal_pc = terminal_pc;
+        if let Some(timing) = timing.as_deref_mut() {
+            timing.trace_report_count += self.report_count;
+            timing.trace_report_row_count += self.output_row;
+            timing.trace_descriptor_row_count += self.output_row;
+        }
         record_trace_descriptor_width_counts(&mut timing, &self.device_trace_descriptors);
         if self.output_row < self.row_count {
             if !self.segment.is_last_segment {
@@ -12307,23 +12314,23 @@ fn build_layout_zisk_main_trace_segment(
             report_detail_timing,
             shape_timing,
         )?;
-        if let Some(timing) = timing.as_deref_mut() {
-            timing.trace_report_count += 1;
-            timing.trace_report_row_count += written_rows;
-            if shape_timing {
-                record_trace_report_shape(timing, report, pending_report, written_rows);
-            }
-            if let Some(started) = report_started {
-                timing.trace_report_detail_sample_count += 1;
-                let duration = started.elapsed();
-                timing.trace_report_sample_duration += duration;
-                record_trace_report_duration(
-                    timing,
-                    report,
-                    pending_report,
-                    written_rows,
-                    duration,
-                );
+        if shape_timing || report_started.is_some() {
+            if let Some(timing) = timing.as_deref_mut() {
+                if shape_timing {
+                    record_trace_report_shape(timing, report, pending_report, written_rows);
+                }
+                if let Some(started) = report_started {
+                    timing.trace_report_detail_sample_count += 1;
+                    let duration = started.elapsed();
+                    timing.trace_report_sample_duration += duration;
+                    record_trace_report_duration(
+                        timing,
+                        report,
+                        pending_report,
+                        written_rows,
+                        duration,
+                    );
+                }
             }
         }
         unit_value_summary.push_report(report);
@@ -12334,6 +12341,14 @@ fn build_layout_zisk_main_trace_segment(
         })?;
     }
     record_aggregate_trace_report_duration(&mut timing, aggregate_report_started);
+    if let Some(timing) = timing.as_deref_mut() {
+        timing.trace_report_count += reports.len();
+        timing.trace_report_row_count += output_row;
+        #[cfg(feature = "cuda")]
+        if device_trace_descriptors.is_some() {
+            timing.trace_descriptor_row_count += output_row;
+        }
+    }
     #[cfg(feature = "cuda")]
     if let Some(descriptors) = device_trace_descriptors.as_ref() {
         record_trace_descriptor_width_counts(&mut timing, descriptors);
@@ -12575,14 +12590,6 @@ fn write_zisk_main_report_columns(
             write_zisk_main_row_columns(builder, output_row, values, columns)
         },
     )
-    .inspect(|_written_rows| {
-        #[cfg(feature = "cuda")]
-        if let Some(timing) = timing.as_mut() {
-            if device_trace_descriptors.is_some() {
-                timing.trace_descriptor_row_count += *_written_rows;
-            }
-        }
-    })
 }
 
 fn write_zisk_main_row_columns(
