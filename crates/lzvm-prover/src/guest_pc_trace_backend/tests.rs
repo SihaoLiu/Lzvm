@@ -6068,6 +6068,198 @@ fn sign_extend_indirect_register_store_fast_path_preserves_row_effects() {
 }
 
 #[test]
+fn no_memory_external_fast_path_parts_match_generic_lowering() {
+    let report = GuestMachineReport {
+        address: 0x8000_0000,
+        instruction_byte_len: 4,
+        instruction: RiscvInstruction::OpImm {
+            kind: RiscvOpImmKind::Ori,
+            rd: 3,
+            rs1: 2,
+            immediate: 0xff,
+        },
+        next_pc: 0x8000_0004,
+        register_writes: vec![GuestRegisterWrite {
+            index: 3,
+            value: 0x1ff,
+        }]
+        .into(),
+        memory_accesses: vec![].into(),
+        precompile_effects: None,
+    };
+    let instruction = lower_guest_report(&report).expect("generic lowering should succeed");
+
+    assert_eq!(
+        no_memory_external_fast_path_parts(
+            &instruction,
+            ZiskMainReportEffects::from_report(&report)
+        ),
+        Some(ZiskMainNoMemoryFastPathParts {
+            a_index: Some(2),
+            b_index: None,
+            store_index: Some(3),
+        })
+    );
+}
+
+#[test]
+fn no_memory_external_register_store_fast_path_preserves_row_effects() {
+    let writes = [GuestRegisterWrite {
+        index: 3,
+        value: 0x1ff,
+    }];
+    let effects = ZiskMainReportEffects {
+        register_writes: &writes,
+        memory_accesses: &[],
+        precompile_memory_accesses: &[],
+        precompile_result: None,
+    };
+    let instruction = ZiskMainInstruction {
+        pc: 0x8000_0000,
+        a: ZiskMainSource::Register(2),
+        b: ZiskMainSource::Immediate(0xff),
+        op: ZiskMainOp::Or,
+        store: ZiskMainStore::Register(3),
+        store_pc: false,
+        set_pc: false,
+        jmp_offset1: 4,
+        jmp_offset2: 4,
+        ind_width: 0,
+        m32: false,
+        is_external_op: true,
+        is_precompiled: false,
+    };
+    let mut state = ZiskMainTraceState::new();
+    state.registers[2] = 0x100;
+    state.registers[3] = 0x77;
+    state.register_mem_steps[2] = 33;
+    state.register_mem_steps[3] = 44;
+    let mut context = ZiskMainReportValidationContext::new(
+        None,
+        16,
+        ZiskMainTraceSegmentInfo {
+            trace_instance_index: 0,
+            is_last_segment: false,
+            previous_c: 0,
+        },
+    )
+    .expect("context should initialize");
+    let mut visited = None;
+    apply_no_memory_external_fast_path(
+        3,
+        instruction,
+        effects,
+        0x8000_0004,
+        ZiskMainNoMemoryFastPathParts {
+            a_index: Some(2),
+            b_index: None,
+            store_index: Some(3),
+        },
+        &mut state,
+        &mut context,
+        &mut |row, values, timing| {
+            assert_eq!(row, 3);
+            assert!(timing.is_none());
+            visited = Some(values);
+            Ok(())
+        },
+    )
+    .expect("no-memory register-store row should take fast path");
+
+    assert_eq!(state.registers[3], 0x1ff);
+    assert_eq!(state.last_c, 0x1ff);
+    assert_eq!(state.next_pc, 0x8000_0004);
+    assert_eq!(state.register_mem_steps[2], 13);
+    assert_eq!(state.register_mem_steps[3], 15);
+    let values = visited.expect("fast path should emit row values");
+    assert_eq!(values.a, 0x100);
+    assert_eq!(values.b, 0xff);
+    assert_eq!(values.c, 0x1ff);
+    assert!(!values.flag);
+    assert_eq!(values.register_accesses.a_prev_mem_step, Some(33));
+    assert_eq!(values.register_accesses.b_prev_mem_step, None);
+    assert_eq!(values.register_accesses.store_prev_mem_step, Some(44));
+    assert_eq!(values.register_accesses.store_prev_value, Some(0x77));
+}
+
+#[test]
+fn no_memory_external_no_store_fast_path_preserves_source_steps() {
+    let effects = ZiskMainReportEffects {
+        register_writes: &[],
+        memory_accesses: &[],
+        precompile_memory_accesses: &[],
+        precompile_result: None,
+    };
+    let instruction = ZiskMainInstruction {
+        pc: 0x8000_0000,
+        a: ZiskMainSource::Register(2),
+        b: ZiskMainSource::Register(3),
+        op: ZiskMainOp::Sub,
+        store: ZiskMainStore::None,
+        store_pc: false,
+        set_pc: false,
+        jmp_offset1: 4,
+        jmp_offset2: 4,
+        ind_width: 0,
+        m32: false,
+        is_external_op: true,
+        is_precompiled: false,
+    };
+    let mut state = ZiskMainTraceState::new();
+    state.registers[2] = 9;
+    state.registers[3] = 4;
+    state.register_mem_steps[2] = 33;
+    state.register_mem_steps[3] = 44;
+    let mut context = ZiskMainReportValidationContext::new(
+        None,
+        16,
+        ZiskMainTraceSegmentInfo {
+            trace_instance_index: 0,
+            is_last_segment: false,
+            previous_c: 0,
+        },
+    )
+    .expect("context should initialize");
+    let mut visited = None;
+    apply_no_memory_external_fast_path(
+        3,
+        instruction,
+        effects,
+        0x8000_0004,
+        ZiskMainNoMemoryFastPathParts {
+            a_index: Some(2),
+            b_index: Some(3),
+            store_index: None,
+        },
+        &mut state,
+        &mut context,
+        &mut |row, values, timing| {
+            assert_eq!(row, 3);
+            assert!(timing.is_none());
+            visited = Some(values);
+            Ok(())
+        },
+    )
+    .expect("no-memory no-store row should take fast path");
+
+    assert_eq!(state.registers[2], 9);
+    assert_eq!(state.registers[3], 4);
+    assert_eq!(state.last_c, 5);
+    assert_eq!(state.next_pc, 0x8000_0004);
+    assert_eq!(state.register_mem_steps[2], 13);
+    assert_eq!(state.register_mem_steps[3], 14);
+    let values = visited.expect("fast path should emit row values");
+    assert_eq!(values.a, 9);
+    assert_eq!(values.b, 4);
+    assert_eq!(values.c, 5);
+    assert!(!values.flag);
+    assert_eq!(values.register_accesses.a_prev_mem_step, Some(33));
+    assert_eq!(values.register_accesses.b_prev_mem_step, Some(44));
+    assert_eq!(values.register_accesses.store_prev_mem_step, None);
+    assert_eq!(values.register_accesses.store_prev_value, None);
+}
+
+#[test]
 fn copy_indirect_register_store_fast_path_preserves_row_effects() {
     let accesses = [memory_read(0x108, 0xaa55)];
     let writes = [GuestRegisterWrite {
