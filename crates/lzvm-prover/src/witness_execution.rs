@@ -463,10 +463,14 @@ pub struct ProveWitnessGuestPcTraceTiming {
     guest_trace_runner_detail_sample_count: usize,
     guest_trace_runner_detail_duration: Duration,
     guest_trace_runner_prepare_instruction_duration: Duration,
+    guest_trace_runner_pre_boundary_duration: Duration,
     guest_trace_runner_row_plan_duration: Duration,
+    guest_trace_runner_cache_policy_duration: Duration,
     guest_trace_runner_advance_duration: Duration,
     guest_trace_runner_cache_update_duration: Duration,
     guest_trace_runner_row_count_duration: Duration,
+    guest_trace_runner_post_boundary_duration: Duration,
+    guest_trace_runner_counter_update_duration: Duration,
     guest_trace_lowerer_duration: Duration,
     guest_trace_lower_duration: Duration,
     guest_trace_report_duration: Duration,
@@ -819,10 +823,16 @@ impl ProveWitnessGuestPcTraceTiming {
             guest_trace_runner_detail_duration: stream_timing.runner_detail_duration(),
             guest_trace_runner_prepare_instruction_duration: stream_timing
                 .runner_prepare_instruction_duration(),
+            guest_trace_runner_pre_boundary_duration: stream_timing.runner_pre_boundary_duration(),
             guest_trace_runner_row_plan_duration: stream_timing.runner_row_plan_duration(),
+            guest_trace_runner_cache_policy_duration: stream_timing.runner_cache_policy_duration(),
             guest_trace_runner_advance_duration: stream_timing.runner_advance_duration(),
             guest_trace_runner_cache_update_duration: stream_timing.runner_cache_update_duration(),
             guest_trace_runner_row_count_duration: stream_timing.runner_row_count_duration(),
+            guest_trace_runner_post_boundary_duration: stream_timing
+                .runner_post_boundary_duration(),
+            guest_trace_runner_counter_update_duration: stream_timing
+                .runner_counter_update_duration(),
             guest_trace_lowerer_duration: stream_timing.lowerer_duration(),
             guest_trace_lower_duration: stream_timing.trace_lower_duration(),
             guest_trace_report_duration: stream_timing.trace_report_duration(),
@@ -1326,8 +1336,16 @@ impl ProveWitnessGuestPcTraceTiming {
         self.guest_trace_runner_prepare_instruction_duration
     }
 
+    pub fn guest_trace_runner_pre_boundary_duration(&self) -> Duration {
+        self.guest_trace_runner_pre_boundary_duration
+    }
+
     pub fn guest_trace_runner_row_plan_duration(&self) -> Duration {
         self.guest_trace_runner_row_plan_duration
+    }
+
+    pub fn guest_trace_runner_cache_policy_duration(&self) -> Duration {
+        self.guest_trace_runner_cache_policy_duration
     }
 
     pub fn guest_trace_runner_advance_duration(&self) -> Duration {
@@ -1340,6 +1358,14 @@ impl ProveWitnessGuestPcTraceTiming {
 
     pub fn guest_trace_runner_row_count_duration(&self) -> Duration {
         self.guest_trace_runner_row_count_duration
+    }
+
+    pub fn guest_trace_runner_post_boundary_duration(&self) -> Duration {
+        self.guest_trace_runner_post_boundary_duration
+    }
+
+    pub fn guest_trace_runner_counter_update_duration(&self) -> Duration {
+        self.guest_trace_runner_counter_update_duration
     }
 
     pub fn guest_trace_lowerer_duration(&self) -> Duration {

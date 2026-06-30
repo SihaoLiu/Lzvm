@@ -37,12 +37,24 @@ RUNNER_DETAIL_SAMPLED_NS_KEY = "timing_guest_trace_runner_detail_sampled_ns"
 RUNNER_PREPARE_INSTRUCTION_SAMPLED_NS_KEY = (
     "timing_guest_trace_runner_prepare_instruction_sampled_ns"
 )
+RUNNER_PRE_BOUNDARY_SAMPLED_NS_KEY = (
+    "timing_guest_trace_runner_pre_boundary_sampled_ns"
+)
 RUNNER_ROW_PLAN_SAMPLED_NS_KEY = "timing_guest_trace_runner_row_plan_sampled_ns"
+RUNNER_CACHE_POLICY_SAMPLED_NS_KEY = (
+    "timing_guest_trace_runner_cache_policy_sampled_ns"
+)
 RUNNER_ADVANCE_SAMPLED_NS_KEY = "timing_guest_trace_runner_advance_sampled_ns"
 RUNNER_CACHE_UPDATE_SAMPLED_NS_KEY = (
     "timing_guest_trace_runner_cache_update_sampled_ns"
 )
 RUNNER_ROW_COUNT_SAMPLED_NS_KEY = "timing_guest_trace_runner_row_count_sampled_ns"
+RUNNER_POST_BOUNDARY_SAMPLED_NS_KEY = (
+    "timing_guest_trace_runner_post_boundary_sampled_ns"
+)
+RUNNER_COUNTER_UPDATE_SAMPLED_NS_KEY = (
+    "timing_guest_trace_runner_counter_update_sampled_ns"
+)
 LOWERER_MS_KEY = "timing_guest_trace_lowerer_ms"
 TRACE_LOWER_MS_KEY = "timing_guest_trace_lower_ms"
 TRACE_REPORT_MS_KEY = "timing_guest_trace_report_ms"
@@ -800,8 +812,10 @@ HEADER = (
     "constant_material_validation_join_wait_ms,constant_material_validation_overlap_hint,"
     "runner_ms,trace_runner_detail_samples,trace_runner_detail_sample_pct,"
     "trace_runner_detail_avg_ns,trace_runner_prepare_instruction_sampled_ns,"
-    "trace_runner_row_plan_sampled_ns,trace_runner_advance_sampled_ns,"
+    "trace_runner_pre_boundary_sampled_ns,trace_runner_row_plan_sampled_ns,"
+    "trace_runner_cache_policy_sampled_ns,trace_runner_advance_sampled_ns,"
     "trace_runner_cache_update_sampled_ns,trace_runner_row_count_sampled_ns,"
+    "trace_runner_post_boundary_sampled_ns,trace_runner_counter_update_sampled_ns,"
     "trace_runner_detail_hotspot,trace_runner_detail_hotspot_pct,"
     "trace_runner_detail_residual_pct,trace_runner_detail_action_hint,"
     "lowerer_ms,trace_lower_ms,trace_report_ms,"
@@ -1141,10 +1155,14 @@ TIMING_KEYS = {
     RUNNER_DETAIL_SAMPLES_KEY,
     RUNNER_DETAIL_SAMPLED_NS_KEY,
     RUNNER_PREPARE_INSTRUCTION_SAMPLED_NS_KEY,
+    RUNNER_PRE_BOUNDARY_SAMPLED_NS_KEY,
     RUNNER_ROW_PLAN_SAMPLED_NS_KEY,
+    RUNNER_CACHE_POLICY_SAMPLED_NS_KEY,
     RUNNER_ADVANCE_SAMPLED_NS_KEY,
     RUNNER_CACHE_UPDATE_SAMPLED_NS_KEY,
     RUNNER_ROW_COUNT_SAMPLED_NS_KEY,
+    RUNNER_POST_BOUNDARY_SAMPLED_NS_KEY,
+    RUNNER_COUNTER_UPDATE_SAMPLED_NS_KEY,
     LOWERER_MS_KEY,
     TRACE_LOWER_MS_KEY,
     TRACE_REPORT_MS_KEY,
@@ -3814,10 +3832,14 @@ def row_validation_hotspot_keys(values: dict[str, int]) -> list[tuple[str, str]]
 
 RUNNER_DETAIL_HOTSPOT_KEYS = [
     ("prepare_instruction", RUNNER_PREPARE_INSTRUCTION_SAMPLED_NS_KEY),
+    ("pre_boundary", RUNNER_PRE_BOUNDARY_SAMPLED_NS_KEY),
     ("row_plan", RUNNER_ROW_PLAN_SAMPLED_NS_KEY),
+    ("cache_policy", RUNNER_CACHE_POLICY_SAMPLED_NS_KEY),
     ("advance", RUNNER_ADVANCE_SAMPLED_NS_KEY),
     ("cache_update", RUNNER_CACHE_UPDATE_SAMPLED_NS_KEY),
     ("row_count", RUNNER_ROW_COUNT_SAMPLED_NS_KEY),
+    ("post_boundary", RUNNER_POST_BOUNDARY_SAMPLED_NS_KEY),
+    ("counter_update", RUNNER_COUNTER_UPDATE_SAMPLED_NS_KEY),
 ]
 
 
@@ -3850,11 +3872,15 @@ def trace_runner_detail_action_hint(
         return "profile_runner_unattributed_work"
     if hotspot_name == "prepare_instruction" and hotspot_pct > 0.0:
         return "profile_instruction_cache_prepare"
+    if hotspot_name in {"pre_boundary", "post_boundary"} and hotspot_pct > 0.0:
+        return "profile_runner_boundary_snapshot"
+    if hotspot_name == "cache_policy" and hotspot_pct > 0.0:
+        return "profile_runner_cache_policy"
     if hotspot_name == "advance" and hotspot_pct > 0.0:
         return "profile_guest_machine_advance"
     if hotspot_name == "cache_update" and hotspot_pct > 0.0:
         return "profile_instruction_cache_invalidation"
-    if hotspot_name in {"row_plan", "row_count"} and hotspot_pct > 0.0:
+    if hotspot_name in {"row_plan", "row_count", "counter_update"} and hotspot_pct > 0.0:
         return "profile_runner_row_accounting"
     return "runner_detail_balanced"
 
@@ -4262,12 +4288,18 @@ def summarize_profile_values(
     trace_runner_prepare_instruction_sampled_ns = values.get(
         RUNNER_PREPARE_INSTRUCTION_SAMPLED_NS_KEY, 0
     )
+    trace_runner_pre_boundary_sampled_ns = values.get(RUNNER_PRE_BOUNDARY_SAMPLED_NS_KEY, 0)
     trace_runner_row_plan_sampled_ns = values.get(RUNNER_ROW_PLAN_SAMPLED_NS_KEY, 0)
+    trace_runner_cache_policy_sampled_ns = values.get(RUNNER_CACHE_POLICY_SAMPLED_NS_KEY, 0)
     trace_runner_advance_sampled_ns = values.get(RUNNER_ADVANCE_SAMPLED_NS_KEY, 0)
     trace_runner_cache_update_sampled_ns = values.get(
         RUNNER_CACHE_UPDATE_SAMPLED_NS_KEY, 0
     )
     trace_runner_row_count_sampled_ns = values.get(RUNNER_ROW_COUNT_SAMPLED_NS_KEY, 0)
+    trace_runner_post_boundary_sampled_ns = values.get(RUNNER_POST_BOUNDARY_SAMPLED_NS_KEY, 0)
+    trace_runner_counter_update_sampled_ns = values.get(
+        RUNNER_COUNTER_UPDATE_SAMPLED_NS_KEY, 0
+    )
     (
         trace_runner_detail_avg_ns,
         trace_runner_detail_hotspot_name,
@@ -5753,10 +5785,14 @@ def summarize_profile_values(
         f"{trace_runner_detail_samples},{trace_runner_detail_sample_pct:.3f},"
         f"{trace_runner_detail_avg_ns},"
         f"{trace_runner_prepare_instruction_sampled_ns},"
+        f"{trace_runner_pre_boundary_sampled_ns},"
         f"{trace_runner_row_plan_sampled_ns},"
+        f"{trace_runner_cache_policy_sampled_ns},"
         f"{trace_runner_advance_sampled_ns},"
         f"{trace_runner_cache_update_sampled_ns},"
         f"{trace_runner_row_count_sampled_ns},"
+        f"{trace_runner_post_boundary_sampled_ns},"
+        f"{trace_runner_counter_update_sampled_ns},"
         f"{csv_cell(trace_runner_detail_hotspot_name)},"
         f"{trace_runner_detail_hotspot_pct:.3f},"
         f"{trace_runner_detail_residual_pct:.3f},"

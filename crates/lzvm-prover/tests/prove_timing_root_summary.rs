@@ -8618,10 +8618,14 @@ fn prove_timing_root_summary_reports_runner_detail_hotspot() {
         "timing_guest_trace_runner_detail_samples=10",
         "timing_guest_trace_runner_detail_sampled_ns=1000000",
         "timing_guest_trace_runner_prepare_instruction_sampled_ns=100000",
+        "timing_guest_trace_runner_pre_boundary_sampled_ns=40000",
         "timing_guest_trace_runner_row_plan_sampled_ns=100000",
-        "timing_guest_trace_runner_advance_sampled_ns=650000",
+        "timing_guest_trace_runner_cache_policy_sampled_ns=30000",
+        "timing_guest_trace_runner_advance_sampled_ns=500000",
         "timing_guest_trace_runner_cache_update_sampled_ns=50000",
         "timing_guest_trace_runner_row_count_sampled_ns=50000",
+        "timing_guest_trace_runner_post_boundary_sampled_ns=60000",
+        "timing_guest_trace_runner_counter_update_sampled_ns=20000",
     ]
     .join("\n");
 
@@ -8665,8 +8669,20 @@ fn prove_timing_root_summary_reports_runner_detail_hotspot() {
     assert_eq!(value("trace_runner_detail_samples"), "10");
     assert_eq!(value("trace_runner_detail_sample_pct"), "1.000");
     assert_eq!(value("trace_runner_detail_avg_ns"), "100000");
+    assert_eq!(
+        value("trace_runner_prepare_instruction_sampled_ns"),
+        "100000"
+    );
+    assert_eq!(value("trace_runner_pre_boundary_sampled_ns"), "40000");
+    assert_eq!(value("trace_runner_row_plan_sampled_ns"), "100000");
+    assert_eq!(value("trace_runner_cache_policy_sampled_ns"), "30000");
+    assert_eq!(value("trace_runner_advance_sampled_ns"), "500000");
+    assert_eq!(value("trace_runner_cache_update_sampled_ns"), "50000");
+    assert_eq!(value("trace_runner_row_count_sampled_ns"), "50000");
+    assert_eq!(value("trace_runner_post_boundary_sampled_ns"), "60000");
+    assert_eq!(value("trace_runner_counter_update_sampled_ns"), "20000");
     assert_eq!(value("trace_runner_detail_hotspot"), "advance");
-    assert_eq!(value("trace_runner_detail_hotspot_pct"), "65.000");
+    assert_eq!(value("trace_runner_detail_hotspot_pct"), "50.000");
     assert_eq!(value("trace_runner_detail_residual_pct"), "5.000");
     assert_eq!(
         value("trace_runner_detail_action_hint"),

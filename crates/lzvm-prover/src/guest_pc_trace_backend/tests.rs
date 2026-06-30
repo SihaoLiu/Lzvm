@@ -222,6 +222,22 @@ fn guest_pc_trace_runner_detail_timing_ignores_unexecuted_row_fit_probe() {
         timing.runner_prepare_instruction_duration(),
         std::time::Duration::ZERO
     );
+    assert_eq!(
+        timing.runner_pre_boundary_duration(),
+        std::time::Duration::ZERO
+    );
+    assert_eq!(
+        timing.runner_cache_policy_duration(),
+        std::time::Duration::ZERO
+    );
+    assert_eq!(
+        timing.runner_post_boundary_duration(),
+        std::time::Duration::ZERO
+    );
+    assert_eq!(
+        timing.runner_counter_update_duration(),
+        std::time::Duration::ZERO
+    );
 }
 
 #[test]

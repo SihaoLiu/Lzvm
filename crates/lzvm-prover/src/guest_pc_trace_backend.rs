@@ -197,10 +197,14 @@ pub(crate) struct GuestPcTraceStreamTiming {
     runner_detail_sample_count: usize,
     runner_detail_duration: Duration,
     runner_prepare_instruction_duration: Duration,
+    runner_pre_boundary_duration: Duration,
     runner_row_plan_duration: Duration,
+    runner_cache_policy_duration: Duration,
     runner_advance_duration: Duration,
     runner_cache_update_duration: Duration,
     runner_row_count_duration: Duration,
+    runner_post_boundary_duration: Duration,
+    runner_counter_update_duration: Duration,
     lowerer_duration: Duration,
     trace_lower_duration: Duration,
     trace_report_duration: Duration,
@@ -348,10 +352,14 @@ impl GuestPcTraceStreamTiming {
         self.runner_detail_sample_count += other.runner_detail_sample_count;
         self.runner_detail_duration += other.runner_detail_duration;
         self.runner_prepare_instruction_duration += other.runner_prepare_instruction_duration;
+        self.runner_pre_boundary_duration += other.runner_pre_boundary_duration;
         self.runner_row_plan_duration += other.runner_row_plan_duration;
+        self.runner_cache_policy_duration += other.runner_cache_policy_duration;
         self.runner_advance_duration += other.runner_advance_duration;
         self.runner_cache_update_duration += other.runner_cache_update_duration;
         self.runner_row_count_duration += other.runner_row_count_duration;
+        self.runner_post_boundary_duration += other.runner_post_boundary_duration;
+        self.runner_counter_update_duration += other.runner_counter_update_duration;
         self.lowerer_duration += other.lowerer_duration;
         self.trace_lower_duration += other.trace_lower_duration;
         self.trace_report_duration += other.trace_report_duration;
@@ -572,8 +580,16 @@ impl GuestPcTraceStreamTiming {
         self.runner_prepare_instruction_duration
     }
 
+    pub fn runner_pre_boundary_duration(&self) -> Duration {
+        self.runner_pre_boundary_duration
+    }
+
     pub fn runner_row_plan_duration(&self) -> Duration {
         self.runner_row_plan_duration
+    }
+
+    pub fn runner_cache_policy_duration(&self) -> Duration {
+        self.runner_cache_policy_duration
     }
 
     pub fn runner_advance_duration(&self) -> Duration {
@@ -586,6 +602,14 @@ impl GuestPcTraceStreamTiming {
 
     pub fn runner_row_count_duration(&self) -> Duration {
         self.runner_row_count_duration
+    }
+
+    pub fn runner_post_boundary_duration(&self) -> Duration {
+        self.runner_post_boundary_duration
+    }
+
+    pub fn runner_counter_update_duration(&self) -> Duration {
+        self.runner_counter_update_duration
     }
 
     pub fn lowerer_duration(&self) -> Duration {
@@ -4280,6 +4304,7 @@ fn run_guest_pc_trace_segment_slice_inner<
             .map_err(GuestPcTraceBackendError::GuestRun)?;
         let prepare_duration = prepare_started.map(|started| started.elapsed());
         let current = prepared.instruction();
+        let pre_boundary_started = detail_duration_started(&timing, report_detail_timing);
         if TRACK_BOUNDARY {
             if let Some(snapshot) = boundary_snapshot.as_deref_mut() {
                 record_zisk_main_runner_pre_boundary_snapshot(
@@ -4291,6 +4316,7 @@ fn run_guest_pc_trace_segment_slice_inner<
                 )?;
             }
         }
+        let pre_boundary_duration = pre_boundary_started.map(|started| started.elapsed());
         if current == RiscvInstruction::Ecall {
             return Ok(finish_guest_pc_trace_segment_slice(
                 GuestPcTraceSegmentSliceFinish {
@@ -4353,10 +4379,17 @@ fn run_guest_pc_trace_segment_slice_inner<
         if let (Some(duration), Some(timing)) = (prepare_duration, timing.as_deref_mut()) {
             timing.runner_prepare_instruction_duration += duration;
         }
+        if let (Some(duration), Some(timing)) = (pre_boundary_duration, timing.as_deref_mut()) {
+            timing.runner_pre_boundary_duration += duration;
+        }
         record_detail_duration(row_plan_started, &mut timing, |timing| {
             &mut timing.runner_row_plan_duration
         });
+        let cache_policy_started = detail_duration_started(&timing, report_detail_timing);
         let clear_instruction_cache = instruction_clears_instruction_cache(state, current);
+        record_detail_duration(cache_policy_started, &mut timing, |timing| {
+            &mut timing.runner_cache_policy_duration
+        });
         let advance_started = detail_duration_started(&timing, report_detail_timing);
         let advanced = if RETAIN_REPORTS {
             reports.reserve(1);
@@ -4428,18 +4461,26 @@ fn run_guest_pc_trace_segment_slice_inner<
         });
         trace_rows = next_trace_rows;
         last_report_shape = Some(advanced.shape);
+        let post_boundary_started = detail_duration_started(&timing, report_detail_timing);
         if TRACK_BOUNDARY {
             if let Some(snapshot) = boundary_snapshot.as_deref_mut() {
                 snapshot.record_report_shape_state(advanced.shape);
                 record_zisk_main_runner_amo_scratch_snapshot(snapshot, &advanced.report)?;
             }
         }
+        record_detail_duration(post_boundary_started, &mut timing, |timing| {
+            &mut timing.runner_post_boundary_duration
+        });
+        let counter_update_started = detail_duration_started(&timing, report_detail_timing);
         report_count = report_count.checked_add(1).ok_or_else(|| {
             GuestPcTraceBackendError::InvalidPcTraceLayout {
                 message: "guest PC trace report count overflow".to_owned(),
             }
         })?;
         executed_instructions += 1;
+        record_detail_duration(counter_update_started, &mut timing, |timing| {
+            &mut timing.runner_counter_update_duration
+        });
         if report_detail_timing {
             record_detail_duration(report_detail_started, &mut timing, |timing| {
                 &mut timing.runner_detail_duration

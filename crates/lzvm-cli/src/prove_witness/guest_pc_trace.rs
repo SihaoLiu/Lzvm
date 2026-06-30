@@ -135,8 +135,16 @@ pub(super) fn record_guest_pc_trace_timing(
             timing.guest_trace_runner_prepare_instruction_duration(),
         ),
         (
+            "guest_trace_runner_pre_boundary",
+            timing.guest_trace_runner_pre_boundary_duration(),
+        ),
+        (
             "guest_trace_runner_row_plan",
             timing.guest_trace_runner_row_plan_duration(),
+        ),
+        (
+            "guest_trace_runner_cache_policy",
+            timing.guest_trace_runner_cache_policy_duration(),
         ),
         (
             "guest_trace_runner_advance",
@@ -149,6 +157,14 @@ pub(super) fn record_guest_pc_trace_timing(
         (
             "guest_trace_runner_row_count",
             timing.guest_trace_runner_row_count_duration(),
+        ),
+        (
+            "guest_trace_runner_post_boundary",
+            timing.guest_trace_runner_post_boundary_duration(),
+        ),
+        (
+            "guest_trace_runner_counter_update",
+            timing.guest_trace_runner_counter_update_duration(),
         ),
     ] {
         record_guest_trace_sampled_duration_counts(
