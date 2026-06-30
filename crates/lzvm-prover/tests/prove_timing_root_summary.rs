@@ -374,6 +374,69 @@ fn prove_timing_root_summary_reports_stream_chunk_process_time() {
 }
 
 #[test]
+fn prove_timing_root_summary_reports_device_source_timings() {
+    let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let script_path = crate_root.join("../../scripts/prove-timing-root-summary.py");
+    let dir = crate_root.join(format!(
+        "../../temp/prove-timing-device-source-{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("device source fixture dir should be created");
+    let log_path = dir.join("device-source.log");
+    let input = [
+        "timing_total_ms=1000",
+        "input_bytes=1024",
+        "timing_guest_device_source_build_ms=31",
+        "timing_guest_device_source_descriptor_upload_ms=29",
+        "timing_guest_device_source_trace_expand_ms=2",
+        "timing_guest_device_source_descriptor_upload_bytes=880",
+        "timing_guest_device_source_descriptor_upload_rows=10",
+        "timing_guest_stage_tree_commit_root_count=1",
+        "timing_guest_stage_tree_commit_root_materialization_groups=1",
+        "timing_guest_stage_tree_commit_root_materialization_max_group_size=1",
+    ]
+    .join("\n");
+    std::fs::write(&log_path, input).expect("device source fixture should be written");
+
+    let output = Command::new("python3")
+        .arg(&script_path)
+        .arg(&log_path)
+        .output()
+        .expect("prove timing root summary should finish");
+
+    assert!(
+        output.status.success(),
+        "prove timing root summary should parse device source input: stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    let mut lines = stdout.lines();
+    let header = parse_csv_line(lines.next().expect("summary should include a header"));
+    let row = parse_csv_line(lines.next().expect("summary should include a data row"));
+    assert_eq!(
+        header.len(),
+        row.len(),
+        "summary header and row should have matching column counts: stdout={stdout}"
+    );
+    let value = |name: &str| {
+        let index = header
+            .iter()
+            .position(|header| header == name)
+            .unwrap_or_else(|| panic!("summary should expose {name}: stdout={stdout}"));
+        row.get(index)
+            .unwrap_or_else(|| panic!("summary row should contain {name}: stdout={stdout}"))
+    };
+    assert_eq!(value("device_source_build_ms"), "31");
+    assert_eq!(value("descriptor_upload_ms"), "29");
+    assert_eq!(value("device_source_trace_expand_ms"), "2");
+    assert_eq!(value("descriptor_upload_bytes"), "880");
+    assert_eq!(value("descriptor_bytes_per_row"), "88.000");
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
 fn prove_timing_root_summary_reports_fri_transcript_and_contribution_work() {
     let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
     let script_path = crate_root.join("../../scripts/prove-timing-root-summary.py");
@@ -637,6 +700,12 @@ fn prove_timing_root_summary_reports_root_grouping_shape() {
         "timing_guest_trace_descriptor_rows",
         "timing_guest_trace_descriptor_compact_rows",
         "timing_guest_trace_descriptor_wide_rows",
+        "timing_guest_device_source_build_ms",
+        "timing_guest_device_source_descriptor_upload_ms",
+        "timing_guest_device_source_trace_expand_ms",
+        "device_source_build_ms",
+        "descriptor_upload_ms",
+        "device_source_trace_expand_ms",
         "timing_guest_device_source_descriptor_upload_bytes",
         "timing_guest_device_source_descriptor_upload_rows",
         "timing_guest_trace_descriptor_unpaired_high32_nonzero_values",

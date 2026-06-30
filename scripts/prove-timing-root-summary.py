@@ -462,6 +462,9 @@ TRACE_RUNNER_REPORT_BUFFER_EXCESS_BYTES_KEY = (
 DESCRIPTOR_ROWS_KEY = "timing_guest_trace_descriptor_rows"
 DESCRIPTOR_COMPACT_ROWS_KEY = "timing_guest_trace_descriptor_compact_rows"
 DESCRIPTOR_WIDE_ROWS_KEY = "timing_guest_trace_descriptor_wide_rows"
+DEVICE_SOURCE_BUILD_MS_KEY = "timing_guest_device_source_build_ms"
+DESCRIPTOR_UPLOAD_MS_KEY = "timing_guest_device_source_descriptor_upload_ms"
+DEVICE_SOURCE_TRACE_EXPAND_MS_KEY = "timing_guest_device_source_trace_expand_ms"
 DESCRIPTOR_UPLOAD_BYTES_KEY = "timing_guest_device_source_descriptor_upload_bytes"
 DESCRIPTOR_UPLOAD_ROWS_KEY = "timing_guest_device_source_descriptor_upload_rows"
 DESCRIPTOR_HIGH32_VALUES_KEY = (
@@ -841,7 +844,8 @@ HEADER = (
     "trace_report_chunk_received,trace_report_chunk_reports,"
     "trace_report_chunk_rows,trace_report_chunk_max_queued,"
     "descriptor_rows,descriptor_compact_rows,"
-    "descriptor_wide_rows,descriptor_upload_bytes,descriptor_bytes_per_row,"
+    "descriptor_wide_rows,device_source_build_ms,descriptor_upload_ms,"
+    "device_source_trace_expand_ms,descriptor_upload_bytes,descriptor_bytes_per_row,"
     "descriptor_high32_nonzero_values,descriptor_high32_nonzero_rows,"
     "descriptor_high32_row_pct,descriptor_high32_a_values,"
     "descriptor_high32_b_values,descriptor_high32_c_values,"
@@ -1291,6 +1295,9 @@ TIMING_KEYS = {
     DESCRIPTOR_ROWS_KEY,
     DESCRIPTOR_COMPACT_ROWS_KEY,
     DESCRIPTOR_WIDE_ROWS_KEY,
+    DEVICE_SOURCE_BUILD_MS_KEY,
+    DESCRIPTOR_UPLOAD_MS_KEY,
+    DEVICE_SOURCE_TRACE_EXPAND_MS_KEY,
     DESCRIPTOR_UPLOAD_BYTES_KEY,
     DESCRIPTOR_UPLOAD_ROWS_KEY,
     DESCRIPTOR_HIGH32_VALUES_KEY,
@@ -4853,6 +4860,9 @@ def summarize_profile_values(
     descriptor_rows = values.get(DESCRIPTOR_ROWS_KEY, 0)
     descriptor_compact_rows = values.get(DESCRIPTOR_COMPACT_ROWS_KEY, 0)
     descriptor_wide_rows = values.get(DESCRIPTOR_WIDE_ROWS_KEY, 0)
+    device_source_build_ms = values.get(DEVICE_SOURCE_BUILD_MS_KEY, 0)
+    descriptor_upload_ms = values.get(DESCRIPTOR_UPLOAD_MS_KEY, 0)
+    device_source_trace_expand_ms = values.get(DEVICE_SOURCE_TRACE_EXPAND_MS_KEY, 0)
     descriptor_upload_bytes = values.get(DESCRIPTOR_UPLOAD_BYTES_KEY, 0)
     descriptor_upload_rows = values.get(DESCRIPTOR_UPLOAD_ROWS_KEY, 0)
     descriptor_bytes_per_row = (
@@ -5666,6 +5676,7 @@ def summarize_profile_values(
         f"{trace_report_chunk_max_queued},"
         f"{descriptor_rows},"
         f"{descriptor_compact_rows},{descriptor_wide_rows},"
+        f"{device_source_build_ms},{descriptor_upload_ms},{device_source_trace_expand_ms},"
         f"{descriptor_upload_bytes},{descriptor_bytes_per_row:.3f},"
         f"{descriptor_high32_values},{descriptor_high32_rows},"
         f"{descriptor_high32_row_pct:.3f},{descriptor_high32_a_values},"
