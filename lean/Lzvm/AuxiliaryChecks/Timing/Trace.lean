@@ -250,6 +250,34 @@ theorem guest_pc_trace_report_timing_acceptance_core_and_sound
       proof
       observed
 
+theorem guest_pc_trace_valid_row_write_timing_acceptance_core_and_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : GuestPcTraceTimingSummary)
+    (rowValidationMilliseconds reportRows : Nat) :
+    forall publicInput proof,
+      GuestPcTraceTimingObservedAcceptance
+        system
+        (some
+          { summary with
+            guestTraceReportRowValidationMilliseconds := rowValidationMilliseconds
+            guestTraceReportRowCount := reportRows })
+        publicInput
+        proof ->
+        RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof observed
+  exact
+    guest_pc_trace_timing_acceptance_core_and_sound
+      assumptions
+      (some
+        { summary with
+          guestTraceReportRowValidationMilliseconds := rowValidationMilliseconds
+          guestTraceReportRowCount := reportRows })
+      publicInput
+      proof
+      observed
+
 theorem guest_pc_trace_report_subtiming_acceptance_sound
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)

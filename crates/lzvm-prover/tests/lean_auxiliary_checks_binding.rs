@@ -1805,6 +1805,23 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
                 .contains("guest_pc_trace_descriptor_upload_shape_acceptance_verifier_core_contract"),
         "Lean guest PC timing summary should prove descriptor upload byte and row counts are verifier-core-neutral"
     );
+    lean_binding::assert_theorem_prefix_contains(
+        &timing_source,
+        "guest_pc_trace_valid_row_write_timing_acceptance_core_and_sound",
+        &[
+            "RuntimeVerifierCoreContract system publicInput proof",
+            "SoundWitness system publicInput proof",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &timing_source,
+        "guest_pc_trace_valid_row_write_timing_acceptance_core_and_sound",
+        &[
+            "guestTraceReportRowValidationMilliseconds",
+            "guestTraceReportRowCount",
+            "guest_pc_trace_timing_acceptance_core_and_sound",
+        ],
+    );
     lean_binding::assert_theorem_declarations(
         &timing_core_source,
         &["guest_pc_trace_timing_some_summary_acceptance_verifier_core_contract"],
