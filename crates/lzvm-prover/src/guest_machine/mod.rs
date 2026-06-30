@@ -1227,7 +1227,7 @@ fn execute_guest_instruction(
             let value = state.read_decoded_register(rs2);
             write_guest_store(memory, kind, address, value)?;
             effects.record_memory_write(address, byte_len, low_bytes_value(value, byte_len));
-            state.clear_reservation_if_overlaps(address, store_byte_len(kind));
+            state.clear_reservation_if_overlaps(address, byte_len);
         }
         RiscvInstruction::Amo {
             kind,
@@ -1244,7 +1244,7 @@ fn execute_guest_instruction(
             let byte_len = amo_width_byte_len(width);
             effects.record_memory_read(address, byte_len, loaded);
             effects.record_memory_write(address, byte_len, low_bytes_value(stored, byte_len));
-            state.clear_reservation_if_overlaps(address, amo_width_byte_len(width));
+            state.clear_reservation_if_overlaps(address, byte_len);
             write_reported_register(state, effects, rd, amo_result(width, loaded));
         }
         RiscvInstruction::LoadReserved { width, rd, rs1, .. } => {
