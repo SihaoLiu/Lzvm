@@ -843,8 +843,13 @@ fn proof_timing_batch_can_append_average_rejection() {
         "batch json should record that the rejected average was appended: {batch_json}"
     );
     assert!(
-        contents.contains("\"avg=1.500 samples=1.500;1.500;1.500 used=3/3\""),
-        "improve log should record the stable rejected average: {contents}"
+        contents
+            .contains("\"avg=1.500 samples=1.500;1.500;1.500 used=3/3 rejected baseline=1.000\""),
+        "improve log should label the stable rejected average: {contents}"
+    );
+    assert!(
+        contents.contains("\"max average; rejected small baseline\""),
+        "improve log summary should label the rejected target: {contents}"
     );
     assert!(
         append_status.contains("exit_code=0"),

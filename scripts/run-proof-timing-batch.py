@@ -607,6 +607,8 @@ def append_improve_log(
     summary: str,
     small_logs: list[Path],
     large_logs: list[Path],
+    small_field: str | None,
+    large_field: str | None,
     max_relative_spread: float,
     small_max_avg_s: float | None,
     large_max_avg_s: float | None,
@@ -629,10 +631,16 @@ def append_improve_log(
         command.extend(["--small-max-avg-s", str(small_max_avg_s)])
     if large_max_avg_s is not None:
         command.extend(["--large-max-avg-s", str(large_max_avg_s)])
-    for path in small_logs:
-        command.extend(["--small-log", str(path)])
-    for path in large_logs:
-        command.extend(["--large-log", str(path)])
+    if small_field is not None:
+        command.extend(["--small", small_field])
+    else:
+        for path in small_logs:
+            command.extend(["--small-log", str(path)])
+    if large_field is not None:
+        command.extend(["--large", large_field])
+    else:
+        for path in large_logs:
+            command.extend(["--large-log", str(path)])
 
     append_stdout_path, append_stderr_path, append_status_path = prepare_append_artifact_paths(
         batch_dir
@@ -734,6 +742,41 @@ def max_average_rejection_messages(
     if large_message is not None:
         messages.append(large_message)
     return messages
+
+
+def max_average_rejection_field(
+    stable_logs: list[Path],
+    max_average_s: float | None,
+) -> str | None:
+    if max_average_s is None:
+        return None
+    stable_timing_s, failed = timing_seconds_values(stable_logs)
+    if failed or not stable_timing_s:
+        return None
+    average = timing_average_seconds(stable_timing_s)
+    if average is None or average <= max_average_s:
+        return None
+    samples = ";".join(f"{value:.3f}" for value in sorted(stable_timing_s))
+    return (
+        f"avg={average:.3f} samples={samples} "
+        f"used={len(stable_timing_s)}/{len(stable_logs)} "
+        f"rejected baseline={max_average_s:.3f}"
+    )
+
+
+def rejected_average_summary(
+    summary: str,
+    small_field: str | None,
+    large_field: str | None,
+) -> str:
+    labels = []
+    if small_field is not None:
+        labels.append("small")
+    if large_field is not None:
+        labels.append("large")
+    if not labels:
+        return summary
+    return f"{summary}; rejected {'/'.join(labels)} baseline"
 
 
 def timing_milliseconds(value: float | None) -> int:
@@ -1089,14 +1132,28 @@ def run_batch(args: argparse.Namespace) -> Path:
         args.large_max_avg_s,
     )
     if args.append_max_average_rejections and rejection_messages:
+        small_rejection_field = max_average_rejection_field(
+            small_stable_logs,
+            args.small_max_avg_s,
+        )
+        large_rejection_field = max_average_rejection_field(
+            large_stable_logs,
+            args.large_max_avg_s,
+        )
         try:
             append_improve_log(
                 append_script,
                 improve_log_path,
                 commit,
-                args.summary,
+                rejected_average_summary(
+                    args.summary,
+                    small_rejection_field,
+                    large_rejection_field,
+                ),
                 small_logs,
                 large_logs,
+                small_rejection_field,
+                large_rejection_field,
                 args.max_relative_spread,
                 None,
                 None,
@@ -1116,6 +1173,8 @@ def run_batch(args: argparse.Namespace) -> Path:
             args.summary,
             small_logs,
             large_logs,
+            None,
+            None,
             args.max_relative_spread,
             args.small_max_avg_s,
             args.large_max_avg_s,
