@@ -5542,6 +5542,84 @@ fn copy_indirect_register_store_fast_path_preserves_row_effects() {
 }
 
 #[test]
+fn copy_indirect_register_store_fast_path_rejects_invalid_registers() {
+    let accesses = [memory_read(0x108, 0xaa55)];
+    let writes = [GuestRegisterWrite {
+        index: 3,
+        value: 0xaa55,
+    }];
+    let instruction = ZiskMainInstruction {
+        pc: 0x8000_0000,
+        a: ZiskMainSource::Register(2),
+        b: ZiskMainSource::Indirect(8),
+        op: ZiskMainOp::CopyB,
+        store: ZiskMainStore::Register(3),
+        store_pc: false,
+        set_pc: false,
+        jmp_offset1: 4,
+        jmp_offset2: 4,
+        ind_width: 8,
+        m32: false,
+        is_external_op: false,
+        is_precompiled: false,
+    };
+    let effects = ZiskMainReportEffects {
+        register_writes: &writes,
+        memory_accesses: &accesses,
+        precompile_memory_accesses: &[],
+        precompile_result: None,
+    };
+    let mut state = ZiskMainTraceState::new();
+    state.registers[2] = 0x100;
+    let mut context = ZiskMainReportValidationContext::new(
+        None,
+        16,
+        ZiskMainTraceSegmentInfo {
+            trace_instance_index: 0,
+            is_last_segment: false,
+            previous_c: 0,
+        },
+    )
+    .expect("context should initialize");
+
+    let source_error = apply_copy_indirect_register_store_fast_path(
+        3,
+        instruction.clone(),
+        effects,
+        0x8000_0004,
+        0,
+        8,
+        3,
+        &mut state,
+        &mut context,
+        &mut |_, _, _| Ok(()),
+    )
+    .expect_err("source register zero should be rejected");
+    assert!(matches!(
+        source_error,
+        GuestPcTraceBackendError::UnsupportedZiskMainSource { row: 3 }
+    ));
+
+    let store_error = apply_copy_indirect_register_store_fast_path(
+        3,
+        instruction,
+        effects,
+        0x8000_0004,
+        2,
+        8,
+        32,
+        &mut state,
+        &mut context,
+        &mut |_, _, _| Ok(()),
+    )
+    .expect_err("destination register outside the valid window should be rejected");
+    assert!(matches!(
+        store_error,
+        GuestPcTraceBackendError::UnsupportedZiskMainStore { row: 3 }
+    ));
+}
+
+#[test]
 fn zisk_main_source_value_reports_memory_access_count() {
     let accesses = [memory_read(64, 96), memory_read(104, 13)];
     let effects = ZiskMainReportEffects {
