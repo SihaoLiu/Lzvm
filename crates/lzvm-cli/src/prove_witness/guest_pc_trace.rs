@@ -261,6 +261,10 @@ pub(super) fn record_guest_pc_trace_timing(
     }
     timings.record_count("guest_trace_report_detail_samples", detail_sample_count);
     timings.record_count(
+        "guest_trace_shape_samples",
+        timing.guest_trace_shape_sample_count(),
+    );
+    timings.record_count(
         "guest_trace_report_source_immediate_reads",
         timing.guest_trace_report_source_immediate_read_count(),
     );

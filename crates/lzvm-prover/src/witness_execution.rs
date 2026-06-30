@@ -498,6 +498,7 @@ pub struct ProveWitnessGuestPcTraceTiming {
     guest_trace_emit_duration: Duration,
     guest_trace_descriptor_duration: Duration,
     guest_trace_report_detail_sample_count: usize,
+    guest_trace_shape_sample_count: usize,
     guest_trace_report_source_immediate_read_count: usize,
     guest_trace_report_source_register_read_count: usize,
     guest_trace_report_source_memory_read_count: usize,
@@ -867,6 +868,7 @@ impl ProveWitnessGuestPcTraceTiming {
             guest_trace_descriptor_duration: stream_timing.trace_descriptor_duration(),
             guest_trace_report_detail_sample_count: stream_timing
                 .trace_report_detail_sample_count(),
+            guest_trace_shape_sample_count: stream_timing.trace_shape_sample_count(),
             guest_trace_report_source_immediate_read_count: stream_timing
                 .trace_report_source_immediate_read_count(),
             guest_trace_report_source_register_read_count: stream_timing
@@ -1443,6 +1445,10 @@ impl ProveWitnessGuestPcTraceTiming {
 
     pub fn guest_trace_report_detail_sample_count(&self) -> usize {
         self.guest_trace_report_detail_sample_count
+    }
+
+    pub fn guest_trace_shape_sample_count(&self) -> usize {
+        self.guest_trace_shape_sample_count
     }
 
     pub fn guest_trace_report_source_immediate_read_count(&self) -> usize {

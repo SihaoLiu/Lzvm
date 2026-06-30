@@ -4578,6 +4578,60 @@ fn prove_timing_root_summary_requests_shape_profile_after_detail_only_trace_samp
 }
 
 #[test]
+fn prove_timing_root_summary_marks_sampled_trace_shape_profile() {
+    let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let script_path = crate_root.join("../../scripts/prove-timing-root-summary.py");
+    let input = [
+        "timing_total_ms=36000",
+        "timing_guest_stage_tree_commit_root_count=120",
+        "timing_guest_stage_tree_commit_root_materialization_groups=120",
+        "timing_guest_stage_tree_commit_root_materialization_max_group_size=1",
+        "timing_guest_trace_reports=1000000",
+        "timing_guest_trace_report_rows=1000000",
+        "timing_guest_trace_shape_samples=10",
+        "timing_guest_trace_single_row_reports=10",
+        "timing_guest_trace_copy_rows=6",
+        "timing_guest_trace_external_op_rows=4",
+        "timing_guest_trace_row_shape_top_1_pattern=176643",
+        "timing_guest_trace_row_shape_top_1_count=6",
+    ]
+    .join("\n");
+
+    let mut child = Command::new("python3")
+        .arg(&script_path)
+        .arg("-")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("prove timing root summary should spawn");
+    child
+        .stdin
+        .as_mut()
+        .expect("stdin should be open")
+        .write_all(input.as_bytes())
+        .expect("stdin should write");
+    let output = child
+        .wait_with_output()
+        .expect("prove timing root summary should run");
+
+    assert!(
+        output.status.success(),
+        "prove timing root summary should pass: stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    assert!(
+        stdout.contains("shape_timing_sampled"),
+        "prove timing root summary should identify sampled shape counters: stdout={stdout}"
+    );
+    assert!(
+        stdout.contains("diagnostic_only_shape_profile"),
+        "sampled shape counters should still be marked diagnostic: stdout={stdout}"
+    );
+}
+
+#[test]
 fn prove_timing_root_summary_reports_tiny_detail_sample_coverage_ppm() {
     let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
     let script_path = crate_root.join("../../scripts/prove-timing-root-summary.py");

@@ -232,6 +232,7 @@ pub(crate) struct GuestPcTraceStreamTiming {
     trace_emit_duration: Duration,
     trace_descriptor_duration: Duration,
     trace_report_detail_sample_count: usize,
+    trace_shape_sample_count: usize,
     trace_report_source_immediate_read_count: usize,
     trace_report_source_register_read_count: usize,
     trace_report_source_memory_read_count: usize,
@@ -385,6 +386,7 @@ impl GuestPcTraceStreamTiming {
         self.trace_emit_duration += other.trace_emit_duration;
         self.trace_descriptor_duration += other.trace_descriptor_duration;
         self.trace_report_detail_sample_count += other.trace_report_detail_sample_count;
+        self.trace_shape_sample_count += other.trace_shape_sample_count;
         self.trace_report_source_immediate_read_count +=
             other.trace_report_source_immediate_read_count;
         self.trace_report_source_register_read_count +=
@@ -692,6 +694,10 @@ impl GuestPcTraceStreamTiming {
 
     pub fn trace_report_detail_sample_count(&self) -> usize {
         self.trace_report_detail_sample_count
+    }
+
+    pub fn trace_shape_sample_count(&self) -> usize {
+        self.trace_shape_sample_count
     }
 
     pub fn trace_report_source_immediate_read_count(&self) -> usize {
@@ -9681,6 +9687,7 @@ struct ZiskMainTraceLowerTimingConfig {
     detail_timing: bool,
     shape_timing: bool,
     detail_sample_stride: usize,
+    shape_sample_stride: Option<usize>,
     row_timing_enabled: bool,
 }
 
@@ -9691,6 +9698,7 @@ impl ZiskMainTraceLowerTimingConfig {
             detail_timing: false,
             shape_timing: false,
             detail_sample_stride: 1,
+            shape_sample_stride: None,
             row_timing_enabled: false,
         }
     }
@@ -9703,11 +9711,17 @@ impl ZiskMainTraceLowerTimingConfig {
         } else {
             1
         };
+        let shape_sample_stride = if shape_timing {
+            None
+        } else {
+            guest_pc_trace_shape_timing_sample_stride()
+        };
         Self {
             detail_timing,
             shape_timing,
             detail_sample_stride,
-            row_timing_enabled: detail_timing || shape_timing,
+            shape_sample_stride,
+            row_timing_enabled: detail_timing || shape_timing || shape_sample_stride.is_some(),
         }
     }
 
@@ -9717,6 +9731,13 @@ impl ZiskMainTraceLowerTimingConfig {
         } else {
             Self::disabled()
         }
+    }
+
+    fn shape_timing_for_report(self, report_index: usize) -> bool {
+        self.shape_timing
+            || self
+                .shape_sample_stride
+                .is_some_and(|stride| report_index.is_multiple_of(stride))
     }
 }
 
@@ -9880,6 +9901,7 @@ impl ZiskMainStreamingDeviceSegmentBuilder {
     ) -> Result<usize, GuestPcTraceBackendError> {
         let report_detail_timing = timing_config.detail_timing
             && report_index.is_multiple_of(timing_config.detail_sample_stride);
+        let report_shape_timing = timing_config.shape_timing_for_report(report_index);
         let report_started = timing
             .as_ref()
             .filter(|_| report_detail_timing)
@@ -9895,17 +9917,15 @@ impl ZiskMainStreamingDeviceSegmentBuilder {
             next_instruction,
             &mut self.state,
             &mut self.context,
-            if timing_config.row_timing_enabled
-                && (report_detail_timing || timing_config.shape_timing)
-            {
+            if timing_config.row_timing_enabled && (report_detail_timing || report_shape_timing) {
                 timing.as_deref_mut()
             } else {
                 None
             },
             report_detail_timing,
-            timing_config.shape_timing,
+            report_shape_timing,
             |_, values, mut visit_timing| {
-                if timing_config.shape_timing {
+                if report_shape_timing {
                     if let Some(timing) = visit_timing.as_deref_mut() {
                         record_trace_lowered_row_shape(timing, &values.instruction);
                     }
@@ -9933,9 +9953,12 @@ impl ZiskMainStreamingDeviceSegmentBuilder {
         if let (Some(timing), Some(started)) = (timing.as_deref_mut(), unit_summary_started) {
             timing.trace_unit_summary_duration += started.elapsed();
         }
-        if timing_config.shape_timing || report_started.is_some() {
+        if report_shape_timing || report_started.is_some() {
             if let Some(timing) = timing {
-                if timing_config.shape_timing {
+                if report_shape_timing {
+                    if !timing_config.shape_timing {
+                        timing.trace_shape_sample_count += 1;
+                    }
                     record_trace_report_shape(timing, report, pending_report, written_rows);
                 }
                 if let Some(started) = report_started {
@@ -13417,6 +13440,13 @@ fn guest_pc_trace_shape_timing_enabled() -> bool {
     env_flag_enabled("LZVM_GUEST_TRACE_SHAPE_TIMING", false)
 }
 
+fn guest_pc_trace_shape_timing_sample_stride() -> Option<usize> {
+    std::env::var("LZVM_GUEST_TRACE_SHAPE_TIMING_SAMPLE_STRIDE")
+        .ok()
+        .and_then(|value| value.parse::<usize>().ok())
+        .filter(|&stride| stride != 0)
+}
+
 fn build_layout_zisk_main_trace_segment(
     layout: &WitnessTraceLayout,
     reports: &[GuestMachineReport],
@@ -13455,9 +13485,16 @@ fn build_layout_zisk_main_trace_segment(
     } else {
         1
     };
+    let shape_sample_stride = if shape_timing {
+        None
+    } else {
+        guest_pc_trace_shape_timing_sample_stride()
+    };
     let aggregate_report_started = timing.as_ref().map(|_| Instant::now());
     for (report_index, report) in reports.iter().enumerate() {
         let report_detail_timing = detail_timing && report_index % detail_sample_stride == 0;
+        let report_shape_timing = shape_timing
+            || shape_sample_stride.is_some_and(|stride| report_index.is_multiple_of(stride));
         let report_started = timing
             .as_ref()
             .filter(|_| report_detail_timing)
@@ -13465,7 +13502,7 @@ fn build_layout_zisk_main_trace_segment(
         let pending_report = state.pending_dma.is_some();
         let mut next_instruction =
             || guest_report_next_instruction(reports, report_index, lookahead_instruction);
-        let row_timing = if report_detail_timing || shape_timing {
+        let row_timing = if report_detail_timing || report_shape_timing {
             timing.as_deref_mut()
         } else {
             None
@@ -13484,11 +13521,14 @@ fn build_layout_zisk_main_trace_segment(
             &mut device_trace_descriptors,
             row_timing,
             report_detail_timing,
-            shape_timing,
+            report_shape_timing,
         )?;
-        if shape_timing || report_started.is_some() {
+        if report_shape_timing || report_started.is_some() {
             if let Some(timing) = timing.as_deref_mut() {
-                if shape_timing {
+                if report_shape_timing {
+                    if !shape_timing {
+                        timing.trace_shape_sample_count += 1;
+                    }
                     record_trace_report_shape(timing, report, pending_report, written_rows);
                 }
                 if let Some(started) = report_started {
