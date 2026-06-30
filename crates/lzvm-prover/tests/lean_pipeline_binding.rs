@@ -239,6 +239,7 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
             "runtime_pipeline_binding_checked_acceptance_artifact_contracts_core_contract",
             "runtime_pipeline_binding_checked_acceptance_artifact_audited_core_contract",
             "runtime_pipeline_binding_evidence_audited_core_contract",
+            "runtime_pipeline_binding_checked_acceptance_audited_query_opening_core_sound_contract",
             "runtime_pipeline_binding_checked_acceptance_audited_accepts_sound_witness_contract",
             "runtime_pipeline_binding_checked_acceptance_audited_soundness_accepts_contract",
             "runtime_pipeline_binding_checked_acceptance_audited_binding_pcs_fri_core_witness_contract",
@@ -2031,6 +2032,31 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
         &lean_source,
         "runtime_pipeline_binding_evidence_audited_core_contract",
         &["abstract_verifier_sound"],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_pipeline_binding_checked_acceptance_audited_query_opening_core_sound_contract",
+        &[
+            "RequiredCryptographicAssumptionStatements assumptions.crypto",
+            "ProofSystemSound system",
+            "system.accepts publicInput proof",
+            "RuntimeQueryPlanBindingEvidence",
+            "RuntimeChallengeSegmentBindingEvidence",
+            "RuntimeOpeningSegmentBindingEvidence",
+            "RuntimeOpeningEvidence",
+            "RuntimeVerifierCoreContract system publicInput proof",
+            "SoundWitness system publicInput proof",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_pipeline_binding_checked_acceptance_audited_query_opening_core_sound_contract",
+        &[
+            "assumption_bundle_carries_required_crypto_evidence",
+            "abstract_verifier_sound",
+            "runtime_pipeline_binding_checked_acceptance_verifier_accepts",
+            "runtime_pipeline_binding_checked_acceptance_query_opening_evidence_core_and_sound",
+        ],
     );
     assert!(
         theorem_prefix(
