@@ -199,4 +199,54 @@ theorem accepted_proof_audited_sound_witness_components
                       (And.intro traceConsistent
                         (And.intro constraintsSatisfied witnessMatchesTrace))))))))))
 
+theorem accepted_proof_audited_core_and_sound_witness_components
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system) :
+    forall publicInput proof,
+      system.accepts publicInput proof ->
+        RequiredCryptographicAssumptionStatements assumptions.crypto
+          /\ RequiredSemanticAssumptionStatements assumptions.semantic
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ exists witness trace constraints,
+            system.transcriptBound publicInput proof
+              /\ system.publicInputBound publicInput proof
+              /\ system.pcsOpeningsValid publicInput proof
+              /\ system.friQueriesValid publicInput proof
+              /\ system.traceConsistent publicInput proof trace
+              /\ system.constraintsSatisfied constraints trace
+              /\ system.witnessMatchesTrace witness trace := by
+  intro publicInput proof accepted
+  have auditedCoreAndWitness :=
+    accepted_proof_audited_core_and_sound_witness
+      assumptions
+      publicInput
+      proof
+      accepted
+  rcases auditedCoreAndWitness with
+    ⟨cryptoEvidence, semanticEvidence, coreContract, soundWitness⟩
+  rcases soundWitness with
+    ⟨witness,
+      trace,
+      constraints,
+      transcriptBound,
+      publicInputBound,
+      pcsOpeningsValid,
+      friQueriesValid,
+      traceConsistent,
+      constraintsSatisfied,
+      witnessMatchesTrace⟩
+  exact
+    And.intro cryptoEvidence
+      (And.intro semanticEvidence
+        (And.intro coreContract
+          (Exists.intro witness
+            (Exists.intro trace
+              (Exists.intro constraints
+                (And.intro transcriptBound
+                  (And.intro publicInputBound
+                    (And.intro pcsOpeningsValid
+                      (And.intro friQueriesValid
+                        (And.intro traceConsistent
+                          (And.intro constraintsSatisfied witnessMatchesTrace)))))))))))
+
 end Lzvm
