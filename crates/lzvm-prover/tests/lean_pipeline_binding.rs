@@ -134,6 +134,8 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
             "runtime_pipeline_binding_checked_acceptance_public_input_bound",
             "runtime_pipeline_binding_checked_acceptance_public_input_bound_from_semantic_assumptions",
             "runtime_pipeline_binding_evidence_implies_pcs_and_fri",
+            "runtime_pipeline_binding_checked_acceptance_eth_binding_evidence",
+            "runtime_pipeline_binding_checked_acceptance_proof_artifact_evidence",
             "runtime_pipeline_binding_checked_acceptance_segment_ids_unique",
             "runtime_pipeline_binding_checked_acceptance_artifact_finalized",
             "runtime_pipeline_binding_checked_acceptance_artifact_structural_obligations",
@@ -346,6 +348,22 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
         &lean_source,
         "runtime_pipeline_binding_evidence_implies_proof_artifact_evidence",
         &["proofArtifactEvidence", "exact proofArtifactEvidence"],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_pipeline_binding_checked_acceptance_eth_binding_evidence",
+        &[
+            "runtime_pipeline_binding_checked_acceptance_eth",
+            "runtime_eth_block_public_input_binding_checked_acceptance_evidence",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_pipeline_binding_checked_acceptance_proof_artifact_evidence",
+        &[
+            "runtime_eth_block_public_input_binding_checked_acceptance_artifact_binding",
+            "runtime_proof_artifact_binding_checked_acceptance_evidence",
+        ],
     );
     lean_binding::assert_theorem_body_contains(
         &lean_source,
