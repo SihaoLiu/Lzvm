@@ -151,6 +151,18 @@ pub(super) fn record_guest_pc_trace_timing(
             timing.guest_trace_runner_advance_duration(),
         ),
         (
+            "guest_trace_runner_advance_setup",
+            timing.guest_trace_runner_advance_setup_duration(),
+        ),
+        (
+            "guest_trace_runner_advance_execute",
+            timing.guest_trace_runner_advance_execute_duration(),
+        ),
+        (
+            "guest_trace_runner_advance_report",
+            timing.guest_trace_runner_advance_report_duration(),
+        ),
+        (
             "guest_trace_runner_cache_update",
             timing.guest_trace_runner_cache_update_duration(),
         ),

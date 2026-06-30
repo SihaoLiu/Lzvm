@@ -231,6 +231,18 @@ fn guest_pc_trace_runner_detail_timing_ignores_unexecuted_row_fit_probe() {
         std::time::Duration::ZERO
     );
     assert_eq!(
+        timing.runner_advance_setup_duration(),
+        std::time::Duration::ZERO
+    );
+    assert_eq!(
+        timing.runner_advance_execute_duration(),
+        std::time::Duration::ZERO
+    );
+    assert_eq!(
+        timing.runner_advance_report_duration(),
+        std::time::Duration::ZERO
+    );
+    assert_eq!(
         timing.runner_post_boundary_duration(),
         std::time::Duration::ZERO
     );

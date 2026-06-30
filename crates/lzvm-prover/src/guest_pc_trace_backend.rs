@@ -16,12 +16,15 @@ use crate::guest_instruction::{
 use crate::guest_machine::{
     advance_guest_machine_with_prepared_fcalls_report_shape,
     advance_guest_machine_with_prepared_fcalls_report_shape_into,
+    advance_guest_machine_with_prepared_fcalls_report_shape_into_timed,
+    advance_guest_machine_with_prepared_fcalls_report_shape_timed,
     instruction_clears_instruction_cache, run_guest_machine_trace_with_fcalls,
     run_guest_machine_with_fcalls, GuestDmaProofValueFlags, GuestFcallHandler,
-    GuestInstructionCache, GuestMachineHalt, GuestMachineMemory, GuestMachineMemoryOverlaySnapshot,
-    GuestMachineReport, GuestMachineReportShape, GuestMachineRunError, GuestMachineState,
-    GuestMachineTraceSliceStatus, GuestMemoryAccess, GuestMemoryAccessKind, GuestMemoryAccessList,
-    GuestPrecompileMemoryAccessList, GuestRegisterWrite, GuestRegisterWriteList,
+    GuestInstructionCache, GuestMachineAdvanceTiming, GuestMachineHalt, GuestMachineMemory,
+    GuestMachineMemoryOverlaySnapshot, GuestMachineReport, GuestMachineReportShape,
+    GuestMachineRunError, GuestMachineState, GuestMachineTraceSliceStatus, GuestMemoryAccess,
+    GuestMemoryAccessKind, GuestMemoryAccessList, GuestPrecompileMemoryAccessList,
+    GuestRegisterWrite, GuestRegisterWriteList,
 };
 use crate::guest_memory::{load_guest_memory_image, GuestMemoryError};
 use crate::witness_layout::{ResolvedTraceColumn, WitnessTraceBuildError, WitnessTraceLayout};
@@ -201,6 +204,9 @@ pub(crate) struct GuestPcTraceStreamTiming {
     runner_row_plan_duration: Duration,
     runner_cache_policy_duration: Duration,
     runner_advance_duration: Duration,
+    runner_advance_setup_duration: Duration,
+    runner_advance_execute_duration: Duration,
+    runner_advance_report_duration: Duration,
     runner_cache_update_duration: Duration,
     runner_row_count_duration: Duration,
     runner_post_boundary_duration: Duration,
@@ -356,6 +362,9 @@ impl GuestPcTraceStreamTiming {
         self.runner_row_plan_duration += other.runner_row_plan_duration;
         self.runner_cache_policy_duration += other.runner_cache_policy_duration;
         self.runner_advance_duration += other.runner_advance_duration;
+        self.runner_advance_setup_duration += other.runner_advance_setup_duration;
+        self.runner_advance_execute_duration += other.runner_advance_execute_duration;
+        self.runner_advance_report_duration += other.runner_advance_report_duration;
         self.runner_cache_update_duration += other.runner_cache_update_duration;
         self.runner_row_count_duration += other.runner_row_count_duration;
         self.runner_post_boundary_duration += other.runner_post_boundary_duration;
@@ -594,6 +603,18 @@ impl GuestPcTraceStreamTiming {
 
     pub fn runner_advance_duration(&self) -> Duration {
         self.runner_advance_duration
+    }
+
+    pub fn runner_advance_setup_duration(&self) -> Duration {
+        self.runner_advance_setup_duration
+    }
+
+    pub fn runner_advance_execute_duration(&self) -> Duration {
+        self.runner_advance_execute_duration
+    }
+
+    pub fn runner_advance_report_duration(&self) -> Duration {
+        self.runner_advance_report_duration
     }
 
     pub fn runner_cache_update_duration(&self) -> Duration {
@@ -4391,6 +4412,8 @@ fn run_guest_pc_trace_segment_slice_inner<
             &mut timing.runner_cache_policy_duration
         });
         let advance_started = detail_duration_started(&timing, report_detail_timing);
+        let mut advance_inner_timing =
+            report_detail_timing.then(GuestMachineAdvanceTiming::default);
         let advanced = if RETAIN_REPORTS {
             reports.reserve(1);
             let report_index = reports.len();
@@ -4401,13 +4424,24 @@ fn run_guest_pc_trace_segment_slice_inner<
                             .to_owned(),
                     }
                 })?;
-                advance_guest_machine_with_prepared_fcalls_report_shape_into(
-                    memory,
-                    state,
-                    handler,
-                    prepared,
-                    report_slot,
-                )
+                if let Some(advance_timing) = advance_inner_timing.as_mut() {
+                    advance_guest_machine_with_prepared_fcalls_report_shape_into_timed(
+                        memory,
+                        state,
+                        handler,
+                        prepared,
+                        report_slot,
+                        advance_timing,
+                    )
+                } else {
+                    advance_guest_machine_with_prepared_fcalls_report_shape_into(
+                        memory,
+                        state,
+                        handler,
+                        prepared,
+                        report_slot,
+                    )
+                }
                 .map_err(GuestMachineRunError::from)
                 .map_err(GuestPcTraceBackendError::GuestRun)?
             };
@@ -4420,20 +4454,37 @@ fn run_guest_pc_trace_segment_slice_inner<
                 shape,
             }
         } else {
-            let advanced = advance_guest_machine_with_prepared_fcalls_report_shape(
-                memory, state, handler, prepared,
-            )
-            .map_err(GuestMachineRunError::from)
-            .map_err(GuestPcTraceBackendError::GuestRun)?;
-            let shape = advanced.shape;
+            let advanced = if let Some(advance_timing) = advance_inner_timing.as_mut() {
+                advance_guest_machine_with_prepared_fcalls_report_shape_timed(
+                    memory,
+                    state,
+                    handler,
+                    prepared,
+                    advance_timing,
+                )
+                .map_err(GuestMachineRunError::from)
+                .map_err(GuestPcTraceBackendError::GuestRun)?
+            } else {
+                advance_guest_machine_with_prepared_fcalls_report_shape(
+                    memory, state, handler, prepared,
+                )
+                .map_err(GuestMachineRunError::from)
+                .map_err(GuestPcTraceBackendError::GuestRun)?
+            };
             GuestMachineAdvancedReportRef {
                 report: GuestMachineAdvancedReportStorage::Owned(advanced.report),
-                shape,
+                shape: advanced.shape,
             }
         };
         record_detail_duration(advance_started, &mut timing, |timing| {
             &mut timing.runner_advance_duration
         });
+        if let (Some(advance_timing), Some(timing)) = (advance_inner_timing, timing.as_deref_mut())
+        {
+            timing.runner_advance_setup_duration += advance_timing.setup_duration;
+            timing.runner_advance_execute_duration += advance_timing.execute_duration;
+            timing.runner_advance_report_duration += advance_timing.report_duration;
+        }
         let cache_update_started = detail_duration_started(&timing, report_detail_timing);
         if clear_instruction_cache {
             instruction_cache.clear();

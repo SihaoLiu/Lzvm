@@ -45,6 +45,15 @@ RUNNER_CACHE_POLICY_SAMPLED_NS_KEY = (
     "timing_guest_trace_runner_cache_policy_sampled_ns"
 )
 RUNNER_ADVANCE_SAMPLED_NS_KEY = "timing_guest_trace_runner_advance_sampled_ns"
+RUNNER_ADVANCE_SETUP_SAMPLED_NS_KEY = (
+    "timing_guest_trace_runner_advance_setup_sampled_ns"
+)
+RUNNER_ADVANCE_EXECUTE_SAMPLED_NS_KEY = (
+    "timing_guest_trace_runner_advance_execute_sampled_ns"
+)
+RUNNER_ADVANCE_REPORT_SAMPLED_NS_KEY = (
+    "timing_guest_trace_runner_advance_report_sampled_ns"
+)
 RUNNER_CACHE_UPDATE_SAMPLED_NS_KEY = (
     "timing_guest_trace_runner_cache_update_sampled_ns"
 )
@@ -814,6 +823,8 @@ HEADER = (
     "trace_runner_detail_avg_ns,trace_runner_prepare_instruction_sampled_ns,"
     "trace_runner_pre_boundary_sampled_ns,trace_runner_row_plan_sampled_ns,"
     "trace_runner_cache_policy_sampled_ns,trace_runner_advance_sampled_ns,"
+    "trace_runner_advance_setup_sampled_ns,trace_runner_advance_execute_sampled_ns,"
+    "trace_runner_advance_report_sampled_ns,"
     "trace_runner_cache_update_sampled_ns,trace_runner_row_count_sampled_ns,"
     "trace_runner_post_boundary_sampled_ns,trace_runner_counter_update_sampled_ns,"
     "trace_runner_detail_hotspot,trace_runner_detail_hotspot_pct,"
@@ -1159,6 +1170,9 @@ TIMING_KEYS = {
     RUNNER_ROW_PLAN_SAMPLED_NS_KEY,
     RUNNER_CACHE_POLICY_SAMPLED_NS_KEY,
     RUNNER_ADVANCE_SAMPLED_NS_KEY,
+    RUNNER_ADVANCE_SETUP_SAMPLED_NS_KEY,
+    RUNNER_ADVANCE_EXECUTE_SAMPLED_NS_KEY,
+    RUNNER_ADVANCE_REPORT_SAMPLED_NS_KEY,
     RUNNER_CACHE_UPDATE_SAMPLED_NS_KEY,
     RUNNER_ROW_COUNT_SAMPLED_NS_KEY,
     RUNNER_POST_BOUNDARY_SAMPLED_NS_KEY,
@@ -4292,6 +4306,15 @@ def summarize_profile_values(
     trace_runner_row_plan_sampled_ns = values.get(RUNNER_ROW_PLAN_SAMPLED_NS_KEY, 0)
     trace_runner_cache_policy_sampled_ns = values.get(RUNNER_CACHE_POLICY_SAMPLED_NS_KEY, 0)
     trace_runner_advance_sampled_ns = values.get(RUNNER_ADVANCE_SAMPLED_NS_KEY, 0)
+    trace_runner_advance_setup_sampled_ns = values.get(
+        RUNNER_ADVANCE_SETUP_SAMPLED_NS_KEY, 0
+    )
+    trace_runner_advance_execute_sampled_ns = values.get(
+        RUNNER_ADVANCE_EXECUTE_SAMPLED_NS_KEY, 0
+    )
+    trace_runner_advance_report_sampled_ns = values.get(
+        RUNNER_ADVANCE_REPORT_SAMPLED_NS_KEY, 0
+    )
     trace_runner_cache_update_sampled_ns = values.get(
         RUNNER_CACHE_UPDATE_SAMPLED_NS_KEY, 0
     )
@@ -5789,6 +5812,9 @@ def summarize_profile_values(
         f"{trace_runner_row_plan_sampled_ns},"
         f"{trace_runner_cache_policy_sampled_ns},"
         f"{trace_runner_advance_sampled_ns},"
+        f"{trace_runner_advance_setup_sampled_ns},"
+        f"{trace_runner_advance_execute_sampled_ns},"
+        f"{trace_runner_advance_report_sampled_ns},"
         f"{trace_runner_cache_update_sampled_ns},"
         f"{trace_runner_row_count_sampled_ns},"
         f"{trace_runner_post_boundary_sampled_ns},"

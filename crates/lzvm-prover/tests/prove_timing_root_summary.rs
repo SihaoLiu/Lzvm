@@ -8622,6 +8622,9 @@ fn prove_timing_root_summary_reports_runner_detail_hotspot() {
         "timing_guest_trace_runner_row_plan_sampled_ns=100000",
         "timing_guest_trace_runner_cache_policy_sampled_ns=30000",
         "timing_guest_trace_runner_advance_sampled_ns=500000",
+        "timing_guest_trace_runner_advance_setup_sampled_ns=70000",
+        "timing_guest_trace_runner_advance_execute_sampled_ns=350000",
+        "timing_guest_trace_runner_advance_report_sampled_ns=40000",
         "timing_guest_trace_runner_cache_update_sampled_ns=50000",
         "timing_guest_trace_runner_row_count_sampled_ns=50000",
         "timing_guest_trace_runner_post_boundary_sampled_ns=60000",
@@ -8677,6 +8680,9 @@ fn prove_timing_root_summary_reports_runner_detail_hotspot() {
     assert_eq!(value("trace_runner_row_plan_sampled_ns"), "100000");
     assert_eq!(value("trace_runner_cache_policy_sampled_ns"), "30000");
     assert_eq!(value("trace_runner_advance_sampled_ns"), "500000");
+    assert_eq!(value("trace_runner_advance_setup_sampled_ns"), "70000");
+    assert_eq!(value("trace_runner_advance_execute_sampled_ns"), "350000");
+    assert_eq!(value("trace_runner_advance_report_sampled_ns"), "40000");
     assert_eq!(value("trace_runner_cache_update_sampled_ns"), "50000");
     assert_eq!(value("trace_runner_row_count_sampled_ns"), "50000");
     assert_eq!(value("trace_runner_post_boundary_sampled_ns"), "60000");

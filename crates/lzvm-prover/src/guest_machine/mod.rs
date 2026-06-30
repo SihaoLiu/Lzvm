@@ -1,6 +1,7 @@
 use std::collections::VecDeque;
 use std::fmt;
 use std::mem::MaybeUninit;
+use std::time::{Duration, Instant};
 
 use smallvec::SmallVec;
 
@@ -609,6 +610,13 @@ pub(crate) struct GuestMachineAdvanceReport {
     pub(crate) shape: GuestMachineReportShape,
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) struct GuestMachineAdvanceTiming {
+    pub(crate) setup_duration: Duration,
+    pub(crate) execute_duration: Duration,
+    pub(crate) report_duration: Duration,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct GuestMachinePreparedInstruction {
     address: u64,
@@ -1092,7 +1100,29 @@ pub(crate) fn advance_guest_machine_with_prepared_fcalls_report_shape(
     handler: &mut dyn GuestFcallHandler,
     prepared: GuestMachinePreparedInstruction,
 ) -> Result<GuestMachineAdvanceReport, GuestMachineError> {
-    advance_guest_machine_prepared_inner_with_report_shape(memory, state, Some(handler), prepared)
+    advance_guest_machine_prepared_inner_with_report_shape(
+        memory,
+        state,
+        Some(handler),
+        prepared,
+        None,
+    )
+}
+
+pub(crate) fn advance_guest_machine_with_prepared_fcalls_report_shape_timed(
+    memory: &mut GuestMachineMemory,
+    state: &mut GuestMachineState,
+    handler: &mut dyn GuestFcallHandler,
+    prepared: GuestMachinePreparedInstruction,
+    timing: &mut GuestMachineAdvanceTiming,
+) -> Result<GuestMachineAdvanceReport, GuestMachineError> {
+    advance_guest_machine_prepared_inner_with_report_shape(
+        memory,
+        state,
+        Some(handler),
+        prepared,
+        Some(timing),
+    )
 }
 
 pub(crate) fn advance_guest_machine_with_prepared_fcalls_report_shape_into(
@@ -1108,6 +1138,25 @@ pub(crate) fn advance_guest_machine_with_prepared_fcalls_report_shape_into(
         Some(handler),
         prepared,
         report,
+        None,
+    )
+}
+
+pub(crate) fn advance_guest_machine_with_prepared_fcalls_report_shape_into_timed(
+    memory: &mut GuestMachineMemory,
+    state: &mut GuestMachineState,
+    handler: &mut dyn GuestFcallHandler,
+    prepared: GuestMachinePreparedInstruction,
+    report: &mut MaybeUninit<GuestMachineReport>,
+    timing: &mut GuestMachineAdvanceTiming,
+) -> Result<GuestMachineReportShape, GuestMachineError> {
+    advance_guest_machine_prepared_inner_report_shape_into(
+        memory,
+        state,
+        Some(handler),
+        prepared,
+        report,
+        Some(timing),
     )
 }
 
@@ -1127,10 +1176,10 @@ fn advance_guest_machine_prepared_inner(
     handler: Option<&mut dyn GuestFcallHandler>,
     prepared: GuestMachinePreparedInstruction,
 ) -> Result<GuestMachineReport, GuestMachineError> {
-    Ok(
-        advance_guest_machine_prepared_inner_with_report_shape(memory, state, handler, prepared)?
-            .report,
-    )
+    Ok(advance_guest_machine_prepared_inner_with_report_shape(
+        memory, state, handler, prepared, None,
+    )?
+    .report)
 }
 
 fn advance_guest_machine_prepared_inner_with_report_shape(
@@ -1138,6 +1187,7 @@ fn advance_guest_machine_prepared_inner_with_report_shape(
     state: &mut GuestMachineState,
     handler: Option<&mut dyn GuestFcallHandler>,
     prepared: GuestMachinePreparedInstruction,
+    timing: Option<&mut GuestMachineAdvanceTiming>,
 ) -> Result<GuestMachineAdvanceReport, GuestMachineError> {
     let mut report = MaybeUninit::uninit();
     let shape = advance_guest_machine_prepared_inner_report_shape_into(
@@ -1146,6 +1196,7 @@ fn advance_guest_machine_prepared_inner_with_report_shape(
         handler,
         prepared,
         &mut report,
+        timing,
     )?;
     Ok(GuestMachineAdvanceReport {
         // SAFETY: advance_guest_machine_prepared_inner_report_shape_into only returns Ok after
@@ -1161,6 +1212,7 @@ fn advance_guest_machine_prepared_inner_report_shape_into(
     handler: Option<&mut dyn GuestFcallHandler>,
     prepared: GuestMachinePreparedInstruction,
     report: &mut MaybeUninit<GuestMachineReport>,
+    mut timing: Option<&mut GuestMachineAdvanceTiming>,
 ) -> Result<GuestMachineReportShape, GuestMachineError> {
     let address = state.pc();
     if prepared.address != address {
@@ -1174,10 +1226,15 @@ fn advance_guest_machine_prepared_inner_report_shape_into(
     let sequential_pc = address
         .checked_add(byte_len as u64)
         .ok_or(GuestMachineError::ProgramCounterOverflow { address, byte_len })?;
+    let setup_started = advance_timing_started(&timing);
     let mut effects = GuestInstructionEffects::default();
     let checkpoint = GuestMachineStateCheckpoint::new(state, instruction);
 
     state.set_pc(sequential_pc);
+    record_advance_timing(setup_started, timing.as_deref_mut(), |timing| {
+        &mut timing.setup_duration
+    });
+    let execute_started = advance_timing_started(&timing);
     if let Err(error) = execute_guest_instruction(
         memory,
         address,
@@ -1189,10 +1246,17 @@ fn advance_guest_machine_prepared_inner_report_shape_into(
     ) {
         effects.restore_registers(state);
         checkpoint.restore(state);
+        record_advance_timing(execute_started, timing.as_deref_mut(), |timing| {
+            &mut timing.execute_duration
+        });
         return Err(error);
     }
     state.retire_instruction();
     let next_pc = state.pc();
+    record_advance_timing(execute_started, timing.as_deref_mut(), |timing| {
+        &mut timing.execute_duration
+    });
+    let report_started = advance_timing_started(&timing);
     let shape = effects.report_shape(instruction);
 
     report.write(GuestMachineReport {
@@ -1207,7 +1271,24 @@ fn advance_guest_machine_prepared_inner_report_shape_into(
             effects.precompile_result,
         ),
     });
+    record_advance_timing(report_started, timing.as_deref_mut(), |timing| {
+        &mut timing.report_duration
+    });
     Ok(shape)
+}
+
+fn advance_timing_started(timing: &Option<&mut GuestMachineAdvanceTiming>) -> Option<Instant> {
+    timing.as_ref().map(|_| Instant::now())
+}
+
+fn record_advance_timing(
+    started: Option<Instant>,
+    timing: Option<&mut GuestMachineAdvanceTiming>,
+    field: impl FnOnce(&mut GuestMachineAdvanceTiming) -> &mut Duration,
+) {
+    if let (Some(started), Some(timing)) = (started, timing) {
+        *field(timing) += started.elapsed();
+    }
 }
 
 fn fetch_decode_guest_instruction(
@@ -2246,6 +2327,7 @@ mod tests {
             &mut state,
             None,
             prepared,
+            None,
         )
         .expect("prepared advance should succeed");
 
@@ -2294,6 +2376,7 @@ mod tests {
             &mut success_state,
             None,
             prepared,
+            None,
         )
         .expect("successful store conditional should advance");
         assert_eq!(
@@ -2317,6 +2400,7 @@ mod tests {
             &mut failure_state,
             None,
             prepared,
+            None,
         )
         .expect("failed store conditional should advance");
         assert_eq!(

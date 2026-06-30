@@ -467,6 +467,9 @@ pub struct ProveWitnessGuestPcTraceTiming {
     guest_trace_runner_row_plan_duration: Duration,
     guest_trace_runner_cache_policy_duration: Duration,
     guest_trace_runner_advance_duration: Duration,
+    guest_trace_runner_advance_setup_duration: Duration,
+    guest_trace_runner_advance_execute_duration: Duration,
+    guest_trace_runner_advance_report_duration: Duration,
     guest_trace_runner_cache_update_duration: Duration,
     guest_trace_runner_row_count_duration: Duration,
     guest_trace_runner_post_boundary_duration: Duration,
@@ -827,6 +830,12 @@ impl ProveWitnessGuestPcTraceTiming {
             guest_trace_runner_row_plan_duration: stream_timing.runner_row_plan_duration(),
             guest_trace_runner_cache_policy_duration: stream_timing.runner_cache_policy_duration(),
             guest_trace_runner_advance_duration: stream_timing.runner_advance_duration(),
+            guest_trace_runner_advance_setup_duration: stream_timing
+                .runner_advance_setup_duration(),
+            guest_trace_runner_advance_execute_duration: stream_timing
+                .runner_advance_execute_duration(),
+            guest_trace_runner_advance_report_duration: stream_timing
+                .runner_advance_report_duration(),
             guest_trace_runner_cache_update_duration: stream_timing.runner_cache_update_duration(),
             guest_trace_runner_row_count_duration: stream_timing.runner_row_count_duration(),
             guest_trace_runner_post_boundary_duration: stream_timing
@@ -1350,6 +1359,18 @@ impl ProveWitnessGuestPcTraceTiming {
 
     pub fn guest_trace_runner_advance_duration(&self) -> Duration {
         self.guest_trace_runner_advance_duration
+    }
+
+    pub fn guest_trace_runner_advance_setup_duration(&self) -> Duration {
+        self.guest_trace_runner_advance_setup_duration
+    }
+
+    pub fn guest_trace_runner_advance_execute_duration(&self) -> Duration {
+        self.guest_trace_runner_advance_execute_duration
+    }
+
+    pub fn guest_trace_runner_advance_report_duration(&self) -> Duration {
+        self.guest_trace_runner_advance_report_duration
     }
 
     pub fn guest_trace_runner_cache_update_duration(&self) -> Duration {
