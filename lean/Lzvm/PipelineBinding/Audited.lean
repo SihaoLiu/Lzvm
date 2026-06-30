@@ -627,6 +627,107 @@ theorem runtime_pipeline_binding_required_external_source_audited_pcs_fri_core_w
       verifierCore,
       soundWitness⟩
 
+theorem runtime_pipeline_binding_required_external_source_audited_query_opening_core_sound_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimePipelineBindingValidation system) :
+    forall artifact publicInput proof (requiresExternalSource : Prop),
+      RuntimePipelineBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        requiresExternalSource ->
+          RequiredCryptographicAssumptionStatements assumptions.crypto
+            /\ ProofSystemSound system
+            /\ system.accepts publicInput proof
+            /\ ExternalSourceOpeningEvidence
+              system
+              (runtime_pipeline_trace_source_validation validation)
+              publicInput
+              proof
+            /\ ExternalSourceOpeningEvidence
+              system
+              (runtime_pipeline_opening_source_validation validation)
+              publicInput
+              proof
+            /\ RuntimeQueryPlanBindingEvidence
+              system
+              validation.queryPlanBindingValidation
+              artifact
+              publicInput
+              proof
+            /\ RuntimeChallengeSegmentBindingEvidence
+              system
+              validation.queryPlanBindingValidation.challengeValidation
+              artifact
+              publicInput
+              proof
+            /\ RuntimeOpeningSegmentBindingEvidence
+              system
+              validation.queryPlanBindingValidation.openingValidation
+              artifact
+              publicInput
+              proof
+            /\ RuntimeOpeningEvidence
+              system
+              validation.queryPlanBindingValidation.openingValidation.openingValidation
+              artifact
+              publicInput
+              proof
+              requiresExternalSource
+            /\ RuntimeVerifierCoreContract system publicInput proof
+            /\ SoundWitness system publicInput proof := by
+  intro artifact publicInput proof requiresExternalSource accepted required
+  have auditedAssumptions :=
+    assumption_bundle_carries_required_crypto_evidence assumptions
+  have proofSystemSound := abstract_verifier_sound assumptions
+  have verifierAccepts :=
+    runtime_pipeline_binding_checked_acceptance_verifier_accepts
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have requiredSound :=
+    runtime_pipeline_binding_required_external_source_sound
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      accepted
+      required
+  have queryOpeningCore :=
+    runtime_pipeline_binding_checked_acceptance_query_opening_evidence_core_and_sound
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      accepted
+  rcases requiredSound with
+    ⟨_pipelineEvidence,
+      traceExternalEvidence,
+      openingExternalEvidence,
+      _pcsOpenings,
+      _requiredSoundWitness⟩
+  exact
+    ⟨auditedAssumptions,
+      proofSystemSound,
+      verifierAccepts,
+      traceExternalEvidence,
+      openingExternalEvidence,
+      queryOpeningCore.left,
+      queryOpeningCore.right.left,
+      queryOpeningCore.right.right.left,
+      queryOpeningCore.right.right.right.left,
+      queryOpeningCore.right.right.right.right.left,
+      queryOpeningCore.right.right.right.right.right⟩
+
 theorem runtime_pipeline_required_external_source_audited_finalized_core_sound_witness_contract
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
