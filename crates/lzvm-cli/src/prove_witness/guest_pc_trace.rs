@@ -120,6 +120,44 @@ pub(super) fn record_guest_pc_trace_timing(
     record_duration!(guest_segment_commit_worker_backpressure_join_duration);
     record_duration!(guest_segment_commit_worker_finish_join_duration);
     record_duration!(guest_trace_runner_duration);
+    let runner_detail_sample_count = timing.guest_trace_runner_detail_sample_count();
+    timings.record_count(
+        "guest_trace_runner_detail_samples",
+        runner_detail_sample_count,
+    );
+    for (name, duration) in [
+        (
+            "guest_trace_runner_detail",
+            timing.guest_trace_runner_detail_duration(),
+        ),
+        (
+            "guest_trace_runner_prepare_instruction",
+            timing.guest_trace_runner_prepare_instruction_duration(),
+        ),
+        (
+            "guest_trace_runner_row_plan",
+            timing.guest_trace_runner_row_plan_duration(),
+        ),
+        (
+            "guest_trace_runner_advance",
+            timing.guest_trace_runner_advance_duration(),
+        ),
+        (
+            "guest_trace_runner_cache_update",
+            timing.guest_trace_runner_cache_update_duration(),
+        ),
+        (
+            "guest_trace_runner_row_count",
+            timing.guest_trace_runner_row_count_duration(),
+        ),
+    ] {
+        record_guest_trace_sampled_duration_counts(
+            timings,
+            name,
+            duration,
+            runner_detail_sample_count,
+        );
+    }
     record_duration!(guest_trace_lowerer_duration);
     record_duration!(guest_trace_lower_duration);
     record_duration!(guest_trace_report_duration);

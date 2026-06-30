@@ -2443,16 +2443,27 @@ fn prove_timing_root_summary_reports_trace_lower_work_and_wall_overlap() {
         String::from_utf8_lossy(&output.stderr)
     );
     let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
-    assert!(
-        stdout.contains(
-            "runner_ms,lowerer_ms,trace_lower_ms,trace_report_ms,trace_report_apply_ms,trace_unit_summary_ms,trace_non_report_ms,trace_runner_lowerer_overlap_ms,trace_lowerer_non_lower_ms,stream_elapsed_ms"
-        ),
-        "prove timing root summary should expose actual trace lower work and runner/lowerer wall overlap columns: stdout={stdout}"
-    );
-    assert!(
-        stdout.contains(",7800,7812,6200,6100,0,0,100,5700,1612,9912,"),
-        "prove timing root summary should compute overlap and non-lowerer work from timing_guest_trace_lower_ms: stdout={stdout}"
-    );
+    let mut lines = stdout.lines();
+    let header = parse_csv_line(lines.next().expect("summary should print a header"));
+    let row = parse_csv_line(lines.next().expect("summary should print one row"));
+    let value = |name: &str| {
+        let index = header
+            .iter()
+            .position(|header| header == name)
+            .unwrap_or_else(|| panic!("summary should expose {name}: stdout={stdout}"));
+        row.get(index)
+            .map(String::as_str)
+            .unwrap_or_else(|| panic!("summary row should contain {name}: stdout={stdout}"))
+    };
+
+    assert_eq!(value("runner_ms"), "7800");
+    assert_eq!(value("lowerer_ms"), "7812");
+    assert_eq!(value("trace_lower_ms"), "6200");
+    assert_eq!(value("trace_report_ms"), "6100");
+    assert_eq!(value("trace_non_report_ms"), "100");
+    assert_eq!(value("trace_runner_lowerer_overlap_ms"), "5700");
+    assert_eq!(value("trace_lowerer_non_lower_ms"), "1612");
+    assert_eq!(value("stream_elapsed_ms"), "9912");
 }
 
 #[test]
@@ -8589,6 +8600,76 @@ fn prove_timing_root_summary_reports_runner_perf_hotspots() {
     assert_eq!(
         value("cpu_runner_hotspot_hint"),
         "instruction_prepare_and_advance"
+    );
+}
+
+#[test]
+fn prove_timing_root_summary_reports_runner_detail_hotspot() {
+    let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let script_path = crate_root.join("../../scripts/prove-timing-root-summary.py");
+    let input = [
+        "timing_total_ms=10000",
+        "timing_guest_stage_tree_commit_root_count=1",
+        "timing_guest_stage_tree_commit_root_materialization_groups=1",
+        "timing_guest_stage_tree_commit_root_materialization_max_group_size=1",
+        "timing_guest_trace_runner_ms=8000",
+        "timing_guest_trace_reports=1000",
+        "timing_guest_trace_runner_detail_samples=10",
+        "timing_guest_trace_runner_detail_sampled_ns=1000000",
+        "timing_guest_trace_runner_prepare_instruction_sampled_ns=100000",
+        "timing_guest_trace_runner_row_plan_sampled_ns=100000",
+        "timing_guest_trace_runner_advance_sampled_ns=650000",
+        "timing_guest_trace_runner_cache_update_sampled_ns=50000",
+        "timing_guest_trace_runner_row_count_sampled_ns=50000",
+    ]
+    .join("\n");
+
+    let mut child = Command::new("python3")
+        .arg(&script_path)
+        .arg("-")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("prove timing root summary should spawn");
+    child
+        .stdin
+        .as_mut()
+        .expect("stdin should be open")
+        .write_all(input.as_bytes())
+        .expect("stdin should write");
+    let output = child
+        .wait_with_output()
+        .expect("prove timing root summary should run");
+
+    assert!(
+        output.status.success(),
+        "prove timing root summary should pass: stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    let mut lines = stdout.lines();
+    let header = parse_csv_line(lines.next().expect("summary should print a header"));
+    let row = parse_csv_line(lines.next().expect("summary should print one row"));
+    let value = |name: &str| {
+        let index = header
+            .iter()
+            .position(|header| header == name)
+            .unwrap_or_else(|| panic!("summary should expose {name}: stdout={stdout}"));
+        row.get(index)
+            .map(String::as_str)
+            .unwrap_or_else(|| panic!("summary row should contain {name}: stdout={stdout}"))
+    };
+
+    assert_eq!(value("trace_runner_detail_samples"), "10");
+    assert_eq!(value("trace_runner_detail_sample_pct"), "1.000");
+    assert_eq!(value("trace_runner_detail_avg_ns"), "100000");
+    assert_eq!(value("trace_runner_detail_hotspot"), "advance");
+    assert_eq!(value("trace_runner_detail_hotspot_pct"), "65.000");
+    assert_eq!(value("trace_runner_detail_residual_pct"), "5.000");
+    assert_eq!(
+        value("trace_runner_detail_action_hint"),
+        "profile_guest_machine_advance"
     );
 }
 

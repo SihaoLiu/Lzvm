@@ -194,6 +194,13 @@ pub(crate) enum GuestPcTraceSegmentStreamError<E> {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(crate) struct GuestPcTraceStreamTiming {
     runner_duration: Duration,
+    runner_detail_sample_count: usize,
+    runner_detail_duration: Duration,
+    runner_prepare_instruction_duration: Duration,
+    runner_row_plan_duration: Duration,
+    runner_advance_duration: Duration,
+    runner_cache_update_duration: Duration,
+    runner_row_count_duration: Duration,
     lowerer_duration: Duration,
     trace_lower_duration: Duration,
     trace_report_duration: Duration,
@@ -337,6 +344,13 @@ pub(crate) struct GuestPcTraceStreamTiming {
 impl GuestPcTraceStreamTiming {
     fn add(&mut self, other: Self) {
         self.runner_duration += other.runner_duration;
+        self.runner_detail_sample_count += other.runner_detail_sample_count;
+        self.runner_detail_duration += other.runner_detail_duration;
+        self.runner_prepare_instruction_duration += other.runner_prepare_instruction_duration;
+        self.runner_row_plan_duration += other.runner_row_plan_duration;
+        self.runner_advance_duration += other.runner_advance_duration;
+        self.runner_cache_update_duration += other.runner_cache_update_duration;
+        self.runner_row_count_duration += other.runner_row_count_duration;
         self.lowerer_duration += other.lowerer_duration;
         self.trace_lower_duration += other.trace_lower_duration;
         self.trace_report_duration += other.trace_report_duration;
@@ -542,6 +556,34 @@ impl GuestPcTraceStreamTiming {
 
     pub fn runner_duration(&self) -> Duration {
         self.runner_duration
+    }
+
+    pub fn runner_detail_sample_count(&self) -> usize {
+        self.runner_detail_sample_count
+    }
+
+    pub fn runner_detail_duration(&self) -> Duration {
+        self.runner_detail_duration
+    }
+
+    pub fn runner_prepare_instruction_duration(&self) -> Duration {
+        self.runner_prepare_instruction_duration
+    }
+
+    pub fn runner_row_plan_duration(&self) -> Duration {
+        self.runner_row_plan_duration
+    }
+
+    pub fn runner_advance_duration(&self) -> Duration {
+        self.runner_advance_duration
+    }
+
+    pub fn runner_cache_update_duration(&self) -> Duration {
+        self.runner_cache_update_duration
+    }
+
+    pub fn runner_row_count_duration(&self) -> Duration {
+        self.runner_row_count_duration
     }
 
     pub fn lowerer_duration(&self) -> Duration {
@@ -3536,6 +3578,7 @@ fn run_guest_pc_trace_segment_slice(
         instruction_limit,
         row_limit,
         &mut instruction_cache,
+        None,
     )
 }
 
@@ -3546,6 +3589,7 @@ fn run_guest_pc_trace_segment_slice_with_cache(
     instruction_limit: u64,
     row_limit: usize,
     instruction_cache: &mut GuestInstructionCache,
+    timing: Option<&mut GuestPcTraceStreamTiming>,
 ) -> Result<GuestPcTraceSegmentSlice, GuestPcTraceBackendError> {
     run_guest_pc_trace_segment_slice_inner::<false, true>(
         memory,
@@ -3555,6 +3599,7 @@ fn run_guest_pc_trace_segment_slice_with_cache(
         row_limit,
         None,
         instruction_cache,
+        timing,
     )
 }
 
@@ -3625,6 +3670,7 @@ fn run_guest_pc_trace_segment_slice_with_boundary_snapshot(
         row_limit,
         boundary_snapshot,
         &mut instruction_cache,
+        None,
     )
 }
 
@@ -3636,6 +3682,7 @@ fn run_guest_pc_trace_segment_slice_with_boundary_snapshot_and_cache(
     row_limit: usize,
     boundary_snapshot: &mut ZiskMainRunnerBoundarySnapshot,
     instruction_cache: &mut GuestInstructionCache,
+    timing: Option<&mut GuestPcTraceStreamTiming>,
 ) -> Result<GuestPcTraceSegmentSlice, GuestPcTraceBackendError> {
     run_guest_pc_trace_segment_slice_inner::<true, true>(
         memory,
@@ -3645,6 +3692,7 @@ fn run_guest_pc_trace_segment_slice_with_boundary_snapshot_and_cache(
         row_limit,
         Some(boundary_snapshot),
         instruction_cache,
+        timing,
     )
 }
 
@@ -3665,6 +3713,7 @@ fn run_guest_pc_trace_segment_slice_with_elided_reports_and_boundary_snapshot(
         row_limit,
         boundary_snapshot,
         &mut instruction_cache,
+        None,
     )
 }
 
@@ -3676,6 +3725,7 @@ fn run_guest_pc_trace_segment_slice_with_elided_reports_and_boundary_snapshot_an
     row_limit: usize,
     boundary_snapshot: &mut ZiskMainRunnerBoundarySnapshot,
     instruction_cache: &mut GuestInstructionCache,
+    timing: Option<&mut GuestPcTraceStreamTiming>,
 ) -> Result<GuestPcTraceSegmentSlice, GuestPcTraceBackendError> {
     run_guest_pc_trace_segment_slice_inner::<true, false>(
         memory,
@@ -3685,6 +3735,7 @@ fn run_guest_pc_trace_segment_slice_with_elided_reports_and_boundary_snapshot_an
         row_limit,
         Some(boundary_snapshot),
         instruction_cache,
+        timing,
     )
 }
 
@@ -4185,12 +4236,15 @@ fn run_guest_pc_trace_segment_slice_inner<
     row_limit: usize,
     mut boundary_snapshot: Option<&mut ZiskMainRunnerBoundarySnapshot>,
     instruction_cache: &mut GuestInstructionCache,
+    mut timing: Option<&mut GuestPcTraceStreamTiming>,
 ) -> Result<GuestPcTraceSegmentSlice, GuestPcTraceBackendError> {
     let mut reports = Vec::new();
     let mut last_report_shape = None;
     let mut report_count = 0_usize;
     let mut executed_instructions = 0_u64;
     let mut trace_rows = 0_usize;
+    let runner_timing_config =
+        GuestPcTraceRunnerTimingConfig::from_env_if_enabled(timing.is_some());
     enum GuestMachineAdvancedReportStorage<'a> {
         Borrowed(&'a GuestMachineReport),
         Owned(GuestMachineReport),
@@ -4210,6 +4264,9 @@ fn run_guest_pc_trace_segment_slice_inner<
         shape: GuestMachineReportShape,
     }
     loop {
+        let report_detail_timing = runner_timing_config.sample(report_count);
+        let report_detail_started = detail_duration_started(&timing, report_detail_timing);
+        let prepare_started = detail_duration_started(&timing, report_detail_timing);
         let pc = state.pc();
         let prepared = instruction_cache
             .prepare(memory, pc)
@@ -4258,6 +4315,10 @@ fn run_guest_pc_trace_segment_slice_inner<
                 },
             ));
         }
+        record_detail_duration(prepare_started, &mut timing, |timing| {
+            &mut timing.runner_prepare_instruction_duration
+        });
+        let row_plan_started = detail_duration_started(&timing, report_detail_timing);
         let max_rows = zisk_main_instruction_max_rows(current);
         if max_rows > row_limit {
             return Err(GuestPcTraceBackendError::InvalidPcTraceLayout {
@@ -4285,7 +4346,11 @@ fn run_guest_pc_trace_segment_slice_inner<
                 },
             ));
         }
+        record_detail_duration(row_plan_started, &mut timing, |timing| {
+            &mut timing.runner_row_plan_duration
+        });
         let clear_instruction_cache = instruction_clears_instruction_cache(state, current);
+        let advance_started = detail_duration_started(&timing, report_detail_timing);
         let advanced = if RETAIN_REPORTS {
             reports.reserve(1);
             let report_index = reports.len();
@@ -4326,11 +4391,19 @@ fn run_guest_pc_trace_segment_slice_inner<
                 shape,
             }
         };
+        record_detail_duration(advance_started, &mut timing, |timing| {
+            &mut timing.runner_advance_duration
+        });
+        let cache_update_started = detail_duration_started(&timing, report_detail_timing);
         if clear_instruction_cache {
             instruction_cache.clear();
         } else {
             instruction_cache.invalidate_report(&advanced.report);
         }
+        record_detail_duration(cache_update_started, &mut timing, |timing| {
+            &mut timing.runner_cache_update_duration
+        });
+        let row_count_started = detail_duration_started(&timing, report_detail_timing);
         let report_rows =
             zisk_main_report_row_count_from_report_shape(report_count, advanced.shape)?;
         let next_trace_rows = trace_rows.checked_add(report_rows).ok_or_else(|| {
@@ -4343,6 +4416,9 @@ fn run_guest_pc_trace_segment_slice_inner<
                 message: "Zisk Main report rows exceed layout rows".to_owned(),
             });
         }
+        record_detail_duration(row_count_started, &mut timing, |timing| {
+            &mut timing.runner_row_count_duration
+        });
         trace_rows = next_trace_rows;
         last_report_shape = Some(advanced.shape);
         if TRACK_BOUNDARY {
@@ -4357,6 +4433,15 @@ fn run_guest_pc_trace_segment_slice_inner<
             }
         })?;
         executed_instructions += 1;
+        if report_detail_timing {
+            record_detail_duration(report_detail_started, &mut timing, |timing| {
+                &mut timing.runner_detail_duration
+            });
+            if let Some(timing) = timing.as_deref_mut() {
+                timing.runner_detail_sample_count =
+                    timing.runner_detail_sample_count.saturating_add(1);
+            }
+        }
         if trace_rows == row_limit {
             let pc = state.pc();
             let current = instruction_cache
@@ -5708,6 +5793,7 @@ fn produce_guest_pc_trace_pending_slices(
                     row_count,
                     snapshot,
                     &mut instruction_cache,
+                    Some(&mut timing),
                 )?
             } else {
                 run_guest_pc_trace_segment_slice_with_boundary_snapshot_and_cache(
@@ -5718,6 +5804,7 @@ fn produce_guest_pc_trace_pending_slices(
                     row_count,
                     snapshot,
                     &mut instruction_cache,
+                    Some(&mut timing),
                 )?
             }
         } else {
@@ -5728,6 +5815,7 @@ fn produce_guest_pc_trace_pending_slices(
                 remaining_limit,
                 row_count,
                 &mut instruction_cache,
+                Some(&mut timing),
             )?
         };
         timing.trace_runner_report_buffer_capacity += slice.report_capacity;
@@ -13426,6 +13514,52 @@ fn guest_pc_trace_traceless_segment_output_selected() -> bool {
 
 fn guest_pc_trace_lower_detail_timing_enabled() -> bool {
     env_flag_enabled("LZVM_GUEST_TRACE_DETAIL_TIMING", false)
+}
+
+#[derive(Clone, Copy)]
+struct GuestPcTraceRunnerTimingConfig {
+    detail_timing: bool,
+    detail_sample_stride: usize,
+}
+
+impl GuestPcTraceRunnerTimingConfig {
+    fn disabled() -> Self {
+        Self {
+            detail_timing: false,
+            detail_sample_stride: 1,
+        }
+    }
+
+    fn from_env_if_enabled(enabled: bool) -> Self {
+        if !enabled {
+            return Self::disabled();
+        }
+        let detail_timing = guest_pc_trace_runner_detail_timing_enabled();
+        Self {
+            detail_timing,
+            detail_sample_stride: if detail_timing {
+                guest_pc_trace_runner_detail_timing_sample_stride()
+            } else {
+                1
+            },
+        }
+    }
+
+    fn sample(self, index: usize) -> bool {
+        self.detail_timing && index % self.detail_sample_stride == 0
+    }
+}
+
+fn guest_pc_trace_runner_detail_timing_enabled() -> bool {
+    env_flag_enabled("LZVM_GUEST_TRACE_RUNNER_DETAIL_TIMING", false)
+}
+
+fn guest_pc_trace_runner_detail_timing_sample_stride() -> usize {
+    std::env::var("LZVM_GUEST_TRACE_RUNNER_DETAIL_TIMING_SAMPLE_STRIDE")
+        .ok()
+        .and_then(|value| value.parse::<usize>().ok())
+        .filter(|&stride| stride != 0)
+        .unwrap_or(1)
 }
 
 fn guest_pc_trace_detail_timing_sample_stride() -> usize {

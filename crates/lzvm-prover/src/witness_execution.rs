@@ -460,6 +460,13 @@ pub struct ProveWitnessGuestPcTraceTiming {
     guest_segment_commit_cuda_allocator_initial_cached_byte_count: usize,
     guest_segment_commit_cuda_allocator_effective_cached_byte_count: usize,
     guest_trace_runner_duration: Duration,
+    guest_trace_runner_detail_sample_count: usize,
+    guest_trace_runner_detail_duration: Duration,
+    guest_trace_runner_prepare_instruction_duration: Duration,
+    guest_trace_runner_row_plan_duration: Duration,
+    guest_trace_runner_advance_duration: Duration,
+    guest_trace_runner_cache_update_duration: Duration,
+    guest_trace_runner_row_count_duration: Duration,
     guest_trace_lowerer_duration: Duration,
     guest_trace_lower_duration: Duration,
     guest_trace_report_duration: Duration,
@@ -807,6 +814,14 @@ impl ProveWitnessGuestPcTraceTiming {
                 .memory_timing
                 .cuda_allocator_effective_cached_byte_count,
             guest_trace_runner_duration: stream_timing.runner_duration(),
+            guest_trace_runner_detail_sample_count: stream_timing.runner_detail_sample_count(),
+            guest_trace_runner_detail_duration: stream_timing.runner_detail_duration(),
+            guest_trace_runner_prepare_instruction_duration: stream_timing
+                .runner_prepare_instruction_duration(),
+            guest_trace_runner_row_plan_duration: stream_timing.runner_row_plan_duration(),
+            guest_trace_runner_advance_duration: stream_timing.runner_advance_duration(),
+            guest_trace_runner_cache_update_duration: stream_timing.runner_cache_update_duration(),
+            guest_trace_runner_row_count_duration: stream_timing.runner_row_count_duration(),
             guest_trace_lowerer_duration: stream_timing.lowerer_duration(),
             guest_trace_lower_duration: stream_timing.trace_lower_duration(),
             guest_trace_report_duration: stream_timing.trace_report_duration(),
@@ -1295,6 +1310,34 @@ impl ProveWitnessGuestPcTraceTiming {
 
     pub fn guest_trace_runner_duration(&self) -> Duration {
         self.guest_trace_runner_duration
+    }
+
+    pub fn guest_trace_runner_detail_sample_count(&self) -> usize {
+        self.guest_trace_runner_detail_sample_count
+    }
+
+    pub fn guest_trace_runner_detail_duration(&self) -> Duration {
+        self.guest_trace_runner_detail_duration
+    }
+
+    pub fn guest_trace_runner_prepare_instruction_duration(&self) -> Duration {
+        self.guest_trace_runner_prepare_instruction_duration
+    }
+
+    pub fn guest_trace_runner_row_plan_duration(&self) -> Duration {
+        self.guest_trace_runner_row_plan_duration
+    }
+
+    pub fn guest_trace_runner_advance_duration(&self) -> Duration {
+        self.guest_trace_runner_advance_duration
+    }
+
+    pub fn guest_trace_runner_cache_update_duration(&self) -> Duration {
+        self.guest_trace_runner_cache_update_duration
+    }
+
+    pub fn guest_trace_runner_row_count_duration(&self) -> Duration {
+        self.guest_trace_runner_row_count_duration
     }
 
     pub fn guest_trace_lowerer_duration(&self) -> Duration {

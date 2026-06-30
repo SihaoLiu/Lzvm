@@ -32,6 +32,17 @@ CONSTANT_MATERIAL_VALIDATION_JOIN_WAIT_MS_KEY = (
     "timing_constant_material_validation_join_wait_ms"
 )
 RUNNER_MS_KEY = "timing_guest_trace_runner_ms"
+RUNNER_DETAIL_SAMPLES_KEY = "timing_guest_trace_runner_detail_samples"
+RUNNER_DETAIL_SAMPLED_NS_KEY = "timing_guest_trace_runner_detail_sampled_ns"
+RUNNER_PREPARE_INSTRUCTION_SAMPLED_NS_KEY = (
+    "timing_guest_trace_runner_prepare_instruction_sampled_ns"
+)
+RUNNER_ROW_PLAN_SAMPLED_NS_KEY = "timing_guest_trace_runner_row_plan_sampled_ns"
+RUNNER_ADVANCE_SAMPLED_NS_KEY = "timing_guest_trace_runner_advance_sampled_ns"
+RUNNER_CACHE_UPDATE_SAMPLED_NS_KEY = (
+    "timing_guest_trace_runner_cache_update_sampled_ns"
+)
+RUNNER_ROW_COUNT_SAMPLED_NS_KEY = "timing_guest_trace_runner_row_count_sampled_ns"
 LOWERER_MS_KEY = "timing_guest_trace_lowerer_ms"
 TRACE_LOWER_MS_KEY = "timing_guest_trace_lower_ms"
 TRACE_REPORT_MS_KEY = "timing_guest_trace_report_ms"
@@ -785,7 +796,13 @@ HEADER = (
     "top_level_unattributed_ms,gpu_memory_preflight_pct,gpu_setup_pct,top_level_bottleneck,"
     "constant_material_validation_elapsed_ms,"
     "constant_material_validation_join_wait_ms,constant_material_validation_overlap_hint,"
-    "runner_ms,lowerer_ms,trace_lower_ms,trace_report_ms,"
+    "runner_ms,trace_runner_detail_samples,trace_runner_detail_sample_pct,"
+    "trace_runner_detail_avg_ns,trace_runner_prepare_instruction_sampled_ns,"
+    "trace_runner_row_plan_sampled_ns,trace_runner_advance_sampled_ns,"
+    "trace_runner_cache_update_sampled_ns,trace_runner_row_count_sampled_ns,"
+    "trace_runner_detail_hotspot,trace_runner_detail_hotspot_pct,"
+    "trace_runner_detail_residual_pct,trace_runner_detail_action_hint,"
+    "lowerer_ms,trace_lower_ms,trace_report_ms,"
     "trace_report_apply_ms,trace_unit_summary_ms,trace_non_report_ms,"
     "trace_runner_lowerer_overlap_ms,trace_lowerer_non_lower_ms,"
     "stream_elapsed_ms,stream_worker_ms,"
@@ -1119,6 +1136,13 @@ TIMING_KEYS = {
     CONSTANT_MATERIAL_VALIDATION_ELAPSED_MS_KEY,
     CONSTANT_MATERIAL_VALIDATION_JOIN_WAIT_MS_KEY,
     RUNNER_MS_KEY,
+    RUNNER_DETAIL_SAMPLES_KEY,
+    RUNNER_DETAIL_SAMPLED_NS_KEY,
+    RUNNER_PREPARE_INSTRUCTION_SAMPLED_NS_KEY,
+    RUNNER_ROW_PLAN_SAMPLED_NS_KEY,
+    RUNNER_ADVANCE_SAMPLED_NS_KEY,
+    RUNNER_CACHE_UPDATE_SAMPLED_NS_KEY,
+    RUNNER_ROW_COUNT_SAMPLED_NS_KEY,
     LOWERER_MS_KEY,
     TRACE_LOWER_MS_KEY,
     TRACE_REPORT_MS_KEY,
@@ -3781,6 +3805,53 @@ def row_validation_hotspot_keys(values: dict[str, int]) -> list[tuple[str, str]]
     )
 
 
+RUNNER_DETAIL_HOTSPOT_KEYS = [
+    ("prepare_instruction", RUNNER_PREPARE_INSTRUCTION_SAMPLED_NS_KEY),
+    ("row_plan", RUNNER_ROW_PLAN_SAMPLED_NS_KEY),
+    ("advance", RUNNER_ADVANCE_SAMPLED_NS_KEY),
+    ("cache_update", RUNNER_CACHE_UPDATE_SAMPLED_NS_KEY),
+    ("row_count", RUNNER_ROW_COUNT_SAMPLED_NS_KEY),
+]
+
+
+def trace_runner_detail_hotspot(values: dict[str, int]) -> tuple[int, str, float, float]:
+    samples = values.get(RUNNER_DETAIL_SAMPLES_KEY, 0)
+    sampled_ns = values.get(RUNNER_DETAIL_SAMPLED_NS_KEY, 0)
+    if samples <= 0 or sampled_ns <= 0:
+        return (0, "none", 0.0, 0.0)
+    avg_ns = sampled_ns // samples
+    hotspot_name = "none"
+    hotspot_ns = 0
+    explained_ns = 0
+    for name, key in RUNNER_DETAIL_HOTSPOT_KEYS:
+        value = values.get(key, 0)
+        explained_ns += value
+        if value > hotspot_ns:
+            hotspot_name = name
+            hotspot_ns = value
+    hotspot_pct = hotspot_ns * 100.0 / sampled_ns if hotspot_ns else 0.0
+    residual_pct = max(sampled_ns - explained_ns, 0) * 100.0 / sampled_ns
+    return (avg_ns, hotspot_name, hotspot_pct, residual_pct)
+
+
+def trace_runner_detail_action_hint(
+    hotspot_name: str, hotspot_pct: float, residual_pct: float, has_sampled_detail: bool
+) -> str:
+    if not has_sampled_detail:
+        return "enable_runner_detail_timing"
+    if residual_pct >= 35.0:
+        return "profile_runner_unattributed_work"
+    if hotspot_name == "prepare_instruction" and hotspot_pct > 0.0:
+        return "profile_instruction_cache_prepare"
+    if hotspot_name == "advance" and hotspot_pct > 0.0:
+        return "profile_guest_machine_advance"
+    if hotspot_name == "cache_update" and hotspot_pct > 0.0:
+        return "profile_instruction_cache_invalidation"
+    if hotspot_name in {"row_plan", "row_count"} and hotspot_pct > 0.0:
+        return "profile_runner_row_accounting"
+    return "runner_detail_balanced"
+
+
 def trace_report_detail_hotspot(values: dict[str, int]) -> tuple[int, str, float]:
     samples = values.get(TRACE_REPORT_DETAIL_SAMPLES_KEY, 0)
     sampled_ns = values.get(TRACE_REPORT_SAMPLED_NS_KEY, 0)
@@ -4174,6 +4245,34 @@ def summarize_profile_values(
         constant_material_join_wait_ms,
     )
     runner_ms = values.get(RUNNER_MS_KEY, 0)
+    trace_runner_detail_samples = values.get(RUNNER_DETAIL_SAMPLES_KEY, 0)
+    trace_reports_for_runner_detail = values.get(TRACE_REPORTS_KEY, 0)
+    trace_runner_detail_sample_pct = (
+        trace_runner_detail_samples * 100.0 / trace_reports_for_runner_detail
+        if trace_reports_for_runner_detail
+        else 0.0
+    )
+    trace_runner_prepare_instruction_sampled_ns = values.get(
+        RUNNER_PREPARE_INSTRUCTION_SAMPLED_NS_KEY, 0
+    )
+    trace_runner_row_plan_sampled_ns = values.get(RUNNER_ROW_PLAN_SAMPLED_NS_KEY, 0)
+    trace_runner_advance_sampled_ns = values.get(RUNNER_ADVANCE_SAMPLED_NS_KEY, 0)
+    trace_runner_cache_update_sampled_ns = values.get(
+        RUNNER_CACHE_UPDATE_SAMPLED_NS_KEY, 0
+    )
+    trace_runner_row_count_sampled_ns = values.get(RUNNER_ROW_COUNT_SAMPLED_NS_KEY, 0)
+    (
+        trace_runner_detail_avg_ns,
+        trace_runner_detail_hotspot_name,
+        trace_runner_detail_hotspot_pct,
+        trace_runner_detail_residual_pct,
+    ) = trace_runner_detail_hotspot(values)
+    trace_runner_detail_action = trace_runner_detail_action_hint(
+        trace_runner_detail_hotspot_name,
+        trace_runner_detail_hotspot_pct,
+        trace_runner_detail_residual_pct,
+        trace_runner_detail_samples > 0,
+    )
     lowerer_ms = values.get(LOWERER_MS_KEY, 0)
     stream_elapsed_ms = values.get(STREAM_ELAPSED_MS_KEY, 0)
     trace_lower_ms = values.get(TRACE_LOWER_MS_KEY, 0)
@@ -5643,7 +5742,18 @@ def summarize_profile_values(
         f"{proof_ms},{output_write_ms},{summary_ms},"
         f"{top_level_unattributed_ms},{gpu_memory_preflight_pct:.3f},{gpu_setup_pct:.3f},{top_level_hint},"
         f"{constant_material_elapsed_ms},{constant_material_join_wait_ms},"
-        f"{constant_material_hint},{runner_ms},{lowerer_ms},"
+        f"{constant_material_hint},{runner_ms},"
+        f"{trace_runner_detail_samples},{trace_runner_detail_sample_pct:.3f},"
+        f"{trace_runner_detail_avg_ns},"
+        f"{trace_runner_prepare_instruction_sampled_ns},"
+        f"{trace_runner_row_plan_sampled_ns},"
+        f"{trace_runner_advance_sampled_ns},"
+        f"{trace_runner_cache_update_sampled_ns},"
+        f"{trace_runner_row_count_sampled_ns},"
+        f"{csv_cell(trace_runner_detail_hotspot_name)},"
+        f"{trace_runner_detail_hotspot_pct:.3f},"
+        f"{trace_runner_detail_residual_pct:.3f},"
+        f"{trace_runner_detail_action},{lowerer_ms},"
         f"{trace_lower_ms},{trace_report_ms},"
         f"{trace_report_apply_ms},{trace_unit_summary_ms},{trace_non_report_ms},"
         f"{trace_runner_lowerer_overlap_ms},"
