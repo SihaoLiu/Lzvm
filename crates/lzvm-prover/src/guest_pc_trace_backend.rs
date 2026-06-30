@@ -2351,27 +2351,34 @@ fn zisk_main_sparse_device_trace_descriptor_words(
         values.instruction.jmp_offset2,
     )?;
     let register_mem_steps = zisk_main_pack_u32_pair(a_prev_mem_step, b_prev_mem_step)?;
-    let unpaired_values = zisk_main_unpaired_descriptor_values(
-        values,
-        a_payload,
-        b_payload,
-        store_payload,
-        store_prev_value,
-    );
     let mut high_mask = 0_u64;
     let mut high_words = [0_u64; ZISK_MAIN_SPARSE_DESCRIPTOR_MAX_HIGH_WORDS];
     let mut high_value_count = 0_usize;
-    for (index, value) in unpaired_values.into_iter().enumerate() {
-        let high = value >> 32;
-        if high != 0 {
-            high_mask |= 1_u64 << index;
-            let high_word_index = high_value_count / 2;
-            if high_value_count.is_multiple_of(2) {
-                high_words[high_word_index] = high;
-            } else {
-                high_words[high_word_index] |= high << 32;
+    if (values.a | values.b | values.c | a_payload | b_payload | store_payload | store_prev_value)
+        >> 32
+        != 0
+    {
+        let unpaired_values = [
+            values.a,
+            values.b,
+            values.c,
+            a_payload,
+            b_payload,
+            store_payload,
+            store_prev_value,
+        ];
+        for (index, value) in unpaired_values.into_iter().enumerate() {
+            let high = value >> 32;
+            if high != 0 {
+                high_mask |= 1_u64 << index;
+                let high_word_index = high_value_count / 2;
+                if high_value_count.is_multiple_of(2) {
+                    high_words[high_word_index] = high;
+                } else {
+                    high_words[high_word_index] |= high << 32;
+                }
+                high_value_count += 1;
             }
-            high_value_count += 1;
         }
     }
     Some(ZiskMainSparseDeviceTraceDescriptorWords {
