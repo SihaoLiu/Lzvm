@@ -166,6 +166,8 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
             "runtime_pipeline_binding_evidence_implies_runtime_soundness_evidence",
             "runtime_pipeline_binding_evidence_implies_runtime_artifact_evidence",
             "runtime_pipeline_binding_evidence_implies_runtime_artifact_core_contract",
+            "runtime_pipeline_binding_evidence_implies_trace_preflight_evidence",
+            "runtime_pipeline_binding_evidence_implies_trace_constraint_evidence",
             "runtime_pipeline_binding_evidence_implies_external_source_requirements",
             "runtime_pipeline_binding_evidence_implies_seeded_query_plan_contract",
             "runtime_pipeline_binding_evidence_implies_trace_semantic_evidence_complete",
@@ -497,6 +499,32 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
         &lean_source,
         "runtime_pipeline_binding_evidence_implies_trace_semantic_evidence_complete",
         &["runtime_trace_constraint_evidence_implies_semantic_evidence_complete"],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_pipeline_binding_evidence_implies_trace_preflight_evidence",
+        &[
+            "RuntimePipelineBindingEvidence",
+            "RuntimeTraceConstraintPreflightBindingEvidence",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_pipeline_binding_evidence_implies_trace_preflight_evidence",
+        &["tracePreflightEvidence"],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_pipeline_binding_evidence_implies_trace_constraint_evidence",
+        &[
+            "RuntimePipelineBindingEvidence",
+            "RuntimeTraceConstraintEvidence",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_pipeline_binding_evidence_implies_trace_constraint_evidence",
+        &["traceConstraintEvidence"],
     );
     lean_binding::assert_theorem_prefix_contains(
         &lean_source,

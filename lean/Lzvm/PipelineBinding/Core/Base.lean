@@ -320,6 +320,81 @@ theorem runtime_pipeline_binding_evidence_implies_runtime_artifact_core_contract
       runtimeArtifactEvidence
       coreObligations
 
+theorem runtime_pipeline_binding_evidence_implies_trace_preflight_evidence
+    {system : VerifierModel}
+    {validation : RuntimePipelineBindingValidation system}
+    {artifact : RuntimeArtifact}
+    {publicInput : PublicInput}
+    {proof : Proof}
+    {requiresExternalSource : Prop} :
+    RuntimePipelineBindingEvidence
+        system
+        validation
+        artifact
+        publicInput
+        proof
+        requiresExternalSource ->
+      RuntimeTraceConstraintPreflightBindingEvidence
+        system
+        validation.traceBindingValidation
+        artifact
+        publicInput
+        proof := by
+  intro evidence
+  rcases evidence with
+    ⟨_ethEvidence,
+      _artifactEvidence,
+      _runtimeArtifactEvidence,
+      tracePreflightEvidence,
+      _traceConstraintEvidence,
+      _queryPlanEvidence,
+      _challengeEvidence,
+      _openingSegmentEvidence,
+      _openingEvidence,
+      _transcriptBound,
+      _publicInputBound,
+      _pcsOpeningsValid,
+      _friQueriesValid⟩
+  exact tracePreflightEvidence
+
+theorem runtime_pipeline_binding_evidence_implies_trace_constraint_evidence
+    {system : VerifierModel}
+    {validation : RuntimePipelineBindingValidation system}
+    {artifact : RuntimeArtifact}
+    {publicInput : PublicInput}
+    {proof : Proof}
+    {requiresExternalSource : Prop} :
+    RuntimePipelineBindingEvidence
+        system
+        validation
+        artifact
+        publicInput
+        proof
+        requiresExternalSource ->
+      RuntimeTraceConstraintEvidence
+        system
+        validation.traceBindingValidation.traceConstraintValidation
+        artifact
+        publicInput
+        proof
+        requiresExternalSource := by
+  intro evidence
+  rcases evidence with
+    ⟨_ethEvidence,
+      _artifactEvidence,
+      _runtimeArtifactEvidence,
+      _tracePreflightEvidence,
+      traceConstraintEvidence,
+      _queryPlanEvidence,
+      _challengeEvidence,
+      _openingSegmentEvidence,
+      _openingEvidence,
+      _transcriptBound,
+      _publicInputBound,
+      _pcsOpeningsValid,
+      _friQueriesValid⟩
+  exact traceConstraintEvidence
+
 theorem runtime_pipeline_binding_evidence_implies_external_source_requirements
     {system : VerifierModel}
     {validation : RuntimePipelineBindingValidation system}
