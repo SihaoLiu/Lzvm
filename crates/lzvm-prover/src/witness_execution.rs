@@ -5651,7 +5651,7 @@ const GUEST_PC_ROOT_MATERIALIZATION_SUPPORTED_INPUT_BYTE_LIMIT: usize = 2 * 1024
 #[cfg(feature = "cuda")]
 const GUEST_PC_ROOT_MATERIALIZATION_DEFAULT_SMALL_INPUT_WINDOW: usize = 24;
 #[cfg(feature = "cuda")]
-const GUEST_PC_ROOT_MATERIALIZATION_DEFAULT_LARGE_INPUT_WINDOW: usize = 4;
+const GUEST_PC_ROOT_MATERIALIZATION_DEFAULT_LARGE_INPUT_WINDOW: usize = 8;
 #[cfg(feature = "cuda")]
 const GUEST_PC_DESCRIPTOR_RETENTION_DEFAULT_INPUT_BYTE_LIMIT: usize =
     GUEST_PC_SMALL_INPUT_BYTE_LIMIT;
@@ -8620,7 +8620,7 @@ mod tests {
 
         let large_default_mode = GuestPcTraceSegmentCommitMode::from_input(8 * 1024 * 1024, None);
         assert!(large_default_mode.cross_segment_root_materialization);
-        assert_eq!(large_default_mode.pending_root_materialization_window, 4);
+        assert_eq!(large_default_mode.pending_root_materialization_window, 8);
 
         let unsupported_mode =
             GuestPcTraceSegmentCommitMode::from_input(2 * 1024 * 1024 * 1024, None);
