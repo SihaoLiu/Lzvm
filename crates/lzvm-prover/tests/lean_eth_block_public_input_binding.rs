@@ -40,6 +40,8 @@ fn lean_eth_block_public_input_binding_exports_core_contract_projection() {
         &[
             "runtime_eth_block_public_input_binding_checked_acceptance_artifact_evidence_contract",
             "runtime_eth_block_public_input_binding_checked_acceptance_input_segment_present",
+            "runtime_eth_block_public_input_binding_checked_acceptance_input_matches",
+            "runtime_eth_block_public_input_binding_checked_acceptance_public_values_match",
             "runtime_eth_block_public_input_binding_checked_acceptance_artifact_wellformed_contract",
             "runtime_eth_block_public_input_binding_checked_acceptance_concrete_segment_ids_allowed",
             "runtime_eth_block_public_input_binding_checked_acceptance_sound",
@@ -61,6 +63,32 @@ fn lean_eth_block_public_input_binding_exports_core_contract_projection() {
         &lean_source,
         "runtime_eth_block_public_input_binding_checked_acceptance_input_segment_present",
         &["validation.ethBindingAcceptedImpliesEthBlockInputSegmentPresent"],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_eth_block_public_input_binding_checked_acceptance_input_matches",
+        &[
+            "RuntimeEthBlockPublicInputBindingCheckedAcceptance",
+            "validation.ethBlockInputMatches artifact publicInput proof",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains_identifier(
+        &lean_source,
+        "runtime_eth_block_public_input_binding_checked_acceptance_input_matches",
+        "validation.ethBindingAcceptedImpliesEthBlockInputMatches",
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_eth_block_public_input_binding_checked_acceptance_public_values_match",
+        &[
+            "RuntimeEthBlockPublicInputBindingCheckedAcceptance",
+            "validation.ethPublicValuesMatch artifact publicInput proof",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains_identifier(
+        &lean_source,
+        "runtime_eth_block_public_input_binding_checked_acceptance_public_values_match",
+        "validation.ethBindingAcceptedImpliesEthPublicValuesMatch",
     );
     lean_binding::assert_theorem_prefix_contains(
         &lean_source,
