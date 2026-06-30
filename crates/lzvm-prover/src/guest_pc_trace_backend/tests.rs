@@ -5547,6 +5547,155 @@ fn load_copy_fast_path_parts_fall_back_for_non_dominant_loads() {
 }
 
 #[test]
+fn store_copy_fast_path_parts_match_generic_lowering() {
+    let report = GuestMachineReport {
+        address: 0x8000_0000,
+        instruction_byte_len: 4,
+        instruction: RiscvInstruction::Store {
+            kind: RiscvStoreKind::Sd,
+            rs1: 2,
+            rs2: 3,
+            offset: 8,
+        },
+        next_pc: 0x8000_0004,
+        register_writes: vec![].into(),
+        memory_accesses: vec![memory_write(0x108, 0xaa55)].into(),
+        precompile_effects: None,
+    };
+
+    let (instruction, a_index, b_index, store_offset) =
+        store_copy_indirect_store_fast_path_parts(3, &report)
+            .expect("fast path detection should succeed")
+            .expect("register store through register base should match");
+
+    assert_eq!(a_index, 2);
+    assert_eq!(b_index, 3);
+    assert_eq!(store_offset, 8);
+    assert_eq!(
+        instruction,
+        lower_guest_report(&report).expect("generic lowering should match")
+    );
+}
+
+#[test]
+fn store_copy_fast_path_parts_fall_back_for_non_dominant_stores() {
+    let mut report = GuestMachineReport {
+        address: 0x8000_0000,
+        instruction_byte_len: 4,
+        instruction: RiscvInstruction::Store {
+            kind: RiscvStoreKind::Sd,
+            rs1: 0,
+            rs2: 3,
+            offset: 8,
+        },
+        next_pc: 0x8000_0004,
+        register_writes: vec![].into(),
+        memory_accesses: vec![memory_write(0x108, 0xaa55)].into(),
+        precompile_effects: None,
+    };
+    assert!(store_copy_indirect_store_fast_path_parts(3, &report)
+        .expect("zero base register should fall back")
+        .is_none());
+
+    report.instruction = RiscvInstruction::Store {
+        kind: RiscvStoreKind::Sd,
+        rs1: 2,
+        rs2: 0,
+        offset: 8,
+    };
+    assert!(store_copy_indirect_store_fast_path_parts(3, &report)
+        .expect("zero source register should fall back")
+        .is_none());
+
+    report.instruction = RiscvInstruction::Store {
+        kind: RiscvStoreKind::Sd,
+        rs1: 2,
+        rs2: 3,
+        offset: 8,
+    };
+    report.next_pc = 0x8000_0008;
+    assert!(store_copy_indirect_store_fast_path_parts(3, &report)
+        .expect("non-sequential store should fall back")
+        .is_none());
+}
+
+#[test]
+fn copy_register_indirect_store_fast_path_preserves_row_effects() {
+    let accesses = [memory_write(0x108, 0xaa55)];
+    let effects = ZiskMainReportEffects {
+        register_writes: &[],
+        memory_accesses: &accesses,
+        precompile_memory_accesses: &[],
+        precompile_result: None,
+    };
+    let instruction = ZiskMainInstruction {
+        pc: 0x8000_0000,
+        a: ZiskMainSource::Register(2),
+        b: ZiskMainSource::Register(3),
+        op: ZiskMainOp::CopyB,
+        store: ZiskMainStore::Indirect(8),
+        store_pc: false,
+        set_pc: false,
+        jmp_offset1: 4,
+        jmp_offset2: 4,
+        ind_width: 8,
+        m32: false,
+        is_external_op: false,
+        is_precompiled: false,
+    };
+    let mut state = ZiskMainTraceState::new();
+    state.registers[2] = 0x100;
+    state.registers[3] = 0xaa55;
+    state.register_mem_steps[2] = 33;
+    state.register_mem_steps[3] = 44;
+    let mut context = ZiskMainReportValidationContext::new(
+        None,
+        16,
+        ZiskMainTraceSegmentInfo {
+            trace_instance_index: 0,
+            is_last_segment: false,
+            previous_c: 0,
+        },
+    )
+    .expect("context should initialize");
+    let mut visited = None;
+    apply_copy_register_indirect_store_fast_path(
+        3,
+        instruction,
+        effects,
+        0x8000_0004,
+        2,
+        3,
+        8,
+        &mut state,
+        &mut context,
+        &mut |row, values, timing| {
+            assert_eq!(row, 3);
+            assert!(timing.is_none());
+            visited = Some(values);
+            Ok(())
+        },
+    )
+    .expect("dominant store row shape should take fast path");
+
+    assert_eq!(state.registers[2], 0x100);
+    assert_eq!(state.registers[3], 0xaa55);
+    assert_eq!(state.last_c, 0xaa55);
+    assert_eq!(state.next_pc, 0x8000_0004);
+    assert_eq!(state.register_mem_steps[2], 13);
+    assert_eq!(state.register_mem_steps[3], 14);
+    let values = visited.expect("fast path should emit row values");
+    assert_eq!(values.a, 0x100);
+    assert_eq!(values.b, 0xaa55);
+    assert_eq!(values.c, 0xaa55);
+    assert!(!values.flag);
+    assert_eq!(values.register_accesses.a_prev_mem_step, Some(33));
+    assert_eq!(values.register_accesses.b_prev_mem_step, Some(44));
+    assert_eq!(values.register_accesses.store_prev_mem_step, None);
+    assert_eq!(values.register_accesses.store_prev_value, None);
+}
+
+#[test]
 fn copy_indirect_register_store_fast_path_preserves_row_effects() {
     let accesses = [memory_read(0x108, 0xaa55)];
     let writes = [GuestRegisterWrite {
