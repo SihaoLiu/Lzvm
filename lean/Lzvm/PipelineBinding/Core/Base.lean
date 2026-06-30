@@ -705,6 +705,128 @@ theorem runtime_pipeline_binding_checked_acceptance_trace
       proof
       accepted
 
+theorem runtime_pipeline_binding_checked_acceptance_trace_preflight_evidence
+    {system : VerifierModel}
+    (validation : RuntimePipelineBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimePipelineBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeTraceConstraintPreflightBindingEvidence
+          system
+          validation.traceBindingValidation
+          artifact
+          publicInput
+          proof := by
+  intro artifact publicInput proof accepted
+  have traceAccepted :=
+    runtime_pipeline_binding_checked_acceptance_trace
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  exact
+    runtime_trace_constraint_artifact_binding_checked_acceptance_evidence
+      validation.traceBindingValidation
+      artifact
+      publicInput
+      proof
+      traceAccepted
+
+theorem runtime_pipeline_binding_checked_acceptance_trace_payload_valid
+    {system : VerifierModel}
+    (validation : RuntimePipelineBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimePipelineBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        validation.traceBindingValidation.traceConstraintSegmentPayloadValid
+          artifact
+          publicInput
+          proof := by
+  intro artifact publicInput proof accepted
+  have preflightEvidence :=
+    runtime_pipeline_binding_checked_acceptance_trace_preflight_evidence
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  exact
+    runtime_trace_constraint_preflight_binding_evidence_implies_payload_valid
+      validation.traceBindingValidation
+      artifact
+      publicInput
+      proof
+      preflightEvidence
+
+theorem runtime_pipeline_binding_checked_acceptance_trace_witness_segments_match
+    {system : VerifierModel}
+    (validation : RuntimePipelineBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimePipelineBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        validation.traceBindingValidation.witnessCommitmentSegmentsMatchTraceEvidence
+          artifact
+          publicInput
+          proof := by
+  intro artifact publicInput proof accepted
+  have preflightEvidence :=
+    runtime_pipeline_binding_checked_acceptance_trace_preflight_evidence
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  exact
+    runtime_trace_constraint_preflight_binding_evidence_implies_witness_segments_match
+      validation.traceBindingValidation
+      artifact
+      publicInput
+      proof
+      preflightEvidence
+
+theorem runtime_pipeline_binding_checked_acceptance_trace_constraint_catalog_matches
+    {system : VerifierModel}
+    (validation : RuntimePipelineBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimePipelineBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        validation.traceBindingValidation.constraintCatalogMatchesTraceEvidence
+          artifact
+          publicInput
+          proof := by
+  intro artifact publicInput proof accepted
+  have preflightEvidence :=
+    runtime_pipeline_binding_checked_acceptance_trace_preflight_evidence
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  exact
+    runtime_trace_constraint_preflight_binding_evidence_implies_constraint_catalog_matches
+      validation.traceBindingValidation
+      artifact
+      publicInput
+      proof
+      preflightEvidence
+
 theorem runtime_pipeline_binding_checked_acceptance_trace_semantic_evidence_complete
     {system : VerifierModel}
     (validation : RuntimePipelineBindingValidation system) :

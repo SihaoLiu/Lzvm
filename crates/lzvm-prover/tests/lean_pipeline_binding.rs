@@ -169,6 +169,10 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
             "runtime_pipeline_binding_evidence_implies_external_source_requirements",
             "runtime_pipeline_binding_evidence_implies_seeded_query_plan_contract",
             "runtime_pipeline_binding_evidence_implies_trace_semantic_evidence_complete",
+            "runtime_pipeline_binding_checked_acceptance_trace_preflight_evidence",
+            "runtime_pipeline_binding_checked_acceptance_trace_payload_valid",
+            "runtime_pipeline_binding_checked_acceptance_trace_witness_segments_match",
+            "runtime_pipeline_binding_checked_acceptance_trace_constraint_catalog_matches",
             "runtime_pipeline_query_opening_checked_contract_without_assumptions",
             "runtime_pipeline_binding_checked_acceptance_query_opening_evidence",
             "runtime_pipeline_binding_checked_acceptance_query_opening_contract",
@@ -506,6 +510,46 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
         &lean_source,
         "runtime_pipeline_binding_checked_acceptance_trace_semantic_evidence_complete",
         &["runtime_trace_constraint_artifact_binding_checked_acceptance_semantic_evidence_complete"],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_pipeline_binding_checked_acceptance_trace_preflight_evidence",
+        &[
+            "RuntimePipelineBindingCheckedAcceptance",
+            "RuntimeTraceConstraintPreflightBindingEvidence",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_pipeline_binding_checked_acceptance_trace_preflight_evidence",
+        &[
+            "runtime_pipeline_binding_checked_acceptance_trace",
+            "runtime_trace_constraint_artifact_binding_checked_acceptance_evidence",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_pipeline_binding_checked_acceptance_trace_payload_valid",
+        &[
+            "runtime_pipeline_binding_checked_acceptance_trace_preflight_evidence",
+            "runtime_trace_constraint_preflight_binding_evidence_implies_payload_valid",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_pipeline_binding_checked_acceptance_trace_witness_segments_match",
+        &[
+            "runtime_pipeline_binding_checked_acceptance_trace_preflight_evidence",
+            "runtime_trace_constraint_preflight_binding_evidence_implies_witness_segments_match",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_pipeline_binding_checked_acceptance_trace_constraint_catalog_matches",
+        &[
+            "runtime_pipeline_binding_checked_acceptance_trace_preflight_evidence",
+            "runtime_trace_constraint_preflight_binding_evidence_implies_constraint_catalog_matches",
+        ],
     );
     lean_binding::assert_theorem_prefix_omits(
         &lean_source,
