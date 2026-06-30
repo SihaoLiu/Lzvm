@@ -4752,6 +4752,356 @@ fn runner_boundary_seed_snapshot_uses_report_shape_for_pending_dma_without_retai
 }
 
 #[test]
+fn runner_boundary_seed_snapshot_uses_store_conditional_register_row_boundary_without_retained_report(
+) {
+    let current_seed = ZiskMainSegmentSeed::new();
+    let runner_state = GuestMachineState::new(0x8000_0004);
+    let boundary_snapshot = ZiskMainRunnerBoundarySnapshot::new(&current_seed);
+    let segment = ZiskMainTraceSegmentInfo {
+        trace_instance_index: 0,
+        is_last_segment: false,
+        previous_c: current_seed.previous_c,
+    };
+
+    let lifted = try_lift_zisk_main_next_segment_seed_from_runner_boundary_snapshot(
+        2,
+        segment,
+        ZiskMainRunnerBoundarySeedInput {
+            reports: &[],
+            report_count: 1,
+            last_report_shape: Some(GuestMachineReportShape {
+                instruction: RiscvInstruction::StoreConditional {
+                    width: RiscvAmoWidth::Doubleword,
+                    rd: 7,
+                    rs1: 10,
+                    rs2: 11,
+                    acquire: false,
+                    release: false,
+                },
+                has_memory_write: true,
+            }),
+            lookahead_instruction: Some(RiscvInstruction::OpImm {
+                kind: RiscvOpImmKind::Addi,
+                rd: 0,
+                rs1: 0,
+                immediate: 0,
+            }),
+            runner_state: &runner_state,
+            current_seed: &current_seed,
+            boundary_snapshot: &boundary_snapshot,
+        },
+    )
+    .expect("store-conditional boundary seed lift should evaluate")
+    .expect("successful store-conditional register row should have c=0");
+
+    assert_eq!(lifted.previous_c, 0);
+    assert_eq!(lifted.initial_state.last_c, 0);
+}
+
+#[test]
+fn runner_boundary_seed_snapshot_uses_store_conditional_source_boundary_without_retained_report() {
+    let current_seed = ZiskMainSegmentSeed::new();
+    let mut runner_state = GuestMachineState::new(0x8000_0004);
+    runner_state
+        .set_register(11, 0xdead_beef_cafe_f00d)
+        .expect("source register should set");
+    let boundary_snapshot = ZiskMainRunnerBoundarySnapshot::new(&current_seed);
+    let segment = ZiskMainTraceSegmentInfo {
+        trace_instance_index: 0,
+        is_last_segment: false,
+        previous_c: current_seed.previous_c,
+    };
+
+    let lifted = try_lift_zisk_main_next_segment_seed_from_runner_boundary_snapshot(
+        1,
+        segment,
+        ZiskMainRunnerBoundarySeedInput {
+            reports: &[],
+            report_count: 1,
+            last_report_shape: Some(GuestMachineReportShape {
+                instruction: RiscvInstruction::StoreConditional {
+                    width: RiscvAmoWidth::Doubleword,
+                    rd: 0,
+                    rs1: 10,
+                    rs2: 11,
+                    acquire: false,
+                    release: false,
+                },
+                has_memory_write: true,
+            }),
+            lookahead_instruction: Some(RiscvInstruction::OpImm {
+                kind: RiscvOpImmKind::Addi,
+                rd: 0,
+                rs1: 0,
+                immediate: 0,
+            }),
+            runner_state: &runner_state,
+            current_seed: &current_seed,
+            boundary_snapshot: &boundary_snapshot,
+        },
+    )
+    .expect("store-conditional boundary seed lift should evaluate")
+    .expect("zero-destination store-conditional should use source register boundary");
+
+    assert_eq!(lifted.previous_c, 0xdead_beef_cafe_f00d);
+    assert_eq!(lifted.initial_state.last_c, 0xdead_beef_cafe_f00d);
+}
+
+#[test]
+fn runner_boundary_seed_snapshot_uses_retained_report_for_zero_register_load_boundary() {
+    let current_seed = ZiskMainSegmentSeed::new();
+    let runner_state = GuestMachineState::new(0x8000_0004);
+    let report = GuestMachineReport {
+        address: 0x8000_0000,
+        instruction_byte_len: 4,
+        instruction: RiscvInstruction::Load {
+            kind: RiscvLoadKind::Lbu,
+            rd: 0,
+            rs1: 10,
+            offset: 5,
+        },
+        next_pc: 0x8000_0004,
+        register_writes: Vec::new().into(),
+        memory_accesses: vec![GuestMemoryAccess {
+            kind: GuestMemoryAccessKind::Read,
+            address: 0x1005,
+            byte_len: 1,
+            value: 0xab,
+        }]
+        .into(),
+        precompile_effects: None,
+    };
+
+    let lifted = try_lift_zisk_main_next_segment_seed_from_runner_boundary(
+        1,
+        ZiskMainTraceSegmentInfo {
+            trace_instance_index: 0,
+            is_last_segment: false,
+            previous_c: current_seed.previous_c,
+        },
+        std::slice::from_ref(&report),
+        None,
+        &runner_state,
+        &current_seed,
+    )
+    .expect("retained load boundary seed lift should evaluate")
+    .expect("retained load boundary should use report memory read");
+
+    assert_eq!(lifted.previous_c, 0xab);
+    assert_eq!(lifted.initial_state.last_c, 0xab);
+}
+
+#[test]
+fn runner_boundary_seed_snapshot_uses_retained_report_for_zero_register_sign_extend_load_boundary()
+{
+    let current_seed = ZiskMainSegmentSeed::new();
+    let runner_state = GuestMachineState::new(0x8000_0004);
+    let report = GuestMachineReport {
+        address: 0x8000_0000,
+        instruction_byte_len: 4,
+        instruction: RiscvInstruction::Load {
+            kind: RiscvLoadKind::Lb,
+            rd: 0,
+            rs1: 10,
+            offset: 5,
+        },
+        next_pc: 0x8000_0004,
+        register_writes: Vec::new().into(),
+        memory_accesses: vec![GuestMemoryAccess {
+            kind: GuestMemoryAccessKind::Read,
+            address: 0x1005,
+            byte_len: 1,
+            value: 0xff,
+        }]
+        .into(),
+        precompile_effects: None,
+    };
+
+    let lifted = try_lift_zisk_main_next_segment_seed_from_runner_boundary(
+        1,
+        ZiskMainTraceSegmentInfo {
+            trace_instance_index: 0,
+            is_last_segment: false,
+            previous_c: current_seed.previous_c,
+        },
+        std::slice::from_ref(&report),
+        None,
+        &runner_state,
+        &current_seed,
+    )
+    .expect("retained sign-extended load boundary seed lift should evaluate")
+    .expect("retained sign-extended load boundary should use report memory read");
+
+    assert_eq!(lifted.previous_c, u64::MAX);
+    assert_eq!(lifted.initial_state.last_c, u64::MAX);
+}
+
+#[test]
+fn runner_boundary_seed_snapshot_uses_pending_dma_add_register_boundary_without_retained_report() {
+    let current_seed = ZiskMainSegmentSeed::new();
+    let mut runner_state = GuestMachineState::new(0x8000_0008);
+    runner_state
+        .set_register(9, 0x9000_1234_5678_abcd)
+        .expect("destination register should set");
+    let mut boundary_snapshot = ZiskMainRunnerBoundarySnapshot::new(&current_seed);
+    boundary_snapshot.record_report_shape_state(GuestMachineReportShape {
+        instruction: RiscvInstruction::ZiskDmaPrepare {
+            kind: RiscvDmaKind::Memcpy,
+            rs1: 5,
+        },
+        has_memory_write: false,
+    });
+    let execute_shape = GuestMachineReportShape {
+        instruction: RiscvInstruction::Op {
+            kind: RiscvOpKind::Add,
+            rd: 9,
+            rs1: 10,
+            rs2: 11,
+        },
+        has_memory_write: true,
+    };
+    boundary_snapshot.record_report_shape_state(execute_shape);
+
+    let lifted = try_lift_zisk_main_next_segment_seed_from_runner_boundary_snapshot(
+        2,
+        ZiskMainTraceSegmentInfo {
+            trace_instance_index: 0,
+            is_last_segment: false,
+            previous_c: current_seed.previous_c,
+        },
+        ZiskMainRunnerBoundarySeedInput {
+            reports: &[],
+            report_count: 2,
+            last_report_shape: Some(execute_shape),
+            lookahead_instruction: Some(RiscvInstruction::OpImm {
+                kind: RiscvOpImmKind::Addi,
+                rd: 0,
+                rs1: 0,
+                immediate: 0,
+            }),
+            runner_state: &runner_state,
+            current_seed: &current_seed,
+            boundary_snapshot: &boundary_snapshot,
+        },
+    )
+    .expect("pending-DMA boundary seed lift should evaluate")
+    .expect("pending-DMA add boundary should use runner destination register");
+
+    assert_eq!(lifted.previous_c, 0x9000_1234_5678_abcd);
+    assert_eq!(lifted.initial_state.last_c, 0x9000_1234_5678_abcd);
+    assert_eq!(lifted.initial_state.pending_dma, None);
+}
+
+#[test]
+fn runner_boundary_seed_snapshot_uses_pending_dma_addi_register_boundary_without_retained_report() {
+    let current_seed = ZiskMainSegmentSeed::new();
+    let mut runner_state = GuestMachineState::new(0x8000_0008);
+    runner_state
+        .set_register(14, 0xfeed_face_cafe_babe)
+        .expect("destination register should set");
+    let mut boundary_snapshot = ZiskMainRunnerBoundarySnapshot::new(&current_seed);
+    boundary_snapshot.record_report_shape_state(GuestMachineReportShape {
+        instruction: RiscvInstruction::ZiskDmaPrepare {
+            kind: RiscvDmaKind::Memset,
+            rs1: 5,
+        },
+        has_memory_write: false,
+    });
+    let execute_shape = GuestMachineReportShape {
+        instruction: RiscvInstruction::OpImm {
+            kind: RiscvOpImmKind::Addi,
+            rd: 14,
+            rs1: 10,
+            immediate: 7,
+        },
+        has_memory_write: true,
+    };
+    boundary_snapshot.record_report_shape_state(execute_shape);
+
+    let lifted = try_lift_zisk_main_next_segment_seed_from_runner_boundary_snapshot(
+        2,
+        ZiskMainTraceSegmentInfo {
+            trace_instance_index: 0,
+            is_last_segment: false,
+            previous_c: current_seed.previous_c,
+        },
+        ZiskMainRunnerBoundarySeedInput {
+            reports: &[],
+            report_count: 2,
+            last_report_shape: Some(execute_shape),
+            lookahead_instruction: Some(RiscvInstruction::OpImm {
+                kind: RiscvOpImmKind::Addi,
+                rd: 0,
+                rs1: 0,
+                immediate: 0,
+            }),
+            runner_state: &runner_state,
+            current_seed: &current_seed,
+            boundary_snapshot: &boundary_snapshot,
+        },
+    )
+    .expect("pending-DMA boundary seed lift should evaluate")
+    .expect("pending-DMA addi boundary should use runner destination register");
+
+    assert_eq!(lifted.previous_c, 0xfeed_face_cafe_babe);
+    assert_eq!(lifted.initial_state.last_c, 0xfeed_face_cafe_babe);
+    assert_eq!(lifted.initial_state.pending_dma, None);
+}
+
+#[test]
+fn runner_boundary_seed_snapshot_keeps_pending_dma_zero_register_boundary_unavailable() {
+    let current_seed = ZiskMainSegmentSeed::new();
+    let runner_state = GuestMachineState::new(0x8000_0008);
+    let mut boundary_snapshot = ZiskMainRunnerBoundarySnapshot::new(&current_seed);
+    boundary_snapshot.record_report_shape_state(GuestMachineReportShape {
+        instruction: RiscvInstruction::ZiskDmaPrepare {
+            kind: RiscvDmaKind::Memcpy,
+            rs1: 5,
+        },
+        has_memory_write: false,
+    });
+    let execute_shape = GuestMachineReportShape {
+        instruction: RiscvInstruction::Op {
+            kind: RiscvOpKind::Add,
+            rd: 0,
+            rs1: 10,
+            rs2: 11,
+        },
+        has_memory_write: true,
+    };
+    boundary_snapshot.record_report_shape_state(execute_shape);
+
+    let result = try_lift_zisk_main_next_segment_seed_from_runner_boundary_snapshot(
+        2,
+        ZiskMainTraceSegmentInfo {
+            trace_instance_index: 0,
+            is_last_segment: false,
+            previous_c: current_seed.previous_c,
+        },
+        ZiskMainRunnerBoundarySeedInput {
+            reports: &[],
+            report_count: 2,
+            last_report_shape: Some(execute_shape),
+            lookahead_instruction: Some(RiscvInstruction::OpImm {
+                kind: RiscvOpImmKind::Addi,
+                rd: 0,
+                rs1: 0,
+                immediate: 0,
+            }),
+            runner_state: &runner_state,
+            current_seed: &current_seed,
+            boundary_snapshot: &boundary_snapshot,
+        },
+    )
+    .expect("pending-DMA boundary seed lift should evaluate");
+
+    assert_eq!(
+        result,
+        Err(ZiskMainDirectSeedLiftMissReason::BoundaryCUnavailable)
+    );
+}
+
+#[test]
 fn runner_boundary_seed_snapshot_uses_snapshot_for_amo_boundary_without_retained_report() {
     let current_seed = ZiskMainSegmentSeed::new();
     let mut runner_state = GuestMachineState::new(0x8000_0004);

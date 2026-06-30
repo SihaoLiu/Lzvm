@@ -15278,6 +15278,11 @@ fn direct_zisk_main_segment_boundary_c_from_tail(
     if matches!(shape.instruction, RiscvInstruction::Amo { .. }) {
         return Ok(Err(ZiskMainDirectSeedLiftMissReason::AmoBoundary));
     }
+    if let Some(boundary_c) =
+        direct_zisk_main_store_conditional_boundary_c(shape, boundary_registers)
+    {
+        return Ok(Ok(boundary_c));
+    }
     if matches!(shape.instruction, RiscvInstruction::StoreConditional { .. }) {
         return Ok(Err(
             ZiskMainDirectSeedLiftMissReason::StoreConditionalBoundary,
@@ -15334,6 +15339,12 @@ fn direct_zisk_main_segment_boundary_c_from_runner_snapshot(
     input: ZiskMainRunnerBoundarySeedInput<'_>,
 ) -> Result<Result<u64, ZiskMainDirectSeedLiftMissReason>, GuestPcTraceBackendError> {
     if input.boundary_snapshot.last_report_pending_dma {
+        if let Some(boundary_c) = direct_zisk_main_pending_dma_boundary_c(
+            input.last_report_shape(),
+            Some(input.runner_state.registers()),
+        ) {
+            return Ok(Ok(boundary_c));
+        }
         return Ok(Err(ZiskMainDirectSeedLiftMissReason::BoundaryCUnavailable));
     }
     let direct = direct_zisk_main_segment_boundary_c_from_tail(ZiskMainDirectBoundaryTailInput {
@@ -15358,6 +15369,45 @@ fn direct_zisk_main_segment_boundary_c_from_runner_snapshot(
         }
     }
     Ok(direct)
+}
+
+fn direct_zisk_main_pending_dma_boundary_c(
+    shape: Option<GuestMachineReportShape>,
+    boundary_registers: Option<&[u64; 32]>,
+) -> Option<u64> {
+    let rd = match shape?.instruction {
+        RiscvInstruction::Op {
+            kind: RiscvOpKind::Add,
+            rd,
+            ..
+        }
+        | RiscvInstruction::OpImm {
+            kind: RiscvOpImmKind::Addi,
+            rd,
+            ..
+        } => rd,
+        _ => return None,
+    };
+    if rd == 0 {
+        return None;
+    }
+    direct_zisk_main_source_register_boundary_c(rd, boundary_registers)
+}
+
+fn direct_zisk_main_store_conditional_boundary_c(
+    shape: GuestMachineReportShape,
+    boundary_registers: Option<&[u64; 32]>,
+) -> Option<u64> {
+    let RiscvInstruction::StoreConditional { rd, rs2, .. } = shape.instruction else {
+        return None;
+    };
+    if !shape.has_memory_write {
+        return None;
+    }
+    if rd == 0 {
+        return direct_zisk_main_source_register_boundary_c(rs2, boundary_registers);
+    }
+    Some(0)
 }
 
 fn direct_zisk_main_amo_boundary_c_from_snapshot(
@@ -15537,7 +15587,10 @@ fn direct_zisk_main_report_result_c(
     }
     match instruction.op {
         ZiskMainOp::Flag => Some(0),
-        ZiskMainOp::CopyB => direct_zisk_main_source_value_without_state(instruction.b),
+        ZiskMainOp::CopyB => direct_zisk_main_report_copy_b_c(report, instruction),
+        ZiskMainOp::SignExtendB | ZiskMainOp::SignExtendH | ZiskMainOp::SignExtendW => {
+            direct_zisk_main_report_sign_extend_c(report, instruction)
+        }
         ZiskMainOp::Add256 if instruction.is_precompiled => report.precompile_result(),
         ZiskMainOp::Keccak
         | ZiskMainOp::Arith256
@@ -15550,6 +15603,44 @@ fn direct_zisk_main_report_result_c(
         }
         _ => None,
     }
+}
+
+fn direct_zisk_main_report_copy_b_c(
+    report: &GuestMachineReport,
+    instruction: &ZiskMainInstruction,
+) -> Option<u64> {
+    match instruction.b {
+        ZiskMainSource::Indirect(_) => direct_zisk_main_report_single_read_value(report),
+        source => direct_zisk_main_source_value_without_state(source),
+    }
+}
+
+fn direct_zisk_main_report_sign_extend_c(
+    report: &GuestMachineReport,
+    instruction: &ZiskMainInstruction,
+) -> Option<u64> {
+    let value = match instruction.b {
+        ZiskMainSource::Indirect(_) => direct_zisk_main_report_single_read_value(report)?,
+        source => direct_zisk_main_source_value_without_state(source)?,
+    };
+    Some(match instruction.op {
+        ZiskMainOp::SignExtendB => i64::from(value as u8 as i8) as u64,
+        ZiskMainOp::SignExtendH => i64::from(value as u16 as i16) as u64,
+        ZiskMainOp::SignExtendW => i64::from(value as u32 as i32) as u64,
+        _ => return None,
+    })
+}
+
+fn direct_zisk_main_report_single_read_value(report: &GuestMachineReport) -> Option<u64> {
+    let mut reads = report
+        .memory_accesses
+        .iter()
+        .filter(|access| access.kind == GuestMemoryAccessKind::Read);
+    let read = reads.next()?;
+    if reads.next().is_some() {
+        return None;
+    }
+    Some(read.value)
 }
 
 fn direct_zisk_main_branch_c(
