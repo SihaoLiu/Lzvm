@@ -19,6 +19,7 @@ repository = "https://github.com/SihaoLiu/Lzvm"
 [profile.release]
 lto = "fat"
 codegen-units = 1
+panic = "abort"
 
 [profile.dev.package.lzvm-field]
 opt-level = 3
