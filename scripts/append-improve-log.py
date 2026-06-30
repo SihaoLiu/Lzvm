@@ -30,6 +30,9 @@ LEGACY_SINGLE_FIELD_RE = re.compile(
     r"([0-9]+(?:\.[0-9]+)?)\b"
 )
 TIMEOUT_FIELD_RE = re.compile(r"(?:^|\s)timeout>([0-9]+(?:\.[0-9]+)?)\b")
+SAMPLES_FIELD_RE = re.compile(
+    r"(?:^|\s)samples=([0-9]+(?:\.[0-9]+)?(?:;[0-9]+(?:\.[0-9]+)?)*)\b"
+)
 AVERAGE_FIELD_PATTERNS = [
     AVG_FIELD_RE,
     LEGACY_AVG_FIELD_RE,
@@ -298,6 +301,11 @@ def timing_field_average_seconds(field: str, label: str) -> float:
         if match is not None:
             raw_value = match.group(1)
             break
+    else:
+        samples_match = SAMPLES_FIELD_RE.search(field)
+        if samples_match is not None:
+            samples = parse_semicolon_samples(samples_match.group(1), label)
+            return sum(samples) / len(samples)
     try:
         value = float(raw_value)
     except ValueError as error:
@@ -307,6 +315,21 @@ def timing_field_average_seconds(field: str, label: str) -> float:
     if not math.isfinite(value) or value < 0.0:
         raise SystemExit(f"{label}: timing average must be nonnegative and finite")
     return value
+
+
+def parse_semicolon_samples(raw: str, label: str) -> list[float]:
+    samples = []
+    for index, part in enumerate(raw.split(";"), start=1):
+        try:
+            value = float(part)
+        except ValueError as error:
+            raise SystemExit(f"{label}: invalid sample {part!r} at position {index}") from error
+        if not math.isfinite(value) or value < 0.0:
+            raise SystemExit(f"{label}: sample must be nonnegative and finite: {part!r}")
+        samples.append(value)
+    if not samples:
+        raise SystemExit(f"{label}: samples field is empty")
+    return samples
 
 
 def enforce_max_average(field: str, label: str, option: str, max_average: float | None) -> None:

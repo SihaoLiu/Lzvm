@@ -171,6 +171,67 @@ fn improve_log_check_accepts_legacy_probe_timing_labels() {
 }
 
 #[test]
+fn improve_log_check_accepts_manual_sample_only_rejection_rows() {
+    let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let workspace_root = crate_root
+        .parent()
+        .and_then(std::path::Path::parent)
+        .expect("workspace root should resolve");
+    let script_path = workspace_root.join("scripts/append-improve-log.py");
+    let log_path = workspace_root.join(format!(
+        "temp/improve-log-sample-only-rejection-{}.csv",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_file(&log_path);
+    std::fs::write(
+        &log_path,
+        concat!(
+            "timestamp,commit,small_proof_time_s,large_proof_time_s,summary\n",
+            "\"2026-06-19T05:55:00-0700\",\"testcase\",\"\",",
+            "\"samples=36.022;79.775;35.942 no_stable_group rejected baseline=35.585\",",
+            "\"Manual unstable row\"\n",
+        ),
+    )
+    .expect("temporary improve log should write");
+
+    let check_output = Command::new(&script_path)
+        .arg("--path")
+        .arg(&log_path)
+        .arg("--check")
+        .output()
+        .expect("improve-log check should run");
+    assert!(
+        check_output.status.success(),
+        "sample-only manual rejection row should validate: stderr={}",
+        String::from_utf8_lossy(&check_output.stderr)
+    );
+
+    let append_output = Command::new(&script_path)
+        .arg("--path")
+        .arg(&log_path)
+        .arg("--commit")
+        .arg("test")
+        .arg("--large-runs")
+        .arg("35.10,35.20,35.30")
+        .arg("--summary")
+        .arg("later append")
+        .output()
+        .expect("improve-log writer should run");
+    let contents = std::fs::read_to_string(&log_path).expect("improve log should read");
+    let _ = std::fs::remove_file(&log_path);
+
+    assert!(
+        append_output.status.success(),
+        "sample-only manual rejection row should not block later appends: stderr={}",
+        String::from_utf8_lossy(&append_output.stderr)
+    );
+    assert!(
+        contents.contains("\"avg=35.200 samples=35.100;35.200;35.300 used=3/3\""),
+        "later append should be recorded after the manual row: {contents}"
+    );
+}
+
+#[test]
 fn improve_log_writer_averages_stable_run_samples() {
     let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
     let workspace_root = crate_root
