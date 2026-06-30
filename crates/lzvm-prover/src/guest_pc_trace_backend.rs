@@ -4657,8 +4657,10 @@ fn guest_pc_trace_segment_queue_capacity() -> usize {
     std::env::var("LZVM_GUEST_PC_TRACE_SEGMENT_QUEUE")
         .ok()
         .and_then(|value| value.parse::<usize>().ok())
-        .unwrap_or(1)
+        .unwrap_or(DEFAULT_GUEST_PC_TRACE_SEGMENT_QUEUE_CAPACITY)
 }
+
+const DEFAULT_GUEST_PC_TRACE_SEGMENT_QUEUE_CAPACITY: usize = 2;
 
 fn guest_pc_trace_report_chunks_enabled() -> bool {
     env_flag_enabled("LZVM_GUEST_PC_TRACE_REPORT_CHUNKS", false)

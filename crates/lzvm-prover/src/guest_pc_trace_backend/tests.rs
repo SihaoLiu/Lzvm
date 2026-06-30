@@ -163,6 +163,27 @@ fn guest_pc_trace_report_chunk_capacity_defaults_to_large_batches() {
 }
 
 #[test]
+fn guest_pc_trace_segment_queue_capacity_defaults_to_measured_overlap_depth() {
+    let _env_lock = GUEST_PC_TRACE_ENV_LOCK
+        .lock()
+        .expect("guest PC trace env lock should not be poisoned");
+    let _queue_env = TestEnvVarGuard::unset("LZVM_GUEST_PC_TRACE_SEGMENT_QUEUE");
+
+    assert_eq!(guest_pc_trace_segment_queue_capacity(), 2);
+}
+
+#[test]
+fn guest_pc_trace_segment_queue_capacity_uses_runtime_override() {
+    let _env_lock = GUEST_PC_TRACE_ENV_LOCK
+        .lock()
+        .expect("guest PC trace env lock should not be poisoned");
+    let _queue_env = TestEnvVarGuard::unset("LZVM_GUEST_PC_TRACE_SEGMENT_QUEUE");
+
+    std::env::set_var("LZVM_GUEST_PC_TRACE_SEGMENT_QUEUE", "5");
+    assert_eq!(guest_pc_trace_segment_queue_capacity(), 5);
+}
+
+#[test]
 fn guest_pc_trace_parallel_lower_job_queue_capacity_is_bounded_and_configurable() {
     let _env_lock = GUEST_PC_TRACE_ENV_LOCK
         .lock()
