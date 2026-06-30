@@ -1,5 +1,6 @@
 use lzvm_artifacts::guest_image::parse_guest_image;
 use lzvm_prover::guest_instruction::RiscvInstruction;
+use lzvm_prover::guest_machine::GuestPrecompileReportEffects;
 use lzvm_prover::guest_machine::{
     advance_guest_machine_with_fcalls, run_guest_machine, run_guest_machine_trace,
     run_guest_machine_trace_with_fcalls, run_guest_machine_with_fcalls, GuestFcallHandler,
@@ -41,6 +42,28 @@ fn sample_guest_image_with_program_headers(program_headers: &[[u8; 56]]) -> Vec<
         bytes.extend_from_slice(header);
     }
     bytes
+}
+
+#[test]
+fn guest_precompile_report_effects_skip_empty_vec_boxing() {
+    assert_eq!(
+        GuestPrecompileReportEffects::from_vec(Vec::new(), None),
+        None
+    );
+
+    let effect = GuestPrecompileReportEffects::from_vec(
+        vec![GuestMemoryAccess {
+            kind: GuestMemoryAccessKind::Read,
+            address: 0x100,
+            byte_len: 8,
+            value: 0xaa55,
+        }],
+        Some(7),
+    )
+    .expect("non-empty precompile effects should be retained");
+    assert_eq!(effect.memory_accesses.len(), 1);
+    assert_eq!(effect.memory_accesses[0].address, 0x100);
+    assert_eq!(effect.result, Some(7));
 }
 
 fn guest_memory_image_with_words(words: &[u32]) -> GuestMemoryImage {

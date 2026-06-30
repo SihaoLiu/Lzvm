@@ -482,7 +482,10 @@ impl GuestPrecompileReportEffects {
         if memory_accesses.is_empty() && result.is_none() {
             None
         } else {
-            Self::from_parts(memory_accesses.into_boxed_slice(), result)
+            Some(Box::new(Self {
+                memory_accesses: memory_accesses.into_boxed_slice(),
+                result,
+            }))
         }
     }
 }
