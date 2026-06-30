@@ -10100,6 +10100,7 @@ struct ZiskMainReportValidationContext<'a> {
     columns: Option<&'a ZiskMainTraceColumns<'a>>,
     row_count: usize,
     row_mem_step_cursor: GuestPcTraceRowMemStepCursor,
+    indirect_memory_columns_available: bool,
 }
 
 impl<'a> ZiskMainReportValidationContext<'a> {
@@ -10108,6 +10109,8 @@ impl<'a> ZiskMainReportValidationContext<'a> {
         row_count: usize,
         segment: ZiskMainTraceSegmentInfo,
     ) -> Result<Self, GuestPcTraceBackendError> {
+        let indirect_memory_columns_available =
+            columns.is_none_or(ZiskMainTraceColumns::has_required_indirect_memory_columns);
         Ok(Self {
             columns,
             row_count,
@@ -10115,12 +10118,17 @@ impl<'a> ZiskMainReportValidationContext<'a> {
                 row_count,
                 segment.trace_instance_index,
             )?,
+            indirect_memory_columns_available,
         })
     }
 
     fn row_mem_step_base(&mut self, row: usize) -> Result<u64, GuestPcTraceBackendError> {
         self.row_mem_step_cursor.advance_to(row)?;
         Ok(self.row_mem_step_cursor.base())
+    }
+
+    fn indirect_memory_columns_available(&self) -> bool {
+        self.indirect_memory_columns_available
     }
 }
 
@@ -10551,14 +10559,12 @@ fn apply_copy_indirect_register_store_fast_path(
         Option<&mut GuestPcTraceStreamTiming>,
     ) -> Result<(), GuestPcTraceBackendError>,
 ) -> Result<(), GuestPcTraceBackendError> {
-    if let Some(columns) = context.columns {
-        if !columns.has_required_indirect_memory_columns() {
-            return Err(GuestPcTraceBackendError::InvalidPcTraceLayout {
-                message: format!(
-                    "Zisk Main memory rows require b_src_ind, b_offset_imm0, ind_width, store_ind, store_offset, and store_mem columns at row {output_row}"
-                ),
-            });
-        }
+    if !context.indirect_memory_columns_available() {
+        return Err(GuestPcTraceBackendError::InvalidPcTraceLayout {
+            message: format!(
+                "Zisk Main memory rows require b_src_ind, b_offset_imm0, ind_width, store_ind, store_offset, and store_mem columns at row {output_row}"
+            ),
+        });
     }
     if !(ZISK_MAIN_REGISTER_START..ZISK_MAIN_REGISTER_START + ZISK_MAIN_REGISTER_COUNT)
         .contains(&usize::from(a_index))

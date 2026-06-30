@@ -10573,6 +10573,37 @@ fn guest_pc_memory_access_validation_has_no_store_fast_path() {
 }
 
 #[test]
+fn guest_pc_copy_fast_path_caches_indirect_layout_check() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let source_path = crate_root.join("src/guest_pc_trace_backend.rs");
+    let source = std::fs::read_to_string(&source_path).expect("guest PC trace source should read");
+
+    let context_body = function_body(
+        &source,
+        "impl<'a> ZiskMainReportValidationContext<'a>",
+        "#[derive(Debug, Clone, Copy, PartialEq, Eq)]",
+    );
+    assert!(
+        context_body.contains("indirect_memory_columns_available")
+            && context_body.contains(
+                "columns.is_none_or(ZiskMainTraceColumns::has_required_indirect_memory_columns)"
+            ),
+        "segment validation context should cache fixed indirect-memory column availability"
+    );
+
+    let fast_path_body = function_body(
+        &source,
+        "fn apply_copy_indirect_register_store_fast_path",
+        "fn record_trace_report_shape",
+    );
+    assert!(
+        fast_path_body.contains("context.indirect_memory_columns_available()")
+            && !fast_path_body.contains("has_required_indirect_memory_columns()"),
+        "copy fast path should use the cached layout check instead of rescanning column options"
+    );
+}
+
+#[test]
 fn memory_column_writer_counts_matches_in_one_pass() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let source_path = crate_root.join("src/guest_pc_trace_backend.rs");
