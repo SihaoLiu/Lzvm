@@ -10337,7 +10337,7 @@ fn apply_zisk_main_lowered_report_row(
     let instruction = lowered_row.instruction;
     let effects = lowered_row.effects;
     let expected_next_pc = lowered_row.expected_next_pc;
-    if !detail_timing && !shape_timing {
+    if !detail_timing && !shape_timing && !instruction.is_external_op {
         if let Some((a_index, b_offset, store_index)) =
             copy_indirect_register_store_fast_path_parts(&instruction, effects)
         {
