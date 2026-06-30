@@ -1432,12 +1432,11 @@ fn write_guest_store(
     address: u64,
     value: u64,
 ) -> Result<(), GuestMachineError> {
-    let bytes = value.to_le_bytes();
     match kind {
-        RiscvStoreKind::Sb => memory.write_range(address, &bytes[..1])?,
-        RiscvStoreKind::Sh => memory.write_range(address, &bytes[..2])?,
-        RiscvStoreKind::Sw => memory.write_range(address, &bytes[..4])?,
-        RiscvStoreKind::Sd => memory.write_range(address, &bytes)?,
+        RiscvStoreKind::Sb => memory.write_u64_le::<1>(address, value)?,
+        RiscvStoreKind::Sh => memory.write_u64_le::<2>(address, value)?,
+        RiscvStoreKind::Sw => memory.write_u64_le::<4>(address, value)?,
+        RiscvStoreKind::Sd => memory.write_u64_le::<8>(address, value)?,
     }
     Ok(())
 }
@@ -1513,8 +1512,8 @@ fn write_guest_amo(
 ) -> Result<(), GuestMachineError> {
     ensure_atomic_aligned(width, address)?;
     match width {
-        RiscvAmoWidth::Word => memory.write_range(address, &(value as u32).to_le_bytes())?,
-        RiscvAmoWidth::Doubleword => memory.write_range(address, &value.to_le_bytes())?,
+        RiscvAmoWidth::Word => memory.write_u64_le::<4>(address, value)?,
+        RiscvAmoWidth::Doubleword => memory.write_u64_le::<8>(address, value)?,
     }
     Ok(())
 }

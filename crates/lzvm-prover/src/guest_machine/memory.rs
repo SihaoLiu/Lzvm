@@ -138,6 +138,29 @@ impl GuestMachineMemory {
         Err(GuestMemoryError::AddressNotMapped { address, byte_len })
     }
 
+    #[inline(always)]
+    pub(crate) fn write_u64_le<const BYTE_LEN: usize>(
+        &mut self,
+        address: u64,
+        value: u64,
+    ) -> Result<(), GuestMemoryError> {
+        if BYTE_LEN > 8 {
+            return Err(GuestMemoryError::AddressRangeOverflow {
+                address,
+                byte_len: BYTE_LEN,
+            });
+        }
+        let end_address = checked_address_end(address, BYTE_LEN)?;
+        if let Some(index) = self.segment_index_containing_range(address, end_address)? {
+            self.segments[index].write_u64_le::<BYTE_LEN>(address, value);
+            return Ok(());
+        }
+        Err(GuestMemoryError::AddressNotMapped {
+            address,
+            byte_len: BYTE_LEN,
+        })
+    }
+
     fn read_halfword(&self, address: u64) -> Result<u16, GuestMemoryError> {
         let end_address = checked_address_end(address, 2)?;
         if let Some(index) = self.segment_index_containing_range(address, end_address)? {
@@ -484,6 +507,31 @@ impl GuestMachineMemorySegment {
         }
     }
 
+    #[inline(always)]
+    fn write_u64_le<const BYTE_LEN: usize>(&mut self, address: u64, value: u64) {
+        debug_assert!(BYTE_LEN <= 8);
+        if BYTE_LEN == 0 {
+            return;
+        }
+        let offset = address - self.virtual_address;
+        let block_index = offset / GUEST_MEMORY_OVERLAY_BLOCK_SIZE;
+        let block_offset = (offset % GUEST_MEMORY_OVERLAY_BLOCK_SIZE) as usize;
+        if block_offset + BYTE_LEN <= GUEST_MEMORY_OVERLAY_BLOCK_SIZE_USIZE {
+            let block = self.written_block_mut(block_index);
+            write_low_u64_le_bytes::<BYTE_LEN>(&mut block[block_offset..], value);
+            return;
+        }
+
+        let mut byte_offset = offset;
+        for byte_index in 0..BYTE_LEN {
+            let block_index = byte_offset / GUEST_MEMORY_OVERLAY_BLOCK_SIZE;
+            let block_offset = (byte_offset % GUEST_MEMORY_OVERLAY_BLOCK_SIZE) as usize;
+            let block = self.written_block_mut(block_index);
+            block[block_offset] = (value >> (byte_index * 8)) as u8;
+            byte_offset += 1;
+        }
+    }
+
     fn written_block_mut(
         &mut self,
         block_index: u64,
@@ -520,6 +568,35 @@ impl GuestMachineMemorySegment {
     fn contains_range(&self, address: u64, end_address: u64) -> Result<bool, GuestMemoryError> {
         let segment_end = self.end_address()?;
         Ok(address >= self.virtual_address && end_address <= segment_end)
+    }
+}
+
+#[inline(always)]
+fn write_low_u64_le_bytes<const BYTE_LEN: usize>(out: &mut [u8], value: u64) {
+    debug_assert!(out.len() >= BYTE_LEN);
+    if BYTE_LEN > 0 {
+        out[0] = value as u8;
+    }
+    if BYTE_LEN > 1 {
+        out[1] = (value >> 8) as u8;
+    }
+    if BYTE_LEN > 2 {
+        out[2] = (value >> 16) as u8;
+    }
+    if BYTE_LEN > 3 {
+        out[3] = (value >> 24) as u8;
+    }
+    if BYTE_LEN > 4 {
+        out[4] = (value >> 32) as u8;
+    }
+    if BYTE_LEN > 5 {
+        out[5] = (value >> 40) as u8;
+    }
+    if BYTE_LEN > 6 {
+        out[6] = (value >> 48) as u8;
+    }
+    if BYTE_LEN > 7 {
+        out[7] = (value >> 56) as u8;
     }
 }
 
@@ -749,6 +826,50 @@ mod tests {
             .expect("cross-block read should succeed");
 
         assert_eq!(bytes, [10, 11, 12, 13, 14, 15, 90, 91, 92, 93, 20, 21]);
+    }
+
+    #[test]
+    fn scalar_le_write_preserves_neighbors_in_one_overlay_block() {
+        let image = sample_guest_image_with_program_header(
+            &[10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21],
+            0x1000,
+        );
+        let mut memory = GuestMachineMemory::from_image(&image);
+
+        memory
+            .write_u64_le::<4>(TEST_ENTRY + 2, 0xaabb_ccdd)
+            .expect("scalar write should succeed");
+        let mut bytes = [0_u8; 12];
+        memory
+            .read_range_into(TEST_ENTRY, &mut bytes)
+            .expect("scalar write result should be readable");
+
+        assert_eq!(
+            bytes,
+            [10, 11, 0xdd, 0xcc, 0xbb, 0xaa, 16, 17, 18, 19, 20, 21]
+        );
+    }
+
+    #[test]
+    fn scalar_le_write_preserves_neighbors_across_overlay_blocks() {
+        let image = sample_guest_image_with_program_header(
+            &[10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21],
+            0x1000,
+        );
+        let mut memory = GuestMachineMemory::from_image(&image);
+
+        memory
+            .write_u64_le::<4>(TEST_ENTRY + 6, 0xaabb_ccdd)
+            .expect("cross-block scalar write should succeed");
+        let mut bytes = [0_u8; 12];
+        memory
+            .read_range_into(TEST_ENTRY, &mut bytes)
+            .expect("cross-block scalar write result should be readable");
+
+        assert_eq!(
+            bytes,
+            [10, 11, 12, 13, 14, 15, 0xdd, 0xcc, 0xbb, 0xaa, 20, 21]
+        );
     }
 
     #[test]

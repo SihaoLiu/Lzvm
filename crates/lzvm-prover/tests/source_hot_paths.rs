@@ -10649,6 +10649,47 @@ fn guest_machine_load_helpers_are_inlined_on_runner_hot_path() {
 }
 
 #[test]
+fn guest_machine_store_writes_use_scalar_memory_helper() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let machine_path = crate_root.join("src/guest_machine/mod.rs");
+    let machine_source =
+        std::fs::read_to_string(&machine_path).expect("guest machine source should read");
+    let memory_path = crate_root.join("src/guest_machine/memory.rs");
+    let memory_source =
+        std::fs::read_to_string(&memory_path).expect("guest machine memory source should read");
+
+    let store_body = function_body(&machine_source, "fn write_guest_store", "fn store_byte_len");
+    for width in ["1", "2", "4", "8"] {
+        assert!(
+            store_body.contains(&format!("memory.write_u64_le::<{width}>")),
+            "guest machine stores should use scalar memory writes for width {width}"
+        );
+    }
+    assert!(
+        !store_body.contains("to_le_bytes") && !store_body.contains("write_range"),
+        "guest machine stores should not build byte slices before writing memory"
+    );
+
+    let amo_body = function_body(
+        &machine_source,
+        "fn write_guest_amo",
+        "fn execute_pending_dma",
+    );
+    assert!(
+        amo_body.contains("memory.write_u64_le::<4>")
+            && amo_body.contains("memory.write_u64_le::<8>")
+            && !amo_body.contains("write_range"),
+        "guest machine AMO writes should share the scalar memory helper"
+    );
+
+    assert!(
+        memory_source.contains("pub(crate) fn write_u64_le<const BYTE_LEN: usize>")
+            && memory_source.contains("fn write_low_u64_le_bytes<const BYTE_LEN: usize>"),
+        "guest machine memory should expose const-width scalar little-endian writes"
+    );
+}
+
+#[test]
 fn guest_pc_source_value_lookup_avoids_request_wrapper() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let source_path = crate_root.join("src/guest_pc_trace_backend.rs");
