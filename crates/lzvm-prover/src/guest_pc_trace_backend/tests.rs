@@ -5696,6 +5696,196 @@ fn copy_register_indirect_store_fast_path_preserves_row_effects() {
 }
 
 #[test]
+fn simple_copy_fast_path_parts_match_generic_lowering() {
+    let reports = [
+        GuestMachineReport {
+            address: 0x8000_0000,
+            instruction_byte_len: 4,
+            instruction: RiscvInstruction::OpImm {
+                kind: RiscvOpImmKind::Addi,
+                rd: 3,
+                rs1: 2,
+                immediate: 0,
+            },
+            next_pc: 0x8000_0004,
+            register_writes: vec![GuestRegisterWrite {
+                index: 3,
+                value: 0xaa55,
+            }]
+            .into(),
+            memory_accesses: vec![].into(),
+            precompile_effects: None,
+        },
+        GuestMachineReport {
+            address: 0x8000_0004,
+            instruction_byte_len: 4,
+            instruction: RiscvInstruction::OpImm {
+                kind: RiscvOpImmKind::Addi,
+                rd: 4,
+                rs1: 0,
+                immediate: -7,
+            },
+            next_pc: 0x8000_0008,
+            register_writes: vec![GuestRegisterWrite {
+                index: 4,
+                value: (-7_i64) as u64,
+            }]
+            .into(),
+            memory_accesses: vec![].into(),
+            precompile_effects: None,
+        },
+        GuestMachineReport {
+            address: 0x8000_0008,
+            instruction_byte_len: 4,
+            instruction: RiscvInstruction::Lui {
+                rd: 5,
+                immediate: 0x1234_5000,
+            },
+            next_pc: 0x8000_000c,
+            register_writes: vec![GuestRegisterWrite {
+                index: 5,
+                value: 0x1234_5000,
+            }]
+            .into(),
+            memory_accesses: vec![].into(),
+            precompile_effects: None,
+        },
+    ];
+
+    for report in reports {
+        let (instruction, _b_index, store_index) =
+            simple_copy_register_store_fast_path_parts(3, &report)
+                .expect("fast path detection should succeed")
+                .expect("simple register copy should match");
+        assert!(store_index != 0);
+        assert_eq!(
+            instruction,
+            lower_guest_report(&report).expect("generic lowering should match")
+        );
+    }
+}
+
+#[test]
+fn simple_copy_fast_path_parts_fall_back_for_non_copy_rows() {
+    let mut report = GuestMachineReport {
+        address: 0x8000_0000,
+        instruction_byte_len: 4,
+        instruction: RiscvInstruction::OpImm {
+            kind: RiscvOpImmKind::Addi,
+            rd: 3,
+            rs1: 2,
+            immediate: 8,
+        },
+        next_pc: 0x8000_0004,
+        register_writes: vec![GuestRegisterWrite {
+            index: 3,
+            value: 0xaa55,
+        }]
+        .into(),
+        memory_accesses: vec![].into(),
+        precompile_effects: None,
+    };
+    assert!(simple_copy_register_store_fast_path_parts(3, &report)
+        .expect("real add should fall back")
+        .is_none());
+
+    report.instruction = RiscvInstruction::OpImm {
+        kind: RiscvOpImmKind::Addi,
+        rd: 0,
+        rs1: 2,
+        immediate: 0,
+    };
+    assert!(simple_copy_register_store_fast_path_parts(3, &report)
+        .expect("zero destination should fall back")
+        .is_none());
+
+    report.instruction = RiscvInstruction::OpImm {
+        kind: RiscvOpImmKind::Addi,
+        rd: 3,
+        rs1: 2,
+        immediate: 0,
+    };
+    report.next_pc = 0x8000_0008;
+    assert!(simple_copy_register_store_fast_path_parts(3, &report)
+        .expect("non-sequential copy should fall back")
+        .is_none());
+}
+
+#[test]
+fn simple_copy_register_store_fast_path_preserves_row_effects() {
+    let writes = [GuestRegisterWrite {
+        index: 3,
+        value: 0xaa55,
+    }];
+    let effects = ZiskMainReportEffects {
+        register_writes: &writes,
+        memory_accesses: &[],
+        precompile_memory_accesses: &[],
+        precompile_result: None,
+    };
+    let instruction = ZiskMainInstruction {
+        pc: 0x8000_0000,
+        a: ZiskMainSource::Immediate(0),
+        b: ZiskMainSource::Register(3),
+        op: ZiskMainOp::CopyB,
+        store: ZiskMainStore::Register(3),
+        store_pc: false,
+        set_pc: false,
+        jmp_offset1: 4,
+        jmp_offset2: 4,
+        ind_width: 0,
+        m32: false,
+        is_external_op: false,
+        is_precompiled: false,
+    };
+    let mut state = ZiskMainTraceState::new();
+    state.registers[3] = 0xaa55;
+    state.register_mem_steps[3] = 44;
+    let mut context = ZiskMainReportValidationContext::new(
+        None,
+        16,
+        ZiskMainTraceSegmentInfo {
+            trace_instance_index: 0,
+            is_last_segment: false,
+            previous_c: 0,
+        },
+    )
+    .expect("context should initialize");
+    let mut visited = None;
+    apply_simple_copy_register_store_fast_path(
+        3,
+        instruction,
+        effects,
+        0x8000_0004,
+        Some(3),
+        3,
+        &mut state,
+        &mut context,
+        &mut |row, values, timing| {
+            assert_eq!(row, 3);
+            assert!(timing.is_none());
+            visited = Some(values);
+            Ok(())
+        },
+    )
+    .expect("simple copy row should take fast path");
+
+    assert_eq!(state.registers[3], 0xaa55);
+    assert_eq!(state.last_c, 0xaa55);
+    assert_eq!(state.next_pc, 0x8000_0004);
+    assert_eq!(state.register_mem_steps[3], 15);
+    let values = visited.expect("fast path should emit row values");
+    assert_eq!(values.a, 0);
+    assert_eq!(values.b, 0xaa55);
+    assert_eq!(values.c, 0xaa55);
+    assert!(!values.flag);
+    assert_eq!(values.register_accesses.a_prev_mem_step, None);
+    assert_eq!(values.register_accesses.b_prev_mem_step, Some(44));
+    assert_eq!(values.register_accesses.store_prev_mem_step, Some(14));
+    assert_eq!(values.register_accesses.store_prev_value, Some(0xaa55));
+}
+
+#[test]
 fn copy_indirect_register_store_fast_path_preserves_row_effects() {
     let accesses = [memory_read(0x108, 0xaa55)];
     let writes = [GuestRegisterWrite {
