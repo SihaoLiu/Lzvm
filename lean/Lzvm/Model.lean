@@ -119,6 +119,22 @@ theorem sound_witness_implies_execution_obligations
       constraintsSatisfied,
       witnessMatchesTrace⟩
 
+theorem sound_witness_implies_core_contract_and_execution_obligations
+    {system : VerifierModel}
+    {publicInput : PublicInput}
+    {proof : Proof} :
+    SoundWitness system publicInput proof ->
+      RuntimeVerifierCoreContract system publicInput proof
+        /\ exists witness trace constraints,
+          system.traceConsistent publicInput proof trace
+            /\ system.constraintsSatisfied constraints trace
+            /\ system.witnessMatchesTrace witness trace := by
+  intro soundWitness
+  exact
+    And.intro
+      (sound_witness_implies_verifier_core_contract soundWitness)
+      (sound_witness_implies_execution_obligations soundWitness)
+
 def ProofSystemSound (system : VerifierModel) : Prop :=
   forall publicInput proof,
     system.accepts publicInput proof -> SoundWitness system publicInput proof
