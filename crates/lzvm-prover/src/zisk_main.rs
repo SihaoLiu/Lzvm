@@ -190,6 +190,7 @@ impl fmt::Display for ZiskMainLowerError {
 
 impl std::error::Error for ZiskMainLowerError {}
 
+#[inline(always)]
 pub fn lower_guest_report(
     report: &GuestMachineReport,
 ) -> Result<ZiskMainInstruction, ZiskMainLowerError> {
