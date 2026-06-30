@@ -33,6 +33,11 @@ fn lean_trace_constraint_artifact_binding_exports_core_contract_projection() {
         &[
             "runtime_trace_constraint_artifact_binding_checked_acceptance_pcs_fri_backend_contract",
             "runtime_trace_constraint_artifact_binding_checked_acceptance_semantic_evidence_complete",
+            "runtime_trace_constraint_preflight_binding_evidence_implies_payload_valid",
+            "runtime_trace_constraint_preflight_binding_evidence_implies_witness_segments_match",
+            "runtime_trace_constraint_preflight_binding_evidence_implies_constraint_catalog_matches",
+            "runtime_trace_constraint_preflight_binding_evidence_implies_artifact_binding_evidence",
+            "runtime_trace_constraint_artifact_binding_checked_acceptance_artifact_binding_evidence",
             "runtime_trace_constraint_artifact_binding_checked_acceptance_sound",
             "runtime_trace_constraint_artifact_binding_checked_acceptance_soundness_obligations",
             "runtime_trace_constraint_artifact_binding_checked_acceptance_verifier_core_contract",
@@ -50,6 +55,14 @@ fn lean_trace_constraint_artifact_binding_exports_core_contract_projection() {
             "RuntimeTraceConstraintArtifactBindingEvidence",
             "RuntimeTraceConstraintSemanticEvidenceComplete",
             "RuntimeTraceConstraintBackendContract",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_trace_constraint_artifact_binding_checked_acceptance_artifact_binding_evidence",
+        &[
+            "runtime_trace_constraint_artifact_binding_checked_acceptance_evidence",
+            "runtime_trace_constraint_preflight_binding_evidence_implies_artifact_binding_evidence",
         ],
     );
     lean_binding::assert_theorem_body_contains(

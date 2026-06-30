@@ -132,6 +132,108 @@ theorem runtime_trace_constraint_artifact_binding_checked_acceptance_evidence
         (And.intro constraintCatalogMatches
           (And.intro witnessCommitmentBinding constraintCatalogBinding)))
 
+theorem runtime_trace_constraint_preflight_binding_evidence_implies_payload_valid
+    {system : VerifierModel}
+    (validation : RuntimeTraceConstraintArtifactBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeTraceConstraintPreflightBindingEvidence
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        validation.traceConstraintSegmentPayloadValid
+          artifact
+          publicInput
+          proof := by
+  intro artifact publicInput proof evidence
+  exact evidence.left
+
+theorem runtime_trace_constraint_preflight_binding_evidence_implies_witness_segments_match
+    {system : VerifierModel}
+    (validation : RuntimeTraceConstraintArtifactBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeTraceConstraintPreflightBindingEvidence
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        validation.witnessCommitmentSegmentsMatchTraceEvidence
+          artifact
+          publicInput
+          proof := by
+  intro artifact publicInput proof evidence
+  exact evidence.right.left
+
+theorem runtime_trace_constraint_preflight_binding_evidence_implies_constraint_catalog_matches
+    {system : VerifierModel}
+    (validation : RuntimeTraceConstraintArtifactBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeTraceConstraintPreflightBindingEvidence
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        validation.constraintCatalogMatchesTraceEvidence
+          artifact
+          publicInput
+          proof := by
+  intro artifact publicInput proof evidence
+  exact evidence.right.right.left
+
+theorem runtime_trace_constraint_preflight_binding_evidence_implies_artifact_binding_evidence
+    {system : VerifierModel}
+    (validation : RuntimeTraceConstraintArtifactBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeTraceConstraintPreflightBindingEvidence
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeTraceConstraintArtifactBindingEvidence
+          system
+          validation.traceConstraintValidation
+          artifact
+          publicInput
+          proof := by
+  intro artifact publicInput proof evidence
+  exact And.intro evidence.right.right.right.left evidence.right.right.right.right
+
+theorem runtime_trace_constraint_artifact_binding_checked_acceptance_artifact_binding_evidence
+    {system : VerifierModel}
+    (validation : RuntimeTraceConstraintArtifactBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeTraceConstraintArtifactBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeTraceConstraintArtifactBindingEvidence
+          system
+          validation.traceConstraintValidation
+          artifact
+          publicInput
+          proof := by
+  intro artifact publicInput proof accepted
+  have preflightEvidence :=
+    runtime_trace_constraint_artifact_binding_checked_acceptance_evidence
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  exact
+    runtime_trace_constraint_preflight_binding_evidence_implies_artifact_binding_evidence
+      validation
+      artifact
+      publicInput
+      proof
+      preflightEvidence
+
 theorem runtime_trace_constraint_artifact_binding_checked_acceptance_trace_constraint
     {system : VerifierModel}
     (validation : RuntimeTraceConstraintArtifactBindingValidation system) :
