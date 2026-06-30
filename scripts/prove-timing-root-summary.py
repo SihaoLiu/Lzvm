@@ -2292,12 +2292,19 @@ def trace_shape_points_to_segment_reexecution(values: dict[str, int]) -> bool:
     if trace_report_rows <= 0:
         return False
     trace_shape_hint = trace_shape_sample_hint(values, trace_report_rows)
+    profiled_rows = trace_shape_row_denominator(
+        values,
+        trace_shape_hint,
+        trace_report_rows,
+    )
+    if profiled_rows <= 0:
+        return False
     external_op_rows = values.get(TRACE_EXTERNAL_OP_ROWS_KEY, 0)
     copy_rows = values.get(TRACE_COPY_ROWS_KEY, 0)
     indirect_memory_rows = values.get(TRACE_INDIRECT_MEMORY_ROWS_KEY, 0)
-    external_op_row_pct = external_op_rows * 100.0 / trace_report_rows
-    copy_row_pct = copy_rows * 100.0 / trace_report_rows
-    indirect_memory_row_pct = indirect_memory_rows * 100.0 / trace_report_rows
+    external_op_row_pct = external_op_rows * 100.0 / profiled_rows
+    copy_row_pct = copy_rows * 100.0 / profiled_rows
+    indirect_memory_row_pct = indirect_memory_rows * 100.0 / profiled_rows
     trace_shape_row_mix = trace_shape_row_mix_hint(
         trace_shape_hint,
         external_op_row_pct,
@@ -2331,7 +2338,7 @@ def trace_shape_points_to_segment_reexecution(values: dict[str, int]) -> bool:
         trace_shape_row_mix,
     )
     return (
-        trace_shape_hint == "shape_timing_enabled"
+        trace_shape_profile_available(trace_shape_hint)
         and trace_shape_row_mix == "copy_and_external_op_rows_dominate"
         and trace_shape_duration in {
             "copy_and_external_op_duration_dominate",
@@ -3468,20 +3475,36 @@ def trace_shape_sample_hint(values: dict[str, int], rows: int) -> str:
 def trace_precompile_action_hint(
     trace_shape_hint: str,
     precompile_rows: int,
-    trace_report_rows: int,
+    profiled_rows: int,
 ) -> str:
-    if trace_shape_hint != "shape_timing_enabled":
-        if trace_report_rows > 0:
+    if not trace_shape_profile_available(trace_shape_hint):
+        if profiled_rows > 0:
             return "enable_shape_timing_for_precompile_rows"
         return "none"
-    if trace_report_rows <= 0:
+    if profiled_rows <= 0:
         return "none"
     if precompile_rows <= 0:
         return "skip_precompile_microprobes"
-    precompile_row_pct = precompile_rows * 100.0 / trace_report_rows
+    precompile_row_pct = precompile_rows * 100.0 / profiled_rows
     if precompile_row_pct < 1.0:
         return "precompile_rows_secondary"
     return "precompile_rows_present"
+
+
+def trace_shape_profile_available(trace_shape_hint: str) -> bool:
+    return trace_shape_hint in {"shape_timing_enabled", "shape_timing_sampled"}
+
+
+def trace_shape_row_denominator(
+    values: dict[str, int],
+    trace_shape_hint: str,
+    trace_report_rows: int,
+) -> int:
+    if trace_shape_hint == "shape_timing_sampled":
+        sample_count = values.get(TRACE_SHAPE_SAMPLES_KEY, 0)
+        if sample_count > 0:
+            return sample_count
+    return trace_report_rows
 
 
 def trace_shape_row_mix_hint(
@@ -3490,7 +3513,7 @@ def trace_shape_row_mix_hint(
     copy_row_pct: float,
     indirect_memory_row_pct: float,
 ) -> str:
-    if trace_shape_hint != "shape_timing_enabled":
+    if not trace_shape_profile_available(trace_shape_hint):
         return "none"
     if copy_row_pct >= 45.0 and external_op_row_pct >= 40.0:
         return "copy_and_external_op_rows_dominate"
@@ -4348,6 +4371,12 @@ def summarize_profile_values(
     flag_rows = values.get(TRACE_FLAG_ROWS_KEY, 0)
     precompile_rows = values.get(TRACE_PRECOMPILE_ROWS_KEY, 0)
     indirect_memory_rows = values.get(TRACE_INDIRECT_MEMORY_ROWS_KEY, 0)
+    trace_shape_hint = trace_shape_sample_hint(values, trace_report_rows)
+    profiled_shape_rows = trace_shape_row_denominator(
+        values,
+        trace_shape_hint,
+        trace_report_rows,
+    )
     register_source_reads = values.get(TRACE_REGISTER_SOURCE_READS_KEY, 0)
     memory_source_reads = values.get(TRACE_MEMORY_SOURCE_READS_KEY, 0)
     register_store_rows = values.get(TRACE_REGISTER_STORE_ROWS_KEY, 0)
@@ -4366,23 +4395,23 @@ def summarize_profile_values(
     row_shape_top_3_shape = trace_row_shape_pattern_description(row_shape_top_3_pattern)
     row_shape_top_4_shape = trace_row_shape_pattern_description(row_shape_top_4_pattern)
     indirect_memory_row_pct = (
-        indirect_memory_rows * 100.0 / trace_report_rows
-        if trace_report_rows
+        indirect_memory_rows * 100.0 / profiled_shape_rows
+        if profiled_shape_rows
         else 0.0
     )
     memory_source_read_pct = (
-        memory_source_reads * 100.0 / trace_report_rows
-        if trace_report_rows
+        memory_source_reads * 100.0 / profiled_shape_rows
+        if profiled_shape_rows
         else 0.0
     )
     memory_store_row_pct = (
-        memory_store_rows * 100.0 / trace_report_rows
-        if trace_report_rows
+        memory_store_rows * 100.0 / profiled_shape_rows
+        if profiled_shape_rows
         else 0.0
     )
     no_store_row_pct = (
-        no_store_rows * 100.0 / trace_report_rows
-        if trace_report_rows
+        no_store_rows * 100.0 / profiled_shape_rows
+        if profiled_shape_rows
         else 0.0
     )
     copy_memory_source_row_pct = (
@@ -4417,16 +4446,21 @@ def summarize_profile_values(
         if copy_source_read_ms
         else 0.0
     )
-    trace_shape_hint = trace_shape_sample_hint(values, trace_report_rows)
     trace_precompile_action = trace_precompile_action_hint(
         trace_shape_hint,
         precompile_rows,
-        trace_report_rows,
+        profiled_shape_rows,
     )
     external_op_row_pct = (
-        external_op_rows * 100.0 / trace_report_rows if trace_report_rows else 0.0
+        external_op_rows * 100.0 / profiled_shape_rows
+        if profiled_shape_rows
+        else 0.0
     )
-    copy_row_pct = copy_rows * 100.0 / trace_report_rows if trace_report_rows else 0.0
+    copy_row_pct = (
+        copy_rows * 100.0 / profiled_shape_rows
+        if profiled_shape_rows
+        else 0.0
+    )
     trace_shape_row_mix = trace_shape_row_mix_hint(
         trace_shape_hint,
         external_op_row_pct,

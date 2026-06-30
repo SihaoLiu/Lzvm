@@ -4621,13 +4621,33 @@ fn prove_timing_root_summary_marks_sampled_trace_shape_profile() {
         String::from_utf8_lossy(&output.stderr)
     );
     let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
-    assert!(
-        stdout.contains("shape_timing_sampled"),
-        "prove timing root summary should identify sampled shape counters: stdout={stdout}"
+    let mut lines = stdout.lines();
+    let headers = parse_csv_line(lines.next().expect("summary should include a header"));
+    let row = parse_csv_line(lines.next().expect("summary should include a data row"));
+    let value = |name: &str| {
+        let index = headers
+            .iter()
+            .position(|candidate| candidate == name)
+            .unwrap_or_else(|| panic!("summary should expose {name}: stdout={stdout}"));
+        row.get(index)
+            .map(String::as_str)
+            .unwrap_or_else(|| panic!("summary row should contain {name}: stdout={stdout}"))
+    };
+
+    assert_eq!(value("trace_shape_sample_hint"), "shape_timing_sampled");
+    assert_eq!(value("external_op_row_pct"), "40.000");
+    assert_eq!(value("copy_row_pct"), "60.000");
+    assert_eq!(
+        value("trace_shape_row_mix_hint"),
+        "copy_and_external_op_rows_dominate"
     );
-    assert!(
-        stdout.contains("diagnostic_only_shape_profile"),
-        "sampled shape counters should still be marked diagnostic: stdout={stdout}"
+    assert_eq!(
+        value("trace_precompile_action_hint"),
+        "skip_precompile_microprobes"
+    );
+    assert_eq!(
+        value("trace_shape_profile_hint"),
+        "diagnostic_only_shape_profile"
     );
 }
 
