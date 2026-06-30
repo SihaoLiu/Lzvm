@@ -544,6 +544,70 @@ theorem runtime_pipeline_binding_evidence_implies_opening_evidence
       _friQueriesValid⟩
   exact openingEvidence
 
+theorem runtime_pipeline_binding_evidence_implies_query_opening_core_contract
+    {system : VerifierModel}
+    {validation : RuntimePipelineBindingValidation system}
+    {artifact : RuntimeArtifact}
+    {publicInput : PublicInput}
+    {proof : Proof}
+    {requiresExternalSource : Prop} :
+    RuntimePipelineBindingEvidence
+        system
+        validation
+        artifact
+        publicInput
+        proof
+        requiresExternalSource ->
+      RuntimeQueryPlanBindingEvidence
+          system
+          validation.queryPlanBindingValidation
+          artifact
+          publicInput
+          proof
+        /\ RuntimeChallengeSegmentBindingEvidence
+          system
+          validation.queryPlanBindingValidation.challengeValidation
+          artifact
+          publicInput
+          proof
+        /\ RuntimeOpeningSegmentBindingEvidence
+          system
+          validation.queryPlanBindingValidation.openingValidation
+          artifact
+          publicInput
+          proof
+        /\ RuntimeOpeningEvidence
+          system
+          validation.queryPlanBindingValidation.openingValidation.openingValidation
+          artifact
+          publicInput
+          proof
+          requiresExternalSource
+        /\ RuntimeVerifierCoreContract system publicInput proof := by
+  intro evidence
+  rcases evidence with
+    ⟨_ethEvidence,
+      _artifactEvidence,
+      _runtimeArtifactEvidence,
+      _tracePreflightEvidence,
+      _traceConstraintEvidence,
+      queryPlanEvidence,
+      challengeEvidence,
+      openingSegmentEvidence,
+      openingEvidence,
+      transcriptBound,
+      publicInputBound,
+      pcsOpeningsValid,
+      friQueriesValid⟩
+  exact
+    And.intro queryPlanEvidence
+      (And.intro challengeEvidence
+        (And.intro openingSegmentEvidence
+          (And.intro openingEvidence
+            (And.intro transcriptBound
+              (And.intro publicInputBound
+                (And.intro pcsOpeningsValid friQueriesValid))))))
+
 theorem runtime_pipeline_binding_evidence_implies_external_source_requirements
     {system : VerifierModel}
     {validation : RuntimePipelineBindingValidation system}
