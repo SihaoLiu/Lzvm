@@ -10,6 +10,7 @@ pub enum EthBlockPublicValuesError {
     MissingEntry {
         name: String,
     },
+    MissingEthPublicBinding,
     ValueMismatch {
         name: String,
     },
@@ -41,6 +42,10 @@ impl fmt::Display for EthBlockPublicValuesError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::MissingEntry { name } => write!(f, "missing ETH block public value: {name}"),
+            Self::MissingEthPublicBinding => write!(
+                f,
+                "setup metadata has no ETH block public binding; add an ETH block public value or packed inputs[64]"
+            ),
             Self::ValueMismatch { name } => {
                 write!(f, "ETH block public value mismatch: {name}")
             }
@@ -121,6 +126,9 @@ pub fn public_values_from_eth_block_input_for_metadata(
             elements,
         });
     }
+    if !values.iter().any(public_value_entry_binds_eth_block) {
+        return Err(EthBlockPublicValuesError::MissingEthPublicBinding);
+    }
     let public_values = PublicValues {
         schema_version: 1,
         setup_hash,
@@ -184,6 +192,13 @@ pub fn validate_eth_block_public_values_with_program_image_cache(
 ) -> Result<(), EthBlockPublicValuesError> {
     validate_eth_block_public_values(input, public_values)?;
     validate_program_image_cache_public_values(public_values, program_image_cache)
+}
+
+fn public_value_entry_binds_eth_block(entry: &PublicValueEntry) -> bool {
+    (entry.name == "inputs" && entry.elements.len() == 64)
+        || ETH_BLOCK_PUBLIC_VALUE_NAMES
+            .iter()
+            .any(|name| *name == entry.name)
 }
 
 fn eth_block_public_value_entries(

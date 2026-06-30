@@ -125,7 +125,42 @@ fn rejects_metadata_generation_without_eth_public_value_binding() {
 
     assert_eq!(
         error.to_string(),
-        "missing ETH block public value: eth_block_hash_u32_be"
+        "setup metadata has no ETH block public binding; add an ETH block public value or packed inputs[64]"
+    );
+}
+
+#[test]
+fn rejects_metadata_generation_with_only_program_image_public_value() {
+    let input = sample_block_input();
+    let global_info = global_info_with_rom_root();
+    let cache = sample_cache();
+
+    let error = public_values_from_eth_block_input_for_metadata(
+        [0x44; 32],
+        &input,
+        &global_info,
+        Some(&cache),
+    )
+    .expect_err("program image public metadata should not bind ETH block input");
+
+    assert_eq!(
+        error.to_string(),
+        "setup metadata has no ETH block public binding; add an ETH block public value or packed inputs[64]"
+    );
+}
+
+#[test]
+fn rejects_unsupported_metadata_without_masking_it_as_missing_binding() {
+    let input = sample_block_input();
+    let global_info = global_info_with_public("application_value", 1);
+
+    let error =
+        public_values_from_eth_block_input_for_metadata([0x44; 32], &input, &global_info, None)
+            .expect_err("unsupported public metadata should be reported directly");
+
+    assert_eq!(
+        error.to_string(),
+        "unsupported ETH block public metadata: application_value"
     );
 }
 
