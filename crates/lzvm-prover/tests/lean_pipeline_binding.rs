@@ -168,6 +168,10 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
             "runtime_pipeline_binding_evidence_implies_runtime_artifact_core_contract",
             "runtime_pipeline_binding_evidence_implies_trace_preflight_evidence",
             "runtime_pipeline_binding_evidence_implies_trace_constraint_evidence",
+            "runtime_pipeline_binding_evidence_implies_query_plan_evidence",
+            "runtime_pipeline_binding_evidence_implies_challenge_evidence",
+            "runtime_pipeline_binding_evidence_implies_opening_segment_evidence",
+            "runtime_pipeline_binding_evidence_implies_opening_evidence",
             "runtime_pipeline_binding_evidence_implies_external_source_requirements",
             "runtime_pipeline_binding_evidence_implies_seeded_query_plan_contract",
             "runtime_pipeline_binding_evidence_implies_trace_semantic_evidence_complete",
@@ -525,6 +529,55 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
         &lean_source,
         "runtime_pipeline_binding_evidence_implies_trace_constraint_evidence",
         &["traceConstraintEvidence"],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_pipeline_binding_evidence_implies_query_plan_evidence",
+        &[
+            "RuntimePipelineBindingEvidence",
+            "RuntimeQueryPlanBindingEvidence",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_pipeline_binding_evidence_implies_query_plan_evidence",
+        &["queryPlanEvidence"],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_pipeline_binding_evidence_implies_challenge_evidence",
+        &[
+            "RuntimePipelineBindingEvidence",
+            "RuntimeChallengeSegmentBindingEvidence",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_pipeline_binding_evidence_implies_challenge_evidence",
+        &["challengeEvidence"],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_pipeline_binding_evidence_implies_opening_segment_evidence",
+        &[
+            "RuntimePipelineBindingEvidence",
+            "RuntimeOpeningSegmentBindingEvidence",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_pipeline_binding_evidence_implies_opening_segment_evidence",
+        &["openingSegmentEvidence"],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_pipeline_binding_evidence_implies_opening_evidence",
+        &["RuntimePipelineBindingEvidence", "RuntimeOpeningEvidence"],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_pipeline_binding_evidence_implies_opening_evidence",
+        &["openingEvidence"],
     );
     lean_binding::assert_theorem_prefix_contains(
         &lean_source,
