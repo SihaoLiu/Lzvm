@@ -139,4 +139,19 @@ def ProofSystemSound (system : VerifierModel) : Prop :=
   forall publicInput proof,
     system.accepts publicInput proof -> SoundWitness system publicInput proof
 
+theorem proof_system_sound_accepts_core_contract_and_execution_obligations
+    {system : VerifierModel}
+    (sound : ProofSystemSound system) :
+    forall publicInput proof,
+      system.accepts publicInput proof ->
+        RuntimeVerifierCoreContract system publicInput proof
+          /\ exists witness trace constraints,
+            system.traceConsistent publicInput proof trace
+              /\ system.constraintsSatisfied constraints trace
+              /\ system.witnessMatchesTrace witness trace := by
+  intro publicInput proof accepted
+  exact
+    sound_witness_implies_core_contract_and_execution_obligations
+      (sound publicInput proof accepted)
+
 end Lzvm

@@ -39,6 +39,7 @@ fn lean_model_exports_verifier_core_contract() {
             "sound_witness_implies_verifier_core_contract",
             "sound_witness_implies_execution_obligations",
             "sound_witness_implies_core_contract_and_execution_obligations",
+            "proof_system_sound_accepts_core_contract_and_execution_obligations",
         ],
     );
     lean_binding::assert_theorem_body_contains(
@@ -48,5 +49,23 @@ fn lean_model_exports_verifier_core_contract() {
             "sound_witness_implies_verifier_core_contract",
             "sound_witness_implies_execution_obligations",
         ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &model_source,
+        "proof_system_sound_accepts_core_contract_and_execution_obligations",
+        &[
+            "ProofSystemSound system",
+            "system.accepts publicInput proof",
+            "RuntimeVerifierCoreContract system publicInput proof",
+            "exists witness trace constraints",
+            "system.traceConsistent publicInput proof trace",
+            "system.constraintsSatisfied constraints trace",
+            "system.witnessMatchesTrace witness trace",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &model_source,
+        "proof_system_sound_accepts_core_contract_and_execution_obligations",
+        &["sound_witness_implies_core_contract_and_execution_obligations"],
     );
 }
