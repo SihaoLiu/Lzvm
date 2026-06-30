@@ -701,6 +701,8 @@ def next_command_parts(
         parts.extend(["--small-max-avg-s", str(args.small_max_avg_s)])
     if args.large_max_avg_s is not None:
         parts.extend(["--large-max-avg-s", str(args.large_max_avg_s)])
+    if args.append_max_average_rejections:
+        parts.append("--append-max-average-rejections")
     if args.parallel_lower_workers is not None:
         parts.extend(["--parallel-lower-workers", str(args.parallel_lower_workers)])
     if args.parallel_lower_job_queue is not None:
@@ -1300,6 +1302,8 @@ def runner_command(args: argparse.Namespace, root: Path) -> list[str]:
         large_max_avg_s = target_max_avg_s(args, "large")
         if large_max_avg_s is not None:
             command.extend(["--large-max-avg-s", str(large_max_avg_s)])
+    if args.append_max_average_rejections:
+        command.append("--append-max-average-rejections")
     for config, mode in selected:
         option = "--small-command" if config.label == "small" else "--large-command"
         command.extend(
@@ -1336,6 +1340,7 @@ def dry_run_summary_lines(args: argparse.Namespace, root: Path) -> list[str]:
         f"gpu_streams={args.gpu_streams or ''}",
         f"witness_thread_pools={args.witness_thread_pools or ''}",
         f"stored_witnesses={args.stored_witnesses or ''}",
+        f"append_max_average_rejections={str(args.append_max_average_rejections).lower()}",
     ]
     for config, mode in selected:
         max_avg_s = target_max_avg_s(args, config.label)
@@ -1601,6 +1606,7 @@ def self_test() -> None:
         small_timeout=10.0,
         skip_targets=False,
         small_max_avg_s=None,
+        append_max_average_rejections=False,
         suite="both",
         summary="self test",
         work_dir=str(work_dir / "runs"),
@@ -1713,6 +1719,7 @@ def main() -> None:
     parser.add_argument("--large-timeout", type=positive_timeout, default=180.0)
     parser.add_argument("--small-max-avg-s", type=positive_timeout, default=None)
     parser.add_argument("--large-max-avg-s", type=positive_timeout, default=None)
+    parser.add_argument("--append-max-average-rejections", action="store_true")
     parser.add_argument("--parallel-lower-workers", type=positive_integer, default=None)
     parser.add_argument("--parallel-lower-job-queue", type=positive_integer, default=None)
     parser.add_argument("--segment-commit-workers", type=positive_integer, default=None)

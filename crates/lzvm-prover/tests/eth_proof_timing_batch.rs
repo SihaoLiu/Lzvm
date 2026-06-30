@@ -410,6 +410,14 @@ fn eth_proof_timing_batch_dry_run_builds_small_command_from_env() {
             && stdout.contains("small_target_max_avg_s=10.0\n"),
         "runner command should enforce the default small target: {stdout}"
     );
+    assert!(
+        !stdout.contains("--append-max-average-rejections"),
+        "rejected average logging should stay off by default: {stdout}"
+    );
+    assert!(
+        stdout.contains("append_max_average_rejections=false\n"),
+        "dry-run metadata should report default rejected average logging: {stdout}"
+    );
     assert_verify_required_text_args(&stdout, "runner command");
     assert!(
         stdout.contains("small_command=env -u LZVM_GUEST_PC_TRACE_PARALLEL_LOWER"),
@@ -687,6 +695,46 @@ fn eth_proof_timing_batch_target_thresholds_follow_selected_suite() {
     assert!(
         !stdout.contains("large_target_max_avg_s="),
         "dry-run metadata should only report selected suites: {stdout}"
+    );
+}
+
+#[test]
+fn eth_proof_timing_batch_dry_run_can_request_rejected_average_logging() {
+    let fixture = ProofFixture::new("eth-proof-timing-batch-append-rejected");
+    let mut command = Command::new(script_path());
+    command
+        .arg("--suite")
+        .arg("small")
+        .arg("--dry-run")
+        .arg("--append-max-average-rejections")
+        .arg("--enforce-targets")
+        .arg("--summary")
+        .arg("append rejected");
+    fixture.apply_env(&mut command, SMALL_PREFIX);
+
+    let output = command
+        .output()
+        .expect("ETH proof timing batch dry-run should run");
+    let success = output.status.success();
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    fixture.cleanup();
+
+    assert!(
+        success,
+        "dry-run should build rejected average logging command: stderr={stderr}"
+    );
+    assert!(
+        stdout.contains("--append-max-average-rejections"),
+        "rejected average logging should be passed to the runner: {stdout}"
+    );
+    assert!(
+        stdout.contains("append_max_average_rejections=true\n"),
+        "dry-run metadata should report rejected average logging: {stdout}"
+    );
+    assert!(
+        stdout.contains("--small-max-avg-s 10.0"),
+        "target threshold should still be passed with rejected average logging: {stdout}"
     );
 }
 
