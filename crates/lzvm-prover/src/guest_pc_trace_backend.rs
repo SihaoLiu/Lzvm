@@ -10,8 +10,8 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use crate::guest_instruction::{
-    RiscvAmoKind, RiscvAmoWidth, RiscvBranchKind, RiscvDmaKind, RiscvInstruction, RiscvOpImmKind,
-    RiscvOpKind, RiscvPrecompileKind,
+    RiscvAmoKind, RiscvAmoWidth, RiscvBranchKind, RiscvDmaKind, RiscvInstruction, RiscvLoadKind,
+    RiscvOpImmKind, RiscvOpKind, RiscvPrecompileKind,
 };
 use crate::guest_machine::{
     advance_guest_machine_with_prepared_fcalls_report_shape,
@@ -10254,6 +10254,25 @@ fn validate_and_apply_zisk_main_report(
     }
 
     validate_zisk_main_report_row_capacity(row, 1, context.row_count)?;
+    if !detail_timing && !shape_timing {
+        if let Some((instruction, a_index, b_offset, store_index)) =
+            load_copy_indirect_register_store_fast_path_parts(row, report)?
+        {
+            apply_copy_indirect_register_store_fast_path(
+                row,
+                instruction,
+                ZiskMainReportEffects::from_report(report),
+                report.next_pc,
+                a_index,
+                b_offset,
+                store_index,
+                state,
+                context,
+                &mut visit,
+            )?;
+            return Ok(1);
+        }
+    }
     let lowering_started = detail_duration_started(&timing, detail_timing);
     let lowered_row = lower_single_zisk_main_report_row(row, report, &mut next_instruction)?;
     record_detail_duration(lowering_started, &mut timing, |timing| {
@@ -10531,6 +10550,66 @@ fn apply_zisk_main_lowered_report_row(
         record_trace_lowered_row_duration(timing, is_external_op, is_copy, started.elapsed());
     }
     result
+}
+
+#[inline(always)]
+fn load_copy_indirect_register_store_fast_path_parts(
+    row: usize,
+    report: &GuestMachineReport,
+) -> Result<Option<(ZiskMainInstruction, u8, i64, u8)>, GuestPcTraceBackendError> {
+    let RiscvInstruction::Load {
+        kind,
+        rd,
+        rs1,
+        offset,
+    } = report.instruction
+    else {
+        return Ok(None);
+    };
+    if rd == 0 || rs1 == 0 || !report.precompile_memory_accesses().is_empty() {
+        return Ok(None);
+    }
+    let ind_width = match kind {
+        RiscvLoadKind::Lbu => 1,
+        RiscvLoadKind::Lhu => 2,
+        RiscvLoadKind::Lwu => 4,
+        RiscvLoadKind::Ld => 8,
+        RiscvLoadKind::Lb | RiscvLoadKind::Lh | RiscvLoadKind::Lw => return Ok(None),
+    };
+    let instruction_size = match report.instruction_byte_len {
+        2 | 4 => report.instruction_byte_len as i64,
+        byte_len => {
+            return Err(GuestPcTraceBackendError::ZiskMainLower {
+                row,
+                source: ZiskMainLowerError::InvalidInstructionByteLen {
+                    pc: report.address,
+                    byte_len: usize::from(byte_len),
+                },
+            });
+        }
+    };
+    let Some(expected_next_pc) = report.address.checked_add(instruction_size as u64) else {
+        return Ok(None);
+    };
+    if expected_next_pc != report.next_pc {
+        return Ok(None);
+    }
+    let instruction = ZiskMainInstruction {
+        pc: report.address,
+        a: ZiskMainSource::Register(rs1),
+        b: ZiskMainSource::Indirect(offset),
+        op: ZiskMainOp::CopyB,
+        store: ZiskMainStore::Register(rd),
+        store_pc: false,
+        set_pc: false,
+        jmp_offset1: instruction_size,
+        jmp_offset2: instruction_size,
+        ind_width,
+        m32: false,
+        is_external_op: false,
+        is_precompiled: false,
+    };
+    Ok(Some((instruction, rs1, offset, rd)))
 }
 
 #[inline(always)]

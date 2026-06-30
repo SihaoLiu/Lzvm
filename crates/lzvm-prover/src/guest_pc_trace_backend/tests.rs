@@ -5460,6 +5460,93 @@ fn ordered_memory_access_value_returns_value_after_order_validation() {
 }
 
 #[test]
+fn load_copy_fast_path_parts_match_generic_lowering() {
+    let report = GuestMachineReport {
+        address: 0x8000_0000,
+        instruction_byte_len: 4,
+        instruction: RiscvInstruction::Load {
+            kind: RiscvLoadKind::Ld,
+            rd: 3,
+            rs1: 2,
+            offset: 8,
+        },
+        next_pc: 0x8000_0004,
+        register_writes: vec![GuestRegisterWrite {
+            index: 3,
+            value: 0xaa55,
+        }]
+        .into(),
+        memory_accesses: vec![memory_read(0x108, 0xaa55)].into(),
+        precompile_effects: None,
+    };
+
+    let (instruction, a_index, b_offset, store_index) =
+        load_copy_indirect_register_store_fast_path_parts(3, &report)
+            .expect("fast path detection should succeed")
+            .expect("ld from register base into register should match");
+
+    assert_eq!(a_index, 2);
+    assert_eq!(b_offset, 8);
+    assert_eq!(store_index, 3);
+    assert_eq!(
+        instruction,
+        lower_guest_report(&report).expect("generic lowering should match")
+    );
+}
+
+#[test]
+fn load_copy_fast_path_parts_fall_back_for_non_dominant_loads() {
+    let mut report = GuestMachineReport {
+        address: 0x8000_0000,
+        instruction_byte_len: 4,
+        instruction: RiscvInstruction::Load {
+            kind: RiscvLoadKind::Lw,
+            rd: 3,
+            rs1: 2,
+            offset: 8,
+        },
+        next_pc: 0x8000_0004,
+        register_writes: vec![GuestRegisterWrite {
+            index: 3,
+            value: 0xaa55,
+        }]
+        .into(),
+        memory_accesses: vec![memory_read(0x108, 0xaa55)].into(),
+        precompile_effects: None,
+    };
+    assert!(
+        load_copy_indirect_register_store_fast_path_parts(3, &report)
+            .expect("signed load should fall back")
+            .is_none()
+    );
+
+    report.instruction = RiscvInstruction::Load {
+        kind: RiscvLoadKind::Ld,
+        rd: 0,
+        rs1: 2,
+        offset: 8,
+    };
+    assert!(
+        load_copy_indirect_register_store_fast_path_parts(3, &report)
+            .expect("zero destination should fall back")
+            .is_none()
+    );
+
+    report.instruction = RiscvInstruction::Load {
+        kind: RiscvLoadKind::Ld,
+        rd: 3,
+        rs1: 2,
+        offset: 8,
+    };
+    report.next_pc = 0x8000_0008;
+    assert!(
+        load_copy_indirect_register_store_fast_path_parts(3, &report)
+            .expect("non-sequential load should fall back")
+            .is_none()
+    );
+}
+
+#[test]
 fn copy_indirect_register_store_fast_path_preserves_row_effects() {
     let accesses = [memory_read(0x108, 0xaa55)];
     let writes = [GuestRegisterWrite {
