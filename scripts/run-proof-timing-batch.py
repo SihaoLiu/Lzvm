@@ -695,6 +695,47 @@ def timing_spread_seconds(values: list[float]) -> float | None:
     return round(max(values) - min(values), 3)
 
 
+def max_average_rejection_message(
+    label: str,
+    stable_logs: list[Path],
+    max_average_s: float | None,
+) -> str | None:
+    if max_average_s is None:
+        return None
+    stable_timing_s, failed = timing_seconds_values(stable_logs)
+    if failed or not stable_timing_s:
+        return None
+    average = timing_average_seconds(stable_timing_s)
+    if average is None or average <= max_average_s:
+        return None
+    option = "--small-max-avg-s" if label == "small" else "--large-max-avg-s"
+    return f"{label} proof time: average {average:.3f}s exceeds {option} {max_average_s:.3f}s"
+
+
+def max_average_rejection_messages(
+    small_stable_logs: list[Path],
+    large_stable_logs: list[Path],
+    small_max_average_s: float | None,
+    large_max_average_s: float | None,
+) -> list[str]:
+    messages = []
+    small_message = max_average_rejection_message(
+        "small",
+        small_stable_logs,
+        small_max_average_s,
+    )
+    if small_message is not None:
+        messages.append(small_message)
+    large_message = max_average_rejection_message(
+        "large",
+        large_stable_logs,
+        large_max_average_s,
+    )
+    if large_message is not None:
+        messages.append(large_message)
+    return messages
+
+
 def timing_milliseconds(value: float | None) -> int:
     if value is None:
         return 0
@@ -823,6 +864,7 @@ def write_batch_json(
         "max_relative_spread": args.max_relative_spread,
         "small_max_avg_s": args.small_max_avg_s,
         "large_max_avg_s": args.large_max_avg_s,
+        "append_max_average_rejections": args.append_max_average_rejections,
         "commit": commit,
         "summary": args.summary,
         "small_command": args.small_command,
@@ -1040,6 +1082,32 @@ def run_batch(args: argparse.Namespace) -> Path:
         record_batch_json(small_logs, large_logs, appended=False)
         raise
     record_batch_json(small_logs, large_logs, appended=False)
+    rejection_messages = max_average_rejection_messages(
+        small_stable_logs,
+        large_stable_logs,
+        args.small_max_avg_s,
+        args.large_max_avg_s,
+    )
+    if args.append_max_average_rejections and rejection_messages:
+        try:
+            append_improve_log(
+                append_script,
+                improve_log_path,
+                commit,
+                args.summary,
+                small_logs,
+                large_logs,
+                args.max_relative_spread,
+                None,
+                None,
+                root,
+                batch_dir,
+            )
+        except SystemExit:
+            record_batch_json(small_logs, large_logs, appended=False)
+            raise
+        record_batch_json(small_logs, large_logs, appended=True)
+        raise SystemExit("; ".join(rejection_messages))
     try:
         append_improve_log(
             append_script,
@@ -1133,6 +1201,7 @@ def self_test() -> None:
         max_runs=None,
         small_max_avg_s=None,
         large_max_avg_s=None,
+        append_max_average_rejections=False,
         path=str(work_dir / "improve-log.csv"),
         require_proof_output=False,
         require_text=[],
@@ -1209,6 +1278,7 @@ def main() -> None:
     parser.add_argument("--max-relative-spread", type=nonnegative_float, default=0.10)
     parser.add_argument("--small-max-avg-s", type=positive_timeout, default=None)
     parser.add_argument("--large-max-avg-s", type=positive_timeout, default=None)
+    parser.add_argument("--append-max-average-rejections", action="store_true")
     parser.add_argument("--append-script", default="scripts/append-improve-log.py")
     parser.add_argument("--timing-summary-script", default="scripts/prove-timing-root-summary.py")
     parser.add_argument("--require-text", action="append", default=[])

@@ -792,6 +792,67 @@ fn proof_timing_batch_rejects_average_above_max() {
 }
 
 #[test]
+fn proof_timing_batch_can_append_average_rejection() {
+    let script_path = batch_script_path();
+    let dir = test_dir("proof-timing-batch-append-max-average");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("fixture dir should be created");
+    let log_path = dir.join("improve-log.csv");
+
+    let output = Command::new(&script_path)
+        .arg("--work-dir")
+        .arg(&dir)
+        .arg("--path")
+        .arg(&log_path)
+        .arg("--commit")
+        .arg("test")
+        .arg("--runs")
+        .arg("3")
+        .arg("--small-max-avg-s")
+        .arg("1.0")
+        .arg("--append-max-average-rejections")
+        .arg("--small-command")
+        .arg("printf 'timing_total_ms=1500\n'")
+        .arg("--summary")
+        .arg("max average")
+        .output()
+        .expect("proof timing batch should run");
+    let success = output.status.success();
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    let batch_dir = single_batch_dir(&dir);
+    let batch_json =
+        std::fs::read_to_string(batch_dir.join("batch.json")).expect("batch json should read");
+    let contents = std::fs::read_to_string(&log_path).expect("improve log should read");
+    let append_status = std::fs::read_to_string(batch_dir.join("append.status"))
+        .expect("append status should read");
+    let _ = std::fs::remove_dir_all(&dir);
+
+    assert!(
+        !success,
+        "proof timing batch should still reject averages above the configured max"
+    );
+    assert!(
+        stderr.contains("small proof time: average 1.500s exceeds --small-max-avg-s 1.000s"),
+        "max average rejection should remain visible to callers: stderr={stderr}"
+    );
+    assert!(
+        batch_json.contains("\"small_max_avg_s\": 1.0")
+            && batch_json.contains("\"append_max_average_rejections\": true")
+            && batch_json.contains("\"small_stable_avg_s\": 1.5")
+            && batch_json.contains("\"appended\": true"),
+        "batch json should record that the rejected average was appended: {batch_json}"
+    );
+    assert!(
+        contents.contains("\"avg=1.500 samples=1.500;1.500;1.500 used=3/3\""),
+        "improve log should record the stable rejected average: {contents}"
+    );
+    assert!(
+        append_status.contains("exit_code=0"),
+        "append helper should succeed before the batch reports rejection: {append_status}"
+    );
+}
+
+#[test]
 fn proof_timing_batch_removes_failed_per_run_summary_outputs() {
     let script_path = batch_script_path();
     let dir = test_dir("proof-timing-batch-run-summary-fails");
