@@ -4166,6 +4166,16 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "Lean proof timing batch summary should expose {field}"
         );
     }
+    for predicate in [
+        "ProofTimingBatchStableAverageRejected",
+        "ProofTimingBatchSmallAverageRejected",
+        "ProofTimingBatchLargeAverageRejected",
+    ] {
+        assert!(
+            lean_proof_timing_source.contains(predicate),
+            "Lean proof timing batch checks should expose rejected average evidence {predicate}"
+        );
+    }
     lean_binding::assert_theorem_declarations(
         &lean_proof_timing_source,
         &[
@@ -4173,6 +4183,8 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "proof_timing_batch_acceptance_sound",
             "proof_timing_batch_acceptance_verifier_core_contract",
             "proof_timing_batch_acceptance_core_and_sound",
+            "proof_timing_batch_small_rejected_average_acceptance_core_and_sound",
+            "proof_timing_batch_large_rejected_average_acceptance_core_and_sound",
         ],
     );
     lean_binding::assert_theorem_body_contains(
@@ -4193,6 +4205,41 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "sound_witness_implies_verifier_core_contract",
         ],
     );
+    for (theorem, evidence) in [
+        (
+            "proof_timing_batch_small_rejected_average_acceptance_core_and_sound",
+            "ProofTimingBatchSmallAverageRejected summary baselineMilliseconds",
+        ),
+        (
+            "proof_timing_batch_large_rejected_average_acceptance_core_and_sound",
+            "ProofTimingBatchLargeAverageRejected summary baselineMilliseconds",
+        ),
+    ] {
+        lean_binding::assert_theorem_prefix_contains(
+            &lean_proof_timing_source,
+            theorem,
+            &[
+                "ProofTimingBatchObservedAcceptance system (some summary) publicInput proof",
+                evidence,
+                "RuntimeVerifierCoreContract system publicInput proof",
+                "SoundWitness system publicInput proof",
+            ],
+        );
+        lean_binding::assert_theorem_body_contains(
+            &lean_proof_timing_source,
+            theorem,
+            &["proof_timing_batch_acceptance_core_and_sound"],
+        );
+        lean_binding::assert_theorem_body_omits(
+            &lean_proof_timing_source,
+            theorem,
+            &[
+                "proof_timing_batch_acceptance_sound",
+                "proof_timing_batch_acceptance_verifier_core_contract",
+                "sound_witness_implies_verifier_core_contract",
+            ],
+        );
+    }
     lean_binding::assert_theorem_prefix_contains(
         &runtime_performance_source,
         "runtime_performance_observation_projects_proof_timing_batch",

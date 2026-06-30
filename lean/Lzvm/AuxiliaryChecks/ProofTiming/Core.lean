@@ -19,6 +19,30 @@ def ProofTimingBatchObservedAcceptance
     (proof : Proof) : Prop :=
   IgnoredMetadataObservedAcceptance system summary publicInput proof
 
+def ProofTimingBatchStableAverageRejected
+    (stableRunCount averageMilliseconds parseFailedCount baselineMilliseconds : Nat) : Prop :=
+  3 <= stableRunCount
+    /\ parseFailedCount = 0
+    /\ baselineMilliseconds < averageMilliseconds
+
+def ProofTimingBatchSmallAverageRejected
+    (summary : ProofTimingBatchSummary)
+    (baselineMilliseconds : Nat) : Prop :=
+  ProofTimingBatchStableAverageRejected
+    summary.smallStableRunCount
+    summary.smallStableAverageMilliseconds
+    summary.smallTimingParseFailedCount
+    baselineMilliseconds
+
+def ProofTimingBatchLargeAverageRejected
+    (summary : ProofTimingBatchSummary)
+    (baselineMilliseconds : Nat) : Prop :=
+  ProofTimingBatchStableAverageRejected
+    summary.largeStableRunCount
+    summary.largeStableAverageMilliseconds
+    summary.largeTimingParseFailedCount
+    baselineMilliseconds
+
 theorem proof_timing_batch_observed_acceptance_projects_verifier_acceptance
     {system : VerifierModel}
     (summary : Option ProofTimingBatchSummary) :
@@ -76,6 +100,48 @@ theorem proof_timing_batch_acceptance_core_and_sound
       publicInput
       proof
       observed
+
+theorem proof_timing_batch_small_rejected_average_acceptance_core_and_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : ProofTimingBatchSummary)
+    (baselineMilliseconds : Nat) :
+    forall publicInput proof,
+      ProofTimingBatchObservedAcceptance system (some summary) publicInput proof ->
+      ProofTimingBatchSmallAverageRejected summary baselineMilliseconds ->
+        ProofTimingBatchSmallAverageRejected summary baselineMilliseconds
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof observed rejectedAverage
+  have coreAndSound :=
+    proof_timing_batch_acceptance_core_and_sound
+      assumptions
+      (some summary)
+      publicInput
+      proof
+      observed
+  exact And.intro rejectedAverage coreAndSound
+
+theorem proof_timing_batch_large_rejected_average_acceptance_core_and_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : ProofTimingBatchSummary)
+    (baselineMilliseconds : Nat) :
+    forall publicInput proof,
+      ProofTimingBatchObservedAcceptance system (some summary) publicInput proof ->
+      ProofTimingBatchLargeAverageRejected summary baselineMilliseconds ->
+        ProofTimingBatchLargeAverageRejected summary baselineMilliseconds
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof observed rejectedAverage
+  have coreAndSound :=
+    proof_timing_batch_acceptance_core_and_sound
+      assumptions
+      (some summary)
+      publicInput
+      proof
+      observed
+  exact And.intro rejectedAverage coreAndSound
 
 def WitnessOpeningRowValueTimingObservedAcceptance
     (system : VerifierModel)
