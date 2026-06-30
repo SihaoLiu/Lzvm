@@ -165,6 +165,8 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
             "runtime_pipeline_binding_evidence_implies_execution_obligations",
             "runtime_pipeline_binding_evidence_implies_runtime_soundness_evidence",
             "runtime_pipeline_binding_evidence_implies_runtime_artifact_evidence",
+            "runtime_pipeline_binding_evidence_implies_eth_binding_evidence",
+            "runtime_pipeline_binding_evidence_implies_proof_artifact_evidence",
             "runtime_pipeline_binding_evidence_implies_runtime_artifact_core_contract",
             "runtime_pipeline_binding_evidence_implies_trace_preflight_evidence",
             "runtime_pipeline_binding_evidence_implies_trace_constraint_evidence",
@@ -334,6 +336,16 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
         )
         .contains("AssumptionBundle"),
         "runtime artifact evidence projection should not require cryptographic assumptions"
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_pipeline_binding_evidence_implies_eth_binding_evidence",
+        &["ethEvidence", "exact ethEvidence"],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_pipeline_binding_evidence_implies_proof_artifact_evidence",
+        &["proofArtifactEvidence", "exact proofArtifactEvidence"],
     );
     lean_binding::assert_theorem_body_contains(
         &lean_source,

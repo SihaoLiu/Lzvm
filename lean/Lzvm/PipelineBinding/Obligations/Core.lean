@@ -64,6 +64,56 @@ theorem runtime_pipeline_binding_evidence_implies_runtime_artifact_evidence
     ⟨_, _, runtimeArtifactEvidence, _, _, _, _, _, _, _, _, _, _⟩
   exact runtimeArtifactEvidence
 
+theorem runtime_pipeline_binding_evidence_implies_eth_binding_evidence
+    {system : VerifierModel}
+    {validation : RuntimePipelineBindingValidation system}
+    {artifact : RuntimeArtifact}
+    {publicInput : PublicInput}
+    {proof : Proof}
+    {requiresExternalSource : Prop} :
+    RuntimePipelineBindingEvidence
+        system
+        validation
+        artifact
+        publicInput
+        proof
+        requiresExternalSource ->
+      RuntimeEthBlockPublicInputBindingEvidence
+        system
+        validation.ethBindingValidation
+        artifact
+        publicInput
+        proof := by
+  intro evidence
+  rcases evidence with
+    ⟨ethEvidence, _, _, _, _, _, _, _, _, _, _, _, _⟩
+  exact ethEvidence
+
+theorem runtime_pipeline_binding_evidence_implies_proof_artifact_evidence
+    {system : VerifierModel}
+    {validation : RuntimePipelineBindingValidation system}
+    {artifact : RuntimeArtifact}
+    {publicInput : PublicInput}
+    {proof : Proof}
+    {requiresExternalSource : Prop} :
+    RuntimePipelineBindingEvidence
+        system
+        validation
+        artifact
+        publicInput
+        proof
+        requiresExternalSource ->
+      RuntimeProofArtifactBindingEvidence
+        system
+        validation.ethBindingValidation.proofArtifactBindingValidation
+        artifact
+        publicInput
+        proof := by
+  intro evidence
+  rcases evidence with
+    ⟨_, proofArtifactEvidence, _, _, _, _, _, _, _, _, _, _, _⟩
+  exact proofArtifactEvidence
+
 theorem runtime_pipeline_binding_required_external_source_sound
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
