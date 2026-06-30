@@ -10357,7 +10357,10 @@ fn lean_pipeline_binding_tracks_runtime_preflight_and_artifact_checks() {
             && lean_source.contains("RuntimeTraceConstraintArtifactBindingValidation")
             && lean_source.contains("RuntimeTraceConstraintPreflightBindingEvidence")
             && lean_source.contains("RuntimeQueryPlanBindingValidation")
-            && lean_source.contains("RuntimeQueryPlanBindingEvidence"),
+            && lean_source.contains("RuntimeQueryPlanBindingEvidence")
+            && lean_source.contains(
+                "runtime_pipeline_binding_checked_acceptance_proof_artifact_full_contract"
+            ),
         "Lean runtime pipeline binding should compose public input, trace, and query plan binding models"
     );
     assert!(

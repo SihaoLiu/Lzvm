@@ -1551,6 +1551,45 @@ theorem runtime_pipeline_binding_checked_acceptance_eth_artifact_wellformed_cont
       proof
       ethAccepted
 
+theorem runtime_pipeline_binding_checked_acceptance_proof_artifact_full_contract
+    {system : VerifierModel}
+    (validation : RuntimePipelineBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimePipelineBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeProofArtifactBindingEvidence
+            system
+            validation.ethBindingValidation.proofArtifactBindingValidation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeProofArtifactBindingStructuralObligations
+            system
+            validation.ethBindingValidation.proofArtifactBindingValidation
+            artifact
+            publicInput
+            proof := by
+  intro artifact publicInput proof accepted
+  have evidence :=
+    runtime_pipeline_binding_checked_acceptance_proof_artifact_evidence
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have structural :=
+    runtime_pipeline_binding_checked_acceptance_eth_artifact_wellformed_contract
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  exact And.intro evidence structural
+
 theorem runtime_pipeline_binding_checked_acceptance_eth_concrete_segment_ids_allowed
     {system : VerifierModel}
     (validation : RuntimePipelineBindingValidation system)
