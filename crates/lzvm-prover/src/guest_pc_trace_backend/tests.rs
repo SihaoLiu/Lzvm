@@ -171,6 +171,57 @@ fn guest_trace_detail_timing_sample_stride_uses_positive_env_values() {
 }
 
 #[test]
+fn guest_pc_trace_runner_detail_timing_ignores_unexecuted_row_fit_probe() {
+    let _env_lock = GUEST_PC_TRACE_ENV_LOCK
+        .lock()
+        .expect("guest PC trace env lock should not be poisoned");
+    let _detail_env = TestEnvVarGuard::set("LZVM_GUEST_TRACE_RUNNER_DETAIL_TIMING", "1");
+    let _stride_env =
+        TestEnvVarGuard::set("LZVM_GUEST_TRACE_RUNNER_DETAIL_TIMING_SAMPLE_STRIDE", "1");
+    let dir = repo_temp_dir("guest-pc-runner-detail-row-fit");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let guest_image = dir.join("guest.elf");
+    let guest_image_bytes = sample_guest_image_with_words(&[riscv_amo_add_d(1, 2, 3)]);
+    std::fs::write(&guest_image, &guest_image_bytes).expect("guest image should be written");
+    let guest_image_info = parse_guest_image(&guest_image_bytes).expect("guest image should parse");
+    let context = WitnessComputeContext {
+        guest_image: Some(&guest_image),
+        guest_image_info: Some(&guest_image_info),
+        trace_layout: None,
+    };
+    let (mut memory, mut state, mut fcall_handler) =
+        load_guest_pc_trace_machine(context, &[]).expect("guest machine should load");
+    let mut instruction_cache = GuestInstructionCache::default();
+    let mut timing = GuestPcTraceStreamTiming::default();
+
+    let result = run_guest_pc_trace_segment_slice_with_cache(
+        &mut memory,
+        &mut state,
+        &mut fcall_handler,
+        32,
+        1,
+        &mut instruction_cache,
+        Some(&mut timing),
+    );
+    let Err(error) = result else {
+        panic!("oversized first report should fail before advance");
+    };
+    std::fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert!(matches!(
+        error,
+        GuestPcTraceBackendError::InvalidPcTraceLayout { .. }
+    ));
+    assert_eq!(timing.runner_detail_sample_count(), 0);
+    assert_eq!(timing.runner_detail_duration(), std::time::Duration::ZERO);
+    assert_eq!(
+        timing.runner_prepare_instruction_duration(),
+        std::time::Duration::ZERO
+    );
+}
+
+#[test]
 fn guest_pc_trace_report_chunk_capacity_defaults_to_large_batches() {
     let _env_lock = GUEST_PC_TRACE_ENV_LOCK
         .lock()

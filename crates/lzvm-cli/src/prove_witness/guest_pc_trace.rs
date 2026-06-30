@@ -303,6 +303,10 @@ pub(super) fn record_guest_pc_trace_timing(
         timing.guest_trace_shape_sample_count(),
     );
     timings.record_count(
+        "guest_trace_shape_sample_rows",
+        timing.guest_trace_shape_sample_row_count(),
+    );
+    timings.record_count(
         "guest_trace_report_source_immediate_reads",
         timing.guest_trace_report_source_immediate_read_count(),
     );

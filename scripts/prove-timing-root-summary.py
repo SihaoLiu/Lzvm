@@ -267,6 +267,7 @@ TRACE_ROW_SHAPE_TOP_3_COUNT_KEY = "timing_guest_trace_row_shape_top_3_count"
 TRACE_ROW_SHAPE_TOP_4_PATTERN_KEY = "timing_guest_trace_row_shape_top_4_pattern"
 TRACE_ROW_SHAPE_TOP_4_COUNT_KEY = "timing_guest_trace_row_shape_top_4_count"
 TRACE_SHAPE_SAMPLES_KEY = "timing_guest_trace_shape_samples"
+TRACE_SHAPE_SAMPLE_ROWS_KEY = "timing_guest_trace_shape_sample_rows"
 TRACE_ROW_SHAPE_SOURCE_NAMES = {
     0: "imm",
     1: "reg",
@@ -365,6 +366,7 @@ TRACE_SHAPE_KEYS = (
     TRACE_ROW_SHAPE_TOP_4_PATTERN_KEY,
     TRACE_ROW_SHAPE_TOP_4_COUNT_KEY,
     TRACE_SHAPE_SAMPLES_KEY,
+    TRACE_SHAPE_SAMPLE_ROWS_KEY,
 )
 TRACE_REPORT_DETAIL_SAMPLES_KEY = "timing_guest_trace_report_detail_samples"
 TRACE_REPORT_SAMPLED_NS_KEY = "timing_guest_trace_report_sampled_ns"
@@ -1275,6 +1277,7 @@ TIMING_KEYS = {
     TRACE_ROW_SHAPE_TOP_4_PATTERN_KEY,
     TRACE_ROW_SHAPE_TOP_4_COUNT_KEY,
     TRACE_SHAPE_SAMPLES_KEY,
+    TRACE_SHAPE_SAMPLE_ROWS_KEY,
     TRACE_REPORT_DETAIL_SAMPLES_KEY,
     TRACE_REPORT_SAMPLED_NS_KEY,
     TRACE_REPORT_LOWERING_SAMPLED_NS_KEY,
@@ -3484,7 +3487,10 @@ def trace_report_detail_action_hint(
 def trace_shape_sample_hint(values: dict[str, int], rows: int) -> str:
     if rows <= 0:
         return "none"
-    if values.get(TRACE_SHAPE_SAMPLES_KEY, 0) > 0:
+    if (
+        values.get(TRACE_SHAPE_SAMPLES_KEY, 0) > 0
+        or values.get(TRACE_SHAPE_SAMPLE_ROWS_KEY, 0) > 0
+    ):
         return "shape_timing_sampled"
     if any(values.get(key, 0) > 0 for key in TRACE_SHAPE_KEYS):
         return "shape_timing_enabled"
@@ -3525,9 +3531,10 @@ def trace_shape_row_denominator(
     trace_report_rows: int,
 ) -> int:
     if trace_shape_hint == "shape_timing_sampled":
-        sample_count = values.get(TRACE_SHAPE_SAMPLES_KEY, 0)
-        if sample_count > 0:
-            return sample_count
+        sample_rows = values.get(TRACE_SHAPE_SAMPLE_ROWS_KEY, 0)
+        if sample_rows > 0:
+            return sample_rows
+        return trace_report_rows
     return trace_report_rows
 
 

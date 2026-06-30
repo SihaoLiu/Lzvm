@@ -3493,6 +3493,10 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "guest_trace_shape_sample_count()",
         ),
         (
+            "\"guest_trace_shape_sample_rows\"",
+            "guest_trace_shape_sample_row_count()",
+        ),
+        (
             "\"guest_trace_report_buffer_capacity\"",
             "guest_trace_report_buffer_capacity()",
         ),

@@ -240,6 +240,7 @@ pub(crate) struct GuestPcTraceStreamTiming {
     trace_descriptor_duration: Duration,
     trace_report_detail_sample_count: usize,
     trace_shape_sample_count: usize,
+    trace_shape_sample_row_count: usize,
     trace_report_source_immediate_read_count: usize,
     trace_report_source_register_read_count: usize,
     trace_report_source_memory_read_count: usize,
@@ -401,6 +402,7 @@ impl GuestPcTraceStreamTiming {
         self.trace_descriptor_duration += other.trace_descriptor_duration;
         self.trace_report_detail_sample_count += other.trace_report_detail_sample_count;
         self.trace_shape_sample_count += other.trace_shape_sample_count;
+        self.trace_shape_sample_row_count += other.trace_shape_sample_row_count;
         self.trace_report_source_immediate_read_count +=
             other.trace_report_source_immediate_read_count;
         self.trace_report_source_register_read_count +=
@@ -740,6 +742,10 @@ impl GuestPcTraceStreamTiming {
 
     pub fn trace_shape_sample_count(&self) -> usize {
         self.trace_shape_sample_count
+    }
+
+    pub fn trace_shape_sample_row_count(&self) -> usize {
+        self.trace_shape_sample_row_count
     }
 
     pub fn trace_report_source_immediate_read_count(&self) -> usize {
@@ -4272,6 +4278,7 @@ fn run_guest_pc_trace_segment_slice_inner<
             .prepare(memory, pc)
             .map_err(GuestMachineRunError::from)
             .map_err(GuestPcTraceBackendError::GuestRun)?;
+        let prepare_duration = prepare_started.map(|started| started.elapsed());
         let current = prepared.instruction();
         if TRACK_BOUNDARY {
             if let Some(snapshot) = boundary_snapshot.as_deref_mut() {
@@ -4315,9 +4322,6 @@ fn run_guest_pc_trace_segment_slice_inner<
                 },
             ));
         }
-        record_detail_duration(prepare_started, &mut timing, |timing| {
-            &mut timing.runner_prepare_instruction_duration
-        });
         let row_plan_started = detail_duration_started(&timing, report_detail_timing);
         let max_rows = zisk_main_instruction_max_rows(current);
         if max_rows > row_limit {
@@ -4345,6 +4349,9 @@ fn run_guest_pc_trace_segment_slice_inner<
                     },
                 },
             ));
+        }
+        if let (Some(duration), Some(timing)) = (prepare_duration, timing.as_deref_mut()) {
+            timing.runner_prepare_instruction_duration += duration;
         }
         record_detail_duration(row_plan_started, &mut timing, |timing| {
             &mut timing.runner_row_plan_duration
@@ -10046,6 +10053,7 @@ impl ZiskMainStreamingDeviceSegmentBuilder {
                 if report_shape_timing {
                     if !timing_config.shape_timing {
                         timing.trace_shape_sample_count += 1;
+                        timing.trace_shape_sample_row_count += written_rows;
                     }
                     record_trace_report_shape(timing, report, pending_report, written_rows);
                 }
@@ -13662,6 +13670,7 @@ fn build_layout_zisk_main_trace_segment(
                 if report_shape_timing {
                     if !shape_timing {
                         timing.trace_shape_sample_count += 1;
+                        timing.trace_shape_sample_row_count += written_rows;
                     }
                     record_trace_report_shape(timing, report, pending_report, written_rows);
                 }
