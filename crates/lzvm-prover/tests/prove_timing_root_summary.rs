@@ -3889,7 +3889,7 @@ fn prove_timing_root_summary_reports_trace_shape_counts() {
     );
     assert!(
         stdout.contains(
-            ",900,100,50,25,10,300,400,20,8,500,45.455,1400,300,27.273,700,200,18.182,100,9.091,shape_timing_enabled,176643,333,op=CopyB;a=reg;b=indirect;store=reg;ind_width=1;store_pc=0;set_pc=0;m32=0;external=0;precompiled=0,1094147,222,op=CopyB;a=reg;b=indirect;store=reg;ind_width=8;store_pc=0;set_pc=0;m32=0;external=0;precompiled=0,1151491,111,op=CopyB;a=reg;b=reg;store=indirect;ind_width=8;store_pc=0;set_pc=0;m32=0;external=0;precompiled=0,268468803,55,op=SignExtendW;a=reg;b=imm;store=reg;ind_width=0;store_pc=0;set_pc=0;m32=0;external=1;precompiled=0,"
+            ",900,100,50,25,10,300,400,20,8,500,45.455,1400,300,27.273,700,200,18.182,100,9.091,shape_timing_enabled,176643,333,op=CopyB;a=reg;b=indirect;store=reg;ind_width=1;store_pc=0;set_pc=0;m32=0;external=0;precompiled=0,1094147,222,op=CopyB;a=reg;b=indirect;store=reg;ind_width=8;store_pc=0;set_pc=0;m32=0;external=0;precompiled=0,1151491,111,op=CopyB;a=reg;b=reg;store=indirect;ind_width=8;store_pc=0;set_pc=0;m32=0;external=0;precompiled=0,268468803,55,op=Sll;a=reg;b=imm;store=reg;ind_width=0;store_pc=0;set_pc=0;m32=0;external=1;precompiled=0,"
         ),
         "prove timing root summary should classify trace shape ratios: stdout={stdout}"
     );
