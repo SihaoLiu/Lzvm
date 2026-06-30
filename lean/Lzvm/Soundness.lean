@@ -109,4 +109,46 @@ theorem accepted_proof_audited_core_and_sound_witness
       (And.intro auditedAssumptions.right
         (And.intro coreContract soundWitness))
 
+theorem accepted_proof_audited_full_evidence
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system) :
+    forall publicInput proof,
+      system.accepts publicInput proof ->
+        RequiredCryptographicAssumptionStatements assumptions.crypto
+          /\ RequiredSemanticAssumptionStatements assumptions.semantic
+          /\ exists witness trace constraints,
+            RuntimeVerifierCoreContract system publicInput proof
+              /\ system.traceConsistent publicInput proof trace
+              /\ system.constraintsSatisfied constraints trace
+              /\ system.witnessMatchesTrace witness trace := by
+  intro publicInput proof accepted
+  have auditedCoreAndWitness :=
+    accepted_proof_audited_core_and_sound_witness
+      assumptions
+      publicInput
+      proof
+      accepted
+  rcases auditedCoreAndWitness with
+    ⟨cryptoEvidence, semanticEvidence, coreContract, soundWitness⟩
+  rcases soundWitness with
+    ⟨witness,
+      trace,
+      constraints,
+      _transcriptBound,
+      _publicInputBound,
+      _pcsOpeningsValid,
+      _friQueriesValid,
+      traceConsistent,
+      constraintsSatisfied,
+      witnessMatchesTrace⟩
+  exact
+    And.intro cryptoEvidence
+      (And.intro semanticEvidence
+        (Exists.intro witness
+          (Exists.intro trace
+            (Exists.intro constraints
+              (And.intro coreContract
+                (And.intro traceConsistent
+                  (And.intro constraintsSatisfied witnessMatchesTrace)))))))
+
 end Lzvm
