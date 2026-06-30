@@ -629,6 +629,64 @@ theorem runtime_pipeline_binding_checked_acceptance_query_opening_evidence
       pcsOpeningsValid,
       friQueriesValid⟩
 
+theorem runtime_pipeline_binding_checked_acceptance_query_opening_evidence_core_and_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimePipelineBindingValidation system) :
+    forall artifact publicInput proof requiresExternalSource,
+      RuntimePipelineBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeQueryPlanBindingEvidence
+            system
+            validation.queryPlanBindingValidation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeChallengeSegmentBindingEvidence
+            system
+            validation.queryPlanBindingValidation.challengeValidation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeOpeningSegmentBindingEvidence
+            system
+            validation.queryPlanBindingValidation.openingValidation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeOpeningEvidence
+            system
+            validation.queryPlanBindingValidation.openingValidation.openingValidation
+            artifact
+            publicInput
+            proof
+            requiresExternalSource
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro artifact publicInput proof requiresExternalSource accepted
+  have sound :=
+    runtime_pipeline_binding_checked_acceptance_sound
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      accepted
+  have evidenceCore :=
+    runtime_pipeline_binding_evidence_implies_query_opening_core_contract sound.left
+  exact
+    ⟨evidenceCore.left,
+      evidenceCore.right.left,
+      evidenceCore.right.right.left,
+      evidenceCore.right.right.right.left,
+      evidenceCore.right.right.right.right,
+      sound.right⟩
+
 theorem runtime_pipeline_binding_checked_acceptance_query_opening_contract
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)

@@ -185,6 +185,7 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
             "runtime_pipeline_binding_checked_acceptance_trace_constraint_catalog_matches",
             "runtime_pipeline_query_opening_checked_contract_without_assumptions",
             "runtime_pipeline_binding_checked_acceptance_query_opening_evidence",
+            "runtime_pipeline_binding_checked_acceptance_query_opening_evidence_core_and_sound",
             "runtime_pipeline_binding_checked_acceptance_query_opening_contract",
             "runtime_pipeline_binding_checked_acceptance_query_plan_material_manifest_contract",
             "runtime_pipeline_binding_checked_acceptance_seeded_query_plan_contract",
@@ -1246,6 +1247,25 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
         &[
             "runtime_pipeline_binding_checked_acceptance_sound",
             "RuntimePipelineBindingEvidence",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_pipeline_binding_checked_acceptance_query_opening_evidence_core_and_sound",
+        &[
+            "RuntimeQueryPlanBindingEvidence",
+            "RuntimeOpeningEvidence",
+            "RuntimeVerifierCoreContract system publicInput proof",
+            "SoundWitness system publicInput proof",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_pipeline_binding_checked_acceptance_query_opening_evidence_core_and_sound",
+        &[
+            "runtime_pipeline_binding_checked_acceptance_sound",
+            "runtime_pipeline_binding_evidence_implies_query_opening_core_contract",
+            "sound.right",
         ],
     );
     lean_binding::assert_theorem_prefix_contains(
