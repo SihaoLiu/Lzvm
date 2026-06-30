@@ -358,9 +358,100 @@ pub struct GuestMemoryAccess {
     pub value: u64,
 }
 
-pub type GuestRegisterWriteList = SmallVec<[GuestRegisterWrite; 1]>;
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GuestInlineEffectList<T> {
+    entries: GuestInlineEffectEntries<T>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum GuestInlineEffectEntries<T> {
+    Empty,
+    One(T),
+    Many(Box<[T]>),
+}
+
+impl<T> Default for GuestInlineEffectList<T> {
+    fn default() -> Self {
+        Self {
+            entries: GuestInlineEffectEntries::Empty,
+        }
+    }
+}
+
+impl<T> GuestInlineEffectList<T> {
+    pub fn push(&mut self, value: T) {
+        self.entries = match std::mem::replace(&mut self.entries, GuestInlineEffectEntries::Empty) {
+            GuestInlineEffectEntries::Empty => GuestInlineEffectEntries::One(value),
+            GuestInlineEffectEntries::One(first) => {
+                let mut entries = Vec::with_capacity(2);
+                entries.push(first);
+                entries.push(value);
+                GuestInlineEffectEntries::Many(entries.into_boxed_slice())
+            }
+            GuestInlineEffectEntries::Many(entries) => {
+                let mut entries = entries.into_vec();
+                entries.push(value);
+                GuestInlineEffectEntries::Many(entries.into_boxed_slice())
+            }
+        };
+    }
+
+    pub fn as_slice(&self) -> &[T] {
+        match &self.entries {
+            GuestInlineEffectEntries::Empty => &[],
+            GuestInlineEffectEntries::One(value) => std::slice::from_ref(value),
+            GuestInlineEffectEntries::Many(entries) => entries,
+        }
+    }
+
+    pub fn len(&self) -> usize {
+        self.as_slice().len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.as_slice().is_empty()
+    }
+}
+
+impl<T> From<Vec<T>> for GuestInlineEffectList<T> {
+    fn from(entries: Vec<T>) -> Self {
+        match entries.len() {
+            0 => Self::default(),
+            1 => {
+                let mut entries = entries.into_iter();
+                Self {
+                    entries: GuestInlineEffectEntries::One(
+                        entries.next().expect("single entry should be present"),
+                    ),
+                }
+            }
+            _ => Self {
+                entries: GuestInlineEffectEntries::Many(entries.into_boxed_slice()),
+            },
+        }
+    }
+}
+
+impl<T> std::ops::Deref for GuestInlineEffectList<T> {
+    type Target = [T];
+
+    fn deref(&self) -> &Self::Target {
+        self.as_slice()
+    }
+}
+
+impl<'a, T> IntoIterator for &'a GuestInlineEffectList<T> {
+    type Item = &'a T;
+    type IntoIter = std::slice::Iter<'a, T>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.as_slice().iter()
+    }
+}
+
+pub type GuestRegisterWriteList = GuestInlineEffectList<GuestRegisterWrite>;
 type GuestRegisterRollbackList = SmallVec<[(u8, u64); 1]>;
-pub type GuestMemoryAccessList = SmallVec<[GuestMemoryAccess; 1]>;
+pub type GuestMemoryAccessList = GuestInlineEffectList<GuestMemoryAccess>;
 pub type GuestPrecompileMemoryAccessList = Box<[GuestMemoryAccess]>;
 
 #[derive(Debug, Clone, PartialEq, Eq)]

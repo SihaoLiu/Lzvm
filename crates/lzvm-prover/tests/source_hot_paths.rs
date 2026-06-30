@@ -8730,11 +8730,14 @@ fn guest_machine_reports_inline_common_effect_storage() {
     );
 
     assert!(
-        source.contains("pub type GuestRegisterWriteList = SmallVec<[GuestRegisterWrite; 1]>;"),
+        source.contains(
+            "pub type GuestRegisterWriteList = GuestInlineEffectList<GuestRegisterWrite>;"
+        ),
         "guest register writes should keep one inline slot"
     );
     assert!(
-        source.contains("pub type GuestMemoryAccessList = SmallVec<[GuestMemoryAccess; 1]>;"),
+        source
+            .contains("pub type GuestMemoryAccessList = GuestInlineEffectList<GuestMemoryAccess>;"),
         "guest memory accesses should keep one inline slot for the dominant single-access case"
     );
     assert!(
@@ -8787,8 +8790,8 @@ fn guest_machine_reports_inline_common_effect_storage() {
 #[test]
 fn guest_machine_report_record_stays_cache_line_pair_sized() {
     assert!(
-        std::mem::size_of::<GuestMachineReport>() <= 120,
-        "guest trace reports should stay within two 64-byte cache lines; got {} bytes",
+        std::mem::size_of::<GuestMachineReport>() <= 96,
+        "guest trace reports should keep compact inline effect lists; got {} bytes",
         std::mem::size_of::<GuestMachineReport>()
     );
 }
