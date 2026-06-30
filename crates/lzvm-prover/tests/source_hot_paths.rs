@@ -1822,7 +1822,7 @@ fn guest_pc_trace_segments_build_device_trace_from_compact_descriptors() {
         "guest PC trace lowering should produce descriptors while applying each report"
     );
     assert!(
-        backend_source.contains("CudaDeviceBuffer::from_zisk_main_trace_descriptors"),
+        backend_source.contains("CudaDeviceBuffer::from_main_trace_descriptors_with_layout"),
         "guest PC CUDA source builder should expand compact descriptors directly on device"
     );
     assert!(
@@ -2185,12 +2185,12 @@ fn trace_less_guest_pc_opening_reuses_retained_device_descriptors() {
         std::fs::read_to_string(&accel_path).expect("CUDA buffer source should read");
 
     assert!(
-        accel_source.contains("from_zisk_main_trace_descriptors_device"),
+        accel_source.contains("from_main_trace_descriptors_device_with_layout"),
         "CUDA descriptor expansion should accept an already-uploaded descriptor buffer"
     );
     assert!(
         backend_source.contains("device_trace_descriptor_buffer")
-            && backend_source.contains("from_zisk_main_trace_descriptors_device"),
+            && backend_source.contains("from_main_trace_descriptors_device_with_layout"),
         "guest PC device trace builders should retain uploaded descriptor buffers for later source rebuilds"
     );
     let cache_body = function_body(
@@ -5316,7 +5316,7 @@ fn guest_pc_trace_timing_splits_device_source_upload_and_expand_work() {
     );
     assert!(
         descriptor_body.contains("trace_expand_duration")
-            && descriptor_body.contains("from_zisk_main_trace_descriptors_device"),
+            && descriptor_body.contains("from_main_trace_descriptors_device_with_layout"),
         "guest PC device descriptor source build should time trace expansion"
     );
 
@@ -10004,7 +10004,7 @@ fn lean_opening_segment_binding_tracks_runtime_opening_checks() {
             && verifier_query_validation
                 .contains("fri_opening_units_by_identity(request.opening_units)")
             && verifier_query_validation
-                .contains("constant_opening_units_by_identity(&constant_opening.units)")
+                .contains("constant_opening_units_by_identity(&opening.units)")
             && verifier_query_validation
                 .contains("witness_opening_units_by_identity(&witness_opening.units)")
             && verifier_query_validation
@@ -11083,7 +11083,7 @@ fn guest_machine_advance_avoids_full_state_clone() {
     let body = function_body(
         &source,
         "fn advance_guest_machine_inner",
-        "pub(crate) fn decode_current_guest_instruction",
+        "fn fetch_decode_guest_instruction",
     );
 
     assert!(
@@ -11263,8 +11263,9 @@ fn guest_machine_run_loop_reuses_prepared_instruction_for_advance() {
     );
 
     assert!(
-        body.contains("prepare_current_guest_instruction(memory, state.pc())"),
-        "guest machine run loop should fetch and decode each current instruction once"
+        body.contains("let mut instruction_cache = GuestInstructionCache::default()")
+            && body.contains("let prepared = instruction_cache.prepare(memory, state.pc())?"),
+        "guest machine run loop should prepare each current instruction through the instruction cache"
     );
     assert!(
         body.contains("advance_guest_machine_prepared_inner"),
