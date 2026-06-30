@@ -368,6 +368,9 @@ fn eth_proof_timing_batch_dry_run_builds_small_command_from_env() {
         .arg(fixture.dir.join("improve-log.csv"))
         .arg("--summary")
         .arg("dry run")
+        .env("LZVM_GUEST_TRACE_DETAIL_TIMING", "1")
+        .env("LZVM_GUEST_TRACE_DETAIL_TIMING_SAMPLE_STRIDE", "7")
+        .env("LZVM_GUEST_TRACE_SHAPE_TIMING", "1")
         .env("CUDA_VISIBLE_DEVICES", "");
     fixture.apply_env(&mut command, SMALL_PREFIX);
 
@@ -451,6 +454,21 @@ fn eth_proof_timing_batch_dry_run_builds_small_command_from_env() {
     assert!(
         stdout.contains("&& env -u LZVM_GUEST_PC_TRACE_PARALLEL_LOWER"),
         "external proof verification should clear pipeline environment controls: {stdout}"
+    );
+    assert!(
+        stdout.contains("-u LZVM_GUEST_TRACE_DETAIL_TIMING")
+            && stdout.contains("-u LZVM_GUEST_TRACE_DETAIL_TIMING_SAMPLE_STRIDE")
+            && stdout.contains("-u LZVM_GUEST_TRACE_SHAPE_TIMING"),
+        "prove and verify commands should clear ambient trace diagnostic controls: {stdout}"
+    );
+    assert!(
+        !stdout.contains("LZVM_GUEST_TRACE_DETAIL_TIMING=1")
+            && !stdout.contains("LZVM_GUEST_TRACE_DETAIL_TIMING_SAMPLE_STRIDE=7")
+            && !stdout.contains("LZVM_GUEST_TRACE_SHAPE_TIMING=1")
+            && stdout.contains("trace_shape_timing=false\n")
+            && stdout.contains("trace_detail_timing=false\n")
+            && stdout.contains("trace_detail_timing_sample_stride=\n"),
+        "diagnostic trace timing should stay off unless requested: {stdout}"
     );
     assert!(
         stdout.contains("LZVM_GUEST_PC_TRACE_COMMIT_PIPELINE=1"),
@@ -640,6 +658,47 @@ fn eth_proof_timing_batch_dry_run_enables_owned_streaming_lower() {
     assert!(
         stdout.contains("LZVM_CUDA_GUEST_PC_OWNED_STREAMING_LOWER=1"),
         "prove command should enable owned streaming lower after clearing inherited controls: {stdout}"
+    );
+}
+
+#[test]
+fn eth_proof_timing_batch_dry_run_can_request_trace_diagnostic_timing() {
+    let fixture = ProofFixture::new("eth-proof-timing-batch-trace-diagnostic");
+    let mut command = Command::new(script_path());
+    command
+        .arg("--suite")
+        .arg("small")
+        .arg("--dry-run")
+        .arg("--trace-shape-timing")
+        .arg("--trace-detail-timing-sample-stride")
+        .arg("4096")
+        .arg("--summary")
+        .arg("trace diagnostic");
+    fixture.apply_env(&mut command, SMALL_PREFIX);
+
+    let output = command
+        .output()
+        .expect("ETH proof timing batch dry-run should run");
+    let success = output.status.success();
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    fixture.cleanup();
+
+    assert!(
+        success,
+        "dry-run should build trace diagnostic command: stderr={stderr}"
+    );
+    assert!(
+        stdout.contains("LZVM_GUEST_TRACE_SHAPE_TIMING=1")
+            && stdout.contains("LZVM_GUEST_TRACE_DETAIL_TIMING=1")
+            && stdout.contains("LZVM_GUEST_TRACE_DETAIL_TIMING_SAMPLE_STRIDE=4096"),
+        "prove command should enable requested trace diagnostic timing: {stdout}"
+    );
+    assert!(
+        stdout.contains("trace_shape_timing=true\n")
+            && stdout.contains("trace_detail_timing=true\n")
+            && stdout.contains("trace_detail_timing_sample_stride=4096\n"),
+        "dry-run metadata should report effective trace diagnostic timing: {stdout}"
     );
 }
 
@@ -936,6 +995,53 @@ fn eth_proof_timing_batch_check_env_reports_ready_paths() {
         )),
         "env check should report the next timing command: {stdout}"
     );
+}
+
+#[test]
+fn eth_proof_timing_batch_check_env_preserves_trace_diagnostic_next_commands() {
+    let fixture = ProofFixture::new("eth-proof-timing-batch-check-env-trace-diagnostic");
+    let mut command = Command::new(script_path());
+    command
+        .arg("--suite")
+        .arg("small")
+        .arg("--check-env")
+        .arg("--trace-shape-timing")
+        .arg("--trace-detail-timing-sample-stride")
+        .arg("4096");
+    fixture.apply_env(&mut command, SMALL_PREFIX);
+
+    let output = command
+        .output()
+        .expect("ETH proof timing batch env check should run");
+    let success = output.status.success();
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    let preflight_line = stdout
+        .lines()
+        .find(|line| line.starts_with("next_preflight_command="))
+        .unwrap_or("");
+    let profile_line = stdout
+        .lines()
+        .find(|line| line.starts_with("next_profile_command="))
+        .unwrap_or("");
+    let run_line = stdout
+        .lines()
+        .find(|line| line.starts_with("next_run_command="))
+        .unwrap_or("");
+    fixture.cleanup();
+
+    assert!(
+        success,
+        "env check should pass for trace diagnostic flags: stderr={stderr}"
+    );
+    for line in [preflight_line, profile_line, run_line] {
+        assert!(
+            line.contains("--trace-shape-timing")
+                && line.contains("--trace-detail-timing")
+                && line.contains("--trace-detail-timing-sample-stride 4096"),
+            "next command should preserve trace diagnostic flags: {stdout}"
+        );
+    }
 }
 
 #[test]

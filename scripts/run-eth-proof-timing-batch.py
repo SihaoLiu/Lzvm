@@ -105,6 +105,9 @@ PIPELINE_ENV_TO_CLEAR = [
     "LZVM_GUEST_PC_TRACE_REPORT_CHUNKS",
     "LZVM_GUEST_PC_TRACE_REPORT_CHUNK_CAPACITY",
     "LZVM_CUDA_GUEST_PC_OWNED_STREAMING_LOWER",
+    "LZVM_GUEST_TRACE_DETAIL_TIMING",
+    "LZVM_GUEST_TRACE_DETAIL_TIMING_SAMPLE_STRIDE",
+    "LZVM_GUEST_TRACE_SHAPE_TIMING",
 ]
 
 MODE_ENV = {
@@ -568,13 +571,42 @@ def mode_args(args: argparse.Namespace) -> list[str]:
         result.append("--skip-verify-proof")
     if args.owned_streaming_lower:
         result.append("--owned-streaming-lower")
+    if args.trace_shape_timing:
+        result.append("--trace-shape-timing")
+    if trace_detail_timing_enabled(args):
+        result.append("--trace-detail-timing")
+    if args.trace_detail_timing_sample_stride is not None:
+        result.extend(
+            [
+                "--trace-detail-timing-sample-stride",
+                str(args.trace_detail_timing_sample_stride),
+            ]
+        )
     return result
+
+
+def trace_detail_timing_enabled(args: argparse.Namespace) -> bool:
+    return bool(args.trace_detail_timing or args.trace_detail_timing_sample_stride is not None)
+
+
+def trace_timing_env_for_args(args: argparse.Namespace) -> dict[str, str]:
+    env: dict[str, str] = {}
+    if args.trace_shape_timing:
+        env["LZVM_GUEST_TRACE_SHAPE_TIMING"] = "1"
+    if trace_detail_timing_enabled(args):
+        env["LZVM_GUEST_TRACE_DETAIL_TIMING"] = "1"
+    if args.trace_detail_timing_sample_stride is not None:
+        env["LZVM_GUEST_TRACE_DETAIL_TIMING_SAMPLE_STRIDE"] = str(
+            args.trace_detail_timing_sample_stride
+        )
+    return env
 
 
 def mode_env_for_args(args: argparse.Namespace, mode: str) -> dict[str, str]:
     mode_env = dict(MODE_ENV[mode])
     if args.owned_streaming_lower:
         mode_env["LZVM_CUDA_GUEST_PC_OWNED_STREAMING_LOWER"] = "1"
+    mode_env.update(trace_timing_env_for_args(args))
     if args.parallel_lower_workers is not None and (
         "LZVM_GUEST_PC_TRACE_PARALLEL_LOWER" in mode_env
         or "LZVM_GUEST_PC_TRACE_PARALLEL_LOWER_WORK_UNITS" in mode_env
@@ -1340,6 +1372,9 @@ def dry_run_summary_lines(args: argparse.Namespace, root: Path) -> list[str]:
         f"gpu_streams={args.gpu_streams or ''}",
         f"witness_thread_pools={args.witness_thread_pools or ''}",
         f"stored_witnesses={args.stored_witnesses or ''}",
+        f"trace_shape_timing={str(args.trace_shape_timing).lower()}",
+        f"trace_detail_timing={str(trace_detail_timing_enabled(args)).lower()}",
+        f"trace_detail_timing_sample_stride={args.trace_detail_timing_sample_stride or ''}",
         f"append_max_average_rejections={str(args.append_max_average_rejections).lower()}",
     ]
     for config, mode in selected:
@@ -1617,6 +1652,9 @@ def self_test() -> None:
         parallel_lower_workers=None,
         segment_commit_workers=None,
         owned_streaming_lower=False,
+        trace_shape_timing=False,
+        trace_detail_timing=False,
+        trace_detail_timing_sample_stride=None,
         gpu_preallocate=False,
         minimal_memory=False,
         no_pack_trace=False,
@@ -1724,6 +1762,9 @@ def main() -> None:
     parser.add_argument("--parallel-lower-job-queue", type=positive_integer, default=None)
     parser.add_argument("--segment-commit-workers", type=positive_integer, default=None)
     parser.add_argument("--owned-streaming-lower", action="store_true")
+    parser.add_argument("--trace-shape-timing", action="store_true")
+    parser.add_argument("--trace-detail-timing", action="store_true")
+    parser.add_argument("--trace-detail-timing-sample-stride", type=positive_integer, default=None)
     parser.add_argument("--gpu-preallocate", action="store_true")
     parser.add_argument("--minimal-memory", action="store_true")
     parser.add_argument("--no-pack-trace", action="store_true")
