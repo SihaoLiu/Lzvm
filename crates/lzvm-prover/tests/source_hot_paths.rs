@@ -2256,6 +2256,15 @@ fn lean_eth_block_public_input_binding_tracks_runtime_checks() {
         "Lean should expose the ETH public-input binding model and verifier core contract"
     );
     assert!(
+        lean_source.contains(
+            "runtime_eth_block_public_input_binding_checked_acceptance_input_matches"
+        ) && lean_source.contains(
+            "runtime_eth_block_public_input_binding_checked_acceptance_public_values_match"
+        ) && lean_source.contains("ethBindingAcceptedImpliesEthBlockInputMatches")
+            && lean_source.contains("ethBindingAcceptedImpliesEthPublicValuesMatch"),
+        "Lean ETH checked acceptance should project input matching and public value matching directly"
+    );
+    assert!(
         artifact_source.contains("fn validate_eth_block_binding")
             && artifact_source.contains("use self::proof_binding_validation")
             && proof_binding_validation_body

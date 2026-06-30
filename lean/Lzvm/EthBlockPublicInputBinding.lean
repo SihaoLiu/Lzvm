@@ -181,6 +181,44 @@ theorem runtime_eth_block_public_input_binding_checked_acceptance_input_segment_
       proof
       accepted
 
+theorem runtime_eth_block_public_input_binding_checked_acceptance_input_matches
+    {system : VerifierModel}
+    (validation : RuntimeEthBlockPublicInputBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeEthBlockPublicInputBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        validation.ethBlockInputMatches artifact publicInput proof := by
+  intro artifact publicInput proof accepted
+  exact
+    validation.ethBindingAcceptedImpliesEthBlockInputMatches
+      artifact
+      publicInput
+      proof
+      accepted
+
+theorem runtime_eth_block_public_input_binding_checked_acceptance_public_values_match
+    {system : VerifierModel}
+    (validation : RuntimeEthBlockPublicInputBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeEthBlockPublicInputBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        validation.ethPublicValuesMatch artifact publicInput proof := by
+  intro artifact publicInput proof accepted
+  exact
+    validation.ethBindingAcceptedImpliesEthPublicValuesMatch
+      artifact
+      publicInput
+      proof
+      accepted
+
 theorem runtime_eth_block_public_input_binding_checked_acceptance_artifact_binding
     {system : VerifierModel}
     (validation : RuntimeEthBlockPublicInputBindingValidation system) :
