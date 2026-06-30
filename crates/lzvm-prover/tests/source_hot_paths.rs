@@ -3100,15 +3100,30 @@ fn guest_pc_trace_device_material_skips_redundant_row_column_validation() {
         "device material report feeder should retain only one pending report"
     );
 
+    let host_segment_body = function_body(
+        &backend_source,
+        concat!("fn build_layout_", "zi", "sk", "_main_trace_segment(\n"),
+        "fn serialize_trace_to_output",
+    );
     let host_write_body = function_body(
         &backend_source,
-        "fn write_zisk_main_report_columns",
-        "fn write_zisk_main_row_columns",
+        concat!("fn write_", "zi", "sk", "_main_report_columns"),
+        concat!("fn write_", "zi", "sk", "_main_row_columns"),
+    );
+    let host_context_constructor = concat!(
+        "let mut validation_context = ",
+        "Zi",
+        "sk",
+        "MainReportValidationContext::new(Some(&columns), layout.row_count(), segment)?"
     );
     assert!(
-        host_write_body
-            .contains("ZiskMainReportValidationContext::new(Some(columns), row_count, segment)?"),
-        "host trace lowering should retain per-row trace-column validation for generic layouts"
+        compact_source_contains(host_segment_body, host_context_constructor),
+        "host trace lowering should build the validation context once per segment"
+    );
+    assert!(
+        host_write_body.contains("context: &mut ZiskMainReportValidationContext")
+            && !host_write_body.contains(context_constructor),
+        "host trace lowering should reuse the segment validation context per report"
     );
 }
 

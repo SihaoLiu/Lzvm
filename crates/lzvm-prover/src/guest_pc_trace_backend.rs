@@ -12268,6 +12268,8 @@ fn build_layout_zisk_main_trace_segment(
     let timing_enabled = timing.is_some();
     let detail_timing = timing_enabled && guest_pc_trace_lower_detail_timing_enabled();
     let shape_timing = timing_enabled && guest_pc_trace_shape_timing_enabled();
+    let mut validation_context =
+        ZiskMainReportValidationContext::new(Some(&columns), layout.row_count(), segment)?;
     let detail_sample_stride = if detail_timing {
         guest_pc_trace_detail_timing_sample_stride()
     } else {
@@ -12297,8 +12299,7 @@ fn build_layout_zisk_main_trace_segment(
             },
             &columns,
             &mut state,
-            layout.row_count(),
-            segment,
+            &mut validation_context,
             #[cfg(feature = "cuda")]
             &mut device_trace_descriptors,
             row_timing,
@@ -12541,20 +12542,18 @@ fn write_zisk_main_report_columns(
     reports: ZiskMainReportWindow<'_>,
     columns: &ZiskMainTraceColumns<'_>,
     state: &mut ZiskMainTraceState,
-    row_count: usize,
-    segment: ZiskMainTraceSegmentInfo,
+    context: &mut ZiskMainReportValidationContext<'_>,
     #[cfg(feature = "cuda")] device_trace_descriptors: &mut Option<ZiskMainDeviceTraceDescriptors>,
     mut timing: Option<&mut GuestPcTraceStreamTiming>,
     _detail_timing: bool,
     shape_timing: bool,
 ) -> Result<usize, GuestPcTraceBackendError> {
-    let mut context = ZiskMainReportValidationContext::new(Some(columns), row_count, segment)?;
     validate_and_apply_zisk_main_report(
         row,
         reports.current,
         reports.next_instruction,
         state,
-        &mut context,
+        context,
         reborrow_trace_timing(&mut timing),
         _detail_timing,
         shape_timing,
