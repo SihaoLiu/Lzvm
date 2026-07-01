@@ -10392,6 +10392,30 @@ fn lean_query_plan_binding_tracks_runtime_transcript_opening_checks() {
 }
 
 #[test]
+fn lean_top_level_soundness_exports_audited_global_local_contract() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let soundness_path = crate_root.join("../../lean/Lzvm/Soundness.lean");
+    let soundness_source =
+        std::fs::read_to_string(&soundness_path).expect("Lean soundness source should read");
+    let lean_root_path = crate_root.join("../../lean/Lzvm.lean");
+    let lean_root_source =
+        std::fs::read_to_string(&lean_root_path).expect("top-level Lean source should read");
+
+    assert!(
+        lean_root_source.contains("import Lzvm.Soundness")
+            && soundness_source.contains("accepted_proof_audited_proof_system_and_components")
+            && soundness_source.contains("RequiredCryptographicAssumptionStatements")
+            && soundness_source.contains("RequiredSemanticAssumptionStatements")
+            && soundness_source.contains("ProofSystemSound system")
+            && soundness_source.contains("RuntimeVerifierCoreContract system publicInput proof")
+            && soundness_source.contains("abstract_verifier_sound assumptions")
+            && soundness_source
+                .contains("accepted_proof_audited_core_and_sound_witness_components"),
+        "top-level Lean soundness should expose one audited contract with global soundness and local accepted-proof components"
+    );
+}
+
+#[test]
 fn lean_pipeline_binding_tracks_runtime_preflight_and_artifact_checks() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let lean_path = crate_root.join("../../lean/Lzvm/PipelineBinding.lean");
