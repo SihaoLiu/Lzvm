@@ -3791,11 +3791,11 @@ fn retained_cache_defaults_prioritize_descriptor_reuse() {
         "default source-device retention should leave cache capacity for retained leaf digests"
     );
     assert!(
-        values_source.contains("const DEFAULT_RETAINED_LEAF_DIGEST_BYTES: usize = 0")
+        values_source.contains("const DEFAULT_RETAINED_LEAF_DIGEST_BYTES: usize = 1_000_000_000")
             && values_source.contains(
                 "const MAX_DEFAULT_RETAINED_LEAF_DIGEST_BYTES: usize = DEFAULT_RETAINED_LEAF_DIGEST_BYTES"
             ),
-        "default leaf-digest retention should stay disabled for the measured descriptor-priority split"
+        "default leaf-digest retention should keep the measured 1GB cap for the owned-streaming descriptor split"
     );
     assert!(
         values_source
@@ -7090,7 +7090,7 @@ fn guest_pc_trace_parallel_lowerer_bounds_result_queue() {
 }
 
 #[test]
-fn guest_pc_trace_owned_streaming_lower_remains_cuda_opt_in() {
+fn guest_pc_trace_owned_streaming_lower_remains_cuda_runtime_gate() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let backend_path = crate_root.join("src/guest_pc_trace_backend.rs");
     let backend_source =
@@ -7108,8 +7108,8 @@ fn guest_pc_trace_owned_streaming_lower_remains_cuda_opt_in() {
     );
     assert!(
         backend_source
-            .contains("env_flag_enabled(\"LZVM_CUDA_GUEST_PC_OWNED_STREAMING_LOWER\", false)"),
-        "owned streaming guest PC trace lowering should remain disabled by default"
+            .contains("env_flag_enabled(\"LZVM_CUDA_GUEST_PC_OWNED_STREAMING_LOWER\", true)"),
+        "owned streaming guest PC trace lowering should default on while keeping an explicit runtime gate"
     );
     assert!(
         backend_source.contains("fn lower_guest_pc_trace_owned_streaming_pending_segment"),

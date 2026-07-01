@@ -9407,7 +9407,7 @@ fn guest_pc_trace_parallel_stream_chunks_enabled() -> bool {
 
 #[cfg(feature = "cuda")]
 fn guest_pc_trace_owned_streaming_lower_enabled() -> bool {
-    env_flag_enabled("LZVM_CUDA_GUEST_PC_OWNED_STREAMING_LOWER", false)
+    env_flag_enabled("LZVM_CUDA_GUEST_PC_OWNED_STREAMING_LOWER", true)
 }
 
 fn guest_pc_trace_needs_full_seed_advance(
