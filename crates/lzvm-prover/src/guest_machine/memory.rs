@@ -1,4 +1,5 @@
 use std::collections::{btree_map::Entry, BTreeMap};
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use crate::guest_instruction::{
     FetchedGuestInstruction, GuestInstructionError, RiscvEncodedInstruction,
@@ -10,12 +11,32 @@ use crate::guest_memory::{
 const HOST_MAPPED_PROGRAM_HEADER_INDEX: u16 = u16::MAX;
 const GUEST_MEMORY_OVERLAY_BLOCK_SIZE: u64 = 128;
 const GUEST_MEMORY_OVERLAY_BLOCK_SIZE_USIZE: usize = GUEST_MEMORY_OVERLAY_BLOCK_SIZE as usize;
+const GUEST_MEMORY_SEGMENT_LOOKUP_CACHE_EMPTY: usize = usize::MAX;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug)]
 pub struct GuestMachineMemory {
     entry_address: u64,
     segments: Vec<GuestMachineMemorySegment>,
+    last_segment_index: AtomicUsize,
 }
+
+impl Clone for GuestMachineMemory {
+    fn clone(&self) -> Self {
+        Self {
+            entry_address: self.entry_address,
+            segments: self.segments.clone(),
+            last_segment_index: AtomicUsize::new(self.last_segment_index.load(Ordering::Relaxed)),
+        }
+    }
+}
+
+impl PartialEq for GuestMachineMemory {
+    fn eq(&self, other: &Self) -> bool {
+        self.entry_address == other.entry_address && self.segments == other.segments
+    }
+}
+
+impl Eq for GuestMachineMemory {}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct GuestMachineMemoryOverlaySnapshot {
@@ -47,6 +68,7 @@ impl GuestMachineMemory {
                 .iter()
                 .map(GuestMachineMemorySegment::from_image_segment)
                 .collect(),
+            last_segment_index: AtomicUsize::new(GUEST_MEMORY_SEGMENT_LOOKUP_CACHE_EMPTY),
         };
         memory.sort_segments_by_address();
         memory
@@ -177,22 +199,36 @@ impl GuestMachineMemory {
         address: u64,
         end_address: u64,
     ) -> Result<Option<usize>, GuestMemoryError> {
+        let cached = self.last_segment_index.load(Ordering::Relaxed);
+        if let Some(segment) = self.segments.get(cached) {
+            if segment.contains_range(address, end_address)? {
+                return Ok(Some(cached));
+            }
+        }
+
         let Some(candidate) = self
             .segments
             .partition_point(|segment| segment.virtual_address <= address)
             .checked_sub(1)
         else {
+            self.last_segment_index
+                .store(GUEST_MEMORY_SEGMENT_LOOKUP_CACHE_EMPTY, Ordering::Relaxed);
             return Ok(None);
         };
         if self.segments[candidate].contains_range(address, end_address)? {
+            self.last_segment_index.store(candidate, Ordering::Relaxed);
             Ok(Some(candidate))
         } else {
+            self.last_segment_index
+                .store(GUEST_MEMORY_SEGMENT_LOOKUP_CACHE_EMPTY, Ordering::Relaxed);
             Ok(None)
         }
     }
 
     fn sort_segments_by_address(&mut self) {
         self.segments.sort_by_key(|segment| segment.virtual_address);
+        self.last_segment_index
+            .store(GUEST_MEMORY_SEGMENT_LOOKUP_CACHE_EMPTY, Ordering::Relaxed);
     }
 
     pub fn map_initialized_range(
@@ -781,6 +817,37 @@ mod tests {
                 .expect("cross-segment lookup should evaluate"),
             None
         );
+    }
+
+    #[test]
+    fn segment_lookup_cache_is_not_semantic_memory_state() {
+        let image = sample_guest_image_with_program_headers(&[
+            (TEST_ENTRY, &[1, 2, 3, 4], 4),
+            (TEST_ENTRY + 0x1000, &[5, 6, 7, 8], 4),
+        ]);
+        let memory = GuestMachineMemory::from_image(&image);
+        let uncached = GuestMachineMemory::from_image(&image);
+
+        assert_eq!(
+            memory
+                .segment_index_containing_range(TEST_ENTRY + 0x1000, TEST_ENTRY + 0x1004)
+                .expect("cached segment lookup should evaluate"),
+            Some(1)
+        );
+        assert_eq!(memory.last_segment_index.load(Ordering::Relaxed), 1);
+        assert_eq!(memory, uncached);
+
+        assert_eq!(
+            memory
+                .segment_index_containing_range(TEST_ENTRY + 2, TEST_ENTRY + 0x1002)
+                .expect("cross-segment lookup should evaluate"),
+            None
+        );
+        assert_eq!(
+            memory.last_segment_index.load(Ordering::Relaxed),
+            GUEST_MEMORY_SEGMENT_LOOKUP_CACHE_EMPTY
+        );
+        assert_eq!(memory, uncached);
     }
 
     #[test]

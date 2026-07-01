@@ -10820,6 +10820,53 @@ fn guest_machine_store_writes_use_scalar_memory_helper() {
 }
 
 #[test]
+fn guest_machine_memory_reuses_last_segment_lookup_without_semantic_state() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let memory_path = crate_root.join("src/guest_machine/memory.rs");
+    let memory_source =
+        std::fs::read_to_string(&memory_path).expect("guest machine memory source should read");
+
+    assert!(
+        memory_source.contains("last_segment_index: AtomicUsize"),
+        "guest machine memory should retain the last successful segment lookup"
+    );
+
+    let lookup_body = function_body(
+        &memory_source,
+        "fn segment_index_containing_range",
+        "fn sort_segments_by_address",
+    );
+    let cache_index = lookup_body
+        .find("let cached = self.last_segment_index.load(Ordering::Relaxed)")
+        .expect("segment lookup should read the last segment cache");
+    let binary_lookup_index = lookup_body
+        .find(".partition_point(")
+        .expect("segment lookup should keep the binary lookup fallback");
+    assert!(
+        cache_index < binary_lookup_index,
+        "segment lookup should check the last segment cache before the binary lookup fallback"
+    );
+    assert!(
+        lookup_body.contains("return Ok(Some(cached));")
+            && lookup_body.contains("self.last_segment_index.store(candidate, Ordering::Relaxed)")
+            && lookup_body.contains("GUEST_MEMORY_SEGMENT_LOOKUP_CACHE_EMPTY"),
+        "segment lookup should hit, fill, and clear the cache explicitly"
+    );
+
+    let equality_body = function_body(
+        &memory_source,
+        "impl PartialEq for GuestMachineMemory",
+        "impl Eq for GuestMachineMemory {}",
+    );
+    assert!(
+        equality_body.contains("self.entry_address == other.entry_address")
+            && equality_body.contains("self.segments == other.segments")
+            && !equality_body.contains("last_segment_index"),
+        "guest machine memory equality should exclude the lookup cache"
+    );
+}
+
+#[test]
 fn guest_pc_source_value_lookup_avoids_request_wrapper() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let source_path = crate_root.join("src/guest_pc_trace_backend.rs");
