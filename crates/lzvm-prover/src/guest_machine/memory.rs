@@ -8,7 +8,7 @@ use crate::guest_memory::{
 };
 
 const HOST_MAPPED_PROGRAM_HEADER_INDEX: u16 = u16::MAX;
-const GUEST_MEMORY_OVERLAY_BLOCK_SIZE: u64 = 8;
+const GUEST_MEMORY_OVERLAY_BLOCK_SIZE: u64 = 64;
 const GUEST_MEMORY_OVERLAY_BLOCK_SIZE_USIZE: usize = GUEST_MEMORY_OVERLAY_BLOCK_SIZE as usize;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -806,26 +806,28 @@ mod tests {
             .read_range_into(TEST_ENTRY + 0x1000, &mut read_back)
             .expect("dense range should be readable");
         assert_eq!(read_back, dense);
-        assert!(memory.written_overlay_entry_count_for_tests() <= 513);
+        let dense_blocks = dense.len().div_ceil(GUEST_MEMORY_OVERLAY_BLOCK_SIZE_USIZE);
+        assert!(memory.written_overlay_entry_count_for_tests() <= dense_blocks + 1);
     }
 
     #[test]
     fn unaligned_write_preserves_neighbors_across_overlay_blocks() {
-        let image = sample_guest_image_with_program_header(
-            &[10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21],
-            0x1000,
-        );
+        let initialized = (0..GUEST_MEMORY_OVERLAY_BLOCK_SIZE_USIZE + 8)
+            .map(|value| value as u8)
+            .collect::<Vec<_>>();
+        let image = sample_guest_image_with_program_header(&initialized, 0x1000);
         let mut memory = GuestMachineMemory::from_image(&image);
+        let write_address = TEST_ENTRY + GUEST_MEMORY_OVERLAY_BLOCK_SIZE - 2;
 
         memory
-            .write_range(TEST_ENTRY + 6, &[90, 91, 92, 93])
+            .write_range(write_address, &[90, 91, 92, 93])
             .expect("cross-block write should succeed");
-        let mut bytes = [0_u8; 12];
+        let mut bytes = [0_u8; 8];
         memory
-            .read_range_into(TEST_ENTRY, &mut bytes)
+            .read_range_into(write_address - 2, &mut bytes)
             .expect("cross-block read should succeed");
 
-        assert_eq!(bytes, [10, 11, 12, 13, 14, 15, 90, 91, 92, 93, 20, 21]);
+        assert_eq!(bytes, [60, 61, 90, 91, 92, 93, 66, 67]);
     }
 
     #[test]
@@ -852,43 +854,42 @@ mod tests {
 
     #[test]
     fn scalar_le_write_preserves_neighbors_across_overlay_blocks() {
-        let image = sample_guest_image_with_program_header(
-            &[10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21],
-            0x1000,
-        );
+        let initialized = (0..GUEST_MEMORY_OVERLAY_BLOCK_SIZE_USIZE + 8)
+            .map(|value| value as u8)
+            .collect::<Vec<_>>();
+        let image = sample_guest_image_with_program_header(&initialized, 0x1000);
         let mut memory = GuestMachineMemory::from_image(&image);
+        let write_address = TEST_ENTRY + GUEST_MEMORY_OVERLAY_BLOCK_SIZE - 2;
 
         memory
-            .write_u64_le::<4>(TEST_ENTRY + 6, 0xaabb_ccdd)
+            .write_u64_le::<4>(write_address, 0xaabb_ccdd)
             .expect("cross-block scalar write should succeed");
-        let mut bytes = [0_u8; 12];
+        let mut bytes = [0_u8; 8];
         memory
-            .read_range_into(TEST_ENTRY, &mut bytes)
+            .read_range_into(write_address - 2, &mut bytes)
             .expect("cross-block scalar write result should be readable");
 
-        assert_eq!(
-            bytes,
-            [10, 11, 12, 13, 14, 15, 0xdd, 0xcc, 0xbb, 0xaa, 20, 21]
-        );
+        assert_eq!(bytes, [60, 61, 0xdd, 0xcc, 0xbb, 0xaa, 66, 67]);
     }
 
     #[test]
     fn read_can_span_written_and_unwritten_blocks() {
-        let image = sample_guest_image_with_program_header(
-            &[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
-            0x1000,
-        );
+        let initialized = (0..GUEST_MEMORY_OVERLAY_BLOCK_SIZE_USIZE + 12)
+            .map(|value| value as u8)
+            .collect::<Vec<_>>();
+        let image = sample_guest_image_with_program_header(&initialized, 0x1000);
         let mut memory = GuestMachineMemory::from_image(&image);
+        let write_address = TEST_ENTRY + GUEST_MEMORY_OVERLAY_BLOCK_SIZE;
 
         memory
-            .write_range(TEST_ENTRY + 8, &[80, 81, 82])
+            .write_range(write_address, &[80, 81, 82])
             .expect("write should succeed");
-        let mut bytes = [0_u8; 12];
+        let mut bytes = [0_u8; 8];
         memory
-            .read_range_into(TEST_ENTRY, &mut bytes)
+            .read_range_into(write_address - 4, &mut bytes)
             .expect("mixed read should succeed");
 
-        assert_eq!(bytes, [1, 2, 3, 4, 5, 6, 7, 8, 80, 81, 82, 12]);
+        assert_eq!(bytes, [60, 61, 62, 63, 80, 81, 82, 67]);
     }
 
     #[test]
