@@ -11475,6 +11475,19 @@ fn guest_pc_trace_slice_reuses_prepared_instruction_for_advance() {
         "guest PC trace slices should advance with the prepared instruction instead of fetching it again"
     );
     assert!(
+        body.contains("advance_guest_machine_with_prepared_fcalls_report_shape_at_pc_into")
+            && body.contains(
+                "advance_guest_machine_with_prepared_fcalls_report_shape_at_pc_into_timed"
+            ),
+        "retained guest PC trace slices should pass the already prepared PC into in-place advance"
+    );
+    assert!(
+        !body.contains("advance_guest_machine_with_prepared_fcalls_report_shape_into(")
+            && !body
+                .contains("advance_guest_machine_with_prepared_fcalls_report_shape_into_timed("),
+        "retained guest PC trace slices should not reload the current PC inside in-place advance"
+    );
+    assert!(
         !body.contains("advance_guest_machine_with_fcalls(memory, state, handler)"),
         "guest PC trace slices should not refetch and decode the same instruction in the hot loop"
     );

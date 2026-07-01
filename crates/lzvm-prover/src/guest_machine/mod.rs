@@ -1214,35 +1214,39 @@ pub(crate) fn advance_guest_machine_with_prepared_fcalls_report_shape_timed(
     )
 }
 
-pub(crate) fn advance_guest_machine_with_prepared_fcalls_report_shape_into(
+pub(crate) fn advance_guest_machine_with_prepared_fcalls_report_shape_at_pc_into(
     memory: &mut GuestMachineMemory,
     state: &mut GuestMachineState,
     handler: &mut dyn GuestFcallHandler,
+    pc: u64,
     prepared: GuestMachinePreparedInstruction,
     report: &mut MaybeUninit<GuestMachineReport>,
 ) -> Result<GuestMachineReportShape, GuestMachineError> {
-    advance_guest_machine_prepared_inner_report_shape_into(
+    advance_guest_machine_prepared_inner_report_shape_at_pc_into(
         memory,
         state,
         Some(handler),
+        pc,
         prepared,
         report,
         None,
     )
 }
 
-pub(crate) fn advance_guest_machine_with_prepared_fcalls_report_shape_into_timed(
+pub(crate) fn advance_guest_machine_with_prepared_fcalls_report_shape_at_pc_into_timed(
     memory: &mut GuestMachineMemory,
     state: &mut GuestMachineState,
     handler: &mut dyn GuestFcallHandler,
+    pc: u64,
     prepared: GuestMachinePreparedInstruction,
     report: &mut MaybeUninit<GuestMachineReport>,
     timing: &mut GuestMachineAdvanceTiming,
 ) -> Result<GuestMachineReportShape, GuestMachineError> {
-    advance_guest_machine_prepared_inner_report_shape_into(
+    advance_guest_machine_prepared_inner_report_shape_at_pc_into(
         memory,
         state,
         Some(handler),
+        pc,
         prepared,
         report,
         Some(timing),
@@ -1301,15 +1305,30 @@ fn advance_guest_machine_prepared_inner_report_shape_into(
     handler: Option<&mut dyn GuestFcallHandler>,
     prepared: GuestMachinePreparedInstruction,
     report: &mut MaybeUninit<GuestMachineReport>,
+    timing: Option<&mut GuestMachineAdvanceTiming>,
+) -> Result<GuestMachineReportShape, GuestMachineError> {
+    let pc = state.pc();
+    advance_guest_machine_prepared_inner_report_shape_at_pc_into(
+        memory, state, handler, pc, prepared, report, timing,
+    )
+}
+
+fn advance_guest_machine_prepared_inner_report_shape_at_pc_into(
+    memory: &mut GuestMachineMemory,
+    state: &mut GuestMachineState,
+    handler: Option<&mut dyn GuestFcallHandler>,
+    pc: u64,
+    prepared: GuestMachinePreparedInstruction,
+    report: &mut MaybeUninit<GuestMachineReport>,
     mut timing: Option<&mut GuestMachineAdvanceTiming>,
 ) -> Result<GuestMachineReportShape, GuestMachineError> {
-    let address = state.pc();
-    if prepared.address != address {
+    if prepared.address != pc {
         return Err(GuestMachineError::PreparedInstructionPcMismatch {
-            expected: address,
+            expected: pc,
             found: prepared.address,
         });
     }
+    let address = pc;
     let byte_len = prepared.byte_len;
     let instruction = prepared.instruction;
     let sequential_pc = address

@@ -15,8 +15,8 @@ use crate::guest_instruction::{
 };
 use crate::guest_machine::{
     advance_guest_machine_with_prepared_fcalls_report_shape,
-    advance_guest_machine_with_prepared_fcalls_report_shape_into,
-    advance_guest_machine_with_prepared_fcalls_report_shape_into_timed,
+    advance_guest_machine_with_prepared_fcalls_report_shape_at_pc_into,
+    advance_guest_machine_with_prepared_fcalls_report_shape_at_pc_into_timed,
     advance_guest_machine_with_prepared_fcalls_report_shape_timed,
     instruction_clears_instruction_cache, run_guest_machine_trace_with_fcalls,
     run_guest_machine_with_fcalls, GuestDmaProofValueFlags, GuestFcallHandler,
@@ -4445,19 +4445,21 @@ fn run_guest_pc_trace_segment_slice_inner<
                     }
                 })?;
                 if let Some(advance_timing) = advance_inner_timing.as_mut() {
-                    advance_guest_machine_with_prepared_fcalls_report_shape_into_timed(
+                    advance_guest_machine_with_prepared_fcalls_report_shape_at_pc_into_timed(
                         memory,
                         state,
                         handler,
+                        pc,
                         prepared,
                         report_slot,
                         advance_timing,
                     )
                 } else {
-                    advance_guest_machine_with_prepared_fcalls_report_shape_into(
+                    advance_guest_machine_with_prepared_fcalls_report_shape_at_pc_into(
                         memory,
                         state,
                         handler,
+                        pc,
                         prepared,
                         report_slot,
                     )
