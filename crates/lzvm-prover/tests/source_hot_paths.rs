@@ -11511,6 +11511,10 @@ fn guest_pc_trace_retained_reports_preallocate_segment_buffer() {
             && !runner_body.contains("reports.reserve(1);"),
         "guest PC trace slices should avoid calling reserve for every retained report"
     );
+    assert!(
+        runner_body.contains("if !RETAIN_REPORTS {\n            last_report_shape = Some(advanced.shape);\n        }"),
+        "retained guest PC trace slices should derive the final shape from retained reports"
+    );
 }
 
 #[test]

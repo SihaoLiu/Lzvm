@@ -4531,7 +4531,9 @@ fn run_guest_pc_trace_segment_slice_inner<
             &mut timing.runner_row_count_duration
         });
         trace_rows = next_trace_rows;
-        last_report_shape = Some(advanced.shape);
+        if !RETAIN_REPORTS {
+            last_report_shape = Some(advanced.shape);
+        }
         let post_boundary_started = detail_duration_started(&timing, report_detail_timing);
         if TRACK_BOUNDARY {
             if let Some(snapshot) = boundary_snapshot.as_deref_mut() {
