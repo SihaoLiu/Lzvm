@@ -779,6 +779,57 @@ def rejected_average_summary(
     return f"{summary}; rejected {'/'.join(labels)} baseline"
 
 
+def requested_summary_output_path(summary: str, root: Path) -> Path | None:
+    candidate = Path(summary)
+    if candidate.suffix != ".csv":
+        return None
+    if not candidate.is_absolute() and len(candidate.parts) <= 1:
+        return None
+    return require_workspace_temp_path(
+        resolve_workspace_path(summary, root),
+        root,
+        "--summary",
+    )
+
+
+def materialize_requested_summary(
+    summary: str,
+    root: Path,
+    stable_summaries: dict[str, Path | None],
+    rejected_labels: list[str],
+) -> Path | None:
+    output_path = requested_summary_output_path(summary, root)
+    if output_path is None:
+        return None
+    sources = [
+        (label, stable_summaries[label])
+        for label in rejected_labels
+        if stable_summaries.get(label) is not None
+    ]
+    if not sources:
+        return None
+    source_path: Path | None = None
+    if len(sources) == 1:
+        source_path = sources[0][1]
+    else:
+        output_name = output_path.name.lower()
+        for label, source in sources:
+            if label in output_name:
+                source_path = source
+                break
+    if source_path is None:
+        return None
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    write_text_no_follow(output_path, read_text(source_path))
+    stderr_source = prefixed_path(source_path.parent, source_path.name, ".stderr")
+    if path_is_regular_file_no_follow(stderr_source):
+        write_text_no_follow(
+            prefixed_path(output_path.parent, output_path.name, ".stderr"),
+            read_text(stderr_source),
+        )
+    return output_path
+
+
 def timing_milliseconds(value: float | None) -> int:
     if value is None:
         return 0
@@ -1131,15 +1182,27 @@ def run_batch(args: argparse.Namespace) -> Path:
         args.small_max_avg_s,
         args.large_max_avg_s,
     )
+    small_rejection_field = max_average_rejection_field(
+        small_stable_logs,
+        args.small_max_avg_s,
+    )
+    large_rejection_field = max_average_rejection_field(
+        large_stable_logs,
+        args.large_max_avg_s,
+    )
+    rejected_labels = []
+    if small_rejection_field is not None:
+        rejected_labels.append("small")
+    if large_rejection_field is not None:
+        rejected_labels.append("large")
+    if rejection_messages:
+        materialize_requested_summary(
+            args.summary,
+            root,
+            stable_timing_summary_paths,
+            rejected_labels,
+        )
     if args.append_max_average_rejections and rejection_messages:
-        small_rejection_field = max_average_rejection_field(
-            small_stable_logs,
-            args.small_max_avg_s,
-        )
-        large_rejection_field = max_average_rejection_field(
-            large_stable_logs,
-            args.large_max_avg_s,
-        )
         try:
             append_improve_log(
                 append_script,

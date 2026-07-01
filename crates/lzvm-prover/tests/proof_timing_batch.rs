@@ -858,6 +858,86 @@ fn proof_timing_batch_can_append_average_rejection() {
 }
 
 #[test]
+fn proof_timing_batch_materializes_requested_summary_on_average_rejection() {
+    let script_path = batch_script_path();
+    let dir = test_dir("proof-timing-batch-rejected-summary");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("fixture dir should be created");
+    let log_path = dir.join("improve-log.csv");
+    let requested_summary = dir.join("strict-large-summary.csv");
+
+    let output = Command::new(&script_path)
+        .arg("--work-dir")
+        .arg(&dir)
+        .arg("--path")
+        .arg(&log_path)
+        .arg("--commit")
+        .arg("test")
+        .arg("--runs")
+        .arg("3")
+        .arg("--large-max-avg-s")
+        .arg("1.0")
+        .arg("--append-max-average-rejections")
+        .arg("--large-command")
+        .arg(concat!(
+            "printf 'timing_total_ms=1500\\n",
+            "timing_guest_stage_tree_commit_root_count=1\\n",
+            "timing_guest_stage_tree_commit_root_materialization_groups=1\\n",
+            "timing_guest_stage_tree_commit_root_materialization_max_group_size=1\\n",
+            "timing_finish_witness_opening_row_dedup_input_rows=0\\n",
+            "timing_finish_witness_opening_row_dedup_unique_rows=0\\n",
+            "timing_finish_witness_opening_row_dedup_elided_rows=0\\n",
+            "timing_finish_fri_opening_ms=10\\n",
+            "timing_finish_fri_opening_unit_build_ms=8\\n",
+            "timing_finish_fri_opening_layer_tree_ms=2\\n",
+            "timing_finish_fri_opening_query_ms=3\\n",
+            "timing_finish_fri_opening_fold_ms=1\\n",
+            "timing_finish_fri_opening_unit_count=1\\n",
+            "timing_finish_fri_opening_layer_count=2\\n",
+            "timing_finish_fri_opening_query_count=3\\n",
+            "timing_finish_fri_transcript_unit_build_ms=4\\n",
+            "timing_finish_fri_transcript_layer_tree_ms=2\\n",
+            "timing_finish_fri_transcript_fold_ms=1\\n",
+            "timing_finish_fri_transcript_unit_count=1\\n",
+            "timing_finish_fri_transcript_layer_count=2\\n",
+            "timing_finish_contribution_segment_ms=5\\n",
+            "timing_finish_contribution_verify_ms=6\\n",
+            "timing_finish_contribution_challenge_ms=7\\n'"
+        ))
+        .arg("--summary")
+        .arg(&requested_summary)
+        .output()
+        .expect("proof timing batch should run");
+    let success = output.status.success();
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    let batch_dir = single_batch_dir(&dir);
+    let requested_summary_text =
+        std::fs::read_to_string(&requested_summary).expect("requested summary should read");
+    let stable_summary_text =
+        std::fs::read_to_string(batch_dir.join("large-stable.proof-timing-summary.csv"))
+            .expect("stable summary should read");
+    let _ = std::fs::remove_dir_all(&dir);
+
+    assert!(
+        !success,
+        "proof timing batch should still reject averages above the configured max"
+    );
+    assert!(
+        stderr.contains("large proof time: average 1.500s exceeds --large-max-avg-s 1.000s"),
+        "max average rejection should remain visible to callers: stderr={stderr}"
+    );
+    assert_eq!(
+        requested_summary_text, stable_summary_text,
+        "rejected run should materialize the requested summary from the stable large summary"
+    );
+    assert!(
+        requested_summary_text.contains("aggregate,total_count,valid_total_count")
+            && requested_summary_text.contains("aggregate,3,3,1500"),
+        "requested summary should contain aggregate timing rows: {requested_summary_text}"
+    );
+}
+
+#[test]
 fn proof_timing_batch_removes_failed_per_run_summary_outputs() {
     let script_path = batch_script_path();
     let dir = test_dir("proof-timing-batch-run-summary-fails");
