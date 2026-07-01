@@ -2219,6 +2219,30 @@ def parallel_lower_live_stream_segment_serial_bound_from_values(
     )
 
 
+def seed_ready_streamed_lower_reexecution_regression_from_values(
+    values: dict[str, int],
+) -> bool:
+    stream_elapsed_ms = values.get(STREAM_ELAPSED_MS_KEY, 0)
+    seed_attempts = values.get(SEED_DIRECT_LIFT_ATTEMPTS_KEY, 0)
+    if (
+        values.get(TOTAL_MS_KEY, 0) <= PROOF_TARGET_MS
+        or values.get(PARALLEL_LOWER_WORKERS_KEY, 0) <= 1
+        or values.get(PARALLEL_LOWER_STREAM_SEGMENTS_KEY, 0) <= 0
+        or values.get(OWNED_STREAMING_LOWER_SEGMENTS_KEY, 0) > 0
+        or stream_elapsed_ms <= 0
+        or seed_attempts <= 0
+        or values.get(SEED_DIRECT_LIFT_SUCCESSES_KEY, 0) < seed_attempts
+        or values.get(SEED_FULL_ADVANCES_KEY, 0) > 1
+    ):
+        return False
+    runner_lowerer_floor_ms = max(
+        values.get(RUNNER_MS_KEY, 0),
+        values.get(LOWERER_MS_KEY, 0),
+        1,
+    )
+    return stream_elapsed_ms >= runner_lowerer_floor_ms * 1.25
+
+
 def parallel_lower_stream_shape_hint(
     stream_segments: int,
     stream_chunks: int,
@@ -2287,6 +2311,8 @@ def trace_pipeline_action_hint_from_values(values: dict[str, int]) -> str:
         return "avoid_replay_only_parallel_lower"
     if parallel_lower_live_stream_segment_serial_bound_from_values(values):
         return "parallel_lower_live_stream_segment_serial_bound"
+    if seed_ready_streamed_lower_reexecution_regression_from_values(values):
+        return "avoid_seed_ready_streamed_lower_reexecution"
     stream_elapsed_ms = values.get(STREAM_ELAPSED_MS_KEY, 0)
     segment_input_gap_ms = values.get(SEGMENT_INPUT_GAP_MS_KEY, 0)
     if (
@@ -3062,6 +3088,7 @@ def performance_focus_hint(
         "avoid_segment_commit_worker_oom_fallback",
         "avoid_replay_only_parallel_lower",
         "parallel_lower_live_stream_segment_serial_bound",
+        "avoid_seed_ready_streamed_lower_reexecution",
     }:
         return trace_pipeline_hint
     if seed_snapshot_runtime_hint == "trusted_seed_snapshot_seed_only_probe":
