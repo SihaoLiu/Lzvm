@@ -60,6 +60,7 @@ fn lean_runtime_soundness_binding_exports_core_contract_projection() {
             "runtime_soundness_evidence_implies_external_source_requirement",
             "runtime_soundness_evidence_implies_binding_pcs_fri_contract",
             "runtime_soundness_evidence_implies_runtime_artifact_core_contract",
+            "runtime_soundness_evidence_audited_runtime_artifact_core_contract",
             "runtime_soundness_checked_acceptance_runtime_artifact_evidence",
             "runtime_soundness_checked_acceptance_transcript_bound",
             "runtime_soundness_checked_acceptance_public_input_bound",
@@ -508,6 +509,38 @@ fn lean_runtime_soundness_binding_exports_core_contract_projection() {
         )
         .contains("AssumptionBundle"),
         "runtime soundness evidence artifact-core projection should not require cryptographic assumptions"
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_soundness_evidence_audited_runtime_artifact_core_contract",
+        &[
+            "RuntimeSoundnessEvidence",
+            "RequiredCryptographicAssumptionStatements assumptions.crypto",
+            "RequiredSemanticAssumptionStatements assumptions.semantic",
+            "RuntimeArtifactEvidence",
+            "system.transcriptBound publicInput proof",
+            "system.publicInputBound publicInput proof",
+            "ExternalSourceOpeningRequirement",
+            "system.pcsOpeningsValid publicInput proof",
+            "system.friQueriesValid publicInput proof",
+            "RuntimeVerifierCoreContract system publicInput proof",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_omits(
+        &lean_source,
+        "runtime_soundness_evidence_audited_runtime_artifact_core_contract",
+        &["RuntimeSoundnessCheckedAcceptance"],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_soundness_evidence_audited_runtime_artifact_core_contract",
+        &[
+            "assumption_bundle_carries_required_evidence",
+            "runtime_soundness_evidence_implies_runtime_artifact_evidence",
+            "runtime_soundness_evidence_implies_external_source_requirement",
+            "runtime_soundness_evidence_implies_pcs_and_fri",
+            "runtime_soundness_evidence_implies_core_obligations",
+        ],
     );
     assert!(
         theorem_prefix(
