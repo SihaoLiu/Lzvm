@@ -380,6 +380,12 @@ impl<T> Default for GuestInlineEffectList<T> {
 }
 
 impl<T> GuestInlineEffectList<T> {
+    fn one(value: T) -> Self {
+        Self {
+            entries: GuestInlineEffectEntries::One(value),
+        }
+    }
+
     pub fn push(&mut self, value: T) {
         self.entries = match std::mem::replace(&mut self.entries, GuestInlineEffectEntries::Empty) {
             GuestInlineEffectEntries::Empty => GuestInlineEffectEntries::One(value),
@@ -1226,6 +1232,18 @@ fn advance_guest_machine_prepared_inner_report_shape_into(
     let sequential_pc = address
         .checked_add(byte_len as u64)
         .ok_or(GuestMachineError::ProgramCounterOverflow { address, byte_len })?;
+    if timing.is_none() {
+        if let Some(shape) = try_advance_guest_machine_no_memory_report_fast_path(
+            state,
+            address,
+            byte_len,
+            sequential_pc,
+            instruction,
+            report,
+        ) {
+            return Ok(shape);
+        }
+    }
     let setup_started = advance_timing_started(&timing);
     let mut effects = GuestInstructionEffects::default();
     let checkpoint = GuestMachineStateCheckpoint::new(state, instruction);
@@ -1275,6 +1293,135 @@ fn advance_guest_machine_prepared_inner_report_shape_into(
         &mut timing.report_duration
     });
     Ok(shape)
+}
+
+fn try_advance_guest_machine_no_memory_report_fast_path(
+    state: &mut GuestMachineState,
+    address: u64,
+    byte_len: usize,
+    sequential_pc: u64,
+    instruction: RiscvInstruction,
+    report: &mut MaybeUninit<GuestMachineReport>,
+) -> Option<GuestMachineReportShape> {
+    if state.pending_dma.is_some() {
+        return None;
+    }
+
+    let mut next_pc = sequential_pc;
+    let mut register_write = None;
+    match instruction {
+        RiscvInstruction::Lui { rd, immediate } => {
+            register_write = write_fast_reported_register(state, rd, immediate as u64);
+        }
+        RiscvInstruction::Auipc { rd, immediate } => {
+            register_write =
+                write_fast_reported_register(state, rd, address.wrapping_add_signed(immediate));
+        }
+        RiscvInstruction::Jal { rd, offset } => {
+            register_write = write_fast_reported_register(state, rd, sequential_pc);
+            next_pc = address.wrapping_add_signed(offset);
+        }
+        RiscvInstruction::Jalr { rd, rs1, offset } => {
+            let target = state.read_decoded_register(rs1).wrapping_add_signed(offset) & !1;
+            register_write = write_fast_reported_register(state, rd, sequential_pc);
+            next_pc = target;
+        }
+        RiscvInstruction::Branch {
+            kind,
+            rs1,
+            rs2,
+            offset,
+        } => {
+            if branch_is_taken(
+                kind,
+                state.read_decoded_register(rs1),
+                state.read_decoded_register(rs2),
+            ) {
+                next_pc = address.wrapping_add_signed(offset);
+            }
+        }
+        RiscvInstruction::OpImm {
+            kind,
+            rd,
+            rs1,
+            immediate,
+        } => {
+            let value = execute_op_imm(kind, state.read_decoded_register(rs1), immediate)
+                .expect("decoded immediate op should be supported");
+            register_write = write_fast_reported_register(state, rd, value);
+        }
+        RiscvInstruction::Op { kind, rd, rs1, rs2 } => {
+            let value = execute_op(
+                kind,
+                state.read_decoded_register(rs1),
+                state.read_decoded_register(rs2),
+            );
+            register_write = write_fast_reported_register(state, rd, value);
+        }
+        RiscvInstruction::OpImm32 {
+            kind,
+            rd,
+            rs1,
+            immediate,
+        } => {
+            let value = execute_op_imm_32(kind, state.read_decoded_register(rs1), immediate);
+            register_write = write_fast_reported_register(state, rd, value);
+        }
+        RiscvInstruction::Op32 { kind, rd, rs1, rs2 } => {
+            let value = execute_op_32(
+                kind,
+                state.read_decoded_register(rs1),
+                state.read_decoded_register(rs2),
+            );
+            register_write = write_fast_reported_register(state, rd, value);
+        }
+        RiscvInstruction::CsrRead { csr, rd } => {
+            register_write = write_fast_reported_register(
+                state,
+                rd,
+                read_csr(csr, state.retired_instructions()),
+            );
+        }
+        RiscvInstruction::ZiskDmaPrepare { kind, rs1 } => {
+            state.set_pending_dma(kind, state.read_decoded_register(rs1));
+        }
+        RiscvInstruction::ZiskFcallParam { port, rs1 } => {
+            state.push_fcall_param(port, state.read_decoded_register(rs1));
+        }
+        RiscvInstruction::Fence { .. } => {}
+        _ => return None,
+    }
+
+    state.set_pc(next_pc);
+    state.retire_instruction();
+    let register_writes = register_write
+        .map(GuestInlineEffectList::one)
+        .unwrap_or_default();
+    report.write(GuestMachineReport {
+        address,
+        instruction_byte_len: guest_instruction_byte_len(byte_len),
+        instruction,
+        next_pc,
+        register_writes,
+        memory_accesses: GuestMemoryAccessList::default(),
+        precompile_effects: None,
+    });
+    Some(GuestMachineReportShape {
+        instruction,
+        has_memory_write: false,
+    })
+}
+
+fn write_fast_reported_register(
+    state: &mut GuestMachineState,
+    index: u8,
+    value: u64,
+) -> Option<GuestRegisterWrite> {
+    if index == 0 {
+        return None;
+    }
+    state.write_nonzero_decoded_register(index, value);
+    Some(GuestRegisterWrite { index, value })
 }
 
 fn advance_timing_started(timing: &Option<&mut GuestMachineAdvanceTiming>) -> Option<Instant> {
@@ -2291,6 +2438,130 @@ mod tests {
         assert_eq!(actual, expected);
         assert_eq!(prepared_state, regular_state);
         assert_eq!(prepared_memory, regular_memory);
+    }
+
+    fn no_memory_fast_path_test_state() -> GuestMachineState {
+        let mut state = GuestMachineState::new(TEST_ENTRY);
+        for (index, value) in [
+            (1, 5),
+            (2, 5),
+            (3, 0x0123_4567_89ab_cdef),
+            (4, 0xfedc_ba98_7654_3210),
+            (6, 0x9000_1000),
+            (7, TEST_ENTRY + 32),
+        ] {
+            state
+                .set_register(index, value)
+                .expect("test register should set");
+        }
+        state.retired_instructions = (3_u64 << 32) | 17;
+        state
+    }
+
+    fn assert_no_memory_fast_path_matches_generic(instruction: RiscvInstruction) {
+        let mut fast_memory = guest_machine_memory_with_words(&[0x0000_0073]);
+        let mut generic_memory = fast_memory.clone();
+        let mut fast_state = no_memory_fast_path_test_state();
+        let mut generic_state = fast_state.clone();
+        let prepared = GuestMachinePreparedInstruction {
+            address: TEST_ENTRY,
+            byte_len: 4,
+            instruction,
+        };
+        let fast = advance_guest_machine_prepared_inner_with_report_shape(
+            &mut fast_memory,
+            &mut fast_state,
+            None,
+            prepared,
+            None,
+        )
+        .expect("fast prepared advance should succeed");
+        let mut timing = GuestMachineAdvanceTiming::default();
+        let generic = advance_guest_machine_prepared_inner_with_report_shape(
+            &mut generic_memory,
+            &mut generic_state,
+            None,
+            prepared,
+            Some(&mut timing),
+        )
+        .expect("generic prepared advance should succeed");
+
+        assert_eq!(fast, generic);
+        assert_eq!(fast_state, generic_state);
+        assert_eq!(fast_memory, generic_memory);
+    }
+
+    #[test]
+    fn prepared_no_memory_fast_path_matches_timed_generic_advance() {
+        for instruction in [
+            RiscvInstruction::Lui {
+                rd: 8,
+                immediate: 0x1234_5000,
+            },
+            RiscvInstruction::Auipc {
+                rd: 8,
+                immediate: 16,
+            },
+            RiscvInstruction::Jal { rd: 8, offset: 16 },
+            RiscvInstruction::Jalr {
+                rd: 8,
+                rs1: 7,
+                offset: 3,
+            },
+            RiscvInstruction::Branch {
+                kind: RiscvBranchKind::Beq,
+                rs1: 1,
+                rs2: 2,
+                offset: 16,
+            },
+            RiscvInstruction::Branch {
+                kind: RiscvBranchKind::Bne,
+                rs1: 1,
+                rs2: 2,
+                offset: 16,
+            },
+            RiscvInstruction::OpImm {
+                kind: RiscvOpImmKind::Slli,
+                rd: 8,
+                rs1: 3,
+                immediate: 4,
+            },
+            RiscvInstruction::Op {
+                kind: RiscvOpKind::Mulhu,
+                rd: 8,
+                rs1: 3,
+                rs2: 4,
+            },
+            RiscvInstruction::OpImm32 {
+                kind: RiscvOpImm32Kind::Sraiw,
+                rd: 8,
+                rs1: 3,
+                immediate: 7,
+            },
+            RiscvInstruction::Op32 {
+                kind: RiscvOp32Kind::Addw,
+                rd: 8,
+                rs1: 3,
+                rs2: 4,
+            },
+            RiscvInstruction::CsrRead {
+                csr: RiscvCsr::Cycle,
+                rd: 8,
+            },
+            RiscvInstruction::ZiskDmaPrepare {
+                kind: RiscvDmaKind::Memcpy,
+                rs1: 6,
+            },
+            RiscvInstruction::ZiskFcallParam { port: 1, rs1: 6 },
+            RiscvInstruction::Fence {
+                kind: crate::guest_instruction::RiscvFenceKind::Fence,
+                mode: 0,
+                predecessor: 0,
+                successor: 0,
+            },
+        ] {
+            assert_no_memory_fast_path_matches_generic(instruction);
+        }
     }
 
     #[test]
