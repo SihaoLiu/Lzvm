@@ -627,6 +627,50 @@ fn eth_proof_timing_batch_dry_run_applies_worker_overrides() {
 }
 
 #[test]
+fn eth_proof_timing_batch_dry_run_applies_worker_overrides_in_default_mode() {
+    let fixture = ProofFixture::new("eth-proof-timing-batch-default-worker-overrides");
+    let mut command = Command::new(script_path());
+    command
+        .arg("--suite")
+        .arg("small")
+        .arg("--small-mode")
+        .arg("default")
+        .arg("--dry-run")
+        .arg("--parallel-lower-workers")
+        .arg("6")
+        .arg("--parallel-lower-job-queue")
+        .arg("12")
+        .arg("--summary")
+        .arg("default worker overrides");
+    fixture.apply_env(&mut command, SMALL_PREFIX);
+
+    let output = command
+        .output()
+        .expect("ETH proof timing batch dry-run should run");
+    let success = output.status.success();
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    fixture.cleanup();
+
+    assert!(
+        success,
+        "dry-run should build default worker override command: stderr={stderr}"
+    );
+    assert!(
+        stdout.contains("LZVM_GUEST_PC_TRACE_PARALLEL_LOWER_WORKERS=6")
+            && stdout.contains("LZVM_GUEST_PC_TRACE_PARALLEL_LOWER_JOB_QUEUE=12")
+            && !stdout.contains("LZVM_GUEST_PC_TRACE_PARALLEL_LOWER=1"),
+        "default mode should pass sizing overrides without forcing parallel lower: {stdout}"
+    );
+    assert!(
+        stdout.contains("small_mode=default\n")
+            && stdout.contains("parallel_lower_workers=6\n")
+            && stdout.contains("parallel_lower_job_queue=12\n"),
+        "dry-run metadata should report default worker overrides: {stdout}"
+    );
+}
+
+#[test]
 fn eth_proof_timing_batch_dry_run_enables_owned_streaming_lower() {
     let fixture = ProofFixture::new("eth-proof-timing-batch-owned-streaming");
     let mut command = Command::new(script_path());

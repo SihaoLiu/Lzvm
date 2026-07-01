@@ -607,17 +607,11 @@ def mode_env_for_args(args: argparse.Namespace, mode: str) -> dict[str, str]:
     if args.owned_streaming_lower:
         mode_env["LZVM_CUDA_GUEST_PC_OWNED_STREAMING_LOWER"] = "1"
     mode_env.update(trace_timing_env_for_args(args))
-    if args.parallel_lower_workers is not None and (
-        "LZVM_GUEST_PC_TRACE_PARALLEL_LOWER" in mode_env
-        or "LZVM_GUEST_PC_TRACE_PARALLEL_LOWER_WORK_UNITS" in mode_env
-    ):
+    if args.parallel_lower_workers is not None:
         mode_env["LZVM_GUEST_PC_TRACE_PARALLEL_LOWER_WORKERS"] = str(
             args.parallel_lower_workers
         )
-    if args.parallel_lower_job_queue is not None and (
-        "LZVM_GUEST_PC_TRACE_PARALLEL_LOWER" in mode_env
-        or "LZVM_GUEST_PC_TRACE_PARALLEL_LOWER_WORK_UNITS" in mode_env
-    ):
+    if args.parallel_lower_job_queue is not None:
         mode_env["LZVM_GUEST_PC_TRACE_PARALLEL_LOWER_JOB_QUEUE"] = str(
             args.parallel_lower_job_queue
         )
