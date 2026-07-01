@@ -546,6 +546,14 @@ impl RetainedCudaParentCheckpointLevel {
         self.level
             .opening_path_siblings_batch_device_for_source_rows(source_rows)
     }
+
+    fn opening_path_siblings_batch_for_source_rows(
+        &self,
+        source_rows: &[usize],
+    ) -> Result<Vec<Vec<Vec<[Felt; HASH_WORDS]>>>, crate::merkle_hash::MerkleHashError> {
+        self.level
+            .opening_path_siblings_batch_for_source_rows(source_rows)
+    }
 }
 
 #[cfg(feature = "cuda")]
@@ -1677,6 +1685,9 @@ impl WitnessStageCompactTreeStorage {
                 .map(Some);
         }
         if let Some(retained_parent_checkpoint_level) = retained_parent_checkpoint_level {
+            if retained_parent_checkpoint_level.folded_level_count() == 1 {
+                return Ok(None);
+            }
             return self
                 .open_batch_with_retained_parent_checkpoint_device_siblings_cuda(
                     row_indices,
@@ -1724,6 +1735,9 @@ impl WitnessStageCompactTreeStorage {
         let Some(retained_parent_checkpoint_level) = &self.retained_parent_checkpoint_level else {
             return Ok(None);
         };
+        if retained_parent_checkpoint_level.folded_level_count() == 1 {
+            return Ok(None);
+        }
         prepare_gpu_setup(self.target_bits)
             .map_err(|_| WitnessStageOpeningError::LengthOverflow)?;
         let source_buffer = self.source_device_buffer(source_device)?;
@@ -2216,6 +2230,25 @@ impl WitnessStageCompactTreeStorage {
             }
         }
 
+        if let Some(retained_parent_checkpoint_level) = &self.retained_parent_checkpoint_level {
+            match self.open_batch_with_sparse_parent_checkpoint_cuda(
+                rows,
+                expected_root,
+                source_buffer,
+                retained_parent_checkpoint_level,
+                timing.as_deref_mut(),
+            ) {
+                Ok(openings) => return Ok(openings),
+                Err(error) if error.is_length_overflow() => {}
+                Err(error) => {
+                    return Err(WitnessStageOpeningError::context(
+                        "compact sparse parent checkpoint",
+                        error,
+                    ));
+                }
+            }
+        }
+
         let mut output_buffer = record_opening_duration(
             timing.as_deref_mut().map(|timing| &mut timing.setup),
             || {
@@ -2311,6 +2344,124 @@ impl WitnessStageCompactTreeStorage {
             .copy_extended_row_values_batch_from_device(&output_buffer, rows, timing)
             .map_err(|source| WitnessStageOpeningError::context("compact row values", source))?;
         Ok(values_by_row.into_iter().zip(siblings_by_row).collect())
+    }
+
+    #[cfg(feature = "cuda")]
+    fn open_batch_with_sparse_parent_checkpoint_cuda(
+        &self,
+        rows: &[usize],
+        _expected_root: [Felt; HASH_WORDS],
+        source_buffer: &SourceDeviceBuffer<'_>,
+        checkpoint: &RetainedCudaParentCheckpointLevel,
+        mut timing: Option<&mut WitnessStageOpeningWorkTiming>,
+    ) -> Result<Vec<CompactOnDemandOpening>, WitnessStageOpeningError> {
+        if rows.is_empty()
+            || self.arity == 0
+            || checkpoint.source_state_count() != self.extended_rows
+            || checkpoint.arity() != self.arity
+            || checkpoint.folded_level_count() != 1
+        {
+            return Err(WitnessStageOpeningError::LengthOverflow);
+        }
+        let mut source_rows = Vec::with_capacity(
+            rows.len()
+                .checked_mul(self.arity)
+                .ok_or(WitnessStageOpeningError::LengthOverflow)?,
+        );
+        let mut selected_offsets = Vec::with_capacity(rows.len());
+        for row in rows {
+            if *row >= self.extended_rows {
+                return Err(WitnessStageOpeningError::LengthOverflow);
+            }
+            let selected_offset = row % self.arity;
+            let group_start = row
+                .checked_sub(selected_offset)
+                .ok_or(WitnessStageOpeningError::LengthOverflow)?;
+            let group_end = group_start
+                .checked_add(self.arity)
+                .ok_or(WitnessStageOpeningError::LengthOverflow)?;
+            if group_end > self.extended_rows {
+                return Err(WitnessStageOpeningError::LengthOverflow);
+            }
+            selected_offsets.push(selected_offset);
+            source_rows.extend(group_start..group_end);
+        }
+
+        let group_values = self
+            .extended_row_values_batch_from_source_cuda(
+                &source_rows,
+                source_buffer,
+                timing.as_deref_mut(),
+            )
+            .map_err(|source| {
+                WitnessStageOpeningError::context(
+                    "compact sparse parent checkpoint row values",
+                    source,
+                )
+            })?;
+        if group_values.len() != source_rows.len() {
+            return Err(WitnessStageOpeningError::LengthOverflow);
+        }
+        let upper_suffixes = record_path_parent_hash_duration(
+            timing.as_deref_mut(),
+            PathParentHashTimingKind::RetainedParentCheckpointSuffix,
+            || {
+                checkpoint
+                    .opening_path_siblings_batch_for_source_rows(rows)
+                    .map_err(WitnessStageOpeningError::from)
+            },
+        )
+        .map_err(|source| {
+            WitnessStageOpeningError::context(
+                "compact sparse parent checkpoint suffix path",
+                source,
+            )
+        })?;
+        if upper_suffixes.len() != rows.len() {
+            return Err(WitnessStageOpeningError::LengthOverflow);
+        }
+        if let Some(timing) = timing.as_deref_mut() {
+            let (row_count, byte_count, launch_count) =
+                merkle_opening_path_parent_work(checkpoint.state_count(), self.arity)
+                    .ok_or(WitnessStageOpeningError::LengthOverflow)?;
+            timing.record_retained_parent_checkpoint_opening(rows.len());
+            timing.record_path_parent_hash_work(
+                PathParentHashTimingKind::RetainedParentCheckpointSuffix,
+                row_count,
+                byte_count,
+                launch_count,
+            );
+        }
+
+        let mut openings = Vec::with_capacity(rows.len());
+        for (query_index, upper_suffix) in upper_suffixes.into_iter().enumerate() {
+            let group_start = query_index
+                .checked_mul(self.arity)
+                .ok_or(WitnessStageOpeningError::LengthOverflow)?;
+            let group_end = group_start
+                .checked_add(self.arity)
+                .ok_or(WitnessStageOpeningError::LengthOverflow)?;
+            let group = &group_values[group_start..group_end];
+            let selected_offset = selected_offsets[query_index];
+            let mut lower_siblings = Vec::with_capacity(self.arity.saturating_sub(1));
+            for (offset, values) in group.iter().enumerate() {
+                if offset != selected_offset {
+                    lower_siblings.push(
+                        linear_hash(values, self.arity).map_err(WitnessStageOpeningError::from)?,
+                    );
+                }
+            }
+            let mut siblings = Vec::with_capacity(
+                upper_suffix
+                    .len()
+                    .checked_add(1)
+                    .ok_or(WitnessStageOpeningError::LengthOverflow)?,
+            );
+            siblings.push(lower_siblings);
+            siblings.extend(upper_suffix);
+            openings.push((group[selected_offset].clone(), siblings));
+        }
+        Ok(openings)
     }
 
     #[cfg(feature = "cuda")]

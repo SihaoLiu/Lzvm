@@ -1123,6 +1123,11 @@ fn cuda_compact_witness_opening_uses_retained_parent_checkpoint_after_leaf_diges
         "retained parent checkpoint opening should be an optional fast path"
     );
     assert!(
+        recompute_body.contains("match self.open_batch_with_sparse_parent_checkpoint_cuda")
+            && recompute_body.contains("compact sparse parent checkpoint"),
+        "folded one-level retained parent checkpoints should use a sparse opening path before full leaf recomputation"
+    );
+    assert!(
         recompute_body.contains("Err(error) if error.is_length_overflow()"),
         "structurally unusable retained parent checkpoints should fall back to full leaf-level openings even after operation context is attached"
     );
@@ -1140,6 +1145,16 @@ fn cuda_compact_witness_opening_uses_retained_parent_checkpoint_after_leaf_diges
     assert!(
         checkpoint_branch_index < full_path_index,
         "checkpoint openings should be attempted before the full leaf-level opening fallback"
+    );
+    let sparse_checkpoint_branch_index = recompute_body
+        .find("open_batch_with_sparse_parent_checkpoint_cuda")
+        .expect("recomputed opening should contain sparse retained checkpoint branch");
+    let full_leaf_allocation_index = recompute_body
+        .find("CudaDeviceBuffer::new(self.raw_leaf_bytes)")
+        .expect("recomputed opening should keep full leaf allocation fallback");
+    assert!(
+        sparse_checkpoint_branch_index < full_leaf_allocation_index,
+        "sparse checkpoint openings should avoid full leaf allocation when the checkpoint shape supports it"
     );
     assert!(
         !recompute_body.contains(".opening_path_siblings(*row)"),

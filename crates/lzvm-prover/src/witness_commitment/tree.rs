@@ -3672,16 +3672,18 @@ mod tests {
             batch_timing.retained_parent_checkpoint_opening_row_count,
             rows.len()
         );
-        assert_eq!(batch_timing.row_values_source_row_count, 0);
-        assert_eq!(batch_timing.row_values_device_row_count, rows.len());
-        assert_eq!(batch_timing.row_values_device_download_batch_count, 1);
+        assert_eq!(batch_timing.leaf_coset_extend_call_count, 0);
+        assert_eq!(batch_timing.leaf_hash_rows, 0);
+        assert_eq!(batch_timing.row_values_source_row_count, rows.len() * arity);
+        assert_eq!(batch_timing.row_values_device_row_count, 0);
+        assert_eq!(batch_timing.row_values_device_download_batch_count, 0);
         assert_eq!(
             batch_timing.row_values_word_count,
-            rows.len() * column_count
+            rows.len() * arity * column_count
         );
         assert_eq!(
             batch_timing.row_values_byte_count,
-            rows.len() * column_count * WORD_BYTES
+            rows.len() * arity * column_count * WORD_BYTES
         );
         let checkpoint_parent_rows = 65536 + 16384 + 4096 + 1024 + 256 + 64 + 16 + 4 + 1;
         assert_eq!(
@@ -3708,8 +3710,10 @@ mod tests {
         )
         .expect("single opening should build");
         assert_eq!(single_openings.len(), 1);
-        assert_eq!(single_timing.row_values_source_row_count, 0);
-        assert_eq!(single_timing.row_values_device_row_count, 1);
+        assert_eq!(single_timing.leaf_coset_extend_call_count, 0);
+        assert_eq!(single_timing.leaf_hash_rows, 0);
+        assert_eq!(single_timing.row_values_source_row_count, arity);
+        assert_eq!(single_timing.row_values_device_row_count, 0);
         assert_eq!(single_timing.row_values_device_download_batch_count, 0);
     }
 
