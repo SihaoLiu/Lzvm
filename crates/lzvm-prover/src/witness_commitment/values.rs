@@ -373,9 +373,9 @@ fn merkle_opening_path_prefix_parent_work(
 }
 
 #[cfg(feature = "cuda")]
-const DEFAULT_RETAINED_SOURCE_DEVICE_BYTES: usize = 4_000_000_000;
+const DEFAULT_RETAINED_SOURCE_DEVICE_BYTES: usize = 0;
 #[cfg(feature = "cuda")]
-const RETAINED_SOURCE_DEVICE_RESERVE_BYTES: usize = 20 * 1024 * 1024 * 1024;
+const RETAINED_SOURCE_DEVICE_RESERVE_BYTES: usize = 11 * 1024 * 1024 * 1024;
 #[cfg(feature = "cuda")]
 const RETAINED_COMBINED_DEVICE_CACHE_RESERVE_BYTES: usize = 10 * 1024 * 1024 * 1024;
 #[cfg(feature = "cuda")]
@@ -905,7 +905,7 @@ fn default_retained_source_device_limit() -> usize {
                 .min(MAX_DEFAULT_RETAINED_SOURCE_DEVICE_BYTES)
         })
         .filter(|limit| *limit > 0)
-        .unwrap_or(0)
+        .unwrap_or(DEFAULT_RETAINED_SOURCE_DEVICE_BYTES)
 }
 
 #[cfg(feature = "cuda")]
@@ -3754,18 +3754,6 @@ mod tests {
         assert!(
             default_retained_parent_checkpoint_limit() <= DEFAULT_RETAINED_PARENT_CHECKPOINT_BYTES,
             "default retained parent checkpoint cache should stay within the measured static cap"
-        );
-    }
-
-    #[test]
-    fn default_retained_source_limit_stays_within_static_cache_cap() {
-        assert_eq!(
-            DEFAULT_RETAINED_SOURCE_DEVICE_BYTES, 4_000_000_000,
-            "default retained source cache should keep descriptor reuse headroom"
-        );
-        assert!(
-            default_retained_source_device_limit() <= DEFAULT_RETAINED_SOURCE_DEVICE_BYTES,
-            "default retained source cache should stay within the measured static cap"
         );
     }
 

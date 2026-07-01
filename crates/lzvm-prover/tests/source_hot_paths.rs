@@ -3788,15 +3788,11 @@ fn retained_cache_defaults_prioritize_descriptor_reuse() {
         .expect("witness commitment values source should read");
 
     assert!(
-        values_source
-            .contains("const DEFAULT_RETAINED_SOURCE_DEVICE_BYTES: usize = 4_000_000_000")
-            && values_source
-                .contains("const RETAINED_SOURCE_DEVICE_RESERVE_BYTES: usize = 20 * 1024 * 1024 * 1024")
+        values_source.contains("const DEFAULT_RETAINED_SOURCE_DEVICE_BYTES: usize = 0")
             && values_source.contains(
                 "const MAX_DEFAULT_RETAINED_SOURCE_DEVICE_BYTES: usize = DEFAULT_RETAINED_SOURCE_DEVICE_BYTES"
-            )
-            && values_source.contains(".unwrap_or(0)"),
-        "default source-device retention should stay modest and require measured device headroom"
+            ),
+        "default source-device retention should remain explicit opt-in after the measured regression"
     );
     assert!(
         values_source.contains("const DEFAULT_RETAINED_LEAF_DIGEST_BYTES: usize = 1_000_000_000")
