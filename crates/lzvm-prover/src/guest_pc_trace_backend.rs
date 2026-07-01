@@ -9635,8 +9635,8 @@ impl ZiskMainSegmentSeed {
 struct ZiskMainRunnerBoundarySnapshot {
     internal_memory: ZiskMainInternalMemory,
     last_report_context: Option<(u64, u8)>,
-    last_report_pending_dma: bool,
-    next_report_pending_dma: bool,
+    last_report_pending_dma: Option<ZiskMainPendingDma>,
+    next_report_pending_dma: Option<ZiskMainPendingDma>,
 }
 
 impl ZiskMainRunnerBoundarySnapshot {
@@ -9644,8 +9644,8 @@ impl ZiskMainRunnerBoundarySnapshot {
         Self {
             internal_memory: seed.initial_state.internal_memory,
             last_report_context: None,
-            last_report_pending_dma: false,
-            next_report_pending_dma: seed.initial_state.pending_dma.is_some(),
+            last_report_pending_dma: None,
+            next_report_pending_dma: seed.initial_state.pending_dma,
         }
     }
 
@@ -9655,7 +9655,7 @@ impl ZiskMainRunnerBoundarySnapshot {
 
     fn record_report_shape_state(&mut self, shape: GuestMachineReportShape) {
         self.last_report_pending_dma = self.next_report_pending_dma;
-        self.next_report_pending_dma = main_pending_dma_from_shape(shape).is_some();
+        self.next_report_pending_dma = main_pending_dma_from_shape(shape);
     }
 
     #[cfg(test)]
@@ -15346,6 +15346,13 @@ fn direct_zisk_main_segment_boundary_c_from_tail(
             ZiskMainDirectSeedLiftMissReason::DmaPrepareMissingLookahead,
         ));
     }
+    if let Some(boundary_c) = direct_zisk_main_dma_prepare_boundary_c(
+        shape.instruction,
+        lookahead_instruction,
+        boundary_registers,
+    ) {
+        return Ok(Ok(boundary_c));
+    }
     if let Some(boundary_c) =
         direct_zisk_main_store_boundary_c(shape.instruction, boundary_registers)
     {
@@ -15389,9 +15396,10 @@ fn direct_zisk_main_segment_boundary_c_from_tail(
 fn direct_zisk_main_segment_boundary_c_from_runner_snapshot(
     input: ZiskMainRunnerBoundarySeedInput<'_>,
 ) -> Result<Result<u64, ZiskMainDirectSeedLiftMissReason>, GuestPcTraceBackendError> {
-    if input.boundary_snapshot.last_report_pending_dma {
+    if let Some(pending_dma) = input.boundary_snapshot.last_report_pending_dma {
         if let Some(boundary_c) = direct_zisk_main_pending_dma_boundary_c(
             input.last_report_shape(),
+            pending_dma,
             Some(input.runner_state.registers()),
         ) {
             return Ok(Ok(boundary_c));
@@ -15424,25 +15432,77 @@ fn direct_zisk_main_segment_boundary_c_from_runner_snapshot(
 
 fn direct_zisk_main_pending_dma_boundary_c(
     shape: Option<GuestMachineReportShape>,
+    pending: ZiskMainPendingDma,
     boundary_registers: Option<&[u64; 32]>,
 ) -> Option<u64> {
-    let rd = match shape?.instruction {
+    let (rd, source_register) = match shape?.instruction {
         RiscvInstruction::Op {
             kind: RiscvOpKind::Add,
             rd,
+            rs1,
             ..
-        }
-        | RiscvInstruction::OpImm {
+        } => (
+            rd,
+            direct_zisk_main_pending_dma_add_result_register(pending, rs1)?,
+        ),
+        RiscvInstruction::OpImm {
             kind: RiscvOpImmKind::Addi,
             rd,
+            rs1,
             ..
-        } => rd,
+        } => (
+            rd,
+            direct_zisk_main_pending_dma_addi_result_register(pending, rs1)?,
+        ),
         _ => return None,
     };
-    if rd == 0 {
-        return None;
+    if rd != 0 {
+        return direct_zisk_main_source_register_boundary_c(rd, boundary_registers);
     }
-    direct_zisk_main_source_register_boundary_c(rd, boundary_registers)
+    direct_zisk_main_source_register_boundary_c(source_register, boundary_registers)
+}
+
+fn direct_zisk_main_pending_dma_add_result_register(
+    pending: ZiskMainPendingDma,
+    rs1: u8,
+) -> Option<u8> {
+    if pending.kind == RiscvDmaKind::Memcmp {
+        None
+    } else {
+        Some(rs1)
+    }
+}
+
+fn direct_zisk_main_pending_dma_addi_result_register(
+    pending: ZiskMainPendingDma,
+    rs1: u8,
+) -> Option<u8> {
+    match pending.kind {
+        RiscvDmaKind::Memcmp => None,
+        RiscvDmaKind::Memset => Some(pending.first_arg_reg),
+        RiscvDmaKind::Memcpy | RiscvDmaKind::Inputcpy => Some(rs1),
+    }
+}
+
+fn direct_zisk_main_dma_prepare_boundary_c(
+    instruction: RiscvInstruction,
+    lookahead_instruction: Option<RiscvInstruction>,
+    boundary_registers: Option<&[u64; 32]>,
+) -> Option<u64> {
+    let RiscvInstruction::ZiskDmaPrepare { kind, rs1 } = instruction else {
+        return None;
+    };
+    if matches!(kind, RiscvDmaKind::Memcpy | RiscvDmaKind::Memcmp) {
+        if let Some(RiscvInstruction::Op {
+            kind: RiscvOpKind::Add,
+            rs2,
+            ..
+        }) = lookahead_instruction
+        {
+            return direct_zisk_main_source_register_boundary_c(rs2, boundary_registers);
+        }
+    }
+    direct_zisk_main_source_register_boundary_c(rs1, boundary_registers)
 }
 
 fn direct_zisk_main_store_conditional_boundary_c(
