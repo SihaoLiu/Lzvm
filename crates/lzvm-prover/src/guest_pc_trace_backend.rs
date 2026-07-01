@@ -3885,7 +3885,7 @@ fn run_guest_pc_trace_segment_slice_with_live_report_chunks(
         if clear_instruction_cache {
             instruction_cache.clear();
         } else {
-            instruction_cache.invalidate_report(&advanced.report);
+            instruction_cache.invalidate_report_shape(&advanced.report, advanced.shape);
         }
         let report_rows =
             zisk_main_report_row_count_from_report_shape(report_count, advanced.shape)?;
@@ -4095,7 +4095,7 @@ fn run_guest_pc_trace_segment_slice_with_streaming_device_material(
         if clear_instruction_cache {
             instruction_cache.clear();
         } else {
-            instruction_cache.invalidate_report(&advanced.report);
+            instruction_cache.invalidate_report_shape(&advanced.report, advanced.shape);
         }
         let report_rows =
             zisk_main_report_row_count_from_report_shape(reports.len(), advanced.shape)?;
@@ -4489,7 +4489,7 @@ fn run_guest_pc_trace_segment_slice_inner<
         if clear_instruction_cache {
             instruction_cache.clear();
         } else {
-            instruction_cache.invalidate_report(&advanced.report);
+            instruction_cache.invalidate_report_shape(&advanced.report, advanced.shape);
         }
         record_detail_duration(cache_update_started, &mut timing, |timing| {
             &mut timing.runner_cache_update_duration
@@ -4630,6 +4630,7 @@ fn guest_machine_report_shape_from_report(report: &GuestMachineReport) -> GuestM
         has_memory_write: report
             .memory_accesses
             .iter()
+            .chain(report.precompile_memory_accesses())
             .any(|access| access.kind == GuestMemoryAccessKind::Write),
     }
 }

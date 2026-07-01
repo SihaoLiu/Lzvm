@@ -536,6 +536,7 @@ impl GuestInstructionEffects {
     }
 
     fn record_precompile_memory_write(&mut self, address: u64, byte_len: usize, value: u64) {
+        self.has_memory_write = true;
         self.precompile_memory_accesses.push(GuestMemoryAccess {
             kind: GuestMemoryAccessKind::Write,
             address,
@@ -714,6 +715,16 @@ impl GuestInstructionCache {
             if access.kind == GuestMemoryAccessKind::Write {
                 self.invalidate_range(access.address, usize::from(access.byte_len));
             }
+        }
+    }
+
+    pub(crate) fn invalidate_report_shape(
+        &mut self,
+        report: &GuestMachineReport,
+        shape: GuestMachineReportShape,
+    ) {
+        if shape.has_memory_write {
+            self.invalidate_report(report);
         }
     }
 
@@ -2739,6 +2750,91 @@ mod tests {
                 instruction,
                 has_memory_write: false,
             }
+        );
+    }
+
+    #[test]
+    fn report_shape_tracks_precompile_memory_writes() {
+        let mut effects = GuestInstructionEffects::default();
+        effects.record_precompile_memory_write(TEST_ENTRY, 4, 0x73);
+
+        let shape = effects.report_shape(RiscvInstruction::Fence {
+            kind: crate::guest_instruction::RiscvFenceKind::Fence,
+            mode: 0,
+            predecessor: 0,
+            successor: 0,
+        });
+
+        assert!(shape.has_memory_write);
+    }
+
+    #[test]
+    fn instruction_cache_shape_gate_preserves_write_invalidation() {
+        let mut memory = guest_machine_memory_with_words(&[addi(1, 0, 7), 0x0000_0073]);
+        let mut cache = GuestInstructionCache::default();
+        let initial = cache
+            .prepare(&memory, TEST_ENTRY)
+            .expect("instruction should prepare");
+        assert_eq!(
+            initial.instruction,
+            RiscvInstruction::OpImm {
+                kind: RiscvOpImmKind::Addi,
+                rd: 1,
+                rs1: 0,
+                immediate: 7,
+            }
+        );
+        write_guest_store(&mut memory, RiscvStoreKind::Sw, TEST_ENTRY, 0x0000_0073)
+            .expect("test store should update instruction memory");
+
+        let report = GuestMachineReport {
+            address: TEST_ENTRY,
+            instruction_byte_len: 4,
+            instruction: RiscvInstruction::Store {
+                kind: RiscvStoreKind::Sw,
+                rs1: 1,
+                rs2: 2,
+                offset: 0,
+            },
+            next_pc: TEST_ENTRY + 4,
+            register_writes: GuestRegisterWriteList::default(),
+            memory_accesses: vec![GuestMemoryAccess {
+                kind: GuestMemoryAccessKind::Write,
+                address: TEST_ENTRY,
+                byte_len: 4,
+                value: 0x0000_0073,
+            }]
+            .into(),
+            precompile_effects: None,
+        };
+        cache.invalidate_report_shape(
+            &report,
+            GuestMachineReportShape {
+                instruction: report.instruction,
+                has_memory_write: false,
+            },
+        );
+        assert_eq!(
+            cache
+                .prepare(&memory, TEST_ENTRY)
+                .expect("cached instruction should still prepare")
+                .instruction,
+            initial.instruction
+        );
+
+        cache.invalidate_report_shape(
+            &report,
+            GuestMachineReportShape {
+                instruction: report.instruction,
+                has_memory_write: true,
+            },
+        );
+        assert_eq!(
+            cache
+                .prepare(&memory, TEST_ENTRY)
+                .expect("invalidated instruction should prepare")
+                .instruction,
+            RiscvInstruction::Ecall
         );
     }
 
