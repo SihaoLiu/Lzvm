@@ -11428,6 +11428,32 @@ fn guest_machine_run_loop_reuses_prepared_instruction_for_advance() {
 }
 
 #[test]
+fn guest_instruction_cache_hit_path_borrows_entry() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let source_path = crate_root.join("src/guest_machine/mod.rs");
+    let source = std::fs::read_to_string(&source_path).expect("guest machine source should read");
+    let body = function_body(
+        &source,
+        "impl GuestInstructionCache",
+        "#[derive(Debug, Clone",
+    );
+
+    assert!(
+        body.contains("#[inline(always)]\n    pub(crate) fn prepare")
+            && body.contains("#[inline(always)]\n    fn index"),
+        "guest instruction cache probe helpers should stay inlined on the runner hot path"
+    );
+    assert!(
+        body.contains("let entry = &self.entries[index];"),
+        "guest instruction cache hit checks should borrow the entry before returning a prepared instruction"
+    );
+    assert!(
+        !body.contains("let entry = self.entries[index];"),
+        "guest instruction cache hit checks should not copy entries before checking for a hit"
+    );
+}
+
+#[test]
 fn guest_pc_trace_slice_reuses_prepared_instruction_for_advance() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let source_path = crate_root.join("src/guest_pc_trace_backend.rs");

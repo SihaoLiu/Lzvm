@@ -676,13 +676,14 @@ impl Default for GuestInstructionCache {
 }
 
 impl GuestInstructionCache {
+    #[inline(always)]
     pub(crate) fn prepare(
         &mut self,
         memory: &GuestMachineMemory,
         address: u64,
     ) -> Result<GuestMachinePreparedInstruction, GuestMachineError> {
         let index = self.index(address);
-        let entry = self.entries[index];
+        let entry = &self.entries[index];
         if entry.generation == self.generation && entry.prepared.address == address {
             return Ok(entry.prepared);
         }
@@ -755,6 +756,7 @@ impl GuestInstructionCache {
         }
     }
 
+    #[inline(always)]
     fn index(&self, address: u64) -> usize {
         ((address >> 1) as usize) & (GUEST_INSTRUCTION_CACHE_ENTRY_COUNT - 1)
     }
