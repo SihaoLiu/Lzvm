@@ -460,6 +460,10 @@ impl GuestMachineMemorySegment {
 
     fn read_range_into(&self, address: u64, bytes: &mut [u8]) {
         let mut offset = address - self.virtual_address;
+        if self.written_blocks.is_empty() {
+            self.read_unwritten_range_into(offset, bytes);
+            return;
+        }
         let mut out = bytes;
         while !out.is_empty() {
             let block_index = offset / GUEST_MEMORY_OVERLAY_BLOCK_SIZE;
