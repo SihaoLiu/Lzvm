@@ -8,7 +8,7 @@ use crate::guest_memory::{
 };
 
 const HOST_MAPPED_PROGRAM_HEADER_INDEX: u16 = u16::MAX;
-const GUEST_MEMORY_OVERLAY_BLOCK_SIZE: u64 = 64;
+const GUEST_MEMORY_OVERLAY_BLOCK_SIZE: u64 = 128;
 const GUEST_MEMORY_OVERLAY_BLOCK_SIZE_USIZE: usize = GUEST_MEMORY_OVERLAY_BLOCK_SIZE as usize;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -827,7 +827,14 @@ mod tests {
             .read_range_into(write_address - 2, &mut bytes)
             .expect("cross-block read should succeed");
 
-        assert_eq!(bytes, [60, 61, 90, 91, 92, 93, 66, 67]);
+        let before_2 = (GUEST_MEMORY_OVERLAY_BLOCK_SIZE - 4) as u8;
+        let before_1 = (GUEST_MEMORY_OVERLAY_BLOCK_SIZE - 3) as u8;
+        let after_2 = (GUEST_MEMORY_OVERLAY_BLOCK_SIZE + 2) as u8;
+        let after_3 = (GUEST_MEMORY_OVERLAY_BLOCK_SIZE + 3) as u8;
+        assert_eq!(
+            bytes,
+            [before_2, before_1, 90, 91, 92, 93, after_2, after_3]
+        );
     }
 
     #[test]
@@ -869,7 +876,14 @@ mod tests {
             .read_range_into(write_address - 2, &mut bytes)
             .expect("cross-block scalar write result should be readable");
 
-        assert_eq!(bytes, [60, 61, 0xdd, 0xcc, 0xbb, 0xaa, 66, 67]);
+        let before_2 = (GUEST_MEMORY_OVERLAY_BLOCK_SIZE - 4) as u8;
+        let before_1 = (GUEST_MEMORY_OVERLAY_BLOCK_SIZE - 3) as u8;
+        let after_2 = (GUEST_MEMORY_OVERLAY_BLOCK_SIZE + 2) as u8;
+        let after_3 = (GUEST_MEMORY_OVERLAY_BLOCK_SIZE + 3) as u8;
+        assert_eq!(
+            bytes,
+            [before_2, before_1, 0xdd, 0xcc, 0xbb, 0xaa, after_2, after_3,]
+        );
     }
 
     #[test]
@@ -889,7 +903,15 @@ mod tests {
             .read_range_into(write_address - 4, &mut bytes)
             .expect("mixed read should succeed");
 
-        assert_eq!(bytes, [60, 61, 62, 63, 80, 81, 82, 67]);
+        let before_4 = (GUEST_MEMORY_OVERLAY_BLOCK_SIZE - 4) as u8;
+        let before_3 = (GUEST_MEMORY_OVERLAY_BLOCK_SIZE - 3) as u8;
+        let before_2 = (GUEST_MEMORY_OVERLAY_BLOCK_SIZE - 2) as u8;
+        let before_1 = (GUEST_MEMORY_OVERLAY_BLOCK_SIZE - 1) as u8;
+        let after_3 = (GUEST_MEMORY_OVERLAY_BLOCK_SIZE + 3) as u8;
+        assert_eq!(
+            bytes,
+            [before_4, before_3, before_2, before_1, 80, 81, 82, after_3,]
+        );
     }
 
     #[test]
