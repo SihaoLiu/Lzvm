@@ -534,22 +534,39 @@ impl GuestMachineMemorySegment {
             return value;
         }
         let offset = address - self.virtual_address;
-        u16::from_le_bytes([self.read_byte(offset), self.read_byte(offset + 1)])
+        if self.written_blocks.is_empty() {
+            return u16::from_le_bytes([
+                self.read_unwritten_byte(offset),
+                self.read_unwritten_byte(offset + 1),
+            ]);
+        }
+        u16::from_le_bytes([
+            self.read_overlay_or_unwritten_byte(offset),
+            self.read_overlay_or_unwritten_byte(offset + 1),
+        ])
     }
 
     #[inline(always)]
     fn read_contiguous_halfword(&self, address: u64) -> Option<u16> {
         let offset = address - self.virtual_address;
-        let bytes = self.contiguous_initialized_or_overlay_bytes(offset, 2)?;
+        let bytes = if self.written_blocks.is_empty() {
+            self.contiguous_initialized_bytes(offset, 2)?
+        } else {
+            self.contiguous_initialized_or_overlay_bytes(offset, 2)?
+        };
         Some(u16::from_le_bytes([bytes[0], bytes[1]]))
     }
 
-    fn read_byte(&self, offset: u64) -> u8 {
+    fn read_overlay_or_unwritten_byte(&self, offset: u64) -> u8 {
         let block_index = offset / GUEST_MEMORY_OVERLAY_BLOCK_SIZE;
         let block_offset = (offset % GUEST_MEMORY_OVERLAY_BLOCK_SIZE) as usize;
         if let Some(block) = self.written_blocks.get(&block_index) {
             return block[block_offset];
         }
+        self.read_unwritten_byte(offset)
+    }
+
+    fn read_unwritten_byte(&self, offset: u64) -> u8 {
         if offset >= self.initialized_bytes.len() as u64 {
             return 0;
         }
@@ -606,7 +623,7 @@ impl GuestMachineMemorySegment {
             Entry::Vacant(entry) => {
                 let mut block = Box::new([0_u8; GUEST_MEMORY_OVERLAY_BLOCK_SIZE_USIZE]);
                 let block_start = block_index * GUEST_MEMORY_OVERLAY_BLOCK_SIZE;
-                read_unwritten_segment_range_into(
+                copy_initialized_segment_range_into(
                     &self.initialized_bytes,
                     block_start,
                     block.as_mut_slice(),
@@ -667,6 +684,10 @@ fn write_low_u64_le_bytes<const BYTE_LEN: usize>(out: &mut [u8], value: u64) {
 
 fn read_unwritten_segment_range_into(initialized_bytes: &[u8], offset: u64, bytes: &mut [u8]) {
     bytes.fill(0);
+    copy_initialized_segment_range_into(initialized_bytes, offset, bytes);
+}
+
+fn copy_initialized_segment_range_into(initialized_bytes: &[u8], offset: u64, bytes: &mut [u8]) {
     let initialized_len = initialized_bytes.len() as u64;
     if offset >= initialized_len {
         return;

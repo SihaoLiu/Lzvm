@@ -711,6 +711,8 @@ impl GuestMachinePreparedInstruction {
 pub(crate) struct GuestInstructionCache {
     entries: Box<[GuestInstructionCacheEntry]>,
     generation: u32,
+    min_cached_address: u64,
+    max_cached_address: u64,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -741,6 +743,8 @@ impl Default for GuestInstructionCache {
             ]
             .into_boxed_slice(),
             generation: 1,
+            min_cached_address: u64::MAX,
+            max_cached_address: 0,
         }
     }
 }
@@ -762,17 +766,22 @@ impl GuestInstructionCache {
             generation: self.generation,
             prepared,
         };
+        self.record_cached_address(address);
         Ok(prepared)
     }
 
     pub(crate) fn clear(&mut self) {
         match self.generation.checked_add(1) {
-            Some(next) => self.generation = next,
+            Some(next) => {
+                self.generation = next;
+                self.clear_cached_address_range();
+            }
             None => {
                 self.generation = 1;
                 self.entries
                     .iter_mut()
                     .for_each(|entry| entry.generation = 0);
+                self.clear_cached_address_range();
             }
         }
     }
@@ -808,6 +817,9 @@ impl GuestInstructionCache {
             return;
         };
         let mut pc = address.saturating_sub(2) & !1;
+        if !self.cached_range_can_overlap(pc, end) {
+            return;
+        }
         while pc < end {
             self.invalidate_address(pc);
             let Some(next) = pc.checked_add(2) else {
@@ -824,6 +836,22 @@ impl GuestInstructionCache {
         {
             self.entries[index].generation = 0;
         }
+    }
+
+    fn record_cached_address(&mut self, address: u64) {
+        self.min_cached_address = self.min_cached_address.min(address);
+        self.max_cached_address = self.max_cached_address.max(address);
+    }
+
+    fn clear_cached_address_range(&mut self) {
+        self.min_cached_address = u64::MAX;
+        self.max_cached_address = 0;
+    }
+
+    fn cached_range_can_overlap(&self, start: u64, end: u64) -> bool {
+        self.min_cached_address <= self.max_cached_address
+            && start <= self.max_cached_address
+            && end > self.min_cached_address
     }
 
     #[inline(always)]
@@ -2943,6 +2971,53 @@ mod tests {
                 .expect("invalidated instruction should prepare")
                 .instruction,
             RiscvInstruction::Ecall
+        );
+    }
+
+    #[test]
+    fn instruction_cache_keeps_entries_for_disjoint_memory_writes() {
+        let mut memory = guest_machine_memory_with_words(&[addi(1, 0, 7), 0x0000_0073]);
+        let mut cache = GuestInstructionCache::default();
+        let initial = cache
+            .prepare(&memory, TEST_ENTRY)
+            .expect("instruction should prepare");
+        write_guest_store(&mut memory, RiscvStoreKind::Sw, TEST_ENTRY, 0x0000_0073)
+            .expect("test store should update instruction memory");
+
+        let report = GuestMachineReport {
+            address: TEST_ENTRY,
+            instruction_byte_len: 4,
+            instruction: RiscvInstruction::Store {
+                kind: RiscvStoreKind::Sw,
+                rs1: 1,
+                rs2: 2,
+                offset: 0,
+            },
+            next_pc: TEST_ENTRY + 4,
+            register_writes: GuestRegisterWriteList::default(),
+            memory_accesses: vec![GuestMemoryAccess {
+                kind: GuestMemoryAccessKind::Write,
+                address: TEST_ENTRY + 0x1000,
+                byte_len: 4,
+                value: 0x0000_0073,
+            }]
+            .into(),
+            precompile_effects: None,
+        };
+
+        cache.invalidate_report_shape(
+            &report,
+            GuestMachineReportShape {
+                instruction: report.instruction,
+                has_memory_write: true,
+            },
+        );
+        assert_eq!(
+            cache
+                .prepare(&memory, TEST_ENTRY)
+                .expect("disjoint write should preserve cached instruction")
+                .instruction,
+            initial.instruction
         );
     }
 
