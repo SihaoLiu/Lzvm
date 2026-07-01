@@ -6498,7 +6498,7 @@ fn guest_pc_trace_timing_reports_descriptor_buffer_retention_budget() {
 }
 
 #[test]
-fn guest_pc_descriptor_buffer_retention_defaults_to_small_inputs_only() {
+fn guest_pc_descriptor_buffer_retention_defaults_to_bounded_inputs() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let execution_path = crate_root.join("src/witness_execution.rs");
     let execution_source =
@@ -6507,6 +6507,13 @@ fn guest_pc_descriptor_buffer_retention_defaults_to_small_inputs_only() {
     assert!(
         execution_source.contains("fn guest_pc_descriptor_buffer_retention_enabled("),
         "descriptor buffer retention should have an explicit input-size gate"
+    );
+    assert!(
+        compact_source_contains(
+            &execution_source,
+            "const GUEST_PC_DESCRIPTOR_RETENTION_DEFAULT_INPUT_BYTE_LIMIT: usize = 16 * 1024 * 1024;"
+        ),
+        "descriptor buffer retention should default to the verified bounded-input gate"
     );
     let gate_body = function_body(
         &execution_source,
@@ -6520,7 +6527,7 @@ fn guest_pc_descriptor_buffer_retention_defaults_to_small_inputs_only() {
                 gate_body,
                 "guest_pc_descriptor_buffer_retention_default_supported_for_input(input_byte_count,)"
             ),
-        "descriptor buffer retention should default to the small-input policy while allowing an explicit env override"
+        "descriptor buffer retention should default to the bounded-input policy while allowing an explicit env override"
     );
     let parallel_lower_gate_body = function_body(
         &execution_source,

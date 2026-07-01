@@ -5755,8 +5755,7 @@ const GUEST_PC_ROOT_MATERIALIZATION_DEFAULT_SMALL_INPUT_WINDOW: usize = 24;
 #[cfg(feature = "cuda")]
 const GUEST_PC_ROOT_MATERIALIZATION_DEFAULT_LARGE_INPUT_WINDOW: usize = 8;
 #[cfg(feature = "cuda")]
-const GUEST_PC_DESCRIPTOR_RETENTION_DEFAULT_INPUT_BYTE_LIMIT: usize =
-    GUEST_PC_SMALL_INPUT_BYTE_LIMIT;
+const GUEST_PC_DESCRIPTOR_RETENTION_DEFAULT_INPUT_BYTE_LIMIT: usize = 16 * 1024 * 1024;
 
 #[cfg(feature = "cuda")]
 fn guest_pc_cross_segment_root_materialization_enabled() -> bool {
@@ -9825,7 +9824,7 @@ mod tests {
 
     #[test]
     #[cfg(feature = "cuda")]
-    fn descriptor_buffer_retention_gate_defaults_to_small_inputs() {
+    fn descriptor_buffer_retention_gate_defaults_to_bounded_inputs() {
         let env = TestEnvVarGuard::new("LZVM_CUDA_RETAINED_DESCRIPTOR_BYTES");
         let parallel_env = TestEnvVarUnlockedGuard::new("LZVM_GUEST_PC_TRACE_PARALLEL_LOWER");
         let work_units_env =
@@ -9836,10 +9835,10 @@ mod tests {
 
         assert!(guest_pc_descriptor_buffer_retention_enabled(0));
         assert!(guest_pc_descriptor_buffer_retention_enabled(
-            (8 * 1024 * 1024) - 1
+            (16 * 1024 * 1024) - 1
         ));
         assert!(!guest_pc_descriptor_buffer_retention_enabled(
-            8 * 1024 * 1024
+            16 * 1024 * 1024
         ));
 
         env.set("64");
