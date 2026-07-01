@@ -1,4 +1,5 @@
-use std::collections::{btree_map::Entry, BTreeMap};
+use std::collections::{hash_map::Entry, HashMap};
+use std::hash::{BuildHasherDefault, Hasher};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use crate::guest_instruction::{
@@ -12,6 +13,34 @@ const HOST_MAPPED_PROGRAM_HEADER_INDEX: u16 = u16::MAX;
 const GUEST_MEMORY_OVERLAY_BLOCK_SIZE: u64 = 128;
 const GUEST_MEMORY_OVERLAY_BLOCK_SIZE_USIZE: usize = GUEST_MEMORY_OVERLAY_BLOCK_SIZE as usize;
 const GUEST_MEMORY_SEGMENT_LOOKUP_CACHE_EMPTY: usize = usize::MAX;
+
+type GuestMemoryOverlayBlockMap = HashMap<
+    u64,
+    Box<[u8; GUEST_MEMORY_OVERLAY_BLOCK_SIZE_USIZE]>,
+    BuildHasherDefault<U64IdentityHasher>,
+>;
+
+#[derive(Default)]
+struct U64IdentityHasher(u64);
+
+impl Hasher for U64IdentityHasher {
+    fn finish(&self) -> u64 {
+        self.0
+    }
+
+    fn write(&mut self, bytes: &[u8]) {
+        let mut hash = 0xcbf2_9ce4_8422_2325_u64;
+        for byte in bytes {
+            hash ^= u64::from(*byte);
+            hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+        }
+        self.0 = hash;
+    }
+
+    fn write_u64(&mut self, value: u64) {
+        self.0 = value;
+    }
+}
 
 #[derive(Debug)]
 pub struct GuestMachineMemory {
@@ -56,7 +85,7 @@ struct GuestMachineMemorySegment {
     virtual_address: u64,
     memory_size: u64,
     initialized_bytes: Vec<u8>,
-    written_blocks: BTreeMap<u64, Box<[u8; GUEST_MEMORY_OVERLAY_BLOCK_SIZE_USIZE]>>,
+    written_blocks: GuestMemoryOverlayBlockMap,
 }
 
 impl GuestMachineMemory {
@@ -250,7 +279,7 @@ impl GuestMachineMemory {
             virtual_address,
             memory_size,
             initialized_bytes,
-            written_blocks: BTreeMap::new(),
+            written_blocks: GuestMemoryOverlayBlockMap::default(),
         };
         let mapped_end = mapped_segment.end_address()?;
         for segment in &self.segments {
@@ -339,7 +368,7 @@ impl GuestMachineMemory {
             virtual_address,
             memory_size,
             initialized_bytes: initialized_bytes.to_vec(),
-            written_blocks: BTreeMap::new(),
+            written_blocks: GuestMemoryOverlayBlockMap::default(),
         };
         let mapped_end = mapped_segment.end_address()?;
         for segment in &self.segments {
@@ -415,7 +444,7 @@ impl GuestMachineMemorySegment {
             virtual_address,
             memory_size,
             initialized_bytes: Vec::new(),
-            written_blocks: BTreeMap::new(),
+            written_blocks: GuestMemoryOverlayBlockMap::default(),
         }
     }
 
@@ -425,7 +454,7 @@ impl GuestMachineMemorySegment {
             virtual_address: segment.virtual_address(),
             memory_size: segment.memory_size(),
             initialized_bytes: segment.initialized_bytes().to_vec(),
-            written_blocks: BTreeMap::new(),
+            written_blocks: GuestMemoryOverlayBlockMap::default(),
         }
     }
 
