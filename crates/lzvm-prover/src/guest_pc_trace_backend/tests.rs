@@ -7564,6 +7564,15 @@ fn zisk_main_report_row_count_uses_lightweight_runner_shape() {
     );
 }
 
+#[test]
+fn main_row_capacity_check_only_near_segment_boundary() {
+    assert!(!main_instruction_capacity_needs_exact_check(0, 4));
+    assert!(!main_instruction_capacity_needs_exact_check(10, 14));
+    assert!(main_instruction_capacity_needs_exact_check(0, 3));
+    assert!(main_instruction_capacity_needs_exact_check(11, 14));
+    assert!(main_instruction_capacity_needs_exact_check(14, 14));
+}
+
 fn add256_report() -> GuestMachineReport {
     let params_address = 64;
     let a_address = 96;

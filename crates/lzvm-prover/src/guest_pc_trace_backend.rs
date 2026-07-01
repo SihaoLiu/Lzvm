@@ -3851,30 +3851,32 @@ fn run_guest_pc_trace_segment_slice_with_live_report_chunks(
                 last_report_shape,
             );
         }
-        let max_rows = zisk_main_instruction_max_rows(current);
-        if max_rows > row_limit {
-            return Err(GuestPcTraceBackendError::InvalidPcTraceLayout {
-                message: "Zisk Main layout cannot fit the next guest instruction".to_owned(),
-            });
-        }
-        let required_rows = trace_rows.checked_add(max_rows).ok_or_else(|| {
-            GuestPcTraceBackendError::InvalidPcTraceLayout {
-                message: "Zisk Main row count overflow".to_owned(),
+        if main_instruction_capacity_needs_exact_check(trace_rows, row_limit) {
+            let max_rows = zisk_main_instruction_max_rows(current);
+            if max_rows > row_limit {
+                return Err(GuestPcTraceBackendError::InvalidPcTraceLayout {
+                    message: "Zisk Main layout cannot fit the next guest instruction".to_owned(),
+                });
             }
-        })?;
-        if trace_rows != 0 && required_rows > row_limit {
-            return finish_guest_pc_trace_live_report_chunk_segment_slice(
-                pending_report,
-                report_count,
-                &mut emit_report,
-                executed_instructions,
-                trace_rows,
-                GuestMachineTraceSliceStatus::Paused {
-                    pc,
-                    instruction: current,
-                },
-                last_report_shape,
-            );
+            let required_rows = trace_rows.checked_add(max_rows).ok_or_else(|| {
+                GuestPcTraceBackendError::InvalidPcTraceLayout {
+                    message: "Zisk Main row count overflow".to_owned(),
+                }
+            })?;
+            if trace_rows != 0 && required_rows > row_limit {
+                return finish_guest_pc_trace_live_report_chunk_segment_slice(
+                    pending_report,
+                    report_count,
+                    &mut emit_report,
+                    executed_instructions,
+                    trace_rows,
+                    GuestMachineTraceSliceStatus::Paused {
+                        pc,
+                        instruction: current,
+                    },
+                    last_report_shape,
+                );
+            }
         }
         let clear_instruction_cache = instruction_clears_instruction_cache(state, current);
         let advanced = advance_guest_machine_with_prepared_fcalls_report_shape(
@@ -4056,35 +4058,37 @@ fn run_guest_pc_trace_segment_slice_with_streaming_device_material(
             )
             .map(Some);
         }
-        let max_rows = zisk_main_instruction_max_rows(current);
-        if max_rows > row_limit {
-            return Err(GuestPcTraceBackendError::InvalidPcTraceLayout {
-                message: "main trace layout cannot fit the next guest instruction".to_owned(),
-            });
-        }
-        let required_rows = trace_rows.checked_add(max_rows).ok_or_else(|| {
-            GuestPcTraceBackendError::InvalidPcTraceLayout {
-                message: "main trace row count overflow".to_owned(),
+        if main_instruction_capacity_needs_exact_check(trace_rows, row_limit) {
+            let max_rows = zisk_main_instruction_max_rows(current);
+            if max_rows > row_limit {
+                return Err(GuestPcTraceBackendError::InvalidPcTraceLayout {
+                    message: "main trace layout cannot fit the next guest instruction".to_owned(),
+                });
             }
-        })?;
-        if trace_rows != 0 && required_rows > row_limit {
-            return finish_guest_pc_trace_streaming_device_segment(
-                builder,
-                reports,
-                &mut pending_report,
-                &mut next_report_index,
-                timing_config,
-                executed_instructions,
-                trace_rows,
-                GuestMachineTraceSliceStatus::Paused {
+            let required_rows = trace_rows.checked_add(max_rows).ok_or_else(|| {
+                GuestPcTraceBackendError::InvalidPcTraceLayout {
+                    message: "main trace row count overflow".to_owned(),
+                }
+            })?;
+            if trace_rows != 0 && required_rows > row_limit {
+                return finish_guest_pc_trace_streaming_device_segment(
+                    builder,
+                    reports,
+                    &mut pending_report,
+                    &mut next_report_index,
+                    timing_config,
+                    executed_instructions,
+                    trace_rows,
+                    GuestMachineTraceSliceStatus::Paused {
+                        pc,
+                        instruction: current,
+                    },
                     pc,
-                    instruction: current,
-                },
-                pc,
-                Some(current),
-                last_report_shape,
-            )
-            .map(Some);
+                    Some(current),
+                    last_report_shape,
+                )
+                .map(Some);
+            }
         }
         let clear_instruction_cache = instruction_clears_instruction_cache(state, current);
         let advanced = advance_guest_machine_with_prepared_fcalls_report_shape(
@@ -4370,32 +4374,34 @@ fn run_guest_pc_trace_segment_slice_inner<
             ));
         }
         let row_plan_started = detail_duration_started(&timing, report_detail_timing);
-        let max_rows = zisk_main_instruction_max_rows(current);
-        if max_rows > row_limit {
-            return Err(GuestPcTraceBackendError::InvalidPcTraceLayout {
-                message: "Zisk Main layout cannot fit the next guest instruction".to_owned(),
-            });
-        }
-        let required_rows = trace_rows.checked_add(max_rows).ok_or_else(|| {
-            GuestPcTraceBackendError::InvalidPcTraceLayout {
-                message: "Zisk Main row count overflow".to_owned(),
+        if main_instruction_capacity_needs_exact_check(trace_rows, row_limit) {
+            let max_rows = zisk_main_instruction_max_rows(current);
+            if max_rows > row_limit {
+                return Err(GuestPcTraceBackendError::InvalidPcTraceLayout {
+                    message: "Zisk Main layout cannot fit the next guest instruction".to_owned(),
+                });
             }
-        })?;
-        if trace_rows != 0 && required_rows > row_limit {
-            return Ok(finish_guest_pc_trace_segment_slice(
-                GuestPcTraceSegmentSliceFinish {
-                    reports,
-                    last_report_shape,
-                    report_count,
-                    retain_reports: RETAIN_REPORTS,
-                    executed_instructions,
-                    trace_rows,
-                    status: GuestMachineTraceSliceStatus::Paused {
-                        pc,
-                        instruction: current,
+            let required_rows = trace_rows.checked_add(max_rows).ok_or_else(|| {
+                GuestPcTraceBackendError::InvalidPcTraceLayout {
+                    message: "Zisk Main row count overflow".to_owned(),
+                }
+            })?;
+            if trace_rows != 0 && required_rows > row_limit {
+                return Ok(finish_guest_pc_trace_segment_slice(
+                    GuestPcTraceSegmentSliceFinish {
+                        reports,
+                        last_report_shape,
+                        report_count,
+                        retain_reports: RETAIN_REPORTS,
+                        executed_instructions,
+                        trace_rows,
+                        status: GuestMachineTraceSliceStatus::Paused {
+                            pc,
+                            instruction: current,
+                        },
                     },
-                },
-            ));
+                ));
+            }
         }
         if let (Some(duration), Some(timing)) = (prepare_duration, timing.as_deref_mut()) {
             timing.runner_prepare_instruction_duration += duration;
@@ -4581,6 +4587,13 @@ fn run_guest_pc_trace_segment_slice_inner<
             ));
         }
     }
+}
+
+const ZISK_MAIN_MAX_INSTRUCTION_ROWS: usize = 4;
+
+#[inline(always)]
+fn main_instruction_capacity_needs_exact_check(trace_rows: usize, row_limit: usize) -> bool {
+    row_limit.saturating_sub(trace_rows) < ZISK_MAIN_MAX_INSTRUCTION_ROWS
 }
 
 fn zisk_main_instruction_max_rows(instruction: RiscvInstruction) -> usize {
