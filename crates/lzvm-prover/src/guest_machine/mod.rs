@@ -1233,14 +1233,15 @@ fn advance_guest_machine_prepared_inner_report_shape_into(
         .checked_add(byte_len as u64)
         .ok_or(GuestMachineError::ProgramCounterOverflow { address, byte_len })?;
     if timing.is_none() {
-        if let Some(shape) = try_advance_guest_machine_no_memory_report_fast_path(
+        if let Some(shape) = try_advance_guest_machine_report_fast_path(
+            memory,
             state,
             address,
             byte_len,
             sequential_pc,
             instruction,
             report,
-        ) {
+        )? {
             return Ok(shape);
         }
     }
@@ -1295,20 +1296,22 @@ fn advance_guest_machine_prepared_inner_report_shape_into(
     Ok(shape)
 }
 
-fn try_advance_guest_machine_no_memory_report_fast_path(
+fn try_advance_guest_machine_report_fast_path(
+    memory: &mut GuestMachineMemory,
     state: &mut GuestMachineState,
     address: u64,
     byte_len: usize,
     sequential_pc: u64,
     instruction: RiscvInstruction,
     report: &mut MaybeUninit<GuestMachineReport>,
-) -> Option<GuestMachineReportShape> {
+) -> Result<Option<GuestMachineReportShape>, GuestMachineError> {
     if state.pending_dma.is_some() {
-        return None;
+        return Ok(None);
     }
 
     let mut next_pc = sequential_pc;
     let mut register_write = None;
+    let mut memory_access = None;
     match instruction {
         RiscvInstruction::Lui { rd, immediate } => {
             register_write = write_fast_reported_register(state, rd, immediate as u64);
@@ -1375,6 +1378,41 @@ fn try_advance_guest_machine_no_memory_report_fast_path(
             );
             register_write = write_fast_reported_register(state, rd, value);
         }
+        RiscvInstruction::Load {
+            kind,
+            rd,
+            rs1,
+            offset,
+        } => {
+            let read_address = state.read_decoded_register(rs1).wrapping_add_signed(offset);
+            let loaded = read_guest_load(memory, kind, read_address)?;
+            memory_access = Some(GuestMemoryAccess {
+                kind: GuestMemoryAccessKind::Read,
+                address: read_address,
+                byte_len: guest_memory_access_byte_len(loaded.byte_len),
+                value: loaded.memory_value,
+            });
+            register_write = write_fast_reported_register(state, rd, loaded.register_value);
+        }
+        RiscvInstruction::Store {
+            kind,
+            rs1,
+            rs2,
+            offset,
+        } => {
+            let write_address = state.read_decoded_register(rs1).wrapping_add_signed(offset);
+            let byte_len = store_byte_len(kind);
+            let value = state.read_decoded_register(rs2);
+            write_guest_store(memory, kind, write_address, value)?;
+            let stored_value = low_bytes_value(value, byte_len);
+            memory_access = Some(GuestMemoryAccess {
+                kind: GuestMemoryAccessKind::Write,
+                address: write_address,
+                byte_len: guest_memory_access_byte_len(byte_len),
+                value: stored_value,
+            });
+            state.clear_reservation_if_overlaps(write_address, byte_len);
+        }
         RiscvInstruction::CsrRead { csr, rd } => {
             register_write = write_fast_reported_register(
                 state,
@@ -1389,7 +1427,7 @@ fn try_advance_guest_machine_no_memory_report_fast_path(
             state.push_fcall_param(port, state.read_decoded_register(rs1));
         }
         RiscvInstruction::Fence { .. } => {}
-        _ => return None,
+        _ => return Ok(None),
     }
 
     state.set_pc(next_pc);
@@ -1397,19 +1435,28 @@ fn try_advance_guest_machine_no_memory_report_fast_path(
     let register_writes = register_write
         .map(GuestInlineEffectList::one)
         .unwrap_or_default();
+    let has_memory_write = matches!(
+        memory_access,
+        Some(GuestMemoryAccess {
+            kind: GuestMemoryAccessKind::Write,
+            ..
+        })
+    );
     report.write(GuestMachineReport {
         address,
         instruction_byte_len: guest_instruction_byte_len(byte_len),
         instruction,
         next_pc,
         register_writes,
-        memory_accesses: GuestMemoryAccessList::default(),
+        memory_accesses: memory_access
+            .map(GuestInlineEffectList::one)
+            .unwrap_or_default(),
         precompile_effects: None,
     });
-    Some(GuestMachineReportShape {
+    Ok(Some(GuestMachineReportShape {
         instruction,
-        has_memory_write: false,
-    })
+        has_memory_write,
+    }))
 }
 
 fn write_fast_reported_register(
@@ -2440,14 +2487,14 @@ mod tests {
         assert_eq!(prepared_memory, regular_memory);
     }
 
-    fn no_memory_fast_path_test_state() -> GuestMachineState {
+    fn report_fast_path_test_state() -> GuestMachineState {
         let mut state = GuestMachineState::new(TEST_ENTRY);
         for (index, value) in [
             (1, 5),
             (2, 5),
             (3, 0x0123_4567_89ab_cdef),
             (4, 0xfedc_ba98_7654_3210),
-            (6, 0x9000_1000),
+            (6, TEST_ENTRY),
             (7, TEST_ENTRY + 32),
         ] {
             state
@@ -2458,10 +2505,10 @@ mod tests {
         state
     }
 
-    fn assert_no_memory_fast_path_matches_generic(instruction: RiscvInstruction) {
+    fn assert_report_fast_path_matches_generic(instruction: RiscvInstruction) {
         let mut fast_memory = guest_machine_memory_with_words(&[0x0000_0073]);
         let mut generic_memory = fast_memory.clone();
-        let mut fast_state = no_memory_fast_path_test_state();
+        let mut fast_state = report_fast_path_test_state();
         let mut generic_state = fast_state.clone();
         let prepared = GuestMachinePreparedInstruction {
             address: TEST_ENTRY,
@@ -2492,7 +2539,7 @@ mod tests {
     }
 
     #[test]
-    fn prepared_no_memory_fast_path_matches_timed_generic_advance() {
+    fn prepared_report_fast_path_matches_timed_generic_advance() {
         for instruction in [
             RiscvInstruction::Lui {
                 rd: 8,
@@ -2544,6 +2591,18 @@ mod tests {
                 rs1: 3,
                 rs2: 4,
             },
+            RiscvInstruction::Load {
+                kind: RiscvLoadKind::Lwu,
+                rd: 8,
+                rs1: 6,
+                offset: 0,
+            },
+            RiscvInstruction::Store {
+                kind: RiscvStoreKind::Sw,
+                rs1: 6,
+                rs2: 3,
+                offset: 0,
+            },
             RiscvInstruction::CsrRead {
                 csr: RiscvCsr::Cycle,
                 rd: 8,
@@ -2560,7 +2619,7 @@ mod tests {
                 successor: 0,
             },
         ] {
-            assert_no_memory_fast_path_matches_generic(instruction);
+            assert_report_fast_path_matches_generic(instruction);
         }
     }
 
