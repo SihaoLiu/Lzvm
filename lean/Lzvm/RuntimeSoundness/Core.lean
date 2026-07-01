@@ -259,6 +259,99 @@ theorem runtime_soundness_evidence_implies_runtime_artifact_core_contract
         requiresExternalSource
         evidence)
 
+theorem runtime_soundness_evidence_audited_runtime_artifact_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeSoundnessValidation system) :
+    forall artifact publicInput proof requiresExternalSource,
+      RuntimeSoundnessEvidence
+          system
+          validation
+          artifact
+          publicInput
+          proof
+          requiresExternalSource ->
+        RequiredCryptographicAssumptionStatements assumptions.crypto
+          /\ RequiredSemanticAssumptionStatements assumptions.semantic
+          /\ RuntimeArtifactEvidence
+            system
+            validation.transcriptValidation.artifactBindingValidation.runtimeValidation
+            artifact
+            publicInput
+            proof
+          /\ system.transcriptBound publicInput proof
+          /\ system.publicInputBound publicInput proof
+          /\ ExternalSourceOpeningRequirement
+            system
+            validation.sourceValidation
+            publicInput
+            proof
+            requiresExternalSource
+          /\ system.pcsOpeningsValid publicInput proof
+          /\ system.friQueriesValid publicInput proof
+          /\ RuntimeVerifierCoreContract system publicInput proof := by
+  intro artifact publicInput proof requiresExternalSource evidence
+  have auditedAssumptions :=
+    assumption_bundle_carries_required_evidence assumptions
+  have artifactEvidence :=
+    runtime_soundness_evidence_implies_runtime_artifact_evidence
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      evidence
+  have transcriptBound :=
+    runtime_soundness_evidence_implies_transcript_bound
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      evidence
+  have publicInputBound :=
+    runtime_soundness_evidence_implies_public_input_bound
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      evidence
+  have sourceRequirement :=
+    runtime_soundness_evidence_implies_external_source_requirement
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      evidence
+  have pcsAndFri :=
+    runtime_soundness_evidence_implies_pcs_and_fri
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      evidence
+  have coreContract :=
+    runtime_soundness_evidence_implies_core_obligations
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      evidence
+  exact
+    ⟨auditedAssumptions.left,
+      auditedAssumptions.right,
+      artifactEvidence,
+      transcriptBound,
+      publicInputBound,
+      sourceRequirement,
+      pcsAndFri.left,
+      pcsAndFri.right,
+      coreContract⟩
+
 theorem runtime_soundness_checked_acceptance_core_obligations
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
