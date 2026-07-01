@@ -1676,7 +1676,18 @@ impl WitnessStageCompactTreeStorage {
                 )
                 .map(Some);
         }
-        if retained_leaf_digest_level.is_some() || retained_parent_checkpoint_level.is_some() {
+        if let Some(retained_parent_checkpoint_level) = retained_parent_checkpoint_level {
+            return self
+                .open_batch_with_retained_parent_checkpoint_device_siblings_cuda(
+                    row_indices,
+                    expected_root,
+                    &source_buffer,
+                    retained_parent_checkpoint_level,
+                    timing,
+                )
+                .map(Some);
+        }
+        if retained_leaf_digest_level.is_some() {
             return Ok(None);
         }
         self.open_batch_with_recomputed_leaf_level_device_siblings_cuda(
@@ -2528,6 +2539,165 @@ impl WitnessStageCompactTreeStorage {
             row_buffer,
             row_indices: rows.to_vec(),
             column_count: self.columns,
+            siblings_by_row,
+        })
+    }
+
+    #[cfg(feature = "cuda")]
+    fn open_batch_with_retained_parent_checkpoint_device_siblings_cuda(
+        &self,
+        rows: &[usize],
+        _expected_root: [Felt; HASH_WORDS],
+        source_buffer: &SourceDeviceBuffer<'_>,
+        checkpoint: &RetainedCudaParentCheckpointLevel,
+        mut timing: Option<&mut WitnessStageOpeningWorkTiming>,
+    ) -> Result<CompactOnDemandOpeningDeviceSiblings, WitnessStageOpeningError> {
+        if rows.is_empty() {
+            return Err(WitnessStageOpeningError::LengthOverflow);
+        }
+        for row in rows {
+            if *row >= self.extended_rows {
+                return Err(WitnessStageOpeningError::LengthOverflow);
+            }
+        }
+        let mut output_buffer = record_opening_duration(
+            timing.as_deref_mut().map(|timing| &mut timing.setup),
+            || {
+                CudaDeviceBuffer::new(self.raw_leaf_bytes)
+                    .map_err(|_| WitnessStageOpeningError::LengthOverflow)
+            },
+        )
+        .map_err(|source| {
+            WitnessStageOpeningError::context("compact full leaf allocation", source)
+        })?;
+        let _extension_workspace = record_opening_duration(
+            timing.as_deref_mut().map(|timing| &mut timing.leaf_extend),
+            || self.extend_source_device_buffer_cuda_unsynced(source_buffer, &mut output_buffer),
+        )
+        .map_err(|source| WitnessStageOpeningError::context("compact leaf extension", source))?;
+        if let Some(timing) = timing.as_deref_mut() {
+            timing.record_coset_extend_work(
+                self.raw_leaf_bytes,
+                self.columns,
+                self.source_bits,
+                self.target_bits,
+            );
+        }
+        let leaf_level = record_opening_duration(
+            timing.as_deref_mut().map(|timing| &mut timing.leaf_hash),
+            || {
+                linear_hash_level_from_validated_row_major_device_buffer(
+                    &output_buffer,
+                    self.extended_rows,
+                    self.columns,
+                    self.arity,
+                )
+                .map_err(WitnessStageOpeningError::from)
+            },
+        )
+        .map_err(|source| WitnessStageOpeningError::context("compact leaf hash", source))?;
+        if leaf_level.state_count() != self.extended_rows
+            || leaf_level.arity() != self.arity
+            || checkpoint.source_state_count() != self.extended_rows
+            || checkpoint.arity() != self.arity
+            || checkpoint.folded_level_count() == 0
+        {
+            return Err(WitnessStageOpeningError::LengthOverflow);
+        }
+        if let Some(timing) = timing.as_deref_mut() {
+            timing.record_leaf_hash_work(self.extended_rows, self.raw_leaf_bytes, self.arity);
+            timing.record_retained_parent_checkpoint_opening(rows.len());
+        }
+
+        let lower_prefix_parent_work = if timing.is_some() {
+            Some(
+                merkle_opening_path_prefix_parent_work(
+                    self.extended_rows,
+                    self.arity,
+                    checkpoint.folded_level_count(),
+                )
+                .ok_or(WitnessStageOpeningError::LengthOverflow)?,
+            )
+        } else {
+            None
+        };
+        let upper_suffix_parent_work = if timing.is_some() {
+            Some(
+                merkle_opening_path_parent_work(checkpoint.state_count(), self.arity)
+                    .ok_or(WitnessStageOpeningError::LengthOverflow)?,
+            )
+        } else {
+            None
+        };
+        let lower_prefixes = record_path_parent_hash_duration(
+            timing.as_deref_mut(),
+            PathParentHashTimingKind::RetainedParentCheckpointPrefix,
+            || {
+                leaf_level
+                    .opening_path_prefix_batch_device_for_source_rows(
+                        rows,
+                        checkpoint.folded_level_count(),
+                    )
+                    .map_err(WitnessStageOpeningError::from)
+            },
+        )
+        .map_err(|source| {
+            WitnessStageOpeningError::context("compact parent checkpoint prefix path", source)
+        })?;
+        if let (Some(timing), Some((row_count, byte_count, launch_count))) =
+            (timing.as_deref_mut(), lower_prefix_parent_work)
+        {
+            timing.record_path_parent_hash_work(
+                PathParentHashTimingKind::RetainedParentCheckpointPrefix,
+                row_count,
+                byte_count,
+                launch_count,
+            );
+        }
+        let upper_suffixes = record_path_parent_hash_duration(
+            timing.as_deref_mut(),
+            PathParentHashTimingKind::RetainedParentCheckpointSuffix,
+            || {
+                checkpoint
+                    .opening_path_siblings_batch_device_for_source_rows(rows)
+                    .map_err(WitnessStageOpeningError::from)
+            },
+        )
+        .map_err(|source| {
+            WitnessStageOpeningError::context("compact parent checkpoint suffix path", source)
+        })?;
+        if let (Some(timing), Some((row_count, byte_count, launch_count))) =
+            (timing.as_deref_mut(), upper_suffix_parent_work)
+        {
+            timing.record_path_parent_hash_work(
+                PathParentHashTimingKind::RetainedParentCheckpointSuffix,
+                row_count,
+                byte_count,
+                launch_count,
+            );
+        }
+        let siblings_by_row = record_path_parent_hash_duration(
+            timing.as_deref_mut(),
+            PathParentHashTimingKind::RetainedParentCheckpointSuffix,
+            || {
+                lower_prefixes
+                    .concat_levels(upper_suffixes)
+                    .map_err(WitnessStageOpeningError::from)
+            },
+        )
+        .map_err(|source| {
+            WitnessStageOpeningError::context("compact parent checkpoint suffix path", source)
+        })?;
+        let values_by_row = self
+            .extended_row_values_batch_from_source_cuda(rows, source_buffer, timing)
+            .map_err(|source| {
+                WitnessStageOpeningError::context("compact parent checkpoint row values", source)
+            })?;
+        if values_by_row.len() != rows.len() {
+            return Err(WitnessStageOpeningError::LengthOverflow);
+        }
+        Ok(CompactOnDemandOpeningDeviceSiblings {
+            values_by_row,
             siblings_by_row,
         })
     }

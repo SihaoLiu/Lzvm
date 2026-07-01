@@ -3555,22 +3555,24 @@ mod tests {
         assert_eq!(timings[1].row_dedup_input_row_count, rows_b.len());
         assert_eq!(timings[1].row_dedup_unique_row_count, 2);
         assert_eq!(timings[1].row_dedup_elided_row_count, 1);
-        assert_eq!(timings[0].row_values_device_row_count, rows_a.len());
-        assert_eq!(timings[1].row_values_device_row_count, 2);
+        assert_eq!(timings[0].row_values_source_row_count, rows_a.len());
+        assert_eq!(timings[1].row_values_source_row_count, 2);
+        assert_eq!(timings[0].row_values_device_row_count, 0);
+        assert_eq!(timings[1].row_values_device_row_count, 0);
         assert_eq!(
             timings[0].row_values_word_count,
             rows_a.len() * column_count
         );
         assert_eq!(timings[1].row_values_word_count, 2 * column_count);
         assert_eq!(timings[0].row_values_device_download_batch_count, 0);
-        assert_eq!(timings[1].row_values_device_download_batch_count, 1);
+        assert_eq!(timings[1].row_values_device_download_batch_count, 0);
         assert_eq!(
             timings
                 .iter()
                 .map(|timing| timing.row_values_device_download_batch_count)
                 .sum::<usize>(),
-            1,
-            "cross-request retained parent checkpoint values should use one device row-value gather"
+            0,
+            "retained parent checkpoint values should avoid full-buffer row gathers"
         );
         assert_eq!(
             timings
@@ -3578,7 +3580,7 @@ mod tests {
                 .map(|timing| timing.row_values_device_single_download_count)
                 .sum::<usize>(),
             0,
-            "cross-request row-value gather should avoid per-request single-row D2H"
+            "retained parent checkpoint values should avoid per-request full-buffer row gathers"
         );
         for group in actual {
             for opening in group {
@@ -3706,6 +3708,7 @@ mod tests {
         )
         .expect("single opening should build");
         assert_eq!(single_openings.len(), 1);
+        assert_eq!(single_timing.row_values_source_row_count, 0);
         assert_eq!(single_timing.row_values_device_row_count, 1);
         assert_eq!(single_timing.row_values_device_download_batch_count, 0);
     }

@@ -40,6 +40,12 @@ use crate::witness_layout::derive_witness_trace_layout;
 use crate::ProveSchedule;
 use crate::ProveUnitSchedule;
 
+#[cfg(any(feature = "cuda", test))]
+const DEFAULT_TRACE_OUTPUT_EXTERNAL_SOURCE_OPENING_BATCH_SIZE: usize = 4;
+#[cfg(feature = "cuda")]
+const TRACE_OUTPUT_EXTERNAL_SOURCE_OPENING_BATCH_SIZE_ENV: &str =
+    "LZVM_WITNESS_OPENING_EXTERNAL_SOURCE_BATCH_SIZE";
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ProveWitnessOpeningSegmentError {
     QueryPlan(PcsQueryPlanSegmentError),
@@ -781,29 +787,54 @@ fn build_witness_opening_segment_from_trace_outputs_cuda_batched(
 ) -> Result<ProofSegment, ProveWitnessOpeningSegmentError> {
     let mut units = Vec::with_capacity(query_plan.units.len());
     let mut pending_works = Vec::new();
+    let mut pending_external_source_works = 0usize;
+    let external_source_batch_size = trace_output_external_source_opening_batch_size();
     for query_unit in &query_plan.units {
         let unit_index = query_unit.unit_index as usize;
         let output = outputs_by_unit
             .get(&(query_unit.unit_index, query_unit.trace_instance_index))
             .ok_or(ProveWitnessOpeningSegmentError::MissingOutputUnit { unit_index })?;
-        if trace_output_opening_unit_needs_external_source(output) {
-            append_trace_output_opening_units_from_prepared_cuda_batch(
-                std::mem::take(&mut pending_works),
-                timing.as_deref_mut(),
-                &mut units,
-            )?;
-            let work = prepare_trace_output_opening_unit_work(
+        let needs_external_source = trace_output_opening_unit_needs_external_source(output);
+        if needs_external_source {
+            if pending_external_source_works == 0 && !pending_works.is_empty() {
+                append_trace_output_opening_units_from_prepared_cuda_batch(
+                    std::mem::take(&mut pending_works),
+                    timing.as_deref_mut(),
+                    &mut units,
+                )?;
+            }
+            pending_works.push(prepare_trace_output_opening_unit_work(
                 schedule,
                 query_unit,
                 output,
                 timing.as_deref_mut(),
+            )?);
+            pending_external_source_works = pending_external_source_works.checked_add(1).ok_or(
+                ProveWitnessOpeningSegmentError::StageOpening {
+                    unit_index: 0,
+                    trace_instance_index: 0,
+                    stage_index: 0,
+                    source_kind: "external",
+                    source: WitnessStageOpeningError::LengthOverflow,
+                },
             )?;
-            append_trace_output_opening_units_from_prepared_cuda_batch(
-                vec![work],
-                timing.as_deref_mut(),
-                &mut units,
-            )?;
+            if pending_external_source_works >= external_source_batch_size {
+                append_trace_output_opening_units_from_prepared_cuda_batch(
+                    std::mem::take(&mut pending_works),
+                    timing.as_deref_mut(),
+                    &mut units,
+                )?;
+                pending_external_source_works = 0;
+            }
         } else {
+            if pending_external_source_works > 0 {
+                append_trace_output_opening_units_from_prepared_cuda_batch(
+                    std::mem::take(&mut pending_works),
+                    timing.as_deref_mut(),
+                    &mut units,
+                )?;
+                pending_external_source_works = 0;
+            }
             pending_works.push(prepare_trace_output_opening_unit_work(
                 schedule,
                 query_unit,
@@ -819,6 +850,20 @@ fn build_witness_opening_segment_from_trace_outputs_cuda_batched(
         id: WITNESS_OPENING_SEGMENT_ID,
         data: encode_witness_opening_segment(&segment)?,
     })
+}
+
+#[cfg(feature = "cuda")]
+fn trace_output_external_source_opening_batch_size() -> usize {
+    let value = std::env::var(TRACE_OUTPUT_EXTERNAL_SOURCE_OPENING_BATCH_SIZE_ENV).ok();
+    parse_trace_output_external_source_opening_batch_size(value.as_deref())
+}
+
+#[cfg(any(feature = "cuda", test))]
+fn parse_trace_output_external_source_opening_batch_size(value: Option<&str>) -> usize {
+    value
+        .and_then(|value| value.parse::<usize>().ok())
+        .filter(|value| *value > 0)
+        .unwrap_or(DEFAULT_TRACE_OUTPUT_EXTERNAL_SOURCE_OPENING_BATCH_SIZE)
 }
 
 #[cfg(feature = "cuda")]
@@ -1532,6 +1577,26 @@ mod tests {
         assert_eq!(
             error,
             LoadWitnessOpeningUnitError::UnexpectedUnit { unit_index: 0 }
+        );
+    }
+
+    #[test]
+    fn external_source_opening_batch_size_parser_uses_positive_values_only() {
+        assert_eq!(
+            parse_trace_output_external_source_opening_batch_size(None),
+            DEFAULT_TRACE_OUTPUT_EXTERNAL_SOURCE_OPENING_BATCH_SIZE
+        );
+        assert_eq!(
+            parse_trace_output_external_source_opening_batch_size(Some("0")),
+            DEFAULT_TRACE_OUTPUT_EXTERNAL_SOURCE_OPENING_BATCH_SIZE
+        );
+        assert_eq!(
+            parse_trace_output_external_source_opening_batch_size(Some("invalid")),
+            DEFAULT_TRACE_OUTPUT_EXTERNAL_SOURCE_OPENING_BATCH_SIZE
+        );
+        assert_eq!(
+            parse_trace_output_external_source_opening_batch_size(Some("12")),
+            12
         );
     }
 
