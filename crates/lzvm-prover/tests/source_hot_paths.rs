@@ -11535,6 +11535,25 @@ fn guest_instruction_cache_hit_path_borrows_entry() {
 }
 
 #[test]
+fn guest_machine_fast_path_handles_free_call_results() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let source_path = crate_root.join("src/guest_machine/mod.rs");
+    let source = std::fs::read_to_string(&source_path).expect("guest machine source should read");
+    let body = function_body(
+        &source,
+        "fn try_advance_guest_machine_report_fast_path",
+        "fn write_fast_reported_register",
+    );
+
+    assert!(
+        body.contains("RiscvInstruction::ZiskFcallResult")
+            && body.contains("pop_fcall_result()")
+            && body.contains("write_fast_reported_register(state, rd, value)"),
+        "returned free-call words should stay on the prepared advance fast path"
+    );
+}
+
+#[test]
 fn guest_pc_trace_slice_reuses_prepared_instruction_for_advance() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let source_path = crate_root.join("src/guest_pc_trace_backend.rs");

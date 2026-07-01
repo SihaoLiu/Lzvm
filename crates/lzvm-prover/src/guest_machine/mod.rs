@@ -1845,6 +1845,12 @@ fn try_advance_guest_machine_report_fast_path(
         RiscvInstruction::ZiskFcallParam { port, rs1 } => {
             state.push_fcall_param(port, state.read_decoded_register(rs1));
         }
+        RiscvInstruction::ZiskFcallResult { rd } => {
+            let value = state
+                .pop_fcall_result()
+                .ok_or(GuestMachineError::MissingFcallResult { address })?;
+            register_write = write_fast_reported_register(state, rd, value);
+        }
         RiscvInstruction::Fence { .. } => {}
         _ => return Ok(None),
     }
@@ -2953,6 +2959,7 @@ mod tests {
                 .expect("test register should set");
         }
         state.retired_instructions = (3_u64 << 32) | 17;
+        state.set_fcall_results(vec![0x0123_4567_89ab_cdef]);
         state
     }
 
@@ -3063,6 +3070,7 @@ mod tests {
                 rs1: 6,
             },
             RiscvInstruction::ZiskFcallParam { port: 1, rs1: 6 },
+            RiscvInstruction::ZiskFcallResult { rd: 8 },
             RiscvInstruction::Fence {
                 kind: crate::guest_instruction::RiscvFenceKind::Fence,
                 mode: 0,
