@@ -11554,6 +11554,26 @@ fn guest_machine_fast_path_handles_free_call_results() {
 }
 
 #[test]
+fn guest_machine_fast_path_handles_pending_dma_pairs() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let source_path = crate_root.join("src/guest_machine/mod.rs");
+    let source = std::fs::read_to_string(&source_path).expect("guest machine source should read");
+    let fast_body = function_body(
+        &source,
+        "fn try_advance_guest_machine_report_fast_path",
+        "fn write_fast_reported_register",
+    );
+    let dma_body = function_body(&source, "fn execute_fast_dma", "fn advance_timing_started");
+
+    assert!(
+        fast_body.contains("if let Some(pending_dma) = state.pending_dma")
+            && fast_body.contains("execute_fast_pending_dma(")
+            && dma_body.contains("write_fast_reported_register(state, rd, result)"),
+        "pending DMA pairs should stay on the prepared advance fast path"
+    );
+}
+
+#[test]
 fn guest_pc_trace_slice_reuses_prepared_instruction_for_advance() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let source_path = crate_root.join("src/guest_pc_trace_backend.rs");

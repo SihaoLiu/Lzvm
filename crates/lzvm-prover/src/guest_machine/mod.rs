@@ -1714,8 +1714,34 @@ fn try_advance_guest_machine_report_fast_path(
     instruction: RiscvInstruction,
     report: &mut MaybeUninit<GuestMachineReport>,
 ) -> Result<Option<GuestMachineReportShape>, GuestMachineError> {
-    if state.pending_dma.is_some() {
-        return Ok(None);
+    if let Some(pending_dma) = state.pending_dma {
+        let checkpoint = GuestMachineStateCheckpoint::new(state, instruction);
+        state.pending_dma = None;
+        state.set_pc(sequential_pc);
+        let register_write =
+            match execute_fast_pending_dma(memory, address, instruction, state, pending_dma) {
+                Ok(register_write) => register_write,
+                Err(error) => {
+                    checkpoint.restore(state);
+                    return Err(error);
+                }
+            };
+        state.retire_instruction();
+        report.write(GuestMachineReport::new(
+            address,
+            guest_instruction_byte_len(byte_len),
+            instruction,
+            sequential_pc,
+            register_write
+                .map(GuestRegisterWriteList::one)
+                .unwrap_or_default(),
+            GuestMemoryAccessList::default(),
+            None,
+        ));
+        return Ok(Some(GuestMachineReportShape {
+            instruction,
+            has_memory_write: false,
+        }));
     }
 
     let mut next_pc = sequential_pc;
@@ -1894,6 +1920,118 @@ fn write_fast_reported_register(
     }
     state.write_nonzero_decoded_register(index, value);
     Some(GuestRegisterWrite { index, value })
+}
+
+#[inline(always)]
+fn execute_fast_pending_dma(
+    memory: &mut GuestMachineMemory,
+    address: u64,
+    instruction: RiscvInstruction,
+    state: &mut GuestMachineState,
+    pending: GuestDmaPrepare,
+) -> Result<Option<GuestRegisterWrite>, GuestMachineError> {
+    match instruction {
+        RiscvInstruction::Op {
+            kind: RiscvOpKind::Add,
+            rd,
+            rs1,
+            rs2,
+        } => {
+            let dst = state.read_decoded_register(rs1);
+            let count = state.read_decoded_register(rs2);
+            execute_fast_dma(
+                memory,
+                state,
+                GuestDmaExecute {
+                    pending,
+                    dst,
+                    count,
+                    rd,
+                    fill_byte: None,
+                },
+            )
+        }
+        RiscvInstruction::OpImm {
+            kind: RiscvOpImmKind::Addi,
+            rd,
+            rs1,
+            immediate,
+        } => {
+            if pending.kind == RiscvDmaKind::Memset {
+                let count = state.read_decoded_register(rs1);
+                execute_fast_dma(
+                    memory,
+                    state,
+                    GuestDmaExecute {
+                        pending,
+                        dst: pending.first_arg,
+                        count,
+                        rd,
+                        fill_byte: Some(immediate as u8),
+                    },
+                )
+            } else {
+                let dst = state.read_decoded_register(rs1);
+                execute_fast_dma(
+                    memory,
+                    state,
+                    GuestDmaExecute {
+                        pending,
+                        dst,
+                        count: immediate as u64,
+                        rd,
+                        fill_byte: None,
+                    },
+                )
+            }
+        }
+        _ => Err(GuestMachineError::UnsupportedInstruction {
+            address,
+            instruction,
+        }),
+    }
+}
+
+#[inline(always)]
+fn execute_fast_dma(
+    memory: &mut GuestMachineMemory,
+    state: &mut GuestMachineState,
+    request: GuestDmaExecute,
+) -> Result<Option<GuestRegisterWrite>, GuestMachineError> {
+    let GuestDmaExecute {
+        pending,
+        dst,
+        count,
+        rd,
+        fill_byte,
+    } = request;
+    let result = match pending.kind {
+        RiscvDmaKind::Memcpy => {
+            dma_memcpy(memory, state, dst, pending.first_arg, count)?;
+            dst
+        }
+        RiscvDmaKind::Memcmp => {
+            let (result, effective_count) = dma_memcmp(memory, dst, pending.first_arg, count)?;
+            state.record_dma_memcmp_proof_value_flags(
+                dst,
+                pending.first_arg,
+                effective_count,
+                result != 0,
+            );
+            return Ok(write_fast_reported_register(state, rd, result));
+        }
+        RiscvDmaKind::Memset => {
+            let fill_byte = fill_byte.unwrap_or(0);
+            dma_memset(memory, state, dst, count, fill_byte)?;
+            dst
+        }
+        RiscvDmaKind::Inputcpy => {
+            dma_inputcpy(memory, state, dst, count)?;
+            dst
+        }
+    };
+    state.record_dma_proof_value_flags(pending.kind, dst, pending.first_arg, count);
+    Ok(write_fast_reported_register(state, rd, result))
 }
 
 fn advance_timing_started(timing: &Option<&mut GuestMachineAdvanceTiming>) -> Option<Instant> {
@@ -2996,6 +3134,58 @@ mod tests {
         assert_eq!(fast_memory, generic_memory);
     }
 
+    fn assert_pending_dma_fast_path_matches_generic(
+        pending: GuestDmaPrepare,
+        instruction: RiscvInstruction,
+        configure_state: impl Fn(&mut GuestMachineState),
+    ) {
+        let mut fast_memory = guest_machine_memory_with_words(&[
+            0x0302_0100,
+            0x0706_0504,
+            0x0b0a_0908,
+            0x0f0e_0d0c,
+            0x1312_1110,
+            0x1716_1514,
+            0x1b1a_1918,
+            0x1f1e_1d1c,
+            0x2322_2120,
+            0x2726_2524,
+            0x2b2a_2928,
+            0x2f2e_2d2c,
+        ]);
+        let mut generic_memory = fast_memory.clone();
+        let mut fast_state = GuestMachineState::new(TEST_ENTRY);
+        fast_state.pending_dma = Some(pending);
+        configure_state(&mut fast_state);
+        let mut generic_state = fast_state.clone();
+        let prepared = GuestMachinePreparedInstruction {
+            address: TEST_ENTRY,
+            byte_len: 4,
+            instruction,
+        };
+        let fast = advance_guest_machine_prepared_inner_with_report_shape(
+            &mut fast_memory,
+            &mut fast_state,
+            None,
+            prepared,
+            None,
+        )
+        .expect("fast prepared advance should succeed");
+        let mut timing = GuestMachineAdvanceTiming::default();
+        let generic = advance_guest_machine_prepared_inner_with_report_shape(
+            &mut generic_memory,
+            &mut generic_state,
+            None,
+            prepared,
+            Some(&mut timing),
+        )
+        .expect("generic prepared advance should succeed");
+
+        assert_eq!(fast, generic);
+        assert_eq!(fast_state, generic_state);
+        assert_eq!(fast_memory, generic_memory);
+    }
+
     #[test]
     fn prepared_report_fast_path_matches_timed_generic_advance() {
         for instruction in [
@@ -3080,6 +3270,79 @@ mod tests {
         ] {
             assert_report_fast_path_matches_generic(instruction);
         }
+    }
+
+    #[test]
+    fn prepared_pending_dma_fast_path_matches_timed_generic_advance() {
+        assert_pending_dma_fast_path_matches_generic(
+            GuestDmaPrepare {
+                kind: RiscvDmaKind::Memcpy,
+                first_arg: TEST_ENTRY + 32,
+            },
+            RiscvInstruction::Op {
+                kind: RiscvOpKind::Add,
+                rd: 8,
+                rs1: 6,
+                rs2: 2,
+            },
+            |state| {
+                state.set_register(2, 8).expect("test register should set");
+                state
+                    .set_register(6, TEST_ENTRY + 16)
+                    .expect("test register should set");
+            },
+        );
+        assert_pending_dma_fast_path_matches_generic(
+            GuestDmaPrepare {
+                kind: RiscvDmaKind::Memcmp,
+                first_arg: TEST_ENTRY + 24,
+            },
+            RiscvInstruction::Op {
+                kind: RiscvOpKind::Add,
+                rd: 8,
+                rs1: 6,
+                rs2: 2,
+            },
+            |state| {
+                state.set_register(2, 8).expect("test register should set");
+                state
+                    .set_register(6, TEST_ENTRY + 16)
+                    .expect("test register should set");
+            },
+        );
+        assert_pending_dma_fast_path_matches_generic(
+            GuestDmaPrepare {
+                kind: RiscvDmaKind::Memset,
+                first_arg: TEST_ENTRY + 16,
+            },
+            RiscvInstruction::OpImm {
+                kind: RiscvOpImmKind::Addi,
+                rd: 8,
+                rs1: 2,
+                immediate: 0x5a,
+            },
+            |state| {
+                state.set_register(2, 8).expect("test register should set");
+            },
+        );
+        assert_pending_dma_fast_path_matches_generic(
+            GuestDmaPrepare {
+                kind: RiscvDmaKind::Inputcpy,
+                first_arg: 0,
+            },
+            RiscvInstruction::OpImm {
+                kind: RiscvOpImmKind::Addi,
+                rd: 8,
+                rs1: 6,
+                immediate: 8,
+            },
+            |state| {
+                state
+                    .set_register(6, TEST_ENTRY + 16)
+                    .expect("test register should set");
+                state.set_fcall_results(vec![0x0123_4567_89ab_cdef]);
+            },
+        );
     }
 
     #[test]
