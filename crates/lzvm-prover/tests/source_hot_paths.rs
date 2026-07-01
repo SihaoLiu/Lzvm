@@ -8781,10 +8781,12 @@ fn guest_machine_reports_inline_common_effect_storage() {
     );
 
     assert!(
-        source.contains(
-            "pub type GuestRegisterWriteList = GuestInlineEffectList<GuestRegisterWrite>;"
-        ),
-        "guest register writes should keep one inline slot"
+        source.contains("pub struct GuestRegisterWriteList")
+            && source.contains("entry: GuestRegisterWrite")
+            && source.contains("entry: GuestRegisterWrite { index: 0, value: 0 }")
+            && source.contains("usize::from(self.entry.index != 0)")
+            && source.contains("GuestRegisterWriteList::one"),
+        "guest register writes should use one compact inline slot with x0 as the empty sentinel"
     );
     assert!(
         source

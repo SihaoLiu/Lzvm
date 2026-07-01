@@ -456,7 +456,77 @@ impl<'a, T> IntoIterator for &'a GuestInlineEffectList<T> {
     }
 }
 
-pub type GuestRegisterWriteList = GuestInlineEffectList<GuestRegisterWrite>;
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct GuestRegisterWriteList {
+    entry: GuestRegisterWrite,
+}
+
+impl Default for GuestRegisterWriteList {
+    fn default() -> Self {
+        Self {
+            entry: GuestRegisterWrite { index: 0, value: 0 },
+        }
+    }
+}
+
+impl GuestRegisterWriteList {
+    fn one(value: GuestRegisterWrite) -> Self {
+        debug_assert_ne!(value.index, 0);
+        Self { entry: value }
+    }
+
+    fn push(&mut self, value: GuestRegisterWrite) {
+        debug_assert_ne!(value.index, 0);
+        if self.entry.index != 0 {
+            panic!("guest instruction reported more than one register write");
+        }
+        self.entry = value;
+    }
+
+    pub fn as_slice(&self) -> &[GuestRegisterWrite] {
+        if self.entry.index == 0 {
+            &[]
+        } else {
+            std::slice::from_ref(&self.entry)
+        }
+    }
+
+    pub fn len(&self) -> usize {
+        usize::from(self.entry.index != 0)
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.entry.index == 0
+    }
+}
+
+impl From<Vec<GuestRegisterWrite>> for GuestRegisterWriteList {
+    fn from(entries: Vec<GuestRegisterWrite>) -> Self {
+        match entries.as_slice() {
+            [] => Self::default(),
+            [entry] => Self::one(*entry),
+            _ => panic!("guest register write list supports at most one entry"),
+        }
+    }
+}
+
+impl std::ops::Deref for GuestRegisterWriteList {
+    type Target = [GuestRegisterWrite];
+
+    fn deref(&self) -> &Self::Target {
+        self.as_slice()
+    }
+}
+
+impl<'a> IntoIterator for &'a GuestRegisterWriteList {
+    type Item = &'a GuestRegisterWrite;
+    type IntoIter = std::slice::Iter<'a, GuestRegisterWrite>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.as_slice().iter()
+    }
+}
+
 type GuestRegisterRollbackList = SmallVec<[(u8, u64); 1]>;
 pub type GuestMemoryAccessList = GuestInlineEffectList<GuestMemoryAccess>;
 pub type GuestPrecompileMemoryAccessList = Box<[GuestMemoryAccess]>;
@@ -1446,7 +1516,7 @@ fn try_advance_guest_machine_report_fast_path(
     state.set_pc(next_pc);
     state.retire_instruction();
     let register_writes = register_write
-        .map(GuestInlineEffectList::one)
+        .map(GuestRegisterWriteList::one)
         .unwrap_or_default();
     let has_memory_write = matches!(
         memory_access,
@@ -2474,6 +2544,23 @@ mod tests {
         ] {
             assert_eq!(read_csr(csr, retired_instructions), 3);
         }
+    }
+
+    #[test]
+    fn register_write_list_uses_x0_sentinel_slot() {
+        let empty = GuestRegisterWriteList::default();
+        assert!(empty.is_empty());
+        assert_eq!(empty.as_slice(), &[]);
+
+        let write = GuestRegisterWrite { index: 3, value: 7 };
+        let one = GuestRegisterWriteList::one(write);
+        assert_eq!(one.len(), 1);
+        assert_eq!(one.as_slice(), &[write]);
+        assert_eq!(
+            std::mem::size_of::<GuestRegisterWriteList>(),
+            std::mem::size_of::<GuestRegisterWrite>()
+        );
+        assert!(std::mem::size_of::<GuestMachineReport>() <= 88);
     }
 
     #[test]
