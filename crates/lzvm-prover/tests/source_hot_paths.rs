@@ -8894,7 +8894,7 @@ fn guest_machine_reports_inline_common_effect_storage() {
 #[test]
 fn guest_machine_report_record_stays_cache_line_pair_sized() {
     assert!(
-        std::mem::size_of::<GuestMachineReport>() <= 96,
+        std::mem::size_of::<GuestMachineReport>() <= 72,
         "guest trace reports should keep compact inline effect lists; got {} bytes",
         std::mem::size_of::<GuestMachineReport>()
     );

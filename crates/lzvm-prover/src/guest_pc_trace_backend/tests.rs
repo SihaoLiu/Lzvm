@@ -1415,7 +1415,7 @@ fn builds_zisk_main_segment_trace_without_serialized_roundtrip() {
     let pc_column = layout.column(1, "pc").expect("pc column").trace_column();
     assert_eq!(
         trace.value(0, pc_column),
-        Some(Felt::from_canonical(report.address).expect("canonical pc"))
+        Some(Felt::from_canonical(report.address()).expect("canonical pc"))
     );
 
     let mut bytes = vec![0; written.output.produced_len];
@@ -1591,19 +1591,20 @@ fn direct_boundary_c_uses_register_store_write_value() {
 
 #[test]
 fn direct_boundary_c_does_not_confuse_store_pc_write_with_c() {
-    let report = GuestMachineReport {
-        address: 0x8000_0000,
-        instruction_byte_len: 4,
-        instruction: RiscvInstruction::Jal { rd: 1, offset: 16 },
-        next_pc: 0x8000_0010,
-        register_writes: vec![GuestRegisterWrite {
-            index: 1,
-            value: 0x8000_0004,
-        }]
-        .into(),
-        memory_accesses: Vec::new().into(),
-        precompile_effects: None,
-    };
+    let report =
+        GuestMachineReport {
+            address_and_instruction_len:
+                crate::guest_machine::pack_report_address_and_instruction_len(0x8000_0000, 4),
+            instruction: RiscvInstruction::Jal { rd: 1, offset: 16 },
+            next_pc: 0x8000_0010,
+            register_writes: vec![GuestRegisterWrite {
+                index: 1,
+                value: 0x8000_0004,
+            }]
+            .into(),
+            memory_accesses: Vec::new().into(),
+            precompile_effects: None,
+        };
     let instruction = lower_guest_report(&report).expect("report should lower");
     assert!(instruction.store_pc);
 
@@ -1619,26 +1620,27 @@ fn direct_boundary_c_does_not_confuse_store_pc_write_with_c() {
 
 #[test]
 fn direct_boundary_c_uses_full_width_memory_store_value() {
-    let report = GuestMachineReport {
-        address: 0x8000_0000,
-        instruction_byte_len: 4,
-        instruction: RiscvInstruction::Store {
-            kind: RiscvStoreKind::Sd,
-            rs1: 1,
-            rs2: 2,
-            offset: 8,
-        },
-        next_pc: 0x8000_0004,
-        register_writes: Vec::new().into(),
-        memory_accesses: vec![GuestMemoryAccess {
-            kind: GuestMemoryAccessKind::Write,
-            address: 0x1008,
-            byte_len: 8,
-            value: 0x1234_5678_9abc_def0,
-        }]
-        .into(),
-        precompile_effects: None,
-    };
+    let report =
+        GuestMachineReport {
+            address_and_instruction_len:
+                crate::guest_machine::pack_report_address_and_instruction_len(0x8000_0000, 4),
+            instruction: RiscvInstruction::Store {
+                kind: RiscvStoreKind::Sd,
+                rs1: 1,
+                rs2: 2,
+                offset: 8,
+            },
+            next_pc: 0x8000_0004,
+            register_writes: Vec::new().into(),
+            memory_accesses: vec![GuestMemoryAccess {
+                kind: GuestMemoryAccessKind::Write,
+                address: 0x1008,
+                byte_len: 8,
+                value: 0x1234_5678_9abc_def0,
+            }]
+            .into(),
+            precompile_effects: None,
+        };
     let instruction = lower_guest_report(&report).expect("report should lower");
     assert!(matches!(instruction.store, ZiskMainStore::Indirect(8)));
 
@@ -1650,20 +1652,21 @@ fn direct_boundary_c_uses_full_width_memory_store_value() {
 
 #[test]
 fn direct_boundary_c_uses_branch_next_pc_outcome() {
-    let taken = GuestMachineReport {
-        address: 0x8000_0000,
-        instruction_byte_len: 4,
-        instruction: RiscvInstruction::Branch {
-            kind: RiscvBranchKind::Beq,
-            rs1: 1,
-            rs2: 2,
-            offset: 16,
-        },
-        next_pc: 0x8000_0010,
-        register_writes: Vec::new().into(),
-        memory_accesses: Vec::new().into(),
-        precompile_effects: None,
-    };
+    let taken =
+        GuestMachineReport {
+            address_and_instruction_len:
+                crate::guest_machine::pack_report_address_and_instruction_len(0x8000_0000, 4),
+            instruction: RiscvInstruction::Branch {
+                kind: RiscvBranchKind::Beq,
+                rs1: 1,
+                rs2: 2,
+                offset: 16,
+            },
+            next_pc: 0x8000_0010,
+            register_writes: Vec::new().into(),
+            memory_accesses: Vec::new().into(),
+            precompile_effects: None,
+        };
     let taken_instruction = lower_guest_report(&taken).expect("branch should lower");
     assert_eq!(
         direct_zisk_main_report_boundary_c(&taken, &taken_instruction),
@@ -4080,18 +4083,19 @@ fn runner_boundary_seed_snapshot_carries_dma_prepare_scratch() {
     let mut current_seed = ZiskMainSegmentSeed::new();
     current_seed.initial_state.registers[5] = 0x1000;
     current_seed.initial_state.registers[6] = 0x20;
-    let report = GuestMachineReport {
-        address: 0x8000_0000,
-        instruction_byte_len: 4,
-        instruction: RiscvInstruction::ZiskDmaPrepare {
-            kind: RiscvDmaKind::Memcpy,
-            rs1: 5,
-        },
-        next_pc: 0x8000_0004,
-        register_writes: Vec::new().into(),
-        memory_accesses: Vec::new().into(),
-        precompile_effects: None,
-    };
+    let report =
+        GuestMachineReport {
+            address_and_instruction_len:
+                crate::guest_machine::pack_report_address_and_instruction_len(0x8000_0000, 4),
+            instruction: RiscvInstruction::ZiskDmaPrepare {
+                kind: RiscvDmaKind::Memcpy,
+                rs1: 5,
+            },
+            next_pc: 0x8000_0004,
+            register_writes: Vec::new().into(),
+            memory_accesses: Vec::new().into(),
+            precompile_effects: None,
+        };
     let mut runner_state = GuestMachineState::new(report.next_pc);
     runner_state
         .set_register(5, 0x1000)
@@ -4145,18 +4149,19 @@ fn runner_boundary_snapshot_records_dma_prepare_scratch_incrementally() {
     let mut current_seed = ZiskMainSegmentSeed::new();
     current_seed.initial_state.registers[5] = 0x1000;
     current_seed.initial_state.registers[6] = 0x20;
-    let report = GuestMachineReport {
-        address: 0x8000_0000,
-        instruction_byte_len: 4,
-        instruction: RiscvInstruction::ZiskDmaPrepare {
-            kind: RiscvDmaKind::Memcpy,
-            rs1: 5,
-        },
-        next_pc: 0x8000_0004,
-        register_writes: Vec::new().into(),
-        memory_accesses: Vec::new().into(),
-        precompile_effects: None,
-    };
+    let report =
+        GuestMachineReport {
+            address_and_instruction_len:
+                crate::guest_machine::pack_report_address_and_instruction_len(0x8000_0000, 4),
+            instruction: RiscvInstruction::ZiskDmaPrepare {
+                kind: RiscvDmaKind::Memcpy,
+                rs1: 5,
+            },
+            next_pc: 0x8000_0004,
+            register_writes: Vec::new().into(),
+            memory_accesses: Vec::new().into(),
+            precompile_effects: None,
+        };
 
     let mut snapshot = ZiskMainRunnerBoundarySnapshot::new(&current_seed);
     snapshot
@@ -4211,26 +4216,27 @@ fn runner_boundary_seed_snapshot_derives_full_width_store_boundary() {
     let mut current_seed = ZiskMainSegmentSeed::new();
     current_seed.initial_state.registers[1] = 0x1000;
     current_seed.initial_state.registers[2] = 0xfeed_face_cafe_babe;
-    let report = GuestMachineReport {
-        address: 0x8000_0000,
-        instruction_byte_len: 4,
-        instruction: RiscvInstruction::Store {
-            kind: RiscvStoreKind::Sd,
-            rs1: 1,
-            rs2: 2,
-            offset: 8,
-        },
-        next_pc: 0x8000_0004,
-        register_writes: Vec::new().into(),
-        memory_accesses: vec![GuestMemoryAccess {
-            kind: GuestMemoryAccessKind::Write,
-            address: 0x1008,
-            byte_len: 8,
-            value: 0xfeed_face_cafe_babe,
-        }]
-        .into(),
-        precompile_effects: None,
-    };
+    let report =
+        GuestMachineReport {
+            address_and_instruction_len:
+                crate::guest_machine::pack_report_address_and_instruction_len(0x8000_0000, 4),
+            instruction: RiscvInstruction::Store {
+                kind: RiscvStoreKind::Sd,
+                rs1: 1,
+                rs2: 2,
+                offset: 8,
+            },
+            next_pc: 0x8000_0004,
+            register_writes: Vec::new().into(),
+            memory_accesses: vec![GuestMemoryAccess {
+                kind: GuestMemoryAccessKind::Write,
+                address: 0x1008,
+                byte_len: 8,
+                value: 0xfeed_face_cafe_babe,
+            }]
+            .into(),
+            precompile_effects: None,
+        };
     let mut runner_state = GuestMachineState::new(report.next_pc);
     runner_state
         .set_register(1, 0x1000)
@@ -4267,26 +4273,27 @@ fn runner_boundary_seed_snapshot_derives_narrow_store_boundary_from_runner_regis
     let mut current_seed = ZiskMainSegmentSeed::new();
     current_seed.initial_state.registers[10] = 0x1000;
     current_seed.initial_state.registers[12] = 0x1234_5678_9abc_def0;
-    let report = GuestMachineReport {
-        address: 0x8000_0000,
-        instruction_byte_len: 4,
-        instruction: RiscvInstruction::Store {
-            kind: RiscvStoreKind::Sb,
-            rs1: 10,
-            rs2: 12,
-            offset: 17,
-        },
-        next_pc: 0x8000_0004,
-        register_writes: Vec::new().into(),
-        memory_accesses: vec![GuestMemoryAccess {
-            kind: GuestMemoryAccessKind::Write,
-            address: 0x1011,
-            byte_len: 1,
-            value: 0xf0,
-        }]
-        .into(),
-        precompile_effects: None,
-    };
+    let report =
+        GuestMachineReport {
+            address_and_instruction_len:
+                crate::guest_machine::pack_report_address_and_instruction_len(0x8000_0000, 4),
+            instruction: RiscvInstruction::Store {
+                kind: RiscvStoreKind::Sb,
+                rs1: 10,
+                rs2: 12,
+                offset: 17,
+            },
+            next_pc: 0x8000_0004,
+            register_writes: Vec::new().into(),
+            memory_accesses: vec![GuestMemoryAccess {
+                kind: GuestMemoryAccessKind::Write,
+                address: 0x1011,
+                byte_len: 1,
+                value: 0xf0,
+            }]
+            .into(),
+            precompile_effects: None,
+        };
     let mut runner_state = GuestMachineState::new(report.next_pc);
     runner_state
         .set_register(10, 0x1000)
@@ -4321,26 +4328,27 @@ fn runner_boundary_seed_snapshot_derives_narrow_store_boundary_from_runner_regis
 #[test]
 fn runner_boundary_seed_snapshot_uses_runner_registers_for_narrow_store() {
     let current_seed = ZiskMainSegmentSeed::new();
-    let report = GuestMachineReport {
-        address: 0x8000_0000,
-        instruction_byte_len: 4,
-        instruction: RiscvInstruction::Store {
-            kind: RiscvStoreKind::Sb,
-            rs1: 10,
-            rs2: 12,
-            offset: 17,
-        },
-        next_pc: 0x8000_0004,
-        register_writes: Vec::new().into(),
-        memory_accesses: vec![GuestMemoryAccess {
-            kind: GuestMemoryAccessKind::Write,
-            address: 0x1011,
-            byte_len: 1,
-            value: 0xf0,
-        }]
-        .into(),
-        precompile_effects: None,
-    };
+    let report =
+        GuestMachineReport {
+            address_and_instruction_len:
+                crate::guest_machine::pack_report_address_and_instruction_len(0x8000_0000, 4),
+            instruction: RiscvInstruction::Store {
+                kind: RiscvStoreKind::Sb,
+                rs1: 10,
+                rs2: 12,
+                offset: 17,
+            },
+            next_pc: 0x8000_0004,
+            register_writes: Vec::new().into(),
+            memory_accesses: vec![GuestMemoryAccess {
+                kind: GuestMemoryAccessKind::Write,
+                address: 0x1011,
+                byte_len: 1,
+                value: 0xf0,
+            }]
+            .into(),
+            precompile_effects: None,
+        };
     let mut runner_state = GuestMachineState::new(report.next_pc);
     runner_state
         .set_register(10, 0x1000)
@@ -4568,20 +4576,21 @@ fn runner_boundary_seed_snapshot_uses_report_shape_for_jalr_boundary_without_ret
 #[test]
 fn runner_boundary_seed_snapshot_uses_report_shape_for_branch_boundary_without_retained_report() {
     let current_seed = ZiskMainSegmentSeed::new();
-    let report = GuestMachineReport {
-        address: 0x8000_0000,
-        instruction_byte_len: 4,
-        instruction: RiscvInstruction::Branch {
-            kind: RiscvBranchKind::Bne,
-            rs1: 22,
-            rs2: 11,
-            offset: 84,
-        },
-        next_pc: 0x8000_0054,
-        register_writes: Vec::new().into(),
-        memory_accesses: Vec::new().into(),
-        precompile_effects: None,
-    };
+    let report =
+        GuestMachineReport {
+            address_and_instruction_len:
+                crate::guest_machine::pack_report_address_and_instruction_len(0x8000_0000, 4),
+            instruction: RiscvInstruction::Branch {
+                kind: RiscvBranchKind::Bne,
+                rs1: 22,
+                rs2: 11,
+                offset: 84,
+            },
+            next_pc: 0x8000_0054,
+            register_writes: Vec::new().into(),
+            memory_accesses: Vec::new().into(),
+            precompile_effects: None,
+        };
     let runner_state = GuestMachineState::new(report.next_pc);
     let mut boundary_snapshot = ZiskMainRunnerBoundarySnapshot::new(&current_seed);
     record_zisk_main_runner_boundary_snapshot(
@@ -4978,26 +4987,27 @@ fn runner_boundary_seed_snapshot_uses_store_conditional_source_boundary_without_
 fn runner_boundary_seed_snapshot_uses_retained_report_for_zero_register_load_boundary() {
     let current_seed = ZiskMainSegmentSeed::new();
     let runner_state = GuestMachineState::new(0x8000_0004);
-    let report = GuestMachineReport {
-        address: 0x8000_0000,
-        instruction_byte_len: 4,
-        instruction: RiscvInstruction::Load {
-            kind: RiscvLoadKind::Lbu,
-            rd: 0,
-            rs1: 10,
-            offset: 5,
-        },
-        next_pc: 0x8000_0004,
-        register_writes: Vec::new().into(),
-        memory_accesses: vec![GuestMemoryAccess {
-            kind: GuestMemoryAccessKind::Read,
-            address: 0x1005,
-            byte_len: 1,
-            value: 0xab,
-        }]
-        .into(),
-        precompile_effects: None,
-    };
+    let report =
+        GuestMachineReport {
+            address_and_instruction_len:
+                crate::guest_machine::pack_report_address_and_instruction_len(0x8000_0000, 4),
+            instruction: RiscvInstruction::Load {
+                kind: RiscvLoadKind::Lbu,
+                rd: 0,
+                rs1: 10,
+                offset: 5,
+            },
+            next_pc: 0x8000_0004,
+            register_writes: Vec::new().into(),
+            memory_accesses: vec![GuestMemoryAccess {
+                kind: GuestMemoryAccessKind::Read,
+                address: 0x1005,
+                byte_len: 1,
+                value: 0xab,
+            }]
+            .into(),
+            precompile_effects: None,
+        };
 
     let lifted = try_lift_zisk_main_next_segment_seed_from_runner_boundary(
         1,
@@ -5023,26 +5033,27 @@ fn runner_boundary_seed_snapshot_uses_retained_report_for_zero_register_sign_ext
 {
     let current_seed = ZiskMainSegmentSeed::new();
     let runner_state = GuestMachineState::new(0x8000_0004);
-    let report = GuestMachineReport {
-        address: 0x8000_0000,
-        instruction_byte_len: 4,
-        instruction: RiscvInstruction::Load {
-            kind: RiscvLoadKind::Lb,
-            rd: 0,
-            rs1: 10,
-            offset: 5,
-        },
-        next_pc: 0x8000_0004,
-        register_writes: Vec::new().into(),
-        memory_accesses: vec![GuestMemoryAccess {
-            kind: GuestMemoryAccessKind::Read,
-            address: 0x1005,
-            byte_len: 1,
-            value: 0xff,
-        }]
-        .into(),
-        precompile_effects: None,
-    };
+    let report =
+        GuestMachineReport {
+            address_and_instruction_len:
+                crate::guest_machine::pack_report_address_and_instruction_len(0x8000_0000, 4),
+            instruction: RiscvInstruction::Load {
+                kind: RiscvLoadKind::Lb,
+                rd: 0,
+                rs1: 10,
+                offset: 5,
+            },
+            next_pc: 0x8000_0004,
+            register_writes: Vec::new().into(),
+            memory_accesses: vec![GuestMemoryAccess {
+                kind: GuestMemoryAccessKind::Read,
+                address: 0x1005,
+                byte_len: 1,
+                value: 0xff,
+            }]
+            .into(),
+            precompile_effects: None,
+        };
 
     let lifted = try_lift_zisk_main_next_segment_seed_from_runner_boundary(
         1,
@@ -5358,23 +5369,24 @@ fn runner_pre_boundary_snapshot_skips_redundant_amo_report_replay() {
             0x1234_5678_9abc_def0,
         )
         .expect("AMO scratch address should be supported");
-    let report = GuestMachineReport {
-        address: 0x8000_0000,
-        instruction_byte_len: 4,
-        instruction: RiscvInstruction::Amo {
-            kind: RiscvAmoKind::Add,
-            width: RiscvAmoWidth::Doubleword,
-            rd: 1,
-            rs1: 1,
-            rs2: 2,
-            acquire: false,
-            release: false,
-        },
-        next_pc: 0x8000_0004,
-        register_writes: Vec::new().into(),
-        memory_accesses: Vec::new().into(),
-        precompile_effects: None,
-    };
+    let report =
+        GuestMachineReport {
+            address_and_instruction_len:
+                crate::guest_machine::pack_report_address_and_instruction_len(0x8000_0000, 4),
+            instruction: RiscvInstruction::Amo {
+                kind: RiscvAmoKind::Add,
+                width: RiscvAmoWidth::Doubleword,
+                rd: 1,
+                rs1: 1,
+                rs2: 2,
+                acquire: false,
+                release: false,
+            },
+            next_pc: 0x8000_0004,
+            register_writes: Vec::new().into(),
+            memory_accesses: Vec::new().into(),
+            precompile_effects: None,
+        };
 
     record_zisk_main_runner_pre_boundary_snapshot(
         &mut boundary_snapshot,
@@ -5406,18 +5418,19 @@ fn runner_pre_boundary_snapshot_keeps_dma_extra_params_update() {
         .set_register(9, 0xfeed_face_cafe_babe)
         .expect("test register should be writable");
     let mut boundary_snapshot = ZiskMainRunnerBoundarySnapshot::new(&current_seed);
-    let report = GuestMachineReport {
-        address: 0x8000_0000,
-        instruction_byte_len: 4,
-        instruction: RiscvInstruction::ZiskDmaPrepare {
-            kind: RiscvDmaKind::Memcpy,
-            rs1: 5,
-        },
-        next_pc: 0x8000_0004,
-        register_writes: Vec::new().into(),
-        memory_accesses: Vec::new().into(),
-        precompile_effects: None,
-    };
+    let report =
+        GuestMachineReport {
+            address_and_instruction_len:
+                crate::guest_machine::pack_report_address_and_instruction_len(0x8000_0000, 4),
+            instruction: RiscvInstruction::ZiskDmaPrepare {
+                kind: RiscvDmaKind::Memcpy,
+                rs1: 5,
+            },
+            next_pc: 0x8000_0004,
+            register_writes: Vec::new().into(),
+            memory_accesses: Vec::new().into(),
+            precompile_effects: None,
+        };
 
     record_zisk_main_runner_pre_boundary_snapshot(
         &mut boundary_snapshot,
@@ -5443,31 +5456,32 @@ fn runner_pre_boundary_snapshot_keeps_dma_extra_params_update() {
 
 #[test]
 fn live_report_chunk_finish_emits_amo_boundary_without_returning_last_report() {
-    let report = GuestMachineReport {
-        address: 0x8000_0000,
-        instruction_byte_len: 4,
-        instruction: RiscvInstruction::Amo {
-            kind: RiscvAmoKind::Add,
-            width: RiscvAmoWidth::Doubleword,
-            rd: 1,
-            rs1: 1,
-            rs2: 2,
-            acquire: false,
-            release: false,
-        },
-        next_pc: 0x8000_0004,
-        register_writes: vec![GuestRegisterWrite {
-            index: 1,
-            value: 0x1234_5678_9abc_def0,
-        }]
-        .into(),
-        memory_accesses: vec![
-            memory_read(0x1000, 0x1234_5678_9abc_def0),
-            memory_write(0x1000, 0x1234_5678_9abc_f000),
-        ]
-        .into(),
-        precompile_effects: None,
-    };
+    let report =
+        GuestMachineReport {
+            address_and_instruction_len:
+                crate::guest_machine::pack_report_address_and_instruction_len(0x8000_0000, 4),
+            instruction: RiscvInstruction::Amo {
+                kind: RiscvAmoKind::Add,
+                width: RiscvAmoWidth::Doubleword,
+                rd: 1,
+                rs1: 1,
+                rs2: 2,
+                acquire: false,
+                release: false,
+            },
+            next_pc: 0x8000_0004,
+            register_writes: vec![GuestRegisterWrite {
+                index: 1,
+                value: 0x1234_5678_9abc_def0,
+            }]
+            .into(),
+            memory_accesses: vec![
+                memory_read(0x1000, 0x1234_5678_9abc_def0),
+                memory_write(0x1000, 0x1234_5678_9abc_f000),
+            ]
+            .into(),
+            precompile_effects: None,
+        };
     let shape = guest_machine_report_shape_from_report(&report);
     let mut emitted = Vec::new();
 
@@ -5499,31 +5513,32 @@ fn live_report_chunk_finish_emits_amo_boundary_without_returning_last_report() {
 
 #[test]
 fn runner_boundary_snapshot_does_not_route_amo_report_after_scratch_snapshot() {
-    let report = GuestMachineReport {
-        address: 0x8000_0000,
-        instruction_byte_len: 4,
-        instruction: RiscvInstruction::Amo {
-            kind: RiscvAmoKind::Add,
-            width: RiscvAmoWidth::Doubleword,
-            rd: 1,
-            rs1: 1,
-            rs2: 2,
-            acquire: false,
-            release: false,
-        },
-        next_pc: 0x8000_0004,
-        register_writes: vec![GuestRegisterWrite {
-            index: 1,
-            value: 0x1234_5678_9abc_def0,
-        }]
-        .into(),
-        memory_accesses: vec![
-            memory_read(0x1000, 0x1234_5678_9abc_def0),
-            memory_write(0x1000, 0x1234_5678_9abc_f000),
-        ]
-        .into(),
-        precompile_effects: None,
-    };
+    let report =
+        GuestMachineReport {
+            address_and_instruction_len:
+                crate::guest_machine::pack_report_address_and_instruction_len(0x8000_0000, 4),
+            instruction: RiscvInstruction::Amo {
+                kind: RiscvAmoKind::Add,
+                width: RiscvAmoWidth::Doubleword,
+                rd: 1,
+                rs1: 1,
+                rs2: 2,
+                acquire: false,
+                release: false,
+            },
+            next_pc: 0x8000_0004,
+            register_writes: vec![GuestRegisterWrite {
+                index: 1,
+                value: 0x1234_5678_9abc_def0,
+            }]
+            .into(),
+            memory_accesses: vec![
+                memory_read(0x1000, 0x1234_5678_9abc_def0),
+                memory_write(0x1000, 0x1234_5678_9abc_f000),
+            ]
+            .into(),
+            precompile_effects: None,
+        };
     let shape = guest_machine_report_shape_from_report(&report);
 
     assert!(
@@ -6109,24 +6124,25 @@ fn ordered_memory_access_value_returns_value_after_order_validation() {
 
 #[test]
 fn load_copy_fast_path_parts_match_generic_lowering() {
-    let report = GuestMachineReport {
-        address: 0x8000_0000,
-        instruction_byte_len: 4,
-        instruction: RiscvInstruction::Load {
-            kind: RiscvLoadKind::Ld,
-            rd: 3,
-            rs1: 2,
-            offset: 8,
-        },
-        next_pc: 0x8000_0004,
-        register_writes: vec![GuestRegisterWrite {
-            index: 3,
-            value: 0xaa55,
-        }]
-        .into(),
-        memory_accesses: vec![memory_read(0x108, 0xaa55)].into(),
-        precompile_effects: None,
-    };
+    let report =
+        GuestMachineReport {
+            address_and_instruction_len:
+                crate::guest_machine::pack_report_address_and_instruction_len(0x8000_0000, 4),
+            instruction: RiscvInstruction::Load {
+                kind: RiscvLoadKind::Ld,
+                rd: 3,
+                rs1: 2,
+                offset: 8,
+            },
+            next_pc: 0x8000_0004,
+            register_writes: vec![GuestRegisterWrite {
+                index: 3,
+                value: 0xaa55,
+            }]
+            .into(),
+            memory_accesses: vec![memory_read(0x108, 0xaa55)].into(),
+            precompile_effects: None,
+        };
 
     let (instruction, a_index, b_offset, store_index) =
         load_copy_indirect_register_store_fast_path_parts(3, &report)
@@ -6144,24 +6160,25 @@ fn load_copy_fast_path_parts_match_generic_lowering() {
 
 #[test]
 fn load_copy_fast_path_parts_fall_back_for_non_dominant_loads() {
-    let mut report = GuestMachineReport {
-        address: 0x8000_0000,
-        instruction_byte_len: 4,
-        instruction: RiscvInstruction::Load {
-            kind: RiscvLoadKind::Lw,
-            rd: 3,
-            rs1: 2,
-            offset: 8,
-        },
-        next_pc: 0x8000_0004,
-        register_writes: vec![GuestRegisterWrite {
-            index: 3,
-            value: 0xaa55,
-        }]
-        .into(),
-        memory_accesses: vec![memory_read(0x108, 0xaa55)].into(),
-        precompile_effects: None,
-    };
+    let mut report =
+        GuestMachineReport {
+            address_and_instruction_len:
+                crate::guest_machine::pack_report_address_and_instruction_len(0x8000_0000, 4),
+            instruction: RiscvInstruction::Load {
+                kind: RiscvLoadKind::Lw,
+                rd: 3,
+                rs1: 2,
+                offset: 8,
+            },
+            next_pc: 0x8000_0004,
+            register_writes: vec![GuestRegisterWrite {
+                index: 3,
+                value: 0xaa55,
+            }]
+            .into(),
+            memory_accesses: vec![memory_read(0x108, 0xaa55)].into(),
+            precompile_effects: None,
+        };
     assert!(
         load_copy_indirect_register_store_fast_path_parts(3, &report)
             .expect("signed load should fall back")
@@ -6198,24 +6215,25 @@ fn load_copy_fast_path_parts_fall_back_for_non_dominant_loads() {
 fn load_sign_extend_fast_path_parts_match_generic_lowering() {
     let mut access = memory_read(0x108, 0xffff_ff80);
     access.byte_len = 4;
-    let report = GuestMachineReport {
-        address: 0x8000_0000,
-        instruction_byte_len: 4,
-        instruction: RiscvInstruction::Load {
-            kind: RiscvLoadKind::Lw,
-            rd: 3,
-            rs1: 2,
-            offset: 8,
-        },
-        next_pc: 0x8000_0004,
-        register_writes: vec![GuestRegisterWrite {
-            index: 3,
-            value: 0xffff_ffff_ffff_ff80,
-        }]
-        .into(),
-        memory_accesses: vec![access].into(),
-        precompile_effects: None,
-    };
+    let report =
+        GuestMachineReport {
+            address_and_instruction_len:
+                crate::guest_machine::pack_report_address_and_instruction_len(0x8000_0000, 4),
+            instruction: RiscvInstruction::Load {
+                kind: RiscvLoadKind::Lw,
+                rd: 3,
+                rs1: 2,
+                offset: 8,
+            },
+            next_pc: 0x8000_0004,
+            register_writes: vec![GuestRegisterWrite {
+                index: 3,
+                value: 0xffff_ffff_ffff_ff80,
+            }]
+            .into(),
+            memory_accesses: vec![access].into(),
+            precompile_effects: None,
+        };
 
     let (instruction, a_index, b_offset, store_index) =
         load_sign_extend_indirect_register_store_fast_path_parts(3, &report)
@@ -6242,24 +6260,25 @@ fn load_sign_extend_fast_path_parts_match_generic_lowering() {
 fn load_sign_extend_fast_path_parts_fall_back_for_non_dominant_loads() {
     let mut access = memory_read(0x108, 0xaa55);
     access.byte_len = 4;
-    let mut report = GuestMachineReport {
-        address: 0x8000_0000,
-        instruction_byte_len: 4,
-        instruction: RiscvInstruction::Load {
-            kind: RiscvLoadKind::Lwu,
-            rd: 3,
-            rs1: 2,
-            offset: 8,
-        },
-        next_pc: 0x8000_0004,
-        register_writes: vec![GuestRegisterWrite {
-            index: 3,
-            value: 0xaa55,
-        }]
-        .into(),
-        memory_accesses: vec![access].into(),
-        precompile_effects: None,
-    };
+    let mut report =
+        GuestMachineReport {
+            address_and_instruction_len:
+                crate::guest_machine::pack_report_address_and_instruction_len(0x8000_0000, 4),
+            instruction: RiscvInstruction::Load {
+                kind: RiscvLoadKind::Lwu,
+                rd: 3,
+                rs1: 2,
+                offset: 8,
+            },
+            next_pc: 0x8000_0004,
+            register_writes: vec![GuestRegisterWrite {
+                index: 3,
+                value: 0xaa55,
+            }]
+            .into(),
+            memory_accesses: vec![access].into(),
+            precompile_effects: None,
+        };
     assert!(
         load_sign_extend_indirect_register_store_fast_path_parts(3, &report)
             .expect("unsigned load should fall back")
@@ -6294,20 +6313,21 @@ fn load_sign_extend_fast_path_parts_fall_back_for_non_dominant_loads() {
 
 #[test]
 fn store_copy_fast_path_parts_match_generic_lowering() {
-    let report = GuestMachineReport {
-        address: 0x8000_0000,
-        instruction_byte_len: 4,
-        instruction: RiscvInstruction::Store {
-            kind: RiscvStoreKind::Sd,
-            rs1: 2,
-            rs2: 3,
-            offset: 8,
-        },
-        next_pc: 0x8000_0004,
-        register_writes: vec![].into(),
-        memory_accesses: vec![memory_write(0x108, 0xaa55)].into(),
-        precompile_effects: None,
-    };
+    let report =
+        GuestMachineReport {
+            address_and_instruction_len:
+                crate::guest_machine::pack_report_address_and_instruction_len(0x8000_0000, 4),
+            instruction: RiscvInstruction::Store {
+                kind: RiscvStoreKind::Sd,
+                rs1: 2,
+                rs2: 3,
+                offset: 8,
+            },
+            next_pc: 0x8000_0004,
+            register_writes: vec![].into(),
+            memory_accesses: vec![memory_write(0x108, 0xaa55)].into(),
+            precompile_effects: None,
+        };
 
     let (instruction, a_index, b_index, store_offset) =
         store_copy_indirect_store_fast_path_parts(3, &report)
@@ -6325,20 +6345,21 @@ fn store_copy_fast_path_parts_match_generic_lowering() {
 
 #[test]
 fn store_copy_fast_path_parts_fall_back_for_non_dominant_stores() {
-    let mut report = GuestMachineReport {
-        address: 0x8000_0000,
-        instruction_byte_len: 4,
-        instruction: RiscvInstruction::Store {
-            kind: RiscvStoreKind::Sd,
-            rs1: 0,
-            rs2: 3,
-            offset: 8,
-        },
-        next_pc: 0x8000_0004,
-        register_writes: vec![].into(),
-        memory_accesses: vec![memory_write(0x108, 0xaa55)].into(),
-        precompile_effects: None,
-    };
+    let mut report =
+        GuestMachineReport {
+            address_and_instruction_len:
+                crate::guest_machine::pack_report_address_and_instruction_len(0x8000_0000, 4),
+            instruction: RiscvInstruction::Store {
+                kind: RiscvStoreKind::Sd,
+                rs1: 0,
+                rs2: 3,
+                offset: 8,
+            },
+            next_pc: 0x8000_0004,
+            register_writes: vec![].into(),
+            memory_accesses: vec![memory_write(0x108, 0xaa55)].into(),
+            precompile_effects: None,
+        };
     assert!(store_copy_indirect_store_fast_path_parts(3, &report)
         .expect("zero base register should fall back")
         .is_none());
@@ -6521,8 +6542,8 @@ fn copy_immediate_indirect_store_fast_path_preserves_row_effects() {
 fn simple_copy_fast_path_parts_match_generic_lowering() {
     let reports = [
         GuestMachineReport {
-            address: 0x8000_0000,
-            instruction_byte_len: 4,
+            address_and_instruction_len:
+                crate::guest_machine::pack_report_address_and_instruction_len(0x8000_0000, 4),
             instruction: RiscvInstruction::OpImm {
                 kind: RiscvOpImmKind::Addi,
                 rd: 3,
@@ -6539,8 +6560,8 @@ fn simple_copy_fast_path_parts_match_generic_lowering() {
             precompile_effects: None,
         },
         GuestMachineReport {
-            address: 0x8000_0004,
-            instruction_byte_len: 4,
+            address_and_instruction_len:
+                crate::guest_machine::pack_report_address_and_instruction_len(0x8000_0004, 4),
             instruction: RiscvInstruction::OpImm {
                 kind: RiscvOpImmKind::Addi,
                 rd: 4,
@@ -6557,8 +6578,8 @@ fn simple_copy_fast_path_parts_match_generic_lowering() {
             precompile_effects: None,
         },
         GuestMachineReport {
-            address: 0x8000_0008,
-            instruction_byte_len: 4,
+            address_and_instruction_len:
+                crate::guest_machine::pack_report_address_and_instruction_len(0x8000_0008, 4),
             instruction: RiscvInstruction::Lui {
                 rd: 5,
                 immediate: 0x1234_5000,
@@ -6589,24 +6610,25 @@ fn simple_copy_fast_path_parts_match_generic_lowering() {
 
 #[test]
 fn simple_copy_fast_path_parts_fall_back_for_non_copy_rows() {
-    let mut report = GuestMachineReport {
-        address: 0x8000_0000,
-        instruction_byte_len: 4,
-        instruction: RiscvInstruction::OpImm {
-            kind: RiscvOpImmKind::Addi,
-            rd: 3,
-            rs1: 2,
-            immediate: 8,
-        },
-        next_pc: 0x8000_0004,
-        register_writes: vec![GuestRegisterWrite {
-            index: 3,
-            value: 0xaa55,
-        }]
-        .into(),
-        memory_accesses: vec![].into(),
-        precompile_effects: None,
-    };
+    let mut report =
+        GuestMachineReport {
+            address_and_instruction_len:
+                crate::guest_machine::pack_report_address_and_instruction_len(0x8000_0000, 4),
+            instruction: RiscvInstruction::OpImm {
+                kind: RiscvOpImmKind::Addi,
+                rd: 3,
+                rs1: 2,
+                immediate: 8,
+            },
+            next_pc: 0x8000_0004,
+            register_writes: vec![GuestRegisterWrite {
+                index: 3,
+                value: 0xaa55,
+            }]
+            .into(),
+            memory_accesses: vec![].into(),
+            precompile_effects: None,
+        };
     assert!(simple_copy_register_store_fast_path_parts(3, &report)
         .expect("real add should fall back")
         .is_none());
@@ -6793,24 +6815,25 @@ fn sign_extend_indirect_register_store_fast_path_preserves_row_effects() {
 
 #[test]
 fn no_memory_external_fast_path_parts_match_generic_lowering() {
-    let report = GuestMachineReport {
-        address: 0x8000_0000,
-        instruction_byte_len: 4,
-        instruction: RiscvInstruction::OpImm {
-            kind: RiscvOpImmKind::Ori,
-            rd: 3,
-            rs1: 2,
-            immediate: 0xff,
-        },
-        next_pc: 0x8000_0004,
-        register_writes: vec![GuestRegisterWrite {
-            index: 3,
-            value: 0x1ff,
-        }]
-        .into(),
-        memory_accesses: vec![].into(),
-        precompile_effects: None,
-    };
+    let report =
+        GuestMachineReport {
+            address_and_instruction_len:
+                crate::guest_machine::pack_report_address_and_instruction_len(0x8000_0000, 4),
+            instruction: RiscvInstruction::OpImm {
+                kind: RiscvOpImmKind::Ori,
+                rd: 3,
+                rs1: 2,
+                immediate: 0xff,
+            },
+            next_pc: 0x8000_0004,
+            register_writes: vec![GuestRegisterWrite {
+                index: 3,
+                value: 0x1ff,
+            }]
+            .into(),
+            memory_accesses: vec![].into(),
+            precompile_effects: None,
+        };
     let instruction = lower_guest_report(&report).expect("generic lowering should succeed");
 
     assert_eq!(
@@ -7649,8 +7672,10 @@ fn add256_report() -> GuestMachineReport {
         memory_write(c_address + 24, 0),
     ]);
     GuestMachineReport {
-        address: 0x8000_0000,
-        instruction_byte_len: 4,
+        address_and_instruction_len: crate::guest_machine::pack_report_address_and_instruction_len(
+            0x8000_0000,
+            4,
+        ),
         instruction: RiscvInstruction::ZiskPrecompile {
             kind: RiscvPrecompileKind::Add256,
             rs1: 1,
@@ -7672,8 +7697,9 @@ fn addi_report() -> GuestMachineReport {
 
 fn addi_report_at(address: u64, rd: u8, rs1: u8, immediate: i16, value: u64) -> GuestMachineReport {
     GuestMachineReport {
-        address,
-        instruction_byte_len: 4,
+        address_and_instruction_len: crate::guest_machine::pack_report_address_and_instruction_len(
+            address, 4,
+        ),
         instruction: RiscvInstruction::OpImm {
             kind: RiscvOpImmKind::Addi,
             rd,
@@ -7690,8 +7716,9 @@ fn addi_report_at(address: u64, rd: u8, rs1: u8, immediate: i16, value: u64) -> 
 #[cfg(feature = "cuda")]
 fn add_report_at(address: u64, rd: u8, rs1: u8, rs2: u8, value: u64) -> GuestMachineReport {
     GuestMachineReport {
-        address,
-        instruction_byte_len: 4,
+        address_and_instruction_len: crate::guest_machine::pack_report_address_and_instruction_len(
+            address, 4,
+        ),
         instruction: RiscvInstruction::Op {
             kind: RiscvOpKind::Add,
             rd,
@@ -7708,8 +7735,9 @@ fn add_report_at(address: u64, rd: u8, rs1: u8, rs2: u8, value: u64) -> GuestMac
 #[cfg(feature = "cuda")]
 fn dma_prepare_report_at(address: u64, kind: RiscvDmaKind, rs1: u8) -> GuestMachineReport {
     GuestMachineReport {
-        address,
-        instruction_byte_len: 4,
+        address_and_instruction_len: crate::guest_machine::pack_report_address_and_instruction_len(
+            address, 4,
+        ),
         instruction: RiscvInstruction::ZiskDmaPrepare { kind, rs1 },
         next_pc: address + 4,
         register_writes: Vec::new().into(),

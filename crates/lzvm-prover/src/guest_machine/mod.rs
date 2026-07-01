@@ -652,8 +652,7 @@ fn guest_instruction_byte_len(byte_len: usize) -> u8 {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GuestMachineReport {
-    pub address: u64,
-    pub instruction_byte_len: u8,
+    pub(crate) address_and_instruction_len: u64,
     pub instruction: RiscvInstruction,
     pub next_pc: u64,
     pub register_writes: GuestRegisterWriteList,
@@ -662,6 +661,39 @@ pub struct GuestMachineReport {
 }
 
 impl GuestMachineReport {
+    #[inline(always)]
+    pub fn new(
+        address: u64,
+        instruction_byte_len: u8,
+        instruction: RiscvInstruction,
+        next_pc: u64,
+        register_writes: GuestRegisterWriteList,
+        memory_accesses: GuestMemoryAccessList,
+        precompile_effects: Option<Box<GuestPrecompileReportEffects>>,
+    ) -> Self {
+        Self {
+            address_and_instruction_len: pack_report_address_and_instruction_len(
+                address,
+                instruction_byte_len,
+            ),
+            instruction,
+            next_pc,
+            register_writes,
+            memory_accesses,
+            precompile_effects,
+        }
+    }
+
+    #[inline(always)]
+    pub fn address(&self) -> u64 {
+        self.address_and_instruction_len & !1
+    }
+
+    #[inline(always)]
+    pub fn instruction_byte_len(&self) -> u8 {
+        2 + ((self.address_and_instruction_len & 1) as u8 * 2)
+    }
+
     pub fn precompile_memory_accesses(&self) -> &[GuestMemoryAccess] {
         self.precompile_effects
             .as_deref()
@@ -673,6 +705,16 @@ impl GuestMachineReport {
             .as_deref()
             .and_then(|effects| effects.result)
     }
+}
+
+#[inline(always)]
+pub(crate) fn pack_report_address_and_instruction_len(
+    address: u64,
+    instruction_byte_len: u8,
+) -> u64 {
+    debug_assert_eq!(address & 1, 0);
+    debug_assert!(matches!(instruction_byte_len, 2 | 4));
+    address | u64::from(instruction_byte_len == 4)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1408,18 +1450,18 @@ fn advance_guest_machine_prepared_inner_report_shape_at_pc_into(
     let report_started = advance_timing_started(&timing);
     let shape = effects.report_shape(instruction);
 
-    report.write(GuestMachineReport {
+    report.write(GuestMachineReport::new(
         address,
-        instruction_byte_len: guest_instruction_byte_len(byte_len),
+        guest_instruction_byte_len(byte_len),
         instruction,
         next_pc,
-        register_writes: effects.register_writes,
-        memory_accesses: effects.memory_accesses,
-        precompile_effects: GuestPrecompileReportEffects::from_vec(
+        effects.register_writes,
+        effects.memory_accesses,
+        GuestPrecompileReportEffects::from_vec(
             effects.precompile_memory_accesses,
             effects.precompile_result,
         ),
-    });
+    ));
     record_advance_timing(report_started, timing.as_deref_mut(), |timing| {
         &mut timing.report_duration
     });
@@ -1582,17 +1624,17 @@ fn try_advance_guest_machine_report_fast_path(
             ..
         })
     );
-    report.write(GuestMachineReport {
+    report.write(GuestMachineReport::new(
         address,
-        instruction_byte_len: guest_instruction_byte_len(byte_len),
+        guest_instruction_byte_len(byte_len),
         instruction,
         next_pc,
         register_writes,
-        memory_accesses: memory_access
+        memory_access
             .map(GuestInlineEffectList::one)
             .unwrap_or_default(),
-        precompile_effects: None,
-    });
+        None,
+    ));
     Ok(Some(GuestMachineReportShape {
         instruction,
         has_memory_write,
@@ -2632,7 +2674,7 @@ mod tests {
             std::mem::size_of::<GuestRegisterWriteList>(),
             std::mem::size_of::<GuestRegisterWrite>()
         );
-        assert!(std::mem::size_of::<GuestMachineReport>() <= 88);
+        assert!(std::mem::size_of::<GuestMachineReport>() <= 72);
     }
 
     #[test]
@@ -2949,8 +2991,8 @@ mod tests {
             .expect("test store should update instruction memory");
 
         let report = GuestMachineReport {
-            address: TEST_ENTRY,
-            instruction_byte_len: 4,
+            address_and_instruction_len:
+                crate::guest_machine::pack_report_address_and_instruction_len(TEST_ENTRY, 4),
             instruction: RiscvInstruction::Store {
                 kind: RiscvStoreKind::Sw,
                 rs1: 1,
@@ -3010,8 +3052,8 @@ mod tests {
             .expect("test store should update instruction memory");
 
         let report = GuestMachineReport {
-            address: TEST_ENTRY,
-            instruction_byte_len: 4,
+            address_and_instruction_len:
+                crate::guest_machine::pack_report_address_and_instruction_len(TEST_ENTRY, 4),
             instruction: RiscvInstruction::Store {
                 kind: RiscvStoreKind::Sw,
                 rs1: 1,

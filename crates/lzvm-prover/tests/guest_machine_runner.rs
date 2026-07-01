@@ -619,9 +619,9 @@ fn traces_guest_machine_until_ecall() {
         GuestMachineHalt::Ecall { address: ENTRY + 8 }
     );
     assert_eq!(trace.reports.len(), 2);
-    assert_eq!(trace.reports[0].address, ENTRY);
+    assert_eq!(trace.reports[0].address(), ENTRY);
     assert_eq!(trace.reports[0].next_pc, ENTRY + 4);
-    assert_eq!(trace.reports[1].address, ENTRY + 4);
+    assert_eq!(trace.reports[1].address(), ENTRY + 4);
     assert_eq!(trace.reports[1].next_pc, ENTRY + 8);
     assert_eq!(state.register(1), Some(7));
     assert_eq!(state.register(2), Some(10));
@@ -902,7 +902,7 @@ fn traces_guest_machine_with_zisk_free_call_handler() {
         trace
             .reports
             .iter()
-            .map(|report| (report.address, report.next_pc))
+            .map(|report| (report.address(), report.next_pc))
             .collect::<Vec<_>>(),
         vec![
             (ENTRY, ENTRY + 4),
@@ -1503,10 +1503,10 @@ fn reports_instruction_byte_lengths_for_mixed_width_trace() {
     let trace = run_guest_machine_trace(&mut memory, &mut state, 8).expect("guest should halt");
 
     assert_eq!(trace.reports.len(), 2);
-    assert_eq!(trace.reports[0].address, ENTRY);
-    assert_eq!(trace.reports[0].instruction_byte_len, 2);
-    assert_eq!(trace.reports[1].address, ENTRY + 2);
-    assert_eq!(trace.reports[1].instruction_byte_len, 4);
+    assert_eq!(trace.reports[0].address(), ENTRY);
+    assert_eq!(trace.reports[0].instruction_byte_len(), 2);
+    assert_eq!(trace.reports[1].address(), ENTRY + 2);
+    assert_eq!(trace.reports[1].instruction_byte_len(), 4);
 }
 
 #[test]

@@ -195,7 +195,7 @@ pub fn lower_guest_report(
     report: &GuestMachineReport,
 ) -> Result<ZiskMainInstruction, ZiskMainLowerError> {
     let instruction_size =
-        instruction_size_offset(report.address, usize::from(report.instruction_byte_len))?;
+        instruction_size_offset(report.address(), usize::from(report.instruction_byte_len()))?;
     match report.instruction {
         RiscvInstruction::Branch {
             kind,
@@ -204,7 +204,7 @@ pub fn lower_guest_report(
             offset,
         } => {
             return Ok(lower_branch(
-                report.address,
+                report.address(),
                 instruction_size,
                 kind,
                 rs1,
@@ -213,24 +213,27 @@ pub fn lower_guest_report(
             ));
         }
         RiscvInstruction::Jal { rd, offset } => {
-            return Ok(lower_jal(report.address, instruction_size, rd, offset));
+            return Ok(lower_jal(report.address(), instruction_size, rd, offset));
         }
         RiscvInstruction::Jalr { rd, rs1, offset } => {
-            return lower_jalr(report.address, instruction_size, rd, rs1, offset);
+            return lower_jalr(report.address(), instruction_size, rd, rs1, offset);
         }
         _ => {}
     }
     validate_sequential_next_pc(report)?;
     match report.instruction {
         RiscvInstruction::Lui { rd, immediate } => {
-            Ok(lower_lui(report.address, instruction_size, rd, immediate))
+            Ok(lower_lui(report.address(), instruction_size, rd, immediate))
         }
-        RiscvInstruction::Auipc { rd, immediate } => {
-            Ok(lower_auipc(report.address, instruction_size, rd, immediate))
-        }
-        RiscvInstruction::Fence { .. } => Ok(lower_fence(report.address, instruction_size)),
+        RiscvInstruction::Auipc { rd, immediate } => Ok(lower_auipc(
+            report.address(),
+            instruction_size,
+            rd,
+            immediate,
+        )),
+        RiscvInstruction::Fence { .. } => Ok(lower_fence(report.address(), instruction_size)),
         RiscvInstruction::CsrRead { csr, rd } => {
-            lower_csr_read(report.address, instruction_size, csr, rd)
+            lower_csr_read(report.address(), instruction_size, csr, rd)
         }
         RiscvInstruction::OpImm {
             kind,
@@ -239,14 +242,14 @@ pub fn lower_guest_report(
             immediate,
         } => match kind {
             RiscvOpImmKind::Addi => Ok(lower_addi(
-                report.address,
+                report.address(),
                 instruction_size,
                 rd,
                 rs1,
                 immediate,
             )),
             _ => Ok(binary_immediate_op(
-                report.address,
+                report.address(),
                 instruction_size,
                 rd,
                 rs1,
@@ -260,7 +263,7 @@ pub fn lower_guest_report(
             rs1,
             immediate,
         } => Ok(binary_immediate_word_op(
-            report.address,
+            report.address(),
             instruction_size,
             rd,
             rs1,
@@ -270,10 +273,10 @@ pub fn lower_guest_report(
         RiscvInstruction::Op { kind, rd, rs1, rs2 } => {
             let (op, is_external_op) = op_kind(kind);
             if rd == 0 && is_external_op {
-                Ok(lower_noop_flag(report.address, instruction_size))
+                Ok(lower_noop_flag(report.address(), instruction_size))
             } else {
                 Ok(binary_register_op_with_external(
-                    report.address,
+                    report.address(),
                     instruction_size,
                     rd,
                     rs1,
@@ -286,10 +289,10 @@ pub fn lower_guest_report(
         RiscvInstruction::Op32 { kind, rd, rs1, rs2 } => {
             let (op, is_external_op) = op_32_kind(kind);
             if rd == 0 && is_external_op {
-                Ok(lower_noop_flag(report.address, instruction_size))
+                Ok(lower_noop_flag(report.address(), instruction_size))
             } else {
                 Ok(binary_register_word_op_with_external(
-                    report.address,
+                    report.address(),
                     instruction_size,
                     rd,
                     rs1,
@@ -306,7 +309,7 @@ pub fn lower_guest_report(
             offset,
         } => match load_op_width(kind) {
             Some((op, width)) => Ok(lower_load(
-                report.address,
+                report.address(),
                 instruction_size,
                 rd,
                 rs1,
@@ -321,7 +324,7 @@ pub fn lower_guest_report(
         RiscvInstruction::LoadReserved { width, rd, rs1, .. } => {
             let (op, ind_width) = load_reserved_op_width(width);
             Ok(lower_load(
-                report.address,
+                report.address(),
                 instruction_size,
                 rd,
                 rs1,
@@ -336,7 +339,7 @@ pub fn lower_guest_report(
             rs2,
             offset,
         } => Ok(lower_store(
-            report.address,
+            report.address(),
             instruction_size,
             rs1,
             rs2,
@@ -344,28 +347,28 @@ pub fn lower_guest_report(
             store_width(kind),
         )),
         RiscvInstruction::ZiskPrecompile { kind, rs1, rd } => Ok(lower_precompile(
-            report.address,
+            report.address(),
             instruction_size,
             kind,
             rs1,
             rd,
         )),
         RiscvInstruction::ZiskDmaPrepare { kind, rs1 } => Ok(lower_dma_prepare(
-            report.address,
+            report.address(),
             instruction_size,
             kind,
             rs1,
         )),
         RiscvInstruction::ZiskFcallParam { port, rs1 } => {
-            lower_fcall_param(report.address, instruction_size, port, rs1)
+            lower_fcall_param(report.address(), instruction_size, port, rs1)
         }
         RiscvInstruction::ZiskFcallInvoke { function_id } => Ok(lower_fcall_invoke(
-            report.address,
+            report.address(),
             instruction_size,
             function_id,
         )),
         RiscvInstruction::ZiskFcallResult { rd } => {
-            Ok(lower_fcall_result(report.address, instruction_size, rd))
+            Ok(lower_fcall_result(report.address(), instruction_size, rd))
         }
         _ => Err(ZiskMainLowerError::UnsupportedInstruction {
             instruction: report.instruction,
@@ -375,15 +378,15 @@ pub fn lower_guest_report(
 
 fn validate_sequential_next_pc(report: &GuestMachineReport) -> Result<(), ZiskMainLowerError> {
     let expected_next_pc = report
-        .address
-        .checked_add(report.instruction_byte_len as u64)
+        .address()
+        .checked_add(report.instruction_byte_len() as u64)
         .filter(|next_pc| *next_pc == report.next_pc);
     match expected_next_pc {
         Some(_) => Ok(()),
         None => Err(ZiskMainLowerError::InconsistentSequentialNextPc {
-            pc: report.address,
+            pc: report.address(),
             next_pc: report.next_pc,
-            instruction_byte_len: usize::from(report.instruction_byte_len),
+            instruction_byte_len: usize::from(report.instruction_byte_len()),
         }),
     }
 }

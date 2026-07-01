@@ -922,25 +922,30 @@ fn rejects_unsupported_main_lowering_instruction() {
 }
 
 #[test]
-fn rejects_invalid_instruction_byte_length() {
-    let error = lower_guest_report(&report(
-        3,
-        RiscvInstruction::OpImm {
-            kind: RiscvOpImmKind::Addi,
-            rd: 1,
-            rs1: 0,
-            immediate: 0,
+fn reports_representable_instruction_byte_lengths() {
+    let compressed = report(
+        2,
+        RiscvInstruction::Fence {
+            kind: RiscvFenceKind::Fence,
+            mode: 0,
+            predecessor: 0,
+            successor: 0,
         },
-    ))
-    .expect_err("invalid instruction size should fail");
-
-    assert_eq!(
-        error,
-        ZiskMainLowerError::InvalidInstructionByteLen {
-            pc: PC,
-            byte_len: 3
-        }
     );
+    let standard = report(
+        4,
+        RiscvInstruction::Fence {
+            kind: RiscvFenceKind::Fence,
+            mode: 0,
+            predecessor: 0,
+            successor: 0,
+        },
+    );
+
+    assert_eq!(compressed.address(), PC);
+    assert_eq!(compressed.instruction_byte_len(), 2);
+    assert_eq!(standard.address(), PC);
+    assert_eq!(standard.instruction_byte_len(), 4);
 }
 
 #[test]
@@ -980,17 +985,17 @@ fn report_with_next_pc(
     next_pc: u64,
     instruction: RiscvInstruction,
 ) -> GuestMachineReport {
-    GuestMachineReport {
-        address: PC,
-        instruction_byte_len: instruction_byte_len
+    GuestMachineReport::new(
+        PC,
+        instruction_byte_len
             .try_into()
             .expect("test instruction byte length should fit in u8"),
         instruction,
         next_pc,
-        register_writes: Vec::new().into(),
-        memory_accesses: Vec::new().into(),
-        precompile_effects: None,
-    }
+        Vec::new().into(),
+        Vec::new().into(),
+        None,
+    )
 }
 
 fn register_store(index: u8) -> ZiskMainStore {

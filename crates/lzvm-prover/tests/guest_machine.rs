@@ -616,7 +616,7 @@ fn advances_integer_instructions_and_preserves_zero_register() {
 
     let report =
         advance_guest_machine(&mut memory, &mut state).expect("instruction should execute");
-    assert_eq!(report.address, ENTRY);
+    assert_eq!(report.address(), ENTRY);
     assert_eq!(report.next_pc, ENTRY + 4);
     assert_eq!(
         report.instruction,
@@ -1708,7 +1708,7 @@ fn advances_fence_instructions_as_noops() {
 
     for (kind, mode, predecessor, successor, address, next_pc) in cases {
         let report = advance_guest_machine(&mut memory, &mut state).expect("fence should execute");
-        assert_eq!(report.address, address);
+        assert_eq!(report.address(), address);
         assert_eq!(report.next_pc, next_pc);
         assert_eq!(
             report.instruction,

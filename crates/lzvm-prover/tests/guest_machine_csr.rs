@@ -119,7 +119,7 @@ fn advances_machine_csr_reads() {
             advance_guest_machine(&mut memory, &mut state).expect("csr read should execute");
         let address = ENTRY + (index as u64) * 4;
 
-        assert_eq!(report.address, address);
+        assert_eq!(report.address(), address);
         assert_eq!(report.next_pc, address + 4);
         assert_eq!(report.instruction, RiscvInstruction::CsrRead { csr, rd });
         assert_eq!(state.register(usize::from(rd)), Some(value));
@@ -160,7 +160,7 @@ fn advances_counter_csr_reads_with_deterministic_ticks() {
             advance_guest_machine(&mut memory, &mut state).expect("csr read should execute");
         let address = ENTRY + (index as u64) * 4;
 
-        assert_eq!(report.address, address);
+        assert_eq!(report.address(), address);
         assert_eq!(report.next_pc, address + 4);
         assert_eq!(report.instruction, RiscvInstruction::CsrRead { csr, rd });
         assert_eq!(state.register(usize::from(rd)), Some(value));
