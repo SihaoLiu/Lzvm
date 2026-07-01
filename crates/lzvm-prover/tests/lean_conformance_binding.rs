@@ -18,21 +18,51 @@ fn lean_conformance_binding_exports_core_contract_projection() {
         "top-level Lean module should import conformance"
     );
     assert!(
+        lean_binding::contains_import(&lean_source, "Lzvm.GuestReportMemoryAccess")
+            && lean_binding::contains_import(&lean_source, "Lzvm.GuestReportRegisterWrite"),
+        "Lean runtime conformance should import the guest report storage models"
+    );
+    assert!(
         lean_source.contains("RuntimeConformanceValidation")
             && lean_source.contains("RuntimeArtifactSoundnessObligations")
+            && lean_source.contains("RuntimeGuestReportStorageEvidence")
+            && lean_source.contains("RuntimeGuestReportStorageLogicalViews")
+            && lean_source.contains("CompactGuestRegisterWriteCanonical")
+            && lean_source.contains("FoldedGuestMemoryEffectsCanonical")
             && lean_source.contains("RuntimeVerifierCoreContract system publicInput proof")
             && lean_source.contains("SoundWitness system publicInput proof"),
-        "Lean runtime conformance should expose checked soundness and verifier core projection"
+        "Lean runtime conformance should expose report storage evidence, checked soundness, and verifier core projection"
     );
     lean_binding::assert_theorem_declarations(
         &lean_source,
         &[
+            "runtime_guest_report_storage_evidence_register_writes",
+            "runtime_guest_report_storage_evidence_register_write_length_le_one",
+            "runtime_guest_report_storage_evidence_normal_memory_accesses",
+            "runtime_guest_report_storage_evidence_precompile_memory_accesses",
+            "runtime_guest_report_storage_evidence_precompile_result",
+            "runtime_guest_report_storage_evidence_logical_views",
             "runtime_artifact_checked_acceptance_sound",
             "runtime_artifact_checked_acceptance_verifier_core_contract",
             "runtime_artifact_checked_acceptance_evidence_core_and_sound",
             "runtime_artifact_checked_acceptance_audited_sound",
             "runtime_conformance_agreement_checked_acceptance_audited_sound",
         ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_guest_report_storage_evidence_logical_views",
+        &[
+            "runtime_guest_report_storage_evidence_register_writes",
+            "runtime_guest_report_storage_evidence_normal_memory_accesses",
+            "runtime_guest_report_storage_evidence_precompile_memory_accesses",
+            "runtime_guest_report_storage_evidence_precompile_result",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_guest_report_storage_evidence_register_write_length_le_one",
+        &["compact_guest_register_write_canonical_length_le_one"],
     );
     lean_binding::assert_theorem_body_contains(
         &lean_source,

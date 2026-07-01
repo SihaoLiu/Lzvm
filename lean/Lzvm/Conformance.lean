@@ -4,6 +4,8 @@ Released under MIT OR Apache-2.0 license.
 Authors: Sihao Liu
 -/
 
+import Lzvm.GuestReportMemoryAccess
+import Lzvm.GuestReportRegisterWrite
 import Lzvm.Soundness
 
 /-!
@@ -22,6 +24,79 @@ soundness model.
 structure RuntimeArtifact where
   id : Nat
 deriving DecidableEq, Repr
+
+structure RuntimeGuestReportStorageEvidence where
+  registerDestination : GuestRegisterWriteDestination
+  compactRegisterWrite : CompactGuestRegisterWrite
+  registerWrites : List GuestRegisterWrite
+  memoryStorage : GuestMemoryAccessStorage
+  normalMemoryAccesses : List GuestMemoryAccess
+  precompileMemoryAccesses : List GuestMemoryAccess
+  precompileResult : Option Nat
+  registerCanonical :
+    CompactGuestRegisterWriteCanonical
+      registerDestination
+      compactRegisterWrite
+      registerWrites
+  memoryCanonical :
+    FoldedGuestMemoryEffectsCanonical
+      memoryStorage
+      normalMemoryAccesses
+      precompileMemoryAccesses
+      precompileResult
+
+def RuntimeGuestReportStorageLogicalViews
+    (evidence : RuntimeGuestReportStorageEvidence) : Prop :=
+  evidence.registerWrites =
+      reconstructGuestRegisterWrites
+        evidence.registerDestination
+        evidence.compactRegisterWrite
+    /\ evidence.memoryStorage.normalAccesses = evidence.normalMemoryAccesses
+    /\ evidence.memoryStorage.precompileAccesses = evidence.precompileMemoryAccesses
+    /\ evidence.memoryStorage.precompileResult = evidence.precompileResult
+
+theorem runtime_guest_report_storage_evidence_register_writes
+    (evidence : RuntimeGuestReportStorageEvidence) :
+    evidence.registerWrites =
+      reconstructGuestRegisterWrites
+        evidence.registerDestination
+        evidence.compactRegisterWrite := by
+  exact evidence.registerCanonical
+
+theorem runtime_guest_report_storage_evidence_register_write_length_le_one
+    (evidence : RuntimeGuestReportStorageEvidence) :
+    evidence.registerWrites.length <= 1 := by
+  exact
+    compact_guest_register_write_canonical_length_le_one
+      evidence.registerCanonical
+
+theorem runtime_guest_report_storage_evidence_normal_memory_accesses
+    (evidence : RuntimeGuestReportStorageEvidence) :
+    evidence.memoryStorage.normalAccesses = evidence.normalMemoryAccesses := by
+  exact evidence.memoryCanonical.left
+
+theorem runtime_guest_report_storage_evidence_precompile_memory_accesses
+    (evidence : RuntimeGuestReportStorageEvidence) :
+    evidence.memoryStorage.precompileAccesses =
+      evidence.precompileMemoryAccesses := by
+  exact evidence.memoryCanonical.right.left
+
+theorem runtime_guest_report_storage_evidence_precompile_result
+    (evidence : RuntimeGuestReportStorageEvidence) :
+    evidence.memoryStorage.precompileResult = evidence.precompileResult := by
+  exact evidence.memoryCanonical.right.right
+
+theorem runtime_guest_report_storage_evidence_logical_views
+    (evidence : RuntimeGuestReportStorageEvidence) :
+    RuntimeGuestReportStorageLogicalViews evidence := by
+  exact
+    And.intro
+      (runtime_guest_report_storage_evidence_register_writes evidence)
+      (And.intro
+        (runtime_guest_report_storage_evidence_normal_memory_accesses evidence)
+        (And.intro
+          (runtime_guest_report_storage_evidence_precompile_memory_accesses evidence)
+          (runtime_guest_report_storage_evidence_precompile_result evidence)))
 
 structure RuntimeConformanceValidation (system : VerifierModel) where
   artifactAccepted : RuntimeArtifact -> PublicInput -> Proof -> Prop
