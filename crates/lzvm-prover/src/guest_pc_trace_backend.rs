@@ -11,7 +11,8 @@ use std::time::{Duration, Instant};
 
 use crate::guest_instruction::{
     RiscvAmoKind, RiscvAmoWidth, RiscvBranchKind, RiscvDmaKind, RiscvInstruction, RiscvLoadKind,
-    RiscvOpImmKind, RiscvOpKind, RiscvPrecompileKind, RiscvStoreKind,
+    RiscvOp32Kind, RiscvOpImm32Kind, RiscvOpImmKind, RiscvOpKind, RiscvPrecompileKind,
+    RiscvStoreKind,
 };
 use crate::guest_machine::{
     advance_guest_machine_with_prepared_fcalls_report_shape,
@@ -10634,6 +10635,19 @@ fn validate_and_apply_zisk_main_report(
             )?;
             return Ok(1);
         }
+        if let Some((instruction, parts)) = direct_external_report_fast_path_parts(row, report)? {
+            apply_no_memory_fast_path(
+                row,
+                instruction,
+                ZiskMainReportEffects::from_report(report),
+                report.next_pc,
+                parts,
+                state,
+                context,
+                &mut visit,
+            )?;
+            return Ok(1);
+        }
     }
     let lowering_started = detail_duration_started(&timing, detail_timing);
     let lowered_row = lower_single_zisk_main_report_row(row, report, &mut next_instruction)?;
@@ -11215,6 +11229,285 @@ fn simple_copy_register_store_fast_path_parts(
         is_precompiled: false,
     };
     Ok(Some((instruction, b_index, store_index)))
+}
+
+#[inline(always)]
+fn direct_external_report_fast_path_parts(
+    row: usize,
+    report: &GuestMachineReport,
+) -> Result<Option<(ZiskMainInstruction, ZiskMainNoMemoryFastPathParts)>, GuestPcTraceBackendError>
+{
+    if !report.memory_accesses.is_empty() || !report.precompile_memory_accesses().is_empty() {
+        return Ok(None);
+    }
+    let pc = report.address();
+    let (a, a_index, b, b_index, op, store, store_index, jmp_offset1, jmp_offset2, m32) =
+        match report.instruction {
+            RiscvInstruction::Branch {
+                kind,
+                rs1,
+                rs2,
+                offset,
+            } => {
+                let instruction_size = direct_instruction_size(row, report)?;
+                let (op, jmp_offset1, jmp_offset2) =
+                    direct_branch_op_offsets(kind, instruction_size, i64::from(offset));
+                let (a, a_index) = direct_register_source(rs1);
+                let (b, b_index) = direct_register_source(rs2);
+                (
+                    a,
+                    a_index,
+                    b,
+                    b_index,
+                    op,
+                    ZiskMainStore::None,
+                    None,
+                    jmp_offset1,
+                    jmp_offset2,
+                    false,
+                )
+            }
+            RiscvInstruction::OpImm {
+                kind,
+                rd,
+                rs1,
+                immediate,
+            } => {
+                let op = match kind {
+                    RiscvOpImmKind::Addi if rd != 0 && rs1 != 0 && immediate != 0 => {
+                        ZiskMainOp::Add
+                    }
+                    RiscvOpImmKind::Addi => return Ok(None),
+                    RiscvOpImmKind::Slti => ZiskMainOp::Lt,
+                    RiscvOpImmKind::Sltiu => ZiskMainOp::Ltu,
+                    RiscvOpImmKind::Xori => ZiskMainOp::Xor,
+                    RiscvOpImmKind::Ori => ZiskMainOp::Or,
+                    RiscvOpImmKind::Andi => ZiskMainOp::And,
+                    RiscvOpImmKind::Slli => ZiskMainOp::Sll,
+                    RiscvOpImmKind::Srli => ZiskMainOp::Srl,
+                    RiscvOpImmKind::Srai => ZiskMainOp::Sra,
+                };
+                let instruction_size = match direct_sequential_instruction_size(row, report)? {
+                    Some(instruction_size) => instruction_size,
+                    None => return Ok(None),
+                };
+                let (a, a_index) = direct_register_source(rs1);
+                let (store, store_index) = direct_register_store(rd);
+                (
+                    a,
+                    a_index,
+                    ZiskMainSource::Immediate(i64::from(immediate) as u64),
+                    None,
+                    op,
+                    store,
+                    store_index,
+                    instruction_size,
+                    instruction_size,
+                    false,
+                )
+            }
+            RiscvInstruction::OpImm32 {
+                kind,
+                rd,
+                rs1,
+                immediate,
+            } => {
+                let op = match kind {
+                    RiscvOpImm32Kind::Addiw => ZiskMainOp::AddW,
+                    RiscvOpImm32Kind::Slliw => ZiskMainOp::SllW,
+                    RiscvOpImm32Kind::Srliw => ZiskMainOp::SrlW,
+                    RiscvOpImm32Kind::Sraiw => ZiskMainOp::SraW,
+                };
+                let instruction_size = match direct_sequential_instruction_size(row, report)? {
+                    Some(instruction_size) => instruction_size,
+                    None => return Ok(None),
+                };
+                let (a, a_index) = direct_register_source(rs1);
+                let (store, store_index) = direct_register_store(rd);
+                (
+                    a,
+                    a_index,
+                    ZiskMainSource::Immediate(i64::from(immediate) as u64),
+                    None,
+                    op,
+                    store,
+                    store_index,
+                    instruction_size,
+                    instruction_size,
+                    true,
+                )
+            }
+            RiscvInstruction::Op { kind, rd, rs1, rs2 } => {
+                if rd == 0 {
+                    return Ok(None);
+                }
+                let op = match kind {
+                    RiscvOpKind::Add => ZiskMainOp::Add,
+                    RiscvOpKind::Sub => ZiskMainOp::Sub,
+                    RiscvOpKind::Sll => ZiskMainOp::Sll,
+                    RiscvOpKind::Slt => ZiskMainOp::Lt,
+                    RiscvOpKind::Sltu => ZiskMainOp::Ltu,
+                    RiscvOpKind::Xor => ZiskMainOp::Xor,
+                    RiscvOpKind::Srl => ZiskMainOp::Srl,
+                    RiscvOpKind::Sra => ZiskMainOp::Sra,
+                    RiscvOpKind::Or => ZiskMainOp::Or,
+                    RiscvOpKind::And => ZiskMainOp::And,
+                    RiscvOpKind::Mul => ZiskMainOp::Mul,
+                    RiscvOpKind::Mulh => ZiskMainOp::Mulh,
+                    RiscvOpKind::Mulhsu => ZiskMainOp::Mulhsu,
+                    RiscvOpKind::Mulhu => ZiskMainOp::Mulhu,
+                    RiscvOpKind::Div => ZiskMainOp::Div,
+                    RiscvOpKind::Divu => ZiskMainOp::Divu,
+                    RiscvOpKind::Rem => ZiskMainOp::Rem,
+                    RiscvOpKind::Remu => ZiskMainOp::Remu,
+                };
+                let instruction_size = match direct_sequential_instruction_size(row, report)? {
+                    Some(instruction_size) => instruction_size,
+                    None => return Ok(None),
+                };
+                let (a, a_index) = direct_register_source(rs1);
+                let (b, b_index) = direct_register_source(rs2);
+                let (store, store_index) = direct_register_store(rd);
+                (
+                    a,
+                    a_index,
+                    b,
+                    b_index,
+                    op,
+                    store,
+                    store_index,
+                    instruction_size,
+                    instruction_size,
+                    false,
+                )
+            }
+            RiscvInstruction::Op32 { kind, rd, rs1, rs2 } => {
+                if rd == 0 {
+                    return Ok(None);
+                }
+                let op = match kind {
+                    RiscvOp32Kind::Addw => ZiskMainOp::AddW,
+                    RiscvOp32Kind::Subw => ZiskMainOp::SubW,
+                    RiscvOp32Kind::Sllw => ZiskMainOp::SllW,
+                    RiscvOp32Kind::Srlw => ZiskMainOp::SrlW,
+                    RiscvOp32Kind::Sraw => ZiskMainOp::SraW,
+                    RiscvOp32Kind::Mulw => ZiskMainOp::MulW,
+                    RiscvOp32Kind::Divw => ZiskMainOp::DivW,
+                    RiscvOp32Kind::Divuw => ZiskMainOp::DivuW,
+                    RiscvOp32Kind::Remw => ZiskMainOp::RemW,
+                    RiscvOp32Kind::Remuw => ZiskMainOp::RemuW,
+                };
+                let instruction_size = match direct_sequential_instruction_size(row, report)? {
+                    Some(instruction_size) => instruction_size,
+                    None => return Ok(None),
+                };
+                let (a, a_index) = direct_register_source(rs1);
+                let (b, b_index) = direct_register_source(rs2);
+                let (store, store_index) = direct_register_store(rd);
+                (
+                    a,
+                    a_index,
+                    b,
+                    b_index,
+                    op,
+                    store,
+                    store_index,
+                    instruction_size,
+                    instruction_size,
+                    true,
+                )
+            }
+            _ => return Ok(None),
+        };
+    Ok(Some((
+        ZiskMainInstruction {
+            pc,
+            a,
+            b,
+            op,
+            store,
+            store_pc: false,
+            set_pc: false,
+            jmp_offset1,
+            jmp_offset2,
+            ind_width: 0,
+            m32,
+            is_external_op: true,
+            is_precompiled: false,
+        },
+        ZiskMainNoMemoryFastPathParts {
+            a_index,
+            b_index,
+            store_index,
+        },
+    )))
+}
+
+#[inline(always)]
+fn direct_register_source(index: u8) -> (ZiskMainSource, Option<u8>) {
+    if index == 0 {
+        (ZiskMainSource::Immediate(0), None)
+    } else {
+        (ZiskMainSource::Register(index), Some(index))
+    }
+}
+
+#[inline(always)]
+fn direct_register_store(index: u8) -> (ZiskMainStore, Option<u8>) {
+    if index == 0 {
+        (ZiskMainStore::None, None)
+    } else {
+        (ZiskMainStore::Register(index), Some(index))
+    }
+}
+
+#[inline(always)]
+fn direct_branch_op_offsets(
+    kind: RiscvBranchKind,
+    instruction_size: i64,
+    offset: i64,
+) -> (ZiskMainOp, i64, i64) {
+    match kind {
+        RiscvBranchKind::Beq => (ZiskMainOp::Eq, offset, instruction_size),
+        RiscvBranchKind::Bne => (ZiskMainOp::Eq, instruction_size, offset),
+        RiscvBranchKind::Blt => (ZiskMainOp::Lt, offset, instruction_size),
+        RiscvBranchKind::Bge => (ZiskMainOp::Lt, instruction_size, offset),
+        RiscvBranchKind::Bltu => (ZiskMainOp::Ltu, offset, instruction_size),
+        RiscvBranchKind::Bgeu => (ZiskMainOp::Ltu, instruction_size, offset),
+    }
+}
+
+#[inline(always)]
+fn direct_instruction_size(
+    row: usize,
+    report: &GuestMachineReport,
+) -> Result<i64, GuestPcTraceBackendError> {
+    match report.instruction_byte_len() {
+        2 | 4 => Ok(report.instruction_byte_len() as i64),
+        byte_len => Err(GuestPcTraceBackendError::ZiskMainLower {
+            row,
+            source: ZiskMainLowerError::InvalidInstructionByteLen {
+                pc: report.address(),
+                byte_len: usize::from(byte_len),
+            },
+        }),
+    }
+}
+
+#[inline(always)]
+fn direct_sequential_instruction_size(
+    row: usize,
+    report: &GuestMachineReport,
+) -> Result<Option<i64>, GuestPcTraceBackendError> {
+    let instruction_size = direct_instruction_size(row, report)?;
+    let Some(expected_next_pc) = report.address().checked_add(instruction_size as u64) else {
+        return Ok(None);
+    };
+    if expected_next_pc == report.next_pc {
+        Ok(Some(instruction_size))
+    } else {
+        Ok(None)
+    }
 }
 
 #[inline(always)]

@@ -10784,6 +10784,38 @@ fn guest_pc_copy_fast_path_caches_indirect_layout_check() {
 }
 
 #[test]
+fn guest_pc_direct_external_fast_path_covers_no_memory_ops() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let source_path = crate_root.join("src/guest_pc_trace_backend.rs");
+    let source = std::fs::read_to_string(&source_path).expect("guest PC trace source should read");
+    let validate_body = function_body(
+        &source,
+        concat!("fn validate_and_apply_", "zi", "sk", "_main_report"),
+        concat!(
+            "fn validate_and_apply_",
+            "zi",
+            "sk",
+            "_main_lowered_report_rows"
+        ),
+    );
+    let direct_body = function_body(
+        &source,
+        "fn direct_external_report_fast_path_parts",
+        "fn direct_register_source",
+    );
+
+    assert!(
+        validate_body.contains("direct_external_report_fast_path_parts(row, report)")
+            && direct_body.contains("RiscvInstruction::OpImm")
+            && direct_body.contains("RiscvInstruction::OpImm32")
+            && direct_body.contains("RiscvInstruction::Branch")
+            && direct_body.contains("ZiskMainOp::AddW")
+            && !direct_body.contains("lower_guest_report"),
+        "no-memory external rows should bypass generic lowering"
+    );
+}
+
+#[test]
 fn memory_column_writer_counts_matches_in_one_pass() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let source_path = crate_root.join("src/guest_pc_trace_backend.rs");
