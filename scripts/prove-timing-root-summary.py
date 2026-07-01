@@ -3346,6 +3346,7 @@ def data_residency_action_hint(
         in {
             "retained_source_disabled_external_rebuild",
             "retained_source_budget_rejected_external_rebuild",
+            "partial_retained_source_external_rebuild",
         }
         and cuda_transfer_hint == "reduce_bulk_h2d_source_uploads"
         and segment_commit_cuda_memory_total_bytes > 0
