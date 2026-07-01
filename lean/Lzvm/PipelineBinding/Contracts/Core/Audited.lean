@@ -53,6 +53,51 @@ theorem runtime_pipeline_binding_evidence_audited_core_contract
           (And.intro pcsAndFri.left
             (And.intro pcsAndFri.right coreContract))))
 
+theorem runtime_pipeline_binding_evidence_audited_soundness_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    {validation : RuntimePipelineBindingValidation system}
+    {artifact : RuntimeArtifact}
+    {publicInput : PublicInput}
+    {proof : Proof}
+    {requiresExternalSource : Prop} :
+    RuntimePipelineBindingEvidence
+        system
+        validation
+        artifact
+        publicInput
+        proof
+        requiresExternalSource ->
+      RequiredCryptographicAssumptionStatements assumptions.crypto
+        /\ RequiredSemanticAssumptionStatements assumptions.semantic
+        /\ system.transcriptBound publicInput proof
+        /\ system.publicInputBound publicInput proof
+        /\ system.pcsOpeningsValid publicInput proof
+        /\ system.friQueriesValid publicInput proof
+        /\ RuntimeVerifierCoreContract system publicInput proof := by
+  intro evidence
+  have auditedCore :=
+    runtime_pipeline_binding_evidence_audited_core_contract
+      assumptions
+      evidence
+  have auditedAssumptions :=
+    assumption_bundle_carries_required_evidence assumptions
+  rcases auditedCore with
+    ⟨_cryptoEvidence,
+      transcriptBound,
+      publicInputBound,
+      pcsOpenings,
+      friQueries,
+      coreContract⟩
+  exact
+    ⟨auditedAssumptions.left,
+      auditedAssumptions.right,
+      transcriptBound,
+      publicInputBound,
+      pcsOpenings,
+      friQueries,
+      coreContract⟩
+
 theorem runtime_pipeline_binding_checked_acceptance_audited_query_opening_core_sound_contract
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
