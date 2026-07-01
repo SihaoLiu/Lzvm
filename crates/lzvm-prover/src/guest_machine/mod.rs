@@ -521,6 +521,33 @@ impl<'a> IntoIterator for &'a GuestRegisterWriteList {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub(crate) struct GuestRegisterWriteValue {
+    value: u64,
+}
+
+impl GuestRegisterWriteValue {
+    pub(crate) fn new(value: u64) -> Self {
+        Self { value }
+    }
+
+    fn from_register_writes(register_writes: GuestRegisterWriteList) -> Self {
+        Self::new(register_writes.entry.value)
+    }
+
+    fn register_writes(self, instruction: RiscvInstruction) -> GuestRegisterWriteList {
+        guest_instruction_register_write_index(instruction).map_or_else(
+            GuestRegisterWriteList::default,
+            |index| {
+                GuestRegisterWriteList::one(GuestRegisterWrite {
+                    index,
+                    value: self.value,
+                })
+            },
+        )
+    }
+}
+
 type GuestRegisterRollbackList = SmallVec<[(u8, u64); 1]>;
 pub type GuestPrecompileMemoryAccessList = Box<[GuestMemoryAccess]>;
 
@@ -828,7 +855,7 @@ pub struct GuestMachineReport {
     pub(crate) address_and_instruction_len: u64,
     pub instruction: RiscvInstruction,
     pub next_pc: u64,
-    pub register_writes: GuestRegisterWriteList,
+    pub(crate) register_write_value: GuestRegisterWriteValue,
     pub memory_accesses: GuestMemoryAccessList,
 }
 
@@ -850,7 +877,7 @@ impl GuestMachineReport {
             ),
             instruction,
             next_pc,
-            register_writes,
+            register_write_value: GuestRegisterWriteValue::from_register_writes(register_writes),
             memory_accesses: GuestMemoryAccessList::with_precompile_effects(
                 memory_accesses,
                 precompile_effects,
@@ -876,6 +903,10 @@ impl GuestMachineReport {
         self.memory_accesses.precompile_result()
     }
 
+    pub fn register_writes(&self) -> GuestRegisterWriteList {
+        self.register_write_value.register_writes(self.instruction)
+    }
+
     #[cfg(test)]
     pub(crate) fn precompile_effects_mut(&mut self) -> Option<&mut GuestPrecompileReportEffects> {
         self.memory_accesses.precompile_effects_mut()
@@ -899,6 +930,28 @@ pub(crate) fn pack_report_address_and_instruction_len(
     debug_assert_eq!(address & 1, 0);
     debug_assert!(matches!(instruction_byte_len, 2 | 4));
     address | u64::from(instruction_byte_len == 4)
+}
+
+fn guest_instruction_register_write_index(instruction: RiscvInstruction) -> Option<u8> {
+    let index = match instruction {
+        RiscvInstruction::Lui { rd, .. }
+        | RiscvInstruction::Auipc { rd, .. }
+        | RiscvInstruction::Jal { rd, .. }
+        | RiscvInstruction::Jalr { rd, .. }
+        | RiscvInstruction::Load { rd, .. }
+        | RiscvInstruction::OpImm { rd, .. }
+        | RiscvInstruction::OpImm32 { rd, .. }
+        | RiscvInstruction::Op { rd, .. }
+        | RiscvInstruction::Op32 { rd, .. }
+        | RiscvInstruction::Amo { rd, .. }
+        | RiscvInstruction::LoadReserved { rd, .. }
+        | RiscvInstruction::StoreConditional { rd, .. }
+        | RiscvInstruction::CsrRead { rd, .. }
+        | RiscvInstruction::ZiskPrecompile { rd, .. }
+        | RiscvInstruction::ZiskFcallResult { rd } => rd,
+        _ => 0,
+    };
+    (index != 0).then_some(index)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -3184,7 +3237,7 @@ mod tests {
                 offset: 0,
             },
             next_pc: TEST_ENTRY + 4,
-            register_writes: GuestRegisterWriteList::default(),
+            register_write_value: GuestRegisterWriteValue::default(),
             memory_accesses: vec![GuestMemoryAccess {
                 kind: GuestMemoryAccessKind::Write,
                 address: TEST_ENTRY,
@@ -3244,7 +3297,7 @@ mod tests {
                 offset: 0,
             },
             next_pc: TEST_ENTRY + 4,
-            register_writes: GuestRegisterWriteList::default(),
+            register_write_value: GuestRegisterWriteValue::default(),
             memory_accesses: vec![GuestMemoryAccess {
                 kind: GuestMemoryAccessKind::Write,
                 address: TEST_ENTRY + 0x1000,

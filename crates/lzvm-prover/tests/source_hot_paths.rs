@@ -8831,8 +8831,10 @@ fn guest_machine_reports_inline_common_effect_storage() {
             && source.contains("entry: GuestRegisterWrite")
             && source.contains("entry: GuestRegisterWrite { index: 0, value: 0 }")
             && source.contains("usize::from(self.entry.index != 0)")
-            && source.contains("GuestRegisterWriteList::one"),
-        "guest register writes should use one compact inline slot with x0 as the empty sentinel"
+            && source.contains("GuestRegisterWriteList::one")
+            && source.contains("pub(crate) struct GuestRegisterWriteValue")
+            && report_body.contains("register_write_value: GuestRegisterWriteValue"),
+        "guest reports should store only the register write value and derive the destination from the instruction"
     );
     assert!(
         source.contains("pub struct GuestMemoryAccessList")
@@ -8850,7 +8852,7 @@ fn guest_machine_reports_inline_common_effect_storage() {
     );
     assert!(
         body.contains("register_writes: GuestRegisterWriteList"),
-        "guest machine reports should inline common small effect lists"
+        "guest instruction effects should keep one compact inline register write during execution"
     );
     assert!(
         body.contains("memory_accesses: GuestMemoryAccessList"),
@@ -8897,7 +8899,7 @@ fn guest_machine_reports_inline_common_effect_storage() {
 #[test]
 fn guest_machine_report_record_stays_cache_line_pair_sized() {
     assert!(
-        std::mem::size_of::<GuestMachineReport>() <= 64,
+        std::mem::size_of::<GuestMachineReport>() <= 56,
         "guest trace reports should keep compact inline effect lists; got {} bytes",
         std::mem::size_of::<GuestMachineReport>()
     );

@@ -3,7 +3,7 @@ use lzvm_prover::guest_instruction::{
     RiscvLoadKind, RiscvOp32Kind, RiscvOpImm32Kind, RiscvOpImmKind, RiscvOpKind,
     RiscvPrecompileKind, RiscvStoreKind,
 };
-use lzvm_prover::guest_machine::{GuestMachineReport, ZISK_ARCHITECTURE_ID};
+use lzvm_prover::guest_machine::{GuestMachineReport, GuestRegisterWrite, ZISK_ARCHITECTURE_ID};
 use lzvm_prover::zisk_fcalls::ZISK_INPUT_ADDRESS;
 use lzvm_prover::zisk_main::{
     lower_guest_report, ZiskMainLowerError, ZiskMainOp, ZiskMainSource, ZiskMainStore,
@@ -992,10 +992,36 @@ fn report_with_next_pc(
             .expect("test instruction byte length should fit in u8"),
         instruction,
         next_pc,
-        Vec::new().into(),
+        synthetic_register_writes(instruction).into(),
         Vec::new().into(),
         None,
     )
+}
+
+fn synthetic_register_writes(instruction: RiscvInstruction) -> Vec<GuestRegisterWrite> {
+    let index = match instruction {
+        RiscvInstruction::Lui { rd, .. }
+        | RiscvInstruction::Auipc { rd, .. }
+        | RiscvInstruction::Jal { rd, .. }
+        | RiscvInstruction::Jalr { rd, .. }
+        | RiscvInstruction::Load { rd, .. }
+        | RiscvInstruction::OpImm { rd, .. }
+        | RiscvInstruction::OpImm32 { rd, .. }
+        | RiscvInstruction::Op { rd, .. }
+        | RiscvInstruction::Op32 { rd, .. }
+        | RiscvInstruction::Amo { rd, .. }
+        | RiscvInstruction::LoadReserved { rd, .. }
+        | RiscvInstruction::StoreConditional { rd, .. }
+        | RiscvInstruction::CsrRead { rd, .. }
+        | RiscvInstruction::ZiskPrecompile { rd, .. }
+        | RiscvInstruction::ZiskFcallResult { rd } => rd,
+        _ => 0,
+    };
+    if index == 0 {
+        Vec::new()
+    } else {
+        vec![GuestRegisterWrite { index, value: 0 }]
+    }
 }
 
 fn register_store(index: u8) -> ZiskMainStore {

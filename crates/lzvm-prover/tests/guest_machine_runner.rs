@@ -651,7 +651,7 @@ fn traces_guest_machine_register_and_memory_effects_until_ecall() {
 
     assert_eq!(trace.run.executed_instructions, 4);
     assert_eq!(
-        trace.reports[0].register_writes.as_slice(),
+        trace.reports[0].register_writes().as_slice(),
         &[GuestRegisterWrite { index: 2, value: 7 }]
     );
     assert!(trace.reports[0].memory_accesses.is_empty());
@@ -665,7 +665,7 @@ fn traces_guest_machine_register_and_memory_effects_until_ecall() {
         }]
     );
     assert_eq!(
-        trace.reports[1].register_writes.as_slice(),
+        trace.reports[1].register_writes().as_slice(),
         &[GuestRegisterWrite {
             index: 3,
             value: 0x0123_4567_89ab_cdef,
@@ -680,7 +680,7 @@ fn traces_guest_machine_register_and_memory_effects_until_ecall() {
             value: 7,
         }]
     );
-    assert!(trace.reports[2].register_writes.is_empty());
+    assert!(trace.reports[2].register_writes().is_empty());
     assert_eq!(
         trace.reports[3].memory_accesses.as_slice(),
         &[GuestMemoryAccess {
@@ -691,7 +691,7 @@ fn traces_guest_machine_register_and_memory_effects_until_ecall() {
         }]
     );
     assert_eq!(
-        trace.reports[3].register_writes.as_slice(),
+        trace.reports[3].register_writes().as_slice(),
         &[GuestRegisterWrite {
             index: 4,
             value: (-128_i64) as u64,
@@ -761,7 +761,7 @@ fn traces_guest_machine_atomic_effects_until_ecall() {
         }]
     );
     assert_eq!(
-        trace.reports[0].register_writes.as_slice(),
+        trace.reports[0].register_writes().as_slice(),
         &[GuestRegisterWrite {
             index: 3,
             value: 0xffff_ffff_8000_0001,
@@ -777,12 +777,12 @@ fn traces_guest_machine_atomic_effects_until_ecall() {
         }]
     );
     assert_eq!(
-        trace.reports[1].register_writes.as_slice(),
+        trace.reports[1].register_writes().as_slice(),
         &[GuestRegisterWrite { index: 4, value: 0 }]
     );
     assert!(trace.reports[2].memory_accesses.is_empty());
     assert_eq!(
-        trace.reports[2].register_writes.as_slice(),
+        trace.reports[2].register_writes().as_slice(),
         &[GuestRegisterWrite { index: 5, value: 1 }]
     );
     assert_eq!(
@@ -803,7 +803,7 @@ fn traces_guest_machine_atomic_effects_until_ecall() {
         ]
     );
     assert_eq!(
-        trace.reports[3].register_writes.as_slice(),
+        trace.reports[3].register_writes().as_slice(),
         &[GuestRegisterWrite {
             index: 6,
             value: 0x5566_7788,

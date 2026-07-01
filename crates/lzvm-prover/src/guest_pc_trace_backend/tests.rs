@@ -1604,11 +1604,7 @@ fn direct_boundary_c_does_not_confuse_store_pc_write_with_c() {
                 crate::guest_machine::pack_report_address_and_instruction_len(0x8000_0000, 4),
             instruction: RiscvInstruction::Jal { rd: 1, offset: 16 },
             next_pc: 0x8000_0010,
-            register_writes: vec![GuestRegisterWrite {
-                index: 1,
-                value: 0x8000_0004,
-            }]
-            .into(),
+            register_write_value: GuestRegisterWriteValue::new(0x8000_0004),
             memory_accesses: Vec::new().into(),
         };
     let instruction = lower_guest_report(&report).expect("report should lower");
@@ -1637,7 +1633,7 @@ fn direct_boundary_c_uses_full_width_memory_store_value() {
                 offset: 8,
             },
             next_pc: 0x8000_0004,
-            register_writes: Vec::new().into(),
+            register_write_value: GuestRegisterWriteValue::default(),
             memory_accesses: vec![GuestMemoryAccess {
                 kind: GuestMemoryAccessKind::Write,
                 address: 0x1008,
@@ -1668,7 +1664,7 @@ fn direct_boundary_c_uses_branch_next_pc_outcome() {
                 offset: 16,
             },
             next_pc: 0x8000_0010,
-            register_writes: Vec::new().into(),
+            register_write_value: GuestRegisterWriteValue::default(),
             memory_accesses: Vec::new().into(),
         };
     let taken_instruction = lower_guest_report(&taken).expect("branch should lower");
@@ -4096,7 +4092,7 @@ fn runner_boundary_seed_snapshot_carries_dma_prepare_scratch() {
                 rs1: 5,
             },
             next_pc: 0x8000_0004,
-            register_writes: Vec::new().into(),
+            register_write_value: GuestRegisterWriteValue::default(),
             memory_accesses: Vec::new().into(),
         };
     let mut runner_state = GuestMachineState::new(report.next_pc);
@@ -4161,7 +4157,7 @@ fn runner_boundary_snapshot_records_dma_prepare_scratch_incrementally() {
                 rs1: 5,
             },
             next_pc: 0x8000_0004,
-            register_writes: Vec::new().into(),
+            register_write_value: GuestRegisterWriteValue::default(),
             memory_accesses: Vec::new().into(),
         };
 
@@ -4229,7 +4225,7 @@ fn runner_boundary_seed_snapshot_derives_full_width_store_boundary() {
                 offset: 8,
             },
             next_pc: 0x8000_0004,
-            register_writes: Vec::new().into(),
+            register_write_value: GuestRegisterWriteValue::default(),
             memory_accesses: vec![GuestMemoryAccess {
                 kind: GuestMemoryAccessKind::Write,
                 address: 0x1008,
@@ -4285,7 +4281,7 @@ fn runner_boundary_seed_snapshot_derives_narrow_store_boundary_from_runner_regis
                 offset: 17,
             },
             next_pc: 0x8000_0004,
-            register_writes: Vec::new().into(),
+            register_write_value: GuestRegisterWriteValue::default(),
             memory_accesses: vec![GuestMemoryAccess {
                 kind: GuestMemoryAccessKind::Write,
                 address: 0x1011,
@@ -4339,7 +4335,7 @@ fn runner_boundary_seed_snapshot_uses_runner_registers_for_narrow_store() {
                 offset: 17,
             },
             next_pc: 0x8000_0004,
-            register_writes: Vec::new().into(),
+            register_write_value: GuestRegisterWriteValue::default(),
             memory_accesses: vec![GuestMemoryAccess {
                 kind: GuestMemoryAccessKind::Write,
                 address: 0x1011,
@@ -4586,7 +4582,7 @@ fn runner_boundary_seed_snapshot_uses_report_shape_for_branch_boundary_without_r
                 offset: 84,
             },
             next_pc: 0x8000_0054,
-            register_writes: Vec::new().into(),
+            register_write_value: GuestRegisterWriteValue::default(),
             memory_accesses: Vec::new().into(),
         };
     let runner_state = GuestMachineState::new(report.next_pc);
@@ -4996,7 +4992,7 @@ fn runner_boundary_seed_snapshot_uses_retained_report_for_zero_register_load_bou
                 offset: 5,
             },
             next_pc: 0x8000_0004,
-            register_writes: Vec::new().into(),
+            register_write_value: GuestRegisterWriteValue::default(),
             memory_accesses: vec![GuestMemoryAccess {
                 kind: GuestMemoryAccessKind::Read,
                 address: 0x1005,
@@ -5041,7 +5037,7 @@ fn runner_boundary_seed_snapshot_uses_retained_report_for_zero_register_sign_ext
                 offset: 5,
             },
             next_pc: 0x8000_0004,
-            register_writes: Vec::new().into(),
+            register_write_value: GuestRegisterWriteValue::default(),
             memory_accesses: vec![GuestMemoryAccess {
                 kind: GuestMemoryAccessKind::Read,
                 address: 0x1005,
@@ -5379,7 +5375,7 @@ fn runner_pre_boundary_snapshot_skips_redundant_amo_report_replay() {
                 release: false,
             },
             next_pc: 0x8000_0004,
-            register_writes: Vec::new().into(),
+            register_write_value: GuestRegisterWriteValue::default(),
             memory_accesses: Vec::new().into(),
         };
 
@@ -5422,7 +5418,7 @@ fn runner_pre_boundary_snapshot_keeps_dma_extra_params_update() {
                 rs1: 5,
             },
             next_pc: 0x8000_0004,
-            register_writes: Vec::new().into(),
+            register_write_value: GuestRegisterWriteValue::default(),
             memory_accesses: Vec::new().into(),
         };
 
@@ -5464,11 +5460,7 @@ fn live_report_chunk_finish_emits_amo_boundary_without_returning_last_report() {
                 release: false,
             },
             next_pc: 0x8000_0004,
-            register_writes: vec![GuestRegisterWrite {
-                index: 1,
-                value: 0x1234_5678_9abc_def0,
-            }]
-            .into(),
+            register_write_value: GuestRegisterWriteValue::new(0x1234_5678_9abc_def0),
             memory_accesses: vec![
                 memory_read(0x1000, 0x1234_5678_9abc_def0),
                 memory_write(0x1000, 0x1234_5678_9abc_f000),
@@ -5520,11 +5512,7 @@ fn runner_boundary_snapshot_does_not_route_amo_report_after_scratch_snapshot() {
                 release: false,
             },
             next_pc: 0x8000_0004,
-            register_writes: vec![GuestRegisterWrite {
-                index: 1,
-                value: 0x1234_5678_9abc_def0,
-            }]
-            .into(),
+            register_write_value: GuestRegisterWriteValue::new(0x1234_5678_9abc_def0),
             memory_accesses: vec![
                 memory_read(0x1000, 0x1234_5678_9abc_def0),
                 memory_write(0x1000, 0x1234_5678_9abc_f000),
@@ -6054,7 +6042,7 @@ fn matching_memory_access_rejects_duplicate_matches() {
         memory_read(64, 33),
     ];
     let effects = ZiskMainReportEffects {
-        register_writes: &[],
+        register_writes: Vec::new().into(),
         memory_accesses: &accesses,
         precompile_memory_accesses: &[],
         precompile_result: None,
@@ -6070,7 +6058,7 @@ fn matching_memory_access_rejects_duplicate_matches() {
 fn zisk_main_source_value_requires_ordered_memory_access() {
     let accesses = [memory_read(72, 13), memory_read(64, 96)];
     let effects = ZiskMainReportEffects {
-        register_writes: &[],
+        register_writes: Vec::new().into(),
         memory_accesses: &accesses,
         precompile_memory_accesses: &[],
         precompile_result: None,
@@ -6097,7 +6085,7 @@ fn zisk_main_source_value_requires_ordered_memory_access() {
 fn ordered_memory_access_value_returns_value_after_order_validation() {
     let accesses = [memory_read(64, 96), memory_read(104, 13)];
     let effects = ZiskMainReportEffects {
-        register_writes: &[],
+        register_writes: Vec::new().into(),
         memory_accesses: &accesses,
         precompile_memory_accesses: &[],
         precompile_result: None,
@@ -6127,11 +6115,7 @@ fn load_copy_fast_path_parts_match_generic_lowering() {
                 offset: 8,
             },
             next_pc: 0x8000_0004,
-            register_writes: vec![GuestRegisterWrite {
-                index: 3,
-                value: 0xaa55,
-            }]
-            .into(),
+            register_write_value: GuestRegisterWriteValue::new(0xaa55),
             memory_accesses: vec![memory_read(0x108, 0xaa55)].into(),
         };
 
@@ -6162,11 +6146,7 @@ fn load_copy_fast_path_parts_fall_back_for_non_dominant_loads() {
                 offset: 8,
             },
             next_pc: 0x8000_0004,
-            register_writes: vec![GuestRegisterWrite {
-                index: 3,
-                value: 0xaa55,
-            }]
-            .into(),
+            register_write_value: GuestRegisterWriteValue::new(0xaa55),
             memory_accesses: vec![memory_read(0x108, 0xaa55)].into(),
         };
     assert!(
@@ -6216,11 +6196,7 @@ fn load_sign_extend_fast_path_parts_match_generic_lowering() {
                 offset: 8,
             },
             next_pc: 0x8000_0004,
-            register_writes: vec![GuestRegisterWrite {
-                index: 3,
-                value: 0xffff_ffff_ffff_ff80,
-            }]
-            .into(),
+            register_write_value: GuestRegisterWriteValue::new(0xffff_ffff_ffff_ff80),
             memory_accesses: vec![access].into(),
         };
 
@@ -6260,11 +6236,7 @@ fn load_sign_extend_fast_path_parts_fall_back_for_non_dominant_loads() {
                 offset: 8,
             },
             next_pc: 0x8000_0004,
-            register_writes: vec![GuestRegisterWrite {
-                index: 3,
-                value: 0xaa55,
-            }]
-            .into(),
+            register_write_value: GuestRegisterWriteValue::new(0xaa55),
             memory_accesses: vec![access].into(),
         };
     assert!(
@@ -6312,7 +6284,7 @@ fn store_copy_fast_path_parts_match_generic_lowering() {
                 offset: 8,
             },
             next_pc: 0x8000_0004,
-            register_writes: vec![].into(),
+            register_write_value: GuestRegisterWriteValue::default(),
             memory_accesses: vec![memory_write(0x108, 0xaa55)].into(),
         };
 
@@ -6343,7 +6315,7 @@ fn store_copy_fast_path_parts_fall_back_for_non_dominant_stores() {
                 offset: 8,
             },
             next_pc: 0x8000_0004,
-            register_writes: vec![].into(),
+            register_write_value: GuestRegisterWriteValue::default(),
             memory_accesses: vec![memory_write(0x108, 0xaa55)].into(),
         };
     assert!(store_copy_indirect_store_fast_path_parts(3, &report)
@@ -6376,7 +6348,7 @@ fn store_copy_fast_path_parts_fall_back_for_non_dominant_stores() {
 fn copy_register_indirect_store_fast_path_preserves_row_effects() {
     let accesses = [memory_write(0x108, 0xaa55)];
     let effects = ZiskMainReportEffects {
-        register_writes: &[],
+        register_writes: Vec::new().into(),
         memory_accesses: &accesses,
         precompile_memory_accesses: &[],
         precompile_result: None,
@@ -6452,7 +6424,7 @@ fn copy_register_indirect_store_fast_path_preserves_row_effects() {
 fn copy_immediate_indirect_store_fast_path_preserves_row_effects() {
     let accesses = [memory_write(0x108, 0x1122_3344_5566_7788)];
     let effects = ZiskMainReportEffects {
-        register_writes: &[],
+        register_writes: Vec::new().into(),
         memory_accesses: &accesses,
         precompile_memory_accesses: &[],
         precompile_result: None,
@@ -6537,11 +6509,7 @@ fn simple_copy_fast_path_parts_match_generic_lowering() {
                 immediate: 0,
             },
             next_pc: 0x8000_0004,
-            register_writes: vec![GuestRegisterWrite {
-                index: 3,
-                value: 0xaa55,
-            }]
-            .into(),
+            register_write_value: GuestRegisterWriteValue::new(0xaa55),
             memory_accesses: vec![].into(),
         },
         GuestMachineReport {
@@ -6554,11 +6522,7 @@ fn simple_copy_fast_path_parts_match_generic_lowering() {
                 immediate: -7,
             },
             next_pc: 0x8000_0008,
-            register_writes: vec![GuestRegisterWrite {
-                index: 4,
-                value: (-7_i64) as u64,
-            }]
-            .into(),
+            register_write_value: GuestRegisterWriteValue::new((-7_i64) as u64),
             memory_accesses: vec![].into(),
         },
         GuestMachineReport {
@@ -6569,11 +6533,7 @@ fn simple_copy_fast_path_parts_match_generic_lowering() {
                 immediate: 0x1234_5000,
             },
             next_pc: 0x8000_000c,
-            register_writes: vec![GuestRegisterWrite {
-                index: 5,
-                value: 0x1234_5000,
-            }]
-            .into(),
+            register_write_value: GuestRegisterWriteValue::new(0x1234_5000),
             memory_accesses: vec![].into(),
         },
     ];
@@ -6604,11 +6564,7 @@ fn simple_copy_fast_path_parts_fall_back_for_non_copy_rows() {
                 immediate: 8,
             },
             next_pc: 0x8000_0004,
-            register_writes: vec![GuestRegisterWrite {
-                index: 3,
-                value: 0xaa55,
-            }]
-            .into(),
+            register_write_value: GuestRegisterWriteValue::new(0xaa55),
             memory_accesses: vec![].into(),
         };
     assert!(simple_copy_register_store_fast_path_parts(3, &report)
@@ -6644,7 +6600,7 @@ fn simple_copy_register_store_fast_path_preserves_row_effects() {
         value: 0xaa55,
     }];
     let effects = ZiskMainReportEffects {
-        register_writes: &writes,
+        register_writes: writes.to_vec().into(),
         memory_accesses: &[],
         precompile_memory_accesses: &[],
         precompile_result: None,
@@ -6724,7 +6680,7 @@ fn sign_extend_indirect_register_store_fast_path_preserves_row_effects() {
         value: 0xffff_ffff_ffff_ff80,
     }];
     let effects = ZiskMainReportEffects {
-        register_writes: &writes,
+        register_writes: writes.to_vec().into(),
         memory_accesses: &accesses,
         precompile_memory_accesses: &[],
         precompile_result: None,
@@ -6808,11 +6764,7 @@ fn no_memory_external_fast_path_parts_match_generic_lowering() {
                 immediate: 0xff,
             },
             next_pc: 0x8000_0004,
-            register_writes: vec![GuestRegisterWrite {
-                index: 3,
-                value: 0x1ff,
-            }]
-            .into(),
+            register_write_value: GuestRegisterWriteValue::new(0x1ff),
             memory_accesses: vec![].into(),
         };
     let instruction = lower_guest_report(&report).expect("generic lowering should succeed");
@@ -6837,7 +6789,7 @@ fn no_memory_copy_fast_path_preserves_row_effects() {
         value: 0xaa55,
     }];
     let effects = ZiskMainReportEffects {
-        register_writes: &writes,
+        register_writes: writes.to_vec().into(),
         memory_accesses: &[],
         precompile_memory_accesses: &[],
         precompile_result: None,
@@ -6924,7 +6876,7 @@ fn no_memory_external_register_store_fast_path_preserves_row_effects() {
         value: 0x1ff,
     }];
     let effects = ZiskMainReportEffects {
-        register_writes: &writes,
+        register_writes: writes.to_vec().into(),
         memory_accesses: &[],
         precompile_memory_accesses: &[],
         precompile_result: None,
@@ -7000,7 +6952,7 @@ fn no_memory_external_register_store_fast_path_preserves_row_effects() {
 #[test]
 fn no_memory_external_no_store_fast_path_preserves_source_steps() {
     let effects = ZiskMainReportEffects {
-        register_writes: &[],
+        register_writes: Vec::new().into(),
         memory_accesses: &[],
         precompile_memory_accesses: &[],
         precompile_result: None,
@@ -7098,7 +7050,7 @@ fn copy_indirect_register_store_fast_path_preserves_row_effects() {
             is_precompiled: false,
         },
         effects: ZiskMainReportEffects {
-            register_writes: &writes,
+            register_writes: writes.to_vec().into(),
             memory_accesses: &accesses,
             precompile_memory_accesses: &[],
             precompile_result: None,
@@ -7179,7 +7131,7 @@ fn copy_indirect_register_store_fast_path_rejects_invalid_registers() {
         is_precompiled: false,
     };
     let effects = ZiskMainReportEffects {
-        register_writes: &writes,
+        register_writes: writes.to_vec().into(),
         memory_accesses: &accesses,
         precompile_memory_accesses: &[],
         precompile_result: None,
@@ -7238,7 +7190,7 @@ fn copy_indirect_register_store_fast_path_rejects_invalid_registers() {
 fn zisk_main_source_value_reports_memory_access_count() {
     let accesses = [memory_read(64, 96), memory_read(104, 13)];
     let effects = ZiskMainReportEffects {
-        register_writes: &[],
+        register_writes: Vec::new().into(),
         memory_accesses: &accesses,
         precompile_memory_accesses: &[],
         precompile_result: None,
@@ -7350,7 +7302,7 @@ fn zisk_main_memory_access_validation_preserves_source_then_store_order() {
     let store_access = memory_write(96, 13);
     let ordered_accesses = [memory_read(64, 96), memory_read(72, 13), store_access];
     let effects = ZiskMainReportEffects {
-        register_writes: &[],
+        register_writes: Vec::new().into(),
         memory_accesses: &ordered_accesses,
         precompile_memory_accesses: &[],
         precompile_result: None,
@@ -7369,7 +7321,7 @@ fn zisk_main_memory_access_validation_preserves_source_then_store_order() {
 
     let reordered_accesses = [memory_read(72, 13), memory_read(64, 96), store_access];
     let effects = ZiskMainReportEffects {
-        register_writes: &[],
+        register_writes: Vec::new().into(),
         memory_accesses: &reordered_accesses,
         precompile_memory_accesses: &[],
         precompile_result: None,
@@ -7402,7 +7354,7 @@ fn zisk_main_memory_access_validation_after_source_values_checks_store_position(
     let store_access = memory_write(96, 13);
     let ordered_accesses = [memory_read(64, 96), memory_read(72, 13), store_access];
     let effects = ZiskMainReportEffects {
-        register_writes: &[],
+        register_writes: Vec::new().into(),
         memory_accesses: &ordered_accesses,
         precompile_memory_accesses: &[],
         precompile_result: None,
@@ -7413,7 +7365,7 @@ fn zisk_main_memory_access_validation_after_source_values_checks_store_position(
 
     let misplaced_store = [memory_read(64, 96), store_access, memory_read(72, 13)];
     let effects = ZiskMainReportEffects {
-        register_writes: &[],
+        register_writes: Vec::new().into(),
         memory_accesses: &misplaced_store,
         precompile_memory_accesses: &[],
         precompile_result: None,
@@ -7683,7 +7635,7 @@ fn addi_report_at(address: u64, rd: u8, rs1: u8, immediate: i16, value: u64) -> 
             immediate: immediate.into(),
         },
         next_pc: address + 4,
-        register_writes: vec![GuestRegisterWrite { index: rd, value }].into(),
+        register_write_value: GuestRegisterWriteValue::new(value),
         memory_accesses: Vec::new().into(),
     }
 }
@@ -7701,7 +7653,7 @@ fn add_report_at(address: u64, rd: u8, rs1: u8, rs2: u8, value: u64) -> GuestMac
             rs2,
         },
         next_pc: address + 4,
-        register_writes: vec![GuestRegisterWrite { index: rd, value }].into(),
+        register_write_value: GuestRegisterWriteValue::new(value),
         memory_accesses: Vec::new().into(),
     }
 }
@@ -7714,7 +7666,7 @@ fn dma_prepare_report_at(address: u64, kind: RiscvDmaKind, rs1: u8) -> GuestMach
         ),
         instruction: RiscvInstruction::ZiskDmaPrepare { kind, rs1 },
         next_pc: address + 4,
-        register_writes: Vec::new().into(),
+        register_write_value: GuestRegisterWriteValue::default(),
         memory_accesses: Vec::new().into(),
     }
 }

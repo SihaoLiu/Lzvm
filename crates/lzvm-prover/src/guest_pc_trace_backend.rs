@@ -24,7 +24,7 @@ use crate::guest_machine::{
     GuestMachineMemoryOverlaySnapshot, GuestMachineReport, GuestMachineReportShape,
     GuestMachineRunError, GuestMachineState, GuestMachineTraceSliceStatus, GuestMemoryAccess,
     GuestMemoryAccessKind, GuestMemoryAccessList, GuestPrecompileMemoryAccessList,
-    GuestRegisterWrite, GuestRegisterWriteList,
+    GuestRegisterWrite, GuestRegisterWriteList, GuestRegisterWriteValue,
 };
 use crate::guest_memory::{load_guest_memory_image, GuestMemoryError};
 use crate::witness_layout::{ResolvedTraceColumn, WitnessTraceBuildError, WitnessTraceLayout};
@@ -1073,7 +1073,7 @@ impl GuestPcTraceStreamTiming {
     }
 
     pub fn trace_report_register_write_list_size_bytes(&self) -> usize {
-        size_of::<GuestRegisterWriteList>()
+        size_of::<GuestRegisterWriteValue>()
     }
 
     pub fn trace_report_memory_access_list_size_bytes(&self) -> usize {
@@ -10316,7 +10316,7 @@ struct ZiskMainReportTraceValues {
 
 #[derive(Debug, Clone, Copy)]
 struct ZiskMainReportEffects<'a> {
-    register_writes: &'a [GuestRegisterWrite],
+    register_writes: GuestRegisterWriteList,
     memory_accesses: &'a [GuestMemoryAccess],
     precompile_memory_accesses: &'a [GuestMemoryAccess],
     precompile_result: Option<u64>,
@@ -10325,7 +10325,7 @@ struct ZiskMainReportEffects<'a> {
 impl<'a> ZiskMainReportEffects<'a> {
     fn empty() -> Self {
         Self {
-            register_writes: &[],
+            register_writes: GuestRegisterWriteList::default(),
             memory_accesses: &[],
             precompile_memory_accesses: &[],
             precompile_result: None,
@@ -10334,7 +10334,7 @@ impl<'a> ZiskMainReportEffects<'a> {
 
     fn from_report(report: &'a GuestMachineReport) -> Self {
         Self {
-            register_writes: &report.register_writes,
+            register_writes: report.register_writes(),
             memory_accesses: &report.memory_accesses,
             precompile_memory_accesses: report.precompile_memory_accesses(),
             precompile_result: report.precompile_result(),
@@ -11475,7 +11475,7 @@ fn apply_copy_indirect_register_store_fast_path(
         store_index,
         row_mem_step_base + ZISK_MAIN_STORE_MEM_STEP_OFFSET,
     );
-    let [write] = effects.register_writes else {
+    let [write] = effects.register_writes.as_slice() else {
         return Err(GuestPcTraceBackendError::ZiskMainEffectMismatch {
             row: output_row,
             message: format!(
@@ -11561,7 +11561,7 @@ fn apply_no_memory_fast_path(
         apply_no_memory_fast_path_register_accesses(output_row, state, row_mem_step_base, parts)?;
     match parts.store_index {
         Some(store_index) => {
-            let [write] = effects.register_writes else {
+            let [write] = effects.register_writes.as_slice() else {
                 return Err(GuestPcTraceBackendError::ZiskMainEffectMismatch {
                     row: output_row,
                     message: format!(
@@ -11779,7 +11779,7 @@ fn apply_sign_extend_indirect_register_store_fast_path(
         store_index,
         row_mem_step_base + ZISK_MAIN_STORE_MEM_STEP_OFFSET,
     );
-    let [write] = effects.register_writes else {
+    let [write] = effects.register_writes.as_slice() else {
         return Err(GuestPcTraceBackendError::ZiskMainEffectMismatch {
             row: output_row,
             message: format!(
@@ -11896,7 +11896,7 @@ fn apply_simple_copy_register_store_fast_path(
         store_index,
         row_mem_step_base + ZISK_MAIN_STORE_MEM_STEP_OFFSET,
     );
-    let [write] = effects.register_writes else {
+    let [write] = effects.register_writes.as_slice() else {
         return Err(GuestPcTraceBackendError::ZiskMainEffectMismatch {
             row: output_row,
             message: format!(
@@ -12610,7 +12610,7 @@ fn lower_amo_report_rows(
             register_jump,
         );
         let mut register_effects = ZiskMainReportEffects::empty();
-        register_effects.register_writes = &report.register_writes;
+        register_effects.register_writes = report.register_writes();
         return Ok(vec![
             ZiskMainLoweredReportRow {
                 instruction: load_row,
@@ -12635,7 +12635,7 @@ fn lower_amo_report_rows(
         ]);
     }
 
-    load_effects.register_writes = &report.register_writes;
+    load_effects.register_writes = report.register_writes();
 
     Ok(vec![
         ZiskMainLoweredReportRow {
@@ -12746,7 +12746,7 @@ fn lower_store_conditional_report_rows(
         register_jump,
     );
     let mut register_effects = ZiskMainReportEffects::empty();
-    register_effects.register_writes = &report.register_writes;
+    register_effects.register_writes = report.register_writes();
     Ok(vec![
         ZiskMainLoweredReportRow {
             instruction: store_row,
@@ -13586,7 +13586,8 @@ fn zisk_main_runner_boundary_snapshot_from_reports(
     let mut snapshot = ZiskMainRunnerBoundarySnapshot::new(current_seed);
     let mut registers = current_seed.initial_state.registers;
     for (report_index, report) in reports.iter().enumerate() {
-        for write in &report.register_writes {
+        let register_writes = report.register_writes();
+        for write in &register_writes {
             if write.index != 0 {
                 registers[usize::from(write.index)] = write.value;
             }
@@ -14510,7 +14511,7 @@ fn zisk_main_fcall_result_value(
     rd: u8,
     effects: ZiskMainReportEffects<'_>,
 ) -> Result<u64, GuestPcTraceBackendError> {
-    let [write] = effects.register_writes else {
+    let [write] = effects.register_writes.as_slice() else {
         return Err(GuestPcTraceBackendError::ZiskMainEffectMismatch {
             row,
             message: format!(
@@ -15101,7 +15102,7 @@ fn zisk_main_dma_result(
 ) -> Result<(u64, bool), GuestPcTraceBackendError> {
     match instruction.store {
         ZiskMainStore::Register(index) => {
-            let [write] = effects.register_writes else {
+            let [write] = effects.register_writes.as_slice() else {
                 return Err(GuestPcTraceBackendError::ZiskMainEffectMismatch {
                     row,
                     message: format!(
@@ -15161,7 +15162,7 @@ fn zisk_main_add256_result(
     match instruction.store {
         ZiskMainStore::None => Ok((result, false)),
         ZiskMainStore::Register(index) => {
-            let [write] = effects.register_writes else {
+            let [write] = effects.register_writes.as_slice() else {
                 return Err(GuestPcTraceBackendError::ZiskMainEffectMismatch {
                     row,
                     message: format!(
@@ -15305,7 +15306,7 @@ fn apply_zisk_main_store(
         }
         ZiskMainStore::Register(index) => {
             let store_value = zisk_main_store_value(instruction, c);
-            let [write] = effects.register_writes else {
+            let [write] = effects.register_writes.as_slice() else {
                 return Err(GuestPcTraceBackendError::ZiskMainEffectMismatch {
                     row,
                     message: format!(
@@ -15772,7 +15773,8 @@ fn direct_zisk_main_report_boundary_c(
         return direct_zisk_main_report_result_c(report, instruction);
     }
     if let ZiskMainStore::Register(index) = instruction.store {
-        let [write] = report.register_writes.as_slice() else {
+        let register_writes = report.register_writes();
+        let [write] = register_writes.as_slice() else {
             return None;
         };
         return (write.index == index).then_some(write.value);
@@ -15960,10 +15962,11 @@ fn write_report_columns(
         write_column(builder, row, &pc_columns.next_pc, report.next_pc)?;
     }
     if let Some(register_write_columns) = &columns.register_write {
+        let register_writes = report.register_writes();
         write_register_columns(
             builder,
             row,
-            &report.register_writes,
+            register_writes.as_slice(),
             register_write_columns,
         )?;
     }
