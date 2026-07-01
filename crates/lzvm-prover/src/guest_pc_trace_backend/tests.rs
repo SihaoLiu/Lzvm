@@ -1284,8 +1284,7 @@ fn copy_source_value_kind_timing_is_tracked_separately() {
 fn rejects_add256_precompile_memory_access_address_mismatch() {
     let mut report = add256_report();
     report
-        .precompile_effects
-        .as_deref_mut()
+        .precompile_effects_mut()
         .expect("Add256 report should carry precompile effects")
         .memory_accesses[4]
         .address += 8;
@@ -1319,8 +1318,10 @@ fn precompile_memory_validation_skips_empty_non_precompile_rows() {
 #[test]
 fn precompile_memory_validation_rejects_non_precompile_rows_with_accesses() {
     let mut report = addi_report();
-    report.precompile_effects =
-        GuestPrecompileReportEffects::from_parts(vec![memory_read(64, 7)].into(), None);
+    report.replace_precompile_effects(GuestPrecompileReportEffects::from_parts(
+        vec![memory_read(64, 7)].into(),
+        None,
+    ));
     let instruction = lower_guest_report(&report).expect("report should lower");
 
     let error = validate_zisk_main_precompile_memory_accesses_if_required(
@@ -1338,7 +1339,10 @@ fn precompile_memory_validation_rejects_non_precompile_rows_with_accesses() {
 #[test]
 fn precompile_memory_validation_rejects_precompile_rows_with_missing_accesses() {
     let mut report = add256_report();
-    report.precompile_effects = GuestPrecompileReportEffects::from_parts(Vec::new().into(), None);
+    report.replace_precompile_effects(GuestPrecompileReportEffects::from_parts(
+        Vec::new().into(),
+        Some(1),
+    ));
     let instruction = lower_guest_report(&report).expect("report should lower");
 
     let error = validate_zisk_main_precompile_memory_accesses_if_required(
@@ -1365,8 +1369,9 @@ fn precompile_memory_validation_required_matches_row_shape() {
     ));
 
     let mut non_precompile_with_access = addi_report();
-    non_precompile_with_access.precompile_effects =
-        GuestPrecompileReportEffects::from_parts(vec![memory_read(64, 7)].into(), None);
+    non_precompile_with_access.replace_precompile_effects(
+        GuestPrecompileReportEffects::from_parts(vec![memory_read(64, 7)].into(), None),
+    );
     let instruction = lower_guest_report(&non_precompile_with_access).expect("report should lower");
     assert!(zisk_main_precompile_memory_validation_required(
         &instruction,
@@ -1374,8 +1379,10 @@ fn precompile_memory_validation_required_matches_row_shape() {
     ));
 
     let mut precompile_without_access = add256_report();
-    precompile_without_access.precompile_effects =
-        GuestPrecompileReportEffects::from_parts(Vec::new().into(), None);
+    precompile_without_access.replace_precompile_effects(GuestPrecompileReportEffects::from_parts(
+        Vec::new().into(),
+        Some(1),
+    ));
     let instruction = lower_guest_report(&precompile_without_access).expect("report should lower");
     assert!(zisk_main_precompile_memory_validation_required(
         &instruction,
@@ -1603,7 +1610,6 @@ fn direct_boundary_c_does_not_confuse_store_pc_write_with_c() {
             }]
             .into(),
             memory_accesses: Vec::new().into(),
-            precompile_effects: None,
         };
     let instruction = lower_guest_report(&report).expect("report should lower");
     assert!(instruction.store_pc);
@@ -1639,7 +1645,6 @@ fn direct_boundary_c_uses_full_width_memory_store_value() {
                 value: 0x1234_5678_9abc_def0,
             }]
             .into(),
-            precompile_effects: None,
         };
     let instruction = lower_guest_report(&report).expect("report should lower");
     assert!(matches!(instruction.store, ZiskMainStore::Indirect(8)));
@@ -1665,7 +1670,6 @@ fn direct_boundary_c_uses_branch_next_pc_outcome() {
             next_pc: 0x8000_0010,
             register_writes: Vec::new().into(),
             memory_accesses: Vec::new().into(),
-            precompile_effects: None,
         };
     let taken_instruction = lower_guest_report(&taken).expect("branch should lower");
     assert_eq!(
@@ -4094,7 +4098,6 @@ fn runner_boundary_seed_snapshot_carries_dma_prepare_scratch() {
             next_pc: 0x8000_0004,
             register_writes: Vec::new().into(),
             memory_accesses: Vec::new().into(),
-            precompile_effects: None,
         };
     let mut runner_state = GuestMachineState::new(report.next_pc);
     runner_state
@@ -4160,7 +4163,6 @@ fn runner_boundary_snapshot_records_dma_prepare_scratch_incrementally() {
             next_pc: 0x8000_0004,
             register_writes: Vec::new().into(),
             memory_accesses: Vec::new().into(),
-            precompile_effects: None,
         };
 
     let mut snapshot = ZiskMainRunnerBoundarySnapshot::new(&current_seed);
@@ -4235,7 +4237,6 @@ fn runner_boundary_seed_snapshot_derives_full_width_store_boundary() {
                 value: 0xfeed_face_cafe_babe,
             }]
             .into(),
-            precompile_effects: None,
         };
     let mut runner_state = GuestMachineState::new(report.next_pc);
     runner_state
@@ -4292,7 +4293,6 @@ fn runner_boundary_seed_snapshot_derives_narrow_store_boundary_from_runner_regis
                 value: 0xf0,
             }]
             .into(),
-            precompile_effects: None,
         };
     let mut runner_state = GuestMachineState::new(report.next_pc);
     runner_state
@@ -4347,7 +4347,6 @@ fn runner_boundary_seed_snapshot_uses_runner_registers_for_narrow_store() {
                 value: 0xf0,
             }]
             .into(),
-            precompile_effects: None,
         };
     let mut runner_state = GuestMachineState::new(report.next_pc);
     runner_state
@@ -4589,7 +4588,6 @@ fn runner_boundary_seed_snapshot_uses_report_shape_for_branch_boundary_without_r
             next_pc: 0x8000_0054,
             register_writes: Vec::new().into(),
             memory_accesses: Vec::new().into(),
-            precompile_effects: None,
         };
     let runner_state = GuestMachineState::new(report.next_pc);
     let mut boundary_snapshot = ZiskMainRunnerBoundarySnapshot::new(&current_seed);
@@ -5006,7 +5004,6 @@ fn runner_boundary_seed_snapshot_uses_retained_report_for_zero_register_load_bou
                 value: 0xab,
             }]
             .into(),
-            precompile_effects: None,
         };
 
     let lifted = try_lift_zisk_main_next_segment_seed_from_runner_boundary(
@@ -5052,7 +5049,6 @@ fn runner_boundary_seed_snapshot_uses_retained_report_for_zero_register_sign_ext
                 value: 0xff,
             }]
             .into(),
-            precompile_effects: None,
         };
 
     let lifted = try_lift_zisk_main_next_segment_seed_from_runner_boundary(
@@ -5385,7 +5381,6 @@ fn runner_pre_boundary_snapshot_skips_redundant_amo_report_replay() {
             next_pc: 0x8000_0004,
             register_writes: Vec::new().into(),
             memory_accesses: Vec::new().into(),
-            precompile_effects: None,
         };
 
     record_zisk_main_runner_pre_boundary_snapshot(
@@ -5429,7 +5424,6 @@ fn runner_pre_boundary_snapshot_keeps_dma_extra_params_update() {
             next_pc: 0x8000_0004,
             register_writes: Vec::new().into(),
             memory_accesses: Vec::new().into(),
-            precompile_effects: None,
         };
 
     record_zisk_main_runner_pre_boundary_snapshot(
@@ -5480,7 +5474,6 @@ fn live_report_chunk_finish_emits_amo_boundary_without_returning_last_report() {
                 memory_write(0x1000, 0x1234_5678_9abc_f000),
             ]
             .into(),
-            precompile_effects: None,
         };
     let shape = guest_machine_report_shape_from_report(&report);
     let mut emitted = Vec::new();
@@ -5537,7 +5530,6 @@ fn runner_boundary_snapshot_does_not_route_amo_report_after_scratch_snapshot() {
                 memory_write(0x1000, 0x1234_5678_9abc_f000),
             ]
             .into(),
-            precompile_effects: None,
         };
     let shape = guest_machine_report_shape_from_report(&report);
 
@@ -6141,7 +6133,6 @@ fn load_copy_fast_path_parts_match_generic_lowering() {
             }]
             .into(),
             memory_accesses: vec![memory_read(0x108, 0xaa55)].into(),
-            precompile_effects: None,
         };
 
     let (instruction, a_index, b_offset, store_index) =
@@ -6177,7 +6168,6 @@ fn load_copy_fast_path_parts_fall_back_for_non_dominant_loads() {
             }]
             .into(),
             memory_accesses: vec![memory_read(0x108, 0xaa55)].into(),
-            precompile_effects: None,
         };
     assert!(
         load_copy_indirect_register_store_fast_path_parts(3, &report)
@@ -6232,7 +6222,6 @@ fn load_sign_extend_fast_path_parts_match_generic_lowering() {
             }]
             .into(),
             memory_accesses: vec![access].into(),
-            precompile_effects: None,
         };
 
     let (instruction, a_index, b_offset, store_index) =
@@ -6277,7 +6266,6 @@ fn load_sign_extend_fast_path_parts_fall_back_for_non_dominant_loads() {
             }]
             .into(),
             memory_accesses: vec![access].into(),
-            precompile_effects: None,
         };
     assert!(
         load_sign_extend_indirect_register_store_fast_path_parts(3, &report)
@@ -6326,7 +6314,6 @@ fn store_copy_fast_path_parts_match_generic_lowering() {
             next_pc: 0x8000_0004,
             register_writes: vec![].into(),
             memory_accesses: vec![memory_write(0x108, 0xaa55)].into(),
-            precompile_effects: None,
         };
 
     let (instruction, a_index, b_index, store_offset) =
@@ -6358,7 +6345,6 @@ fn store_copy_fast_path_parts_fall_back_for_non_dominant_stores() {
             next_pc: 0x8000_0004,
             register_writes: vec![].into(),
             memory_accesses: vec![memory_write(0x108, 0xaa55)].into(),
-            precompile_effects: None,
         };
     assert!(store_copy_indirect_store_fast_path_parts(3, &report)
         .expect("zero base register should fall back")
@@ -6557,7 +6543,6 @@ fn simple_copy_fast_path_parts_match_generic_lowering() {
             }]
             .into(),
             memory_accesses: vec![].into(),
-            precompile_effects: None,
         },
         GuestMachineReport {
             address_and_instruction_len:
@@ -6575,7 +6560,6 @@ fn simple_copy_fast_path_parts_match_generic_lowering() {
             }]
             .into(),
             memory_accesses: vec![].into(),
-            precompile_effects: None,
         },
         GuestMachineReport {
             address_and_instruction_len:
@@ -6591,7 +6575,6 @@ fn simple_copy_fast_path_parts_match_generic_lowering() {
             }]
             .into(),
             memory_accesses: vec![].into(),
-            precompile_effects: None,
         },
     ];
 
@@ -6627,7 +6610,6 @@ fn simple_copy_fast_path_parts_fall_back_for_non_copy_rows() {
             }]
             .into(),
             memory_accesses: vec![].into(),
-            precompile_effects: None,
         };
     assert!(simple_copy_register_store_fast_path_parts(3, &report)
         .expect("real add should fall back")
@@ -6832,7 +6814,6 @@ fn no_memory_external_fast_path_parts_match_generic_lowering() {
             }]
             .into(),
             memory_accesses: vec![].into(),
-            precompile_effects: None,
         };
     let instruction = lower_guest_report(&report).expect("generic lowering should succeed");
 
@@ -7671,24 +7652,19 @@ fn add256_report() -> GuestMachineReport {
         memory_write(c_address + 16, 0),
         memory_write(c_address + 24, 0),
     ]);
-    GuestMachineReport {
-        address_and_instruction_len: crate::guest_machine::pack_report_address_and_instruction_len(
-            0x8000_0000,
-            4,
-        ),
-        instruction: RiscvInstruction::ZiskPrecompile {
+    GuestMachineReport::new(
+        0x8000_0000,
+        4,
+        RiscvInstruction::ZiskPrecompile {
             kind: RiscvPrecompileKind::Add256,
             rs1: 1,
             rd: 2,
         },
-        next_pc: 0x8000_0004,
-        register_writes: vec![GuestRegisterWrite { index: 2, value: 1 }].into(),
-        memory_accesses: Vec::new().into(),
-        precompile_effects: GuestPrecompileReportEffects::from_parts(
-            precompile_memory_accesses.into(),
-            Some(1),
-        ),
-    }
+        0x8000_0004,
+        vec![GuestRegisterWrite { index: 2, value: 1 }].into(),
+        Vec::new().into(),
+        GuestPrecompileReportEffects::from_parts(precompile_memory_accesses.into(), Some(1)),
+    )
 }
 
 fn addi_report() -> GuestMachineReport {
@@ -7709,7 +7685,6 @@ fn addi_report_at(address: u64, rd: u8, rs1: u8, immediate: i16, value: u64) -> 
         next_pc: address + 4,
         register_writes: vec![GuestRegisterWrite { index: rd, value }].into(),
         memory_accesses: Vec::new().into(),
-        precompile_effects: None,
     }
 }
 
@@ -7728,7 +7703,6 @@ fn add_report_at(address: u64, rd: u8, rs1: u8, rs2: u8, value: u64) -> GuestMac
         next_pc: address + 4,
         register_writes: vec![GuestRegisterWrite { index: rd, value }].into(),
         memory_accesses: Vec::new().into(),
-        precompile_effects: None,
     }
 }
 
@@ -7742,7 +7716,6 @@ fn dma_prepare_report_at(address: u64, kind: RiscvDmaKind, rs1: u8) -> GuestMach
         next_pc: address + 4,
         register_writes: Vec::new().into(),
         memory_accesses: Vec::new().into(),
-        precompile_effects: None,
     }
 }
 

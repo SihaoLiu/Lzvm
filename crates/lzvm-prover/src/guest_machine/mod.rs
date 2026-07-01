@@ -380,12 +380,6 @@ impl<T> Default for GuestInlineEffectList<T> {
 }
 
 impl<T> GuestInlineEffectList<T> {
-    fn one(value: T) -> Self {
-        Self {
-            entries: GuestInlineEffectEntries::One(value),
-        }
-    }
-
     pub fn push(&mut self, value: T) {
         self.entries = match std::mem::replace(&mut self.entries, GuestInlineEffectEntries::Empty) {
             GuestInlineEffectEntries::Empty => GuestInlineEffectEntries::One(value),
@@ -528,13 +522,174 @@ impl<'a> IntoIterator for &'a GuestRegisterWriteList {
 }
 
 type GuestRegisterRollbackList = SmallVec<[(u8, u64); 1]>;
-pub type GuestMemoryAccessList = GuestInlineEffectList<GuestMemoryAccess>;
 pub type GuestPrecompileMemoryAccessList = Box<[GuestMemoryAccess]>;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GuestMemoryAccessList {
+    entries: GuestMemoryAccessEntries,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum GuestMemoryAccessEntries {
+    Empty,
+    One(GuestMemoryAccess),
+    Many(Box<[GuestMemoryAccess]>),
+    Precompile(Box<GuestPrecompileReportEffects>),
+}
+
+impl Default for GuestMemoryAccessList {
+    fn default() -> Self {
+        Self {
+            entries: GuestMemoryAccessEntries::Empty,
+        }
+    }
+}
+
+impl GuestMemoryAccessList {
+    fn one(value: GuestMemoryAccess) -> Self {
+        Self {
+            entries: GuestMemoryAccessEntries::One(value),
+        }
+    }
+
+    pub fn push(&mut self, value: GuestMemoryAccess) {
+        self.entries = match std::mem::replace(&mut self.entries, GuestMemoryAccessEntries::Empty) {
+            GuestMemoryAccessEntries::Empty => GuestMemoryAccessEntries::One(value),
+            GuestMemoryAccessEntries::One(first) => {
+                let mut entries = Vec::with_capacity(2);
+                entries.push(first);
+                entries.push(value);
+                GuestMemoryAccessEntries::Many(entries.into_boxed_slice())
+            }
+            GuestMemoryAccessEntries::Many(entries) => {
+                let mut entries = entries.into_vec();
+                entries.push(value);
+                GuestMemoryAccessEntries::Many(entries.into_boxed_slice())
+            }
+            GuestMemoryAccessEntries::Precompile(mut effects) => {
+                let mut entries = std::mem::take(&mut effects.normal_memory_accesses).into_vec();
+                entries.push(value);
+                effects.normal_memory_accesses = entries.into_boxed_slice();
+                GuestMemoryAccessEntries::Precompile(effects)
+            }
+        };
+    }
+
+    pub fn as_slice(&self) -> &[GuestMemoryAccess] {
+        match &self.entries {
+            GuestMemoryAccessEntries::Empty => &[],
+            GuestMemoryAccessEntries::One(value) => std::slice::from_ref(value),
+            GuestMemoryAccessEntries::Many(entries) => entries,
+            GuestMemoryAccessEntries::Precompile(effects) => {
+                effects.normal_memory_accesses.as_ref()
+            }
+        }
+    }
+
+    pub fn len(&self) -> usize {
+        self.as_slice().len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.as_slice().is_empty()
+    }
+
+    fn with_precompile_effects(
+        memory_accesses: Self,
+        precompile_effects: Option<Box<GuestPrecompileReportEffects>>,
+    ) -> Self {
+        match precompile_effects {
+            Some(effects) => Self {
+                entries: GuestMemoryAccessEntries::Precompile(
+                    effects.with_normal_memory_accesses(memory_accesses),
+                ),
+            },
+            None => memory_accesses,
+        }
+    }
+
+    fn into_boxed_slice(self) -> Box<[GuestMemoryAccess]> {
+        match self.entries {
+            GuestMemoryAccessEntries::Empty => Vec::new().into_boxed_slice(),
+            GuestMemoryAccessEntries::One(value) => vec![value].into_boxed_slice(),
+            GuestMemoryAccessEntries::Many(entries) => entries,
+            GuestMemoryAccessEntries::Precompile(effects) => effects.into_normal_memory_accesses(),
+        }
+    }
+
+    fn precompile_memory_accesses(&self) -> &[GuestMemoryAccess] {
+        match &self.entries {
+            GuestMemoryAccessEntries::Precompile(effects) => effects.memory_accesses.as_ref(),
+            _ => &[],
+        }
+    }
+
+    fn precompile_result(&self) -> Option<u64> {
+        match &self.entries {
+            GuestMemoryAccessEntries::Precompile(effects) => effects.result,
+            _ => None,
+        }
+    }
+
+    #[cfg(test)]
+    fn precompile_effects_mut(&mut self) -> Option<&mut GuestPrecompileReportEffects> {
+        match &mut self.entries {
+            GuestMemoryAccessEntries::Precompile(effects) => Some(effects),
+            _ => None,
+        }
+    }
+
+    #[cfg(test)]
+    fn replace_precompile_effects(
+        &mut self,
+        precompile_effects: Option<Box<GuestPrecompileReportEffects>>,
+    ) {
+        let memory_accesses = std::mem::take(self);
+        *self = Self::with_precompile_effects(memory_accesses, precompile_effects);
+    }
+}
+
+impl From<Vec<GuestMemoryAccess>> for GuestMemoryAccessList {
+    fn from(entries: Vec<GuestMemoryAccess>) -> Self {
+        match entries.len() {
+            0 => Self::default(),
+            1 => {
+                let mut entries = entries.into_iter();
+                Self {
+                    entries: GuestMemoryAccessEntries::One(
+                        entries.next().expect("single entry should be present"),
+                    ),
+                }
+            }
+            _ => Self {
+                entries: GuestMemoryAccessEntries::Many(entries.into_boxed_slice()),
+            },
+        }
+    }
+}
+
+impl std::ops::Deref for GuestMemoryAccessList {
+    type Target = [GuestMemoryAccess];
+
+    fn deref(&self) -> &Self::Target {
+        self.as_slice()
+    }
+}
+
+impl<'a> IntoIterator for &'a GuestMemoryAccessList {
+    type Item = &'a GuestMemoryAccess;
+    type IntoIter = std::slice::Iter<'a, GuestMemoryAccess>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.as_slice().iter()
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GuestPrecompileReportEffects {
     pub memory_accesses: GuestPrecompileMemoryAccessList,
     pub result: Option<u64>,
+    normal_memory_accesses: GuestPrecompileMemoryAccessList,
 }
 
 impl GuestPrecompileReportEffects {
@@ -548,6 +703,7 @@ impl GuestPrecompileReportEffects {
             Some(Box::new(Self {
                 memory_accesses,
                 result,
+                normal_memory_accesses: Vec::new().into_boxed_slice(),
             }))
         }
     }
@@ -562,8 +718,25 @@ impl GuestPrecompileReportEffects {
             Some(Box::new(Self {
                 memory_accesses: memory_accesses.into_boxed_slice(),
                 result,
+                normal_memory_accesses: Vec::new().into_boxed_slice(),
             }))
         }
+    }
+
+    fn with_normal_memory_accesses(
+        mut self: Box<Self>,
+        memory_accesses: GuestMemoryAccessList,
+    ) -> Box<Self> {
+        self.normal_memory_accesses = memory_accesses.into_boxed_slice();
+        self
+    }
+
+    fn into_normal_memory_accesses(self: Box<Self>) -> GuestPrecompileMemoryAccessList {
+        let GuestPrecompileReportEffects {
+            normal_memory_accesses,
+            ..
+        } = *self;
+        normal_memory_accesses
     }
 }
 
@@ -657,7 +830,6 @@ pub struct GuestMachineReport {
     pub next_pc: u64,
     pub register_writes: GuestRegisterWriteList,
     pub memory_accesses: GuestMemoryAccessList,
-    pub precompile_effects: Option<Box<GuestPrecompileReportEffects>>,
 }
 
 impl GuestMachineReport {
@@ -679,8 +851,10 @@ impl GuestMachineReport {
             instruction,
             next_pc,
             register_writes,
-            memory_accesses,
-            precompile_effects,
+            memory_accesses: GuestMemoryAccessList::with_precompile_effects(
+                memory_accesses,
+                precompile_effects,
+            ),
         }
     }
 
@@ -695,15 +869,25 @@ impl GuestMachineReport {
     }
 
     pub fn precompile_memory_accesses(&self) -> &[GuestMemoryAccess] {
-        self.precompile_effects
-            .as_deref()
-            .map_or(&[], |effects| effects.memory_accesses.as_ref())
+        self.memory_accesses.precompile_memory_accesses()
     }
 
     pub fn precompile_result(&self) -> Option<u64> {
-        self.precompile_effects
-            .as_deref()
-            .and_then(|effects| effects.result)
+        self.memory_accesses.precompile_result()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn precompile_effects_mut(&mut self) -> Option<&mut GuestPrecompileReportEffects> {
+        self.memory_accesses.precompile_effects_mut()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn replace_precompile_effects(
+        &mut self,
+        precompile_effects: Option<Box<GuestPrecompileReportEffects>>,
+    ) {
+        self.memory_accesses
+            .replace_precompile_effects(precompile_effects);
     }
 }
 
@@ -1631,7 +1815,7 @@ fn try_advance_guest_machine_report_fast_path(
         next_pc,
         register_writes,
         memory_access
-            .map(GuestInlineEffectList::one)
+            .map(GuestMemoryAccessList::one)
             .unwrap_or_default(),
         None,
     ));
@@ -3008,7 +3192,6 @@ mod tests {
                 value: 0x0000_0073,
             }]
             .into(),
-            precompile_effects: None,
         };
         cache.invalidate_report_shape(
             &report,
@@ -3069,7 +3252,6 @@ mod tests {
                 value: 0x0000_0073,
             }]
             .into(),
-            precompile_effects: None,
         };
 
         cache.invalidate_report_shape(

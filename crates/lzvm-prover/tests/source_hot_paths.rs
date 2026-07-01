@@ -8835,8 +8835,9 @@ fn guest_machine_reports_inline_common_effect_storage() {
         "guest register writes should use one compact inline slot with x0 as the empty sentinel"
     );
     assert!(
-        source
-            .contains("pub type GuestMemoryAccessList = GuestInlineEffectList<GuestMemoryAccess>;"),
+        source.contains("pub struct GuestMemoryAccessList")
+            && source.contains("GuestMemoryAccessEntries::One")
+            && source.contains("GuestMemoryAccessList::one"),
         "guest memory accesses should keep one inline slot for the dominant single-access case"
     );
     assert!(
@@ -8857,8 +8858,9 @@ fn guest_machine_reports_inline_common_effect_storage() {
     );
     assert!(
         source.contains("pub struct GuestPrecompileReportEffects")
-            && source.contains("memory_accesses: GuestPrecompileMemoryAccessList"),
-        "guest machine reports should keep rare precompile data in an out-of-line effects record"
+            && source.contains("memory_accesses: GuestPrecompileMemoryAccessList")
+            && source.contains("Precompile(Box<GuestPrecompileReportEffects>)"),
+        "guest machine reports should keep rare precompile data in an out-of-line access-list variant"
     );
     assert!(
         source.contains("pub fn from_vec(")
@@ -8866,8 +8868,9 @@ fn guest_machine_reports_inline_common_effect_storage() {
         "guest machine reports should skip boxing empty precompile access vectors"
     );
     assert!(
-        report_body.contains("precompile_effects: Option<Box<GuestPrecompileReportEffects>>"),
-        "guest machine reports should store only a thin optional precompile-effects pointer"
+        report_body.contains("memory_accesses: GuestMemoryAccessList")
+            && source.contains("GuestMemoryAccessList::with_precompile_effects("),
+        "guest machine reports should fold rare precompile effects into the memory access list"
     );
     assert!(
         source.contains("pub struct GuestMachineReport"),
@@ -8894,7 +8897,7 @@ fn guest_machine_reports_inline_common_effect_storage() {
 #[test]
 fn guest_machine_report_record_stays_cache_line_pair_sized() {
     assert!(
-        std::mem::size_of::<GuestMachineReport>() <= 72,
+        std::mem::size_of::<GuestMachineReport>() <= 64,
         "guest trace reports should keep compact inline effect lists; got {} bytes",
         std::mem::size_of::<GuestMachineReport>()
     );
