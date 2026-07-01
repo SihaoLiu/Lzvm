@@ -1447,15 +1447,21 @@ fn try_advance_guest_machine_report_fast_path(
             register_write = write_fast_reported_register(state, rd, immediate as u64);
         }
         RiscvInstruction::Auipc { rd, immediate } => {
-            register_write =
-                write_fast_reported_register(state, rd, address.wrapping_add_signed(immediate));
+            register_write = write_fast_reported_register(
+                state,
+                rd,
+                address.wrapping_add_signed(i64::from(immediate)),
+            );
         }
         RiscvInstruction::Jal { rd, offset } => {
             register_write = write_fast_reported_register(state, rd, sequential_pc);
-            next_pc = address.wrapping_add_signed(offset);
+            next_pc = address.wrapping_add_signed(i64::from(offset));
         }
         RiscvInstruction::Jalr { rd, rs1, offset } => {
-            let target = state.read_decoded_register(rs1).wrapping_add_signed(offset) & !1;
+            let target = state
+                .read_decoded_register(rs1)
+                .wrapping_add_signed(i64::from(offset))
+                & !1;
             register_write = write_fast_reported_register(state, rd, sequential_pc);
             next_pc = target;
         }
@@ -1470,7 +1476,7 @@ fn try_advance_guest_machine_report_fast_path(
                 state.read_decoded_register(rs1),
                 state.read_decoded_register(rs2),
             ) {
-                next_pc = address.wrapping_add_signed(offset);
+                next_pc = address.wrapping_add_signed(i64::from(offset));
             }
         }
         RiscvInstruction::OpImm {
@@ -1514,7 +1520,9 @@ fn try_advance_guest_machine_report_fast_path(
             rs1,
             offset,
         } => {
-            let read_address = state.read_decoded_register(rs1).wrapping_add_signed(offset);
+            let read_address = state
+                .read_decoded_register(rs1)
+                .wrapping_add_signed(i64::from(offset));
             let loaded = read_guest_load(memory, kind, read_address)?;
             memory_access = Some(GuestMemoryAccess {
                 kind: GuestMemoryAccessKind::Read,
@@ -1530,7 +1538,9 @@ fn try_advance_guest_machine_report_fast_path(
             rs2,
             offset,
         } => {
-            let write_address = state.read_decoded_register(rs1).wrapping_add_signed(offset);
+            let write_address = state
+                .read_decoded_register(rs1)
+                .wrapping_add_signed(i64::from(offset));
             let byte_len = store_byte_len(kind);
             let value = state.read_decoded_register(rs2);
             write_guest_store(memory, kind, write_address, value)?;
@@ -1651,14 +1661,22 @@ fn execute_guest_instruction(
             write_reported_register(state, effects, rd, immediate as u64);
         }
         RiscvInstruction::Auipc { rd, immediate } => {
-            write_reported_register(state, effects, rd, address.wrapping_add_signed(immediate));
+            write_reported_register(
+                state,
+                effects,
+                rd,
+                address.wrapping_add_signed(i64::from(immediate)),
+            );
         }
         RiscvInstruction::Jal { rd, offset } => {
             write_reported_register(state, effects, rd, sequential_pc);
-            state.set_pc(address.wrapping_add_signed(offset));
+            state.set_pc(address.wrapping_add_signed(i64::from(offset)));
         }
         RiscvInstruction::Jalr { rd, rs1, offset } => {
-            let target = state.read_decoded_register(rs1).wrapping_add_signed(offset) & !1;
+            let target = state
+                .read_decoded_register(rs1)
+                .wrapping_add_signed(i64::from(offset))
+                & !1;
             write_reported_register(state, effects, rd, sequential_pc);
             state.set_pc(target);
         }
@@ -1673,7 +1691,7 @@ fn execute_guest_instruction(
                 state.read_decoded_register(rs1),
                 state.read_decoded_register(rs2),
             ) {
-                state.set_pc(address.wrapping_add_signed(offset));
+                state.set_pc(address.wrapping_add_signed(i64::from(offset)));
             }
         }
         RiscvInstruction::OpImm {
@@ -1721,7 +1739,9 @@ fn execute_guest_instruction(
             rs1,
             offset,
         } => {
-            let address = state.read_decoded_register(rs1).wrapping_add_signed(offset);
+            let address = state
+                .read_decoded_register(rs1)
+                .wrapping_add_signed(i64::from(offset));
             let loaded = read_guest_load(memory, kind, address)?;
             effects.record_memory_read(address, loaded.byte_len, loaded.memory_value);
             write_reported_register(state, effects, rd, loaded.register_value);
@@ -1732,7 +1752,9 @@ fn execute_guest_instruction(
             rs2,
             offset,
         } => {
-            let address = state.read_decoded_register(rs1).wrapping_add_signed(offset);
+            let address = state
+                .read_decoded_register(rs1)
+                .wrapping_add_signed(i64::from(offset));
             let byte_len = store_byte_len(kind);
             let value = state.read_decoded_register(rs2);
             write_guest_store(memory, kind, address, value)?;
@@ -2361,10 +2383,11 @@ fn read_csr(csr: RiscvCsr, retired_instructions: u64) -> u64 {
     }
 }
 
-fn execute_op_imm(kind: RiscvOpImmKind, rs1: u64, immediate: i64) -> Option<u64> {
+fn execute_op_imm(kind: RiscvOpImmKind, rs1: u64, immediate: i32) -> Option<u64> {
+    let wide_immediate = i64::from(immediate);
     let value = match kind {
-        RiscvOpImmKind::Addi => rs1.wrapping_add_signed(immediate),
-        RiscvOpImmKind::Slti => u64::from((rs1 as i64) < immediate),
+        RiscvOpImmKind::Addi => rs1.wrapping_add_signed(wide_immediate),
+        RiscvOpImmKind::Slti => u64::from((rs1 as i64) < wide_immediate),
         RiscvOpImmKind::Sltiu => u64::from(rs1 < immediate as u64),
         RiscvOpImmKind::Xori => rs1 ^ immediate as u64,
         RiscvOpImmKind::Ori => rs1 | immediate as u64,
@@ -2376,9 +2399,11 @@ fn execute_op_imm(kind: RiscvOpImmKind, rs1: u64, immediate: i64) -> Option<u64>
     Some(value)
 }
 
-fn execute_op_imm_32(kind: RiscvOpImm32Kind, rs1: u64, immediate: i64) -> u64 {
+fn execute_op_imm_32(kind: RiscvOpImm32Kind, rs1: u64, immediate: i32) -> u64 {
     match kind {
-        RiscvOpImm32Kind::Addiw => sign_extend_word(rs1.wrapping_add_signed(immediate) as u32),
+        RiscvOpImm32Kind::Addiw => {
+            sign_extend_word(rs1.wrapping_add_signed(i64::from(immediate)) as u32)
+        }
         RiscvOpImm32Kind::Slliw => {
             sign_extend_word((rs1 as u32).wrapping_shl((immediate as u32) & 0x1f))
         }

@@ -11014,6 +11014,7 @@ fn load_copy_indirect_register_store_fast_path_parts(
     if expected_next_pc != report.next_pc {
         return Ok(None);
     }
+    let offset = i64::from(offset);
     let instruction = ZiskMainInstruction {
         pc: report.address,
         a: ZiskMainSource::Register(rs1),
@@ -11075,6 +11076,7 @@ fn load_sign_extend_indirect_register_store_fast_path_parts(
     if expected_next_pc != report.next_pc {
         return Ok(None);
     }
+    let offset = i64::from(offset);
     let instruction = ZiskMainInstruction {
         pc: report.address,
         a: ZiskMainSource::Register(rs1),
@@ -11134,6 +11136,7 @@ fn store_copy_indirect_store_fast_path_parts(
     if expected_next_pc != report.next_pc {
         return Ok(None);
     }
+    let offset = i64::from(offset);
     let instruction = ZiskMainInstruction {
         pc: report.address,
         a: ZiskMainSource::Register(rs1),
@@ -12870,8 +12873,9 @@ fn lower_pending_dma_addi(
     pending: ZiskMainPendingDma,
     rd: u8,
     rs1: u8,
-    immediate: i64,
+    immediate: i32,
 ) -> ZiskMainInstruction {
+    let immediate = i64::from(immediate);
     let (a, b, op, jmp_offset1) = match pending.kind {
         RiscvDmaKind::Memcpy => (
             zisk_main_register_source(rs1),
@@ -15669,7 +15673,7 @@ fn direct_zisk_main_jalr_boundary_c(
     let RiscvInstruction::Jalr { offset, .. } = instruction else {
         return None;
     };
-    boundary_pc.map(|pc| wrapping_sub_signed(pc, offset))
+    boundary_pc.map(|pc| wrapping_sub_signed(pc, i64::from(offset)))
 }
 
 fn direct_zisk_main_flag_boundary_c(instruction: RiscvInstruction) -> Option<u64> {
@@ -15706,6 +15710,7 @@ fn direct_zisk_main_branch_boundary_c(
     let (pc, instruction_byte_len) = last_report_context?;
     let boundary_pc = boundary_pc?;
     let instruction_size = i64::from(instruction_byte_len);
+    let offset = i64::from(offset);
     let (flag_offset, fallthrough_offset) = match kind {
         RiscvBranchKind::Beq | RiscvBranchKind::Blt | RiscvBranchKind::Bltu => {
             (offset, instruction_size)

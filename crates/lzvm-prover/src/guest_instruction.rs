@@ -83,50 +83,50 @@ pub enum RiscvInstruction {
     },
     Lui {
         rd: u8,
-        immediate: i64,
+        immediate: i32,
     },
     Auipc {
         rd: u8,
-        immediate: i64,
+        immediate: i32,
     },
     Jal {
         rd: u8,
-        offset: i64,
+        offset: i32,
     },
     Jalr {
         rd: u8,
         rs1: u8,
-        offset: i64,
+        offset: i32,
     },
     Branch {
         kind: RiscvBranchKind,
         rs1: u8,
         rs2: u8,
-        offset: i64,
+        offset: i32,
     },
     Load {
         kind: RiscvLoadKind,
         rd: u8,
         rs1: u8,
-        offset: i64,
+        offset: i32,
     },
     Store {
         kind: RiscvStoreKind,
         rs1: u8,
         rs2: u8,
-        offset: i64,
+        offset: i32,
     },
     OpImm {
         kind: RiscvOpImmKind,
         rd: u8,
         rs1: u8,
-        immediate: i64,
+        immediate: i32,
     },
     OpImm32 {
         kind: RiscvOpImm32Kind,
         rd: u8,
         rs1: u8,
-        immediate: i64,
+        immediate: i32,
     },
     Op {
         kind: RiscvOpKind,
@@ -770,15 +770,15 @@ fn decode_compressed_register_control(halfword: u16) -> RiscvInstruction {
     }
 }
 
-fn compressed_addi_immediate(halfword: u16) -> i64 {
+fn compressed_addi_immediate(halfword: u16) -> i32 {
     sign_extend(u64::from(compressed_ci_immediate_payload(halfword)), 6)
 }
 
-fn compressed_shift_immediate(halfword: u16) -> i64 {
-    i64::from(compressed_ci_immediate_payload(halfword))
+fn compressed_shift_immediate(halfword: u16) -> i32 {
+    i32::from(compressed_ci_immediate_payload(halfword))
 }
 
-fn compressed_lui_immediate(halfword: u16) -> i64 {
+fn compressed_lui_immediate(halfword: u16) -> i32 {
     sign_extend(u64::from(compressed_ci_immediate_payload(halfword)), 6) << 12
 }
 
@@ -786,7 +786,7 @@ fn compressed_ci_immediate_payload(halfword: u16) -> u16 {
     ((halfword >> 2) & 0x1f) | (((halfword >> 12) & 1) << 5)
 }
 
-fn compressed_addi16sp_immediate(halfword: u16) -> i64 {
+fn compressed_addi16sp_immediate(halfword: u16) -> i32 {
     let bit_4 = (halfword >> 6) & 1;
     let bit_5 = (halfword >> 2) & 1;
     let bit_6 = (halfword >> 5) & 1;
@@ -800,54 +800,54 @@ fn compressed_register(encoded: u16) -> u8 {
     ((encoded & 0x7) as u8) + 8
 }
 
-fn compressed_addi4spn_immediate(halfword: u16) -> i64 {
+fn compressed_addi4spn_immediate(halfword: u16) -> i32 {
     let bits_5_4 = (halfword >> 11) & 0x3;
     let bits_9_6 = (halfword >> 7) & 0xf;
     let bit_2 = (halfword >> 6) & 1;
     let bit_3 = (halfword >> 5) & 1;
-    i64::from((bit_2 << 2) | (bit_3 << 3) | (bits_5_4 << 4) | (bits_9_6 << 6))
+    i32::from((bit_2 << 2) | (bit_3 << 3) | (bits_5_4 << 4) | (bits_9_6 << 6))
 }
 
-fn compressed_lw_sw_offset(halfword: u16) -> i64 {
+fn compressed_lw_sw_offset(halfword: u16) -> i32 {
     let bits_5_3 = (halfword >> 10) & 0x7;
     let bit_2 = (halfword >> 6) & 1;
     let bit_6 = (halfword >> 5) & 1;
-    i64::from((bit_2 << 2) | (bits_5_3 << 3) | (bit_6 << 6))
+    i32::from((bit_2 << 2) | (bits_5_3 << 3) | (bit_6 << 6))
 }
 
-fn compressed_ld_sd_offset(halfword: u16) -> i64 {
+fn compressed_ld_sd_offset(halfword: u16) -> i32 {
     let bits_5_3 = (halfword >> 10) & 0x7;
     let bits_7_6 = (halfword >> 5) & 0x3;
-    i64::from((bits_5_3 << 3) | (bits_7_6 << 6))
+    i32::from((bits_5_3 << 3) | (bits_7_6 << 6))
 }
 
-fn compressed_lwsp_offset(halfword: u16) -> i64 {
+fn compressed_lwsp_offset(halfword: u16) -> i32 {
     let bits_4_2 = (halfword >> 4) & 0x7;
     let bit_5 = (halfword >> 12) & 1;
     let bits_7_6 = (halfword >> 2) & 0x3;
-    i64::from((bits_4_2 << 2) | (bit_5 << 5) | (bits_7_6 << 6))
+    i32::from((bits_4_2 << 2) | (bit_5 << 5) | (bits_7_6 << 6))
 }
 
-fn compressed_ldsp_offset(halfword: u16) -> i64 {
+fn compressed_ldsp_offset(halfword: u16) -> i32 {
     let bits_4_3 = (halfword >> 5) & 0x3;
     let bit_5 = (halfword >> 12) & 1;
     let bits_8_6 = (halfword >> 2) & 0x7;
-    i64::from((bits_4_3 << 3) | (bit_5 << 5) | (bits_8_6 << 6))
+    i32::from((bits_4_3 << 3) | (bit_5 << 5) | (bits_8_6 << 6))
 }
 
-fn compressed_swsp_offset(halfword: u16) -> i64 {
+fn compressed_swsp_offset(halfword: u16) -> i32 {
     let bits_5_2 = (halfword >> 9) & 0xf;
     let bits_7_6 = (halfword >> 7) & 0x3;
-    i64::from((bits_5_2 << 2) | (bits_7_6 << 6))
+    i32::from((bits_5_2 << 2) | (bits_7_6 << 6))
 }
 
-fn compressed_sdsp_offset(halfword: u16) -> i64 {
+fn compressed_sdsp_offset(halfword: u16) -> i32 {
     let bits_5_3 = (halfword >> 10) & 0x7;
     let bits_8_6 = (halfword >> 7) & 0x7;
-    i64::from((bits_5_3 << 3) | (bits_8_6 << 6))
+    i32::from((bits_5_3 << 3) | (bits_8_6 << 6))
 }
 
-fn compressed_jump_offset(halfword: u16) -> i64 {
+fn compressed_jump_offset(halfword: u16) -> i32 {
     let bit_11 = (halfword >> 12) & 1;
     let bit_4 = (halfword >> 11) & 1;
     let bits_9_8 = (halfword >> 9) & 0x3;
@@ -867,7 +867,7 @@ fn compressed_jump_offset(halfword: u16) -> i64 {
     sign_extend(u64::from(value), 12)
 }
 
-fn compressed_branch_offset(halfword: u16) -> i64 {
+fn compressed_branch_offset(halfword: u16) -> i32 {
     let bit_8 = (halfword >> 12) & 1;
     let bits_4_3 = (halfword >> 10) & 0x3;
     let bits_7_6 = (halfword >> 5) & 0x3;
@@ -1222,14 +1222,14 @@ fn shift_funct6(word: u32) -> u8 {
     ((word >> 26) & 0x3f) as u8
 }
 
-fn i_immediate(word: u32) -> i64 {
+fn i_immediate(word: u32) -> i32 {
     sign_extend((word >> 20) as u64, 12)
 }
 
-fn op_imm_immediate(kind: RiscvOpImmKind, word: u32) -> i64 {
+fn op_imm_immediate(kind: RiscvOpImmKind, word: u32) -> i32 {
     match kind {
         RiscvOpImmKind::Slli | RiscvOpImmKind::Srli | RiscvOpImmKind::Srai => {
-            i64::from((word >> 20) & 0x3f)
+            ((word >> 20) & 0x3f) as i32
         }
         RiscvOpImmKind::Addi
         | RiscvOpImmKind::Slti
@@ -1240,22 +1240,22 @@ fn op_imm_immediate(kind: RiscvOpImmKind, word: u32) -> i64 {
     }
 }
 
-fn op_imm_32_immediate(kind: RiscvOpImm32Kind, word: u32) -> i64 {
+fn op_imm_32_immediate(kind: RiscvOpImm32Kind, word: u32) -> i32 {
     match kind {
         RiscvOpImm32Kind::Addiw => i_immediate(word),
         RiscvOpImm32Kind::Slliw | RiscvOpImm32Kind::Srliw | RiscvOpImm32Kind::Sraiw => {
-            i64::from((word >> 20) & 0x1f)
+            ((word >> 20) & 0x1f) as i32
         }
     }
 }
 
-fn s_immediate(word: u32) -> i64 {
+fn s_immediate(word: u32) -> i32 {
     let low = (word >> 7) & 0x1f;
     let high = (word >> 25) & 0x7f;
     sign_extend(u64::from(low | (high << 5)), 12)
 }
 
-fn b_immediate(word: u32) -> i64 {
+fn b_immediate(word: u32) -> i32 {
     let bit_11 = (word >> 7) & 0x01;
     let bits_4_1 = (word >> 8) & 0x0f;
     let bits_10_5 = (word >> 25) & 0x3f;
@@ -1264,11 +1264,11 @@ fn b_immediate(word: u32) -> i64 {
     sign_extend(u64::from(value), 13)
 }
 
-fn u_immediate(word: u32) -> i64 {
+fn u_immediate(word: u32) -> i32 {
     sign_extend(u64::from(word & 0xffff_f000), 32)
 }
 
-fn j_immediate(word: u32) -> i64 {
+fn j_immediate(word: u32) -> i32 {
     let bits_19_12 = (word >> 12) & 0xff;
     let bit_11 = (word >> 20) & 0x01;
     let bits_10_1 = (word >> 21) & 0x03ff;
@@ -1277,7 +1277,7 @@ fn j_immediate(word: u32) -> i64 {
     sign_extend(u64::from(value), 21)
 }
 
-fn sign_extend(value: u64, bits: u32) -> i64 {
+fn sign_extend(value: u64, bits: u32) -> i32 {
     let shift = 64 - bits;
-    ((value << shift) as i64) >> shift
+    (((value << shift) as i64) >> shift) as i32
 }

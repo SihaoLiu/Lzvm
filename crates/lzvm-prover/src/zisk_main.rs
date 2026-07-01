@@ -400,8 +400,9 @@ fn lower_addi(
     instruction_size: i64,
     rd: u8,
     rs1: u8,
-    immediate: i64,
+    immediate: i32,
 ) -> ZiskMainInstruction {
+    let immediate = i64::from(immediate);
     if rd == 0 {
         return base_instruction(
             pc,
@@ -468,13 +469,13 @@ fn binary_immediate_op(
     instruction_size: i64,
     rd: u8,
     rs1: u8,
-    immediate: i64,
+    immediate: i32,
     op: ZiskMainOp,
 ) -> ZiskMainInstruction {
     base_instruction(
         pc,
         register_source(rs1),
-        ZiskMainSource::Immediate(immediate as u64),
+        ZiskMainSource::Immediate(i64::from(immediate) as u64),
         op,
         register_store(rd),
         instruction_size,
@@ -501,7 +502,7 @@ fn binary_immediate_word_op(
     instruction_size: i64,
     rd: u8,
     rs1: u8,
-    immediate: i64,
+    immediate: i32,
     op: ZiskMainOp,
 ) -> ZiskMainInstruction {
     let mut instruction = binary_immediate_op(pc, instruction_size, rd, rs1, immediate, op);
@@ -514,14 +515,14 @@ fn lower_load(
     instruction_size: i64,
     rd: u8,
     rs1: u8,
-    offset: i64,
+    offset: i32,
     op: ZiskMainOp,
     width: u64,
 ) -> ZiskMainInstruction {
     let mut instruction = base_instruction(
         pc,
         register_source(rs1),
-        ZiskMainSource::Indirect(offset),
+        ZiskMainSource::Indirect(i64::from(offset)),
         op,
         register_store(rd),
         instruction_size,
@@ -535,7 +536,7 @@ fn lower_store(
     instruction_size: i64,
     rs1: u8,
     rs2: u8,
-    offset: i64,
+    offset: i32,
     width: u64,
 ) -> ZiskMainInstruction {
     let mut instruction = base_instruction(
@@ -543,25 +544,25 @@ fn lower_store(
         register_source(rs1),
         register_source(rs2),
         ZiskMainOp::CopyB,
-        ZiskMainStore::Indirect(offset),
+        ZiskMainStore::Indirect(i64::from(offset)),
         instruction_size,
     );
     instruction.ind_width = width;
     instruction
 }
 
-fn lower_lui(pc: u64, instruction_size: i64, rd: u8, immediate: i64) -> ZiskMainInstruction {
+fn lower_lui(pc: u64, instruction_size: i64, rd: u8, immediate: i32) -> ZiskMainInstruction {
     base_instruction(
         pc,
         ZiskMainSource::Immediate(0),
-        ZiskMainSource::Immediate(immediate as u64),
+        ZiskMainSource::Immediate(i64::from(immediate) as u64),
         ZiskMainOp::CopyB,
         register_store(rd),
         instruction_size,
     )
 }
 
-fn lower_auipc(pc: u64, instruction_size: i64, rd: u8, immediate: i64) -> ZiskMainInstruction {
+fn lower_auipc(pc: u64, instruction_size: i64, rd: u8, immediate: i32) -> ZiskMainInstruction {
     let (store, store_pc) = register_pc_store(rd);
     let mut instruction = base_instruction(
         pc,
@@ -573,11 +574,11 @@ fn lower_auipc(pc: u64, instruction_size: i64, rd: u8, immediate: i64) -> ZiskMa
     );
     instruction.store_pc = store_pc;
     instruction.jmp_offset1 = instruction_size;
-    instruction.jmp_offset2 = immediate;
+    instruction.jmp_offset2 = i64::from(immediate);
     instruction
 }
 
-fn lower_jal(pc: u64, instruction_size: i64, rd: u8, offset: i64) -> ZiskMainInstruction {
+fn lower_jal(pc: u64, instruction_size: i64, rd: u8, offset: i32) -> ZiskMainInstruction {
     let (store, store_pc) = register_pc_store(rd);
     let mut instruction = base_instruction(
         pc,
@@ -588,7 +589,7 @@ fn lower_jal(pc: u64, instruction_size: i64, rd: u8, offset: i64) -> ZiskMainIns
         instruction_size,
     );
     instruction.store_pc = store_pc;
-    instruction.jmp_offset1 = offset;
+    instruction.jmp_offset1 = i64::from(offset);
     instruction.jmp_offset2 = instruction_size;
     instruction
 }
@@ -598,7 +599,7 @@ fn lower_jalr(
     instruction_size: i64,
     rd: u8,
     rs1: u8,
-    offset: i64,
+    offset: i32,
 ) -> Result<ZiskMainInstruction, ZiskMainLowerError> {
     if offset % 2 != 0 {
         return Err(ZiskMainLowerError::UnsupportedInstruction {
@@ -616,7 +617,7 @@ fn lower_jalr(
     );
     instruction.store_pc = store_pc;
     instruction.set_pc = true;
-    instruction.jmp_offset1 = offset;
+    instruction.jmp_offset1 = i64::from(offset);
     instruction.jmp_offset2 = instruction_size;
     Ok(instruction)
 }
@@ -749,9 +750,10 @@ fn lower_branch(
     kind: RiscvBranchKind,
     rs1: u8,
     rs2: u8,
-    offset: i64,
+    offset: i32,
 ) -> ZiskMainInstruction {
-    let (op, jmp_offset1, jmp_offset2) = branch_op_offsets(kind, instruction_size, offset);
+    let (op, jmp_offset1, jmp_offset2) =
+        branch_op_offsets(kind, instruction_size, i64::from(offset));
     let mut instruction = base_instruction(
         pc,
         register_source(rs1),
