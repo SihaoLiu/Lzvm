@@ -11481,6 +11481,39 @@ fn guest_pc_trace_slice_reuses_prepared_instruction_for_advance() {
 }
 
 #[test]
+fn guest_pc_trace_retained_reports_preallocate_segment_buffer() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let source_path = crate_root.join("src/guest_pc_trace_backend.rs");
+    let source = std::fs::read_to_string(&source_path).expect("guest PC trace source should read");
+    let constructor_body = function_body(
+        &source,
+        "fn new_guest_pc_trace_report_buffer",
+        "fn run_guest_pc_trace_segment_slice_inner",
+    );
+    let runner_body = function_body(
+        &source,
+        "fn run_guest_pc_trace_segment_slice_inner",
+        "const ZISK_MAIN_MAX_INSTRUCTION_ROWS",
+    );
+
+    assert!(
+        constructor_body.contains("Vec::with_capacity(row_limit.min(instruction_capacity))"),
+        "retained guest PC report buffers should allocate to the segment limit before the hot loop"
+    );
+    assert!(
+        runner_body.contains(
+            "new_guest_pc_trace_report_buffer::<RETAIN_REPORTS>(instruction_limit, row_limit)"
+        ),
+        "guest PC trace slices should use the retained report buffer constructor"
+    );
+    assert!(
+        runner_body.contains("if reports.len() == reports.capacity()")
+            && !runner_body.contains("reports.reserve(1);"),
+        "guest PC trace slices should avoid calling reserve for every retained report"
+    );
+}
+
+#[test]
 fn guest_pc_trace_paused_slice_carries_boundary_lookahead() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let machine_path = crate_root.join("src/guest_machine/mod.rs");

@@ -4280,6 +4280,17 @@ fn finish_guest_pc_trace_segment_slice(
     }
 }
 
+fn new_guest_pc_trace_report_buffer<const RETAIN_REPORTS: bool>(
+    instruction_limit: u64,
+    row_limit: usize,
+) -> Vec<GuestMachineReport> {
+    if !RETAIN_REPORTS {
+        return Vec::new();
+    }
+    let instruction_capacity = usize::try_from(instruction_limit).unwrap_or(usize::MAX);
+    Vec::with_capacity(row_limit.min(instruction_capacity))
+}
+
 fn run_guest_pc_trace_segment_slice_inner<
     const TRACK_BOUNDARY: bool,
     const RETAIN_REPORTS: bool,
@@ -4293,7 +4304,8 @@ fn run_guest_pc_trace_segment_slice_inner<
     instruction_cache: &mut GuestInstructionCache,
     mut timing: Option<&mut GuestPcTraceStreamTiming>,
 ) -> Result<GuestPcTraceSegmentSlice, GuestPcTraceBackendError> {
-    let mut reports = Vec::new();
+    let mut reports =
+        new_guest_pc_trace_report_buffer::<RETAIN_REPORTS>(instruction_limit, row_limit);
     let mut last_report_shape = None;
     let mut report_count = 0_usize;
     let mut executed_instructions = 0_u64;
@@ -4421,7 +4433,9 @@ fn run_guest_pc_trace_segment_slice_inner<
         let mut advance_inner_timing =
             report_detail_timing.then(GuestMachineAdvanceTiming::default);
         let advanced = if RETAIN_REPORTS {
-            reports.reserve(1);
+            if reports.len() == reports.capacity() {
+                reports.reserve(row_limit.saturating_sub(reports.len()).max(1));
+            }
             let report_index = reports.len();
             let shape = {
                 let report_slot = reports.spare_capacity_mut().first_mut().ok_or_else(|| {
