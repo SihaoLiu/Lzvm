@@ -4577,13 +4577,14 @@ fn guest_pc_trace_segment_commit_pool_uses_scoped_bounded_workers() {
                 "DEFAULT_GUEST_PC_TRACE_AUTO_COMMIT_PIPELINE_INPUT_BYTES: usize = 1024 * 1024"
             )
             && source.contains("guest_pc_trace_segment_commit_pipeline_env_override()")
+            && source.contains("guest_pc_trace_auto_parallel_lower_selected(instruction_limit)")
             && source.contains(
                 "input_byte_count >= DEFAULT_GUEST_PC_TRACE_AUTO_COMMIT_PIPELINE_INPUT_BYTES"
             )
             && source.contains("LZVM_GUEST_PC_TRACE_SEGMENT_COMMIT_WORKERS")
             && source.contains(".filter(|count| *count > 0)")
-            && source.contains("default_guest_pc_trace_segment_commit_worker_count_for_input(input_byte_count)"),
-        "segment commit worker count should be an explicit nonzero env-controlled knob with a thresholded default"
+            && source.contains("default_guest_pc_trace_segment_commit_worker_count_for_input_and_limit"),
+        "segment commit worker count should be an explicit nonzero env-controlled knob with thresholded defaults"
     );
 
     let pool_region = function_body(
@@ -6839,8 +6840,18 @@ fn guest_pc_trace_parallel_lowerer_stays_seeded_and_opt_in() {
         "parallel guest PC trace lowering should have an explicit runtime gate"
     );
     assert!(
-        backend_source.contains("env_flag_enabled(\"LZVM_GUEST_PC_TRACE_PARALLEL_LOWER\", false)"),
-        "parallel guest PC trace lowering should remain disabled by default"
+        backend_source.contains("guest_pc_trace_parallel_lower_env_override()"),
+        "parallel guest PC trace lowering should keep an explicit opt-in flag"
+    );
+    assert!(
+        backend_source.contains("LZVM_GUEST_PC_TRACE_AUTO_PARALLEL_LOWER")
+            && backend_source.contains(
+                "DEFAULT_GUEST_PC_TRACE_AUTO_PARALLEL_LOWER_MIN_INSTRUCTIONS: u64 = 600_000_000"
+            )
+            && backend_source
+                .contains("DEFAULT_GUEST_PC_TRACE_AUTO_PARALLEL_LOWER_WORKERS: usize = 2")
+            && backend_source.contains("guest_pc_trace_auto_parallel_lower_selected"),
+        "parallel guest PC trace lowering should have a bounded large-runtime default"
     );
     assert!(
         !backend_source.contains("LZVM_GUEST_PC_TRACE_COMMIT_PIPELINE"),
@@ -6897,6 +6908,16 @@ fn guest_pc_trace_parallel_lowerer_stays_seeded_and_opt_in() {
     assert!(
         trusted_snapshot_body.contains("guest_pc_trace_parallel_lower_enabled()"),
         "parallel guest PC trace lowering should enable trusted seed lifting"
+    );
+    let seed_mode_body = function_body(
+        &backend_source,
+        "impl GuestPcTraceRunnerSeedMode",
+        "#[derive(Clone, Copy)]\nstruct GuestPcTraceParallelLowerMode",
+    );
+    assert!(
+        seed_mode_body.contains("guest_pc_trace_parallel_lower_enabled_for_limit")
+            && seed_mode_body.contains("instruction_limit"),
+        "runtime seed mode should include the large-runtime lower selector"
     );
     let live_pending_body = function_body(
         &backend_source,

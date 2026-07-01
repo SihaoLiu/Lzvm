@@ -37,7 +37,7 @@ use crate::guest_pc_trace_backend::{
 };
 use crate::guest_pc_trace_backend::{
     for_each_guest_pc_trace_segment_collecting_proof_values_with_context,
-    for_each_guest_pc_trace_segment_with_context,
+    for_each_guest_pc_trace_segment_with_context, guest_pc_trace_auto_parallel_lower_selected,
     run_guest_pc_trace_runtime_proof_values_with_context, run_guest_pc_trace_segments_with_context,
     GuestPcTraceBackend, GuestPcTraceSegmentRunOutput, GuestPcTraceSegmentStreamError,
     GuestPcTraceStreamTiming, ZISK_MAIN_ROW_SHAPE_TOP_PATTERN_COUNT,
@@ -4281,7 +4281,8 @@ fn run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_optiona
     let auxiliary_inputs = Arc::new(auxiliary_inputs);
     let mut timing_observer = timing_observer;
     let input_byte_count = shared_inputs.input.len();
-    let mut segment_commit_mode = GuestPcTraceSegmentCommitMode::from_input(input_byte_count, None);
+    let mut segment_commit_mode =
+        GuestPcTraceSegmentCommitMode::from_input(input_byte_count, instruction_limit, None);
     let initial_worker_count = segment_commit_mode.worker_count;
     let mut oom_retry_count = 0;
     let collect_segment_commit_memory_timing = timing_observer.is_some();
@@ -4362,6 +4363,7 @@ fn run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_optiona
                 segment_commit_oom_retry_duration += segment_commit_attempt_elapsed;
                 segment_commit_mode = GuestPcTraceSegmentCommitMode::from_input(
                     input_byte_count,
+                    instruction_limit,
                     Some(next_worker_count),
                 );
             }
@@ -5115,11 +5117,17 @@ struct GuestPcTraceSegmentCommitMode {
 }
 
 impl GuestPcTraceSegmentCommitMode {
-    fn from_input(input_byte_count: usize, worker_count_override: Option<usize>) -> Self {
-        let worker_count = guest_pc_trace_segment_commit_worker_count_for_input_with_override(
-            input_byte_count,
-            worker_count_override,
-        );
+    fn from_input(
+        input_byte_count: usize,
+        instruction_limit: u64,
+        worker_count_override: Option<usize>,
+    ) -> Self {
+        let worker_count =
+            guest_pc_trace_segment_commit_worker_count_for_input_and_limit_with_override(
+                input_byte_count,
+                instruction_limit,
+                worker_count_override,
+            );
         let cross_segment_root_materialization =
             guest_pc_cross_segment_root_materialization_selected(input_byte_count);
         #[cfg(feature = "cuda")]
@@ -5291,7 +5299,13 @@ const GUEST_PC_TRACE_COMMIT_PIPELINE_ENV: &str = "LZVM_GUEST_PC_TRACE_COMMIT_PIP
 const DEFAULT_GUEST_PC_TRACE_COMMIT_PIPELINE_WORKERS: usize = 2;
 const DEFAULT_GUEST_PC_TRACE_AUTO_COMMIT_PIPELINE_INPUT_BYTES: usize = 1024 * 1024;
 
-fn default_guest_pc_trace_segment_commit_worker_count_for_input(input_byte_count: usize) -> usize {
+fn default_guest_pc_trace_segment_commit_worker_count_for_input_and_limit(
+    input_byte_count: usize,
+    instruction_limit: u64,
+) -> usize {
+    if guest_pc_trace_auto_parallel_lower_selected(instruction_limit) {
+        return 1;
+    }
     if guest_pc_trace_segment_commit_pipeline_selected(input_byte_count) {
         DEFAULT_GUEST_PC_TRACE_COMMIT_PIPELINE_WORKERS
     } else {
@@ -5299,23 +5313,57 @@ fn default_guest_pc_trace_segment_commit_worker_count_for_input(input_byte_count
     }
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
+fn default_guest_pc_trace_segment_commit_worker_count_for_input(input_byte_count: usize) -> usize {
+    default_guest_pc_trace_segment_commit_worker_count_for_input_and_limit(input_byte_count, 0)
+}
+
+#[cfg_attr(not(test), allow(dead_code))]
 fn guest_pc_trace_segment_commit_worker_count_for_input(input_byte_count: usize) -> usize {
+    guest_pc_trace_segment_commit_worker_count_for_input_and_limit(input_byte_count, 0)
+}
+
+fn guest_pc_trace_segment_commit_worker_count_for_input_and_limit(
+    input_byte_count: usize,
+    instruction_limit: u64,
+) -> usize {
     std::env::var("LZVM_GUEST_PC_TRACE_SEGMENT_COMMIT_WORKERS")
         .ok()
         .and_then(|value| value.parse::<usize>().ok())
         .filter(|count| *count > 0)
         .unwrap_or_else(|| {
-            default_guest_pc_trace_segment_commit_worker_count_for_input(input_byte_count)
+            default_guest_pc_trace_segment_commit_worker_count_for_input_and_limit(
+                input_byte_count,
+                instruction_limit,
+            )
         })
 }
 
-fn guest_pc_trace_segment_commit_worker_count_for_input_with_override(
+fn guest_pc_trace_segment_commit_worker_count_for_input_and_limit_with_override(
     input_byte_count: usize,
+    instruction_limit: u64,
     worker_count_override: Option<usize>,
 ) -> usize {
     worker_count_override
         .filter(|count| *count > 0)
-        .unwrap_or_else(|| guest_pc_trace_segment_commit_worker_count_for_input(input_byte_count))
+        .unwrap_or_else(|| {
+            guest_pc_trace_segment_commit_worker_count_for_input_and_limit(
+                input_byte_count,
+                instruction_limit,
+            )
+        })
+}
+
+#[cfg_attr(not(test), allow(dead_code))]
+fn guest_pc_trace_segment_commit_worker_count_for_input_with_override(
+    input_byte_count: usize,
+    worker_count_override: Option<usize>,
+) -> usize {
+    guest_pc_trace_segment_commit_worker_count_for_input_and_limit_with_override(
+        input_byte_count,
+        0,
+        worker_count_override,
+    )
 }
 
 fn guest_pc_trace_segment_commit_async_single_worker_enabled() -> bool {
@@ -8646,6 +8694,67 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "cuda")]
+    #[test]
+    fn guest_pc_segment_commit_auto_lower_default_uses_single_worker() {
+        let commit_workers_env = TestEnvVarGuard::new("LZVM_GUEST_PC_TRACE_SEGMENT_COMMIT_WORKERS");
+        commit_workers_env.unset();
+        let commit_pipeline_env =
+            TestEnvVarUnlockedGuard::new("LZVM_GUEST_PC_TRACE_COMMIT_PIPELINE");
+        let parallel_env = TestEnvVarUnlockedGuard::new("LZVM_GUEST_PC_TRACE_PARALLEL_LOWER");
+        let work_units_env =
+            TestEnvVarUnlockedGuard::new("LZVM_GUEST_PC_TRACE_PARALLEL_LOWER_WORK_UNITS");
+        let auto_env = TestEnvVarUnlockedGuard::new("LZVM_GUEST_PC_TRACE_AUTO_PARALLEL_LOWER");
+        commit_pipeline_env.unset();
+        parallel_env.unset();
+        work_units_env.unset();
+        auto_env.unset();
+
+        assert_eq!(
+            guest_pc_trace_segment_commit_worker_count_for_input_and_limit(
+                8 * 1024 * 1024,
+                599_999_999
+            ),
+            2
+        );
+        assert_eq!(
+            guest_pc_trace_segment_commit_worker_count_for_input_and_limit(
+                8 * 1024 * 1024,
+                600_000_000
+            ),
+            1
+        );
+
+        auto_env.set("0");
+        assert_eq!(
+            guest_pc_trace_segment_commit_worker_count_for_input_and_limit(
+                8 * 1024 * 1024,
+                600_000_000
+            ),
+            2
+        );
+
+        auto_env.unset();
+        parallel_env.set("1");
+        assert_eq!(
+            guest_pc_trace_segment_commit_worker_count_for_input_and_limit(
+                8 * 1024 * 1024,
+                600_000_000
+            ),
+            2
+        );
+
+        parallel_env.unset();
+        commit_workers_env.set("3");
+        assert_eq!(
+            guest_pc_trace_segment_commit_worker_count_for_input_and_limit(
+                8 * 1024 * 1024,
+                600_000_000
+            ),
+            3
+        );
+    }
+
     #[test]
     fn env_flag_present_and_enabled_uses_present_non_disabled_values() {
         let env = TestEnvVarGuard::new("LZVM_TEST_PRESENT_FLAG");
@@ -8680,18 +8789,18 @@ mod tests {
         commit_workers_env.unset();
         commit_pipeline_env.set("1");
         async_single_env.set("1");
-        let pipeline_mode = GuestPcTraceSegmentCommitMode::from_input(1024, None);
+        let pipeline_mode = GuestPcTraceSegmentCommitMode::from_input(1024, 0, None);
         assert_eq!(pipeline_mode.worker_count, 2);
         assert!(!pipeline_mode.async_single_worker);
 
         commit_pipeline_env.unset();
         commit_workers_env.set("1");
-        let serial_async_mode = GuestPcTraceSegmentCommitMode::from_input(1024, None);
+        let serial_async_mode = GuestPcTraceSegmentCommitMode::from_input(1024, 0, None);
         assert_eq!(serial_async_mode.worker_count, 1);
         assert!(serial_async_mode.async_single_worker);
 
         async_single_env.set("0");
-        let serial_inline_mode = GuestPcTraceSegmentCommitMode::from_input(1024, None);
+        let serial_inline_mode = GuestPcTraceSegmentCommitMode::from_input(1024, 0, None);
         assert_eq!(serial_inline_mode.worker_count, 1);
         assert!(!serial_inline_mode.async_single_worker);
     }
@@ -8705,26 +8814,27 @@ mod tests {
 
         window_env.set("7");
         root_env.set("0");
-        let disabled_mode = GuestPcTraceSegmentCommitMode::from_input(1024, None);
+        let disabled_mode = GuestPcTraceSegmentCommitMode::from_input(1024, 0, None);
         assert!(!disabled_mode.cross_segment_root_materialization);
         assert_eq!(disabled_mode.pending_root_materialization_window, 1);
 
         root_env.set("1");
-        let enabled_mode = GuestPcTraceSegmentCommitMode::from_input(1024, None);
+        let enabled_mode = GuestPcTraceSegmentCommitMode::from_input(1024, 0, None);
         assert!(enabled_mode.cross_segment_root_materialization);
         assert_eq!(enabled_mode.pending_root_materialization_window, 7);
 
         window_env.unset();
-        let small_default_mode = GuestPcTraceSegmentCommitMode::from_input(1024, None);
+        let small_default_mode = GuestPcTraceSegmentCommitMode::from_input(1024, 0, None);
         assert!(small_default_mode.cross_segment_root_materialization);
         assert_eq!(small_default_mode.pending_root_materialization_window, 24);
 
-        let large_default_mode = GuestPcTraceSegmentCommitMode::from_input(8 * 1024 * 1024, None);
+        let large_default_mode =
+            GuestPcTraceSegmentCommitMode::from_input(8 * 1024 * 1024, 0, None);
         assert!(large_default_mode.cross_segment_root_materialization);
         assert_eq!(large_default_mode.pending_root_materialization_window, 8);
 
         let unsupported_mode =
-            GuestPcTraceSegmentCommitMode::from_input(2 * 1024 * 1024 * 1024, None);
+            GuestPcTraceSegmentCommitMode::from_input(2 * 1024 * 1024 * 1024, 0, None);
         assert!(!unsupported_mode.cross_segment_root_materialization);
         assert_eq!(unsupported_mode.pending_root_materialization_window, 1);
     }
@@ -8737,7 +8847,7 @@ mod tests {
         env.unset();
         debug_env.unset();
 
-        let default_mode = GuestPcTraceSegmentCommitMode::from_input(1024, None);
+        let default_mode = GuestPcTraceSegmentCommitMode::from_input(1024, 0, None);
         assert!(default_mode.trace_cuda_run_config.stage_source_retention);
         assert!(
             !default_mode
@@ -8752,7 +8862,7 @@ mod tests {
             default_mode.trace_cuda_run_config
         );
 
-        let disabled_mode = GuestPcTraceSegmentCommitMode::from_input(1024, None);
+        let disabled_mode = GuestPcTraceSegmentCommitMode::from_input(1024, 0, None);
         assert!(!disabled_mode.trace_cuda_run_config.stage_source_retention);
         assert!(
             !disabled_mode
@@ -8760,7 +8870,7 @@ mod tests {
                 .stage_source_retention_debug
         );
         debug_env.set("yes");
-        let disabled_debug_mode = GuestPcTraceSegmentCommitMode::from_input(1024, None);
+        let disabled_debug_mode = GuestPcTraceSegmentCommitMode::from_input(1024, 0, None);
         assert!(
             !disabled_debug_mode
                 .trace_cuda_run_config
@@ -8773,7 +8883,7 @@ mod tests {
         );
 
         env.set("yes");
-        let enabled_mode = GuestPcTraceSegmentCommitMode::from_input(1024, None);
+        let enabled_mode = GuestPcTraceSegmentCommitMode::from_input(1024, 0, None);
         assert!(enabled_mode.trace_cuda_run_config.stage_source_retention);
         assert!(
             enabled_mode
@@ -8786,7 +8896,7 @@ mod tests {
                 .trace_cuda_run_config
                 .stage_source_retention_debug
         );
-        let debug_disabled_mode = GuestPcTraceSegmentCommitMode::from_input(1024, None);
+        let debug_disabled_mode = GuestPcTraceSegmentCommitMode::from_input(1024, 0, None);
         assert!(
             !debug_disabled_mode
                 .trace_cuda_run_config
@@ -8808,7 +8918,7 @@ mod tests {
         percent_env.unset();
         debug_env.unset();
 
-        let default_mode = GuestPcTraceSegmentCommitMode::from_input(1024, None);
+        let default_mode = GuestPcTraceSegmentCommitMode::from_input(1024, 0, None);
         assert!(
             !default_mode
                 .trace_cuda_run_config
@@ -8839,7 +8949,7 @@ mod tests {
         sparse_env.set("true");
         percent_env.set("17");
         debug_env.set("yes");
-        let enabled_mode = GuestPcTraceSegmentCommitMode::from_input(1024, None);
+        let enabled_mode = GuestPcTraceSegmentCommitMode::from_input(1024, 0, None);
         let enabled_config = enabled_mode.trace_cuda_run_config;
         let enabled_upload_config = enabled_config.stage_source_upload;
         assert!(enabled_upload_config.terminal_sparse_trace_source);
@@ -8930,7 +9040,7 @@ mod tests {
         parallel_env.unset();
         work_units_env.unset();
 
-        let small_input_mode = GuestPcTraceSegmentCommitMode::from_input(1024, None);
+        let small_input_mode = GuestPcTraceSegmentCommitMode::from_input(1024, 0, None);
         assert!(
             small_input_mode
                 .trace_cuda_run_config
@@ -8948,7 +9058,7 @@ mod tests {
             small_input_mode.trace_cuda_run_config
         );
 
-        let disabled_mode = GuestPcTraceSegmentCommitMode::from_input(1024, None);
+        let disabled_mode = GuestPcTraceSegmentCommitMode::from_input(1024, 0, None);
         assert!(
             !disabled_mode
                 .trace_cuda_run_config
@@ -8956,7 +9066,7 @@ mod tests {
         );
 
         descriptor_env.set("1");
-        let forced_mode = GuestPcTraceSegmentCommitMode::from_input(64 * 1024 * 1024, None);
+        let forced_mode = GuestPcTraceSegmentCommitMode::from_input(64 * 1024 * 1024, 0, None);
         assert!(
             forced_mode
                 .trace_cuda_run_config

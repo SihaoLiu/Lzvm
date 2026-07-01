@@ -3832,6 +3832,7 @@ fn large_runtime_auto_work_units_select_parallel_lower() {
         .expect("guest PC trace env lock should not be poisoned");
     let _parallel_env = TestEnvVarGuard::unset("LZVM_GUEST_PC_TRACE_PARALLEL_LOWER");
     let _work_units_env = TestEnvVarGuard::unset("LZVM_GUEST_PC_TRACE_PARALLEL_LOWER_WORK_UNITS");
+    let _auto_lower_env = TestEnvVarGuard::unset("LZVM_GUEST_PC_TRACE_AUTO_PARALLEL_LOWER");
     let _auto_env = TestEnvVarGuard::unset("LZVM_GUEST_PC_TRACE_AUTO_PARALLEL_LOWER_WORK_UNITS");
     let _snapshot_env = TestEnvVarGuard::unset("LZVM_GUEST_PC_TRACE_RUNNER_SEED_SNAPSHOT");
     let _trusted_env = TestEnvVarGuard::unset("LZVM_GUEST_PC_TRACE_RUNNER_SEED_SNAPSHOT_TRUSTED");
@@ -3848,8 +3849,8 @@ fn large_runtime_auto_work_units_select_parallel_lower() {
     ));
 
     let seed_mode = GuestPcTraceRunnerSeedMode::from_runtime(50_000_000);
-    assert!(!seed_mode.snapshot);
-    assert!(!seed_mode.trusted);
+    assert!(seed_mode.snapshot);
+    assert!(seed_mode.trusted);
 
     let mode = GuestPcTraceParallelLowerMode::from_runtime(50_000_000);
     assert!(mode.work_units);
@@ -3860,6 +3861,54 @@ fn large_runtime_auto_work_units_select_parallel_lower() {
 }
 
 #[test]
+#[cfg(feature = "cuda")]
+fn large_runtime_auto_lower_uses_bounded_workers() {
+    let _env_lock = GUEST_PC_TRACE_ENV_LOCK
+        .lock()
+        .expect("guest PC trace env lock should not be poisoned");
+    let _parallel_env = TestEnvVarGuard::unset("LZVM_GUEST_PC_TRACE_PARALLEL_LOWER");
+    let _work_units_env = TestEnvVarGuard::unset("LZVM_GUEST_PC_TRACE_PARALLEL_LOWER_WORK_UNITS");
+    let _auto_lower_env = TestEnvVarGuard::unset("LZVM_GUEST_PC_TRACE_AUTO_PARALLEL_LOWER");
+    let _workers_env = TestEnvVarGuard::unset("LZVM_GUEST_PC_TRACE_PARALLEL_LOWER_WORKERS");
+    let _snapshot_env = TestEnvVarGuard::unset("LZVM_GUEST_PC_TRACE_RUNNER_SEED_SNAPSHOT");
+    let _trusted_env = TestEnvVarGuard::unset("LZVM_GUEST_PC_TRACE_RUNNER_SEED_SNAPSHOT_TRUSTED");
+
+    assert!(!guest_pc_trace_auto_parallel_lower_selected(599_999_999));
+    assert!(!guest_pc_trace_parallel_lower_enabled_for_limit(
+        599_999_999
+    ));
+    assert!(guest_pc_trace_auto_parallel_lower_selected(600_000_000));
+    assert!(guest_pc_trace_parallel_lower_enabled_for_limit(600_000_000));
+    assert_eq!(
+        guest_pc_trace_parallel_lower_worker_count_for_limit(600_000_000),
+        Some(2)
+    );
+
+    let seed_mode = GuestPcTraceRunnerSeedMode::from_runtime(600_000_000);
+    assert!(seed_mode.snapshot);
+    assert!(seed_mode.trusted);
+
+    std::env::set_var("LZVM_GUEST_PC_TRACE_AUTO_PARALLEL_LOWER", "0");
+    assert!(!guest_pc_trace_auto_parallel_lower_selected(600_000_000));
+    assert!(!guest_pc_trace_parallel_lower_enabled_for_limit(
+        600_000_000
+    ));
+
+    std::env::set_var("LZVM_GUEST_PC_TRACE_AUTO_PARALLEL_LOWER", "1");
+    std::env::set_var("LZVM_GUEST_PC_TRACE_PARALLEL_LOWER_WORKERS", "3");
+    assert_eq!(
+        guest_pc_trace_parallel_lower_worker_count_for_limit(600_000_000),
+        Some(3)
+    );
+
+    std::env::set_var("LZVM_GUEST_PC_TRACE_PARALLEL_LOWER", "0");
+    assert!(!guest_pc_trace_auto_parallel_lower_selected(600_000_000));
+    assert!(!guest_pc_trace_parallel_lower_enabled_for_limit(
+        600_000_000
+    ));
+}
+
+#[test]
 #[cfg(not(feature = "cuda"))]
 fn large_runtime_auto_work_units_stay_disabled_without_gpu_feature() {
     let _env_lock = GUEST_PC_TRACE_ENV_LOCK
@@ -3867,6 +3916,7 @@ fn large_runtime_auto_work_units_stay_disabled_without_gpu_feature() {
         .expect("guest PC trace env lock should not be poisoned");
     let _parallel_env = TestEnvVarGuard::unset("LZVM_GUEST_PC_TRACE_PARALLEL_LOWER");
     let _work_units_env = TestEnvVarGuard::unset("LZVM_GUEST_PC_TRACE_PARALLEL_LOWER_WORK_UNITS");
+    let _auto_lower_env = TestEnvVarGuard::unset("LZVM_GUEST_PC_TRACE_AUTO_PARALLEL_LOWER");
     let _auto_env = TestEnvVarGuard::unset("LZVM_GUEST_PC_TRACE_AUTO_PARALLEL_LOWER_WORK_UNITS");
     let _snapshot_env = TestEnvVarGuard::unset("LZVM_GUEST_PC_TRACE_RUNNER_SEED_SNAPSHOT");
     let _trusted_env = TestEnvVarGuard::unset("LZVM_GUEST_PC_TRACE_RUNNER_SEED_SNAPSHOT_TRUSTED");
