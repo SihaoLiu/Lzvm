@@ -842,6 +842,49 @@ fn eth_proof_timing_batch_dry_run_can_request_rejected_average_logging() {
 }
 
 #[test]
+fn eth_proof_timing_batch_dry_run_can_request_seed_discovery_modes() {
+    let fixture = ProofFixture::new("eth-proof-timing-batch-seed-discovery");
+    let mut command = Command::new(script_path());
+    command
+        .arg("--suite")
+        .arg("large")
+        .arg("--dry-run")
+        .arg("--seed-discovery")
+        .arg("--seed-discovery-streaming-device-lower")
+        .arg("--summary")
+        .arg("seed discovery");
+    fixture.apply_env(&mut command, LARGE_PREFIX);
+
+    let output = command
+        .output()
+        .expect("ETH proof timing batch dry-run should run");
+    let success = output.status.success();
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    fixture.cleanup();
+
+    assert!(
+        success,
+        "dry-run should build seed discovery command: stderr={stderr}"
+    );
+    assert!(
+        stdout.contains("-u LZVM_GUEST_PC_TRACE_SEED_DISCOVERY")
+            && stdout.contains("-u LZVM_GUEST_PC_TRACE_SEED_DISCOVERY_STREAMING_DEVICE_LOWER"),
+        "seed discovery knobs should be cleared before explicit command env: {stdout}"
+    );
+    assert!(
+        stdout.contains("LZVM_GUEST_PC_TRACE_SEED_DISCOVERY=1")
+            && stdout.contains("LZVM_GUEST_PC_TRACE_SEED_DISCOVERY_STREAMING_DEVICE_LOWER=1"),
+        "seed discovery knobs should be explicit command env: {stdout}"
+    );
+    assert!(
+        stdout.contains("seed_discovery=true\n")
+            && stdout.contains("seed_discovery_streaming_device_lower=true\n"),
+        "dry-run metadata should report seed discovery modes: {stdout}"
+    );
+}
+
+#[test]
 fn eth_proof_timing_batch_skip_targets_omits_default_thresholds() {
     let fixture = ProofFixture::new("eth-proof-timing-batch-skip-targets");
     let mut command = Command::new(script_path());

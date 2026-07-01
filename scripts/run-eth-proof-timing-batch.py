@@ -104,6 +104,8 @@ PIPELINE_ENV_TO_CLEAR = [
     "LZVM_GUEST_PC_TRACE_PARALLEL_STREAM_CHUNKS",
     "LZVM_GUEST_PC_TRACE_REPORT_CHUNKS",
     "LZVM_GUEST_PC_TRACE_REPORT_CHUNK_CAPACITY",
+    "LZVM_GUEST_PC_TRACE_SEED_DISCOVERY",
+    "LZVM_GUEST_PC_TRACE_SEED_DISCOVERY_STREAMING_DEVICE_LOWER",
     "LZVM_CUDA_GUEST_PC_OWNED_STREAMING_LOWER",
     "LZVM_GUEST_TRACE_DETAIL_TIMING",
     "LZVM_GUEST_TRACE_DETAIL_TIMING_SAMPLE_STRIDE",
@@ -569,6 +571,10 @@ def mode_args(args: argparse.Namespace) -> list[str]:
     result = ["--small-mode", args.small_mode, "--large-mode", args.large_mode]
     if args.skip_verify_proof:
         result.append("--skip-verify-proof")
+    if args.seed_discovery:
+        result.append("--seed-discovery")
+    if args.seed_discovery_streaming_device_lower:
+        result.append("--seed-discovery-streaming-device-lower")
     if args.owned_streaming_lower:
         result.append("--owned-streaming-lower")
     if args.trace_shape_timing:
@@ -604,6 +610,10 @@ def trace_timing_env_for_args(args: argparse.Namespace) -> dict[str, str]:
 
 def mode_env_for_args(args: argparse.Namespace, mode: str) -> dict[str, str]:
     mode_env = dict(MODE_ENV[mode])
+    if args.seed_discovery:
+        mode_env["LZVM_GUEST_PC_TRACE_SEED_DISCOVERY"] = "1"
+    if args.seed_discovery_streaming_device_lower:
+        mode_env["LZVM_GUEST_PC_TRACE_SEED_DISCOVERY_STREAMING_DEVICE_LOWER"] = "1"
     if args.owned_streaming_lower:
         mode_env["LZVM_CUDA_GUEST_PC_OWNED_STREAMING_LOWER"] = "1"
     mode_env.update(trace_timing_env_for_args(args))
@@ -1359,6 +1369,9 @@ def dry_run_summary_lines(args: argparse.Namespace, root: Path) -> list[str]:
         f"parallel_lower_workers={args.parallel_lower_workers or ''}",
         f"parallel_lower_job_queue={args.parallel_lower_job_queue or ''}",
         f"segment_commit_workers={args.segment_commit_workers or ''}",
+        f"seed_discovery={str(args.seed_discovery).lower()}",
+        "seed_discovery_streaming_device_lower="
+        f"{str(args.seed_discovery_streaming_device_lower).lower()}",
         f"owned_streaming_lower={str(args.owned_streaming_lower).lower()}",
         f"gpu_preallocate={str(args.gpu_preallocate).lower()}",
         f"minimal_memory={str(args.minimal_memory).lower()}",
@@ -1645,6 +1658,8 @@ def self_test() -> None:
         parallel_lower_job_queue=None,
         parallel_lower_workers=None,
         segment_commit_workers=None,
+        seed_discovery=False,
+        seed_discovery_streaming_device_lower=False,
         owned_streaming_lower=False,
         trace_shape_timing=False,
         trace_detail_timing=False,
@@ -1755,6 +1770,8 @@ def main() -> None:
     parser.add_argument("--parallel-lower-workers", type=positive_integer, default=None)
     parser.add_argument("--parallel-lower-job-queue", type=positive_integer, default=None)
     parser.add_argument("--segment-commit-workers", type=positive_integer, default=None)
+    parser.add_argument("--seed-discovery", action="store_true")
+    parser.add_argument("--seed-discovery-streaming-device-lower", action="store_true")
     parser.add_argument("--owned-streaming-lower", action="store_true")
     parser.add_argument("--trace-shape-timing", action="store_true")
     parser.add_argument("--trace-detail-timing", action="store_true")
