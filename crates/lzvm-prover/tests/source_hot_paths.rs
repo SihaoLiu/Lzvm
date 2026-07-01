@@ -3560,14 +3560,18 @@ fn trace_output_external_source_openings_flush_to_bound_device_memory() {
         "external-source witness opening batching should not expose an unbounded cross-unit device-memory gate"
     );
     assert!(
-        batch_body.contains("if trace_output_opening_unit_needs_external_source(output) {"),
+        batch_body.contains(
+            "let needs_external_source = trace_output_opening_unit_needs_external_source(output);"
+        ) && batch_body.contains("if needs_external_source {"),
         "trace-output witness opening batching should flush external-source units conservatively"
     );
     assert!(
         batch_body.contains("std::mem::take(&mut pending_works)")
             && batch_body.contains("append_trace_output_opening_units_from_prepared_cuda_batch")
-            && batch_body.contains("vec![work]"),
-        "external-source units should be opened one unit at a time after flushing retained-source work"
+            && batch_body.contains("let external_source_batch_size = trace_output_external_source_opening_batch_size();")
+            && batch_body.contains("pending_external_source_works >= external_source_batch_size")
+            && batch_body.contains("if pending_external_source_works > 0 {"),
+        "external-source units should be opened through a bounded batch after flushing retained-source work"
     );
 }
 
@@ -3784,11 +3788,15 @@ fn retained_cache_defaults_prioritize_descriptor_reuse() {
         .expect("witness commitment values source should read");
 
     assert!(
-        values_source.contains("const DEFAULT_RETAINED_SOURCE_DEVICE_BYTES: usize = 0")
+        values_source
+            .contains("const DEFAULT_RETAINED_SOURCE_DEVICE_BYTES: usize = 4_000_000_000")
+            && values_source
+                .contains("const RETAINED_SOURCE_DEVICE_RESERVE_BYTES: usize = 20 * 1024 * 1024 * 1024")
             && values_source.contains(
                 "const MAX_DEFAULT_RETAINED_SOURCE_DEVICE_BYTES: usize = DEFAULT_RETAINED_SOURCE_DEVICE_BYTES"
-            ),
-        "default source-device retention should leave cache capacity for retained leaf digests"
+            )
+            && values_source.contains(".unwrap_or(0)"),
+        "default source-device retention should stay modest and require measured device headroom"
     );
     assert!(
         values_source.contains("const DEFAULT_RETAINED_LEAF_DIGEST_BYTES: usize = 1_000_000_000")
@@ -4492,7 +4500,7 @@ fn guest_pc_trace_segment_commit_uses_worker_state() {
             && mode_body.contains("trace_cuda_run_config: WitnessTraceCudaRunConfig")
             && mode_body.contains("pending_root_materialization_window: usize")
             && mode_body.contains(
-                "guest_pc_trace_segment_commit_worker_count_for_input_with_override"
+                "guest_pc_trace_segment_commit_worker_count_for_input_and_limit_with_override"
             )
             && mode_body.contains("guest_pc_cross_segment_root_materialization_selected")
             && mode_body.contains("WitnessTraceCudaRunConfig::from_input(input_byte_count)")
