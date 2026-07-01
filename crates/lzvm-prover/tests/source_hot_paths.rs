@@ -3777,7 +3777,7 @@ fn compact_opening_reuses_retained_wide_leaf_digest_levels() {
 }
 
 #[test]
-fn retained_cache_defaults_prioritize_leaf_digest_reuse() {
+fn retained_cache_defaults_prioritize_descriptor_reuse() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let values_path = crate_root.join("src/witness_commitment/values.rs");
     let values_source = std::fs::read_to_string(&values_path)
@@ -3791,11 +3791,11 @@ fn retained_cache_defaults_prioritize_leaf_digest_reuse() {
         "default source-device retention should leave cache capacity for retained leaf digests"
     );
     assert!(
-        values_source.contains("const DEFAULT_RETAINED_LEAF_DIGEST_BYTES: usize = 22_000_000_000")
+        values_source.contains("const DEFAULT_RETAINED_LEAF_DIGEST_BYTES: usize = 0")
             && values_source.contains(
                 "const MAX_DEFAULT_RETAINED_LEAF_DIGEST_BYTES: usize = DEFAULT_RETAINED_LEAF_DIGEST_BYTES"
             ),
-        "default leaf-digest retention should use the measured 22GB cap for opening reuse"
+        "default leaf-digest retention should stay disabled for the measured descriptor-priority split"
     );
     assert!(
         values_source
@@ -3809,10 +3809,10 @@ fn retained_cache_defaults_prioritize_leaf_digest_reuse() {
     );
     assert!(
         values_source.contains(
-            "const DEFAULT_RETAINED_DESCRIPTOR_BUFFER_BYTES: usize = 8_000_000_000"
+            "const DEFAULT_RETAINED_DESCRIPTOR_BUFFER_BYTES: usize = 14_000_000_000"
         ) && values_source.contains("const MAX_DEFAULT_RETAINED_DESCRIPTOR_BUFFER_BYTES: usize")
             && values_source.contains("DEFAULT_RETAINED_DESCRIPTOR_BUFFER_BYTES"),
-        "default descriptor-buffer retention should use the measured 8GB cap for strict opening reuse"
+        "default descriptor-buffer retention should use the measured 14GB cap for strict opening reuse"
     );
     assert!(
         values_source.contains("RETAINED_COMBINED_DEVICE_CACHE_RESERVE_BYTES")

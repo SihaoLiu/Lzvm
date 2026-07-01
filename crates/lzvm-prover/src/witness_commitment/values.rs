@@ -385,7 +385,7 @@ static RETAINED_SOURCE_DEVICE_BYTES: AtomicUsize = AtomicUsize::new(0);
 #[cfg(feature = "cuda")]
 static RETAINED_SOURCE_DEVICE_LIMIT: OnceLock<usize> = OnceLock::new();
 #[cfg(feature = "cuda")]
-const DEFAULT_RETAINED_DESCRIPTOR_BUFFER_BYTES: usize = 8_000_000_000;
+const DEFAULT_RETAINED_DESCRIPTOR_BUFFER_BYTES: usize = 14_000_000_000;
 #[cfg(feature = "cuda")]
 const RETAINED_DESCRIPTOR_BUFFER_RESERVE_BYTES: usize = 10 * 1024 * 1024 * 1024;
 #[cfg(feature = "cuda")]
@@ -401,7 +401,7 @@ static RETAINED_COMBINED_DEVICE_CACHE_LIMIT: OnceLock<Option<usize>> = OnceLock:
 static RETAINED_SOURCE_DEVICE_REGISTRY: OnceLock<Mutex<HashMap<usize, RetainedSourceDeviceEntry>>> =
     OnceLock::new();
 #[cfg(feature = "cuda")]
-const DEFAULT_RETAINED_LEAF_DIGEST_BYTES: usize = 22_000_000_000;
+const DEFAULT_RETAINED_LEAF_DIGEST_BYTES: usize = 0;
 #[cfg(feature = "cuda")]
 const RETAINED_LEAF_DIGEST_RESERVE_BYTES: usize = 10 * 1024 * 1024 * 1024;
 #[cfg(feature = "cuda")]
@@ -3736,8 +3736,8 @@ mod tests {
     #[test]
     fn default_retained_leaf_digest_limit_stays_within_static_cache_cap() {
         assert_eq!(
-            DEFAULT_RETAINED_LEAF_DIGEST_BYTES, 22_000_000_000,
-            "default retained leaf digest cache should match the measured leaf-priority split"
+            DEFAULT_RETAINED_LEAF_DIGEST_BYTES, 0,
+            "default retained leaf digest cache should stay disabled for the measured descriptor-priority split"
         );
         assert!(
             default_retained_leaf_digest_limit() <= DEFAULT_RETAINED_LEAF_DIGEST_BYTES,
