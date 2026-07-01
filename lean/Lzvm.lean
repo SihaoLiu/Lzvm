@@ -15,6 +15,7 @@ import Lzvm.DigestPrefix
 import Lzvm.EthBlockPublicInputBinding
 import Lzvm.ExternalSource
 import Lzvm.FramedGuestInputBinding
+import Lzvm.GuestReportRegisterWrite
 import Lzvm.MerklePathSoundness
 import Lzvm.Model
 import Lzvm.OrderedLookup
