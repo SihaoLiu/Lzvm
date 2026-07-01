@@ -1413,16 +1413,13 @@ fn cuda_compact_opening_reuses_retained_stage_source_device_buffer() {
     );
     assert!(
         values_source.contains("RETAINED_COMBINED_DEVICE_CACHE_RESERVE_BYTES")
-            && values_source.contains(
-                "retained_combined_device_cache_allows(next, descriptor_bytes, leaf_bytes)"
-            )
-            && values_source.contains(
-                "retained_combined_device_cache_allows(source_bytes, next, leaf_bytes)"
-            )
-            && values_source.contains(
-                "retained_combined_device_cache_allows(source_bytes, descriptor_bytes, next)"
-            ),
-        "retained source, descriptor, and leaf digest caches should keep a shared CUDA memory reserve for openings"
+            && values_source.contains("RETAINED_PARENT_CHECKPOINT_BYTES")
+            && values_source.contains("parent_reserved_bytes")
+            && values_source
+                .contains("retained_parent_checkpoint_limit().saturating_sub(parent_bytes)")
+            && values_source
+                .contains("retained_combined_device_cache_allows(source_bytes, descriptor_bytes, leaf_bytes, next)"),
+        "retained source, descriptor, leaf digest, and parent checkpoint caches should keep a shared CUDA memory reserve for openings while preserving checkpoint headroom"
     );
     assert!(
         values_source.contains("RETAINED_SOURCE_DEVICE_REGISTRY")
@@ -3801,6 +3798,16 @@ fn retained_cache_defaults_prioritize_leaf_digest_reuse() {
         "default leaf-digest retention should use the measured 22GB cap for opening reuse"
     );
     assert!(
+        values_source
+            .contains("const DEFAULT_RETAINED_PARENT_CHECKPOINT_BYTES: usize = 10_000_000_000")
+            && values_source.contains(
+                "const MAX_DEFAULT_RETAINED_PARENT_CHECKPOINT_BYTES: usize ="
+            )
+            && values_source.contains("DEFAULT_RETAINED_PARENT_CHECKPOINT_BYTES")
+            && values_source.contains("LZVM_CUDA_RETAINED_PARENT_CHECKPOINT_BYTES"),
+        "default parent-checkpoint retention should use the measured 10GB cap for sparse opening reuse"
+    );
+    assert!(
         values_source.contains(
             "const DEFAULT_RETAINED_DESCRIPTOR_BUFFER_BYTES: usize = 10_000_000_000"
         ) && values_source.contains("const MAX_DEFAULT_RETAINED_DESCRIPTOR_BUFFER_BYTES: usize")
@@ -3809,16 +3816,12 @@ fn retained_cache_defaults_prioritize_leaf_digest_reuse() {
     );
     assert!(
         values_source.contains("RETAINED_COMBINED_DEVICE_CACHE_RESERVE_BYTES")
-            && values_source.contains(
-                "retained_combined_device_cache_allows(next, descriptor_bytes, leaf_bytes)"
-            )
-            && values_source.contains(
-                "retained_combined_device_cache_allows(source_bytes, next, leaf_bytes)"
-            )
-            && values_source.contains(
-                "retained_combined_device_cache_allows(source_bytes, descriptor_bytes, next)"
-            ),
-        "source, descriptor, and leaf digest defaults should remain bounded by the shared device-memory reserve"
+            && values_source.contains("reserve_retained_parent_checkpoint_bytes")
+            && values_source.contains("release_retained_parent_checkpoint_bytes")
+            && values_source.contains("parent_reserved_bytes")
+            && values_source
+                .contains("retained_parent_checkpoint_limit().saturating_sub(parent_bytes)"),
+        "source, descriptor, leaf digest, and parent checkpoint defaults should remain bounded by the shared device-memory reserve with checkpoint headroom"
     );
 }
 

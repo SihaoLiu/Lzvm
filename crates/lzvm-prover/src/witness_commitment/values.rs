@@ -410,6 +410,17 @@ const MAX_DEFAULT_RETAINED_LEAF_DIGEST_BYTES: usize = DEFAULT_RETAINED_LEAF_DIGE
 static RETAINED_LEAF_DIGEST_BYTES: AtomicUsize = AtomicUsize::new(0);
 #[cfg(feature = "cuda")]
 static RETAINED_LEAF_DIGEST_LIMIT: OnceLock<usize> = OnceLock::new();
+#[cfg(feature = "cuda")]
+const DEFAULT_RETAINED_PARENT_CHECKPOINT_BYTES: usize = 10_000_000_000;
+#[cfg(feature = "cuda")]
+const RETAINED_PARENT_CHECKPOINT_RESERVE_BYTES: usize = 10 * 1024 * 1024 * 1024;
+#[cfg(feature = "cuda")]
+const MAX_DEFAULT_RETAINED_PARENT_CHECKPOINT_BYTES: usize =
+    DEFAULT_RETAINED_PARENT_CHECKPOINT_BYTES;
+#[cfg(feature = "cuda")]
+static RETAINED_PARENT_CHECKPOINT_BYTES: AtomicUsize = AtomicUsize::new(0);
+#[cfg(feature = "cuda")]
+static RETAINED_PARENT_CHECKPOINT_LIMIT: OnceLock<usize> = OnceLock::new();
 
 #[cfg(feature = "cuda")]
 #[derive(Debug)]
@@ -566,7 +577,7 @@ impl Drop for RetainedCudaLeafDigestLevel {
 #[cfg(feature = "cuda")]
 impl Drop for RetainedCudaParentCheckpointLevel {
     fn drop(&mut self) {
-        release_retained_leaf_digest_bytes(self.bytes);
+        release_retained_parent_checkpoint_bytes(self.bytes);
     }
 }
 
@@ -684,7 +695,7 @@ pub(crate) fn retain_parent_checkpoint_level(
     }
     let level = checkpoint?;
     let bytes = level.byte_len();
-    reserve_retained_leaf_digest_bytes(bytes)?;
+    reserve_retained_parent_checkpoint_bytes(bytes)?;
     Some(Arc::new(RetainedCudaParentCheckpointLevel { level, bytes }))
 }
 
@@ -740,7 +751,8 @@ fn reserve_retained_device_bytes(bytes: usize) -> Option<()> {
         }
         let descriptor_bytes = RETAINED_DESCRIPTOR_BUFFER_BYTES.load(Ordering::Acquire);
         let leaf_bytes = RETAINED_LEAF_DIGEST_BYTES.load(Ordering::Acquire);
-        retained_combined_device_cache_allows(next, descriptor_bytes, leaf_bytes)?;
+        let parent_bytes = RETAINED_PARENT_CHECKPOINT_BYTES.load(Ordering::Acquire);
+        retained_combined_device_cache_allows(next, descriptor_bytes, leaf_bytes, parent_bytes)?;
         match RETAINED_SOURCE_DEVICE_BYTES.compare_exchange_weak(
             current,
             next,
@@ -775,7 +787,8 @@ fn reserve_retained_descriptor_buffer_bytes(bytes: usize) -> Option<()> {
         }
         let source_bytes = RETAINED_SOURCE_DEVICE_BYTES.load(Ordering::Acquire);
         let leaf_bytes = RETAINED_LEAF_DIGEST_BYTES.load(Ordering::Acquire);
-        retained_combined_device_cache_allows(source_bytes, next, leaf_bytes)?;
+        let parent_bytes = RETAINED_PARENT_CHECKPOINT_BYTES.load(Ordering::Acquire);
+        retained_combined_device_cache_allows(source_bytes, next, leaf_bytes, parent_bytes)?;
         match RETAINED_DESCRIPTOR_BUFFER_BYTES.compare_exchange_weak(
             current,
             next,
@@ -810,7 +823,15 @@ fn reserve_retained_leaf_digest_bytes(bytes: usize) -> Option<()> {
         }
         let source_bytes = RETAINED_SOURCE_DEVICE_BYTES.load(Ordering::Acquire);
         let descriptor_bytes = RETAINED_DESCRIPTOR_BUFFER_BYTES.load(Ordering::Acquire);
-        retained_combined_device_cache_allows(source_bytes, descriptor_bytes, next)?;
+        let parent_bytes = RETAINED_PARENT_CHECKPOINT_BYTES.load(Ordering::Acquire);
+        let parent_reserved_bytes = parent_bytes
+            .checked_add(retained_parent_checkpoint_limit().saturating_sub(parent_bytes))?;
+        retained_combined_device_cache_allows(
+            source_bytes,
+            descriptor_bytes,
+            next,
+            parent_reserved_bytes,
+        )?;
         match RETAINED_LEAF_DIGEST_BYTES.compare_exchange_weak(
             current,
             next,
@@ -826,6 +847,42 @@ fn reserve_retained_leaf_digest_bytes(bytes: usize) -> Option<()> {
 #[cfg(feature = "cuda")]
 fn release_retained_leaf_digest_bytes(bytes: usize) {
     RETAINED_LEAF_DIGEST_BYTES.fetch_sub(bytes, Ordering::AcqRel);
+}
+
+#[cfg(feature = "cuda")]
+fn reserve_retained_parent_checkpoint_bytes(bytes: usize) -> Option<()> {
+    if bytes == 0 {
+        return Some(());
+    }
+    let limit = retained_parent_checkpoint_limit();
+    if bytes > limit {
+        return None;
+    }
+    let mut current = RETAINED_PARENT_CHECKPOINT_BYTES.load(Ordering::Acquire);
+    loop {
+        let next = current.checked_add(bytes)?;
+        if next > limit {
+            return None;
+        }
+        let source_bytes = RETAINED_SOURCE_DEVICE_BYTES.load(Ordering::Acquire);
+        let descriptor_bytes = RETAINED_DESCRIPTOR_BUFFER_BYTES.load(Ordering::Acquire);
+        let leaf_bytes = RETAINED_LEAF_DIGEST_BYTES.load(Ordering::Acquire);
+        retained_combined_device_cache_allows(source_bytes, descriptor_bytes, leaf_bytes, next)?;
+        match RETAINED_PARENT_CHECKPOINT_BYTES.compare_exchange_weak(
+            current,
+            next,
+            Ordering::AcqRel,
+            Ordering::Acquire,
+        ) {
+            Ok(_) => return Some(()),
+            Err(observed) => current = observed,
+        }
+    }
+}
+
+#[cfg(feature = "cuda")]
+fn release_retained_parent_checkpoint_bytes(bytes: usize) {
+    RETAINED_PARENT_CHECKPOINT_BYTES.fetch_sub(bytes, Ordering::AcqRel);
 }
 
 #[cfg(feature = "cuda")]
@@ -898,6 +955,29 @@ fn default_retained_leaf_digest_limit() -> usize {
 }
 
 #[cfg(feature = "cuda")]
+fn retained_parent_checkpoint_limit() -> usize {
+    std::env::var("LZVM_CUDA_RETAINED_PARENT_CHECKPOINT_BYTES")
+        .ok()
+        .and_then(|value| value.parse::<usize>().ok())
+        .unwrap_or_else(|| {
+            *RETAINED_PARENT_CHECKPOINT_LIMIT.get_or_init(default_retained_parent_checkpoint_limit)
+        })
+}
+
+#[cfg(feature = "cuda")]
+fn default_retained_parent_checkpoint_limit() -> usize {
+    cuda_memory_info()
+        .ok()
+        .map(|info| {
+            info.total_bytes
+                .saturating_sub(RETAINED_PARENT_CHECKPOINT_RESERVE_BYTES)
+                .min(MAX_DEFAULT_RETAINED_PARENT_CHECKPOINT_BYTES)
+        })
+        .filter(|limit| *limit > 0)
+        .unwrap_or(DEFAULT_RETAINED_PARENT_CHECKPOINT_BYTES)
+}
+
+#[cfg(feature = "cuda")]
 fn retained_combined_device_cache_limit() -> Option<usize> {
     *RETAINED_COMBINED_DEVICE_CACHE_LIMIT.get_or_init(|| {
         cuda_memory_info()
@@ -915,11 +995,13 @@ fn retained_combined_device_cache_allows(
     source_bytes: usize,
     descriptor_bytes: usize,
     leaf_bytes: usize,
+    parent_checkpoint_bytes: usize,
 ) -> Option<()> {
     if let Some(limit) = retained_combined_device_cache_limit() {
         let combined = source_bytes
             .checked_add(descriptor_bytes)?
-            .checked_add(leaf_bytes)?;
+            .checked_add(leaf_bytes)?
+            .checked_add(parent_checkpoint_bytes)?;
         if combined > limit {
             return None;
         }
@@ -3660,6 +3742,18 @@ mod tests {
         assert!(
             default_retained_leaf_digest_limit() <= DEFAULT_RETAINED_LEAF_DIGEST_BYTES,
             "default retained leaf digest cache should stay within the measured static cap"
+        );
+    }
+
+    #[test]
+    fn default_retained_parent_checkpoint_limit_stays_within_static_cache_cap() {
+        assert_eq!(
+            DEFAULT_RETAINED_PARENT_CHECKPOINT_BYTES, 10_000_000_000,
+            "default retained parent checkpoint cache should match the measured checkpoint split"
+        );
+        assert!(
+            default_retained_parent_checkpoint_limit() <= DEFAULT_RETAINED_PARENT_CHECKPOINT_BYTES,
+            "default retained parent checkpoint cache should stay within the measured static cap"
         );
     }
 
