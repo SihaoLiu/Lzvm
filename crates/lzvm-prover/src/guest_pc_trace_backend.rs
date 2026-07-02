@@ -7911,6 +7911,7 @@ fn send_guest_pc_trace_parallel_lower_segment_result(
     timing: GuestPcTraceStreamTiming,
 ) -> bool {
     let send_started = Instant::now();
+    let mut full_queue_spins = 0_u32;
     let mut message = GuestPcTraceParallelLowerMessage::Segment {
         trace_instance_index,
         result: Box::new(result),
@@ -7924,10 +7925,24 @@ fn send_guest_pc_trace_parallel_lower_segment_result(
             Ok(()) => return true,
             Err(mpsc::TrySendError::Full(returned_message)) => {
                 message = returned_message;
-                std::thread::yield_now();
+                wait_guest_pc_trace_parallel_lower_full_result_queue(&mut full_queue_spins);
             }
             Err(mpsc::TrySendError::Disconnected(_)) => return false,
         }
+    }
+}
+
+const GUEST_PC_TRACE_PARALLEL_LOWER_RESULT_SEND_SPIN_LIMIT: u32 = 64;
+const GUEST_PC_TRACE_PARALLEL_LOWER_RESULT_SEND_BACKOFF_MICROS: u64 = 50;
+
+fn wait_guest_pc_trace_parallel_lower_full_result_queue(full_queue_spins: &mut u32) {
+    if *full_queue_spins < GUEST_PC_TRACE_PARALLEL_LOWER_RESULT_SEND_SPIN_LIMIT {
+        *full_queue_spins += 1;
+        std::thread::yield_now();
+    } else {
+        std::thread::sleep(Duration::from_micros(
+            GUEST_PC_TRACE_PARALLEL_LOWER_RESULT_SEND_BACKOFF_MICROS,
+        ));
     }
 }
 

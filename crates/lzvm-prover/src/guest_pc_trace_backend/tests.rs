@@ -4007,6 +4007,64 @@ fn parallel_lower_job_dispatch_records_full_queue_backpressure() {
     );
 }
 
+#[test]
+fn parallel_lower_result_send_records_full_queue_backpressure() {
+    let (sender, receiver) = std::sync::mpsc::sync_channel(1);
+    sender
+        .send(GuestPcTraceParallelLowerMessage::Complete {
+            stream: Box::new(GuestPcTraceStreamResult {
+                proof_values: Vec::new(),
+                timing: GuestPcTraceStreamTiming::default(),
+            }),
+            dispatched_count: 0,
+            timing: GuestPcTraceStreamTiming::default(),
+        })
+        .expect("result queue should accept setup message");
+    let drain = std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(5));
+        let _previous = receiver
+            .recv()
+            .expect("drain thread should receive setup message");
+        receiver
+            .recv()
+            .expect("drain thread should receive result message")
+    });
+    let seed = ZiskMainSegmentSeed::new();
+    let result = GuestPcTraceSeededLoweredSegment {
+        seed: seed.clone(),
+        lowered: GuestPcTraceLoweredSegment {
+            segment: GuestPcTraceSegmentTrace {
+                trace_instance_index: 0,
+                trace_source_prefix_rows: 0,
+                #[cfg(feature = "cuda")]
+                device_segment_material: None,
+                trace: None,
+                unit_values: Vec::new(),
+                proof_values: Vec::new(),
+            },
+            next_seed: seed,
+        },
+    };
+
+    assert!(send_guest_pc_trace_parallel_lower_segment_result(
+        &sender,
+        0,
+        Ok(result),
+        GuestPcTraceStreamTiming::default(),
+    ));
+
+    let message = drain.join().expect("drain thread should finish");
+    match message {
+        GuestPcTraceParallelLowerMessage::Segment { timing, .. } => {
+            assert!(
+                timing.parallel_lower_result_send_wait_duration() > std::time::Duration::ZERO,
+                "full result queue send should record nonzero wait"
+            );
+        }
+        _ => panic!("drain thread should receive a segment result"),
+    }
+}
+
 #[cfg(feature = "cuda")]
 #[test]
 fn fixed_worker_stream_chunk_dispatch_records_full_queue_backpressure() {
