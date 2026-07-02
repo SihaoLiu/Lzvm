@@ -3058,13 +3058,35 @@ mod tests {
     ) {
         let mut fast_memory = guest_machine_memory_with_words(words);
         let mut generic_memory = fast_memory.clone();
+        let mut direct_memory = fast_memory.clone();
         let mut fast_state = report_fast_path_test_state();
         let mut generic_state = fast_state.clone();
+        let mut direct_state = fast_state.clone();
         let prepared = GuestMachinePreparedInstruction {
             address: TEST_ENTRY,
             byte_len: 4,
             instruction,
         };
+        let mut direct_report = MaybeUninit::new(GuestMachineReport::new(
+            TEST_ENTRY,
+            4,
+            instruction,
+            TEST_ENTRY + 4,
+            GuestRegisterWriteList::default(),
+            GuestMemoryAccessList::default(),
+            None,
+        ));
+        let direct_shape = try_advance_guest_machine_report_fast_path(
+            &mut direct_memory,
+            &mut direct_state,
+            TEST_ENTRY,
+            4,
+            TEST_ENTRY + 4,
+            instruction,
+            &mut direct_report,
+        )
+        .expect("direct report fast path should not fail")
+        .expect("instruction should use report fast path");
         let fast = advance_guest_machine_prepared_inner_with_report_shape(
             &mut fast_memory,
             &mut fast_state,
@@ -3084,8 +3106,11 @@ mod tests {
         .expect("generic prepared advance should succeed");
 
         assert_eq!(fast, generic);
+        assert_eq!(direct_shape, generic.shape);
         assert_eq!(fast_state, generic_state);
+        assert_eq!(direct_state, generic_state);
         assert_eq!(fast_memory, generic_memory);
+        assert_eq!(direct_memory, generic_memory);
     }
 
     fn assert_report_fast_path_matches_generic(instruction: RiscvInstruction) {

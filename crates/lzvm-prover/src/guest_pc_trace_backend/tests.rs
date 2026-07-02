@@ -6662,7 +6662,6 @@ fn report_level_fast_path_parts_routes_representative_rows() {
         NoMemory,
         SimpleCopy,
         Jump,
-        PcRelative,
     }
 
     let mut signed_load = memory_read(0x108, 0xffff_ff80);
@@ -6728,7 +6727,7 @@ fn report_level_fast_path_parts_routes_representative_rows() {
                 register_write_value: GuestRegisterWriteValue::new(0x8000_004c),
                 memory_accesses: vec![].into(),
             },
-            ReportLevelRoute::PcRelative,
+            ReportLevelRoute::Jump,
         ),
         (
             GuestMachineReport {
@@ -6829,9 +6828,6 @@ fn report_level_fast_path_parts_routes_representative_rows() {
                 (ReportLevelRoute::SimpleCopy, instruction)
             }
             MainReportFastPathParts::Jump(instruction, _) => (ReportLevelRoute::Jump, instruction),
-            MainReportFastPathParts::PcRelative(instruction, _) => {
-                (ReportLevelRoute::PcRelative, instruction)
-            }
         };
         assert_eq!(actual_route, expected_route);
         assert_eq!(actual_instruction, expected_instruction);
