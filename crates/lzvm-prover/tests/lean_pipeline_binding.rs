@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::path::Path;
 
 #[path = "support/lean_binding.rs"]
@@ -122,6 +123,7 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
     let runtime_soundness_source = format!(
         "{runtime_soundness_entrypoint_source}\n{runtime_soundness_core_source}\n{runtime_soundness_external_source}"
     );
+    let mut prefixes = TheoremPrefixCache::new(&lean_source);
 
     lean_binding::assert_theorem_declarations(
         &lean_source,
@@ -327,30 +329,22 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
             && lean_source.contains("RuntimeProofArtifactBindingValidationAgreement"),
         "pipeline binding validation should require agreement between ETH and query-plan artifact bindings"
     );
-    assert!(theorem_prefix(
-        &lean_source,
-        "runtime_pipeline_binding_checked_acceptance_runtime_artifact_evidence"
-    )
-    .contains("(validation : RuntimePipelineBindingValidation system)"));
-    assert!(theorem_prefix(
-        &lean_source,
-        "runtime_pipeline_binding_checked_acceptance_pipeline_evidence"
-    )
-    .contains("(validation : RuntimePipelineBindingValidation system)"));
+    assert!(prefixes
+        .prefix("runtime_pipeline_binding_checked_acceptance_runtime_artifact_evidence")
+        .contains("(validation : RuntimePipelineBindingValidation system)"));
+    assert!(prefixes
+        .prefix("runtime_pipeline_binding_checked_acceptance_pipeline_evidence")
+        .contains("(validation : RuntimePipelineBindingValidation system)"));
     assert!(
-        theorem_prefix(
-            &lean_source,
-            "runtime_pipeline_binding_checked_acceptance_pipeline_evidence"
-        )
-        .contains("(assumptions : AssumptionBundle system)"),
+        prefixes
+            .prefix("runtime_pipeline_binding_checked_acceptance_pipeline_evidence")
+            .contains("(assumptions : AssumptionBundle system)"),
         "pipeline evidence projection should require the audited assumption bundle"
     );
     assert!(
-        !theorem_prefix(
-            &lean_source,
-            "runtime_pipeline_binding_checked_acceptance_runtime_artifact_evidence"
-        )
-        .contains("AssumptionBundle"),
+        !prefixes
+            .prefix("runtime_pipeline_binding_checked_acceptance_runtime_artifact_evidence")
+            .contains("AssumptionBundle"),
         "runtime artifact evidence projection should not require cryptographic assumptions"
     );
     lean_binding::assert_theorem_body_contains(
@@ -466,76 +460,51 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
         ],
     );
     assert!(
-        theorem_prefix(
-            &lean_source,
-            "runtime_pipeline_binding_evidence_implies_runtime_artifact_core_contract"
-        )
-        .contains("RuntimeArtifactEvidence")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_evidence_implies_runtime_artifact_core_contract"
-            )
-            .contains("RuntimeVerifierCoreContract system publicInput proof"),
+        prefixes
+            .prefix("runtime_pipeline_binding_evidence_implies_runtime_artifact_core_contract")
+            .contains("RuntimeArtifactEvidence")
+            && prefixes
+                .prefix("runtime_pipeline_binding_evidence_implies_runtime_artifact_core_contract")
+                .contains("RuntimeVerifierCoreContract system publicInput proof"),
         "pipeline evidence should package runtime artifact evidence with verifier core obligations"
     );
     assert!(
-        !theorem_prefix(
-            &lean_source,
-            "runtime_pipeline_binding_evidence_implies_runtime_artifact_core_contract"
-        )
-        .contains("AssumptionBundle"),
+        !prefixes
+            .prefix("runtime_pipeline_binding_evidence_implies_runtime_artifact_core_contract")
+            .contains("AssumptionBundle"),
         "pipeline evidence artifact-core projection should not require cryptographic assumptions"
     );
     assert!(
-        theorem_prefix(
-            &lean_source,
-            "runtime_pipeline_binding_evidence_implies_external_source_requirements"
-        )
-        .contains("RuntimePipelineBindingEvidence")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_evidence_implies_external_source_requirements"
-            )
-            .contains("ExternalSourceOpeningRequirement")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_evidence_implies_external_source_requirements"
-            )
-            .contains("runtime_pipeline_trace_source_validation validation")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_evidence_implies_external_source_requirements"
-            )
-            .contains("runtime_pipeline_opening_source_validation validation"),
+        prefixes
+            .prefix("runtime_pipeline_binding_evidence_implies_external_source_requirements")
+            .contains("RuntimePipelineBindingEvidence")
+            && prefixes
+                .prefix("runtime_pipeline_binding_evidence_implies_external_source_requirements")
+                .contains("ExternalSourceOpeningRequirement")
+            && prefixes
+                .prefix("runtime_pipeline_binding_evidence_implies_external_source_requirements")
+                .contains("runtime_pipeline_trace_source_validation validation")
+            && prefixes
+                .prefix("runtime_pipeline_binding_evidence_implies_external_source_requirements")
+                .contains("runtime_pipeline_opening_source_validation validation"),
         "pipeline evidence should expose both trace and opening external-source requirements"
     );
     assert!(
-        !theorem_prefix(
-            &lean_source,
-            "runtime_pipeline_binding_evidence_implies_external_source_requirements"
-        )
+        !prefixes.prefix("runtime_pipeline_binding_evidence_implies_external_source_requirements")
         .contains("AssumptionBundle"),
         "pipeline external-source requirement projection should not require cryptographic assumptions"
     );
     assert!(
-        theorem_prefix(
-            &lean_source,
-            "runtime_pipeline_binding_evidence_implies_seeded_query_plan_contract"
-        )
+        prefixes.prefix("runtime_pipeline_binding_evidence_implies_seeded_query_plan_contract")
         .contains("RuntimePipelineBindingEvidence")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_evidence_implies_seeded_query_plan_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_evidence_implies_seeded_query_plan_contract")
             .contains("RuntimeQueryPlanBindingSeededContract"),
         "pipeline evidence should retain seeded query-plan witness digest and FRI-opening obligations"
     );
     assert!(
-        !theorem_prefix(
-            &lean_source,
-            "runtime_pipeline_binding_evidence_implies_seeded_query_plan_contract"
-        )
-        .contains("AssumptionBundle"),
+        !prefixes
+            .prefix("runtime_pipeline_binding_evidence_implies_seeded_query_plan_contract")
+            .contains("AssumptionBundle"),
         "pipeline seeded query-plan projection should not require cryptographic assumptions"
     );
     lean_binding::assert_theorem_prefix_contains(
@@ -1442,51 +1411,27 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
         &["runtime_eth_block_public_input_binding_checked_acceptance_sound"],
     );
     assert!(
-        theorem_prefix(
-            &lean_source,
-            "runtime_pipeline_binding_checked_acceptance_runtime_soundness_accepts_contract"
-        )
+        prefixes.prefix("runtime_pipeline_binding_checked_acceptance_runtime_soundness_accepts_contract")
         .contains("system.accepts publicInput proof")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_checked_acceptance_runtime_soundness_accepts_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_checked_acceptance_runtime_soundness_accepts_contract")
             .contains("RuntimeSoundnessEvidence")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_checked_acceptance_runtime_soundness_accepts_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_checked_acceptance_runtime_soundness_accepts_contract")
             .contains("RuntimeVerifierCoreContract system publicInput proof")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_checked_acceptance_runtime_soundness_accepts_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_checked_acceptance_runtime_soundness_accepts_contract")
             .contains("SoundWitness system publicInput proof"),
         "runtime soundness accepts contract should expose verifier acceptance and runtime evidence"
     );
     assert!(
-        theorem_prefix(
-            &lean_source,
-            "runtime_pipeline_binding_checked_acceptance_runtime_artifact_soundness_obligations"
-        )
+        prefixes.prefix("runtime_pipeline_binding_checked_acceptance_runtime_artifact_soundness_obligations")
         .contains("(assumptions : AssumptionBundle system)"),
         "runtime artifact soundness obligations should require the audited assumption bundle"
     );
     assert!(
-        theorem_prefix(
-            &lean_source,
-            "runtime_pipeline_binding_checked_acceptance_trace_artifact_soundness_obligations"
-        )
+        prefixes.prefix("runtime_pipeline_binding_checked_acceptance_trace_artifact_soundness_obligations")
         .contains("(assumptions : AssumptionBundle system)")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_checked_acceptance_trace_artifact_soundness_obligations"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_checked_acceptance_trace_artifact_soundness_obligations")
             .contains("requiresExternalSource")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_checked_acceptance_trace_artifact_soundness_obligations"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_checked_acceptance_trace_artifact_soundness_obligations")
             .contains("RuntimeTraceConstraintSoundnessObligations"),
         "trace artifact soundness obligations should expose the trace contract with audited assumptions"
     );
@@ -1577,19 +1522,15 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
         );
     }
     assert!(
-        theorem_prefix(
-            &lean_source,
-            "runtime_pipeline_binding_checked_acceptance_accepts_full_soundness_contract"
-        )
-        .contains("(assumptions : AssumptionBundle system)"),
+        prefixes
+            .prefix("runtime_pipeline_binding_checked_acceptance_accepts_full_soundness_contract")
+            .contains("(assumptions : AssumptionBundle system)"),
         "accepts plus full soundness contract should require the audited assumption bundle"
     );
     assert!(
-        theorem_prefix(
-            &lean_source,
-            "runtime_pipeline_binding_checked_acceptance_accepts_full_soundness_contract"
-        )
-        .contains("system.accepts publicInput proof"),
+        prefixes
+            .prefix("runtime_pipeline_binding_checked_acceptance_accepts_full_soundness_contract")
+            .contains("system.accepts publicInput proof"),
         "accepts plus full soundness contract should expose verifier acceptance"
     );
     lean_binding::assert_theorem_prefix_contains(
@@ -1603,74 +1544,38 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
         ],
     );
     assert!(
-        theorem_prefix(
-            &lean_source,
-            "runtime_pipeline_binding_checked_acceptance_proof_system_sound"
-        )
+        prefixes.prefix("runtime_pipeline_binding_checked_acceptance_proof_system_sound")
         .contains("ProofSystemSound system")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_checked_acceptance_proof_system_sound"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_checked_acceptance_proof_system_sound")
             .contains("system.accepts publicInput proof")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_checked_acceptance_proof_system_sound"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_checked_acceptance_proof_system_sound")
             .contains("SoundWitness system publicInput proof"),
         "pipeline checked acceptance should expose model-wide proof-system soundness and the accepted proof witness"
     );
     assert!(
-        theorem_prefix(
-            &lean_source,
-            "runtime_pipeline_binding_checked_acceptance_audited_accepts_sound_witness_contract"
-        )
+        prefixes.prefix("runtime_pipeline_binding_checked_acceptance_audited_accepts_sound_witness_contract")
         .contains("RequiredCryptographicAssumptionStatements assumptions.crypto")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_checked_acceptance_audited_accepts_sound_witness_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_checked_acceptance_audited_accepts_sound_witness_contract")
             .contains("ProofSystemSound system")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_checked_acceptance_audited_accepts_sound_witness_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_checked_acceptance_audited_accepts_sound_witness_contract")
             .contains("system.accepts publicInput proof")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_checked_acceptance_audited_accepts_sound_witness_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_checked_acceptance_audited_accepts_sound_witness_contract")
             .contains("SoundWitness system publicInput proof"),
         "pipeline checked acceptance should expose compact audited acceptance and witness evidence"
     );
     assert!(
-        !theorem_prefix(
-            &lean_source,
-            "runtime_pipeline_binding_checked_acceptance_audited_accepts_sound_witness_contract"
-        )
+        !prefixes.prefix("runtime_pipeline_binding_checked_acceptance_audited_accepts_sound_witness_contract")
         .contains("RuntimePipelineBindingEvidence"),
         "compact audited pipeline acceptance contract should not force callers to unpack full pipeline evidence"
     );
     assert!(
-        theorem_prefix(
-            &lean_source,
-            "runtime_pipeline_binding_checked_acceptance_audited_soundness_obligations"
-        )
+        prefixes.prefix("runtime_pipeline_binding_checked_acceptance_audited_soundness_obligations")
         .contains("RequiredCryptographicAssumptionStatements assumptions.crypto")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_checked_acceptance_audited_soundness_obligations"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_checked_acceptance_audited_soundness_obligations")
             .contains("RequiredSemanticAssumptionStatements assumptions.semantic")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_checked_acceptance_audited_soundness_obligations"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_checked_acceptance_audited_soundness_obligations")
             .contains("RuntimePipelineBindingEvidence")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_checked_acceptance_audited_soundness_obligations"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_checked_acceptance_audited_soundness_obligations")
             .contains("SoundWitness system publicInput proof"),
         "pipeline checked acceptance should package audited crypto and semantic obligations with pipeline evidence"
     );
@@ -1683,30 +1588,15 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
         ],
     );
     assert!(
-        theorem_prefix(
-            &lean_source,
-            "runtime_pipeline_binding_checked_acceptance_audited_soundness_accepts_contract"
-        )
+        prefixes.prefix("runtime_pipeline_binding_checked_acceptance_audited_soundness_accepts_contract")
         .contains("RequiredCryptographicAssumptionStatements assumptions.crypto")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_checked_acceptance_audited_soundness_accepts_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_checked_acceptance_audited_soundness_accepts_contract")
             .contains("RequiredSemanticAssumptionStatements assumptions.semantic")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_checked_acceptance_audited_soundness_accepts_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_checked_acceptance_audited_soundness_accepts_contract")
             .contains("ProofSystemSound system")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_checked_acceptance_audited_soundness_accepts_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_checked_acceptance_audited_soundness_accepts_contract")
             .contains("system.accepts publicInput proof")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_checked_acceptance_audited_soundness_accepts_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_checked_acceptance_audited_soundness_accepts_contract")
             .contains("SoundWitness system publicInput proof"),
         "pipeline checked acceptance should expose semantic audited compact acceptance and witness evidence"
     );
@@ -1719,166 +1609,76 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
         ],
     );
     assert!(
-        theorem_prefix(
-            &lean_source,
-            "runtime_pipeline_binding_checked_acceptance_proof_system_full_soundness_contract"
-        )
+        prefixes.prefix("runtime_pipeline_binding_checked_acceptance_proof_system_full_soundness_contract")
         .contains("ProofSystemSound system")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_checked_acceptance_proof_system_full_soundness_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_checked_acceptance_proof_system_full_soundness_contract")
             .contains("system.accepts publicInput proof")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_checked_acceptance_proof_system_full_soundness_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_checked_acceptance_proof_system_full_soundness_contract")
             .contains("RuntimePipelineBindingEvidence")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_checked_acceptance_proof_system_full_soundness_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_checked_acceptance_proof_system_full_soundness_contract")
             .contains("RuntimeArtifactSoundnessObligations")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_checked_acceptance_proof_system_full_soundness_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_checked_acceptance_proof_system_full_soundness_contract")
             .contains("RuntimeVerifierCoreContract system publicInput proof")
-                        && theorem_prefix(
-                            &lean_source,
-                            "runtime_pipeline_binding_checked_acceptance_proof_system_full_soundness_contract"
-                        )
+                        && prefixes.prefix("runtime_pipeline_binding_checked_acceptance_proof_system_full_soundness_contract")
                         .contains("SoundWitness system publicInput proof")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_checked_acceptance_proof_system_full_soundness_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_checked_acceptance_proof_system_full_soundness_contract")
             .contains("RuntimeFriFoldTraceIdentityContract")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_checked_acceptance_proof_system_full_soundness_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_checked_acceptance_proof_system_full_soundness_contract")
             .contains("RuntimeFriFoldQueryPlanOrderContract"),
                     "pipeline checked acceptance should package model soundness with the accepted full soundness contract"
                 );
     assert!(
-        theorem_prefix(
-            &lean_source,
-            "runtime_pipeline_binding_checked_acceptance_audited_proof_system_contract"
-        )
+        prefixes.prefix("runtime_pipeline_binding_checked_acceptance_audited_proof_system_contract")
         .contains("RequiredCryptographicAssumptionStatements assumptions.crypto")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_checked_acceptance_audited_proof_system_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_checked_acceptance_audited_proof_system_contract")
             .contains("ProofSystemSound system")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_checked_acceptance_audited_proof_system_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_checked_acceptance_audited_proof_system_contract")
             .contains("system.accepts publicInput proof")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_checked_acceptance_audited_proof_system_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_checked_acceptance_audited_proof_system_contract")
             .contains("RuntimePipelineBindingEvidence")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_checked_acceptance_audited_proof_system_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_checked_acceptance_audited_proof_system_contract")
             .contains("RuntimeVerifierCoreContract system publicInput proof")
-                        && theorem_prefix(
-                            &lean_source,
-                            "runtime_pipeline_binding_checked_acceptance_audited_proof_system_contract"
-                        )
+                        && prefixes.prefix("runtime_pipeline_binding_checked_acceptance_audited_proof_system_contract")
                         .contains("SoundWitness system publicInput proof")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_checked_acceptance_audited_proof_system_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_checked_acceptance_audited_proof_system_contract")
             .contains("RuntimeFriFoldTraceIdentityContract")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_checked_acceptance_audited_proof_system_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_checked_acceptance_audited_proof_system_contract")
             .contains("RuntimeFriFoldQueryPlanOrderContract"),
                     "pipeline checked acceptance should package audited crypto assumptions with proof-system soundness"
                 );
     assert!(
-        theorem_prefix(
-            &lean_source,
-            "runtime_pipeline_binding_checked_acceptance_audited_proof_system_core_contract"
-        )
+        prefixes.prefix("runtime_pipeline_binding_checked_acceptance_audited_proof_system_core_contract")
         .contains("RequiredCryptographicAssumptionStatements assumptions.crypto")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_checked_acceptance_audited_proof_system_core_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_checked_acceptance_audited_proof_system_core_contract")
             .contains("ProofSystemSound system")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_checked_acceptance_audited_proof_system_core_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_checked_acceptance_audited_proof_system_core_contract")
             .contains("system.accepts publicInput proof")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_checked_acceptance_audited_proof_system_core_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_checked_acceptance_audited_proof_system_core_contract")
             .contains("system.transcriptBound publicInput proof")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_checked_acceptance_audited_proof_system_core_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_checked_acceptance_audited_proof_system_core_contract")
             .contains("system.publicInputBound publicInput proof")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_checked_acceptance_audited_proof_system_core_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_checked_acceptance_audited_proof_system_core_contract")
             .contains("system.pcsOpeningsValid publicInput proof")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_checked_acceptance_audited_proof_system_core_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_checked_acceptance_audited_proof_system_core_contract")
             .contains("system.friQueriesValid publicInput proof")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_checked_acceptance_audited_proof_system_core_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_checked_acceptance_audited_proof_system_core_contract")
             .contains("validation.queryPlanBindingValidation.queryPlanSeedBindsWitnessTreeDigests")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_checked_acceptance_audited_proof_system_core_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_checked_acceptance_audited_proof_system_core_contract")
             .contains(
                 "validation.queryPlanBindingValidation.queryPlanSeededFriOpeningRequirementsChecked"
             )
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_checked_acceptance_audited_proof_system_core_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_checked_acceptance_audited_proof_system_core_contract")
             .contains("RuntimeVerifierCoreContract system publicInput proof")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_checked_acceptance_audited_proof_system_core_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_checked_acceptance_audited_proof_system_core_contract")
             .contains("system.traceConsistent publicInput proof trace")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_checked_acceptance_audited_proof_system_core_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_checked_acceptance_audited_proof_system_core_contract")
             .contains("SoundWitness system publicInput proof"),
         "pipeline contracts should expose compact proof-system, binding, execution, verifier core, and witness evidence"
     );
     assert!(
-        !theorem_prefix(
-            &lean_source,
-            "runtime_pipeline_binding_checked_acceptance_audited_proof_system_core_contract"
-        )
+        !prefixes.prefix("runtime_pipeline_binding_checked_acceptance_audited_proof_system_core_contract")
         .contains("RuntimePipelineBindingEvidence")
-            && !theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_checked_acceptance_audited_proof_system_core_contract"
-            )
+            && !prefixes.prefix("runtime_pipeline_binding_checked_acceptance_audited_proof_system_core_contract")
             .contains("RuntimeArtifactSoundnessObligations"),
         "compact proof-system core contract should not force callers to unpack full pipeline evidence or artifact obligations"
     );
@@ -2137,62 +1937,29 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
         ],
     );
     assert!(
-        theorem_prefix(
-            &lean_source,
-            "runtime_pipeline_binding_checked_acceptance_audited_binding_pcs_fri_core_witness_contract"
-        )
+        prefixes.prefix("runtime_pipeline_binding_checked_acceptance_audited_binding_pcs_fri_core_witness_contract")
         .contains("RequiredCryptographicAssumptionStatements assumptions.crypto")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_checked_acceptance_audited_binding_pcs_fri_core_witness_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_checked_acceptance_audited_binding_pcs_fri_core_witness_contract")
             .contains("ProofSystemSound system")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_checked_acceptance_audited_binding_pcs_fri_core_witness_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_checked_acceptance_audited_binding_pcs_fri_core_witness_contract")
             .contains("system.accepts publicInput proof")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_checked_acceptance_audited_binding_pcs_fri_core_witness_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_checked_acceptance_audited_binding_pcs_fri_core_witness_contract")
             .contains("system.transcriptBound publicInput proof")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_checked_acceptance_audited_binding_pcs_fri_core_witness_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_checked_acceptance_audited_binding_pcs_fri_core_witness_contract")
             .contains("system.publicInputBound publicInput proof")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_checked_acceptance_audited_binding_pcs_fri_core_witness_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_checked_acceptance_audited_binding_pcs_fri_core_witness_contract")
             .contains("system.pcsOpeningsValid publicInput proof")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_checked_acceptance_audited_binding_pcs_fri_core_witness_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_checked_acceptance_audited_binding_pcs_fri_core_witness_contract")
             .contains("system.friQueriesValid publicInput proof")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_checked_acceptance_audited_binding_pcs_fri_core_witness_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_checked_acceptance_audited_binding_pcs_fri_core_witness_contract")
             .contains("validation.queryPlanBindingValidation.queryPlanSeedBindsWitnessTreeDigests")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_checked_acceptance_audited_binding_pcs_fri_core_witness_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_checked_acceptance_audited_binding_pcs_fri_core_witness_contract")
             .contains(
                 "validation.queryPlanBindingValidation.queryPlanSeededFriOpeningRequirementsChecked"
             )
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_checked_acceptance_audited_binding_pcs_fri_core_witness_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_checked_acceptance_audited_binding_pcs_fri_core_witness_contract")
             .contains("RuntimeVerifierCoreContract system publicInput proof")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_checked_acceptance_audited_binding_pcs_fri_core_witness_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_checked_acceptance_audited_binding_pcs_fri_core_witness_contract")
             .contains("SoundWitness system publicInput proof"),
         "pipeline checked acceptance should expose compact audited binding, seeded PCS/FRI, verifier core, and witness evidence"
     );
@@ -2205,83 +1972,38 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
         ],
     );
     assert!(
-        !theorem_prefix(
-            &lean_source,
-            "runtime_pipeline_binding_checked_acceptance_audited_binding_pcs_fri_core_witness_contract"
-        )
+        !prefixes.prefix("runtime_pipeline_binding_checked_acceptance_audited_binding_pcs_fri_core_witness_contract")
         .contains("RuntimePipelineBindingEvidence"),
         "compact audited pipeline binding contract should not force callers to unpack full pipeline evidence"
     );
     assert!(
-        theorem_prefix(
-            &lean_source,
-            "runtime_pipeline_binding_checked_acceptance_audited_segment_ids_contract"
-        )
+        prefixes.prefix("runtime_pipeline_binding_checked_acceptance_audited_segment_ids_contract")
         .contains("RequiredCryptographicAssumptionStatements assumptions.crypto")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_checked_acceptance_audited_segment_ids_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_checked_acceptance_audited_segment_ids_contract")
             .contains("ProofSystemSound system")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_checked_acceptance_audited_segment_ids_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_checked_acceptance_audited_segment_ids_contract")
             .contains("RuntimeVerifierCoreContract system publicInput proof")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_checked_acceptance_audited_segment_ids_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_checked_acceptance_audited_segment_ids_contract")
             .contains("SoundWitness system publicInput proof")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_checked_acceptance_audited_segment_ids_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_checked_acceptance_audited_segment_ids_contract")
             .contains("let ethArtifactValidation :=")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_checked_acceptance_audited_segment_ids_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_checked_acceptance_audited_segment_ids_contract")
             .contains("validation.ethBindingValidation.proofArtifactBindingValidation")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_checked_acceptance_audited_segment_ids_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_checked_acceptance_audited_segment_ids_contract")
             .contains("RuntimeProofArtifactBindingValidationAgreement")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_checked_acceptance_audited_segment_ids_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_checked_acceptance_audited_segment_ids_contract")
             .contains("artifactValidation.proofContainerCanonical artifact publicInput proof")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_checked_acceptance_audited_segment_ids_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_checked_acceptance_audited_segment_ids_contract")
             .contains("artifactValidation.proofSegmentsPresent artifact publicInput proof")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_checked_acceptance_audited_segment_ids_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_checked_acceptance_audited_segment_ids_contract")
             .contains("artifactValidation.proofMetadataCanonical artifact publicInput proof")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_checked_acceptance_audited_segment_ids_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_checked_acceptance_audited_segment_ids_contract")
             .contains("artifactValidation.proofSegmentPayloadsNonempty artifact publicInput proof")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_checked_acceptance_audited_segment_ids_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_checked_acceptance_audited_segment_ids_contract")
             .contains("artifactValidation.proofSegmentIdsAllowed artifact publicInput proof")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_checked_acceptance_audited_segment_ids_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_checked_acceptance_audited_segment_ids_contract")
             .contains("artifactValidation.proofSegmentIdsUnique artifact publicInput proof")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_checked_acceptance_audited_segment_ids_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_checked_acceptance_audited_segment_ids_contract")
             .contains("artifactValidation.proofUnitValuesTraceIdentityCoverage"),
         "audited pipeline segment contract should include audited core, witness, container canonicality, metadata canonicality, segment presence, nonempty payloads, allowed segment IDs, segment-id uniqueness, and unit-values coverage"
     );
@@ -2440,11 +2162,11 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
         ],
     );
     assert!(
-        theorem_prefix(
-            &lean_source,
-            "runtime_pipeline_binding_checked_acceptance_query_plan_material_manifest_contract"
-        )
-        .contains("RuntimeQueryPlanMaterialManifestContract"),
+        prefixes
+            .prefix(
+                "runtime_pipeline_binding_checked_acceptance_query_plan_material_manifest_contract"
+            )
+            .contains("RuntimeQueryPlanMaterialManifestContract"),
         "pipeline checked acceptance should project query-plan material manifest matching"
     );
     lean_binding::assert_theorem_prefix_omits(
@@ -2461,18 +2183,14 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
         ],
     );
     assert!(
-        theorem_prefix(
-            &lean_source,
-            "runtime_pipeline_binding_checked_acceptance_seeded_query_plan_contract"
-        )
-        .contains("RuntimeQueryPlanBindingSeededContract"),
+        prefixes
+            .prefix("runtime_pipeline_binding_checked_acceptance_seeded_query_plan_contract")
+            .contains("RuntimeQueryPlanBindingSeededContract"),
         "pipeline checked acceptance should project seeded query-plan constraints"
     );
     assert!(
         {
-            let prefix = theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_checked_acceptance_seed_binds_witness_tree_digests",
+            let prefix = prefixes.prefix("runtime_pipeline_binding_checked_acceptance_seed_binds_witness_tree_digests",
             );
             prefix.contains(
                 "validation.queryPlanBindingValidation.queryPlanSeedBindsWitnessTreeDigests",
@@ -2484,9 +2202,7 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
     );
     assert!(
         {
-            let prefix = theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_checked_acceptance_seeded_fri_opening_requirements_checked",
+            let prefix = prefixes.prefix("runtime_pipeline_binding_checked_acceptance_seeded_fri_opening_requirements_checked",
             );
             prefix.contains(
                 "validation.queryPlanBindingValidation.queryPlanSeededFriOpeningRequirementsChecked",
@@ -2564,50 +2280,23 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
         ],
     );
     assert!(
-        theorem_prefix(
-            &lean_source,
-            "runtime_pipeline_binding_checked_acceptance_challenge_query_opening_core_contract"
-        )
+        prefixes.prefix("runtime_pipeline_binding_checked_acceptance_challenge_query_opening_core_contract")
         .contains("RuntimeChallengeSegmentBindingEvidence")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_checked_acceptance_challenge_query_opening_core_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_checked_acceptance_challenge_query_opening_core_contract")
             .contains("RuntimeTranscriptBindingEvidence")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_checked_acceptance_challenge_query_opening_core_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_checked_acceptance_challenge_query_opening_core_contract")
             .contains("RuntimeQueryPlanBindingBoundContract")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_checked_acceptance_challenge_query_opening_core_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_checked_acceptance_challenge_query_opening_core_contract")
             .contains("RuntimeOpeningSegmentBindingBoundContract")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_checked_acceptance_challenge_query_opening_core_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_checked_acceptance_challenge_query_opening_core_contract")
             .contains("RuntimeOpeningEvidence")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_checked_acceptance_challenge_query_opening_core_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_checked_acceptance_challenge_query_opening_core_contract")
             .contains("system.transcriptBound publicInput proof")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_checked_acceptance_challenge_query_opening_core_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_checked_acceptance_challenge_query_opening_core_contract")
             .contains("system.pcsOpeningsValid publicInput proof")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_checked_acceptance_challenge_query_opening_core_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_checked_acceptance_challenge_query_opening_core_contract")
             .contains("system.friQueriesValid publicInput proof")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_checked_acceptance_challenge_query_opening_core_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_checked_acceptance_challenge_query_opening_core_contract")
             .contains("RuntimeVerifierCoreContract system publicInput proof"),
         "pipeline checked acceptance should expose challenge, transcript, query, opening, and verifier core evidence"
     );
@@ -2966,15 +2655,9 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
         ],
     );
     assert!(
-        theorem_prefix(
-            &lean_source,
-            "runtime_pipeline_binding_required_external_source_verifier_core_contract"
-        )
+        prefixes.prefix("runtime_pipeline_binding_required_external_source_verifier_core_contract")
         .contains("ExternalSourceOpeningEvidence")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_required_external_source_verifier_core_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_required_external_source_verifier_core_contract")
             .contains("RuntimeVerifierCoreContract system publicInput proof"),
         "pipeline required external-source projection should expose external evidence and verifier core contract"
     );
@@ -3023,179 +2706,80 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
         &["sound_witness_implies_verifier_core_contract"],
     );
     assert!(
-        theorem_prefix(
-            &lean_source,
-            "runtime_pipeline_binding_required_external_source_full_soundness_contract"
-        )
+        prefixes.prefix("runtime_pipeline_binding_required_external_source_full_soundness_contract")
         .contains("system.accepts publicInput proof")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_required_external_source_full_soundness_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_required_external_source_full_soundness_contract")
             .contains("ExternalSourceOpeningEvidence")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_required_external_source_full_soundness_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_required_external_source_full_soundness_contract")
             .contains("RuntimePipelineBindingEvidence")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_required_external_source_full_soundness_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_required_external_source_full_soundness_contract")
             .contains("RuntimeArtifactSoundnessObligations")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_required_external_source_full_soundness_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_required_external_source_full_soundness_contract")
             .contains("RuntimeVerifierCoreContract system publicInput proof")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_required_external_source_full_soundness_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_required_external_source_full_soundness_contract")
             .contains("system.traceConsistent publicInput proof trace")
-                        && theorem_prefix(
-                            &lean_source,
-                            "runtime_pipeline_binding_required_external_source_full_soundness_contract"
-                        )
+                        && prefixes.prefix("runtime_pipeline_binding_required_external_source_full_soundness_contract")
                         .contains("SoundWitness system publicInput proof")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_required_external_source_full_soundness_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_required_external_source_full_soundness_contract")
             .contains("RuntimeFriFoldTraceIdentityContract")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_required_external_source_full_soundness_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_required_external_source_full_soundness_contract")
             .contains("RuntimeFriFoldQueryPlanOrderContract"),
                     "pipeline required external-source projection should expose the accepted full soundness contract"
                 );
     assert!(
-        theorem_prefix(
-            &lean_source,
-            "runtime_pipeline_binding_required_external_source_proof_system_full_soundness_contract"
-        )
+        prefixes.prefix("runtime_pipeline_binding_required_external_source_proof_system_full_soundness_contract")
         .contains("ProofSystemSound system")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_required_external_source_proof_system_full_soundness_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_required_external_source_proof_system_full_soundness_contract")
             .contains("system.accepts publicInput proof")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_required_external_source_proof_system_full_soundness_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_required_external_source_proof_system_full_soundness_contract")
             .contains("ExternalSourceOpeningEvidence")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_required_external_source_proof_system_full_soundness_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_required_external_source_proof_system_full_soundness_contract")
             .contains("RuntimePipelineBindingEvidence")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_required_external_source_proof_system_full_soundness_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_required_external_source_proof_system_full_soundness_contract")
             .contains("RuntimeArtifactSoundnessObligations")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_required_external_source_proof_system_full_soundness_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_required_external_source_proof_system_full_soundness_contract")
             .contains("RuntimeVerifierCoreContract system publicInput proof")
-                        && theorem_prefix(
-                            &lean_source,
-                            "runtime_pipeline_binding_required_external_source_proof_system_full_soundness_contract"
-                        )
+                        && prefixes.prefix("runtime_pipeline_binding_required_external_source_proof_system_full_soundness_contract")
                         .contains("SoundWitness system publicInput proof")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_required_external_source_proof_system_full_soundness_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_required_external_source_proof_system_full_soundness_contract")
             .contains("RuntimeFriFoldTraceIdentityContract")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_required_external_source_proof_system_full_soundness_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_required_external_source_proof_system_full_soundness_contract")
             .contains("RuntimeFriFoldQueryPlanOrderContract"),
                     "pipeline required external-source projection should package model soundness with the full soundness contract"
                 );
     assert!(
-        theorem_prefix(
-            &lean_source,
-            "runtime_pipeline_binding_required_external_source_audited_proof_system_contract"
-        )
+        prefixes.prefix("runtime_pipeline_binding_required_external_source_audited_proof_system_contract")
         .contains("RequiredCryptographicAssumptionStatements assumptions.crypto")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_required_external_source_audited_proof_system_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_required_external_source_audited_proof_system_contract")
             .contains("ProofSystemSound system")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_required_external_source_audited_proof_system_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_required_external_source_audited_proof_system_contract")
             .contains("system.accepts publicInput proof")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_required_external_source_audited_proof_system_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_required_external_source_audited_proof_system_contract")
             .contains("RuntimePipelineBindingEvidence")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_required_external_source_audited_proof_system_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_required_external_source_audited_proof_system_contract")
             .contains("RuntimeVerifierCoreContract system publicInput proof")
-                        && theorem_prefix(
-                            &lean_source,
-                            "runtime_pipeline_binding_required_external_source_audited_proof_system_contract"
-                        )
+                        && prefixes.prefix("runtime_pipeline_binding_required_external_source_audited_proof_system_contract")
                         .contains("SoundWitness system publicInput proof")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_required_external_source_audited_proof_system_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_required_external_source_audited_proof_system_contract")
             .contains("RuntimeFriFoldTraceIdentityContract")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_required_external_source_audited_proof_system_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_required_external_source_audited_proof_system_contract")
             .contains("RuntimeFriFoldQueryPlanOrderContract"),
                     "pipeline required external-source projection should package audited crypto assumptions with proof-system soundness"
                 );
     assert!(
-        theorem_prefix(
-            &lean_source,
-            "runtime_pipeline_binding_required_external_source_audited_soundness_proof_system_contract"
-        )
+        prefixes.prefix("runtime_pipeline_binding_required_external_source_audited_soundness_proof_system_contract")
         .contains("RequiredCryptographicAssumptionStatements assumptions.crypto")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_required_external_source_audited_soundness_proof_system_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_required_external_source_audited_soundness_proof_system_contract")
             .contains("RequiredSemanticAssumptionStatements assumptions.semantic")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_required_external_source_audited_soundness_proof_system_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_required_external_source_audited_soundness_proof_system_contract")
             .contains("ProofSystemSound system")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_required_external_source_audited_soundness_proof_system_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_required_external_source_audited_soundness_proof_system_contract")
             .contains("ExternalSourceOpeningEvidence")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_required_external_source_audited_soundness_proof_system_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_required_external_source_audited_soundness_proof_system_contract")
             .contains("RuntimePipelineBindingEvidence")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_required_external_source_audited_soundness_proof_system_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_required_external_source_audited_soundness_proof_system_contract")
             .contains("RuntimeVerifierCoreContract system publicInput proof")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_required_external_source_audited_soundness_proof_system_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_required_external_source_audited_soundness_proof_system_contract")
             .contains("SoundWitness system publicInput proof"),
         "pipeline required external-source projection should package audited crypto and semantic assumptions with proof-system soundness"
     );
@@ -3208,95 +2792,44 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
         ],
     );
     assert!(
-        theorem_prefix(
-            &lean_source,
-            "runtime_pipeline_binding_required_external_source_audited_proof_system_core_contract"
-        )
+        prefixes.prefix("runtime_pipeline_binding_required_external_source_audited_proof_system_core_contract")
         .contains("RequiredCryptographicAssumptionStatements assumptions.crypto")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_required_external_source_audited_proof_system_core_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_required_external_source_audited_proof_system_core_contract")
             .contains("ProofSystemSound system")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_required_external_source_audited_proof_system_core_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_required_external_source_audited_proof_system_core_contract")
             .contains("system.accepts publicInput proof")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_required_external_source_audited_proof_system_core_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_required_external_source_audited_proof_system_core_contract")
             .contains("ExternalSourceOpeningEvidence")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_required_external_source_audited_proof_system_core_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_required_external_source_audited_proof_system_core_contract")
             .contains("runtime_pipeline_trace_source_validation validation")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_required_external_source_audited_proof_system_core_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_required_external_source_audited_proof_system_core_contract")
             .contains("runtime_pipeline_opening_source_validation validation")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_required_external_source_audited_proof_system_core_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_required_external_source_audited_proof_system_core_contract")
             .contains("system.transcriptBound publicInput proof")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_required_external_source_audited_proof_system_core_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_required_external_source_audited_proof_system_core_contract")
             .contains("system.publicInputBound publicInput proof")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_required_external_source_audited_proof_system_core_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_required_external_source_audited_proof_system_core_contract")
             .contains("system.pcsOpeningsValid publicInput proof")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_required_external_source_audited_proof_system_core_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_required_external_source_audited_proof_system_core_contract")
             .contains("system.friQueriesValid publicInput proof")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_required_external_source_audited_proof_system_core_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_required_external_source_audited_proof_system_core_contract")
             .contains("validation.queryPlanBindingValidation.queryPlanSeedBindsWitnessTreeDigests")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_required_external_source_audited_proof_system_core_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_required_external_source_audited_proof_system_core_contract")
             .contains(
                 "validation.queryPlanBindingValidation.queryPlanSeededFriOpeningRequirementsChecked"
             )
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_required_external_source_audited_proof_system_core_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_required_external_source_audited_proof_system_core_contract")
             .contains("RuntimeVerifierCoreContract system publicInput proof")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_required_external_source_audited_proof_system_core_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_required_external_source_audited_proof_system_core_contract")
             .contains("system.traceConsistent publicInput proof trace")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_required_external_source_audited_proof_system_core_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_required_external_source_audited_proof_system_core_contract")
             .contains("SoundWitness system publicInput proof"),
         "pipeline required external-source projection should package audited proof-system core obligations"
     );
     assert!(
-        !theorem_prefix(
-            &lean_source,
-            "runtime_pipeline_binding_required_external_source_audited_proof_system_core_contract"
-        )
+        !prefixes.prefix("runtime_pipeline_binding_required_external_source_audited_proof_system_core_contract")
         .contains("RuntimePipelineBindingEvidence")
-            && !theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_required_external_source_audited_proof_system_core_contract"
-            )
+            && !prefixes.prefix("runtime_pipeline_binding_required_external_source_audited_proof_system_core_contract")
             .contains("RuntimeArtifactSoundnessObligations"),
         "compact required external-source proof-system core contract should not force full artifact evidence"
     );
@@ -3537,220 +3070,103 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
         ],
     );
     assert!(
-        theorem_prefix(
-            &lean_source,
-            "runtime_pipeline_binding_required_external_source_audited_accepts_sound_witness_contract"
-        )
+        prefixes.prefix("runtime_pipeline_binding_required_external_source_audited_accepts_sound_witness_contract")
         .contains("RequiredCryptographicAssumptionStatements assumptions.crypto")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_required_external_source_audited_accepts_sound_witness_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_required_external_source_audited_accepts_sound_witness_contract")
             .contains("ProofSystemSound system")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_required_external_source_audited_accepts_sound_witness_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_required_external_source_audited_accepts_sound_witness_contract")
             .contains("system.accepts publicInput proof")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_required_external_source_audited_accepts_sound_witness_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_required_external_source_audited_accepts_sound_witness_contract")
             .contains("ExternalSourceOpeningEvidence")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_required_external_source_audited_accepts_sound_witness_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_required_external_source_audited_accepts_sound_witness_contract")
             .contains("runtime_pipeline_trace_source_validation validation")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_required_external_source_audited_accepts_sound_witness_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_required_external_source_audited_accepts_sound_witness_contract")
             .contains("runtime_pipeline_opening_source_validation validation")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_required_external_source_audited_accepts_sound_witness_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_required_external_source_audited_accepts_sound_witness_contract")
             .contains("SoundWitness system publicInput proof"),
         "pipeline required external-source projection should expose compact audited acceptance, both external-source evidences, and witness evidence"
     );
     assert!(
-        !theorem_prefix(
-            &lean_source,
-            "runtime_pipeline_binding_required_external_source_audited_accepts_sound_witness_contract"
-        )
+        !prefixes.prefix("runtime_pipeline_binding_required_external_source_audited_accepts_sound_witness_contract")
         .contains("RuntimePipelineBindingEvidence"),
         "compact required external-source pipeline contract should not force callers to unpack full pipeline evidence"
     );
     assert!(
-        theorem_prefix(
-            &lean_source,
-            "runtime_pipeline_binding_required_external_source_audited_pcs_accepts_sound_witness_contract"
-        )
+        prefixes.prefix("runtime_pipeline_binding_required_external_source_audited_pcs_accepts_sound_witness_contract")
         .contains("RequiredCryptographicAssumptionStatements assumptions.crypto")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_required_external_source_audited_pcs_accepts_sound_witness_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_required_external_source_audited_pcs_accepts_sound_witness_contract")
             .contains("ProofSystemSound system")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_required_external_source_audited_pcs_accepts_sound_witness_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_required_external_source_audited_pcs_accepts_sound_witness_contract")
             .contains("system.accepts publicInput proof")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_required_external_source_audited_pcs_accepts_sound_witness_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_required_external_source_audited_pcs_accepts_sound_witness_contract")
             .contains("ExternalSourceOpeningEvidence")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_required_external_source_audited_pcs_accepts_sound_witness_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_required_external_source_audited_pcs_accepts_sound_witness_contract")
             .contains("runtime_pipeline_trace_source_validation validation")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_required_external_source_audited_pcs_accepts_sound_witness_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_required_external_source_audited_pcs_accepts_sound_witness_contract")
             .contains("runtime_pipeline_opening_source_validation validation")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_required_external_source_audited_pcs_accepts_sound_witness_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_required_external_source_audited_pcs_accepts_sound_witness_contract")
             .contains("system.pcsOpeningsValid publicInput proof")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_required_external_source_audited_pcs_accepts_sound_witness_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_required_external_source_audited_pcs_accepts_sound_witness_contract")
             .contains("SoundWitness system publicInput proof"),
         "pipeline required external-source projection should expose compact audited acceptance, both external-source evidences, PCS openings, and witness evidence"
     );
     assert!(
-        !theorem_prefix(
-            &lean_source,
-            "runtime_pipeline_binding_required_external_source_audited_pcs_accepts_sound_witness_contract"
-        )
+        !prefixes.prefix("runtime_pipeline_binding_required_external_source_audited_pcs_accepts_sound_witness_contract")
         .contains("RuntimePipelineBindingEvidence"),
         "compact required external-source pipeline PCS contract should not force callers to unpack full pipeline evidence"
     );
     assert!(
-        theorem_prefix(
-            &lean_source,
-            "runtime_pipeline_binding_required_external_source_audited_pcs_fri_witness_contract"
-        )
+        prefixes.prefix("runtime_pipeline_binding_required_external_source_audited_pcs_fri_witness_contract")
         .contains("RequiredCryptographicAssumptionStatements assumptions.crypto")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_required_external_source_audited_pcs_fri_witness_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_required_external_source_audited_pcs_fri_witness_contract")
             .contains("ProofSystemSound system")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_required_external_source_audited_pcs_fri_witness_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_required_external_source_audited_pcs_fri_witness_contract")
             .contains("system.accepts publicInput proof")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_required_external_source_audited_pcs_fri_witness_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_required_external_source_audited_pcs_fri_witness_contract")
             .contains("ExternalSourceOpeningEvidence")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_required_external_source_audited_pcs_fri_witness_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_required_external_source_audited_pcs_fri_witness_contract")
             .contains("runtime_pipeline_trace_source_validation validation")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_required_external_source_audited_pcs_fri_witness_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_required_external_source_audited_pcs_fri_witness_contract")
             .contains("runtime_pipeline_opening_source_validation validation")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_required_external_source_audited_pcs_fri_witness_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_required_external_source_audited_pcs_fri_witness_contract")
             .contains("system.pcsOpeningsValid publicInput proof")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_required_external_source_audited_pcs_fri_witness_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_required_external_source_audited_pcs_fri_witness_contract")
             .contains("system.friQueriesValid publicInput proof")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_required_external_source_audited_pcs_fri_witness_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_required_external_source_audited_pcs_fri_witness_contract")
             .contains("SoundWitness system publicInput proof"),
         "pipeline required external-source projection should expose compact audited acceptance, both external-source evidences, PCS openings, FRI queries, and witness evidence"
     );
     assert!(
-        !theorem_prefix(
-            &lean_source,
-            "runtime_pipeline_binding_required_external_source_audited_pcs_fri_witness_contract"
-        )
+        !prefixes.prefix("runtime_pipeline_binding_required_external_source_audited_pcs_fri_witness_contract")
         .contains("RuntimePipelineBindingEvidence"),
         "compact required external-source pipeline PCS/FRI contract should not force callers to unpack full pipeline evidence"
     );
     assert!(
-        theorem_prefix(
-            &lean_source,
-            "runtime_pipeline_binding_required_external_source_audited_pcs_fri_core_witness_contract"
-        )
+        prefixes.prefix("runtime_pipeline_binding_required_external_source_audited_pcs_fri_core_witness_contract")
         .contains("RequiredCryptographicAssumptionStatements assumptions.crypto")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_required_external_source_audited_pcs_fri_core_witness_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_required_external_source_audited_pcs_fri_core_witness_contract")
             .contains("ProofSystemSound system")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_required_external_source_audited_pcs_fri_core_witness_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_required_external_source_audited_pcs_fri_core_witness_contract")
             .contains("system.accepts publicInput proof")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_required_external_source_audited_pcs_fri_core_witness_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_required_external_source_audited_pcs_fri_core_witness_contract")
             .contains("ExternalSourceOpeningEvidence")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_required_external_source_audited_pcs_fri_core_witness_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_required_external_source_audited_pcs_fri_core_witness_contract")
             .contains("runtime_pipeline_trace_source_validation validation")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_required_external_source_audited_pcs_fri_core_witness_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_required_external_source_audited_pcs_fri_core_witness_contract")
             .contains("runtime_pipeline_opening_source_validation validation")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_required_external_source_audited_pcs_fri_core_witness_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_required_external_source_audited_pcs_fri_core_witness_contract")
             .contains("system.pcsOpeningsValid publicInput proof")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_required_external_source_audited_pcs_fri_core_witness_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_required_external_source_audited_pcs_fri_core_witness_contract")
             .contains("system.friQueriesValid publicInput proof")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_required_external_source_audited_pcs_fri_core_witness_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_required_external_source_audited_pcs_fri_core_witness_contract")
             .contains("validation.queryPlanBindingValidation.queryPlanSeedBindsWitnessTreeDigests")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_required_external_source_audited_pcs_fri_core_witness_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_required_external_source_audited_pcs_fri_core_witness_contract")
             .contains(
                 "validation.queryPlanBindingValidation.queryPlanSeededFriOpeningRequirementsChecked"
             )
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_required_external_source_audited_pcs_fri_core_witness_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_required_external_source_audited_pcs_fri_core_witness_contract")
             .contains("RuntimeVerifierCoreContract system publicInput proof")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_required_external_source_audited_pcs_fri_core_witness_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_required_external_source_audited_pcs_fri_core_witness_contract")
             .contains("SoundWitness system publicInput proof"),
         "pipeline required external-source projection should expose compact audited seeded PCS/FRI, verifier core obligations, and witness evidence"
     );
@@ -3763,10 +3179,7 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
         ],
     );
     assert!(
-        !theorem_prefix(
-            &lean_source,
-            "runtime_pipeline_binding_required_external_source_audited_pcs_fri_core_witness_contract"
-        )
+        !prefixes.prefix("runtime_pipeline_binding_required_external_source_audited_pcs_fri_core_witness_contract")
         .contains("RuntimePipelineBindingEvidence"),
         "compact required external-source pipeline PCS/FRI core contract should not force callers to unpack full pipeline evidence"
     );
@@ -3848,85 +3261,37 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
         ],
     );
     assert!(
-        theorem_prefix(
-            &lean_source,
-            "runtime_pipeline_binding_required_external_source_audited_segment_ids_contract"
-        )
+        prefixes.prefix("runtime_pipeline_binding_required_external_source_audited_segment_ids_contract")
         .contains("RequiredCryptographicAssumptionStatements assumptions.crypto")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_required_external_source_audited_segment_ids_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_required_external_source_audited_segment_ids_contract")
             .contains("ExternalSourceOpeningEvidence")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_required_external_source_audited_segment_ids_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_required_external_source_audited_segment_ids_contract")
             .contains("runtime_pipeline_trace_source_validation validation")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_required_external_source_audited_segment_ids_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_required_external_source_audited_segment_ids_contract")
             .contains("runtime_pipeline_opening_source_validation validation")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_required_external_source_audited_segment_ids_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_required_external_source_audited_segment_ids_contract")
             .contains("RuntimeVerifierCoreContract system publicInput proof")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_required_external_source_audited_segment_ids_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_required_external_source_audited_segment_ids_contract")
             .contains("SoundWitness system publicInput proof")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_required_external_source_audited_segment_ids_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_required_external_source_audited_segment_ids_contract")
             .contains("let ethArtifactValidation :=")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_required_external_source_audited_segment_ids_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_required_external_source_audited_segment_ids_contract")
             .contains("validation.ethBindingValidation.proofArtifactBindingValidation")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_required_external_source_audited_segment_ids_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_required_external_source_audited_segment_ids_contract")
             .contains("RuntimeProofArtifactBindingValidationAgreement")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_required_external_source_audited_segment_ids_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_required_external_source_audited_segment_ids_contract")
             .contains("artifactValidation.proofContainerCanonical artifact publicInput proof")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_required_external_source_audited_segment_ids_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_required_external_source_audited_segment_ids_contract")
             .contains("artifactValidation.proofSegmentsPresent artifact publicInput proof")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_required_external_source_audited_segment_ids_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_required_external_source_audited_segment_ids_contract")
             .contains("artifactValidation.proofMetadataCanonical artifact publicInput proof")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_required_external_source_audited_segment_ids_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_required_external_source_audited_segment_ids_contract")
             .contains("artifactValidation.proofSegmentPayloadsNonempty artifact publicInput proof")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_required_external_source_audited_segment_ids_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_required_external_source_audited_segment_ids_contract")
             .contains("artifactValidation.proofSegmentIdsAllowed artifact publicInput proof")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_required_external_source_audited_segment_ids_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_required_external_source_audited_segment_ids_contract")
             .contains("artifactValidation.proofSegmentIdsUnique artifact publicInput proof")
-            && theorem_prefix(
-                &lean_source,
-                "runtime_pipeline_binding_required_external_source_audited_segment_ids_contract"
-            )
+            && prefixes.prefix("runtime_pipeline_binding_required_external_source_audited_segment_ids_contract")
             .contains("artifactValidation.proofUnitValuesTraceIdentityCoverage"),
         "required external-source audited segment contract should keep source evidence, container canonicality, metadata canonicality, segment presence, nonempty payloads, allowed segment IDs, segment-id uniqueness, and unit-values coverage together"
     );
@@ -4092,6 +3457,27 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
     );
 }
 
-fn theorem_prefix(source: &str, name: &str) -> String {
-    lean_binding::theorem_prefix(source, name)
+struct TheoremPrefixCache<'a> {
+    source: &'a str,
+    prefixes: BTreeMap<&'static str, String>,
+}
+
+impl<'a> TheoremPrefixCache<'a> {
+    fn new(source: &'a str) -> Self {
+        Self {
+            source,
+            prefixes: BTreeMap::new(),
+        }
+    }
+
+    fn prefix(&mut self, name: &'static str) -> &str {
+        if !self.prefixes.contains_key(name) {
+            let prefix = lean_binding::theorem_prefix(self.source, name);
+            self.prefixes.insert(name, prefix);
+        }
+        self.prefixes
+            .get(name)
+            .expect("Lean theorem prefix should be cached")
+            .as_str()
+    }
 }
