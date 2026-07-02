@@ -1355,7 +1355,7 @@ impl CudaDeviceBuffer {
                 rhs: expected_descriptor_words,
             });
         }
-        let descriptor_buffer = Self::from_pinned_u64_words(descriptors)?;
+        let descriptor_buffer = Self::from_u64_words(descriptors)?;
         Self::from_zisk_main_trace_descriptors_device(
             &descriptor_buffer,
             descriptor_words,
@@ -1389,7 +1389,7 @@ impl CudaDeviceBuffer {
             start_word,
             slice_width_words,
         )?;
-        let descriptor_buffer = Self::from_pinned_u64_words(descriptors)?;
+        let descriptor_buffer = Self::from_u64_words(descriptors)?;
         Self::from_zisk_main_trace_descriptors_device_selected_row_major_u64_slice(
             &descriptor_buffer,
             descriptor_words,
@@ -1418,7 +1418,7 @@ impl CudaDeviceBuffer {
             row_count,
             row_width_words,
         )?;
-        let descriptor_buffer = Self::from_pinned_u64_words(descriptors)?;
+        let descriptor_buffer = Self::from_u64_words(descriptors)?;
         let high_buffer = Self::from_u64_words(high_words)?;
         Self::from_sparse_zisk_main_trace_descriptors_device(
             &descriptor_buffer,
@@ -1450,7 +1450,7 @@ impl CudaDeviceBuffer {
             row_count,
             row_width_words,
         )?;
-        let descriptor_buffer = Self::from_pinned_u64_words(descriptors)?;
+        let descriptor_buffer = Self::from_u64_words(descriptors)?;
         Self::from_main_trace_descriptors_device_with_layout(
             &descriptor_buffer,
             descriptor_words,
@@ -1479,7 +1479,7 @@ impl CudaDeviceBuffer {
             row_count,
             row_width_words,
         )?;
-        let descriptor_buffer = Self::from_pinned_u64_words(descriptors)?;
+        let descriptor_buffer = Self::from_u64_words(descriptors)?;
         let high_buffer = Self::from_u64_words(high_words)?;
         let buffer = Self::new(output_byte_len)?;
         if row_count == 0 {

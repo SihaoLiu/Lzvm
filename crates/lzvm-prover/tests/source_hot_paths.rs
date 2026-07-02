@@ -5369,7 +5369,7 @@ fn guest_pc_trace_timing_splits_device_source_upload_and_expand_work() {
     );
     assert!(
         material_body.contains("descriptor_upload_duration")
-            && material_body.contains("CudaDeviceBuffer::from_pinned_u64_words"),
+            && material_body.contains("CudaDeviceBuffer::from_u64_words"),
         "guest PC device material source build should time descriptor uploads"
     );
 
@@ -8793,7 +8793,7 @@ fn cuda_state_prefix_expansion_avoids_temporary_prefix_device_buffer() {
 }
 
 #[test]
-fn cuda_main_trace_descriptor_uploads_use_owned_pinned_staging() {
+fn cuda_main_trace_descriptor_uploads_use_direct_descriptor_staging() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let source_path = crate_root.join("../lzvm-accel/src/cuda_buffer.rs");
     let source = std::fs::read_to_string(&source_path).expect("accel source should read");
@@ -8804,9 +8804,9 @@ fn cuda_main_trace_descriptor_uploads_use_owned_pinned_staging() {
         "#[allow(clippy::too_many_arguments)]\n    pub fn from_sparse_main_trace_descriptors_with_layout",
     );
     assert!(
-        compact_body.contains("Self::from_pinned_u64_words(descriptors)?")
-            && !compact_body.contains("Self::from_u64_words(descriptors)?"),
-        "main trace descriptor upload should use owned pinned staging"
+        compact_body.contains("Self::from_u64_words(descriptors)?")
+            && !compact_body.contains("Self::from_pinned_u64_words(descriptors)?"),
+        "main trace descriptor upload should avoid the slower owned pinned staging path"
     );
 
     let sparse_body = function_body(
@@ -8815,9 +8815,9 @@ fn cuda_main_trace_descriptor_uploads_use_owned_pinned_staging() {
         "pub fn from_main_trace_descriptor_selected_row_major_u64_slice_with_layout",
     );
     assert!(
-        sparse_body.contains("Self::from_pinned_u64_words(descriptors)?")
+        sparse_body.contains("Self::from_u64_words(descriptors)?")
             && sparse_body.contains("let high_buffer = Self::from_u64_words(high_words)?"),
-        "sparse descriptor upload should stage the large descriptor stream while leaving high words on the standard path"
+        "sparse descriptor upload should keep both descriptor streams on the direct upload path"
     );
 }
 
