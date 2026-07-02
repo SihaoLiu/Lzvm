@@ -10608,12 +10608,13 @@ fn validate_and_apply_zisk_main_report(
     validate_zisk_main_report_row_capacity(row, 1, context.row_count)?;
     if !detail_timing && !shape_timing {
         if let Some(fast_path) = report_level_fast_path_parts(row, report)? {
+            let effects = ZiskMainReportEffects::from_report(report);
             match fast_path {
                 MainReportFastPathParts::LoadCopy(instruction, a_index, b_offset, store_index) => {
                     apply_copy_indirect_register_store_fast_path(
                         row,
                         instruction,
-                        ZiskMainReportEffects::from_report(report),
+                        effects,
                         report.next_pc,
                         a_index,
                         b_offset,
@@ -10632,7 +10633,7 @@ fn validate_and_apply_zisk_main_report(
                     apply_sign_extend_indirect_register_store_fast_path(
                         row,
                         instruction,
-                        ZiskMainReportEffects::from_report(report),
+                        effects,
                         report.next_pc,
                         a_index,
                         b_offset,
@@ -10646,7 +10647,7 @@ fn validate_and_apply_zisk_main_report(
                     apply_no_memory_fast_path(
                         row,
                         instruction,
-                        ZiskMainReportEffects::from_report(report),
+                        effects,
                         report.next_pc,
                         parts,
                         state,
@@ -10658,7 +10659,7 @@ fn validate_and_apply_zisk_main_report(
                     apply_copy_register_indirect_store_fast_path(
                         row,
                         instruction,
-                        ZiskMainReportEffects::from_report(report),
+                        effects,
                         report.next_pc,
                         a_index,
                         b_index,
@@ -10672,7 +10673,7 @@ fn validate_and_apply_zisk_main_report(
                     apply_simple_copy_register_store_fast_path(
                         row,
                         instruction,
-                        ZiskMainReportEffects::from_report(report),
+                        effects,
                         report.next_pc,
                         b_index,
                         store_index,
@@ -10685,7 +10686,7 @@ fn validate_and_apply_zisk_main_report(
                     apply_jump_fast_path(
                         row,
                         instruction,
-                        ZiskMainReportEffects::from_report(report),
+                        effects,
                         report.next_pc,
                         parts,
                         state,
@@ -10697,7 +10698,7 @@ fn validate_and_apply_zisk_main_report(
                     apply_jump_fast_path(
                         row,
                         instruction,
-                        ZiskMainReportEffects::from_report(report),
+                        effects,
                         report.next_pc,
                         parts,
                         state,
