@@ -13748,16 +13748,7 @@ fn zisk_main_report_instruction_size(
     row: usize,
     report: &GuestMachineReport,
 ) -> Result<i64, GuestPcTraceBackendError> {
-    match report.instruction_byte_len() {
-        2 | 4 => Ok(report.instruction_byte_len() as i64),
-        byte_len => Err(GuestPcTraceBackendError::ZiskMainLower {
-            row,
-            source: ZiskMainLowerError::InvalidInstructionByteLen {
-                pc: report.address(),
-                byte_len: usize::from(byte_len),
-            },
-        }),
-    }
+    report_fast_path_instruction_size(row, report)
 }
 
 fn zisk_main_base_instruction(
