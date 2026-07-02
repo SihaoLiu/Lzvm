@@ -10471,6 +10471,35 @@ fn lean_top_level_soundness_exports_audited_global_local_contract() {
 }
 
 #[test]
+fn lean_runtime_soundness_exports_checked_execution_obligations() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let runtime_core_path = crate_root.join("../../lean/Lzvm/RuntimeSoundness/Core.lean");
+    let runtime_core_source = std::fs::read_to_string(&runtime_core_path)
+        .expect("Lean runtime soundness core source should read");
+    let theorem_body = function_body(
+        &runtime_core_source,
+        "theorem runtime_soundness_checked_acceptance_core_and_execution_obligations",
+        "theorem runtime_soundness_checked_acceptance_proof_system_sound",
+    );
+
+    assert!(
+        runtime_core_source.contains(
+            "theorem runtime_soundness_checked_acceptance_core_and_execution_obligations"
+        ) && theorem_body.contains("system.accepts publicInput proof")
+            && theorem_body.contains("RuntimeVerifierCoreContract system publicInput proof")
+            && theorem_body.contains("exists witness trace constraints")
+            && theorem_body.contains("system.traceConsistent publicInput proof trace")
+            && theorem_body.contains("system.constraintsSatisfied constraints trace")
+            && theorem_body.contains("system.witnessMatchesTrace witness trace")
+            && theorem_body
+                .contains("runtime_soundness_checked_acceptance_accepts_core_sound_witness")
+            && theorem_body.contains("sound_witness_implies_execution_obligations")
+            && !theorem_body.contains("abstract_verifier_sound"),
+        "runtime Lean soundness should expose checked acceptance, verifier core, and explicit execution obligations through the centralized checked-acceptance soundness helper"
+    );
+}
+
+#[test]
 fn lean_pipeline_binding_tracks_runtime_preflight_and_artifact_checks() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let lean_path = crate_root.join("../../lean/Lzvm/PipelineBinding.lean");
