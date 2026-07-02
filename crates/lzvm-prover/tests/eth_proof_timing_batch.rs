@@ -1031,6 +1031,44 @@ fn eth_proof_timing_batch_dry_run_can_request_trace_diagnostic_timing() {
 }
 
 #[test]
+fn eth_proof_timing_batch_dry_run_can_request_trace_shape_sample_timing() {
+    let fixture = ProofFixture::new("eth-proof-timing-batch-trace-shape-sample");
+    let mut command = Command::new(script_path());
+    command
+        .arg("--suite")
+        .arg("small")
+        .arg("--dry-run")
+        .arg("--trace-shape-timing-sample-stride")
+        .arg("4096")
+        .arg("--summary")
+        .arg("trace shape sample");
+    fixture.apply_env(&mut command, SMALL_PREFIX);
+
+    let output = command
+        .output()
+        .expect("ETH proof timing batch dry-run should run");
+    let success = output.status.success();
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    fixture.cleanup();
+
+    assert!(
+        success,
+        "dry-run should build trace shape sample command: stderr={stderr}"
+    );
+    assert!(
+        stdout.contains("LZVM_GUEST_TRACE_SHAPE_TIMING_SAMPLE_STRIDE=4096")
+            && !stdout.contains("LZVM_GUEST_TRACE_SHAPE_TIMING=1"),
+        "prove command should enable sampled shape timing without full shape timing: {stdout}"
+    );
+    assert!(
+        stdout.contains("trace_shape_timing=false\n")
+            && stdout.contains("trace_shape_timing_sample_stride=4096\n"),
+        "dry-run metadata should report sampled trace shape timing: {stdout}"
+    );
+}
+
+#[test]
 fn eth_proof_timing_batch_target_thresholds_follow_selected_suite() {
     let fixture = ProofFixture::new("eth-proof-timing-batch-target-thresholds");
     let mut command = Command::new(script_path());
@@ -1422,6 +1460,8 @@ fn eth_proof_timing_batch_check_env_preserves_trace_diagnostic_next_commands() {
         .arg("small")
         .arg("--check-env")
         .arg("--trace-shape-timing")
+        .arg("--trace-shape-timing-sample-stride")
+        .arg("2048")
         .arg("--trace-detail-timing-sample-stride")
         .arg("4096");
     fixture.apply_env(&mut command, SMALL_PREFIX);
@@ -1453,6 +1493,7 @@ fn eth_proof_timing_batch_check_env_preserves_trace_diagnostic_next_commands() {
     for line in [preflight_line, profile_line, run_line] {
         assert!(
             line.contains("--trace-shape-timing")
+                && line.contains("--trace-shape-timing-sample-stride 2048")
                 && line.contains("--trace-detail-timing")
                 && line.contains("--trace-detail-timing-sample-stride 4096"),
             "next command should preserve trace diagnostic flags: {stdout}"

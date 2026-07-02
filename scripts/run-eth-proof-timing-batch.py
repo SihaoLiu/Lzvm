@@ -676,6 +676,13 @@ def mode_args(args: argparse.Namespace) -> list[str]:
         result.append("--owned-streaming-lower")
     if args.trace_shape_timing:
         result.append("--trace-shape-timing")
+    if args.trace_shape_timing_sample_stride is not None:
+        result.extend(
+            [
+                "--trace-shape-timing-sample-stride",
+                str(args.trace_shape_timing_sample_stride),
+            ]
+        )
     if trace_detail_timing_enabled(args):
         result.append("--trace-detail-timing")
     if args.trace_detail_timing_sample_stride is not None:
@@ -696,6 +703,10 @@ def trace_timing_env_for_args(args: argparse.Namespace) -> dict[str, str]:
     env: dict[str, str] = {}
     if args.trace_shape_timing:
         env["LZVM_GUEST_TRACE_SHAPE_TIMING"] = "1"
+    if args.trace_shape_timing_sample_stride is not None:
+        env["LZVM_GUEST_TRACE_SHAPE_TIMING_SAMPLE_STRIDE"] = str(
+            args.trace_shape_timing_sample_stride
+        )
     if trace_detail_timing_enabled(args):
         env["LZVM_GUEST_TRACE_DETAIL_TIMING"] = "1"
     if args.trace_detail_timing_sample_stride is not None:
@@ -1506,6 +1517,7 @@ def dry_run_summary_lines(args: argparse.Namespace, root: Path) -> list[str]:
         f"witness_thread_pools={args.witness_thread_pools or ''}",
         f"stored_witnesses={args.stored_witnesses or ''}",
         f"trace_shape_timing={str(args.trace_shape_timing).lower()}",
+        f"trace_shape_timing_sample_stride={args.trace_shape_timing_sample_stride or ''}",
         f"trace_detail_timing={str(trace_detail_timing_enabled(args)).lower()}",
         f"trace_detail_timing_sample_stride={args.trace_detail_timing_sample_stride or ''}",
         f"append_max_average_rejections={str(args.append_max_average_rejections).lower()}",
@@ -1799,6 +1811,7 @@ def self_test() -> None:
         seed_discovery_streaming_device_lower=False,
         owned_streaming_lower=False,
         trace_shape_timing=False,
+        trace_shape_timing_sample_stride=None,
         trace_detail_timing=False,
         trace_detail_timing_sample_stride=None,
         gpu_preallocate=False,
@@ -1917,6 +1930,9 @@ def main() -> None:
     parser.add_argument("--seed-discovery-streaming-device-lower", action="store_true")
     parser.add_argument("--owned-streaming-lower", action="store_true")
     parser.add_argument("--trace-shape-timing", action="store_true")
+    parser.add_argument(
+        "--trace-shape-timing-sample-stride", type=positive_integer, default=None
+    )
     parser.add_argument("--trace-detail-timing", action="store_true")
     parser.add_argument("--trace-detail-timing-sample-stride", type=positive_integer, default=None)
     parser.add_argument("--gpu-preallocate", action="store_true")
