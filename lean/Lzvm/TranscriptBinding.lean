@@ -905,4 +905,59 @@ theorem runtime_transcript_binding_checked_acceptance_evidence_core_and_sound
           (And.intro transcriptBound
             (And.intro coreContract fullContract.right.right.right))))
 
+theorem
+  runtime_transcript_binding_checked_acceptance_concrete_core_sound_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeTranscriptBindingValidation system)
+    (binding :
+      RuntimeProofArtifactConcreteSegmentIdBinding
+        validation.artifactBindingValidation) :
+    forall artifact publicInput proof,
+      RuntimeTranscriptBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        (RuntimeTranscriptBindingEvidence
+            system
+            validation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeTranscriptBindingStructuralObligations
+            system
+            validation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeArtifactEvidence
+            system
+            validation.artifactBindingValidation.runtimeValidation
+            artifact
+            publicInput
+            proof
+          /\ system.transcriptBound publicInput proof
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof)
+          /\ RuntimeProofArtifactConcreteSegmentIdsAllowed proof := by
+  intro artifact publicInput proof accepted
+  exact
+    And.intro
+      (runtime_transcript_binding_checked_acceptance_evidence_core_and_sound
+        assumptions
+        validation
+        artifact
+        publicInput
+        proof
+        accepted)
+      (runtime_transcript_binding_checked_acceptance_concrete_segment_ids_allowed
+        validation
+        binding
+        artifact
+        publicInput
+        proof
+        accepted)
+
 end Lzvm
