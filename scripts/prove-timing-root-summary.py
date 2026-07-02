@@ -957,7 +957,8 @@ HEADER = (
     "source_retention_max_rejected_bytes,source_retention_limit_bytes,"
     "source_retention_rejected_total_exceeds_device_memory,"
     "source_retention_max_rejected_exceeds_device_memory,"
-    "opening_source_rebuild_hint,opening_row_value_device_rows,"
+    "opening_source_rebuild_hint,opening_external_source_descriptor_action_hint,"
+    "opening_row_value_device_rows,"
     "opening_row_value_source_rows,opening_row_value_source_extend_ms,"
     "opening_row_value_source_extend_pct,opening_source_row_value_action_hint,"
     "opening_row_dedup_input_rows,opening_row_dedup_unique_rows,"
@@ -3386,6 +3387,24 @@ def opening_source_rebuild_hint(
     return "external_source_rebuild"
 
 
+def opening_external_source_descriptor_action_hint(
+    external_source_count: int,
+    descriptor_upload_ms: int,
+    descriptor_upload_bytes: int,
+    descriptor_retention_rejected: int,
+    descriptor_retention_limit_bytes: int,
+) -> str:
+    if external_source_count <= 0 or descriptor_upload_bytes <= 0:
+        return "none"
+    if descriptor_retention_rejected > 0:
+        return "opening_descriptor_reupload_after_retention_reject"
+    if descriptor_retention_limit_bytes == 0:
+        return "opening_descriptor_reupload_without_retention_budget"
+    if descriptor_upload_ms > 0:
+        return "opening_descriptor_reupload"
+    return "opening_descriptor_reupload_bytes_only"
+
+
 def data_residency_action_hint(
     source_rebuild_hint: str,
     cuda_transfer_hint: str,
@@ -5644,6 +5663,15 @@ def summarize_profile_values(
         source_retention_rejected,
         source_retention_limit_bytes,
     )
+    opening_external_source_descriptor_action = (
+        opening_external_source_descriptor_action_hint(
+            opening_external_source_count,
+            opening_external_source_descriptor_upload_ms,
+            opening_external_source_descriptor_upload_bytes,
+            descriptor_retention_rejected,
+            descriptor_retention_limit_bytes,
+        )
+    )
     opening_hint = opening_batching_hint(
         opening_query_units,
         opening_single_query_units,
@@ -6045,7 +6073,8 @@ def summarize_profile_values(
         f"{source_retention_max_rejected_bytes},{source_retention_limit_bytes},"
         f"{source_retention_total_exceeds_device_memory},"
         f"{source_retention_max_exceeds_device_memory},"
-        f"{source_rebuild_hint},{opening_row_value_device_rows},"
+        f"{source_rebuild_hint},{opening_external_source_descriptor_action},"
+        f"{opening_row_value_device_rows},"
         f"{opening_row_value_source_rows},{opening_row_value_source_extend_ms},"
         f"{opening_row_value_source_extend_pct:.3f},{opening_source_row_value_hint},"
         f"{opening_row_dedup_input_rows},{opening_row_dedup_unique_rows},"

@@ -444,12 +444,15 @@ fn prove_timing_root_summary_reports_opening_external_source_timings() {
         "timing_total_ms=1000",
         "input_bytes=1024",
         "timing_finish_witness_opening_ms=123",
+        "timing_finish_witness_opening_external_source_count=2",
         "timing_finish_witness_external_source_ms=45",
         "timing_finish_witness_external_source_descriptor_upload_ms=37",
         "timing_finish_witness_external_source_descriptor_upload_bytes=880",
         "timing_finish_witness_external_source_descriptor_upload_words=110",
         "timing_finish_witness_external_source_descriptor_upload_rows=10",
         "timing_finish_witness_external_source_trace_expand_ms=8",
+        "timing_guest_descriptor_buffer_retention_rejected=3",
+        "timing_guest_descriptor_buffer_retention_limit_bytes=1400",
         "timing_guest_stage_tree_commit_root_count=1",
         "timing_guest_stage_tree_commit_root_materialization_groups=1",
         "timing_guest_stage_tree_commit_root_materialization_max_group_size=1",
@@ -498,6 +501,10 @@ fn prove_timing_root_summary_reports_opening_external_source_timings() {
     assert_eq!(value("opening_external_source_descriptor_upload_words"), "110");
     assert_eq!(value("opening_external_source_descriptor_upload_rows"), "10");
     assert_eq!(value("opening_external_source_trace_expand_ms"), "8");
+    assert_eq!(
+        value("opening_external_source_descriptor_action_hint"),
+        "opening_descriptor_reupload_after_retention_reject"
+    );
 }
 
 #[test]
@@ -821,6 +828,7 @@ fn prove_timing_root_summary_reports_root_grouping_shape() {
         "timing_guest_stage_source_upload_ms",
         "timing_guest_retained_trace_artifact_ms",
         "opening_source_rebuild_hint",
+        "opening_external_source_descriptor_action_hint",
         "timing_finish_witness_opening_row_values_device_rows",
         "timing_finish_witness_opening_row_values_source_rows",
         "timing_finish_witness_opening_row_value_source_extend_ms",
