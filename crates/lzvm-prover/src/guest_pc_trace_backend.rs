@@ -11,7 +11,8 @@ use std::time::{Duration, Instant};
 
 use crate::guest_instruction::{
     RiscvAmoKind, RiscvAmoWidth, RiscvBranchKind, RiscvDmaKind, RiscvInstruction, RiscvLoadKind,
-    RiscvOpImmKind, RiscvOpKind, RiscvPrecompileKind, RiscvStoreKind,
+    RiscvOp32Kind, RiscvOpImm32Kind, RiscvOpImmKind, RiscvOpKind, RiscvPrecompileKind,
+    RiscvStoreKind,
 };
 use crate::guest_machine::{
     advance_guest_machine_with_prepared_fcalls_report_shape,
@@ -10655,6 +10656,19 @@ fn validate_and_apply_zisk_main_report(
             )?;
             return Ok(1);
         }
+        if let Some((instruction, parts)) = arithmetic_fast_path_parts(row, report)? {
+            apply_no_memory_fast_path(
+                row,
+                instruction,
+                ZiskMainReportEffects::from_report(report),
+                report.next_pc,
+                parts,
+                state,
+                context,
+                &mut visit,
+            )?;
+            return Ok(1);
+        }
         if let Some((instruction, parts)) = branch_fast_path_parts(row, report)? {
             apply_no_memory_fast_path(
                 row,
@@ -11436,6 +11450,237 @@ fn no_memory_fast_path_op_supported(op: ZiskMainOp) -> bool {
             | ZiskMainOp::SignExtendH
             | ZiskMainOp::SignExtendW
     )
+}
+
+#[inline(always)]
+fn arithmetic_fast_path_parts(
+    row: usize,
+    report: &GuestMachineReport,
+) -> Result<Option<(ZiskMainInstruction, ZiskMainNoMemoryFastPathParts)>, GuestPcTraceBackendError>
+{
+    let (a, a_index, b, b_index, op, store, store_index, m32) = match report.instruction {
+        RiscvInstruction::OpImm {
+            kind: RiscvOpImmKind::Addi,
+            rd,
+            rs1,
+            immediate,
+        } => {
+            if rd == 0 || rs1 == 0 || immediate == 0 {
+                return Ok(None);
+            }
+            let (a, a_index) = arithmetic_register_source(rs1);
+            (
+                a,
+                a_index,
+                ZiskMainSource::Immediate(i64::from(immediate) as u64),
+                None,
+                ZiskMainOp::Add,
+                ZiskMainStore::Register(rd),
+                Some(rd),
+                false,
+            )
+        }
+        RiscvInstruction::OpImm {
+            kind,
+            rd,
+            rs1,
+            immediate,
+        } => {
+            let (a, a_index) = arithmetic_register_source(rs1);
+            let (store, store_index) = arithmetic_register_store(rd);
+            (
+                a,
+                a_index,
+                ZiskMainSource::Immediate(i64::from(immediate) as u64),
+                None,
+                arithmetic_immediate_op(kind),
+                store,
+                store_index,
+                false,
+            )
+        }
+        RiscvInstruction::OpImm32 {
+            kind,
+            rd,
+            rs1,
+            immediate,
+        } => {
+            let (a, a_index) = arithmetic_register_source(rs1);
+            let (store, store_index) = arithmetic_register_store(rd);
+            (
+                a,
+                a_index,
+                ZiskMainSource::Immediate(i64::from(immediate) as u64),
+                None,
+                arithmetic_immediate_word_op(kind),
+                store,
+                store_index,
+                true,
+            )
+        }
+        RiscvInstruction::Op { kind, rd, rs1, rs2 } => {
+            if rd == 0 {
+                return Ok(None);
+            }
+            let (a, a_index) = arithmetic_register_source(rs1);
+            let (b, b_index) = arithmetic_register_source(rs2);
+            (
+                a,
+                a_index,
+                b,
+                b_index,
+                arithmetic_register_op(kind),
+                ZiskMainStore::Register(rd),
+                Some(rd),
+                false,
+            )
+        }
+        RiscvInstruction::Op32 { kind, rd, rs1, rs2 } => {
+            if rd == 0 {
+                return Ok(None);
+            }
+            let (a, a_index) = arithmetic_register_source(rs1);
+            let (b, b_index) = arithmetic_register_source(rs2);
+            (
+                a,
+                a_index,
+                b,
+                b_index,
+                arithmetic_register_word_op(kind),
+                ZiskMainStore::Register(rd),
+                Some(rd),
+                true,
+            )
+        }
+        _ => return Ok(None),
+    };
+    if !report.memory_accesses.is_empty() || !report.precompile_memory_accesses().is_empty() {
+        return Ok(None);
+    }
+    let instruction_size = match report.instruction_byte_len() {
+        2 | 4 => report.instruction_byte_len() as i64,
+        byte_len => {
+            return Err(GuestPcTraceBackendError::ZiskMainLower {
+                row,
+                source: ZiskMainLowerError::InvalidInstructionByteLen {
+                    pc: report.address(),
+                    byte_len: usize::from(byte_len),
+                },
+            });
+        }
+    };
+    let Some(expected_next_pc) = report.address().checked_add(instruction_size as u64) else {
+        return Ok(None);
+    };
+    if expected_next_pc != report.next_pc {
+        return Ok(None);
+    }
+    let instruction = ZiskMainInstruction {
+        pc: report.address(),
+        a,
+        b,
+        op,
+        store,
+        store_pc: false,
+        set_pc: false,
+        jmp_offset1: instruction_size,
+        jmp_offset2: instruction_size,
+        ind_width: 0,
+        m32,
+        is_external_op: true,
+        is_precompiled: false,
+    };
+    Ok(Some((
+        instruction,
+        ZiskMainNoMemoryFastPathParts {
+            a_index,
+            b_index,
+            store_index,
+        },
+    )))
+}
+
+#[inline(always)]
+fn arithmetic_register_source(index: u8) -> (ZiskMainSource, Option<u8>) {
+    if index == 0 {
+        (ZiskMainSource::Immediate(0), None)
+    } else {
+        (ZiskMainSource::Register(index), Some(index))
+    }
+}
+
+#[inline(always)]
+fn arithmetic_register_store(index: u8) -> (ZiskMainStore, Option<u8>) {
+    if index == 0 {
+        (ZiskMainStore::None, None)
+    } else {
+        (ZiskMainStore::Register(index), Some(index))
+    }
+}
+
+#[inline(always)]
+fn arithmetic_immediate_op(kind: RiscvOpImmKind) -> ZiskMainOp {
+    match kind {
+        RiscvOpImmKind::Addi => ZiskMainOp::Add,
+        RiscvOpImmKind::Slti => ZiskMainOp::Lt,
+        RiscvOpImmKind::Sltiu => ZiskMainOp::Ltu,
+        RiscvOpImmKind::Xori => ZiskMainOp::Xor,
+        RiscvOpImmKind::Ori => ZiskMainOp::Or,
+        RiscvOpImmKind::Andi => ZiskMainOp::And,
+        RiscvOpImmKind::Slli => ZiskMainOp::Sll,
+        RiscvOpImmKind::Srli => ZiskMainOp::Srl,
+        RiscvOpImmKind::Srai => ZiskMainOp::Sra,
+    }
+}
+
+#[inline(always)]
+fn arithmetic_immediate_word_op(kind: RiscvOpImm32Kind) -> ZiskMainOp {
+    match kind {
+        RiscvOpImm32Kind::Addiw => ZiskMainOp::AddW,
+        RiscvOpImm32Kind::Slliw => ZiskMainOp::SllW,
+        RiscvOpImm32Kind::Srliw => ZiskMainOp::SrlW,
+        RiscvOpImm32Kind::Sraiw => ZiskMainOp::SraW,
+    }
+}
+
+#[inline(always)]
+fn arithmetic_register_op(kind: RiscvOpKind) -> ZiskMainOp {
+    match kind {
+        RiscvOpKind::Add => ZiskMainOp::Add,
+        RiscvOpKind::Sub => ZiskMainOp::Sub,
+        RiscvOpKind::Sll => ZiskMainOp::Sll,
+        RiscvOpKind::Slt => ZiskMainOp::Lt,
+        RiscvOpKind::Sltu => ZiskMainOp::Ltu,
+        RiscvOpKind::Xor => ZiskMainOp::Xor,
+        RiscvOpKind::Srl => ZiskMainOp::Srl,
+        RiscvOpKind::Sra => ZiskMainOp::Sra,
+        RiscvOpKind::Or => ZiskMainOp::Or,
+        RiscvOpKind::And => ZiskMainOp::And,
+        RiscvOpKind::Mul => ZiskMainOp::Mul,
+        RiscvOpKind::Mulh => ZiskMainOp::Mulh,
+        RiscvOpKind::Mulhsu => ZiskMainOp::Mulhsu,
+        RiscvOpKind::Mulhu => ZiskMainOp::Mulhu,
+        RiscvOpKind::Div => ZiskMainOp::Div,
+        RiscvOpKind::Divu => ZiskMainOp::Divu,
+        RiscvOpKind::Rem => ZiskMainOp::Rem,
+        RiscvOpKind::Remu => ZiskMainOp::Remu,
+    }
+}
+
+#[inline(always)]
+fn arithmetic_register_word_op(kind: RiscvOp32Kind) -> ZiskMainOp {
+    match kind {
+        RiscvOp32Kind::Addw => ZiskMainOp::AddW,
+        RiscvOp32Kind::Subw => ZiskMainOp::SubW,
+        RiscvOp32Kind::Sllw => ZiskMainOp::SllW,
+        RiscvOp32Kind::Srlw => ZiskMainOp::SrlW,
+        RiscvOp32Kind::Sraw => ZiskMainOp::SraW,
+        RiscvOp32Kind::Mulw => ZiskMainOp::MulW,
+        RiscvOp32Kind::Divw => ZiskMainOp::DivW,
+        RiscvOp32Kind::Divuw => ZiskMainOp::DivuW,
+        RiscvOp32Kind::Remw => ZiskMainOp::RemW,
+        RiscvOp32Kind::Remuw => ZiskMainOp::RemuW,
+    }
 }
 
 #[inline(always)]

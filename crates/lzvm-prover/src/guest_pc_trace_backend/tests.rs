@@ -1,7 +1,8 @@
 use super::*;
 use crate::guest_instruction::{
     decode_riscv_instruction, RiscvAmoKind, RiscvAmoWidth, RiscvBranchKind, RiscvInstruction,
-    RiscvLoadKind, RiscvOpImmKind, RiscvPrecompileKind, RiscvStoreKind,
+    RiscvLoadKind, RiscvOp32Kind, RiscvOpImm32Kind, RiscvOpImmKind, RiscvOpKind,
+    RiscvPrecompileKind, RiscvStoreKind,
 };
 use crate::guest_machine::GuestMachineReportShape;
 use crate::guest_machine::GuestPrecompileReportEffects;
@@ -6838,6 +6839,197 @@ fn no_memory_external_fast_path_parts_match_generic_lowering() {
             store_index: Some(3),
         })
     );
+}
+
+#[test]
+fn arithmetic_fast_path_parts_match_generic_lowering() {
+    let reports = [
+        GuestMachineReport {
+            address_and_instruction_len:
+                crate::guest_machine::pack_report_address_and_instruction_len(0x8000_0000, 4),
+            instruction: RiscvInstruction::OpImm {
+                kind: RiscvOpImmKind::Addi,
+                rd: 3,
+                rs1: 2,
+                immediate: 9,
+            },
+            next_pc: 0x8000_0004,
+            register_write_value: GuestRegisterWriteValue::new(12),
+            memory_accesses: vec![].into(),
+        },
+        GuestMachineReport {
+            address_and_instruction_len:
+                crate::guest_machine::pack_report_address_and_instruction_len(0x8000_0000, 4),
+            instruction: RiscvInstruction::OpImm {
+                kind: RiscvOpImmKind::Ori,
+                rd: 0,
+                rs1: 2,
+                immediate: 0xff,
+            },
+            next_pc: 0x8000_0004,
+            register_write_value: GuestRegisterWriteValue::default(),
+            memory_accesses: vec![].into(),
+        },
+        GuestMachineReport {
+            address_and_instruction_len:
+                crate::guest_machine::pack_report_address_and_instruction_len(0x8000_0000, 4),
+            instruction: RiscvInstruction::OpImm32 {
+                kind: RiscvOpImm32Kind::Addiw,
+                rd: 4,
+                rs1: 5,
+                immediate: -1,
+            },
+            next_pc: 0x8000_0004,
+            register_write_value: GuestRegisterWriteValue::new(u64::MAX),
+            memory_accesses: vec![].into(),
+        },
+        GuestMachineReport {
+            address_and_instruction_len:
+                crate::guest_machine::pack_report_address_and_instruction_len(0x8000_0000, 4),
+            instruction: RiscvInstruction::Op {
+                kind: RiscvOpKind::Add,
+                rd: 6,
+                rs1: 7,
+                rs2: 8,
+            },
+            next_pc: 0x8000_0004,
+            register_write_value: GuestRegisterWriteValue::new(19),
+            memory_accesses: vec![].into(),
+        },
+        GuestMachineReport {
+            address_and_instruction_len:
+                crate::guest_machine::pack_report_address_and_instruction_len(0x8000_0000, 4),
+            instruction: RiscvInstruction::Op32 {
+                kind: RiscvOp32Kind::Sraw,
+                rd: 9,
+                rs1: 10,
+                rs2: 11,
+            },
+            next_pc: 0x8000_0004,
+            register_write_value: GuestRegisterWriteValue::new(0),
+            memory_accesses: vec![].into(),
+        },
+    ];
+
+    for report in reports {
+        let expected = lower_guest_report(&report).expect("generic lowering should succeed");
+        let (actual, parts) = arithmetic_fast_path_parts(3, &report)
+            .expect("arithmetic matcher should not fail")
+            .expect("arithmetic row should match");
+        assert_eq!(actual, expected);
+        assert_eq!(
+            Some(parts),
+            no_memory_external_fast_path_parts(
+                &expected,
+                ZiskMainReportEffects::from_report(&report)
+            )
+        );
+    }
+}
+
+#[test]
+fn arithmetic_fast_path_skips_noop_register_ops() {
+    let report =
+        GuestMachineReport {
+            address_and_instruction_len:
+                crate::guest_machine::pack_report_address_and_instruction_len(0x8000_0000, 4),
+            instruction: RiscvInstruction::Op {
+                kind: RiscvOpKind::Add,
+                rd: 0,
+                rs1: 7,
+                rs2: 8,
+            },
+            next_pc: 0x8000_0004,
+            register_write_value: GuestRegisterWriteValue::default(),
+            memory_accesses: vec![].into(),
+        };
+    let lowered = lower_guest_report(&report).expect("generic lowering should succeed");
+
+    assert_eq!(lowered.op, ZiskMainOp::Flag);
+    assert!(arithmetic_fast_path_parts(3, &report)
+        .expect("arithmetic matcher should not fail")
+        .is_none());
+}
+
+#[test]
+fn arithmetic_fast_path_preserves_row_effects() {
+    let writes = [GuestRegisterWrite {
+        index: 6,
+        value: 19,
+    }];
+    let effects = ZiskMainReportEffects {
+        register_writes: writes.to_vec().into(),
+        memory_accesses: &[],
+        precompile_memory_accesses: &[],
+        precompile_result: None,
+    };
+    let report =
+        GuestMachineReport {
+            address_and_instruction_len:
+                crate::guest_machine::pack_report_address_and_instruction_len(0x8000_0000, 4),
+            instruction: RiscvInstruction::Op {
+                kind: RiscvOpKind::Add,
+                rd: 6,
+                rs1: 7,
+                rs2: 8,
+            },
+            next_pc: 0x8000_0004,
+            register_write_value: GuestRegisterWriteValue::new(19),
+            memory_accesses: vec![].into(),
+        };
+    let (instruction, parts) = arithmetic_fast_path_parts(3, &report)
+        .expect("arithmetic matcher should not fail")
+        .expect("arithmetic row should match");
+    let mut state = ZiskMainTraceState::new();
+    state.registers[6] = 0x77;
+    state.registers[7] = 11;
+    state.registers[8] = 8;
+    state.register_mem_steps[6] = 55;
+    state.register_mem_steps[7] = 33;
+    state.register_mem_steps[8] = 44;
+    let mut context = ZiskMainReportValidationContext::new(
+        None,
+        16,
+        ZiskMainTraceSegmentInfo {
+            trace_instance_index: 0,
+            is_last_segment: false,
+            previous_c: 0,
+        },
+    )
+    .expect("context should initialize");
+    let mut visited = None;
+    apply_no_memory_fast_path(
+        3,
+        instruction,
+        effects,
+        report.next_pc,
+        parts,
+        &mut state,
+        &mut context,
+        &mut |row, values, timing| {
+            assert_eq!(row, 3);
+            assert!(timing.is_none());
+            visited = Some(values);
+            Ok(())
+        },
+    )
+    .expect("arithmetic row should take fast path");
+
+    assert_eq!(state.registers[6], 19);
+    assert_eq!(state.last_c, 19);
+    assert_eq!(state.next_pc, 0x8000_0004);
+    assert_eq!(state.register_mem_steps[7], 13);
+    assert_eq!(state.register_mem_steps[8], 14);
+    assert_eq!(state.register_mem_steps[6], 15);
+    let values = visited.expect("fast path should emit row values");
+    assert_eq!(values.a, 11);
+    assert_eq!(values.b, 8);
+    assert_eq!(values.c, 19);
+    assert!(!values.flag);
+    assert_eq!(values.register_accesses.a_prev_mem_step, Some(33));
+    assert_eq!(values.register_accesses.b_prev_mem_step, Some(44));
+    assert_eq!(values.register_accesses.store_prev_mem_step, Some(55));
+    assert_eq!(values.register_accesses.store_prev_value, Some(0x77));
 }
 
 #[test]

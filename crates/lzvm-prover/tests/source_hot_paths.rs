@@ -10901,6 +10901,29 @@ fn guest_pc_branch_fast_path_checks_instruction_before_effects() {
 }
 
 #[test]
+fn guest_pc_arithmetic_fast_path_checks_instruction_before_effects() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let source_path = crate_root.join("src/guest_pc_trace_backend.rs");
+    let source = std::fs::read_to_string(&source_path).expect("guest PC trace source should read");
+
+    let body = function_body(
+        &source,
+        "fn arithmetic_fast_path_parts",
+        "#[inline(always)]\nfn arithmetic_register_source",
+    );
+    let instruction_index = body
+        .find("match report.instruction")
+        .expect("arithmetic matcher should inspect the instruction first");
+    let memory_index = body
+        .find("report.memory_accesses")
+        .expect("arithmetic matcher should still reject rows with effects");
+    assert!(
+        instruction_index < memory_index,
+        "arithmetic matcher should reject unrelated rows before effect-list checks"
+    );
+}
+
+#[test]
 fn memory_column_writer_counts_matches_in_one_pass() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let source_path = crate_root.join("src/guest_pc_trace_backend.rs");
