@@ -4820,8 +4820,8 @@ fn retained_leaf_digest_opening_uses_shifted_row_weight_cache() {
         "retained leaf digest openings should batch source-derived row values"
     );
     assert!(
-        !leaf_digest_body.contains("extended_selected_row_values_from_source_cuda"),
-        "retained leaf digest openings should avoid the selected-row extension API while it recomputes and uploads per-query weights"
+        leaf_digest_body.contains("extended_row_values_batch_from_source_cuda(rows"),
+        "retained leaf digest openings should keep using the batched source-row helper"
     );
     let source_batch_body = function_body(
         &values_source,
@@ -4829,11 +4829,20 @@ fn retained_leaf_digest_opening_uses_shifted_row_weight_cache() {
         "fn open_with_recomputed_leaf_level_cuda",
     );
     assert!(
+        source_batch_body.contains("use_selected_row_extension")
+            && source_batch_body
+                .contains("cuda_goldilocks_coset_extend_row_major_columns_selected_rows_device")
+            && source_batch_body.contains(
+                "cuda_goldilocks_coset_extend_row_major_columns_strided_selected_rows_device"
+            ),
+        "small batched compact source row values should use selected-row helpers"
+    );
+    assert!(
         source_batch_body
             .contains("cuda_goldilocks_coset_extend_row_major_columns_shifted_rows_device")
             && source_batch_body
                 .contains("cuda_goldilocks_coset_extend_row_major_columns_strided_shifted_rows_device"),
-        "batched compact source row values should use shifted-row batch helpers with their residue weight cache"
+        "larger batched compact source row values should keep the shifted-row helpers with their residue weight cache"
     );
 }
 

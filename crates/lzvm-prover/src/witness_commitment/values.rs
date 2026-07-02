@@ -13,10 +13,12 @@ use std::time::Instant;
 use lzvm_accel::{
     cuda_goldilocks_coset_extend_row_major_columns_device,
     cuda_goldilocks_coset_extend_row_major_columns_device_unsynced,
+    cuda_goldilocks_coset_extend_row_major_columns_selected_rows_device,
     cuda_goldilocks_coset_extend_row_major_columns_shifted_row_device,
     cuda_goldilocks_coset_extend_row_major_columns_shifted_rows_device,
     cuda_goldilocks_coset_extend_row_major_columns_strided_device,
     cuda_goldilocks_coset_extend_row_major_columns_strided_device_unsynced,
+    cuda_goldilocks_coset_extend_row_major_columns_strided_selected_rows_device,
     cuda_goldilocks_coset_extend_row_major_columns_strided_shifted_row_device,
     cuda_goldilocks_coset_extend_row_major_columns_strided_shifted_rows_device, cuda_memory_info,
     CudaDeviceBuffer, CudaRowMajorColumnView,
@@ -38,6 +40,14 @@ use crate::merkle_hash::{
 };
 
 type CompactOnDemandOpening = (Vec<Felt>, Vec<Vec<[Felt; HASH_WORDS]>>);
+
+#[cfg(feature = "cuda")]
+const SELECTED_ROW_EXTENSION_MAX_SOURCE_ROWS: usize = 16;
+
+#[cfg(feature = "cuda")]
+fn use_selected_row_extension(source_rows: usize, row_count: usize) -> bool {
+    row_count > 1 && source_rows <= SELECTED_ROW_EXTENSION_MAX_SOURCE_ROWS
+}
 
 #[cfg(feature = "cuda")]
 pub(crate) struct CompactOnDemandOpeningDeviceSiblings {
@@ -2180,30 +2190,54 @@ impl WitnessStageCompactTreeStorage {
             || {
                 let mut row_buffer = CudaDeviceBuffer::new(byte_count)
                     .map_err(|_| WitnessStageOpeningError::LengthOverflow)?;
+                let use_selected = use_selected_row_extension(self.source_rows, rows.len());
                 if source_buffer.is_compact_for(self.columns) {
-                    cuda_goldilocks_coset_extend_row_major_columns_shifted_rows_device(
-                        source_buffer.as_buffer(),
-                        &mut row_buffer,
-                        self.columns,
-                        self.source_bits,
-                        self.target_bits,
-                        rows,
-                    )
+                    if use_selected {
+                        cuda_goldilocks_coset_extend_row_major_columns_selected_rows_device(
+                            source_buffer.as_buffer(),
+                            &mut row_buffer,
+                            self.columns,
+                            self.source_bits,
+                            self.target_bits,
+                            rows,
+                        )
+                    } else {
+                        cuda_goldilocks_coset_extend_row_major_columns_shifted_rows_device(
+                            source_buffer.as_buffer(),
+                            &mut row_buffer,
+                            self.columns,
+                            self.source_bits,
+                            self.target_bits,
+                            rows,
+                        )
+                    }
                     .map_err(|_| WitnessStageOpeningError::LengthOverflow)?;
                 } else {
-                    cuda_goldilocks_coset_extend_row_major_columns_strided_shifted_rows_device(
-                        source_buffer.as_buffer(),
-                        &mut row_buffer,
-                        CudaRowMajorColumnView {
-                            source_rows: self.source_rows,
-                            source_row_stride: source_buffer.row_stride(),
-                            column_offset: source_buffer.column_offset(),
-                            column_count: self.columns,
-                        },
-                        self.source_bits,
-                        self.target_bits,
-                        rows,
-                    )
+                    let view = CudaRowMajorColumnView {
+                        source_rows: self.source_rows,
+                        source_row_stride: source_buffer.row_stride(),
+                        column_offset: source_buffer.column_offset(),
+                        column_count: self.columns,
+                    };
+                    if use_selected {
+                        cuda_goldilocks_coset_extend_row_major_columns_strided_selected_rows_device(
+                            source_buffer.as_buffer(),
+                            &mut row_buffer,
+                            view,
+                            self.source_bits,
+                            self.target_bits,
+                            rows,
+                        )
+                    } else {
+                        cuda_goldilocks_coset_extend_row_major_columns_strided_shifted_rows_device(
+                            source_buffer.as_buffer(),
+                            &mut row_buffer,
+                            view,
+                            self.source_bits,
+                            self.target_bits,
+                            rows,
+                        )
+                    }
                     .map_err(|_| WitnessStageOpeningError::LengthOverflow)?;
                 }
                 Ok(row_buffer)
