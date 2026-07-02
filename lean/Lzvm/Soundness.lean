@@ -109,6 +109,33 @@ theorem accepted_proof_audited_core_and_sound_witness
       (And.intro auditedAssumptions.right
         (And.intro coreContract soundWitness))
 
+theorem accepted_proof_audited_core_and_execution_obligations
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system) :
+    forall publicInput proof,
+      system.accepts publicInput proof ->
+        RequiredCryptographicAssumptionStatements assumptions.crypto
+          /\ RequiredSemanticAssumptionStatements assumptions.semantic
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ exists witness trace constraints,
+            system.traceConsistent publicInput proof trace
+              /\ system.constraintsSatisfied constraints trace
+              /\ system.witnessMatchesTrace witness trace := by
+  intro publicInput proof accepted
+  have auditedCoreAndWitness :=
+    accepted_proof_audited_core_and_sound_witness
+      assumptions
+      publicInput
+      proof
+      accepted
+  rcases auditedCoreAndWitness with
+    ⟨cryptoEvidence, semanticEvidence, coreContract, soundWitness⟩
+  exact
+    ⟨cryptoEvidence,
+      semanticEvidence,
+      coreContract,
+      sound_witness_implies_execution_obligations soundWitness⟩
+
 theorem accepted_proof_audited_full_evidence
     {system : VerifierModel}
     (assumptions : AssumptionBundle system) :
@@ -280,5 +307,41 @@ theorem accepted_proof_audited_proof_system_and_components
       (And.intro semanticEvidence
         (And.intro (abstract_verifier_sound assumptions)
           (And.intro coreContract witnessComponents)))
+
+theorem accepted_proof_audited_proof_system_core_and_execution_obligations
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system) :
+    forall publicInput proof,
+      system.accepts publicInput proof ->
+        RequiredCryptographicAssumptionStatements assumptions.crypto
+          /\ RequiredSemanticAssumptionStatements assumptions.semantic
+          /\ ProofSystemSound system
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ exists witness trace constraints,
+            system.traceConsistent publicInput proof trace
+              /\ system.constraintsSatisfied constraints trace
+              /\ system.witnessMatchesTrace witness trace := by
+  intro publicInput proof accepted
+  have auditedCoreExecution :=
+    accepted_proof_audited_core_and_execution_obligations
+      assumptions
+      publicInput
+      proof
+      accepted
+  have proofSystemSound := abstract_verifier_sound assumptions
+  have coreExecution :=
+    proof_system_sound_accepts_core_contract_and_execution_obligations
+      proofSystemSound
+      publicInput
+      proof
+      accepted
+  rcases auditedCoreExecution with
+    ⟨cryptoEvidence, semanticEvidence, _coreContract, _executionObligations⟩
+  exact
+    ⟨cryptoEvidence,
+      semanticEvidence,
+      proofSystemSound,
+      coreExecution.left,
+      coreExecution.right⟩
 
 end Lzvm

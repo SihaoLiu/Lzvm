@@ -10465,8 +10465,16 @@ fn lean_top_level_soundness_exports_audited_global_local_contract() {
             && soundness_source.contains("RuntimeVerifierCoreContract system publicInput proof")
             && soundness_source.contains("abstract_verifier_sound assumptions")
             && soundness_source
+                .contains("accepted_proof_audited_core_and_execution_obligations")
+            && soundness_source.contains(
+                "accepted_proof_audited_proof_system_core_and_execution_obligations"
+            )
+            && soundness_source.contains("sound_witness_implies_execution_obligations")
+            && soundness_source
+                .contains("proof_system_sound_accepts_core_contract_and_execution_obligations")
+            && soundness_source
                 .contains("accepted_proof_audited_core_and_sound_witness_components"),
-        "top-level Lean soundness should expose one audited contract with global soundness and local accepted-proof components"
+        "top-level Lean soundness should expose audited contracts with global soundness, verifier core, and execution obligations"
     );
 }
 
