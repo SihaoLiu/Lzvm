@@ -1142,6 +1142,31 @@ HEADER = (
     "fri_opening_known_nested_pct,fri_opening_unit_build_residual_ms,"
     "fri_opening_unit_build_residual_pct,fri_opening_scope_hint"
 )
+AGGREGATE_MEAN_PROFILE_COLUMNS = (
+    "witness_ms",
+    "top_level_unattributed_ms",
+    "runner_ms",
+    "lowerer_ms",
+    "trace_lower_ms",
+    "stream_elapsed_ms",
+    "stream_worker_ms",
+    "segment_commit_ms",
+    "finish_opening_ms",
+    "opening_external_source_ms",
+    "opening_external_source_descriptor_upload_ms",
+    "opening_row_value_source_extend_ms",
+    "retained_parent_checkpoint_path_ms",
+    "leaf_kernel_ms",
+    "direct_d2h_wait_ms",
+    "descriptor_upload_ms",
+    "cuda_host_register_wait_ms",
+    "cuda_h2d_bytes",
+    "cuda_allocator_d2h_wait_ms",
+    "proof_12s_gap_ms",
+)
+AGGREGATE_MEAN_HEADER_SUFFIX = "," + ",".join(
+    f"{column}_mean" for column in AGGREGATE_MEAN_PROFILE_COLUMNS
+)
 AGGREGATE_HEADER = (
     "aggregate,total_count,valid_total_count,total_min_ms,total_mean_ms,"
     "total_median_ms,total_max_ms,sample_spread_pct,close_samples,max_outlier,"
@@ -1152,7 +1177,7 @@ AGGREGATE_HEADER = (
     "segment_commit_memory_pressure_consensus,"
     "dominant_segment_commit_memory_diagnostic_hint,"
     "segment_commit_memory_diagnostic_consensus"
-)
+) + AGGREGATE_MEAN_HEADER_SUFFIX
 AGGREGATE_BY_INPUT_BYTES_HEADER = (
     "aggregate_by_input_bytes,input_bytes,total_count,valid_total_count,total_min_ms,"
     "total_mean_ms,total_median_ms,total_max_ms,sample_spread_pct,close_samples,"
@@ -1163,7 +1188,7 @@ AGGREGATE_BY_INPUT_BYTES_HEADER = (
     "segment_commit_memory_pressure_consensus,"
     "dominant_segment_commit_memory_diagnostic_hint,"
     "segment_commit_memory_diagnostic_consensus"
-)
+) + AGGREGATE_MEAN_HEADER_SUFFIX
 CLOSE_SAMPLE_SPREAD_PCT = 5.0
 OUTLIER_RATIO_THRESHOLD = 1.5
 
@@ -6312,22 +6337,45 @@ def dominant_hint_and_consensus(hints: list[str]) -> tuple[str, str]:
     return dominant_hint, consensus
 
 
-def summarize_total_samples(parsed_inputs: list[tuple[str, dict[str, int]]]) -> str:
+PROFILE_HEADER_FIELDS = tuple(next(csv.reader([HEADER])))
+
+
+def profile_summary_map(row: str) -> dict[str, str]:
+    fields = next(csv.reader([row]))
+    if len(fields) != len(PROFILE_HEADER_FIELDS):
+        raise ValueError("profile summary row does not match the header")
+    return dict(zip(PROFILE_HEADER_FIELDS, fields))
+
+
+def aggregate_mean_suffix(profile_rows: list[dict[str, str]]) -> str:
+    if not profile_rows:
+        return "," + ",".join("0.000" for _ in AGGREGATE_MEAN_PROFILE_COLUMNS)
+    means: list[str] = []
+    for column in AGGREGATE_MEAN_PROFILE_COLUMNS:
+        total = sum(float(row.get(column, "0") or 0.0) for row in profile_rows)
+        means.append(f"{total / len(profile_rows):.3f}")
+    return "," + ",".join(means)
+
+
+def summarize_total_samples(
+    parsed_inputs: list[tuple[str, dict[str, int], dict[str, str]]],
+) -> str:
     total_count = len(parsed_inputs)
     valid_inputs = [
-        (label, values)
-        for label, values in parsed_inputs
+        (label, values, profile_row)
+        for label, values, profile_row in parsed_inputs
         if values.get(TOTAL_MS_KEY, 0) > 0 and not is_diagnostic_shape_profile(values)
     ]
     totals = [
         values[TOTAL_MS_KEY]
-        for _, values in valid_inputs
+        for _, values, _ in valid_inputs
     ]
     valid_total_count = len(totals)
     if not totals:
         return (
             f"aggregate,{total_count},0,0,0.000,0.000,0,0.000,no,no,"
             "none,no,none,no,none,no,none,no,none,no"
+            f"{aggregate_mean_suffix([])}"
         )
 
     total_min_ms = min(totals)
@@ -6351,24 +6399,24 @@ def summarize_total_samples(parsed_inputs: list[tuple[str, dict[str, int]]]) -> 
     )
     action_hints = [
         trace_pipeline_action_hint_from_values(values)
-        for _, values in valid_inputs
+        for _, values, _ in valid_inputs
     ]
     dominant_action_hint, action_consensus = dominant_hint_and_consensus(action_hints)
     trace_structure_hints = [
         trace_structure_hint_from_values(values)
-        for _, values in valid_inputs
+        for _, values, _ in valid_inputs
     ]
     dominant_trace_structure_hint, trace_structure_consensus = (
         dominant_hint_and_consensus(trace_structure_hints)
     )
     transfer_hints = [
         cuda_transfer_action_hint_from_values(values)
-        for _, values in valid_inputs
+        for _, values, _ in valid_inputs
     ]
     dominant_transfer_hint, transfer_consensus = dominant_hint_and_consensus(transfer_hints)
     segment_memory_hints = [
         segment_commit_memory_pressure_hint_from_values(values)
-        for _, values in valid_inputs
+        for _, values, _ in valid_inputs
     ]
     dominant_segment_memory_hint, segment_memory_consensus = (
         dominant_hint_and_consensus(segment_memory_hints)
@@ -6378,11 +6426,12 @@ def summarize_total_samples(parsed_inputs: list[tuple[str, dict[str, int]]]) -> 
             values.get(SEGMENT_COMMIT_MS_KEY, 0),
             segment_commit_memory_pressure_hint_from_values(values),
         )
-        for _, values in valid_inputs
+        for _, values, _ in valid_inputs
     ]
     dominant_segment_memory_diagnostic, segment_memory_diagnostic_consensus = (
         dominant_hint_and_consensus(segment_memory_diagnostic_hints)
     )
+    mean_suffix = aggregate_mean_suffix([profile_row for _, _, profile_row in valid_inputs])
     return (
         f"aggregate,{total_count},{valid_total_count},{total_min_ms},"
         f"{total_mean_ms:.3f},{total_median_ms:.3f},{total_max_ms},"
@@ -6392,28 +6441,29 @@ def summarize_total_samples(parsed_inputs: list[tuple[str, dict[str, int]]]) -> 
         f"{dominant_transfer_hint},{transfer_consensus},"
         f"{dominant_segment_memory_hint},{segment_memory_consensus},"
         f"{dominant_segment_memory_diagnostic},{segment_memory_diagnostic_consensus}"
+        f"{mean_suffix}"
     )
 
 
 def summarize_total_samples_by_input_bytes(
     input_bytes: int,
-    parsed_inputs: list[tuple[str, dict[str, int]]],
+    parsed_inputs: list[tuple[str, dict[str, int], dict[str, str]]],
 ) -> str:
     summary = summarize_total_samples(parsed_inputs)
     return f"aggregate_by_input_bytes,{input_bytes},{summary.split(',', 1)[1]}"
 
 
 def grouped_total_samples_by_input_bytes(
-    parsed_inputs: list[tuple[str, dict[str, int]]],
-) -> list[tuple[int, list[tuple[str, dict[str, int]]]]]:
-    groups: dict[int, list[tuple[str, dict[str, int]]]] = {}
+    parsed_inputs: list[tuple[str, dict[str, int], dict[str, str]]],
+) -> list[tuple[int, list[tuple[str, dict[str, int], dict[str, str]]]]]:
+    groups: dict[int, list[tuple[str, dict[str, int], dict[str, str]]]] = {}
     order: list[int] = []
-    for label, values in parsed_inputs:
+    for label, values, profile_row in parsed_inputs:
         input_bytes = values.get(INPUT_BYTES_KEY, 0)
         if input_bytes not in groups:
             groups[input_bytes] = []
             order.append(input_bytes)
-        groups[input_bytes].append((label, values))
+        groups[input_bytes].append((label, values, profile_row))
     return [(input_bytes, groups[input_bytes]) for input_bytes in order]
 
 
@@ -6423,18 +6473,15 @@ def print_summary(inputs: list[tuple[str, str]]) -> None:
         for label, text in inputs
     ]
     print(HEADER)
+    aggregate_inputs = []
     for label, values, perf_hotspots in parsed_inputs:
-        print(summarize_profile_values(label, values, perf_hotspots))
+        row = summarize_profile_values(label, values, perf_hotspots)
+        print(row)
+        aggregate_inputs.append((label, values, profile_summary_map(row)))
     if len(parsed_inputs) > 1:
         print(AGGREGATE_HEADER)
-        print(
-            summarize_total_samples(
-                [(label, values) for label, values, _ in parsed_inputs]
-            )
-        )
-        grouped_inputs = grouped_total_samples_by_input_bytes(
-            [(label, values) for label, values, _ in parsed_inputs]
-        )
+        print(summarize_total_samples(aggregate_inputs))
+        grouped_inputs = grouped_total_samples_by_input_bytes(aggregate_inputs)
         if len(grouped_inputs) > 1:
             print(AGGREGATE_BY_INPUT_BYTES_HEADER)
             for input_bytes, group in grouped_inputs:

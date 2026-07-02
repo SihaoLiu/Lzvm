@@ -3204,6 +3204,111 @@ fn prove_timing_root_summary_excludes_diagnostic_shape_profiles_from_aggregate()
 }
 
 #[test]
+fn prove_timing_root_summary_aggregates_key_profile_means() {
+    let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let script_path = crate_root.join("../../scripts/prove-timing-root-summary.py");
+    let dir = crate_root.join("../../temp/prove-timing-profile-mean-aggregate");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("timing summary fixture directory should be created");
+
+    let sample = |total_ms: u64,
+                  witness_ms: u64,
+                  runner_ms: u64,
+                  row_value_source_extend_ms: u64,
+                  host_register_wait_ns: u64,
+                  h2d_bytes: u64| {
+        [
+            "input_bytes=12447640".to_owned(),
+            format!("timing_total_ms={total_ms}"),
+            format!("timing_witness_ms={witness_ms}"),
+            format!("timing_guest_trace_runner_ms={runner_ms}"),
+            format!("timing_finish_witness_opening_row_value_source_extend_ms={row_value_source_extend_ms}"),
+            format!("timing_cuda_allocator_host_register_wait_ns={host_register_wait_ns}"),
+            format!("timing_cuda_allocator_copy_h2d_bytes={h2d_bytes}"),
+            "timing_guest_stage_tree_commit_root_count=120".to_owned(),
+            "timing_guest_stage_tree_commit_root_materialization_groups=120".to_owned(),
+            "timing_guest_stage_tree_commit_root_materialization_max_group_size=1".to_owned(),
+        ]
+        .join("\n")
+    };
+    let fixtures = [
+        (
+            15_000_u64,
+            5_000_u64,
+            4_000_u64,
+            100_u64,
+            1_000_000_000_u64,
+            1_000_u64,
+        ),
+        (18_000, 6_000, 6_000, 200, 2_000_000_000, 2_000),
+        (21_000, 7_000, 8_000, 300, 3_000_000_000, 3_000),
+    ];
+    let paths = fixtures
+        .into_iter()
+        .enumerate()
+        .map(|(index, fixture)| {
+            let path = dir.join(format!("sample-{index}.log"));
+            std::fs::write(
+                &path,
+                sample(
+                    fixture.0, fixture.1, fixture.2, fixture.3, fixture.4, fixture.5,
+                ),
+            )
+            .expect("sample timing log should be written");
+            path
+        })
+        .collect::<Vec<_>>();
+
+    let output = Command::new("python3")
+        .arg(&script_path)
+        .args(&paths)
+        .output()
+        .expect("prove timing root summary should run");
+    let _ = std::fs::remove_dir_all(&dir);
+
+    assert!(
+        output.status.success(),
+        "prove timing root summary should pass: stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    let lines = stdout.lines().collect::<Vec<_>>();
+    assert!(
+        lines.len() >= 6,
+        "multi-sample summary should include data and aggregate rows: stdout={stdout}"
+    );
+    let aggregate_headers = parse_csv_line(lines[4]);
+    let aggregate_fields = parse_csv_line(lines[5]);
+    let aggregate_value = |name: &str| {
+        let index = aggregate_headers
+            .iter()
+            .position(|header| header == name)
+            .unwrap_or_else(|| panic!("aggregate summary should expose {name}: stdout={stdout}"));
+        aggregate_fields
+            .get(index)
+            .map(String::as_str)
+            .unwrap_or_else(|| panic!("aggregate row should contain {name}: stdout={stdout}"))
+    };
+
+    assert_eq!(aggregate_value("witness_ms_mean"), "6000.000");
+    assert_eq!(
+        aggregate_value("top_level_unattributed_ms_mean"),
+        "12000.000"
+    );
+    assert_eq!(aggregate_value("runner_ms_mean"), "6000.000");
+    assert_eq!(
+        aggregate_value("opening_row_value_source_extend_ms_mean"),
+        "200.000"
+    );
+    assert_eq!(
+        aggregate_value("cuda_host_register_wait_ms_mean"),
+        "2000.000"
+    );
+    assert_eq!(aggregate_value("cuda_h2d_bytes_mean"), "2000.000");
+    assert_eq!(aggregate_value("proof_12s_gap_ms_mean"), "6000.000");
+}
+
+#[test]
 fn prove_timing_root_summary_aggregates_cuda_transfer_action() {
     let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
     let script_path = crate_root.join("../../scripts/prove-timing-root-summary.py");
