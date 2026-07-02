@@ -1845,9 +1845,8 @@ fn try_advance_guest_machine_report_fast_path(
             let write_address = state
                 .read_decoded_register(rs1)
                 .wrapping_add_signed(i64::from(offset));
-            let byte_len = store_byte_len(kind);
             let value = state.read_decoded_register(rs2);
-            write_guest_store(memory, kind, write_address, value)?;
+            let byte_len = write_guest_store(memory, kind, write_address, value)?;
             let stored_value = low_bytes_value(value, byte_len);
             memory_access = Some(GuestMemoryAccess {
                 kind: GuestMemoryAccessKind::Write,
@@ -2172,9 +2171,8 @@ fn execute_guest_instruction(
             let address = state
                 .read_decoded_register(rs1)
                 .wrapping_add_signed(i64::from(offset));
-            let byte_len = store_byte_len(kind);
             let value = state.read_decoded_register(rs2);
-            write_guest_store(memory, kind, address, value)?;
+            let byte_len = write_guest_store(memory, kind, address, value)?;
             effects.record_memory_write(address, byte_len, low_bytes_value(value, byte_len));
             state.clear_reservation_if_overlaps(address, byte_len);
         }
@@ -2343,23 +2341,26 @@ fn write_guest_store(
     kind: RiscvStoreKind,
     address: u64,
     value: u64,
-) -> Result<(), GuestMachineError> {
-    match kind {
-        RiscvStoreKind::Sb => memory.write_u64_le::<1>(address, value)?,
-        RiscvStoreKind::Sh => memory.write_u64_le::<2>(address, value)?,
-        RiscvStoreKind::Sw => memory.write_u64_le::<4>(address, value)?,
-        RiscvStoreKind::Sd => memory.write_u64_le::<8>(address, value)?,
-    }
-    Ok(())
-}
-
-fn store_byte_len(kind: RiscvStoreKind) -> usize {
-    match kind {
-        RiscvStoreKind::Sb => 1,
-        RiscvStoreKind::Sh => 2,
-        RiscvStoreKind::Sw => 4,
-        RiscvStoreKind::Sd => 8,
-    }
+) -> Result<usize, GuestMachineError> {
+    let byte_len = match kind {
+        RiscvStoreKind::Sb => {
+            memory.write_u64_le::<1>(address, value)?;
+            1
+        }
+        RiscvStoreKind::Sh => {
+            memory.write_u64_le::<2>(address, value)?;
+            2
+        }
+        RiscvStoreKind::Sw => {
+            memory.write_u64_le::<4>(address, value)?;
+            4
+        }
+        RiscvStoreKind::Sd => {
+            memory.write_u64_le::<8>(address, value)?;
+            8
+        }
+    };
+    Ok(byte_len)
 }
 
 fn low_bytes_value(value: u64, byte_len: usize) -> u64 {
