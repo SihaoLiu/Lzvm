@@ -11071,24 +11071,9 @@ fn load_copy_indirect_register_store_fast_path_parts(
         RiscvLoadKind::Ld => 8,
         RiscvLoadKind::Lb | RiscvLoadKind::Lh | RiscvLoadKind::Lw => return Ok(None),
     };
-    let instruction_size = match report.instruction_byte_len() {
-        2 | 4 => report.instruction_byte_len() as i64,
-        byte_len => {
-            return Err(GuestPcTraceBackendError::ZiskMainLower {
-                row,
-                source: ZiskMainLowerError::InvalidInstructionByteLen {
-                    pc: report.address(),
-                    byte_len: usize::from(byte_len),
-                },
-            });
-        }
-    };
-    let Some(expected_next_pc) = report.address().checked_add(instruction_size as u64) else {
+    let Some(instruction_size) = sequential_report_fast_path_instruction_size(row, report)? else {
         return Ok(None);
     };
-    if expected_next_pc != report.next_pc {
-        return Ok(None);
-    }
     let offset = i64::from(offset);
     let instruction = ZiskMainInstruction {
         pc: report.address(),
@@ -11133,24 +11118,9 @@ fn load_sign_extend_indirect_register_store_fast_path_parts(
             return Ok(None);
         }
     };
-    let instruction_size = match report.instruction_byte_len() {
-        2 | 4 => report.instruction_byte_len() as i64,
-        byte_len => {
-            return Err(GuestPcTraceBackendError::ZiskMainLower {
-                row,
-                source: ZiskMainLowerError::InvalidInstructionByteLen {
-                    pc: report.address(),
-                    byte_len: usize::from(byte_len),
-                },
-            });
-        }
-    };
-    let Some(expected_next_pc) = report.address().checked_add(instruction_size as u64) else {
+    let Some(instruction_size) = sequential_report_fast_path_instruction_size(row, report)? else {
         return Ok(None);
     };
-    if expected_next_pc != report.next_pc {
-        return Ok(None);
-    }
     let offset = i64::from(offset);
     let instruction = ZiskMainInstruction {
         pc: report.address(),
@@ -11193,24 +11163,9 @@ fn store_copy_indirect_store_fast_path_parts(
         RiscvStoreKind::Sw => 4,
         RiscvStoreKind::Sd => 8,
     };
-    let instruction_size = match report.instruction_byte_len() {
-        2 | 4 => report.instruction_byte_len() as i64,
-        byte_len => {
-            return Err(GuestPcTraceBackendError::ZiskMainLower {
-                row,
-                source: ZiskMainLowerError::InvalidInstructionByteLen {
-                    pc: report.address(),
-                    byte_len: usize::from(byte_len),
-                },
-            });
-        }
-    };
-    let Some(expected_next_pc) = report.address().checked_add(instruction_size as u64) else {
+    let Some(instruction_size) = sequential_report_fast_path_instruction_size(row, report)? else {
         return Ok(None);
     };
-    if expected_next_pc != report.next_pc {
-        return Ok(None);
-    }
     let offset = i64::from(offset);
     let instruction = ZiskMainInstruction {
         pc: report.address(),
@@ -11238,24 +11193,9 @@ fn simple_copy_register_store_fast_path_parts(
     if !report.precompile_memory_accesses().is_empty() {
         return Ok(None);
     }
-    let instruction_size = match report.instruction_byte_len() {
-        2 | 4 => report.instruction_byte_len() as i64,
-        byte_len => {
-            return Err(GuestPcTraceBackendError::ZiskMainLower {
-                row,
-                source: ZiskMainLowerError::InvalidInstructionByteLen {
-                    pc: report.address(),
-                    byte_len: usize::from(byte_len),
-                },
-            });
-        }
-    };
-    let Some(expected_next_pc) = report.address().checked_add(instruction_size as u64) else {
+    let Some(instruction_size) = sequential_report_fast_path_instruction_size(row, report)? else {
         return Ok(None);
     };
-    if expected_next_pc != report.next_pc {
-        return Ok(None);
-    }
     let (b, b_index, store_index) = match report.instruction {
         RiscvInstruction::Lui { rd, immediate } if rd != 0 => {
             (ZiskMainSource::Immediate(immediate as u64), None, rd)
@@ -11471,8 +11411,9 @@ fn report_fast_path_instruction_size(
     row: usize,
     report: &GuestMachineReport,
 ) -> Result<i64, GuestPcTraceBackendError> {
-    match report.instruction_byte_len() {
-        2 | 4 => Ok(report.instruction_byte_len() as i64),
+    let byte_len = report.instruction_byte_len();
+    match byte_len {
+        2 | 4 => Ok(i64::from(byte_len)),
         byte_len => Err(GuestPcTraceBackendError::ZiskMainLower {
             row,
             source: ZiskMainLowerError::InvalidInstructionByteLen {
@@ -11870,24 +11811,9 @@ fn arithmetic_fast_path_parts(
     if !report.memory_accesses.is_empty() || !report.precompile_memory_accesses().is_empty() {
         return Ok(None);
     }
-    let instruction_size = match report.instruction_byte_len() {
-        2 | 4 => report.instruction_byte_len() as i64,
-        byte_len => {
-            return Err(GuestPcTraceBackendError::ZiskMainLower {
-                row,
-                source: ZiskMainLowerError::InvalidInstructionByteLen {
-                    pc: report.address(),
-                    byte_len: usize::from(byte_len),
-                },
-            });
-        }
-    };
-    let Some(expected_next_pc) = report.address().checked_add(instruction_size as u64) else {
+    let Some(instruction_size) = sequential_report_fast_path_instruction_size(row, report)? else {
         return Ok(None);
     };
-    if expected_next_pc != report.next_pc {
-        return Ok(None);
-    }
     let instruction = ZiskMainInstruction {
         pc: report.address(),
         a,
@@ -12014,18 +11940,7 @@ fn branch_fast_path_parts(
     if !report.memory_accesses.is_empty() || !report.precompile_memory_accesses().is_empty() {
         return Ok(None);
     }
-    let instruction_size = match report.instruction_byte_len() {
-        2 | 4 => report.instruction_byte_len() as i64,
-        byte_len => {
-            return Err(GuestPcTraceBackendError::ZiskMainLower {
-                row,
-                source: ZiskMainLowerError::InvalidInstructionByteLen {
-                    pc: report.address(),
-                    byte_len: usize::from(byte_len),
-                },
-            });
-        }
-    };
+    let instruction_size = report_fast_path_instruction_size(row, report)?;
     let (op, jmp_offset1, jmp_offset2) =
         branch_fast_path_offsets(kind, instruction_size, i64::from(offset));
     let instruction = ZiskMainInstruction {
@@ -12095,18 +12010,7 @@ fn jump_fast_path_parts(
     if !report.memory_accesses.is_empty() || !report.precompile_memory_accesses().is_empty() {
         return Ok(None);
     }
-    let instruction_size = match report.instruction_byte_len() {
-        2 | 4 => report.instruction_byte_len() as i64,
-        byte_len => {
-            return Err(GuestPcTraceBackendError::ZiskMainLower {
-                row,
-                source: ZiskMainLowerError::InvalidInstructionByteLen {
-                    pc: report.address(),
-                    byte_len: usize::from(byte_len),
-                },
-            });
-        }
-    };
+    let instruction_size = report_fast_path_instruction_size(row, report)?;
     let pc = report.address();
     let store = if jump_rd == 0 {
         ZiskMainStore::None
