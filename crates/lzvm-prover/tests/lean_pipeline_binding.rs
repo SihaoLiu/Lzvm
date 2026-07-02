@@ -3471,13 +3471,9 @@ impl<'a> TheoremPrefixCache<'a> {
     }
 
     fn prefix(&mut self, name: &'static str) -> &str {
-        if !self.prefixes.contains_key(name) {
-            let prefix = lean_binding::theorem_prefix(self.source, name);
-            self.prefixes.insert(name, prefix);
-        }
         self.prefixes
-            .get(name)
-            .expect("Lean theorem prefix should be cached")
+            .entry(name)
+            .or_insert_with(|| lean_binding::theorem_prefix(self.source, name))
             .as_str()
     }
 }
