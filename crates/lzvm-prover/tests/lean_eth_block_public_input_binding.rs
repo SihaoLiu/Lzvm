@@ -277,12 +277,18 @@ fn lean_eth_block_public_input_binding_exports_core_contract_projection() {
             ),
         ],
     );
-    lean_binding::assert_theorem_body_omits(
-        &lean_source,
-        "runtime_eth_block_public_input_binding_checked_acceptance_concrete_core_sound_contract",
-        &[
-            "runtime_eth_block_public_input_binding_checked_acceptance_sound",
-            "sound_witness_implies_verifier_core_contract",
-        ],
-    );
+    for identifier in [
+        "runtime_eth_block_public_input_binding_checked_acceptance_sound",
+        "sound_witness_implies_verifier_core_contract",
+        "abstract_verifier_sound",
+    ] {
+        lean_binding::assert_theorem_body_omits_identifier(
+            &lean_source,
+            concat!(
+                "runtime_eth_block_public_input_binding_checked_acceptance_",
+                "concrete_core_sound_contract"
+            ),
+            identifier,
+        );
+    }
 }

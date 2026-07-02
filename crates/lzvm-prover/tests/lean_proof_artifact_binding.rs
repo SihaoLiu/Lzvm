@@ -315,14 +315,17 @@ fn lean_proof_artifact_binding_exports_core_contract_projection() {
             "runtime_proof_artifact_binding_checked_acceptance_concrete_segment_ids_allowed",
         ],
     );
-    lean_binding::assert_theorem_body_omits(
-        &lean_source,
-        "runtime_proof_artifact_binding_checked_acceptance_concrete_core_sound_contract",
-        &[
-            "runtime_proof_artifact_binding_checked_acceptance_sound",
-            "sound_witness_implies_verifier_core_contract",
-        ],
-    );
+    for identifier in [
+        "runtime_proof_artifact_binding_checked_acceptance_sound",
+        "sound_witness_implies_verifier_core_contract",
+        "abstract_verifier_sound",
+    ] {
+        lean_binding::assert_theorem_body_omits_identifier(
+            &lean_source,
+            "runtime_proof_artifact_binding_checked_acceptance_concrete_core_sound_contract",
+            identifier,
+        );
+    }
     lean_binding::assert_theorem_body_contains(
         &lean_source,
         "runtime_proof_artifact_finalized_full_contract",

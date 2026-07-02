@@ -90,6 +90,7 @@ fn lean_framed_guest_input_binding_exports_soundness_structural_contract() {
         &[
             "RuntimeFramedGuestInputBindingCheckedAcceptance",
             "RuntimeProofArtifactConcreteSegmentIdBinding",
+            "validation.ethBlockValidation.proofArtifactBindingValidation",
             "RuntimeFramedGuestInputBindingEvidence",
             "RuntimeFramedGuestInputBindingStructuralObligations",
             "RuntimeVerifierCoreContract system publicInput proof",
@@ -105,12 +106,15 @@ fn lean_framed_guest_input_binding_exports_soundness_structural_contract() {
             "runtime_framed_guest_input_binding_checked_acceptance_concrete_segment_ids_allowed",
         ],
     );
-    lean_binding::assert_theorem_body_omits(
-        &lean_source,
-        "runtime_framed_guest_input_binding_checked_acceptance_concrete_core_sound_contract",
-        &[
-            "runtime_framed_guest_input_binding_checked_acceptance_sound",
-            "sound_witness_implies_verifier_core_contract",
-        ],
-    );
+    for identifier in [
+        "runtime_framed_guest_input_binding_checked_acceptance_sound",
+        "sound_witness_implies_verifier_core_contract",
+        "abstract_verifier_sound",
+    ] {
+        lean_binding::assert_theorem_body_omits_identifier(
+            &lean_source,
+            "runtime_framed_guest_input_binding_checked_acceptance_concrete_core_sound_contract",
+            identifier,
+        );
+    }
 }
