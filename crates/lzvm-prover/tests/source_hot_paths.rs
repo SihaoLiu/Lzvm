@@ -10892,6 +10892,15 @@ fn guest_pc_report_level_fast_path_dispatches_by_instruction() {
         body.contains("match report.instruction"),
         "report-level fast path should dispatch by instruction before calling matchers"
     );
+    let load_copy_index = body
+        .find("load_copy_indirect_register_store_fast_path_parts")
+        .expect("report-level dispatch should include unsigned load rows");
+    let load_extend_index = body
+        .find("load_sign_extend_indirect_register_store_fast_path_parts")
+        .expect("report-level dispatch should include signed load rows");
+    let store_index = body
+        .find("store_copy_indirect_store_fast_path_parts")
+        .expect("report-level dispatch should include store rows");
     let jump_index = body
         .find("jump_fast_path_parts")
         .expect("report-level dispatch should include jump rows");
@@ -10904,14 +10913,21 @@ fn guest_pc_report_level_fast_path_dispatches_by_instruction() {
     let special_index = body
         .find("special_no_memory_fast_path_parts")
         .expect("report-level dispatch should include special no-memory rows");
+    let simple_copy_index = body
+        .find("simple_copy_register_store_fast_path_parts")
+        .expect("report-level dispatch should include simple copy rows");
     let arithmetic_index = body
         .find("arithmetic_fast_path_parts")
         .expect("report-level dispatch should include arithmetic rows");
     assert!(
-        pc_relative_index < jump_index
+        load_copy_index < load_extend_index
+            && load_extend_index < store_index
+            && store_index < pc_relative_index
+            && pc_relative_index < jump_index
             && jump_index < branch_index
             && branch_index < special_index
-            && special_index < arithmetic_index,
+            && special_index < simple_copy_index
+            && simple_copy_index < arithmetic_index,
         "report-level dispatch should avoid unrelated matcher probes on common rows"
     );
 }
