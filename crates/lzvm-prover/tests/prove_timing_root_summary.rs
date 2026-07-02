@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::io::Write;
 use std::process::{Command, Stdio};
 
@@ -32,7 +33,7 @@ fn parse_csv_line(line: &str) -> Vec<String> {
     fields
 }
 
-fn prove_timing_root_summary_value(input_lines: &[&str], name: &str) -> String {
+fn run_prove_timing_root_summary(input_lines: &[&str]) -> String {
     let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
     let script_path = crate_root.join("../../scripts/prove-timing-root-summary.py");
     let input = input_lines.join("\n");
@@ -60,7 +61,10 @@ fn prove_timing_root_summary_value(input_lines: &[&str], name: &str) -> String {
         "prove timing root summary should pass: stderr={}",
         String::from_utf8_lossy(&output.stderr)
     );
-    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    String::from_utf8(output.stdout).expect("stdout should be utf-8")
+}
+
+fn parse_summary_values(stdout: &str) -> BTreeMap<String, String> {
     let mut lines = stdout.lines();
     let header = parse_csv_line(lines.next().expect("summary should include a header"));
     let row = parse_csv_line(lines.next().expect("summary should include a data row"));
@@ -69,13 +73,33 @@ fn prove_timing_root_summary_value(input_lines: &[&str], name: &str) -> String {
         row.len(),
         "summary header and row should have matching column counts: stdout={stdout}"
     );
-    let index = header
-        .iter()
-        .position(|header| header == name)
-        .unwrap_or_else(|| panic!("summary should expose {name}: stdout={stdout}"));
-    row.get(index)
-        .unwrap_or_else(|| panic!("summary row should contain {name}: stdout={stdout}"))
-        .clone()
+    let mut values = BTreeMap::new();
+    for (name, value) in header.into_iter().zip(row) {
+        assert!(
+            values.insert(name.clone(), value).is_none(),
+            "summary header should not repeat {name}: stdout={stdout}"
+        );
+    }
+    values
+}
+
+fn prove_timing_root_summary_values(input_lines: &[&str]) -> BTreeMap<String, String> {
+    let stdout = run_prove_timing_root_summary(input_lines);
+    parse_summary_values(&stdout)
+}
+
+fn prove_timing_root_summary_value(input_lines: &[&str], name: &str) -> String {
+    let stdout = run_prove_timing_root_summary(input_lines);
+    parse_summary_values(&stdout)
+        .remove(name)
+        .unwrap_or_else(|| panic!("summary should expose {name}: stdout={stdout}"))
+}
+
+fn expect_summary_value<'a>(values: &'a BTreeMap<String, String>, name: &str) -> &'a str {
+    values.get(name).map(String::as_str).unwrap_or_else(|| {
+        let keys = values.keys().collect::<Vec<_>>();
+        panic!("summary should expose {name}: keys={keys:?}")
+    })
 }
 
 #[cfg(unix)]
@@ -148,52 +172,19 @@ fn prove_timing_root_summary_rejects_conflicting_duplicate_timing_fields() {
 
 #[test]
 fn prove_timing_root_summary_accepts_identical_duplicate_timing_fields() {
-    let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
-    let script_path = crate_root.join("../../scripts/prove-timing-root-summary.py");
     let input = [
         "timing_total_ms=1000",
         "timing_total_ms=1000",
         "timing_guest_stage_tree_commit_root_count=1",
         "timing_guest_stage_tree_commit_root_materialization_groups=1",
         "timing_guest_stage_tree_commit_root_materialization_max_group_size=1",
-    ]
-    .join("\n");
+    ];
+    let values = prove_timing_root_summary_values(&input);
 
-    let mut child = Command::new("python3")
-        .arg(&script_path)
-        .arg("-")
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .expect("prove timing root summary should spawn");
-    child
-        .stdin
-        .as_mut()
-        .expect("stdin should be open")
-        .write_all(input.as_bytes())
-        .expect("stdin should write");
-    let output = child
-        .wait_with_output()
-        .expect("prove timing root summary should run");
-
-    assert!(
-        output.status.success(),
-        "identical duplicate timing fields should be accepted: stderr={}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
-    let mut lines = stdout.lines();
-    let header = parse_csv_line(lines.next().expect("summary should print a header"));
-    let row = parse_csv_line(lines.next().expect("summary should print one row"));
-    let total_ms_index = header
-        .iter()
-        .position(|field| field == "total_ms")
-        .expect("summary should include total_ms");
     assert_eq!(
-        row.get(total_ms_index),
-        Some(&"1000".to_owned()),
-        "summary should preserve the duplicated timing value once: stdout={stdout}"
+        expect_summary_value(&values, "total_ms"),
+        "1000",
+        "summary should preserve the duplicated timing value once"
     );
 }
 
@@ -421,15 +412,6 @@ fn prove_timing_root_summary_reports_stream_chunk_process_time() {
 
 #[test]
 fn prove_timing_root_summary_reports_device_source_timings() {
-    let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
-    let script_path = crate_root.join("../../scripts/prove-timing-root-summary.py");
-    let dir = crate_root.join(format!(
-        "../../temp/prove-timing-device-source-{}",
-        std::process::id()
-    ));
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).expect("device source fixture dir should be created");
-    let log_path = dir.join("device-source.log");
     let input = [
         "timing_total_ms=1000",
         "input_bytes=1024",
@@ -441,51 +423,30 @@ fn prove_timing_root_summary_reports_device_source_timings() {
         "timing_guest_stage_tree_commit_root_count=1",
         "timing_guest_stage_tree_commit_root_materialization_groups=1",
         "timing_guest_stage_tree_commit_root_materialization_max_group_size=1",
-    ]
-    .join("\n");
-    std::fs::write(&log_path, input).expect("device source fixture should be written");
+    ];
+    let values = prove_timing_root_summary_values(&input);
 
-    let output = Command::new("python3")
-        .arg(&script_path)
-        .arg(&log_path)
-        .output()
-        .expect("prove timing root summary should finish");
-
-    assert!(
-        output.status.success(),
-        "prove timing root summary should parse device source input: stderr={}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
-    let mut lines = stdout.lines();
-    let header = parse_csv_line(lines.next().expect("summary should include a header"));
-    let row = parse_csv_line(lines.next().expect("summary should include a data row"));
     assert_eq!(
-        header.len(),
-        row.len(),
-        "summary header and row should have matching column counts: stdout={stdout}"
+        expect_summary_value(&values, "device_source_build_ms"),
+        "31"
     );
-    let value = |name: &str| {
-        let index = header
-            .iter()
-            .position(|header| header == name)
-            .unwrap_or_else(|| panic!("summary should expose {name}: stdout={stdout}"));
-        row.get(index)
-            .unwrap_or_else(|| panic!("summary row should contain {name}: stdout={stdout}"))
-    };
-    assert_eq!(value("device_source_build_ms"), "31");
-    assert_eq!(value("descriptor_upload_ms"), "29");
-    assert_eq!(value("device_source_trace_expand_ms"), "2");
-    assert_eq!(value("descriptor_upload_bytes"), "880");
-    assert_eq!(value("descriptor_bytes_per_row"), "88.000");
-
-    let _ = std::fs::remove_dir_all(&dir);
+    assert_eq!(expect_summary_value(&values, "descriptor_upload_ms"), "29");
+    assert_eq!(
+        expect_summary_value(&values, "device_source_trace_expand_ms"),
+        "2"
+    );
+    assert_eq!(
+        expect_summary_value(&values, "descriptor_upload_bytes"),
+        "880"
+    );
+    assert_eq!(
+        expect_summary_value(&values, "descriptor_bytes_per_row"),
+        "88.000"
+    );
 }
 
 #[test]
 fn prove_timing_root_summary_reports_opening_external_source_timings() {
-    let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
-    let script_path = crate_root.join("../../scripts/prove-timing-root-summary.py");
     let input = [
         "timing_total_ms=1000",
         "input_bytes=1024",
@@ -502,62 +463,35 @@ fn prove_timing_root_summary_reports_opening_external_source_timings() {
         "timing_guest_stage_tree_commit_root_count=1",
         "timing_guest_stage_tree_commit_root_materialization_groups=1",
         "timing_guest_stage_tree_commit_root_materialization_max_group_size=1",
-    ]
-    .join("\n");
+    ];
+    let values = prove_timing_root_summary_values(&input);
 
-    let mut child = Command::new("python3")
-        .arg(&script_path)
-        .arg("-")
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .expect("prove timing root summary should spawn");
-    child
-        .stdin
-        .as_mut()
-        .expect("stdin should be open")
-        .write_all(input.as_bytes())
-        .expect("stdin should write");
-    let output = child
-        .wait_with_output()
-        .expect("prove timing root summary should run");
-
-    assert!(
-        output.status.success(),
-        "prove timing root summary should pass: stderr={}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
-    let mut lines = stdout.lines();
-    let header = parse_csv_line(lines.next().expect("summary should include a header"));
-    let row = parse_csv_line(lines.next().expect("summary should include a data row"));
-    let value = |name: &str| {
-        let index = header
-            .iter()
-            .position(|header| header == name)
-            .unwrap_or_else(|| panic!("summary should expose {name}: stdout={stdout}"));
-        row.get(index)
-            .unwrap_or_else(|| panic!("summary row should contain {name}: stdout={stdout}"))
-    };
-
-    assert_eq!(value("opening_external_source_ms"), "45");
-    assert_eq!(value("opening_external_source_descriptor_upload_ms"), "37");
     assert_eq!(
-        value("opening_external_source_descriptor_upload_bytes"),
+        expect_summary_value(&values, "opening_external_source_ms"),
+        "45"
+    );
+    assert_eq!(
+        expect_summary_value(&values, "opening_external_source_descriptor_upload_ms"),
+        "37"
+    );
+    assert_eq!(
+        expect_summary_value(&values, "opening_external_source_descriptor_upload_bytes"),
         "880"
     );
     assert_eq!(
-        value("opening_external_source_descriptor_upload_words"),
+        expect_summary_value(&values, "opening_external_source_descriptor_upload_words"),
         "110"
     );
     assert_eq!(
-        value("opening_external_source_descriptor_upload_rows"),
+        expect_summary_value(&values, "opening_external_source_descriptor_upload_rows"),
         "10"
     );
-    assert_eq!(value("opening_external_source_trace_expand_ms"), "8");
     assert_eq!(
-        value("opening_external_source_descriptor_action_hint"),
+        expect_summary_value(&values, "opening_external_source_trace_expand_ms"),
+        "8"
+    );
+    assert_eq!(
+        expect_summary_value(&values, "opening_external_source_descriptor_action_hint"),
         "opening_descriptor_reupload_after_retention_reject"
     );
 }
