@@ -18,7 +18,7 @@ use crate::guest_machine::{
     advance_guest_machine_with_prepared_fcalls_report_shape,
     advance_guest_machine_with_prepared_fcalls_report_shape_at_pc_into,
     advance_guest_machine_with_prepared_fcalls_report_shape_at_pc_into_timed,
-    advance_guest_machine_with_prepared_fcalls_report_shape_timed,
+    advance_guest_machine_with_prepared_fcalls_report_shape_timed, fixed_csr_value,
     instruction_clears_instruction_cache, run_guest_machine_trace_with_fcalls,
     run_guest_machine_with_fcalls, GuestDmaProofValueFlags, GuestFcallHandler,
     GuestInstructionCache, GuestMachineAdvanceTiming, GuestMachineHalt, GuestMachineMemory,
@@ -10492,6 +10492,7 @@ struct MainJumpFastPathParts {
 enum MainReportFastPathParts {
     NoMemory(ZiskMainInstruction, ZiskMainNoMemoryFastPathParts),
     Jump(ZiskMainInstruction, MainJumpFastPathParts),
+    PcRelative(ZiskMainInstruction, MainJumpFastPathParts),
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -10677,6 +10678,18 @@ fn validate_and_apply_zisk_main_report(
                     )?;
                 }
                 MainReportFastPathParts::Jump(instruction, parts) => {
+                    apply_jump_fast_path(
+                        row,
+                        instruction,
+                        ZiskMainReportEffects::from_report(report),
+                        report.next_pc,
+                        parts,
+                        state,
+                        context,
+                        &mut visit,
+                    )?;
+                }
+                MainReportFastPathParts::PcRelative(instruction, parts) => {
                     apply_jump_fast_path(
                         row,
                         instruction,
@@ -11449,16 +11462,61 @@ fn no_memory_fast_path_op_supported(op: ZiskMainOp) -> bool {
 }
 
 #[inline(always)]
+fn report_fast_path_instruction_size(
+    row: usize,
+    report: &GuestMachineReport,
+) -> Result<i64, GuestPcTraceBackendError> {
+    match report.instruction_byte_len() {
+        2 | 4 => Ok(report.instruction_byte_len() as i64),
+        byte_len => Err(GuestPcTraceBackendError::ZiskMainLower {
+            row,
+            source: ZiskMainLowerError::InvalidInstructionByteLen {
+                pc: report.address(),
+                byte_len: usize::from(byte_len),
+            },
+        }),
+    }
+}
+
+#[inline(always)]
+fn sequential_report_fast_path_instruction_size(
+    row: usize,
+    report: &GuestMachineReport,
+) -> Result<Option<i64>, GuestPcTraceBackendError> {
+    let instruction_size = report_fast_path_instruction_size(row, report)?;
+    let Some(expected_next_pc) = report.address().checked_add(instruction_size as u64) else {
+        return Ok(None);
+    };
+    if expected_next_pc != report.next_pc {
+        return Ok(None);
+    }
+    Ok(Some(instruction_size))
+}
+
+#[inline(always)]
 fn report_level_fast_path_parts(
     row: usize,
     report: &GuestMachineReport,
 ) -> Result<Option<MainReportFastPathParts>, GuestPcTraceBackendError> {
     match report.instruction {
+        RiscvInstruction::Auipc { .. } => Ok(pc_relative_fast_path_parts(row, report)?
+            .map(|(instruction, parts)| MainReportFastPathParts::PcRelative(instruction, parts))),
         RiscvInstruction::Jal { .. } | RiscvInstruction::Jalr { .. } => {
             Ok(jump_fast_path_parts(row, report)?
                 .map(|(instruction, parts)| MainReportFastPathParts::Jump(instruction, parts)))
         }
         RiscvInstruction::Branch { .. } => Ok(branch_fast_path_parts(row, report)?
+            .map(|(instruction, parts)| MainReportFastPathParts::NoMemory(instruction, parts))),
+        RiscvInstruction::Fence { .. }
+        | RiscvInstruction::CsrRead { .. }
+        | RiscvInstruction::ZiskFcallParam { .. }
+        | RiscvInstruction::ZiskFcallInvoke { .. }
+        | RiscvInstruction::Lui { rd: 0, .. }
+        | RiscvInstruction::OpImm {
+            kind: RiscvOpImmKind::Addi,
+            rd: 0,
+            ..
+        } => Ok(special_no_memory_fast_path_parts(row, report)?
             .map(|(instruction, parts)| MainReportFastPathParts::NoMemory(instruction, parts))),
         RiscvInstruction::OpImm { .. }
         | RiscvInstruction::OpImm32 { .. }
@@ -11467,6 +11525,185 @@ fn report_level_fast_path_parts(
             .map(|(instruction, parts)| MainReportFastPathParts::NoMemory(instruction, parts))),
         _ => Ok(None),
     }
+}
+
+#[inline(always)]
+fn pc_relative_fast_path_parts(
+    row: usize,
+    report: &GuestMachineReport,
+) -> Result<Option<(ZiskMainInstruction, MainJumpFastPathParts)>, GuestPcTraceBackendError> {
+    let (rd, immediate) = match report.instruction {
+        RiscvInstruction::Auipc { rd, immediate } => (rd, immediate),
+        _ => return Ok(None),
+    };
+    if !report.memory_accesses.is_empty() || !report.precompile_memory_accesses().is_empty() {
+        return Ok(None);
+    }
+    let Some(instruction_size) = sequential_report_fast_path_instruction_size(row, report)? else {
+        return Ok(None);
+    };
+    let store = if rd == 0 {
+        ZiskMainStore::None
+    } else {
+        ZiskMainStore::Register(rd)
+    };
+    Ok(Some((
+        ZiskMainInstruction {
+            pc: report.address(),
+            a: ZiskMainSource::Immediate(0),
+            b: ZiskMainSource::Immediate(0),
+            op: ZiskMainOp::Flag,
+            store,
+            store_pc: rd != 0,
+            set_pc: false,
+            jmp_offset1: instruction_size,
+            jmp_offset2: i64::from(immediate),
+            ind_width: 0,
+            m32: false,
+            is_external_op: false,
+            is_precompiled: false,
+        },
+        MainJumpFastPathParts {
+            b_index: None,
+            store_index: (rd != 0).then_some(rd),
+        },
+    )))
+}
+
+#[inline(always)]
+fn special_no_memory_fast_path_parts(
+    row: usize,
+    report: &GuestMachineReport,
+) -> Result<Option<(ZiskMainInstruction, ZiskMainNoMemoryFastPathParts)>, GuestPcTraceBackendError>
+{
+    match report.instruction {
+        RiscvInstruction::Fence { .. }
+        | RiscvInstruction::CsrRead { .. }
+        | RiscvInstruction::ZiskFcallParam { .. }
+        | RiscvInstruction::ZiskFcallInvoke { .. }
+        | RiscvInstruction::Lui { rd: 0, .. }
+        | RiscvInstruction::OpImm {
+            kind: RiscvOpImmKind::Addi,
+            rd: 0,
+            ..
+        } => {}
+        _ => return Ok(None),
+    }
+    if !report.memory_accesses.is_empty() || !report.precompile_memory_accesses().is_empty() {
+        return Ok(None);
+    }
+    let Some(instruction_size) = sequential_report_fast_path_instruction_size(row, report)? else {
+        return Ok(None);
+    };
+    let pc = report.address();
+    let (a, a_index, b, b_index, op, store, store_index) = match report.instruction {
+        RiscvInstruction::Fence { .. } | RiscvInstruction::CsrRead { rd: 0, .. } => (
+            ZiskMainSource::Immediate(0),
+            None,
+            ZiskMainSource::Immediate(0),
+            None,
+            ZiskMainOp::Flag,
+            ZiskMainStore::None,
+            None,
+        ),
+        RiscvInstruction::CsrRead { csr, rd } => {
+            let Some(value) = fixed_csr_value(csr).filter(|value| *value <= i64::MAX as u64) else {
+                return Ok(None);
+            };
+            (
+                ZiskMainSource::Immediate(0),
+                None,
+                ZiskMainSource::Immediate(value),
+                None,
+                ZiskMainOp::CopyB,
+                ZiskMainStore::Register(rd),
+                Some(rd),
+            )
+        }
+        RiscvInstruction::ZiskFcallParam { port, rs1 } => {
+            let Some(words) = fcall_param_word_count(port) else {
+                return Ok(None);
+            };
+            (
+                ZiskMainSource::Immediate(words),
+                None,
+                if rs1 == 0 {
+                    ZiskMainSource::Immediate(0)
+                } else {
+                    ZiskMainSource::Register(rs1)
+                },
+                (rs1 != 0).then_some(rs1),
+                ZiskMainOp::CopyB,
+                ZiskMainStore::None,
+                None,
+            )
+        }
+        RiscvInstruction::ZiskFcallInvoke { function_id } => (
+            ZiskMainSource::Immediate(u64::from(function_id)),
+            None,
+            ZiskMainSource::Immediate(0),
+            None,
+            ZiskMainOp::CopyB,
+            ZiskMainStore::None,
+            None,
+        ),
+        RiscvInstruction::Lui { rd: 0, immediate } => (
+            ZiskMainSource::Immediate(0),
+            None,
+            ZiskMainSource::Immediate(i64::from(immediate) as u64),
+            None,
+            ZiskMainOp::CopyB,
+            ZiskMainStore::None,
+            None,
+        ),
+        RiscvInstruction::OpImm {
+            kind: RiscvOpImmKind::Addi,
+            rd: 0,
+            rs1,
+            immediate,
+        } => (
+            if rs1 == 0 {
+                ZiskMainSource::Immediate(0)
+            } else {
+                ZiskMainSource::Register(rs1)
+            },
+            (rs1 != 0).then_some(rs1),
+            ZiskMainSource::Immediate(i64::from(immediate) as u64),
+            None,
+            ZiskMainOp::Flag,
+            ZiskMainStore::None,
+            None,
+        ),
+        _ => return Ok(None),
+    };
+    Ok(Some((
+        ZiskMainInstruction {
+            pc,
+            a,
+            b,
+            op,
+            store,
+            store_pc: false,
+            set_pc: false,
+            jmp_offset1: instruction_size,
+            jmp_offset2: instruction_size,
+            ind_width: 0,
+            m32: false,
+            is_external_op: false,
+            is_precompiled: false,
+        },
+        ZiskMainNoMemoryFastPathParts {
+            a_index,
+            b_index,
+            store_index,
+        },
+    )))
+}
+
+#[inline(always)]
+fn fcall_param_word_count(port: u8) -> Option<u64> {
+    const WORDS: [u64; 16] = [1, 2, 4, 8, 12, 16, 20, 24, 28, 32, 48, 64, 80, 96, 128, 256];
+    WORDS.get(usize::from(port)).copied()
 }
 
 #[inline(always)]

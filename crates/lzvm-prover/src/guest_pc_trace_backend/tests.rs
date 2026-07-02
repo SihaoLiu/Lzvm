@@ -1,8 +1,8 @@
 use super::*;
 use crate::guest_instruction::{
-    decode_riscv_instruction, RiscvAmoKind, RiscvAmoWidth, RiscvBranchKind, RiscvInstruction,
-    RiscvLoadKind, RiscvOp32Kind, RiscvOpImm32Kind, RiscvOpImmKind, RiscvOpKind,
-    RiscvPrecompileKind, RiscvStoreKind,
+    decode_riscv_instruction, RiscvAmoKind, RiscvAmoWidth, RiscvBranchKind, RiscvCsr,
+    RiscvFenceKind, RiscvInstruction, RiscvLoadKind, RiscvOp32Kind, RiscvOpImm32Kind,
+    RiscvOpImmKind, RiscvOpKind, RiscvPrecompileKind, RiscvStoreKind,
 };
 use crate::guest_machine::GuestMachineReportShape;
 use crate::guest_machine::GuestPrecompileReportEffects;
@@ -7312,6 +7312,237 @@ fn jump_fast_path_parts_match_generic_lowering() {
             .expect("jump should match");
         assert_eq!(actual, expected);
     }
+}
+
+#[test]
+fn pc_relative_fast_path_parts_match_generic_lowering() {
+    let reports = [
+        GuestMachineReport {
+            address_and_instruction_len:
+                crate::guest_machine::pack_report_address_and_instruction_len(0x8000_0000, 4),
+            instruction: RiscvInstruction::Auipc {
+                rd: 5,
+                immediate: 0x40,
+            },
+            next_pc: 0x8000_0004,
+            register_write_value: GuestRegisterWriteValue::new(0x8000_0040),
+            memory_accesses: vec![].into(),
+        },
+        GuestMachineReport {
+            address_and_instruction_len:
+                crate::guest_machine::pack_report_address_and_instruction_len(0x8000_0020, 4),
+            instruction: RiscvInstruction::Auipc {
+                rd: 0,
+                immediate: -16,
+            },
+            next_pc: 0x8000_0024,
+            register_write_value: GuestRegisterWriteValue::default(),
+            memory_accesses: vec![].into(),
+        },
+    ];
+
+    for report in reports {
+        let expected = lower_guest_report(&report).expect("generic lowering should succeed");
+        let (actual, _parts) = pc_relative_fast_path_parts(3, &report)
+            .expect("pc-relative matcher should not fail")
+            .expect("pc-relative row should match");
+        assert_eq!(actual, expected);
+    }
+}
+
+#[test]
+fn special_no_memory_fast_path_parts_match_generic_lowering() {
+    let reports = [
+        GuestMachineReport {
+            address_and_instruction_len:
+                crate::guest_machine::pack_report_address_and_instruction_len(0x8000_0000, 4),
+            instruction: RiscvInstruction::Fence {
+                kind: RiscvFenceKind::Fence,
+                mode: 0,
+                predecessor: 0,
+                successor: 0,
+            },
+            next_pc: 0x8000_0004,
+            register_write_value: GuestRegisterWriteValue::default(),
+            memory_accesses: vec![].into(),
+        },
+        GuestMachineReport {
+            address_and_instruction_len:
+                crate::guest_machine::pack_report_address_and_instruction_len(0x8000_0004, 4),
+            instruction: RiscvInstruction::CsrRead {
+                csr: RiscvCsr::Mvendorid,
+                rd: 3,
+            },
+            next_pc: 0x8000_0008,
+            register_write_value: GuestRegisterWriteValue::new(
+                fixed_csr_value(RiscvCsr::Mvendorid).expect("fixed CSR should exist"),
+            ),
+            memory_accesses: vec![].into(),
+        },
+        GuestMachineReport {
+            address_and_instruction_len:
+                crate::guest_machine::pack_report_address_and_instruction_len(0x8000_0008, 4),
+            instruction: RiscvInstruction::CsrRead {
+                csr: RiscvCsr::Cycle,
+                rd: 0,
+            },
+            next_pc: 0x8000_000c,
+            register_write_value: GuestRegisterWriteValue::default(),
+            memory_accesses: vec![].into(),
+        },
+        GuestMachineReport {
+            address_and_instruction_len:
+                crate::guest_machine::pack_report_address_and_instruction_len(0x8000_000c, 4),
+            instruction: RiscvInstruction::ZiskFcallParam { port: 2, rs1: 7 },
+            next_pc: 0x8000_0010,
+            register_write_value: GuestRegisterWriteValue::default(),
+            memory_accesses: vec![].into(),
+        },
+        GuestMachineReport {
+            address_and_instruction_len:
+                crate::guest_machine::pack_report_address_and_instruction_len(0x8000_0010, 4),
+            instruction: RiscvInstruction::ZiskFcallInvoke { function_id: 9 },
+            next_pc: 0x8000_0014,
+            register_write_value: GuestRegisterWriteValue::default(),
+            memory_accesses: vec![].into(),
+        },
+        GuestMachineReport {
+            address_and_instruction_len:
+                crate::guest_machine::pack_report_address_and_instruction_len(0x8000_0014, 4),
+            instruction: RiscvInstruction::Lui {
+                rd: 0,
+                immediate: 0x1234_5000,
+            },
+            next_pc: 0x8000_0018,
+            register_write_value: GuestRegisterWriteValue::default(),
+            memory_accesses: vec![].into(),
+        },
+        GuestMachineReport {
+            address_and_instruction_len:
+                crate::guest_machine::pack_report_address_and_instruction_len(0x8000_0018, 4),
+            instruction: RiscvInstruction::OpImm {
+                kind: RiscvOpImmKind::Addi,
+                rd: 0,
+                rs1: 7,
+                immediate: -5,
+            },
+            next_pc: 0x8000_001c,
+            register_write_value: GuestRegisterWriteValue::default(),
+            memory_accesses: vec![].into(),
+        },
+    ];
+
+    for report in reports {
+        let expected = lower_guest_report(&report).expect("generic lowering should succeed");
+        let (actual, _parts) = special_no_memory_fast_path_parts(3, &report)
+            .expect("special no-memory matcher should not fail")
+            .expect("special no-memory row should match");
+        assert_eq!(actual, expected);
+    }
+}
+
+#[test]
+fn special_no_memory_fast_path_parts_fall_back_for_unsupported_rows() {
+    let reports = [
+        GuestMachineReport {
+            address_and_instruction_len:
+                crate::guest_machine::pack_report_address_and_instruction_len(0x8000_0000, 4),
+            instruction: RiscvInstruction::CsrRead {
+                csr: RiscvCsr::Cycle,
+                rd: 3,
+            },
+            next_pc: 0x8000_0004,
+            register_write_value: GuestRegisterWriteValue::new(0),
+            memory_accesses: vec![].into(),
+        },
+        GuestMachineReport {
+            address_and_instruction_len:
+                crate::guest_machine::pack_report_address_and_instruction_len(0x8000_0000, 4),
+            instruction: RiscvInstruction::ZiskFcallParam { port: 20, rs1: 7 },
+            next_pc: 0x8000_0004,
+            register_write_value: GuestRegisterWriteValue::default(),
+            memory_accesses: vec![].into(),
+        },
+    ];
+
+    for report in reports {
+        assert!(special_no_memory_fast_path_parts(3, &report)
+            .expect("unsupported special row should not fail during matching")
+            .is_none());
+    }
+}
+
+#[test]
+fn pc_relative_fast_path_preserves_row_effects() {
+    let writes = [GuestRegisterWrite {
+        index: 5,
+        value: 0x8000_0040,
+    }];
+    let effects = ZiskMainReportEffects {
+        register_writes: writes.to_vec().into(),
+        memory_accesses: &[],
+        precompile_memory_accesses: &[],
+        precompile_result: None,
+    };
+    let report =
+        GuestMachineReport {
+            address_and_instruction_len:
+                crate::guest_machine::pack_report_address_and_instruction_len(0x8000_0000, 4),
+            instruction: RiscvInstruction::Auipc {
+                rd: 5,
+                immediate: 0x40,
+            },
+            next_pc: 0x8000_0004,
+            register_write_value: GuestRegisterWriteValue::new(0x8000_0040),
+            memory_accesses: vec![].into(),
+        };
+    let (instruction, parts) = pc_relative_fast_path_parts(3, &report)
+        .expect("pc-relative matcher should not fail")
+        .expect("pc-relative row should match");
+    let mut state = ZiskMainTraceState::new();
+    state.registers[5] = 0x77;
+    state.register_mem_steps[5] = 44;
+    let mut context = ZiskMainReportValidationContext::new(
+        None,
+        16,
+        ZiskMainTraceSegmentInfo {
+            trace_instance_index: 0,
+            is_last_segment: false,
+            previous_c: 0,
+        },
+    )
+    .expect("context should initialize");
+    let mut visited = None;
+    apply_jump_fast_path(
+        3,
+        instruction,
+        effects,
+        report.next_pc,
+        parts,
+        &mut state,
+        &mut context,
+        &mut |row, values, timing| {
+            assert_eq!(row, 3);
+            assert!(timing.is_none());
+            visited = Some(values);
+            Ok(())
+        },
+    )
+    .expect("pc-relative row should take fast path");
+
+    assert_eq!(state.registers[5], 0x8000_0040);
+    assert_eq!(state.last_c, 0);
+    assert_eq!(state.next_pc, 0x8000_0004);
+    assert_eq!(state.register_mem_steps[5], 15);
+    let values = visited.expect("fast path should emit row values");
+    assert_eq!(values.a, 0);
+    assert_eq!(values.b, 0);
+    assert_eq!(values.c, 0);
+    assert!(values.flag);
+    assert_eq!(values.register_accesses.a_prev_mem_step, None);
+    assert_eq!(values.register_accesses.b_prev_mem_step, None);
+    assert_eq!(values.register_accesses.store_prev_mem_step, Some(44));
+    assert_eq!(values.register_accesses.store_prev_value, Some(0x77));
 }
 
 #[test]

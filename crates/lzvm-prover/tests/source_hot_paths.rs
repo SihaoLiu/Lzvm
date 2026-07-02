@@ -10898,12 +10898,44 @@ fn guest_pc_report_level_fast_path_dispatches_by_instruction() {
     let branch_index = body
         .find("branch_fast_path_parts")
         .expect("report-level dispatch should include branch rows");
+    let pc_relative_index = body
+        .find("pc_relative_fast_path_parts")
+        .expect("report-level dispatch should include PC-relative rows");
+    let special_index = body
+        .find("special_no_memory_fast_path_parts")
+        .expect("report-level dispatch should include special no-memory rows");
     let arithmetic_index = body
         .find("arithmetic_fast_path_parts")
         .expect("report-level dispatch should include arithmetic rows");
     assert!(
-        jump_index < branch_index && branch_index < arithmetic_index,
-        "report-level dispatch should avoid unrelated matcher probes on jump rows"
+        pc_relative_index < jump_index
+            && jump_index < branch_index
+            && branch_index < special_index
+            && special_index < arithmetic_index,
+        "report-level dispatch should avoid unrelated matcher probes on common rows"
+    );
+}
+
+#[test]
+fn guest_pc_special_fast_path_checks_instruction_before_effects() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let source_path = crate_root.join("src/guest_pc_trace_backend.rs");
+    let source = std::fs::read_to_string(&source_path).expect("guest PC trace source should read");
+
+    let body = function_body(
+        &source,
+        "fn special_no_memory_fast_path_parts",
+        "#[inline(always)]\nfn fcall_param_word_count",
+    );
+    let instruction_index = body
+        .find("match report.instruction")
+        .expect("special matcher should inspect the instruction first");
+    let memory_index = body
+        .find("report.memory_accesses")
+        .expect("special matcher should still reject rows with effects");
+    assert!(
+        instruction_index < memory_index,
+        "special matcher should reject unrelated rows before effect-list checks"
     );
 }
 
