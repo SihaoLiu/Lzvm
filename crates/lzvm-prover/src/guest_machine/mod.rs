@@ -1832,7 +1832,7 @@ fn try_advance_guest_machine_report_fast_path(
             memory_access = Some(GuestMemoryAccess {
                 kind: GuestMemoryAccessKind::Read,
                 address: read_address,
-                byte_len: loaded.byte_len,
+                byte_len: guest_memory_access_byte_len(loaded.byte_len),
                 value: loaded.memory_value,
             });
             register_write = write_fast_reported_register(state, rd, loaded.register_value);
@@ -1848,16 +1848,15 @@ fn try_advance_guest_machine_report_fast_path(
                 .wrapping_add_signed(i64::from(offset));
             let value = state.read_decoded_register(rs2);
             let byte_len = write_guest_store(memory, kind, write_address, value)?;
-            let byte_len_usize = usize::from(byte_len);
-            let stored_value = low_bytes_value(value, byte_len_usize);
+            let stored_value = low_bytes_value(value, byte_len);
             has_memory_write = true;
             memory_access = Some(GuestMemoryAccess {
                 kind: GuestMemoryAccessKind::Write,
                 address: write_address,
-                byte_len,
+                byte_len: guest_memory_access_byte_len(byte_len),
                 value: stored_value,
             });
-            state.clear_reservation_if_overlaps(write_address, byte_len_usize);
+            state.clear_reservation_if_overlaps(write_address, byte_len);
         }
         RiscvInstruction::CsrRead { csr, rd } => {
             register_write = write_fast_reported_register(
@@ -2155,7 +2154,7 @@ fn execute_guest_instruction(
                 .read_decoded_register(rs1)
                 .wrapping_add_signed(i64::from(offset));
             let loaded = read_guest_load(memory, kind, address)?;
-            effects.record_memory_read(address, usize::from(loaded.byte_len), loaded.memory_value);
+            effects.record_memory_read(address, loaded.byte_len, loaded.memory_value);
             write_reported_register(state, effects, rd, loaded.register_value);
         }
         RiscvInstruction::Store {
@@ -2169,13 +2168,8 @@ fn execute_guest_instruction(
                 .wrapping_add_signed(i64::from(offset));
             let value = state.read_decoded_register(rs2);
             let byte_len = write_guest_store(memory, kind, address, value)?;
-            let byte_len_usize = usize::from(byte_len);
-            effects.record_memory_write(
-                address,
-                byte_len_usize,
-                low_bytes_value(value, byte_len_usize),
-            );
-            state.clear_reservation_if_overlaps(address, byte_len_usize);
+            effects.record_memory_write(address, byte_len, low_bytes_value(value, byte_len));
+            state.clear_reservation_if_overlaps(address, byte_len);
         }
         RiscvInstruction::Amo {
             kind,
@@ -2299,7 +2293,7 @@ fn write_reported_register(
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct GuestLoadResult {
-    byte_len: u8,
+    byte_len: usize,
     memory_value: u64,
     register_value: u64,
 }
@@ -2311,7 +2305,7 @@ fn read_guest_load(
     address: u64,
 ) -> Result<GuestLoadResult, GuestMachineError> {
     let byte_len = guest_load_byte_len(kind);
-    let memory_value = memory.read_u64_le(address, usize::from(byte_len))?;
+    let memory_value = memory.read_u64_le(address, byte_len)?;
     let register_value = match kind {
         RiscvLoadKind::Lb => i64::from(memory_value as u8 as i8) as u64,
         RiscvLoadKind::Lh => i64::from(memory_value as u16 as i16) as u64,
@@ -2328,7 +2322,7 @@ fn read_guest_load(
 }
 
 #[inline(always)]
-fn guest_load_byte_len(kind: RiscvLoadKind) -> u8 {
+fn guest_load_byte_len(kind: RiscvLoadKind) -> usize {
     match kind {
         RiscvLoadKind::Lb | RiscvLoadKind::Lbu => 1,
         RiscvLoadKind::Lh | RiscvLoadKind::Lhu => 2,
@@ -2342,7 +2336,7 @@ fn write_guest_store(
     kind: RiscvStoreKind,
     address: u64,
     value: u64,
-) -> Result<u8, GuestMachineError> {
+) -> Result<usize, GuestMachineError> {
     let byte_len = match kind {
         RiscvStoreKind::Sb => {
             memory.write_u64_le::<1>(address, value)?;

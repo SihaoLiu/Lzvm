@@ -11060,9 +11060,7 @@ fn guest_machine_load_reads_memory_once_after_shape_decode() {
     );
     assert!(
         load_body.contains("let byte_len = guest_load_byte_len(kind);")
-            && load_body.contains(
-                "let memory_value = memory.read_u64_le(address, usize::from(byte_len))?;"
-            )
+            && load_body.contains("let memory_value = memory.read_u64_le(address, byte_len)?;")
             && load_body.contains("let register_value = match kind"),
         "guest load decoding should select byte length before its single memory read"
     );
