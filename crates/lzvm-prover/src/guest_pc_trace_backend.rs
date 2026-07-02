@@ -10655,6 +10655,19 @@ fn validate_and_apply_zisk_main_report(
             )?;
             return Ok(1);
         }
+        if let Some((instruction, parts)) = branch_fast_path_parts(row, report)? {
+            apply_no_memory_fast_path(
+                row,
+                instruction,
+                ZiskMainReportEffects::from_report(report),
+                report.next_pc,
+                parts,
+                state,
+                context,
+                &mut visit,
+            )?;
+            return Ok(1);
+        }
         if let Some((instruction, parts)) = jump_fast_path_parts(row, report)? {
             apply_jump_fast_path(
                 row,
@@ -11423,6 +11436,87 @@ fn no_memory_fast_path_op_supported(op: ZiskMainOp) -> bool {
             | ZiskMainOp::SignExtendH
             | ZiskMainOp::SignExtendW
     )
+}
+
+#[inline(always)]
+fn branch_fast_path_parts(
+    row: usize,
+    report: &GuestMachineReport,
+) -> Result<Option<(ZiskMainInstruction, ZiskMainNoMemoryFastPathParts)>, GuestPcTraceBackendError>
+{
+    let (kind, rs1, rs2, offset) = match report.instruction {
+        RiscvInstruction::Branch {
+            kind,
+            rs1,
+            rs2,
+            offset,
+        } => (kind, rs1, rs2, offset),
+        _ => return Ok(None),
+    };
+    if !report.memory_accesses.is_empty() || !report.precompile_memory_accesses().is_empty() {
+        return Ok(None);
+    }
+    let instruction_size = match report.instruction_byte_len() {
+        2 | 4 => report.instruction_byte_len() as i64,
+        byte_len => {
+            return Err(GuestPcTraceBackendError::ZiskMainLower {
+                row,
+                source: ZiskMainLowerError::InvalidInstructionByteLen {
+                    pc: report.address(),
+                    byte_len: usize::from(byte_len),
+                },
+            });
+        }
+    };
+    let (op, jmp_offset1, jmp_offset2) =
+        branch_fast_path_offsets(kind, instruction_size, i64::from(offset));
+    let instruction = ZiskMainInstruction {
+        pc: report.address(),
+        a: if rs1 == 0 {
+            ZiskMainSource::Immediate(0)
+        } else {
+            ZiskMainSource::Register(rs1)
+        },
+        b: if rs2 == 0 {
+            ZiskMainSource::Immediate(0)
+        } else {
+            ZiskMainSource::Register(rs2)
+        },
+        op,
+        store: ZiskMainStore::None,
+        store_pc: false,
+        set_pc: false,
+        jmp_offset1,
+        jmp_offset2,
+        ind_width: 0,
+        m32: false,
+        is_external_op: true,
+        is_precompiled: false,
+    };
+    Ok(Some((
+        instruction,
+        ZiskMainNoMemoryFastPathParts {
+            a_index: (rs1 != 0).then_some(rs1),
+            b_index: (rs2 != 0).then_some(rs2),
+            store_index: None,
+        },
+    )))
+}
+
+#[inline(always)]
+fn branch_fast_path_offsets(
+    kind: RiscvBranchKind,
+    instruction_size: i64,
+    offset: i64,
+) -> (ZiskMainOp, i64, i64) {
+    match kind {
+        RiscvBranchKind::Beq => (ZiskMainOp::Eq, offset, instruction_size),
+        RiscvBranchKind::Bne => (ZiskMainOp::Eq, instruction_size, offset),
+        RiscvBranchKind::Blt => (ZiskMainOp::Lt, offset, instruction_size),
+        RiscvBranchKind::Bge => (ZiskMainOp::Lt, instruction_size, offset),
+        RiscvBranchKind::Bltu => (ZiskMainOp::Ltu, offset, instruction_size),
+        RiscvBranchKind::Bgeu => (ZiskMainOp::Ltu, instruction_size, offset),
+    }
 }
 
 #[inline(always)]

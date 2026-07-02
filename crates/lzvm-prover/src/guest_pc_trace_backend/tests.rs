@@ -6841,6 +6841,225 @@ fn no_memory_external_fast_path_parts_match_generic_lowering() {
 }
 
 #[test]
+fn branch_fast_path_parts_match_generic_lowering() {
+    let reports = [
+        GuestMachineReport {
+            address_and_instruction_len:
+                crate::guest_machine::pack_report_address_and_instruction_len(0x8000_0000, 4),
+            instruction: RiscvInstruction::Branch {
+                kind: RiscvBranchKind::Beq,
+                rs1: 2,
+                rs2: 3,
+                offset: 16,
+            },
+            next_pc: 0x8000_0010,
+            register_write_value: GuestRegisterWriteValue::default(),
+            memory_accesses: vec![].into(),
+        },
+        GuestMachineReport {
+            address_and_instruction_len:
+                crate::guest_machine::pack_report_address_and_instruction_len(0x8000_0000, 2),
+            instruction: RiscvInstruction::Branch {
+                kind: RiscvBranchKind::Bne,
+                rs1: 0,
+                rs2: 3,
+                offset: -4,
+            },
+            next_pc: 0x8000_0002,
+            register_write_value: GuestRegisterWriteValue::default(),
+            memory_accesses: vec![].into(),
+        },
+        GuestMachineReport {
+            address_and_instruction_len:
+                crate::guest_machine::pack_report_address_and_instruction_len(0x8000_0000, 4),
+            instruction: RiscvInstruction::Branch {
+                kind: RiscvBranchKind::Blt,
+                rs1: 4,
+                rs2: 0,
+                offset: 8,
+            },
+            next_pc: 0x8000_0008,
+            register_write_value: GuestRegisterWriteValue::default(),
+            memory_accesses: vec![].into(),
+        },
+        GuestMachineReport {
+            address_and_instruction_len:
+                crate::guest_machine::pack_report_address_and_instruction_len(0x8000_0000, 4),
+            instruction: RiscvInstruction::Branch {
+                kind: RiscvBranchKind::Bgeu,
+                rs1: 5,
+                rs2: 6,
+                offset: -12,
+            },
+            next_pc: 0x7fff_fff4,
+            register_write_value: GuestRegisterWriteValue::default(),
+            memory_accesses: vec![].into(),
+        },
+    ];
+
+    for report in reports {
+        let expected = lower_guest_report(&report).expect("generic lowering should succeed");
+        let (actual, parts) = branch_fast_path_parts(3, &report)
+            .expect("branch matcher should not fail")
+            .expect("branch should match");
+        assert_eq!(actual, expected);
+        assert_eq!(
+            Some(parts),
+            no_memory_external_fast_path_parts(
+                &expected,
+                ZiskMainReportEffects::from_report(&report)
+            )
+        );
+    }
+}
+
+#[test]
+fn taken_branch_fast_path_preserves_row_effects() {
+    let effects = ZiskMainReportEffects {
+        register_writes: Vec::new().into(),
+        memory_accesses: &[],
+        precompile_memory_accesses: &[],
+        precompile_result: None,
+    };
+    let report =
+        GuestMachineReport {
+            address_and_instruction_len:
+                crate::guest_machine::pack_report_address_and_instruction_len(0x8000_0000, 4),
+            instruction: RiscvInstruction::Branch {
+                kind: RiscvBranchKind::Beq,
+                rs1: 2,
+                rs2: 3,
+                offset: 16,
+            },
+            next_pc: 0x8000_0010,
+            register_write_value: GuestRegisterWriteValue::default(),
+            memory_accesses: vec![].into(),
+        };
+    let (instruction, parts) = branch_fast_path_parts(3, &report)
+        .expect("branch matcher should not fail")
+        .expect("branch should match");
+    let mut state = ZiskMainTraceState::new();
+    state.registers[2] = 0x55;
+    state.registers[3] = 0x55;
+    state.register_mem_steps[2] = 33;
+    state.register_mem_steps[3] = 44;
+    let mut context = ZiskMainReportValidationContext::new(
+        None,
+        16,
+        ZiskMainTraceSegmentInfo {
+            trace_instance_index: 0,
+            is_last_segment: false,
+            previous_c: 0,
+        },
+    )
+    .expect("context should initialize");
+    let mut visited = None;
+    apply_no_memory_fast_path(
+        3,
+        instruction,
+        effects,
+        report.next_pc,
+        parts,
+        &mut state,
+        &mut context,
+        &mut |row, values, timing| {
+            assert_eq!(row, 3);
+            assert!(timing.is_none());
+            visited = Some(values);
+            Ok(())
+        },
+    )
+    .expect("taken branch row should take fast path");
+
+    assert_eq!(state.last_c, 1);
+    assert_eq!(state.next_pc, 0x8000_0010);
+    assert_eq!(state.register_mem_steps[2], 13);
+    assert_eq!(state.register_mem_steps[3], 14);
+    let values = visited.expect("fast path should emit row values");
+    assert_eq!(values.a, 0x55);
+    assert_eq!(values.b, 0x55);
+    assert_eq!(values.c, 1);
+    assert!(values.flag);
+    assert_eq!(values.register_accesses.a_prev_mem_step, Some(33));
+    assert_eq!(values.register_accesses.b_prev_mem_step, Some(44));
+    assert_eq!(values.register_accesses.store_prev_mem_step, None);
+    assert_eq!(values.register_accesses.store_prev_value, None);
+}
+
+#[test]
+fn fallthrough_branch_fast_path_preserves_row_effects() {
+    let effects = ZiskMainReportEffects {
+        register_writes: Vec::new().into(),
+        memory_accesses: &[],
+        precompile_memory_accesses: &[],
+        precompile_result: None,
+    };
+    let report =
+        GuestMachineReport {
+            address_and_instruction_len:
+                crate::guest_machine::pack_report_address_and_instruction_len(0x8000_0000, 4),
+            instruction: RiscvInstruction::Branch {
+                kind: RiscvBranchKind::Beq,
+                rs1: 4,
+                rs2: 5,
+                offset: 16,
+            },
+            next_pc: 0x8000_0004,
+            register_write_value: GuestRegisterWriteValue::default(),
+            memory_accesses: vec![].into(),
+        };
+    let (instruction, parts) = branch_fast_path_parts(3, &report)
+        .expect("branch matcher should not fail")
+        .expect("branch should match");
+    let mut state = ZiskMainTraceState::new();
+    state.registers[4] = 0x55;
+    state.registers[5] = 0x56;
+    state.register_mem_steps[4] = 35;
+    state.register_mem_steps[5] = 45;
+    let mut context = ZiskMainReportValidationContext::new(
+        None,
+        16,
+        ZiskMainTraceSegmentInfo {
+            trace_instance_index: 0,
+            is_last_segment: false,
+            previous_c: 0,
+        },
+    )
+    .expect("context should initialize");
+    let mut visited = None;
+    apply_no_memory_fast_path(
+        3,
+        instruction,
+        effects,
+        report.next_pc,
+        parts,
+        &mut state,
+        &mut context,
+        &mut |row, values, timing| {
+            assert_eq!(row, 3);
+            assert!(timing.is_none());
+            visited = Some(values);
+            Ok(())
+        },
+    )
+    .expect("fallthrough branch row should take fast path");
+
+    assert_eq!(state.last_c, 0);
+    assert_eq!(state.next_pc, 0x8000_0004);
+    assert_eq!(state.register_mem_steps[4], 13);
+    assert_eq!(state.register_mem_steps[5], 14);
+    let values = visited.expect("fast path should emit row values");
+    assert_eq!(values.a, 0x55);
+    assert_eq!(values.b, 0x56);
+    assert_eq!(values.c, 0);
+    assert!(!values.flag);
+    assert_eq!(values.register_accesses.a_prev_mem_step, Some(35));
+    assert_eq!(values.register_accesses.b_prev_mem_step, Some(45));
+    assert_eq!(values.register_accesses.store_prev_mem_step, None);
+    assert_eq!(values.register_accesses.store_prev_value, None);
+}
+
+#[test]
 fn jump_fast_path_parts_match_generic_lowering() {
     let reports = [
         GuestMachineReport {
