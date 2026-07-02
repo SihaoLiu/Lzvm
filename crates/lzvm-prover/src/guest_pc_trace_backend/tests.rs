@@ -6843,73 +6843,124 @@ fn no_memory_external_fast_path_parts_match_generic_lowering() {
 
 #[test]
 fn arithmetic_fast_path_parts_match_generic_lowering() {
-    let reports = [
-        GuestMachineReport {
+    let mut reports = Vec::new();
+    for (variant, kind) in [
+        RiscvOpImmKind::Addi,
+        RiscvOpImmKind::Slti,
+        RiscvOpImmKind::Sltiu,
+        RiscvOpImmKind::Xori,
+        RiscvOpImmKind::Ori,
+        RiscvOpImmKind::Andi,
+        RiscvOpImmKind::Slli,
+        RiscvOpImmKind::Srli,
+        RiscvOpImmKind::Srai,
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        reports.push(GuestMachineReport {
             address_and_instruction_len:
                 crate::guest_machine::pack_report_address_and_instruction_len(0x8000_0000, 4),
             instruction: RiscvInstruction::OpImm {
-                kind: RiscvOpImmKind::Addi,
+                kind,
                 rd: 3,
                 rs1: 2,
-                immediate: 9,
-            },
-            next_pc: 0x8000_0004,
-            register_write_value: GuestRegisterWriteValue::new(12),
-            memory_accesses: vec![].into(),
-        },
-        GuestMachineReport {
-            address_and_instruction_len:
-                crate::guest_machine::pack_report_address_and_instruction_len(0x8000_0000, 4),
-            instruction: RiscvInstruction::OpImm {
-                kind: RiscvOpImmKind::Ori,
-                rd: 0,
-                rs1: 2,
-                immediate: 0xff,
-            },
-            next_pc: 0x8000_0004,
-            register_write_value: GuestRegisterWriteValue::default(),
-            memory_accesses: vec![].into(),
-        },
-        GuestMachineReport {
-            address_and_instruction_len:
-                crate::guest_machine::pack_report_address_and_instruction_len(0x8000_0000, 4),
-            instruction: RiscvInstruction::OpImm32 {
-                kind: RiscvOpImm32Kind::Addiw,
-                rd: 4,
-                rs1: 5,
-                immediate: -1,
-            },
-            next_pc: 0x8000_0004,
-            register_write_value: GuestRegisterWriteValue::new(u64::MAX),
-            memory_accesses: vec![].into(),
-        },
-        GuestMachineReport {
-            address_and_instruction_len:
-                crate::guest_machine::pack_report_address_and_instruction_len(0x8000_0000, 4),
-            instruction: RiscvInstruction::Op {
-                kind: RiscvOpKind::Add,
-                rd: 6,
-                rs1: 7,
-                rs2: 8,
-            },
-            next_pc: 0x8000_0004,
-            register_write_value: GuestRegisterWriteValue::new(19),
-            memory_accesses: vec![].into(),
-        },
-        GuestMachineReport {
-            address_and_instruction_len:
-                crate::guest_machine::pack_report_address_and_instruction_len(0x8000_0000, 4),
-            instruction: RiscvInstruction::Op32 {
-                kind: RiscvOp32Kind::Sraw,
-                rd: 9,
-                rs1: 10,
-                rs2: 11,
+                immediate: i32::try_from(variant + 1).expect("variant index should fit"),
             },
             next_pc: 0x8000_0004,
             register_write_value: GuestRegisterWriteValue::new(0),
             memory_accesses: vec![].into(),
-        },
-    ];
+        });
+    }
+    for (variant, kind) in [
+        RiscvOpImm32Kind::Addiw,
+        RiscvOpImm32Kind::Slliw,
+        RiscvOpImm32Kind::Srliw,
+        RiscvOpImm32Kind::Sraiw,
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        reports.push(GuestMachineReport {
+            address_and_instruction_len:
+                crate::guest_machine::pack_report_address_and_instruction_len(0x8000_0000, 4),
+            instruction: RiscvInstruction::OpImm32 {
+                kind,
+                rd: 4,
+                rs1: 5,
+                immediate: i32::try_from(variant + 1).expect("variant index should fit"),
+            },
+            next_pc: 0x8000_0004,
+            register_write_value: GuestRegisterWriteValue::new(0),
+            memory_accesses: vec![].into(),
+        });
+    }
+    for (variant, kind) in [
+        RiscvOpKind::Add,
+        RiscvOpKind::Sub,
+        RiscvOpKind::Sll,
+        RiscvOpKind::Slt,
+        RiscvOpKind::Sltu,
+        RiscvOpKind::Xor,
+        RiscvOpKind::Srl,
+        RiscvOpKind::Sra,
+        RiscvOpKind::Or,
+        RiscvOpKind::And,
+        RiscvOpKind::Mul,
+        RiscvOpKind::Mulh,
+        RiscvOpKind::Mulhsu,
+        RiscvOpKind::Mulhu,
+        RiscvOpKind::Div,
+        RiscvOpKind::Divu,
+        RiscvOpKind::Rem,
+        RiscvOpKind::Remu,
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        reports.push(GuestMachineReport {
+            address_and_instruction_len:
+                crate::guest_machine::pack_report_address_and_instruction_len(0x8000_0000, 4),
+            instruction: RiscvInstruction::Op {
+                kind,
+                rd: 6,
+                rs1: 7,
+                rs2: u8::try_from(8 + variant).expect("variant index should fit"),
+            },
+            next_pc: 0x8000_0004,
+            register_write_value: GuestRegisterWriteValue::new(0),
+            memory_accesses: vec![].into(),
+        });
+    }
+    for (variant, kind) in [
+        RiscvOp32Kind::Addw,
+        RiscvOp32Kind::Subw,
+        RiscvOp32Kind::Sllw,
+        RiscvOp32Kind::Srlw,
+        RiscvOp32Kind::Sraw,
+        RiscvOp32Kind::Mulw,
+        RiscvOp32Kind::Divw,
+        RiscvOp32Kind::Divuw,
+        RiscvOp32Kind::Remw,
+        RiscvOp32Kind::Remuw,
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        reports.push(GuestMachineReport {
+            address_and_instruction_len:
+                crate::guest_machine::pack_report_address_and_instruction_len(0x8000_0000, 4),
+            instruction: RiscvInstruction::Op32 {
+                kind,
+                rd: 9,
+                rs1: 10,
+                rs2: u8::try_from(11 + variant).expect("variant index should fit"),
+            },
+            next_pc: 0x8000_0004,
+            register_write_value: GuestRegisterWriteValue::new(0),
+            memory_accesses: vec![].into(),
+        });
+    }
 
     for report in reports {
         let expected = lower_guest_report(&report).expect("generic lowering should succeed");
@@ -7034,60 +7085,30 @@ fn arithmetic_fast_path_preserves_row_effects() {
 
 #[test]
 fn branch_fast_path_parts_match_generic_lowering() {
-    let reports = [
-        GuestMachineReport {
+    let reports =
+        [
+            RiscvBranchKind::Beq,
+            RiscvBranchKind::Bne,
+            RiscvBranchKind::Blt,
+            RiscvBranchKind::Bge,
+            RiscvBranchKind::Bltu,
+            RiscvBranchKind::Bgeu,
+        ]
+        .into_iter()
+        .enumerate()
+        .map(|(variant, kind)| GuestMachineReport {
             address_and_instruction_len:
                 crate::guest_machine::pack_report_address_and_instruction_len(0x8000_0000, 4),
             instruction: RiscvInstruction::Branch {
-                kind: RiscvBranchKind::Beq,
-                rs1: 2,
-                rs2: 3,
-                offset: 16,
+                kind,
+                rs1: u8::try_from(variant + 1).expect("variant index should fit"),
+                rs2: u8::try_from(variant + 7).expect("variant index should fit"),
+                offset: 16 - i32::try_from(variant).expect("variant index should fit") * 4,
             },
-            next_pc: 0x8000_0010,
+            next_pc: 0x8000_0004,
             register_write_value: GuestRegisterWriteValue::default(),
             memory_accesses: vec![].into(),
-        },
-        GuestMachineReport {
-            address_and_instruction_len:
-                crate::guest_machine::pack_report_address_and_instruction_len(0x8000_0000, 2),
-            instruction: RiscvInstruction::Branch {
-                kind: RiscvBranchKind::Bne,
-                rs1: 0,
-                rs2: 3,
-                offset: -4,
-            },
-            next_pc: 0x8000_0002,
-            register_write_value: GuestRegisterWriteValue::default(),
-            memory_accesses: vec![].into(),
-        },
-        GuestMachineReport {
-            address_and_instruction_len:
-                crate::guest_machine::pack_report_address_and_instruction_len(0x8000_0000, 4),
-            instruction: RiscvInstruction::Branch {
-                kind: RiscvBranchKind::Blt,
-                rs1: 4,
-                rs2: 0,
-                offset: 8,
-            },
-            next_pc: 0x8000_0008,
-            register_write_value: GuestRegisterWriteValue::default(),
-            memory_accesses: vec![].into(),
-        },
-        GuestMachineReport {
-            address_and_instruction_len:
-                crate::guest_machine::pack_report_address_and_instruction_len(0x8000_0000, 4),
-            instruction: RiscvInstruction::Branch {
-                kind: RiscvBranchKind::Bgeu,
-                rs1: 5,
-                rs2: 6,
-                offset: -12,
-            },
-            next_pc: 0x7fff_fff4,
-            register_write_value: GuestRegisterWriteValue::default(),
-            memory_accesses: vec![].into(),
-        },
-    ];
+        });
 
     for report in reports {
         let expected = lower_guest_report(&report).expect("generic lowering should succeed");

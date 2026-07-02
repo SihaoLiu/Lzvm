@@ -10488,6 +10488,12 @@ struct MainJumpFastPathParts {
     store_index: Option<u8>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum MainReportFastPathParts {
+    NoMemory(ZiskMainInstruction, ZiskMainNoMemoryFastPathParts),
+    Jump(ZiskMainInstruction, MainJumpFastPathParts),
+}
+
 #[allow(clippy::too_many_arguments)]
 fn validate_and_apply_zisk_main_report(
     row: usize,
@@ -10656,43 +10662,33 @@ fn validate_and_apply_zisk_main_report(
             )?;
             return Ok(1);
         }
-        if let Some((instruction, parts)) = arithmetic_fast_path_parts(row, report)? {
-            apply_no_memory_fast_path(
-                row,
-                instruction,
-                ZiskMainReportEffects::from_report(report),
-                report.next_pc,
-                parts,
-                state,
-                context,
-                &mut visit,
-            )?;
-            return Ok(1);
-        }
-        if let Some((instruction, parts)) = branch_fast_path_parts(row, report)? {
-            apply_no_memory_fast_path(
-                row,
-                instruction,
-                ZiskMainReportEffects::from_report(report),
-                report.next_pc,
-                parts,
-                state,
-                context,
-                &mut visit,
-            )?;
-            return Ok(1);
-        }
-        if let Some((instruction, parts)) = jump_fast_path_parts(row, report)? {
-            apply_jump_fast_path(
-                row,
-                instruction,
-                ZiskMainReportEffects::from_report(report),
-                report.next_pc,
-                parts,
-                state,
-                context,
-                &mut visit,
-            )?;
+        if let Some(fast_path) = report_level_fast_path_parts(row, report)? {
+            match fast_path {
+                MainReportFastPathParts::NoMemory(instruction, parts) => {
+                    apply_no_memory_fast_path(
+                        row,
+                        instruction,
+                        ZiskMainReportEffects::from_report(report),
+                        report.next_pc,
+                        parts,
+                        state,
+                        context,
+                        &mut visit,
+                    )?;
+                }
+                MainReportFastPathParts::Jump(instruction, parts) => {
+                    apply_jump_fast_path(
+                        row,
+                        instruction,
+                        ZiskMainReportEffects::from_report(report),
+                        report.next_pc,
+                        parts,
+                        state,
+                        context,
+                        &mut visit,
+                    )?;
+                }
+            }
             return Ok(1);
         }
     }
@@ -11450,6 +11446,27 @@ fn no_memory_fast_path_op_supported(op: ZiskMainOp) -> bool {
             | ZiskMainOp::SignExtendH
             | ZiskMainOp::SignExtendW
     )
+}
+
+#[inline(always)]
+fn report_level_fast_path_parts(
+    row: usize,
+    report: &GuestMachineReport,
+) -> Result<Option<MainReportFastPathParts>, GuestPcTraceBackendError> {
+    match report.instruction {
+        RiscvInstruction::Jal { .. } | RiscvInstruction::Jalr { .. } => {
+            Ok(jump_fast_path_parts(row, report)?
+                .map(|(instruction, parts)| MainReportFastPathParts::Jump(instruction, parts)))
+        }
+        RiscvInstruction::Branch { .. } => Ok(branch_fast_path_parts(row, report)?
+            .map(|(instruction, parts)| MainReportFastPathParts::NoMemory(instruction, parts))),
+        RiscvInstruction::OpImm { .. }
+        | RiscvInstruction::OpImm32 { .. }
+        | RiscvInstruction::Op { .. }
+        | RiscvInstruction::Op32 { .. } => Ok(arithmetic_fast_path_parts(row, report)?
+            .map(|(instruction, parts)| MainReportFastPathParts::NoMemory(instruction, parts))),
+        _ => Ok(None),
+    }
 }
 
 #[inline(always)]

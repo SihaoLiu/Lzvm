@@ -10878,6 +10878,36 @@ fn guest_pc_jump_fast_path_checks_instruction_before_effects() {
 }
 
 #[test]
+fn guest_pc_report_level_fast_path_dispatches_by_instruction() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let source_path = crate_root.join("src/guest_pc_trace_backend.rs");
+    let source = std::fs::read_to_string(&source_path).expect("guest PC trace source should read");
+
+    let body = function_body(
+        &source,
+        "fn report_level_fast_path_parts",
+        "#[inline(always)]\nfn arithmetic_fast_path_parts",
+    );
+    assert!(
+        body.contains("match report.instruction"),
+        "report-level fast path should dispatch by instruction before calling matchers"
+    );
+    let jump_index = body
+        .find("jump_fast_path_parts")
+        .expect("report-level dispatch should include jump rows");
+    let branch_index = body
+        .find("branch_fast_path_parts")
+        .expect("report-level dispatch should include branch rows");
+    let arithmetic_index = body
+        .find("arithmetic_fast_path_parts")
+        .expect("report-level dispatch should include arithmetic rows");
+    assert!(
+        jump_index < branch_index && branch_index < arithmetic_index,
+        "report-level dispatch should avoid unrelated matcher probes on jump rows"
+    );
+}
+
+#[test]
 fn guest_pc_branch_fast_path_checks_instruction_before_effects() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let source_path = crate_root.join("src/guest_pc_trace_backend.rs");
