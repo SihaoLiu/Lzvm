@@ -2954,25 +2954,35 @@ def opening_batching_hint(
 
 
 def opening_external_source_boundary_hint(
+    total_ms: int,
     external_source_count: int,
     query_units: int,
     single_query_units: int,
+    row_value_source_rows: int,
+    row_value_source_extend_ms: int,
     row_value_device_rows: int,
     row_value_device_download_batches: int,
     row_value_device_single_downloads: int,
     direct_d2h_wait_ms: float,
 ) -> str:
-    if direct_d2h_wait_ms < OPENING_BATCHING_D2H_WAIT_MS_THRESHOLD:
-        return "none"
     if external_source_count <= 0 or query_units <= 1:
         return "none"
     if single_query_units < query_units:
         return "none"
-    if row_value_device_rows <= 1 or row_value_device_download_batches != 0:
-        return "none"
-    if row_value_device_single_downloads <= 1:
-        return "none"
-    return EXTERNAL_SOURCE_ROW_VALUE_BOUNDARY_HINT
+    source_extend_pct = row_value_source_extend_ms * 100.0 / total_ms if total_ms else 0.0
+    source_row_boundary = (
+        row_value_source_rows >= query_units
+        and source_extend_pct >= SOURCE_ROW_VALUE_SECONDARY_PCT_THRESHOLD
+    )
+    device_row_boundary = (
+        direct_d2h_wait_ms >= OPENING_BATCHING_D2H_WAIT_MS_THRESHOLD
+        and row_value_device_rows > 1
+        and row_value_device_download_batches == 0
+        and row_value_device_single_downloads > 1
+    )
+    if source_row_boundary or device_row_boundary:
+        return EXTERNAL_SOURCE_ROW_VALUE_BOUNDARY_HINT
+    return "none"
 
 
 def opening_device_single_stage_shape(values: dict[str, int]) -> tuple[int, int, int]:
@@ -5608,9 +5618,12 @@ def summarize_profile_values(
         opening_row_value_d2h_wait_ms,
     )
     opening_external_source_boundary = opening_external_source_boundary_hint(
+        total_ms,
         opening_external_source_count,
         opening_query_units,
         opening_single_query_units,
+        opening_row_value_source_rows,
+        opening_row_value_source_extend_ms,
         opening_row_value_device_rows,
         opening_row_value_device_download_batches,
         opening_row_value_device_single_downloads,

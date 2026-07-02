@@ -2887,6 +2887,88 @@ fn prove_timing_root_summary_reports_source_row_value_extend_priority() {
 }
 
 #[test]
+fn prove_timing_root_summary_reports_external_source_row_value_boundary_without_d2h() {
+    let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let script_path = crate_root.join("../../scripts/prove-timing-root-summary.py");
+    let input = [
+        "input_bytes=12447640",
+        "timing_total_ms=29054",
+        "timing_guest_trace_runner_ms=23254",
+        "timing_guest_trace_lowerer_ms=23289",
+        "timing_guest_trace_lower_ms=27703",
+        "timing_guest_trace_stream_elapsed_ms=23423",
+        "timing_guest_trace_stream_ms=8364",
+        "timing_guest_segment_commit_ms=15058",
+        "timing_guest_trace_segment_receive_wait_ms=8362",
+        "timing_guest_trace_pending_receive_wait_ms=23251",
+        "timing_guest_stage_tree_commit_root_count=477",
+        "timing_guest_stage_tree_commit_root_materialization_groups=60",
+        "timing_guest_stage_tree_commit_root_materialization_max_group_size=8",
+        "timing_finish_witness_opening_query_unit_count=477",
+        "timing_finish_witness_opening_single_query_unit_count=477",
+        "timing_finish_witness_opening_query_count=477",
+        "timing_finish_witness_opening_max_queries_per_unit=1",
+        "timing_finish_witness_opening_external_source_count=477",
+        "timing_finish_witness_opening_row_values_source_rows=1866",
+        "timing_finish_witness_opening_row_value_source_extend_ms=2832",
+    ]
+    .join("\n");
+
+    let mut child = Command::new("python3")
+        .arg(&script_path)
+        .arg("-")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("prove timing root summary should spawn");
+    child
+        .stdin
+        .as_mut()
+        .expect("stdin should be open")
+        .write_all(input.as_bytes())
+        .expect("stdin should write");
+    let output = child
+        .wait_with_output()
+        .expect("prove timing root summary should run");
+
+    assert!(
+        output.status.success(),
+        "prove timing root summary should pass: stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    let mut lines = stdout.lines();
+    let header = lines
+        .next()
+        .expect("prove timing root summary should print a header");
+    let row = lines
+        .next()
+        .expect("prove timing root summary should print a data row");
+    let headers = header.split(',').collect::<Vec<_>>();
+    let fields = row.split(',').collect::<Vec<_>>();
+    let value = |name: &str| {
+        let index = headers
+            .iter()
+            .position(|header| *header == name)
+            .unwrap_or_else(|| panic!("summary should expose {name}: stdout={stdout}"));
+        fields
+            .get(index)
+            .copied()
+            .unwrap_or_else(|| panic!("summary row should contain {name}: stdout={stdout}"))
+    };
+
+    assert_eq!(
+        value("opening_external_source_boundary_hint"),
+        "external_source_unit_boundary_blocks_row_value_batch"
+    );
+    assert_eq!(
+        value("opening_source_row_value_action_hint"),
+        "profile_external_source_row_value_rebuilds"
+    );
+}
+
+#[test]
 fn prove_timing_root_summary_aggregates_trace_pipeline_action() {
     let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
     let script_path = crate_root.join("../../scripts/prove-timing-root-summary.py");
