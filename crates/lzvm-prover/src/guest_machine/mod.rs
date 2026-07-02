@@ -1747,6 +1747,7 @@ fn try_advance_guest_machine_report_fast_path(
     let mut next_pc = sequential_pc;
     let mut register_write = None;
     let mut memory_access = None;
+    let mut has_memory_write = false;
     match instruction {
         RiscvInstruction::Lui { rd, immediate } => {
             register_write = write_fast_reported_register(state, rd, immediate as u64);
@@ -1848,6 +1849,7 @@ fn try_advance_guest_machine_report_fast_path(
             let value = state.read_decoded_register(rs2);
             let byte_len = write_guest_store(memory, kind, write_address, value)?;
             let stored_value = low_bytes_value(value, byte_len);
+            has_memory_write = true;
             memory_access = Some(GuestMemoryAccess {
                 kind: GuestMemoryAccessKind::Write,
                 address: write_address,
@@ -1884,13 +1886,6 @@ fn try_advance_guest_machine_report_fast_path(
     let register_writes = register_write
         .map(GuestRegisterWriteList::one)
         .unwrap_or_default();
-    let has_memory_write = matches!(
-        memory_access,
-        Some(GuestMemoryAccess {
-            kind: GuestMemoryAccessKind::Write,
-            ..
-        })
-    );
     report.write(GuestMachineReport::new(
         address,
         guest_instruction_byte_len(byte_len),
