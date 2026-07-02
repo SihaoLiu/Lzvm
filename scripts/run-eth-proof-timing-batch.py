@@ -25,6 +25,29 @@ DEFAULT_NVIDIA_SMI_COMMAND = "nvidia-smi"
 DEFAULT_MIN_GPU_FREE_MIB = 1024
 DEFAULT_EXTRA_RUN_BUDGET = 2
 ENV_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+BINARY_FRESHNESS_FILES = ("Cargo.lock", "Cargo.toml")
+BINARY_FRESHNESS_ROOTS = ("crates",)
+BINARY_FRESHNESS_SKIP_DIRS = {
+    ".git",
+    "benches",
+    "examples",
+    "target",
+    "temp",
+    "tests",
+}
+BINARY_FRESHNESS_SUFFIXES = {
+    ".c",
+    ".cc",
+    ".cpp",
+    ".cu",
+    ".cuh",
+    ".h",
+    ".hpp",
+    ".rs",
+    ".toml",
+}
+BINARY_FRESHNESS_TOLERANCE_NS = 1_000_000_000
+_newest_binary_input_cache: tuple[Path, int] | None = None
 
 REQUIRED_PATHS = [
     ("SETUP", "dir"),
@@ -388,6 +411,56 @@ def validate_artifact_with_cli_summary(
         )
 
 
+def iter_binary_freshness_inputs(root: Path):
+    for name in BINARY_FRESHNESS_FILES:
+        path = root / name
+        if path.is_file():
+            yield path
+    for name in BINARY_FRESHNESS_ROOTS:
+        path = root / name
+        if not path.is_dir():
+            continue
+        for current, dirs, files in os.walk(path):
+            dirs[:] = [entry for entry in dirs if entry not in BINARY_FRESHNESS_SKIP_DIRS]
+            current_path = Path(current)
+            for entry in files:
+                candidate = current_path / entry
+                if candidate.suffix in BINARY_FRESHNESS_SUFFIXES:
+                    yield candidate
+
+
+def newest_binary_input(root: Path) -> tuple[Path, int] | None:
+    global _newest_binary_input_cache
+    if _newest_binary_input_cache is not None:
+        return _newest_binary_input_cache
+    newest: tuple[Path, int] | None = None
+    for path in iter_binary_freshness_inputs(root):
+        try:
+            mtime = path.stat().st_mtime_ns
+        except OSError:
+            continue
+        if newest is None or mtime > newest[1]:
+            newest = (path, mtime)
+    _newest_binary_input_cache = newest
+    return newest
+
+
+def validate_binary_freshness(bin_path: Path, root: Path, name: str) -> None:
+    newest = newest_binary_input(root)
+    if newest is None:
+        return
+    source_path, source_mtime = newest
+    bin_mtime = bin_path.stat().st_mtime_ns
+    if bin_mtime + BINARY_FRESHNESS_TOLERANCE_NS >= source_mtime:
+        return
+    source_display = display_path_for_shell(source_path, root)
+    raise SystemExit(
+        f"{name} freshness check failed: {bin_path} is older than {source_display}; "
+        f"rebuild with: {DEFAULT_BIN_BUILD_COMMAND}; pass --allow-stale-bin only "
+        "for an intentional old-binary comparison"
+    )
+
+
 def framed_input_data(payload: bytes) -> bytes:
     data = len(payload).to_bytes(8, "little") + payload
     return data + b"\0" * ((8 - (len(data) % 8)) % 8)
@@ -464,7 +537,7 @@ class GpuMemoryRow(NamedTuple):
     free: int
 
 
-def configured_paths(config: ProofEnv) -> dict[str, Path]:
+def configured_paths(config: ProofEnv, allow_stale_bin: bool = False) -> dict[str, Path]:
     paths = {suffix.lower(): config.path(suffix) for suffix in REQUIRED_SUFFIXES}
     validate_framed_input_data(paths["input_data"], config.var("INPUT_DATA"))
     bin_value = config.bin_override or os.environ.get(config.var("BIN"))
@@ -482,6 +555,8 @@ def configured_paths(config: ProofEnv) -> dict[str, Path]:
         raise SystemExit(f"{config.var('BIN')} must be a file: {bin_path}")
     if not os.access(bin_path, os.X_OK):
         raise SystemExit(f"{config.var('BIN')} must be executable: {bin_path}")
+    if not allow_stale_bin:
+        validate_binary_freshness(bin_path, config.root, config.var("BIN"))
     paths["bin"] = bin_path
     validate_artifact_with_cli_summary(
         bin_path,
@@ -705,6 +780,8 @@ def next_command_parts(
     if args.large_bin is not None:
         large_bin = display_path_for_shell(resolve_workspace_path(args.large_bin, root), root)
         parts.extend(["--large-bin", large_bin])
+    if args.allow_stale_bin:
+        parts.append("--allow-stale-bin")
     parts.extend(["--max-runs", str(effective_max_runs(args))])
     parts.extend(
         [
@@ -834,8 +911,9 @@ def command_for_env(
     verify_proof: bool,
     mode_env: dict[str, str] | None = None,
     proof_args: list[str] | None = None,
+    allow_stale_bin: bool = False,
 ) -> str:
-    paths = configured_paths(config)
+    paths = configured_paths(config, allow_stale_bin=allow_stale_bin)
     bin_path = paths["bin"]
     output_dir = f"{{batch_dir}}/{config.label}-{{run_padded}}.proof"
     proof_path = f"{output_dir}/proof.bin"
@@ -1170,6 +1248,7 @@ def profile_command_for_env(
             not args.skip_verify_proof,
             mode_env_for_args(args, mode),
             proof_tuning_args(args),
+            allow_stale_bin=args.allow_stale_bin,
         ),
         config.label,
         batch_dir,
@@ -1370,6 +1449,7 @@ def runner_command(args: argparse.Namespace, root: Path) -> list[str]:
                     not args.skip_verify_proof,
                     mode_env_for_args(args, mode),
                     proof_tuning_args(args),
+                    allow_stale_bin=args.allow_stale_bin,
                 ),
             ]
         )
@@ -1402,6 +1482,7 @@ def dry_run_summary_lines(args: argparse.Namespace, root: Path) -> list[str]:
         f"trace_detail_timing={str(trace_detail_timing_enabled(args)).lower()}",
         f"trace_detail_timing_sample_stride={args.trace_detail_timing_sample_stride or ''}",
         f"append_max_average_rejections={str(args.append_max_average_rejections).lower()}",
+        f"allow_stale_bin={str(args.allow_stale_bin).lower()}",
     ]
     for config, mode in selected:
         max_avg_s = target_max_avg_s(args, config.label)
@@ -1474,7 +1555,12 @@ def check_env(
         gpu_ready = print_gpu_memory_check(args, root)
     selected = selected_envs(args, root)
     ready = [
-        (config, mode, configured_paths(config), config.trace_limit())
+        (
+            config,
+            mode,
+            configured_paths(config, allow_stale_bin=args.allow_stale_bin),
+            config.trace_limit(),
+        )
         for config, mode in selected
     ]
     if require_profile_tools and not profile_ready:
@@ -1666,6 +1752,7 @@ def self_test() -> None:
         small_mode="combined",
         small_timeout=10.0,
         skip_targets=False,
+        allow_stale_bin=False,
         small_bin=None,
         small_max_avg_s=None,
         append_max_average_rejections=False,
@@ -1810,6 +1897,7 @@ def main() -> None:
     parser.add_argument("--env-file")
     parser.add_argument("--small-bin")
     parser.add_argument("--large-bin")
+    parser.add_argument("--allow-stale-bin", action="store_true")
     parser.add_argument("--max-relative-spread", type=nonnegative_float, default=0.10)
     parser.add_argument("--runner", default=DEFAULT_RUNNER)
     parser.add_argument("--dry-run", action="store_true")
