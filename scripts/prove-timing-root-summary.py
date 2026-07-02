@@ -2327,6 +2327,20 @@ def trace_pipeline_action_hint_from_values(values: dict[str, int]) -> str:
     ):
         return "trace_producer_input_gap_dominant"
     seed_attempts = values.get(SEED_DIRECT_LIFT_ATTEMPTS_KEY, 0)
+    seed_ready = (
+        seed_attempts > 0
+        and values.get(SEED_DIRECT_LIFT_SUCCESSES_KEY, 0) >= seed_attempts
+        and values.get(SEED_FULL_ADVANCES_KEY, 0) <= 1
+    )
+    if (
+        values.get(TOTAL_MS_KEY, 0) > PROOF_TARGET_MS
+        and values.get(PARALLEL_LOWER_WORKERS_KEY, 0) > 1
+        and stream_elapsed_ms > 0
+        and seed_ready
+        and values.get(PENDING_RECEIVE_WAIT_MS_KEY, 0) >= stream_elapsed_ms * 0.5
+        and values.get(RUNNER_MS_KEY, 0) >= stream_elapsed_ms * 0.75
+    ):
+        return "parallel_lower_runner_bound_after_seed_ready"
     if (
         values.get(TOTAL_MS_KEY, 0) > PROOF_TARGET_MS
         and values.get(PARALLEL_LOWER_WORKERS_KEY, 0) > 1
@@ -2334,8 +2348,7 @@ def trace_pipeline_action_hint_from_values(values: dict[str, int]) -> str:
         and stream_elapsed_ms > 0
         and values.get(PARALLEL_LOWER_RESULT_RECEIVE_WAIT_MS_KEY, 0)
         >= stream_elapsed_ms * 0.5
-        and seed_attempts > 0
-        and values.get(SEED_DIRECT_LIFT_SUCCESSES_KEY, 0) >= seed_attempts
+        and seed_ready
     ):
         return "parallel_lower_result_bound_after_seed_ready"
     if (
@@ -3078,6 +3091,8 @@ def performance_focus_hint(
         "seed_direct_lift_before_parallel_reexecution",
         "parallel_segment_reexecution_authorization_required",
         "parallel_trace_lowering_candidate",
+        "parallel_lower_result_bound_after_seed_ready",
+        "parallel_lower_runner_bound_after_seed_ready",
         "trace_generation_parallelism_candidate",
         "commit_trace_overlap_candidate",
         "segment_commit_candidate",
