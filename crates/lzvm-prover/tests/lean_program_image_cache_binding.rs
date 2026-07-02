@@ -288,6 +288,8 @@ fn lean_program_image_cache_binding_exports_core_contract_projection() {
             "RuntimeProofArtifactFinalized",
             "RuntimeVerifierCoreContract system publicInput proof",
             "system.traceConsistent publicInput proof trace",
+            "system.constraintsSatisfied constraints trace",
+            "system.witnessMatchesTrace witness trace",
             "SoundWitness system publicInput proof",
         ],
     );
@@ -331,6 +333,8 @@ fn lean_program_image_cache_binding_exports_core_contract_projection() {
             "RuntimeProgramImageCacheBindingStructuralObligations",
             "RuntimeVerifierCoreContract system publicInput proof",
             "system.traceConsistent publicInput proof trace",
+            "system.constraintsSatisfied constraints trace",
+            "system.witnessMatchesTrace witness trace",
             "SoundWitness system publicInput proof",
         ],
     );
@@ -363,6 +367,8 @@ fn lean_program_image_cache_binding_exports_core_contract_projection() {
             "RuntimeProgramImageCacheBindingStructuralObligations",
             "RuntimeVerifierCoreContract system publicInput proof",
             "system.traceConsistent publicInput proof trace",
+            "system.constraintsSatisfied constraints trace",
+            "system.witnessMatchesTrace witness trace",
             "SoundWitness system publicInput proof",
             "RuntimeProofArtifactConcreteSegmentIdsAllowed proof",
         ],

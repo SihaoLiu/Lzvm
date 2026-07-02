@@ -792,6 +792,12 @@ theorem
             artifact
             publicInput
             proof
+          /\ RuntimeProofArtifactFinalized
+            system
+            validation.programImageCacheValidation.proofArtifactBindingValidation
+            artifact
+            publicInput
+            proof
           /\ RuntimeVerifierCoreContract system publicInput proof
           /\ (exists witness trace constraints,
             system.traceConsistent publicInput proof trace
@@ -813,6 +819,13 @@ theorem
       publicInput
       proof
       accepted
+  have cacheAccepted :=
+    runtime_framed_guest_input_binding_checked_acceptance_program_image_cache_acceptance
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
   have ethFinalizedCore :=
     runtime_eth_block_public_input_binding_audited_finalized_core_sound_witness_contract
       assumptions
@@ -821,19 +834,36 @@ theorem
       publicInput
       proof
       ethAccepted
+  have cacheFinalizedCore :=
+    runtime_program_image_cache_binding_audited_finalized_core_sound_witness_contract
+      assumptions
+      validation.programImageCacheValidation
+      artifact
+      publicInput
+      proof
+      cacheAccepted
   rcases ethFinalizedCore with
     ⟨cryptoEvidence,
       semanticEvidence,
       _ethEvidence,
-      artifactFinalized,
+      ethArtifactFinalized,
       coreContract,
       executionObligations,
       soundWitness⟩
+  rcases cacheFinalizedCore with
+    ⟨_,
+      _,
+      _,
+      cacheArtifactFinalized,
+      _,
+      _,
+      _⟩
   exact
     ⟨cryptoEvidence,
       semanticEvidence,
       evidence,
-      artifactFinalized,
+      ethArtifactFinalized,
+      cacheArtifactFinalized,
       coreContract,
       executionObligations,
       soundWitness⟩
@@ -861,6 +891,12 @@ theorem
           /\ RuntimeProofArtifactFinalized
             system
             validation.ethBlockValidation.proofArtifactBindingValidation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeProofArtifactFinalized
+            system
+            validation.programImageCacheValidation.proofArtifactBindingValidation
             artifact
             publicInput
             proof
@@ -896,7 +932,8 @@ theorem
     ⟨cryptoEvidence,
       semanticEvidence,
       evidence,
-      artifactFinalized,
+      ethArtifactFinalized,
+      cacheArtifactFinalized,
       coreContract,
       executionObligations,
       soundWitness⟩
@@ -904,7 +941,8 @@ theorem
     ⟨cryptoEvidence,
       semanticEvidence,
       evidence,
-      artifactFinalized,
+      ethArtifactFinalized,
+      cacheArtifactFinalized,
       structural,
       coreContract,
       executionObligations,
@@ -936,6 +974,12 @@ theorem
           /\ RuntimeProofArtifactFinalized
             system
             validation.ethBlockValidation.proofArtifactBindingValidation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeProofArtifactFinalized
+            system
+            validation.programImageCacheValidation.proofArtifactBindingValidation
             artifact
             publicInput
             proof

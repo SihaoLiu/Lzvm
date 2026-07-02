@@ -305,6 +305,8 @@ fn lean_eth_block_public_input_binding_exports_core_contract_projection() {
             "RuntimeProofArtifactFinalized",
             "RuntimeVerifierCoreContract system publicInput proof",
             "system.traceConsistent publicInput proof trace",
+            "system.constraintsSatisfied constraints trace",
+            "system.witnessMatchesTrace witness trace",
             "SoundWitness system publicInput proof",
         ],
     );
@@ -340,6 +342,8 @@ fn lean_eth_block_public_input_binding_exports_core_contract_projection() {
             "RuntimeEthBlockPublicInputBindingStructuralObligations",
             "RuntimeVerifierCoreContract system publicInput proof",
             "system.traceConsistent publicInput proof trace",
+            "system.constraintsSatisfied constraints trace",
+            "system.witnessMatchesTrace witness trace",
             "SoundWitness system publicInput proof",
         ],
     );
@@ -372,6 +376,8 @@ fn lean_eth_block_public_input_binding_exports_core_contract_projection() {
             "RuntimeEthBlockPublicInputBindingStructuralObligations",
             "RuntimeVerifierCoreContract system publicInput proof",
             "system.traceConsistent publicInput proof trace",
+            "system.constraintsSatisfied constraints trace",
+            "system.witnessMatchesTrace witness trace",
             "SoundWitness system publicInput proof",
             "RuntimeProofArtifactConcreteSegmentIdsAllowed proof",
         ],

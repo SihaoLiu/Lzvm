@@ -392,6 +392,8 @@ fn lean_query_plan_binding_exports_opening_segment_projections() {
             "validation.queryPlanSeededFriOpeningRequirementsChecked",
             "RuntimeVerifierCoreContract system publicInput proof",
             "system.traceConsistent publicInput proof trace",
+            "system.constraintsSatisfied constraints trace",
+            "system.witnessMatchesTrace witness trace",
             "SoundWitness system publicInput proof",
         ],
     );
@@ -444,6 +446,8 @@ fn lean_query_plan_binding_exports_opening_segment_projections() {
             "RuntimeProofArtifactBindingStructuralObligations",
             "RuntimeVerifierCoreContract system publicInput proof",
             "system.traceConsistent publicInput proof trace",
+            "system.constraintsSatisfied constraints trace",
+            "system.witnessMatchesTrace witness trace",
             "SoundWitness system publicInput proof",
         ],
     );
@@ -479,6 +483,8 @@ fn lean_query_plan_binding_exports_opening_segment_projections() {
             "RuntimeProofArtifactBindingStructuralObligations",
             "RuntimeVerifierCoreContract system publicInput proof",
             "system.traceConsistent publicInput proof trace",
+            "system.constraintsSatisfied constraints trace",
+            "system.witnessMatchesTrace witness trace",
             "SoundWitness system publicInput proof",
             "RuntimeProofArtifactConcreteSegmentIdsAllowed proof",
         ],
