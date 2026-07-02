@@ -32,6 +32,52 @@ fn parse_csv_line(line: &str) -> Vec<String> {
     fields
 }
 
+fn prove_timing_root_summary_value(input_lines: &[&str], name: &str) -> String {
+    let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let script_path = crate_root.join("../../scripts/prove-timing-root-summary.py");
+    let input = input_lines.join("\n");
+
+    let mut child = Command::new("python3")
+        .arg(&script_path)
+        .arg("-")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("prove timing root summary should spawn");
+    child
+        .stdin
+        .as_mut()
+        .expect("stdin should be open")
+        .write_all(input.as_bytes())
+        .expect("stdin should write");
+    let output = child
+        .wait_with_output()
+        .expect("prove timing root summary should run");
+
+    assert!(
+        output.status.success(),
+        "prove timing root summary should pass: stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    let mut lines = stdout.lines();
+    let header = parse_csv_line(lines.next().expect("summary should include a header"));
+    let row = parse_csv_line(lines.next().expect("summary should include a data row"));
+    assert_eq!(
+        header.len(),
+        row.len(),
+        "summary header and row should have matching column counts: stdout={stdout}"
+    );
+    let index = header
+        .iter()
+        .position(|header| header == name)
+        .unwrap_or_else(|| panic!("summary should expose {name}: stdout={stdout}"));
+    row.get(index)
+        .unwrap_or_else(|| panic!("summary row should contain {name}: stdout={stdout}"))
+        .clone()
+}
+
 #[cfg(unix)]
 #[test]
 fn prove_timing_root_summary_script_is_directly_executable() {
@@ -497,13 +543,76 @@ fn prove_timing_root_summary_reports_opening_external_source_timings() {
 
     assert_eq!(value("opening_external_source_ms"), "45");
     assert_eq!(value("opening_external_source_descriptor_upload_ms"), "37");
-    assert_eq!(value("opening_external_source_descriptor_upload_bytes"), "880");
-    assert_eq!(value("opening_external_source_descriptor_upload_words"), "110");
-    assert_eq!(value("opening_external_source_descriptor_upload_rows"), "10");
+    assert_eq!(
+        value("opening_external_source_descriptor_upload_bytes"),
+        "880"
+    );
+    assert_eq!(
+        value("opening_external_source_descriptor_upload_words"),
+        "110"
+    );
+    assert_eq!(
+        value("opening_external_source_descriptor_upload_rows"),
+        "10"
+    );
     assert_eq!(value("opening_external_source_trace_expand_ms"), "8");
     assert_eq!(
         value("opening_external_source_descriptor_action_hint"),
         "opening_descriptor_reupload_after_retention_reject"
+    );
+}
+
+#[test]
+fn prove_timing_root_summary_reports_opening_descriptor_action_hint_branches() {
+    let base = [
+        "timing_total_ms=1000",
+        "input_bytes=1024",
+        "timing_guest_stage_tree_commit_root_count=1",
+        "timing_guest_stage_tree_commit_root_materialization_groups=1",
+        "timing_guest_stage_tree_commit_root_materialization_max_group_size=1",
+    ];
+    let field = "opening_external_source_descriptor_action_hint";
+
+    let mut no_external = base.to_vec();
+    no_external.extend([
+        "timing_finish_witness_opening_external_source_count=0",
+        "timing_finish_witness_external_source_descriptor_upload_bytes=880",
+    ]);
+    assert_eq!(prove_timing_root_summary_value(&no_external, field), "none");
+
+    let mut no_budget = base.to_vec();
+    no_budget.extend([
+        "timing_finish_witness_opening_external_source_count=2",
+        "timing_finish_witness_external_source_descriptor_upload_ms=37",
+        "timing_finish_witness_external_source_descriptor_upload_bytes=880",
+        "timing_guest_descriptor_buffer_retention_limit_bytes=0",
+    ]);
+    assert_eq!(
+        prove_timing_root_summary_value(&no_budget, field),
+        "opening_descriptor_reupload_without_retention_budget"
+    );
+
+    let mut plain_reupload = base.to_vec();
+    plain_reupload.extend([
+        "timing_finish_witness_opening_external_source_count=2",
+        "timing_finish_witness_external_source_descriptor_upload_ms=37",
+        "timing_finish_witness_external_source_descriptor_upload_bytes=880",
+        "timing_guest_descriptor_buffer_retention_limit_bytes=1400",
+    ]);
+    assert_eq!(
+        prove_timing_root_summary_value(&plain_reupload, field),
+        "opening_descriptor_reupload"
+    );
+
+    let mut bytes_only = base.to_vec();
+    bytes_only.extend([
+        "timing_finish_witness_opening_external_source_count=2",
+        "timing_finish_witness_external_source_descriptor_upload_bytes=880",
+        "timing_guest_descriptor_buffer_retention_limit_bytes=1400",
+    ]);
+    assert_eq!(
+        prove_timing_root_summary_value(&bytes_only, field),
+        "opening_descriptor_reupload_bytes_only"
     );
 }
 

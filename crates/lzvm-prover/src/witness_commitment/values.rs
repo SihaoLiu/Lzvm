@@ -3792,6 +3792,14 @@ mod tests {
     }
 
     #[test]
+    fn selected_row_extension_gate_stays_small_and_batched() {
+        assert!(!use_selected_row_extension(16, 1));
+        assert!(use_selected_row_extension(16, 2));
+        assert!(!use_selected_row_extension(17, 2));
+        assert!(use_selected_row_extension(1, 2));
+    }
+
+    #[test]
     fn multi_device_row_value_batch_decodes_rows_and_records_one_batch() {
         let left = CudaDeviceBuffer::from_u64_words(&(0_u64..12).collect::<Vec<_>>())
             .expect("left rows should upload");

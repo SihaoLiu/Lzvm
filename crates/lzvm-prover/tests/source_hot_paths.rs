@@ -4819,10 +4819,6 @@ fn retained_leaf_digest_opening_uses_shifted_row_weight_cache() {
         leaf_digest_body.contains("extended_row_values_batch_from_source_cuda(rows"),
         "retained leaf digest openings should batch source-derived row values"
     );
-    assert!(
-        leaf_digest_body.contains("extended_row_values_batch_from_source_cuda(rows"),
-        "retained leaf digest openings should keep using the batched source-row helper"
-    );
     let source_batch_body = function_body(
         &values_source,
         "fn extended_row_values_batch_from_source_cuda",
