@@ -27,6 +27,7 @@ DEFAULT_EXTRA_RUN_BUDGET = 2
 EXTERNAL_SOURCE_OPENING_BATCH_ENV = (
     "LZVM_CUDA_TRACE_OUTPUT_EXTERNAL_SOURCE_OPENING_BATCH_SIZE"
 )
+CROSS_SEGMENT_ROOT_WINDOW_ENV = "LZVM_CUDA_GUEST_PC_CROSS_SEGMENT_ROOT_WINDOW"
 ENV_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 BINARY_FRESHNESS_FILES = ("Cargo.lock", "Cargo.toml")
 BINARY_FRESHNESS_ROOTS = ("crates",)
@@ -137,6 +138,7 @@ PIPELINE_ENV_TO_CLEAR = [
     "LZVM_GUEST_TRACE_DETAIL_TIMING_SAMPLE_STRIDE",
     "LZVM_GUEST_TRACE_SHAPE_TIMING",
     EXTERNAL_SOURCE_OPENING_BATCH_ENV,
+    CROSS_SEGMENT_ROOT_WINDOW_ENV,
 ]
 
 MODE_ENV = {
@@ -721,6 +723,8 @@ def mode_env_for_args(args: argparse.Namespace, mode: str) -> dict[str, str]:
         mode_env["LZVM_GUEST_PC_TRACE_SEGMENT_COMMIT_WORKERS"] = str(
             args.segment_commit_workers
         )
+    if args.cross_segment_root_window is not None:
+        mode_env[CROSS_SEGMENT_ROOT_WINDOW_ENV] = str(args.cross_segment_root_window)
     if args.external_source_opening_batch_size is not None:
         mode_env[EXTERNAL_SOURCE_OPENING_BATCH_ENV] = str(
             args.external_source_opening_batch_size
@@ -849,6 +853,8 @@ def next_command_parts(
         parts.extend(["--parallel-lower-job-queue", str(args.parallel_lower_job_queue)])
     if args.segment_commit_workers is not None:
         parts.extend(["--segment-commit-workers", str(args.segment_commit_workers)])
+    if args.cross_segment_root_window is not None:
+        parts.extend(["--cross-segment-root-window", str(args.cross_segment_root_window)])
     if args.external_source_opening_batch_size is not None:
         parts.extend(
             [
@@ -1483,6 +1489,7 @@ def dry_run_summary_lines(args: argparse.Namespace, root: Path) -> list[str]:
         f"parallel_lower_workers={args.parallel_lower_workers or ''}",
         f"parallel_lower_job_queue={args.parallel_lower_job_queue or ''}",
         f"segment_commit_workers={args.segment_commit_workers or ''}",
+        f"cross_segment_root_window={args.cross_segment_root_window or ''}",
         "external_source_opening_batch_size="
         f"{args.external_source_opening_batch_size or ''}",
         f"seed_discovery={str(args.seed_discovery).lower()}",
@@ -1783,6 +1790,7 @@ def self_test() -> None:
         parallel_lower_job_queue=None,
         parallel_lower_workers=None,
         segment_commit_workers=None,
+        cross_segment_root_window=None,
         external_source_opening_batch_size=None,
         seed_discovery=False,
         seed_discovery_streaming_device_lower=False,
@@ -1896,6 +1904,7 @@ def main() -> None:
     parser.add_argument("--parallel-lower-workers", type=positive_integer, default=None)
     parser.add_argument("--parallel-lower-job-queue", type=positive_integer, default=None)
     parser.add_argument("--segment-commit-workers", type=positive_integer, default=None)
+    parser.add_argument("--cross-segment-root-window", type=positive_integer, default=None)
     parser.add_argument(
         "--external-source-opening-batch-size",
         type=positive_integer,

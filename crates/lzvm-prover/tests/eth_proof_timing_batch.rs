@@ -758,6 +758,121 @@ fn eth_proof_timing_batch_check_env_preserves_external_source_opening_batch_next
 }
 
 #[test]
+fn eth_proof_timing_batch_dry_run_pins_cross_segment_root_window() {
+    let fixture = ProofFixture::new("eth-proof-timing-batch-root-window");
+    let mut command = Command::new(script_path());
+    command
+        .arg("--suite")
+        .arg("small")
+        .arg("--dry-run")
+        .arg("--cross-segment-root-window")
+        .arg("16")
+        .arg("--summary")
+        .arg("root window")
+        .env("LZVM_CUDA_GUEST_PC_CROSS_SEGMENT_ROOT_WINDOW", "8");
+    fixture.apply_env(&mut command, SMALL_PREFIX);
+
+    let output = command
+        .output()
+        .expect("ETH proof timing batch dry-run should run");
+    let success = output.status.success();
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    fixture.cleanup();
+
+    assert!(
+        success,
+        "dry-run should build cross-segment root window command: stderr={stderr}"
+    );
+    assert!(
+        stdout.contains("LZVM_CUDA_GUEST_PC_CROSS_SEGMENT_ROOT_WINDOW=16"),
+        "dry-run command should pin explicit cross-segment root window: {stdout}"
+    );
+    assert!(
+        stdout.contains("cross_segment_root_window=16\n"),
+        "dry-run metadata should report explicit cross-segment root window: {stdout}"
+    );
+    assert!(
+        !stdout.contains("LZVM_CUDA_GUEST_PC_CROSS_SEGMENT_ROOT_WINDOW=8"),
+        "ambient cross-segment root window should not leak into generated commands: {stdout}"
+    );
+}
+
+#[test]
+fn eth_proof_timing_batch_dry_run_clears_ambient_cross_segment_root_window() {
+    let fixture = ProofFixture::new("eth-proof-timing-batch-clear-root-window");
+    let mut command = Command::new(script_path());
+    command
+        .arg("--suite")
+        .arg("small")
+        .arg("--dry-run")
+        .arg("--summary")
+        .arg("clear root window")
+        .env("LZVM_CUDA_GUEST_PC_CROSS_SEGMENT_ROOT_WINDOW", "8");
+    fixture.apply_env(&mut command, SMALL_PREFIX);
+
+    let output = command
+        .output()
+        .expect("ETH proof timing batch dry-run should run");
+    let success = output.status.success();
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    fixture.cleanup();
+
+    assert!(
+        success,
+        "dry-run should clear ambient cross-segment root window: stderr={stderr}"
+    );
+    assert!(
+        stdout.contains("-u LZVM_CUDA_GUEST_PC_CROSS_SEGMENT_ROOT_WINDOW"),
+        "generated commands should clear ambient cross-segment root window: {stdout}"
+    );
+    assert!(
+        stdout.contains("cross_segment_root_window=\n"),
+        "dry-run metadata should show no explicit cross-segment root window: {stdout}"
+    );
+    assert!(
+        !stdout.contains("LZVM_CUDA_GUEST_PC_CROSS_SEGMENT_ROOT_WINDOW=8")
+            && !stdout.contains("--cross-segment-root-window"),
+        "ambient cross-segment root window should not be copied into commands: {stdout}"
+    );
+}
+
+#[test]
+fn eth_proof_timing_batch_check_env_preserves_cross_segment_root_window_next_command() {
+    let fixture = ProofFixture::new("eth-proof-timing-batch-next-root-window");
+    let mut command = Command::new(script_path());
+    command
+        .arg("--suite")
+        .arg("small")
+        .arg("--check-env")
+        .arg("--cross-segment-root-window")
+        .arg("16");
+    fixture.apply_env(&mut command, SMALL_PREFIX);
+
+    let output = command
+        .output()
+        .expect("ETH proof timing batch check-env should run");
+    let success = output.status.success();
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    fixture.cleanup();
+
+    assert!(
+        success,
+        "check-env should pass with cross-segment root window: stderr={stderr}"
+    );
+    let next_run = stdout
+        .lines()
+        .find(|line| line.starts_with("next_run_command="))
+        .expect("check-env should print next run command");
+    assert!(
+        next_run.contains("--cross-segment-root-window 16"),
+        "next run command should preserve explicit cross-segment root window: {stdout}"
+    );
+}
+
+#[test]
 fn eth_proof_timing_batch_dry_run_applies_worker_overrides_in_default_mode() {
     let fixture = ProofFixture::new("eth-proof-timing-batch-default-worker-overrides");
     let mut command = Command::new(script_path());
