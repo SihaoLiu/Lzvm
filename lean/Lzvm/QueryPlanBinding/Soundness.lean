@@ -395,6 +395,70 @@ theorem runtime_query_plan_binding_checked_acceptance_evidence_core_and_sound
                 (And.intro sound.right.right.right.right.right.right.left
                   (And.intro core sound.right.right.right.right.right.right.right)))))))
 
+theorem runtime_query_plan_binding_checked_acceptance_concrete_core_sound_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeQueryPlanBindingValidation system)
+    (binding :
+      RuntimeProofArtifactConcreteSegmentIdBinding
+        validation.challengeValidation.transcriptValidation.artifactBindingValidation) :
+    forall artifact publicInput proof requiresExternalSource,
+      RuntimeQueryPlanBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        (RuntimeQueryPlanBindingEvidence
+            system
+            validation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeChallengeSegmentBindingEvidence
+            system
+            validation.challengeValidation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeOpeningSegmentBindingEvidence
+            system
+            validation.openingValidation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeOpeningEvidence
+            system
+            validation.openingValidation.openingValidation
+            artifact
+            publicInput
+            proof
+            requiresExternalSource
+          /\ system.transcriptBound publicInput proof
+          /\ system.pcsOpeningsValid publicInput proof
+          /\ system.friQueriesValid publicInput proof
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof)
+          /\ RuntimeProofArtifactConcreteSegmentIdsAllowed proof := by
+  intro artifact publicInput proof requiresExternalSource accepted
+  exact
+    And.intro
+      (runtime_query_plan_binding_checked_acceptance_evidence_core_and_sound
+        assumptions
+        validation
+        artifact
+        publicInput
+        proof
+        requiresExternalSource
+        accepted)
+      (runtime_query_plan_binding_checked_acceptance_concrete_segment_ids_allowed
+        validation
+        binding
+        artifact
+        publicInput
+        proof
+        accepted)
+
 theorem runtime_query_plan_binding_checked_acceptance_opening_and_core_contract
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
