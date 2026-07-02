@@ -4957,22 +4957,18 @@ struct GuestPcTraceParallelLowerMode {
 
 impl GuestPcTraceParallelLowerMode {
     fn from_env() -> Self {
-        Self::from_flags(
-            guest_pc_trace_parallel_lower_work_units_enabled(),
-            guest_pc_trace_parallel_lower_replay_snapshot_enabled(),
-        )
+        Self::from_work_units_enabled(guest_pc_trace_parallel_lower_work_units_enabled())
     }
 
     fn from_runtime(instruction_limit: u64) -> Self {
-        Self::from_flags(
-            guest_pc_trace_parallel_lower_work_units_enabled_for_limit(instruction_limit),
-            guest_pc_trace_parallel_lower_replay_snapshot_enabled_for_limit(instruction_limit),
-        )
+        Self::from_work_units_enabled(guest_pc_trace_parallel_lower_work_units_enabled_for_limit(
+            instruction_limit,
+        ))
     }
 
-    fn from_flags(work_units: bool, replay_snapshot: bool) -> Self {
+    fn from_work_units_enabled(work_units: bool) -> Self {
         Self {
-            replay_snapshot,
+            replay_snapshot: guest_pc_trace_parallel_lower_replay_snapshot_enabled(),
             work_units,
             traceless_segment_output: guest_pc_trace_traceless_segment_output_selected(),
             #[cfg(feature = "cuda")]
@@ -5906,10 +5902,9 @@ fn produce_guest_pc_trace_pending_slices(
     let runner_seed_snapshot_trusted = seed_mode.trusted;
     let validate_runner_seed_snapshot = seed_mode.validate;
     let segment_replay = guest_pc_trace_segment_replay_enabled();
-    let report_elision =
-        guest_pc_trace_parallel_lower_report_elision_enabled_for_limit(instruction_limit)
-            && guest_pc_trace_parallel_lower_worker_count_for_limit(instruction_limit)
-                .is_some_and(|count| count > 1);
+    let report_elision = guest_pc_trace_parallel_lower_report_elision_enabled()
+        && guest_pc_trace_parallel_lower_worker_count_for_limit(instruction_limit)
+            .is_some_and(|count| count > 1);
     let carry_replay_snapshot = guest_pc_trace_segment_replay_snapshot_enabled() || report_elision;
     let runtime_parallel_lower = guest_pc_trace_parallel_lower_enabled_for_limit(instruction_limit);
     let mut seed_mirror =
@@ -9260,23 +9255,8 @@ fn guest_pc_trace_parallel_lower_replay_snapshot_enabled() -> bool {
         || guest_pc_trace_parallel_lower_report_elision_enabled()
 }
 
-fn guest_pc_trace_parallel_lower_replay_snapshot_enabled_for_limit(instruction_limit: u64) -> bool {
-    env_flag_enabled("LZVM_GUEST_PC_TRACE_PARALLEL_LOWER_REPLAY_SNAPSHOT", false)
-        || guest_pc_trace_parallel_lower_report_elision_enabled_for_limit(instruction_limit)
-}
-
 fn guest_pc_trace_parallel_lower_report_elision_enabled() -> bool {
     env_flag_enabled("LZVM_GUEST_PC_TRACE_PARALLEL_LOWER_REPLAY_ONLY", false)
-}
-
-fn guest_pc_trace_parallel_lower_report_elision_enabled_for_limit(instruction_limit: u64) -> bool {
-    match env_flag_override("LZVM_GUEST_PC_TRACE_PARALLEL_LOWER_REPLAY_ONLY") {
-        Some(enabled) => enabled,
-        None => {
-            guest_pc_trace_auto_parallel_lower_selected(instruction_limit)
-                && !guest_pc_trace_parallel_lower_work_units_enabled_for_limit(instruction_limit)
-        }
-    }
 }
 
 #[cfg_attr(not(test), allow(dead_code))]
