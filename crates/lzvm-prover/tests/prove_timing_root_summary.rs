@@ -437,6 +437,70 @@ fn prove_timing_root_summary_reports_device_source_timings() {
 }
 
 #[test]
+fn prove_timing_root_summary_reports_opening_external_source_timings() {
+    let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let script_path = crate_root.join("../../scripts/prove-timing-root-summary.py");
+    let input = [
+        "timing_total_ms=1000",
+        "input_bytes=1024",
+        "timing_finish_witness_opening_ms=123",
+        "timing_finish_witness_external_source_ms=45",
+        "timing_finish_witness_external_source_descriptor_upload_ms=37",
+        "timing_finish_witness_external_source_descriptor_upload_bytes=880",
+        "timing_finish_witness_external_source_descriptor_upload_words=110",
+        "timing_finish_witness_external_source_descriptor_upload_rows=10",
+        "timing_finish_witness_external_source_trace_expand_ms=8",
+        "timing_guest_stage_tree_commit_root_count=1",
+        "timing_guest_stage_tree_commit_root_materialization_groups=1",
+        "timing_guest_stage_tree_commit_root_materialization_max_group_size=1",
+    ]
+    .join("\n");
+
+    let mut child = Command::new("python3")
+        .arg(&script_path)
+        .arg("-")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("prove timing root summary should spawn");
+    child
+        .stdin
+        .as_mut()
+        .expect("stdin should be open")
+        .write_all(input.as_bytes())
+        .expect("stdin should write");
+    let output = child
+        .wait_with_output()
+        .expect("prove timing root summary should run");
+
+    assert!(
+        output.status.success(),
+        "prove timing root summary should pass: stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    let mut lines = stdout.lines();
+    let header = parse_csv_line(lines.next().expect("summary should include a header"));
+    let row = parse_csv_line(lines.next().expect("summary should include a data row"));
+    let value = |name: &str| {
+        let index = header
+            .iter()
+            .position(|header| header == name)
+            .unwrap_or_else(|| panic!("summary should expose {name}: stdout={stdout}"));
+        row.get(index)
+            .unwrap_or_else(|| panic!("summary row should contain {name}: stdout={stdout}"))
+    };
+
+    assert_eq!(value("opening_external_source_ms"), "45");
+    assert_eq!(value("opening_external_source_descriptor_upload_ms"), "37");
+    assert_eq!(value("opening_external_source_descriptor_upload_bytes"), "880");
+    assert_eq!(value("opening_external_source_descriptor_upload_words"), "110");
+    assert_eq!(value("opening_external_source_descriptor_upload_rows"), "10");
+    assert_eq!(value("opening_external_source_trace_expand_ms"), "8");
+}
+
+#[test]
 fn prove_timing_root_summary_reports_fri_transcript_and_contribution_work() {
     let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
     let script_path = crate_root.join("../../scripts/prove-timing-root-summary.py");
@@ -727,6 +791,18 @@ fn prove_timing_root_summary_reports_root_grouping_shape() {
         "seed_snapshot_runtime_hint",
         "timing_guest_trace_seed_full_advances",
         "timing_finish_witness_opening_ms",
+        "timing_finish_witness_external_source_ms",
+        "timing_finish_witness_external_source_descriptor_upload_ms",
+        "timing_finish_witness_external_source_descriptor_upload_bytes",
+        "timing_finish_witness_external_source_descriptor_upload_words",
+        "timing_finish_witness_external_source_descriptor_upload_rows",
+        "timing_finish_witness_external_source_trace_expand_ms",
+        "opening_external_source_ms",
+        "opening_external_source_descriptor_upload_ms",
+        "opening_external_source_descriptor_upload_bytes",
+        "opening_external_source_descriptor_upload_words",
+        "opening_external_source_descriptor_upload_rows",
+        "opening_external_source_trace_expand_ms",
         "timing_finish_witness_opening_query_unit_count",
         "timing_finish_witness_opening_single_query_unit_count",
         "timing_finish_witness_opening_query_count",

@@ -563,6 +563,22 @@ SEED_DIRECT_LIFT_MS_KEY = "timing_guest_trace_seed_direct_lift_ms"
 SEED_FULL_ADVANCE_MS_KEY = "timing_guest_trace_seed_full_advance_ms"
 SEED_FULL_ADVANCES_KEY = "timing_guest_trace_seed_full_advances"
 FINISH_OPENING_MS_KEY = "timing_finish_witness_opening_ms"
+OPENING_EXTERNAL_SOURCE_MS_KEY = "timing_finish_witness_external_source_ms"
+OPENING_EXTERNAL_SOURCE_DESCRIPTOR_UPLOAD_MS_KEY = (
+    "timing_finish_witness_external_source_descriptor_upload_ms"
+)
+OPENING_EXTERNAL_SOURCE_DESCRIPTOR_UPLOAD_BYTES_KEY = (
+    "timing_finish_witness_external_source_descriptor_upload_bytes"
+)
+OPENING_EXTERNAL_SOURCE_DESCRIPTOR_UPLOAD_WORDS_KEY = (
+    "timing_finish_witness_external_source_descriptor_upload_words"
+)
+OPENING_EXTERNAL_SOURCE_DESCRIPTOR_UPLOAD_ROWS_KEY = (
+    "timing_finish_witness_external_source_descriptor_upload_rows"
+)
+OPENING_EXTERNAL_SOURCE_TRACE_EXPAND_MS_KEY = (
+    "timing_finish_witness_external_source_trace_expand_ms"
+)
 OPENING_QUERY_COUNT_KEY = "timing_finish_witness_opening_query_count"
 OPENING_QUERY_UNITS_KEY = "timing_finish_witness_opening_query_unit_count"
 OPENING_SINGLE_QUERY_UNITS_KEY = "timing_finish_witness_opening_single_query_unit_count"
@@ -915,7 +931,13 @@ HEADER = (
     "seed_direct_lift_boundary_c_unavailable,seed_direct_lift_ms,"
     "seed_full_advance_ms,seed_full_advances,"
     "seed_snapshot_runtime_hint,"
-    "finish_opening_ms,opening_query_units,opening_single_query_units,"
+    "finish_opening_ms,opening_external_source_ms,"
+    "opening_external_source_descriptor_upload_ms,"
+    "opening_external_source_descriptor_upload_bytes,"
+    "opening_external_source_descriptor_upload_words,"
+    "opening_external_source_descriptor_upload_rows,"
+    "opening_external_source_trace_expand_ms,"
+    "opening_query_units,opening_single_query_units,"
     "opening_queries,opening_max_queries_per_unit,opening_stage_count,"
     "fri_opening_ms,fri_opening_unit_build_ms,fri_opening_layer_tree_ms,"
     "fri_opening_query_ms,fri_opening_fold_ms,"
@@ -1385,6 +1407,12 @@ TIMING_KEYS = {
     SEED_FULL_ADVANCE_MS_KEY,
     SEED_FULL_ADVANCES_KEY,
     FINISH_OPENING_MS_KEY,
+    OPENING_EXTERNAL_SOURCE_MS_KEY,
+    OPENING_EXTERNAL_SOURCE_DESCRIPTOR_UPLOAD_MS_KEY,
+    OPENING_EXTERNAL_SOURCE_DESCRIPTOR_UPLOAD_BYTES_KEY,
+    OPENING_EXTERNAL_SOURCE_DESCRIPTOR_UPLOAD_WORDS_KEY,
+    OPENING_EXTERNAL_SOURCE_DESCRIPTOR_UPLOAD_ROWS_KEY,
+    OPENING_EXTERNAL_SOURCE_TRACE_EXPAND_MS_KEY,
     OPENING_QUERY_COUNT_KEY,
     OPENING_QUERY_UNITS_KEY,
     OPENING_SINGLE_QUERY_UNITS_KEY,
@@ -5220,6 +5248,22 @@ def summarize_profile_values(
         parallel_lower_workers,
     )
     finish_opening_ms = values.get(FINISH_OPENING_MS_KEY, 0)
+    opening_external_source_ms = values.get(OPENING_EXTERNAL_SOURCE_MS_KEY, 0)
+    opening_external_source_descriptor_upload_ms = values.get(
+        OPENING_EXTERNAL_SOURCE_DESCRIPTOR_UPLOAD_MS_KEY, 0
+    )
+    opening_external_source_descriptor_upload_bytes = values.get(
+        OPENING_EXTERNAL_SOURCE_DESCRIPTOR_UPLOAD_BYTES_KEY, 0
+    )
+    opening_external_source_descriptor_upload_words = values.get(
+        OPENING_EXTERNAL_SOURCE_DESCRIPTOR_UPLOAD_WORDS_KEY, 0
+    )
+    opening_external_source_descriptor_upload_rows = values.get(
+        OPENING_EXTERNAL_SOURCE_DESCRIPTOR_UPLOAD_ROWS_KEY, 0
+    )
+    opening_external_source_trace_expand_ms = values.get(
+        OPENING_EXTERNAL_SOURCE_TRACE_EXPAND_MS_KEY, 0
+    )
     opening_queries = values.get(OPENING_QUERY_COUNT_KEY, 0)
     opening_query_units = values.get(OPENING_QUERY_UNITS_KEY, 0)
     opening_single_query_units = values.get(OPENING_SINGLE_QUERY_UNITS_KEY, 0)
@@ -5974,7 +6018,13 @@ def summarize_profile_values(
         f"{seed_direct_lift_boundary_c_unavailable},{seed_direct_lift_ms},"
         f"{seed_full_advance_ms},{seed_full_advances},"
         f"{seed_snapshot_runtime},"
-        f"{finish_opening_ms},{opening_query_units},{opening_single_query_units},"
+        f"{finish_opening_ms},{opening_external_source_ms},"
+        f"{opening_external_source_descriptor_upload_ms},"
+        f"{opening_external_source_descriptor_upload_bytes},"
+        f"{opening_external_source_descriptor_upload_words},"
+        f"{opening_external_source_descriptor_upload_rows},"
+        f"{opening_external_source_trace_expand_ms},"
+        f"{opening_query_units},{opening_single_query_units},"
         f"{opening_queries},{opening_max_queries_per_unit},{opening_stage_count},"
         f"{fri_opening_ms},{fri_opening_unit_build_ms},{fri_opening_layer_tree_ms},"
         f"{fri_opening_query_ms},{fri_opening_fold_ms},"
