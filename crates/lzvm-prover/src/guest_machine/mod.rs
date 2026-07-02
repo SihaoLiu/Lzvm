@@ -886,31 +886,6 @@ impl GuestMachineReport {
     }
 
     #[inline(always)]
-    fn new_fast_path(
-        address: u64,
-        instruction_byte_len: u8,
-        instruction: RiscvInstruction,
-        next_pc: u64,
-        register_write: Option<GuestRegisterWrite>,
-        memory_access: Option<GuestMemoryAccess>,
-    ) -> Self {
-        Self {
-            address_and_instruction_len: pack_report_address_and_instruction_len(
-                address,
-                instruction_byte_len,
-            ),
-            instruction,
-            next_pc,
-            register_write_value: GuestRegisterWriteValue::new(
-                register_write.map_or(0, |write| write.value),
-            ),
-            memory_accesses: memory_access
-                .map(GuestMemoryAccessList::one)
-                .unwrap_or_default(),
-        }
-    }
-
-    #[inline(always)]
     pub fn address(&self) -> u64 {
         self.address_and_instruction_len & !1
     }
@@ -1752,12 +1727,15 @@ fn try_advance_guest_machine_report_fast_path(
                 }
             };
         state.retire_instruction();
-        report.write(GuestMachineReport::new_fast_path(
+        report.write(GuestMachineReport::new(
             address,
             guest_instruction_byte_len(byte_len),
             instruction,
             sequential_pc,
-            register_write,
+            register_write
+                .map(GuestRegisterWriteList::one)
+                .unwrap_or_default(),
+            GuestMemoryAccessList::default(),
             None,
         ));
         return Ok(Some(GuestMachineReportShape {
@@ -1905,13 +1883,19 @@ fn try_advance_guest_machine_report_fast_path(
 
     state.set_pc(next_pc);
     state.retire_instruction();
-    report.write(GuestMachineReport::new_fast_path(
+    let register_writes = register_write
+        .map(GuestRegisterWriteList::one)
+        .unwrap_or_default();
+    report.write(GuestMachineReport::new(
         address,
         guest_instruction_byte_len(byte_len),
         instruction,
         next_pc,
-        register_write,
-        memory_access,
+        register_writes,
+        memory_access
+            .map(GuestMemoryAccessList::one)
+            .unwrap_or_default(),
+        None,
     ));
     Ok(Some(GuestMachineReportShape {
         instruction,
