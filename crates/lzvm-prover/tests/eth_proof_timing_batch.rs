@@ -637,6 +637,127 @@ fn eth_proof_timing_batch_dry_run_applies_worker_overrides() {
 }
 
 #[test]
+fn eth_proof_timing_batch_dry_run_pins_external_source_opening_batch_size() {
+    let fixture = ProofFixture::new("eth-proof-timing-batch-external-source-batch");
+    let mut command = Command::new(script_path());
+    command
+        .arg("--suite")
+        .arg("small")
+        .arg("--dry-run")
+        .arg("--external-source-opening-batch-size")
+        .arg("8")
+        .arg("--summary")
+        .arg("external source batch")
+        .env(
+            "LZVM_CUDA_TRACE_OUTPUT_EXTERNAL_SOURCE_OPENING_BATCH_SIZE",
+            "16",
+        );
+    fixture.apply_env(&mut command, SMALL_PREFIX);
+
+    let output = command
+        .output()
+        .expect("ETH proof timing batch dry-run should run");
+    let success = output.status.success();
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    fixture.cleanup();
+
+    assert!(
+        success,
+        "dry-run should build external source batch command: stderr={stderr}"
+    );
+    assert!(
+        stdout.contains("LZVM_CUDA_TRACE_OUTPUT_EXTERNAL_SOURCE_OPENING_BATCH_SIZE=8"),
+        "dry-run command should pin explicit external source batch size: {stdout}"
+    );
+    assert!(
+        stdout.contains("external_source_opening_batch_size=8\n"),
+        "dry-run metadata should report explicit external source batch size: {stdout}"
+    );
+    assert!(
+        !stdout.contains("LZVM_CUDA_TRACE_OUTPUT_EXTERNAL_SOURCE_OPENING_BATCH_SIZE=16"),
+        "ambient external source batch env should not leak into generated commands: {stdout}"
+    );
+}
+
+#[test]
+fn eth_proof_timing_batch_dry_run_clears_ambient_external_source_opening_batch_size() {
+    let fixture = ProofFixture::new("eth-proof-timing-batch-clear-external-source-batch");
+    let mut command = Command::new(script_path());
+    command
+        .arg("--suite")
+        .arg("small")
+        .arg("--dry-run")
+        .arg("--summary")
+        .arg("clear external source batch")
+        .env(
+            "LZVM_CUDA_TRACE_OUTPUT_EXTERNAL_SOURCE_OPENING_BATCH_SIZE",
+            "16",
+        );
+    fixture.apply_env(&mut command, SMALL_PREFIX);
+
+    let output = command
+        .output()
+        .expect("ETH proof timing batch dry-run should run");
+    let success = output.status.success();
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    fixture.cleanup();
+
+    assert!(
+        success,
+        "dry-run should clear ambient external source batch env: stderr={stderr}"
+    );
+    assert!(
+        stdout.contains("-u LZVM_CUDA_TRACE_OUTPUT_EXTERNAL_SOURCE_OPENING_BATCH_SIZE"),
+        "generated commands should clear ambient external source batch env: {stdout}"
+    );
+    assert!(
+        stdout.contains("external_source_opening_batch_size=\n"),
+        "dry-run metadata should show no explicit external source batch size: {stdout}"
+    );
+    assert!(
+        !stdout.contains("LZVM_CUDA_TRACE_OUTPUT_EXTERNAL_SOURCE_OPENING_BATCH_SIZE=16")
+            && !stdout.contains("--external-source-opening-batch-size"),
+        "ambient external source batch size should not be copied into commands: {stdout}"
+    );
+}
+
+#[test]
+fn eth_proof_timing_batch_check_env_preserves_external_source_opening_batch_next_command() {
+    let fixture = ProofFixture::new("eth-proof-timing-batch-next-external-source-batch");
+    let mut command = Command::new(script_path());
+    command
+        .arg("--suite")
+        .arg("small")
+        .arg("--check-env")
+        .arg("--external-source-opening-batch-size")
+        .arg("8");
+    fixture.apply_env(&mut command, SMALL_PREFIX);
+
+    let output = command
+        .output()
+        .expect("ETH proof timing batch check-env should run");
+    let success = output.status.success();
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    fixture.cleanup();
+
+    assert!(
+        success,
+        "check-env should pass with external source batch size: stderr={stderr}"
+    );
+    let next_run = stdout
+        .lines()
+        .find(|line| line.starts_with("next_run_command="))
+        .expect("check-env should print next run command");
+    assert!(
+        next_run.contains("--external-source-opening-batch-size 8"),
+        "next run command should preserve explicit external source batch size: {stdout}"
+    );
+}
+
+#[test]
 fn eth_proof_timing_batch_dry_run_applies_worker_overrides_in_default_mode() {
     let fixture = ProofFixture::new("eth-proof-timing-batch-default-worker-overrides");
     let mut command = Command::new(script_path());
