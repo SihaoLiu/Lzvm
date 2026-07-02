@@ -1106,6 +1106,86 @@ theorem runtime_query_plan_binding_audited_finalized_core_sound_witness_contract
                 (And.intro coreContract
                   (And.intro executionObligations soundWitness)))))))
 
+theorem runtime_query_plan_binding_audited_finalized_segment_ids_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeQueryPlanBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeQueryPlanBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RequiredCryptographicAssumptionStatements assumptions.crypto
+          /\ RequiredSemanticAssumptionStatements assumptions.semantic
+          /\ RuntimeQueryPlanBindingEvidence
+            system
+            validation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeProofArtifactFinalized
+            system
+            validation.challengeValidation.transcriptValidation.artifactBindingValidation
+            artifact
+            publicInput
+            proof
+          /\ validation.queryPlanSeedBindsWitnessTreeDigests artifact publicInput proof
+          /\ validation.queryPlanSeededFriOpeningRequirementsChecked
+            artifact
+            publicInput
+            proof
+          /\ RuntimeProofArtifactBindingStructuralObligations
+            system
+            validation.challengeValidation.transcriptValidation.artifactBindingValidation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ (exists witness trace constraints,
+            system.traceConsistent publicInput proof trace
+              /\ system.constraintsSatisfied constraints trace
+              /\ system.witnessMatchesTrace witness trace)
+          /\ SoundWitness system publicInput proof := by
+  intro artifact publicInput proof accepted
+  have finalizedCore :=
+    runtime_query_plan_binding_audited_finalized_core_sound_witness_contract
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have structural :=
+    runtime_query_plan_binding_checked_acceptance_artifact_structural_obligations
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  rcases finalizedCore with
+    ⟨cryptoEvidence,
+      semanticEvidence,
+      queryPlanEvidence,
+      artifactFinalized,
+      seedBinds,
+      seededFriOpeningChecked,
+      coreContract,
+      executionObligations,
+      soundWitness⟩
+  exact
+    ⟨cryptoEvidence,
+      semanticEvidence,
+      queryPlanEvidence,
+      artifactFinalized,
+      seedBinds,
+      seededFriOpeningChecked,
+      structural,
+      coreContract,
+      executionObligations,
+      soundWitness⟩
+
 theorem runtime_query_plan_binding_audited_finalized_concrete_segment_ids_contract
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
@@ -1139,6 +1219,12 @@ theorem runtime_query_plan_binding_audited_finalized_concrete_segment_ids_contra
             artifact
             publicInput
             proof
+          /\ RuntimeProofArtifactBindingStructuralObligations
+            system
+            validation.challengeValidation.transcriptValidation.artifactBindingValidation
+            artifact
+            publicInput
+            proof
           /\ RuntimeVerifierCoreContract system publicInput proof
           /\ (exists witness trace constraints,
             system.traceConsistent publicInput proof trace
@@ -1149,7 +1235,7 @@ theorem runtime_query_plan_binding_audited_finalized_concrete_segment_ids_contra
   intro artifact publicInput proof accepted
   exact
     And.intro
-      (runtime_query_plan_binding_audited_finalized_core_sound_witness_contract
+      (runtime_query_plan_binding_audited_finalized_segment_ids_contract
         assumptions
         validation
         artifact
