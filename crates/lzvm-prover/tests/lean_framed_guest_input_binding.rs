@@ -17,6 +17,9 @@ fn lean_framed_guest_input_binding_exports_soundness_structural_contract() {
             "runtime_framed_guest_input_binding_checked_acceptance_runtime_shape_contract",
             "runtime_framed_guest_input_binding_checked_acceptance_soundness_and_structural_contract",
             "runtime_framed_guest_input_binding_checked_acceptance_concrete_core_sound_contract",
+            "runtime_framed_guest_input_binding_audited_finalized_core_sound_witness_contract",
+            "runtime_framed_guest_input_binding_audited_finalized_segment_ids_contract",
+            "runtime_framed_guest_input_binding_audited_finalized_concrete_segment_ids_contract",
         ],
     );
     lean_binding::assert_theorem_prefix_contains(
@@ -117,4 +120,99 @@ fn lean_framed_guest_input_binding_exports_soundness_structural_contract() {
             identifier,
         );
     }
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_framed_guest_input_binding_audited_finalized_core_sound_witness_contract",
+        &[
+            "RuntimeFramedGuestInputBindingCheckedAcceptance",
+            "RequiredCryptographicAssumptionStatements assumptions.crypto",
+            "RequiredSemanticAssumptionStatements assumptions.semantic",
+            "RuntimeFramedGuestInputBindingEvidence",
+            "RuntimeProofArtifactFinalized",
+            "validation.ethBlockValidation.proofArtifactBindingValidation",
+            "RuntimeVerifierCoreContract system publicInput proof",
+            "system.traceConsistent publicInput proof trace",
+            "SoundWitness system publicInput proof",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_framed_guest_input_binding_audited_finalized_core_sound_witness_contract",
+        &[
+            "runtime_framed_guest_input_binding_checked_acceptance_evidence",
+            "runtime_framed_guest_input_binding_checked_acceptance_eth_block_acceptance",
+            "runtime_eth_block_public_input_binding_audited_finalized_core_sound_witness_contract",
+        ],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &lean_source,
+        "runtime_framed_guest_input_binding_audited_finalized_core_sound_witness_contract",
+        &[
+            "runtime_framed_guest_input_binding_checked_acceptance_full_contract",
+            "runtime_framed_guest_input_binding_checked_acceptance_sound",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_framed_guest_input_binding_audited_finalized_segment_ids_contract",
+        &[
+            "RequiredCryptographicAssumptionStatements assumptions.crypto",
+            "RequiredSemanticAssumptionStatements assumptions.semantic",
+            "RuntimeFramedGuestInputBindingEvidence",
+            "RuntimeProofArtifactFinalized",
+            "RuntimeFramedGuestInputBindingStructuralObligations",
+            "RuntimeVerifierCoreContract system publicInput proof",
+            "system.traceConsistent publicInput proof trace",
+            "SoundWitness system publicInput proof",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_framed_guest_input_binding_audited_finalized_segment_ids_contract",
+        &[
+            "runtime_framed_guest_input_binding_audited_finalized_core_sound_witness_contract",
+            "runtime_framed_guest_input_binding_checked_acceptance_structural_obligations",
+        ],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &lean_source,
+        "runtime_framed_guest_input_binding_audited_finalized_segment_ids_contract",
+        &[
+            "runtime_framed_guest_input_binding_checked_acceptance_full_contract",
+            "runtime_framed_guest_input_binding_checked_acceptance_sound",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_framed_guest_input_binding_audited_finalized_concrete_segment_ids_contract",
+        &[
+            "RuntimeFramedGuestInputBindingCheckedAcceptance",
+            "RuntimeProofArtifactConcreteSegmentIdBinding",
+            "RequiredCryptographicAssumptionStatements assumptions.crypto",
+            "RequiredSemanticAssumptionStatements assumptions.semantic",
+            "RuntimeFramedGuestInputBindingEvidence",
+            "RuntimeProofArtifactFinalized",
+            "RuntimeFramedGuestInputBindingStructuralObligations",
+            "RuntimeVerifierCoreContract system publicInput proof",
+            "system.traceConsistent publicInput proof trace",
+            "SoundWitness system publicInput proof",
+            "RuntimeProofArtifactConcreteSegmentIdsAllowed proof",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_framed_guest_input_binding_audited_finalized_concrete_segment_ids_contract",
+        &[
+            "runtime_framed_guest_input_binding_audited_finalized_segment_ids_contract",
+            "runtime_framed_guest_input_binding_checked_acceptance_concrete_segment_ids_allowed",
+        ],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &lean_source,
+        "runtime_framed_guest_input_binding_audited_finalized_concrete_segment_ids_contract",
+        &[
+            "runtime_framed_guest_input_binding_checked_acceptance_full_contract",
+            "runtime_framed_guest_input_binding_checked_acceptance_sound",
+        ],
+    );
 }

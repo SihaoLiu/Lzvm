@@ -766,4 +766,208 @@ theorem
         proof
         accepted)
 
+theorem
+  runtime_framed_guest_input_binding_audited_finalized_core_sound_witness_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeFramedGuestInputBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeFramedGuestInputBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RequiredCryptographicAssumptionStatements assumptions.crypto
+          /\ RequiredSemanticAssumptionStatements assumptions.semantic
+          /\ RuntimeFramedGuestInputBindingEvidence
+            system
+            validation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeProofArtifactFinalized
+            system
+            validation.ethBlockValidation.proofArtifactBindingValidation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ (exists witness trace constraints,
+            system.traceConsistent publicInput proof trace
+              /\ system.constraintsSatisfied constraints trace
+              /\ system.witnessMatchesTrace witness trace)
+          /\ SoundWitness system publicInput proof := by
+  intro artifact publicInput proof accepted
+  have evidence :=
+    runtime_framed_guest_input_binding_checked_acceptance_evidence
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have ethAccepted :=
+    runtime_framed_guest_input_binding_checked_acceptance_eth_block_acceptance
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have ethFinalizedCore :=
+    runtime_eth_block_public_input_binding_audited_finalized_core_sound_witness_contract
+      assumptions
+      validation.ethBlockValidation
+      artifact
+      publicInput
+      proof
+      ethAccepted
+  rcases ethFinalizedCore with
+    ⟨cryptoEvidence,
+      semanticEvidence,
+      _ethEvidence,
+      artifactFinalized,
+      coreContract,
+      executionObligations,
+      soundWitness⟩
+  exact
+    ⟨cryptoEvidence,
+      semanticEvidence,
+      evidence,
+      artifactFinalized,
+      coreContract,
+      executionObligations,
+      soundWitness⟩
+
+theorem
+  runtime_framed_guest_input_binding_audited_finalized_segment_ids_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeFramedGuestInputBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeFramedGuestInputBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RequiredCryptographicAssumptionStatements assumptions.crypto
+          /\ RequiredSemanticAssumptionStatements assumptions.semantic
+          /\ RuntimeFramedGuestInputBindingEvidence
+            system
+            validation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeProofArtifactFinalized
+            system
+            validation.ethBlockValidation.proofArtifactBindingValidation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeFramedGuestInputBindingStructuralObligations
+            system
+            validation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ (exists witness trace constraints,
+            system.traceConsistent publicInput proof trace
+              /\ system.constraintsSatisfied constraints trace
+              /\ system.witnessMatchesTrace witness trace)
+          /\ SoundWitness system publicInput proof := by
+  intro artifact publicInput proof accepted
+  have finalizedCore :=
+    runtime_framed_guest_input_binding_audited_finalized_core_sound_witness_contract
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have structural :=
+    runtime_framed_guest_input_binding_checked_acceptance_structural_obligations
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  rcases finalizedCore with
+    ⟨cryptoEvidence,
+      semanticEvidence,
+      evidence,
+      artifactFinalized,
+      coreContract,
+      executionObligations,
+      soundWitness⟩
+  exact
+    ⟨cryptoEvidence,
+      semanticEvidence,
+      evidence,
+      artifactFinalized,
+      structural,
+      coreContract,
+      executionObligations,
+      soundWitness⟩
+
+theorem
+  runtime_framed_guest_input_binding_audited_finalized_concrete_segment_ids_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeFramedGuestInputBindingValidation system)
+    (binding :
+      RuntimeProofArtifactConcreteSegmentIdBinding
+        validation.ethBlockValidation.proofArtifactBindingValidation) :
+    forall artifact publicInput proof,
+      RuntimeFramedGuestInputBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        (RequiredCryptographicAssumptionStatements assumptions.crypto
+          /\ RequiredSemanticAssumptionStatements assumptions.semantic
+          /\ RuntimeFramedGuestInputBindingEvidence
+            system
+            validation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeProofArtifactFinalized
+            system
+            validation.ethBlockValidation.proofArtifactBindingValidation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeFramedGuestInputBindingStructuralObligations
+            system
+            validation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ (exists witness trace constraints,
+            system.traceConsistent publicInput proof trace
+              /\ system.constraintsSatisfied constraints trace
+              /\ system.witnessMatchesTrace witness trace)
+          /\ SoundWitness system publicInput proof)
+          /\ RuntimeProofArtifactConcreteSegmentIdsAllowed proof := by
+  intro artifact publicInput proof accepted
+  exact
+    And.intro
+      (runtime_framed_guest_input_binding_audited_finalized_segment_ids_contract
+        assumptions
+        validation
+        artifact
+        publicInput
+        proof
+        accepted)
+      (runtime_framed_guest_input_binding_checked_acceptance_concrete_segment_ids_allowed
+        validation
+        binding
+        artifact
+        publicInput
+        proof
+        accepted)
+
 end Lzvm
