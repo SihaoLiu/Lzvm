@@ -938,6 +938,58 @@ theorem runtime_proof_artifact_binding_checked_acceptance_evidence_core_and_soun
         (And.intro fullContract.right.right.left
           (And.intro coreContract fullContract.right.right.right)))
 
+theorem
+  runtime_proof_artifact_binding_checked_acceptance_concrete_core_sound_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeProofArtifactBindingValidation system)
+    (binding : RuntimeProofArtifactConcreteSegmentIdBinding validation) :
+    forall artifact publicInput proof,
+      RuntimeProofArtifactBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        (RuntimeProofArtifactBindingEvidence
+            system
+            validation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeProofArtifactBindingStructuralObligations
+            system
+            validation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeArtifactEvidence
+            system
+            validation.runtimeValidation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof)
+          /\ RuntimeProofArtifactConcreteSegmentIdsAllowed proof := by
+  intro artifact publicInput proof accepted
+  exact
+    And.intro
+      (runtime_proof_artifact_binding_checked_acceptance_evidence_core_and_sound
+        assumptions
+        validation
+        artifact
+        publicInput
+        proof
+        accepted)
+      (runtime_proof_artifact_binding_checked_acceptance_concrete_segment_ids_allowed
+        validation
+        binding
+        artifact
+        publicInput
+        proof
+        accepted)
+
 theorem runtime_proof_artifact_finalized_full_contract
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
