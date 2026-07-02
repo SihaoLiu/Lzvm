@@ -6,9 +6,13 @@ mod lean_binding;
 #[test]
 fn lean_opening_segment_binding_exports_core_contract_projection() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let lean_path = crate_root.join("../../lean/Lzvm/OpeningSegmentBinding.lean");
-    let lean_source =
-        std::fs::read_to_string(&lean_path).expect("Lean opening segment binding should read");
+    let lean_source = lean_binding::read_lean_sources(
+        crate_root,
+        &[
+            "../../lean/Lzvm/OpeningSegmentBinding.lean",
+            "../../lean/Lzvm/OpeningSegmentBinding/SegmentIds.lean",
+        ],
+    );
     let top_level_path = crate_root.join("../../lean/Lzvm.lean");
     let top_level_source =
         std::fs::read_to_string(&top_level_path).expect("Lean top-level source should read");
@@ -71,7 +75,11 @@ fn lean_opening_segment_binding_exports_core_contract_projection() {
     );
 
     assert!(
-        lean_binding::contains_import(&top_level_source, "Lzvm.OpeningSegmentBinding"),
+        lean_binding::contains_import(&top_level_source, "Lzvm.OpeningSegmentBinding")
+            && lean_binding::contains_import(
+                &top_level_source,
+                "Lzvm.OpeningSegmentBinding.SegmentIds"
+            ),
         "top-level Lean module should import opening segment binding"
     );
     assert!(
@@ -192,6 +200,8 @@ fn lean_opening_segment_binding_exports_core_contract_projection() {
             "runtime_opening_segment_binding_checked_acceptance_sound",
             "runtime_opening_segment_binding_checked_acceptance_verifier_core_contract",
             "runtime_opening_segment_binding_checked_acceptance_evidence_core_and_sound",
+            "runtime_opening_segment_binding_checked_acceptance_concrete_segment_ids_allowed",
+            "runtime_opening_segment_binding_checked_acceptance_concrete_core_sound_contract",
             "runtime_opening_segment_binding_checked_acceptance_opening_and_core_contract",
             "runtime_opening_segment_binding_checked_acceptance_full_soundness_contract",
             "runtime_opening_segment_binding_audited_core_sound_witness_contract",
@@ -683,6 +693,65 @@ fn lean_opening_segment_binding_exports_core_contract_projection() {
         "runtime_opening_segment_binding_checked_acceptance_evidence_core_and_sound",
         &["sound_witness_implies_verifier_core_contract"],
     );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_opening_segment_binding_checked_acceptance_concrete_segment_ids_allowed",
+        &[
+            "RuntimeOpeningSegmentBindingCheckedAcceptance",
+            "RuntimeProofArtifactConcreteSegmentIdBinding",
+            "validation.openingValidation.runtimeSoundnessValidation.transcriptValidation",
+            "transcriptValidation.artifactBindingValidation",
+            "RuntimeProofArtifactConcreteSegmentIdsAllowed proof",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_opening_segment_binding_checked_acceptance_concrete_segment_ids_allowed",
+        &[
+            "runtime_opening_segment_binding_checked_acceptance_opening",
+            "runtime_opening_checked_acceptance_concrete_segment_ids_allowed",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_omits(
+        &lean_source,
+        "runtime_opening_segment_binding_checked_acceptance_concrete_segment_ids_allowed",
+        &["AssumptionBundle"],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_opening_segment_binding_checked_acceptance_concrete_core_sound_contract",
+        &[
+            "RuntimeOpeningSegmentBindingCheckedAcceptance",
+            "RuntimeProofArtifactConcreteSegmentIdBinding",
+            "validation.openingValidation.runtimeSoundnessValidation.transcriptValidation",
+            "transcriptValidation.artifactBindingValidation",
+            "RuntimeOpeningSegmentBindingEvidence",
+            "RuntimeOpeningEvidence",
+            "RuntimeVerifierCoreContract system publicInput proof",
+            "SoundWitness system publicInput proof",
+            "RuntimeProofArtifactConcreteSegmentIdsAllowed proof",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_opening_segment_binding_checked_acceptance_concrete_core_sound_contract",
+        &[
+            "runtime_opening_segment_binding_checked_acceptance_evidence_core_and_sound",
+            "runtime_opening_segment_binding_checked_acceptance_concrete_segment_ids_allowed",
+        ],
+    );
+    for identifier in [
+        "runtime_opening_segment_binding_checked_acceptance_sound",
+        "runtime_opening_checked_acceptance_sound",
+        "sound_witness_implies_verifier_core_contract",
+        "abstract_verifier_sound",
+    ] {
+        lean_binding::assert_theorem_body_omits_identifier(
+            &lean_source,
+            "runtime_opening_segment_binding_checked_acceptance_concrete_core_sound_contract",
+            identifier,
+        );
+    }
     lean_binding::assert_theorem_prefix_contains(
         &lean_source,
         "runtime_opening_segment_binding_checked_acceptance_opening_and_core_contract",

@@ -27,6 +27,7 @@ import Lzvm.ProofArtifactBinding
 import Lzvm.ProgramImageCacheBinding
 import Lzvm.OpeningValidation
 import Lzvm.OpeningSegmentBinding
+import Lzvm.OpeningSegmentBinding.SegmentIds
 import Lzvm.PipelineBinding
 import Lzvm.PipelineBinding.Accepts
 import Lzvm.PipelineBinding.Contracts
