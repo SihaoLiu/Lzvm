@@ -10940,7 +10940,7 @@ fn guest_pc_report_level_fast_path_dispatches_by_instruction() {
 }
 
 #[test]
-fn guest_pc_report_size_uses_single_validator() {
+fn guest_pc_report_size_inlines_generic_validator() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let source_path = crate_root.join("src/guest_pc_trace_backend.rs");
     let source = std::fs::read_to_string(&source_path).expect("guest PC trace source should read");
@@ -10951,12 +10951,16 @@ fn guest_pc_report_size_uses_single_validator() {
         concat!("fn ", "zi", "sk", "_main_base_instruction"),
     );
     assert!(
-        body.contains("report_fast_path_instruction_size(row, report)"),
-        "generic report-size checks should delegate to the fast-path report-size validator"
+        body.contains("match report.instruction_byte_len()"),
+        "generic report-size checks should inline byte-length validation"
     );
     assert!(
-        !body.contains("match report.instruction_byte_len()"),
-        "generic report-size checks should not duplicate byte-length validation"
+        body.contains("ZiskMainLowerError::InvalidInstructionByteLen"),
+        "generic report-size checks should preserve invalid byte-length errors"
+    );
+    assert!(
+        !body.contains("report_fast_path_instruction_size(row, report)"),
+        "generic report-size checks should avoid the shared fast-path report-size helper"
     );
 }
 
