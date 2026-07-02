@@ -659,9 +659,10 @@ fn eth_proof_timing_batch_dry_run_pins_external_source_opening_batch_size() {
         .arg("8")
         .arg("--summary")
         .arg("external source batch")
+        .env("LZVM_WITNESS_OPENING_EXTERNAL_SOURCE_BATCH_SIZE", "16")
         .env(
             "LZVM_CUDA_TRACE_OUTPUT_EXTERNAL_SOURCE_OPENING_BATCH_SIZE",
-            "16",
+            "32",
         );
     fixture.apply_env(&mut command, SMALL_PREFIX);
 
@@ -678,7 +679,7 @@ fn eth_proof_timing_batch_dry_run_pins_external_source_opening_batch_size() {
         "dry-run should build external source batch command: stderr={stderr}"
     );
     assert!(
-        stdout.contains("LZVM_CUDA_TRACE_OUTPUT_EXTERNAL_SOURCE_OPENING_BATCH_SIZE=8"),
+        stdout.contains("LZVM_WITNESS_OPENING_EXTERNAL_SOURCE_BATCH_SIZE=8"),
         "dry-run command should pin explicit external source batch size: {stdout}"
     );
     assert!(
@@ -686,7 +687,8 @@ fn eth_proof_timing_batch_dry_run_pins_external_source_opening_batch_size() {
         "dry-run metadata should report explicit external source batch size: {stdout}"
     );
     assert!(
-        !stdout.contains("LZVM_CUDA_TRACE_OUTPUT_EXTERNAL_SOURCE_OPENING_BATCH_SIZE=16"),
+        !stdout.contains("LZVM_WITNESS_OPENING_EXTERNAL_SOURCE_BATCH_SIZE=16")
+            && !stdout.contains("LZVM_CUDA_TRACE_OUTPUT_EXTERNAL_SOURCE_OPENING_BATCH_SIZE=32"),
         "ambient external source batch env should not leak into generated commands: {stdout}"
     );
 }
@@ -701,9 +703,10 @@ fn eth_proof_timing_batch_dry_run_clears_ambient_external_source_opening_batch_s
         .arg("--dry-run")
         .arg("--summary")
         .arg("clear external source batch")
+        .env("LZVM_WITNESS_OPENING_EXTERNAL_SOURCE_BATCH_SIZE", "16")
         .env(
             "LZVM_CUDA_TRACE_OUTPUT_EXTERNAL_SOURCE_OPENING_BATCH_SIZE",
-            "16",
+            "32",
         );
     fixture.apply_env(&mut command, SMALL_PREFIX);
 
@@ -720,7 +723,8 @@ fn eth_proof_timing_batch_dry_run_clears_ambient_external_source_opening_batch_s
         "dry-run should clear ambient external source batch env: stderr={stderr}"
     );
     assert!(
-        stdout.contains("-u LZVM_CUDA_TRACE_OUTPUT_EXTERNAL_SOURCE_OPENING_BATCH_SIZE"),
+        stdout.contains("-u LZVM_WITNESS_OPENING_EXTERNAL_SOURCE_BATCH_SIZE")
+            && stdout.contains("-u LZVM_CUDA_TRACE_OUTPUT_EXTERNAL_SOURCE_OPENING_BATCH_SIZE"),
         "generated commands should clear ambient external source batch env: {stdout}"
     );
     assert!(
@@ -728,7 +732,8 @@ fn eth_proof_timing_batch_dry_run_clears_ambient_external_source_opening_batch_s
         "dry-run metadata should show no explicit external source batch size: {stdout}"
     );
     assert!(
-        !stdout.contains("LZVM_CUDA_TRACE_OUTPUT_EXTERNAL_SOURCE_OPENING_BATCH_SIZE=16")
+        !stdout.contains("LZVM_WITNESS_OPENING_EXTERNAL_SOURCE_BATCH_SIZE=16")
+            && !stdout.contains("LZVM_CUDA_TRACE_OUTPUT_EXTERNAL_SOURCE_OPENING_BATCH_SIZE=32")
             && !stdout.contains("--external-source-opening-batch-size"),
         "ambient external source batch size should not be copied into commands: {stdout}"
     );
