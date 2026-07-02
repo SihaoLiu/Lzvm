@@ -718,4 +718,52 @@ theorem runtime_framed_guest_input_binding_checked_acceptance_full_contract
       sound.right.right.right.left,
       sound.right.right.right.right⟩
 
+theorem
+  runtime_framed_guest_input_binding_checked_acceptance_concrete_core_sound_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeFramedGuestInputBindingValidation system)
+    (binding :
+      RuntimeProofArtifactConcreteSegmentIdBinding
+        validation.ethBlockValidation.proofArtifactBindingValidation) :
+    forall artifact publicInput proof,
+      RuntimeFramedGuestInputBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        (RuntimeFramedGuestInputBindingEvidence
+            system
+            validation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeFramedGuestInputBindingStructuralObligations
+            system
+            validation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof)
+          /\ RuntimeProofArtifactConcreteSegmentIdsAllowed proof := by
+  intro artifact publicInput proof accepted
+  exact
+    And.intro
+      (runtime_framed_guest_input_binding_checked_acceptance_full_contract
+        assumptions
+        validation
+        artifact
+        publicInput
+        proof
+        accepted)
+      (runtime_framed_guest_input_binding_checked_acceptance_concrete_segment_ids_allowed
+        validation
+        binding
+        artifact
+        publicInput
+        proof
+        accepted)
+
 end Lzvm

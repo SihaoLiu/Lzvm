@@ -16,6 +16,7 @@ fn lean_framed_guest_input_binding_exports_soundness_structural_contract() {
             "runtime_framed_guest_input_binding_checked_acceptance_concrete_segment_ids_allowed",
             "runtime_framed_guest_input_binding_checked_acceptance_runtime_shape_contract",
             "runtime_framed_guest_input_binding_checked_acceptance_soundness_and_structural_contract",
+            "runtime_framed_guest_input_binding_checked_acceptance_concrete_core_sound_contract",
         ],
     );
     lean_binding::assert_theorem_prefix_contains(
@@ -82,5 +83,34 @@ fn lean_framed_guest_input_binding_exports_soundness_structural_contract() {
         &lean_source,
         "runtime_framed_guest_input_binding_checked_acceptance_soundness_and_structural_contract",
         &["abstract_verifier_sound"],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_framed_guest_input_binding_checked_acceptance_concrete_core_sound_contract",
+        &[
+            "RuntimeFramedGuestInputBindingCheckedAcceptance",
+            "RuntimeProofArtifactConcreteSegmentIdBinding",
+            "RuntimeFramedGuestInputBindingEvidence",
+            "RuntimeFramedGuestInputBindingStructuralObligations",
+            "RuntimeVerifierCoreContract system publicInput proof",
+            "SoundWitness system publicInput proof",
+            "RuntimeProofArtifactConcreteSegmentIdsAllowed proof",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_framed_guest_input_binding_checked_acceptance_concrete_core_sound_contract",
+        &[
+            "runtime_framed_guest_input_binding_checked_acceptance_full_contract",
+            "runtime_framed_guest_input_binding_checked_acceptance_concrete_segment_ids_allowed",
+        ],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &lean_source,
+        "runtime_framed_guest_input_binding_checked_acceptance_concrete_core_sound_contract",
+        &[
+            "runtime_framed_guest_input_binding_checked_acceptance_sound",
+            "sound_witness_implies_verifier_core_contract",
+        ],
     );
 }
