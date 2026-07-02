@@ -141,6 +141,62 @@ fn lean_runtime_soundness_contracts_exports_concrete_segment_contract() {
 }
 
 #[test]
+fn lean_runtime_soundness_contracts_exports_finalized_segment_contract() {
+    let lean_source = read_contracts_source();
+    let theorem =
+        "runtime_soundness_checked_acceptance_artifact_audited_finalized_segment_ids_contract";
+
+    lean_binding::assert_theorem_declarations(&lean_source, &[theorem]);
+    assert_prefix_contains_groups(
+        &lean_source,
+        theorem,
+        &[
+            AUDITED_ARTIFACT_CORE_SNIPPETS,
+            &["RuntimeProofArtifactFinalized"],
+            SEGMENT_ID_SNIPPETS,
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        theorem,
+        &[
+            "runtime_soundness_checked_acceptance_artifact_audited_segment_ids_contract",
+            "runtime_soundness_checked_acceptance_audited_finalized_core_sound_witness_contract",
+        ],
+    );
+    assert_body_omits_direct_assumption_access(&lean_source, theorem);
+}
+
+#[test]
+fn lean_runtime_soundness_contracts_exports_finalized_concrete_segment_contract() {
+    let lean_source = read_contracts_source();
+    let theorem =
+        "runtime_soundness_checked_acceptance_artifact_audited_finalized_concrete_segment_ids_contract";
+
+    lean_binding::assert_theorem_declarations(&lean_source, &[theorem]);
+    assert_prefix_contains_groups(
+        &lean_source,
+        theorem,
+        &[
+            &["RuntimeProofArtifactConcreteSegmentIdBinding"],
+            AUDITED_ARTIFACT_CORE_SNIPPETS,
+            &["RuntimeProofArtifactFinalized"],
+            SEGMENT_ID_SNIPPETS,
+            &["RuntimeProofArtifactConcreteSegmentIdsAllowed proof"],
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        theorem,
+        &[
+            "runtime_soundness_checked_acceptance_artifact_audited_finalized_segment_ids_contract",
+            "runtime_soundness_checked_acceptance_concrete_segment_ids_allowed",
+        ],
+    );
+    assert_body_omits_direct_assumption_access(&lean_source, theorem);
+}
+
+#[test]
 fn lean_runtime_soundness_contracts_exports_required_source_concrete_segment_contract() {
     let lean_source = read_contracts_source();
     let theorem =
