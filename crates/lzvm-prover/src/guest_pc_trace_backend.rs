@@ -10481,6 +10481,12 @@ struct ZiskMainNoMemoryFastPathParts {
     store_index: Option<u8>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct MainJumpFastPathParts {
+    b_index: Option<u8>,
+    store_index: Option<u8>,
+}
+
 #[allow(clippy::too_many_arguments)]
 fn validate_and_apply_zisk_main_report(
     row: usize,
@@ -10643,6 +10649,19 @@ fn validate_and_apply_zisk_main_report(
                 report.next_pc,
                 b_index,
                 store_index,
+                state,
+                context,
+                &mut visit,
+            )?;
+            return Ok(1);
+        }
+        if let Some((instruction, parts)) = jump_fast_path_parts(row, report)? {
+            apply_jump_fast_path(
+                row,
+                instruction,
+                ZiskMainReportEffects::from_report(report),
+                report.next_pc,
+                parts,
                 state,
                 context,
                 &mut visit,
@@ -11407,6 +11426,97 @@ fn no_memory_fast_path_op_supported(op: ZiskMainOp) -> bool {
 }
 
 #[inline(always)]
+fn jump_fast_path_parts(
+    row: usize,
+    report: &GuestMachineReport,
+) -> Result<Option<(ZiskMainInstruction, MainJumpFastPathParts)>, GuestPcTraceBackendError> {
+    let (jump_rd, jump_rs1, jump_offset, is_register_target) = match report.instruction {
+        RiscvInstruction::Jal { rd, offset } => (rd, None, offset, false),
+        RiscvInstruction::Jalr { rd, rs1, offset } => {
+            if offset % 2 != 0 {
+                return Ok(None);
+            }
+            (rd, Some(rs1), offset, true)
+        }
+        _ => return Ok(None),
+    };
+    if !report.memory_accesses.is_empty() || !report.precompile_memory_accesses().is_empty() {
+        return Ok(None);
+    }
+    let instruction_size = match report.instruction_byte_len() {
+        2 | 4 => report.instruction_byte_len() as i64,
+        byte_len => {
+            return Err(GuestPcTraceBackendError::ZiskMainLower {
+                row,
+                source: ZiskMainLowerError::InvalidInstructionByteLen {
+                    pc: report.address(),
+                    byte_len: usize::from(byte_len),
+                },
+            });
+        }
+    };
+    let pc = report.address();
+    let store = if jump_rd == 0 {
+        ZiskMainStore::None
+    } else {
+        ZiskMainStore::Register(jump_rd)
+    };
+    let (instruction, parts) = if is_register_target {
+        let Some(rs1) = jump_rs1 else {
+            return Ok(None);
+        };
+        (
+            ZiskMainInstruction {
+                pc,
+                a: ZiskMainSource::Immediate(!1),
+                b: if rs1 == 0 {
+                    ZiskMainSource::Immediate(0)
+                } else {
+                    ZiskMainSource::Register(rs1)
+                },
+                op: ZiskMainOp::And,
+                store,
+                store_pc: jump_rd != 0,
+                set_pc: true,
+                jmp_offset1: i64::from(jump_offset),
+                jmp_offset2: instruction_size,
+                ind_width: 0,
+                m32: false,
+                is_external_op: true,
+                is_precompiled: false,
+            },
+            MainJumpFastPathParts {
+                b_index: (rs1 != 0).then_some(rs1),
+                store_index: (jump_rd != 0).then_some(jump_rd),
+            },
+        )
+    } else {
+        (
+            ZiskMainInstruction {
+                pc,
+                a: ZiskMainSource::Immediate(0),
+                b: ZiskMainSource::Immediate(0),
+                op: ZiskMainOp::Flag,
+                store,
+                store_pc: jump_rd != 0,
+                set_pc: false,
+                jmp_offset1: i64::from(jump_offset),
+                jmp_offset2: instruction_size,
+                ind_width: 0,
+                m32: false,
+                is_external_op: false,
+                is_precompiled: false,
+            },
+            MainJumpFastPathParts {
+                b_index: None,
+                store_index: (jump_rd != 0).then_some(jump_rd),
+            },
+        )
+    };
+    Ok(Some((instruction, parts)))
+}
+
+#[inline(always)]
 fn apply_copy_indirect_register_store_fast_path(
     output_row: usize,
     instruction: ZiskMainInstruction,
@@ -11526,6 +11636,118 @@ fn apply_copy_indirect_register_store_fast_path(
                 store_prev_mem_step: Some(store_prev_mem_step),
                 store_prev_value: Some(store_prev_value),
             },
+        },
+        None,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+#[inline(always)]
+fn apply_jump_fast_path(
+    output_row: usize,
+    instruction: ZiskMainInstruction,
+    effects: ZiskMainReportEffects<'_>,
+    expected_next_pc: u64,
+    parts: MainJumpFastPathParts,
+    state: &mut ZiskMainTraceState,
+    context: &mut ZiskMainReportValidationContext<'_>,
+    visit: &mut impl FnMut(
+        usize,
+        ZiskMainReportTraceValues,
+        Option<&mut GuestPcTraceStreamTiming>,
+    ) -> Result<(), GuestPcTraceBackendError>,
+) -> Result<(), GuestPcTraceBackendError> {
+    if !effects.memory_accesses.is_empty() {
+        return Err(GuestPcTraceBackendError::ZiskMainEffectMismatch {
+            row: output_row,
+            message: format!(
+                "expected 0 memory accesses, found {}",
+                effects.memory_accesses.len()
+            ),
+        });
+    }
+    if !effects.precompile_memory_accesses.is_empty() {
+        return Err(GuestPcTraceBackendError::ZiskMainEffectMismatch {
+            row: output_row,
+            message: "jump row reported precompile memory accesses".to_owned(),
+        });
+    }
+    let a = no_memory_fast_path_source_value(output_row, instruction.a, None, state)?;
+    let b = no_memory_fast_path_source_value(output_row, instruction.b, parts.b_index, state)?;
+    let (c, flag) = main_op_result(instruction.op, a, b);
+    let computed_next_pc = if instruction.set_pc {
+        c.wrapping_add_signed(instruction.jmp_offset1)
+    } else if flag {
+        instruction.pc.wrapping_add_signed(instruction.jmp_offset1)
+    } else {
+        instruction.pc.wrapping_add_signed(instruction.jmp_offset2)
+    };
+    if expected_next_pc != computed_next_pc {
+        return Err(GuestPcTraceBackendError::ZiskMainEffectMismatch {
+            row: output_row,
+            message: format!("expected next pc {computed_next_pc}, found {expected_next_pc}"),
+        });
+    }
+
+    let row_mem_step_base = context.row_mem_step_base(output_row)?;
+    let register_accesses = apply_no_memory_fast_path_register_accesses(
+        output_row,
+        state,
+        row_mem_step_base,
+        ZiskMainNoMemoryFastPathParts {
+            a_index: None,
+            b_index: parts.b_index,
+            store_index: parts.store_index,
+        },
+    )?;
+    match parts.store_index {
+        Some(store_index) => {
+            let store_value = if instruction.store_pc {
+                instruction.pc.wrapping_add_signed(instruction.jmp_offset2)
+            } else {
+                c
+            };
+            let [write] = effects.register_writes.as_slice() else {
+                return Err(GuestPcTraceBackendError::ZiskMainEffectMismatch {
+                    row: output_row,
+                    message: format!(
+                        "store register row reported {} register writes",
+                        effects.register_writes.len()
+                    ),
+                });
+            };
+            if write.index != store_index || write.value != store_value {
+                return Err(GuestPcTraceBackendError::ZiskMainEffectMismatch {
+                    row: output_row,
+                    message: format!(
+                        "expected x{store_index} = {store_value}, found x{} = {}",
+                        write.index, write.value
+                    ),
+                });
+            }
+            state.registers[usize::from(store_index)] = store_value;
+        }
+        None => {
+            if !effects.register_writes.is_empty() {
+                return Err(GuestPcTraceBackendError::ZiskMainEffectMismatch {
+                    row: output_row,
+                    message: "store none row reported register writes".to_owned(),
+                });
+            }
+        }
+    }
+    state.last_c = c;
+    state.next_pc = expected_next_pc;
+
+    visit(
+        output_row,
+        ZiskMainReportTraceValues {
+            instruction,
+            a,
+            b,
+            c,
+            flag,
+            register_accesses,
         },
         None,
     )
