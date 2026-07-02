@@ -10503,7 +10503,6 @@ enum MainReportFastPathParts {
     StoreCopy(ZiskMainInstruction, u8, u8, i64),
     SimpleCopy(ZiskMainInstruction, Option<u8>, u8),
     Jump(ZiskMainInstruction, MainJumpFastPathParts),
-    FcallResult(ZiskMainInstruction, u8),
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -10689,18 +10688,6 @@ fn validate_and_apply_zisk_main_report(
                         effects,
                         report.next_pc,
                         parts,
-                        state,
-                        context,
-                        &mut visit,
-                    )?;
-                }
-                MainReportFastPathParts::FcallResult(instruction, store_index) => {
-                    apply_fcall_result_fast_path(
-                        row,
-                        instruction,
-                        effects,
-                        report.next_pc,
-                        store_index,
                         state,
                         context,
                         &mut visit,
@@ -11495,10 +11482,6 @@ fn report_level_fast_path_parts(
             ..
         } => Ok(special_no_memory_fast_path_parts(row, report)?
             .map(|(instruction, parts)| MainReportFastPathParts::NoMemory(instruction, parts))),
-        RiscvInstruction::ZiskFcallResult { .. } => Ok(fcall_result_fast_path_parts(row, report)?
-            .map(|(instruction, store_index)| {
-                MainReportFastPathParts::FcallResult(instruction, store_index)
-            })),
         RiscvInstruction::Lui { .. } => Ok(simple_copy_register_store_fast_path_parts(
             row, report,
         )?
@@ -11708,43 +11691,6 @@ fn special_no_memory_fast_path_parts(
 fn fcall_param_word_count(port: u8) -> Option<u64> {
     const WORDS: [u64; 16] = [1, 2, 4, 8, 12, 16, 20, 24, 28, 32, 48, 64, 80, 96, 128, 256];
     WORDS.get(usize::from(port)).copied()
-}
-
-#[inline(always)]
-fn fcall_result_fast_path_parts(
-    row: usize,
-    report: &GuestMachineReport,
-) -> Result<Option<(ZiskMainInstruction, u8)>, GuestPcTraceBackendError> {
-    let RiscvInstruction::ZiskFcallResult { rd } = report.instruction else {
-        return Ok(None);
-    };
-    if rd == 0
-        || !report.memory_accesses.is_empty()
-        || !report.precompile_memory_accesses().is_empty()
-    {
-        return Ok(None);
-    }
-    let Some(instruction_size) = sequential_report_fast_path_instruction_size(row, report)? else {
-        return Ok(None);
-    };
-    Ok(Some((
-        ZiskMainInstruction {
-            pc: report.address(),
-            a: ZiskMainSource::Immediate(0),
-            b: ZiskMainSource::Memory(ZISK_INPUT_ADDRESS),
-            op: ZiskMainOp::CopyB,
-            store: ZiskMainStore::Register(rd),
-            store_pc: false,
-            set_pc: false,
-            jmp_offset1: instruction_size,
-            jmp_offset2: instruction_size,
-            ind_width: 0,
-            m32: false,
-            is_external_op: false,
-            is_precompiled: false,
-        },
-        rd,
-    )))
 }
 
 #[inline(always)]
@@ -12513,108 +12459,6 @@ fn apply_no_memory_fast_path_register_accesses(
         ));
     }
     Ok(register_accesses)
-}
-
-#[allow(clippy::too_many_arguments)]
-#[inline(always)]
-fn apply_fcall_result_fast_path(
-    output_row: usize,
-    instruction: ZiskMainInstruction,
-    effects: ZiskMainReportEffects<'_>,
-    expected_next_pc: u64,
-    store_index: u8,
-    state: &mut ZiskMainTraceState,
-    context: &mut ZiskMainReportValidationContext<'_>,
-    visit: &mut impl FnMut(
-        usize,
-        ZiskMainReportTraceValues,
-        Option<&mut GuestPcTraceStreamTiming>,
-    ) -> Result<(), GuestPcTraceBackendError>,
-) -> Result<(), GuestPcTraceBackendError> {
-    if !valid_main_register_index(store_index) {
-        return Err(GuestPcTraceBackendError::UnsupportedZiskMainStore { row: output_row });
-    }
-    if !effects.memory_accesses.is_empty() {
-        return Err(GuestPcTraceBackendError::ZiskMainEffectMismatch {
-            row: output_row,
-            message: format!(
-                "expected 0 memory accesses, found {}",
-                effects.memory_accesses.len()
-            ),
-        });
-    }
-    if !effects.precompile_memory_accesses.is_empty() {
-        return Err(GuestPcTraceBackendError::ZiskMainEffectMismatch {
-            row: output_row,
-            message: "free-call result row reported precompile memory accesses".to_owned(),
-        });
-    }
-    let [write] = effects.register_writes.as_slice() else {
-        return Err(GuestPcTraceBackendError::ZiskMainEffectMismatch {
-            row: output_row,
-            message: format!(
-                "free-call result row reported {} register writes",
-                effects.register_writes.len()
-            ),
-        });
-    };
-    if write.index != store_index {
-        return Err(GuestPcTraceBackendError::ZiskMainEffectMismatch {
-            row: output_row,
-            message: format!(
-                "expected free-call result in x{store_index}, found x{}",
-                write.index
-            ),
-        });
-    }
-    let a = 0;
-    let b = write.value;
-    let c = b;
-    let flag = false;
-    let computed_next_pc = instruction.pc.wrapping_add_signed(instruction.jmp_offset2);
-    if expected_next_pc != computed_next_pc {
-        return Err(GuestPcTraceBackendError::ZiskMainEffectMismatch {
-            row: output_row,
-            message: format!("expected next pc {computed_next_pc}, found {expected_next_pc}"),
-        });
-    }
-
-    let row_mem_step_base = context.row_mem_step_base(output_row)?;
-    if row_mem_step_base
-        .checked_add(ZISK_MAIN_STORE_MEM_STEP_OFFSET)
-        .is_none()
-    {
-        return Err(GuestPcTraceBackendError::InvalidPcTraceLayout {
-            message: "Zisk Main memory step is too large".to_owned(),
-        });
-    }
-    let store_prev_value = state.registers[usize::from(store_index)];
-    let store_prev_mem_step = read_then_update_register_mem_step(
-        &mut state.register_mem_steps,
-        store_index,
-        row_mem_step_base + ZISK_MAIN_STORE_MEM_STEP_OFFSET,
-    );
-    state.registers[usize::from(store_index)] = c;
-    state.last_c = c;
-    state.next_pc = expected_next_pc;
-
-    visit(
-        output_row,
-        ZiskMainReportTraceValues {
-            instruction,
-            a,
-            b,
-            c,
-            flag,
-            register_accesses: ZiskMainRegisterAccessValues {
-                a_prev_mem_step: None,
-                b_prev_mem_step: None,
-                store_prev_mem_step: Some(store_prev_mem_step),
-                store_prev_value: Some(store_prev_value),
-            },
-        },
-        None,
-    )
 }
 
 #[allow(clippy::too_many_arguments)]

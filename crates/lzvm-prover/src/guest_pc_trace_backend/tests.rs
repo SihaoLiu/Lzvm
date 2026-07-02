@@ -6662,7 +6662,6 @@ fn report_level_fast_path_parts_routes_representative_rows() {
         NoMemory,
         SimpleCopy,
         Jump,
-        FcallResult,
     }
 
     let mut signed_load = memory_read(0x108, 0xffff_ff80);
@@ -6793,17 +6792,6 @@ fn report_level_fast_path_parts_routes_representative_rows() {
             GuestMachineReport {
                 address_and_instruction_len:
                     crate::guest_machine::pack_report_address_and_instruction_len(0x8000_0020, 4),
-                instruction: RiscvInstruction::ZiskFcallResult { rd: 10 },
-                next_pc: 0x8000_0024,
-                register_write_value: GuestRegisterWriteValue::new(0x1234_5678),
-                memory_accesses: vec![].into(),
-            },
-            ReportLevelRoute::FcallResult,
-        ),
-        (
-            GuestMachineReport {
-                address_and_instruction_len:
-                    crate::guest_machine::pack_report_address_and_instruction_len(0x8000_0020, 4),
                 instruction: RiscvInstruction::OpImm {
                     kind: RiscvOpImmKind::Addi,
                     rd: 3,
@@ -6840,86 +6828,10 @@ fn report_level_fast_path_parts_routes_representative_rows() {
                 (ReportLevelRoute::SimpleCopy, instruction)
             }
             MainReportFastPathParts::Jump(instruction, _) => (ReportLevelRoute::Jump, instruction),
-            MainReportFastPathParts::FcallResult(instruction, _) => {
-                (ReportLevelRoute::FcallResult, instruction)
-            }
         };
         assert_eq!(actual_route, expected_route);
         assert_eq!(actual_instruction, expected_instruction);
     }
-}
-
-#[test]
-fn fcall_result_fast_path_preserves_row_effects() {
-    let writes = [GuestRegisterWrite {
-        index: 10,
-        value: 0x1234_5678,
-    }];
-    let effects = ZiskMainReportEffects {
-        register_writes: writes.to_vec().into(),
-        memory_accesses: &[],
-        precompile_memory_accesses: &[],
-        precompile_result: None,
-    };
-    let instruction = ZiskMainInstruction {
-        pc: 0x8000_0000,
-        a: ZiskMainSource::Immediate(0),
-        b: ZiskMainSource::Memory(ZISK_INPUT_ADDRESS),
-        op: ZiskMainOp::CopyB,
-        store: ZiskMainStore::Register(10),
-        store_pc: false,
-        set_pc: false,
-        jmp_offset1: 4,
-        jmp_offset2: 4,
-        ind_width: 0,
-        m32: false,
-        is_external_op: false,
-        is_precompiled: false,
-    };
-    let mut state = ZiskMainTraceState::new();
-    state.registers[10] = 0xaa55;
-    state.register_mem_steps[10] = 44;
-    let mut context = ZiskMainReportValidationContext::new(
-        None,
-        16,
-        ZiskMainTraceSegmentInfo {
-            trace_instance_index: 0,
-            is_last_segment: false,
-            previous_c: 0,
-        },
-    )
-    .expect("context should initialize");
-    let mut visited = None;
-    apply_fcall_result_fast_path(
-        3,
-        instruction,
-        effects,
-        0x8000_0004,
-        10,
-        &mut state,
-        &mut context,
-        &mut |row, values, timing| {
-            assert_eq!(row, 3);
-            assert!(timing.is_none());
-            visited = Some(values);
-            Ok(())
-        },
-    )
-    .expect("free-call result row should take fast path");
-
-    assert_eq!(state.registers[10], 0x1234_5678);
-    assert_eq!(state.last_c, 0x1234_5678);
-    assert_eq!(state.next_pc, 0x8000_0004);
-    assert_eq!(state.register_mem_steps[10], 15);
-    let values = visited.expect("fast path should emit row values");
-    assert_eq!(values.a, 0);
-    assert_eq!(values.b, 0x1234_5678);
-    assert_eq!(values.c, 0x1234_5678);
-    assert!(!values.flag);
-    assert_eq!(values.register_accesses.a_prev_mem_step, None);
-    assert_eq!(values.register_accesses.b_prev_mem_step, None);
-    assert_eq!(values.register_accesses.store_prev_mem_step, Some(44));
-    assert_eq!(values.register_accesses.store_prev_value, Some(0xaa55));
 }
 
 #[test]
