@@ -403,11 +403,19 @@ def target_max_avg_s(args: argparse.Namespace, label: str) -> float | None:
 
 
 class ProofEnv:
-    def __init__(self, prefix: str, label: str, default_trace_limit: str, root: Path):
+    def __init__(
+        self,
+        prefix: str,
+        label: str,
+        default_trace_limit: str,
+        root: Path,
+        bin_override: str | None = None,
+    ):
         self.prefix = prefix
         self.label = label
         self.default_trace_limit = default_trace_limit
         self.root = root
+        self.bin_override = bin_override
 
     def var(self, suffix: str) -> str:
         return f"{self.prefix}_{suffix}"
@@ -442,6 +450,11 @@ class ProofEnv:
             self.var("TRACE_LIMIT"),
         )
 
+    def bin_value(self) -> str | Path:
+        if self.bin_override:
+            return self.bin_override
+        return os.environ.get(self.var("BIN"), DEFAULT_BIN_RELATIVE)
+
 
 class GpuMemoryRow(NamedTuple):
     index: int
@@ -454,7 +467,7 @@ class GpuMemoryRow(NamedTuple):
 def configured_paths(config: ProofEnv) -> dict[str, Path]:
     paths = {suffix.lower(): config.path(suffix) for suffix in REQUIRED_SUFFIXES}
     validate_framed_input_data(paths["input_data"], config.var("INPUT_DATA"))
-    bin_value = os.environ.get(config.var("BIN"))
+    bin_value = config.bin_override or os.environ.get(config.var("BIN"))
     bin_path = (
         resolve_workspace_path(bin_value, config.root)
         if bin_value
@@ -487,15 +500,15 @@ def configured_paths(config: ProofEnv) -> dict[str, Path]:
     return paths
 
 
-def proof_envs(root: Path) -> tuple[ProofEnv, ProofEnv]:
+def proof_envs(args: argparse.Namespace, root: Path) -> tuple[ProofEnv, ProofEnv]:
     return (
-        ProofEnv(SMALL_PREFIX, "small", "120000000", root),
-        ProofEnv(LARGE_PREFIX, "large", "600000000", root),
+        ProofEnv(SMALL_PREFIX, "small", "120000000", root, args.small_bin),
+        ProofEnv(LARGE_PREFIX, "large", "600000000", root, args.large_bin),
     )
 
 
 def template_envs(args: argparse.Namespace, root: Path) -> list[tuple[ProofEnv, str]]:
-    small, large = proof_envs(root)
+    small, large = proof_envs(args, root)
     requested = {
         "small": [(small, args.small_mode)],
         "large": [(large, args.large_mode)],
@@ -537,7 +550,7 @@ def env_template_text(args: argparse.Namespace, root: Path) -> str:
         lines.append(
             shell_export(
                 config.var("BIN"),
-                os.environ.get(config.var("BIN"), DEFAULT_BIN_RELATIVE),
+                config.bin_value(),
             )
         )
         for suffix in REQUIRED_SUFFIXES:
@@ -686,6 +699,12 @@ def next_command_parts(
             "--env-file",
         )
         parts.extend(["--env-file", display_path_for_shell(env_file_path, root)])
+    if args.small_bin is not None:
+        small_bin = display_path_for_shell(resolve_workspace_path(args.small_bin, root), root)
+        parts.extend(["--small-bin", small_bin])
+    if args.large_bin is not None:
+        large_bin = display_path_for_shell(resolve_workspace_path(args.large_bin, root), root)
+        parts.extend(["--large-bin", large_bin])
     parts.extend(["--max-runs", str(effective_max_runs(args))])
     parts.extend(
         [
@@ -1247,7 +1266,7 @@ def artifact_template_help_lines() -> list[str]:
 
 
 def selected_envs(args: argparse.Namespace, root: Path) -> list[tuple[ProofEnv, str]]:
-    small, large = proof_envs(root)
+    small, large = proof_envs(args, root)
     requested = {
         "small": [(small, args.small_mode)],
         "large": [(large, args.large_mode)],
@@ -1647,6 +1666,7 @@ def self_test() -> None:
         small_mode="combined",
         small_timeout=10.0,
         skip_targets=False,
+        small_bin=None,
         small_max_avg_s=None,
         append_max_average_rejections=False,
         suite="both",
@@ -1654,6 +1674,7 @@ def self_test() -> None:
         work_dir=str(work_dir / "runs"),
         check_env=False,
         enforce_targets=False,
+        large_bin=None,
         large_max_avg_s=None,
         parallel_lower_job_queue=None,
         parallel_lower_workers=None,
@@ -1787,6 +1808,8 @@ def main() -> None:
     parser.add_argument("--summary")
     parser.add_argument("--commit")
     parser.add_argument("--env-file")
+    parser.add_argument("--small-bin")
+    parser.add_argument("--large-bin")
     parser.add_argument("--max-relative-spread", type=nonnegative_float, default=0.10)
     parser.add_argument("--runner", default=DEFAULT_RUNNER)
     parser.add_argument("--dry-run", action="store_true")

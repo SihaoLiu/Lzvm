@@ -1085,6 +1085,51 @@ fn eth_proof_timing_batch_check_env_reports_ready_paths() {
 }
 
 #[test]
+fn eth_proof_timing_batch_check_env_preserves_cli_binary_override() {
+    let fixture = ProofFixture::new("eth-proof-timing-batch-cli-bin-override");
+    let override_bin = write_fake_lzvm(&fixture.dir, "override lzvm");
+    make_executable(&override_bin);
+    let override_rel = override_bin
+        .strip_prefix(workspace_root())
+        .expect("override binary path should be under workspace")
+        .display()
+        .to_string();
+    let mut command = Command::new(script_path());
+    command
+        .arg("--suite")
+        .arg("small")
+        .arg("--check-env")
+        .arg("--small-bin")
+        .arg(&override_bin);
+    fixture.apply_env(&mut command, SMALL_PREFIX);
+
+    let output = command
+        .output()
+        .expect("ETH proof timing batch env check should accept CLI binary override");
+    let success = output.status.success();
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    fixture.cleanup();
+
+    assert!(
+        success,
+        "env check should pass with a CLI binary override: stderr={stderr}"
+    );
+    assert!(
+        stdout.contains(&format!("small_bin={}", override_bin.display())),
+        "env check should report the CLI-selected binary: {stdout}"
+    );
+    assert!(
+        stdout.contains(&format!("--small-bin '{}'", override_rel)),
+        "follow-up commands should preserve the CLI binary override: {stdout}"
+    );
+    assert!(
+        !stdout.contains(&format!("small_bin={}", fixture.fake_bin.display())),
+        "env binary should not override the CLI-selected binary: {stdout}"
+    );
+}
+
+#[test]
 fn eth_proof_timing_batch_check_env_preserves_trace_diagnostic_next_commands() {
     let fixture = ProofFixture::new("eth-proof-timing-batch-check-env-trace-diagnostic");
     let mut command = Command::new(script_path());
