@@ -1672,6 +1672,10 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
             && prefixes.prefix("runtime_pipeline_binding_checked_acceptance_audited_proof_system_core_contract")
             .contains("system.traceConsistent publicInput proof trace")
             && prefixes.prefix("runtime_pipeline_binding_checked_acceptance_audited_proof_system_core_contract")
+            .contains("system.constraintsSatisfied constraints trace")
+            && prefixes.prefix("runtime_pipeline_binding_checked_acceptance_audited_proof_system_core_contract")
+            .contains("system.witnessMatchesTrace witness trace")
+            && prefixes.prefix("runtime_pipeline_binding_checked_acceptance_audited_proof_system_core_contract")
             .contains("SoundWitness system publicInput proof"),
         "pipeline contracts should expose compact proof-system, binding, execution, verifier core, and witness evidence"
     );
@@ -2067,6 +2071,9 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
             "validation.queryPlanBindingValidation.queryPlanSeededFriOpeningRequirementsChecked",
             "RuntimeVerifierCoreContract system publicInput proof",
             "exists witness trace constraints",
+            "system.traceConsistent publicInput proof trace",
+            "system.constraintsSatisfied constraints trace",
+            "system.witnessMatchesTrace witness trace",
             "SoundWitness system publicInput proof",
         ],
     );
@@ -2108,6 +2115,9 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
             "validation.queryPlanBindingValidation.queryPlanSeededFriOpeningRequirementsChecked",
             "RuntimeVerifierCoreContract system publicInput proof",
             "exists witness trace constraints",
+            "system.traceConsistent publicInput proof trace",
+            "system.constraintsSatisfied constraints trace",
+            "system.witnessMatchesTrace witness trace",
             "SoundWitness system publicInput proof",
             "RuntimeProofArtifactBindingValidationAgreement",
             "artifactValidation.proofContainerCanonical artifact publicInput proof",
@@ -2142,6 +2152,12 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
             "RuntimeProofArtifactConcreteSegmentIdBinding",
             "RequiredSemanticAssumptionStatements assumptions.semantic",
             "RuntimeProofArtifactFinalized",
+            "RuntimeVerifierCoreContract system publicInput proof",
+            "exists witness trace constraints",
+            "system.traceConsistent publicInput proof trace",
+            "system.constraintsSatisfied constraints trace",
+            "system.witnessMatchesTrace witness trace",
+            "SoundWitness system publicInput proof",
             "RuntimeProofArtifactConcreteSegmentIdsAllowed proof",
         ],
     );
@@ -2596,6 +2612,8 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
             "system.pcsOpeningsValid publicInput proof",
             "system.friQueriesValid publicInput proof",
             "system.traceConsistent publicInput proof trace",
+            "system.constraintsSatisfied constraints trace",
+            "system.witnessMatchesTrace witness trace",
             "RuntimeVerifierCoreContract system publicInput proof",
             "SoundWitness system publicInput proof",
         ],
@@ -2630,6 +2648,8 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
             "system.pcsOpeningsValid publicInput proof",
             "system.friQueriesValid publicInput proof",
             "system.traceConsistent publicInput proof trace",
+            "system.constraintsSatisfied constraints trace",
+            "system.witnessMatchesTrace witness trace",
             "RuntimeVerifierCoreContract system publicInput proof",
             "SoundWitness system publicInput proof",
         ],
@@ -2718,8 +2738,12 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
             .contains("RuntimeVerifierCoreContract system publicInput proof")
             && prefixes.prefix("runtime_pipeline_binding_required_external_source_full_soundness_contract")
             .contains("system.traceConsistent publicInput proof trace")
-                        && prefixes.prefix("runtime_pipeline_binding_required_external_source_full_soundness_contract")
-                        .contains("SoundWitness system publicInput proof")
+            && prefixes.prefix("runtime_pipeline_binding_required_external_source_full_soundness_contract")
+            .contains("system.constraintsSatisfied constraints trace")
+            && prefixes.prefix("runtime_pipeline_binding_required_external_source_full_soundness_contract")
+            .contains("system.witnessMatchesTrace witness trace")
+            && prefixes.prefix("runtime_pipeline_binding_required_external_source_full_soundness_contract")
+            .contains("SoundWitness system publicInput proof")
             && prefixes.prefix("runtime_pipeline_binding_required_external_source_full_soundness_contract")
             .contains("RuntimeFriFoldTraceIdentityContract")
             && prefixes.prefix("runtime_pipeline_binding_required_external_source_full_soundness_contract")
@@ -2822,6 +2846,10 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
             .contains("RuntimeVerifierCoreContract system publicInput proof")
             && prefixes.prefix("runtime_pipeline_binding_required_external_source_audited_proof_system_core_contract")
             .contains("system.traceConsistent publicInput proof trace")
+            && prefixes.prefix("runtime_pipeline_binding_required_external_source_audited_proof_system_core_contract")
+            .contains("system.constraintsSatisfied constraints trace")
+            && prefixes.prefix("runtime_pipeline_binding_required_external_source_audited_proof_system_core_contract")
+            .contains("system.witnessMatchesTrace witness trace")
             && prefixes.prefix("runtime_pipeline_binding_required_external_source_audited_proof_system_core_contract")
             .contains("SoundWitness system publicInput proof"),
         "pipeline required external-source projection should package audited proof-system core obligations"
@@ -3010,6 +3038,8 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
             "system.pcsOpeningsValid publicInput proof",
             "system.friQueriesValid publicInput proof",
             "system.traceConsistent publicInput proof trace",
+            "system.constraintsSatisfied constraints trace",
+            "system.witnessMatchesTrace witness trace",
             "RuntimeVerifierCoreContract system publicInput proof",
             "SoundWitness system publicInput proof",
         ],
@@ -3048,6 +3078,8 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
             "system.pcsOpeningsValid publicInput proof",
             "system.friQueriesValid publicInput proof",
             "system.traceConsistent publicInput proof trace",
+            "system.constraintsSatisfied constraints trace",
+            "system.witnessMatchesTrace witness trace",
             "RuntimeVerifierCoreContract system publicInput proof",
             "SoundWitness system publicInput proof",
         ],
@@ -3235,6 +3267,10 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
             "validation.queryPlanBindingValidation.queryPlanSeedBindsWitnessTreeDigests",
             "validation.queryPlanBindingValidation.queryPlanSeededFriOpeningRequirementsChecked",
             "RuntimeVerifierCoreContract system publicInput proof",
+            "exists witness trace constraints",
+            "system.traceConsistent publicInput proof trace",
+            "system.constraintsSatisfied constraints trace",
+            "system.witnessMatchesTrace witness trace",
             "SoundWitness system publicInput proof",
         ],
     );
@@ -3354,6 +3390,9 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
             "runtime_pipeline_opening_source_validation validation",
             "RuntimeVerifierCoreContract system publicInput proof",
             "exists witness trace constraints",
+            "system.traceConsistent publicInput proof trace",
+            "system.constraintsSatisfied constraints trace",
+            "system.witnessMatchesTrace witness trace",
             "SoundWitness system publicInput proof",
             "RuntimeProofArtifactBindingValidationAgreement",
             "artifactValidation.proofContainerCanonical artifact publicInput proof",
@@ -3388,6 +3427,12 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
             "RuntimeProofArtifactConcreteSegmentIdBinding",
             "RequiredSemanticAssumptionStatements assumptions.semantic",
             "RuntimeProofArtifactFinalized",
+            "RuntimeVerifierCoreContract system publicInput proof",
+            "exists witness trace constraints",
+            "system.traceConsistent publicInput proof trace",
+            "system.constraintsSatisfied constraints trace",
+            "system.witnessMatchesTrace witness trace",
+            "SoundWitness system publicInput proof",
             "RuntimeProofArtifactConcreteSegmentIdsAllowed proof",
         ],
     );

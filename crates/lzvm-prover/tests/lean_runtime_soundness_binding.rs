@@ -912,6 +912,8 @@ fn lean_runtime_soundness_binding_exports_core_contract_projection() {
             "RuntimeArtifactSoundnessObligations",
             "RuntimeVerifierCoreContract system publicInput proof",
             "system.traceConsistent publicInput proof trace",
+            "system.constraintsSatisfied constraints trace",
+            "system.witnessMatchesTrace witness trace",
             "SoundWitness system publicInput proof",
         ],
     );
@@ -931,7 +933,10 @@ fn lean_runtime_soundness_binding_exports_core_contract_projection() {
             "RequiredSemanticAssumptionStatements assumptions.semantic",
             "RuntimeProofArtifactFinalized",
             "RuntimeVerifierCoreContract system publicInput proof",
+            "exists witness trace constraints",
             "system.traceConsistent publicInput proof trace",
+            "system.constraintsSatisfied constraints trace",
+            "system.witnessMatchesTrace witness trace",
             "SoundWitness system publicInput proof",
         ],
     );
@@ -1251,6 +1256,16 @@ fn lean_runtime_soundness_binding_exports_core_contract_projection() {
                 &lean_source,
                 "runtime_soundness_required_external_source_audited_proof_system_core_contract"
             )
+            .contains("system.constraintsSatisfied constraints trace")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_soundness_required_external_source_audited_proof_system_core_contract"
+            )
+            .contains("system.witnessMatchesTrace witness trace")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_soundness_required_external_source_audited_proof_system_core_contract"
+            )
             .contains("SoundWitness system publicInput proof"),
         "required external-source runtime soundness should package audited proof-system core obligations"
     );
@@ -1451,7 +1466,10 @@ fn lean_runtime_soundness_binding_exports_core_contract_projection() {
             "RuntimeProofArtifactFinalized",
             "ExternalSourceOpeningEvidence",
             "RuntimeVerifierCoreContract system publicInput proof",
+            "exists witness trace constraints",
             "system.traceConsistent publicInput proof trace",
+            "system.constraintsSatisfied constraints trace",
+            "system.witnessMatchesTrace witness trace",
             "SoundWitness system publicInput proof",
         ],
     );
@@ -1535,6 +1553,16 @@ fn lean_runtime_soundness_binding_exports_core_contract_projection() {
                 "runtime_soundness_required_external_source_contracts_core_contract"
             )
             .contains("system.traceConsistent publicInput proof trace")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_soundness_required_external_source_contracts_core_contract"
+            )
+            .contains("system.constraintsSatisfied constraints trace")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_soundness_required_external_source_contracts_core_contract"
+            )
+            .contains("system.witnessMatchesTrace witness trace")
             && theorem_prefix(
                 &lean_source,
                 "runtime_soundness_required_external_source_contracts_core_contract"
@@ -1941,7 +1969,10 @@ fn lean_runtime_soundness_binding_exports_core_contract_projection() {
             "RequiredSemanticAssumptionStatements assumptions.semantic",
             "RuntimeProofArtifactFinalized",
             "RuntimeVerifierCoreContract system publicInput proof",
+            "exists witness trace constraints",
             "system.traceConsistent publicInput proof trace",
+            "system.constraintsSatisfied constraints trace",
+            "system.witnessMatchesTrace witness trace",
             "SoundWitness system publicInput proof",
             "RuntimeProofArtifactConcreteSegmentIdsAllowed proof",
         ],
@@ -2041,6 +2072,16 @@ fn lean_runtime_soundness_binding_exports_core_contract_projection() {
                 "runtime_soundness_checked_acceptance_contracts_core_contract"
             )
             .contains("system.traceConsistent publicInput proof trace")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_soundness_checked_acceptance_contracts_core_contract"
+            )
+            .contains("system.constraintsSatisfied constraints trace")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_soundness_checked_acceptance_contracts_core_contract"
+            )
+            .contains("system.witnessMatchesTrace witness trace")
             && theorem_prefix(
                 &lean_source,
                 "runtime_soundness_checked_acceptance_contracts_core_contract"
@@ -2176,6 +2217,16 @@ fn lean_runtime_soundness_binding_exports_core_contract_projection() {
                 "runtime_soundness_checked_acceptance_artifact_contracts_core_contract"
             )
             .contains("system.traceConsistent publicInput proof trace")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_soundness_checked_acceptance_artifact_contracts_core_contract"
+            )
+            .contains("system.constraintsSatisfied constraints trace")
+            && theorem_prefix(
+                &lean_source,
+                "runtime_soundness_checked_acceptance_artifact_contracts_core_contract"
+            )
+            .contains("system.witnessMatchesTrace witness trace")
             && theorem_prefix(
                 &lean_source,
                 "runtime_soundness_checked_acceptance_artifact_contracts_core_contract"
