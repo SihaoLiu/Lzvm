@@ -3,7 +3,6 @@
 #include <cuda_runtime.h>
 
 #include <chrono>
-#include <cstring>
 #include <limits>
 
 namespace {
@@ -249,30 +248,6 @@ extern "C" int lzvm_cuda_pinned_host_alloc(void** out, std::size_t bytes) {
         return 0;
     }
     return static_cast<int>(cudaHostAlloc(out, bytes, cudaHostAllocDefault));
-}
-
-extern "C" int lzvm_cuda_pinned_host_alloc_copy_from(
-    void** out,
-    const void* src,
-    std::size_t bytes) {
-    if (out == nullptr) {
-        return -1;
-    }
-    *out = nullptr;
-    if (bytes == 0) {
-        return 0;
-    }
-    if (src == nullptr) {
-        return -1;
-    }
-    const int status =
-        static_cast<int>(cudaHostAlloc(out, bytes, cudaHostAllocDefault));
-    if (status != 0) {
-        *out = nullptr;
-        return status;
-    }
-    std::memcpy(*out, src, bytes);
-    return 0;
 }
 
 extern "C" void lzvm_cuda_pinned_host_free(void* ptr) {

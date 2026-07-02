@@ -26,11 +26,6 @@ impl MainTraceDeviceLayout {
 
 unsafe extern "C" {
     fn lzvm_cuda_pinned_host_alloc(out: *mut *mut c_void, bytes: usize) -> i32;
-    safe fn lzvm_cuda_pinned_host_alloc_copy_from(
-        out: *mut *mut c_void,
-        src: *const c_void,
-        bytes: usize,
-    ) -> i32;
     fn lzvm_cuda_pinned_host_free(ptr: *mut c_void);
     fn lzvm_cuda_copy_h2d_bytes(dst: *mut c_void, src: *const c_void, bytes: usize) -> i32;
     fn lzvm_cuda_copy_h2d_pinned_bytes(dst: *mut c_void, src: *const c_void, bytes: usize) -> i32;
@@ -863,18 +858,6 @@ impl CudaPinnedHostBuffer {
     pub fn new(len: usize) -> Result<Self, AccelError> {
         let mut ptr = ptr::null_mut();
         let code = unsafe { lzvm_cuda_pinned_host_alloc(&mut ptr, len) };
-        cuda_status(code)?;
-        if len > 0 && ptr.is_null() {
-            return Err(AccelError::Cuda { code: -1 });
-        }
-        Ok(Self { ptr, len })
-    }
-
-    #[cfg(target_endian = "little")]
-    pub fn from_u64_words(words: &[u64]) -> Result<Self, AccelError> {
-        let len = u64_word_byte_len(words.len())?;
-        let mut ptr = ptr::null_mut();
-        let code = lzvm_cuda_pinned_host_alloc_copy_from(&mut ptr, words.as_ptr().cast(), len);
         cuda_status(code)?;
         if len > 0 && ptr.is_null() {
             return Err(AccelError::Cuda { code: -1 });
@@ -3172,27 +3155,20 @@ mod tests {
     }
 
     #[test]
-    fn pinned_host_to_device_copy_round_trips_without_registering_host_range() {
+    fn pinned_host_to_device_copy_records_copy_without_registering_host_range() {
         let _guard = crate::CUDA_TEST_LOCK
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
         cuda_allocator::cuda_allocator_clear_cache().expect("allocator cache should clear");
-        let words = (0..200_000_u64)
-            .map(|value| value.wrapping_mul(0x1_0000_0001))
-            .collect::<Vec<_>>();
-        let byte_len = words.len() * std::mem::size_of::<u64>();
-        let pinned = CudaPinnedHostBuffer::from_u64_words(&words)
-            .expect("pinned host words should allocate");
+        let byte_len = 200_000 * std::mem::size_of::<u64>();
+        let pinned =
+            CudaPinnedHostBuffer::new(byte_len).expect("pinned host buffer should allocate");
         let mut device = CudaDeviceBuffer::new(byte_len).expect("device buffer should allocate");
 
         device
             .copy_from_pinned(&pinned)
             .expect("pinned H2D copy should run");
 
-        assert_eq!(
-            device.to_u64_words().expect("device words should download"),
-            words
-        );
         let stats = cuda_allocator::cuda_allocator_stats().expect("allocator stats should load");
         assert_eq!(
             stats.cuda_host_register_calls, 0,
@@ -3201,13 +3177,12 @@ mod tests {
         assert_eq!(stats.cuda_copy_h2d_calls, 1);
         assert_eq!(stats.cuda_copy_h2d_bytes, byte_len);
 
-        let mut too_short =
+        let short =
             CudaPinnedHostBuffer::new(byte_len - 1).expect("short pinned buffer should allocate");
         let error = device
-            .copy_from_pinned(&too_short)
+            .copy_from_pinned(&short)
             .expect_err("short pinned source should be rejected");
         assert!(matches!(error, AccelError::LengthMismatch { .. }));
-        unsafe { too_short.as_mut_bytes() }.fill(0);
 
         cuda_allocator::cuda_allocator_clear_cache().expect("allocator cache should clear");
     }
