@@ -94,6 +94,7 @@ fn lean_runtime_soundness_binding_exports_core_contract_projection() {
             "runtime_soundness_checked_acceptance_audited_soundness_proof_system_contract",
             "runtime_soundness_checked_acceptance_audited_soundness_finalized_proof_system_contract",
             "runtime_soundness_checked_acceptance_audited_finalized_core_sound_witness_contract",
+            "runtime_soundness_checked_acceptance_audited_finalized_concrete_segment_ids_contract",
             "runtime_soundness_checked_acceptance_audited_accepts_sound_witness_contract",
             "runtime_soundness_required_external_source_pcs_sound",
             "runtime_soundness_required_external_source_verifier_core_contract",
@@ -1929,6 +1930,38 @@ fn lean_runtime_soundness_binding_exports_core_contract_projection() {
             identifier,
         );
     }
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_soundness_checked_acceptance_audited_finalized_concrete_segment_ids_contract",
+        &[
+            "(assumptions : AssumptionBundle system)",
+            "RuntimeProofArtifactConcreteSegmentIdBinding",
+            "validation.transcriptValidation.artifactBindingValidation",
+            "RequiredCryptographicAssumptionStatements assumptions.crypto",
+            "RequiredSemanticAssumptionStatements assumptions.semantic",
+            "RuntimeProofArtifactFinalized",
+            "RuntimeVerifierCoreContract system publicInput proof",
+            "system.traceConsistent publicInput proof trace",
+            "SoundWitness system publicInput proof",
+            "RuntimeProofArtifactConcreteSegmentIdsAllowed proof",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_soundness_checked_acceptance_audited_finalized_concrete_segment_ids_contract",
+        &[
+            "runtime_soundness_checked_acceptance_audited_finalized_core_sound_witness_contract",
+            "runtime_soundness_checked_acceptance_concrete_segment_ids_allowed",
+        ],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &lean_source,
+        "runtime_soundness_checked_acceptance_audited_finalized_concrete_segment_ids_contract",
+        &[
+            "accepted_proof_audited_core_and_sound_witness",
+            "runtime_soundness_checked_acceptance_audited_soundness_finalized_proof_system_contract",
+        ],
+    );
     lean_binding::assert_theorem_body_contains(
         &lean_source,
         "runtime_soundness_checked_acceptance_proof_system_sound",
