@@ -10897,6 +10897,43 @@ fn guest_machine_load_helpers_are_inlined_on_runner_hot_path() {
 }
 
 #[test]
+fn guest_machine_report_fast_path_runs_under_runner_detail_timing() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let source_path = crate_root.join("src/guest_machine/mod.rs");
+    let source = std::fs::read_to_string(&source_path).expect("guest machine source should read");
+
+    let body = function_body(
+        &source,
+        "fn advance_guest_machine_prepared_inner_report_shape_at_pc_into",
+        "fn try_advance_guest_machine_report_fast_path",
+    );
+    let fast_path_timer_index = body
+        .find("let fast_path_started = advance_timing_started(&timing);")
+        .expect("sampled fast path should start an advance timer");
+    let fast_path_index = body
+        .find("try_advance_guest_machine_report_fast_path(")
+        .expect("prepared advance should try the report fast path");
+    let setup_index = body
+        .find("let setup_started = advance_timing_started(&timing);")
+        .expect("prepared advance should retain generic setup timing");
+    assert!(
+        fast_path_timer_index < fast_path_index && fast_path_index < setup_index,
+        "sampled runner detail should exercise the report fast path before generic setup"
+    );
+
+    let fast_path_block = &body[fast_path_index..setup_index];
+    assert!(
+        fast_path_block.contains("record_advance_timing(fast_path_started, timing.as_deref_mut()")
+            && fast_path_block.contains("&mut timing.execute_duration"),
+        "sampled report fast path should be attributed to advance execution timing"
+    );
+    assert!(
+        !body.contains("if timing.is_none()"),
+        "runner detail timing should not disable the report fast path"
+    );
+}
+
+#[test]
 fn guest_machine_store_writes_use_scalar_memory_helper() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let machine_path = crate_root.join("src/guest_machine/mod.rs");

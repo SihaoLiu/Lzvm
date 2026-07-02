@@ -1641,18 +1641,20 @@ fn advance_guest_machine_prepared_inner_report_shape_at_pc_into(
     let sequential_pc = address
         .checked_add(byte_len as u64)
         .ok_or(GuestMachineError::ProgramCounterOverflow { address, byte_len })?;
-    if timing.is_none() {
-        if let Some(shape) = try_advance_guest_machine_report_fast_path(
-            memory,
-            state,
-            address,
-            byte_len,
-            sequential_pc,
-            instruction,
-            report,
-        )? {
-            return Ok(shape);
-        }
+    let fast_path_started = advance_timing_started(&timing);
+    if let Some(shape) = try_advance_guest_machine_report_fast_path(
+        memory,
+        state,
+        address,
+        byte_len,
+        sequential_pc,
+        instruction,
+        report,
+    )? {
+        record_advance_timing(fast_path_started, timing.as_deref_mut(), |timing| {
+            &mut timing.execute_duration
+        });
+        return Ok(shape);
     }
     let setup_started = advance_timing_started(&timing);
     let mut effects = GuestInstructionEffects::default();
