@@ -158,6 +158,51 @@ theorem runtime_pipeline_binding_checked_acceptance_audited_segment_ids_contract
       segmentIdsUnique,
       unitValuesTraceIdentityCoverage⟩
 
+theorem runtime_pipeline_binding_checked_acceptance_concrete_core_sound_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimePipelineBindingValidation system)
+    (binding :
+      let queryPlanValidation := validation.queryPlanBindingValidation
+      let challengeValidation := queryPlanValidation.challengeValidation
+      RuntimeProofArtifactConcreteSegmentIdBinding
+        challengeValidation.transcriptValidation.artifactBindingValidation) :
+    forall artifact publicInput proof requiresExternalSource,
+      RuntimePipelineBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        (RuntimePipelineBindingEvidence
+            system
+            validation
+            artifact
+            publicInput
+            proof
+            requiresExternalSource
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof)
+          /\ RuntimeProofArtifactConcreteSegmentIdsAllowed proof := by
+  intro artifact publicInput proof requiresExternalSource accepted
+  exact
+    And.intro
+      (runtime_pipeline_binding_checked_acceptance_evidence_core_and_sound
+        assumptions
+        validation
+        artifact
+        publicInput
+        proof
+        requiresExternalSource
+        accepted)
+      (runtime_pipeline_binding_checked_acceptance_concrete_segment_ids_allowed
+        validation
+        binding
+        artifact
+        publicInput
+        proof
+        accepted)
+
 theorem runtime_pipeline_binding_checked_acceptance_audited_concrete_segment_ids_contract
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)

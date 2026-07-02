@@ -228,6 +228,7 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
             "runtime_pipeline_binding_checked_acceptance_trace_artifact_soundness_obligations",
             "runtime_pipeline_binding_checked_acceptance_trace_artifact_evidence_core_and_sound",
             "runtime_pipeline_binding_checked_acceptance_evidence_core_and_sound",
+            "runtime_pipeline_binding_checked_acceptance_concrete_core_sound_contract",
             "runtime_pipeline_binding_checked_acceptance_accepts_full_soundness_contract",
             "runtime_pipeline_binding_checked_acceptance_proof_system_sound",
             "runtime_pipeline_binding_checked_acceptance_proof_system_full_soundness_contract",
@@ -1534,6 +1535,40 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
         "runtime_pipeline_binding_checked_acceptance_evidence_core_and_sound",
         &["sound_witness_implies_verifier_core_contract"],
     );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_pipeline_binding_checked_acceptance_concrete_core_sound_contract",
+        &[
+            "(assumptions : AssumptionBundle system)",
+            "let queryPlanValidation := validation.queryPlanBindingValidation",
+            "let challengeValidation := queryPlanValidation.challengeValidation",
+            "RuntimeProofArtifactConcreteSegmentIdBinding",
+            "challengeValidation.transcriptValidation.artifactBindingValidation",
+            "RuntimePipelineBindingEvidence",
+            "RuntimeVerifierCoreContract system publicInput proof",
+            "SoundWitness system publicInput proof",
+            "RuntimeProofArtifactConcreteSegmentIdsAllowed proof",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_pipeline_binding_checked_acceptance_concrete_core_sound_contract",
+        &[
+            "runtime_pipeline_binding_checked_acceptance_evidence_core_and_sound",
+            "runtime_pipeline_binding_checked_acceptance_concrete_segment_ids_allowed",
+        ],
+    );
+    for identifier in [
+        "runtime_pipeline_binding_checked_acceptance_sound",
+        "sound_witness_implies_verifier_core_contract",
+        "abstract_verifier_sound",
+    ] {
+        lean_binding::assert_theorem_body_omits_identifier(
+            &lean_source,
+            "runtime_pipeline_binding_checked_acceptance_concrete_core_sound_contract",
+            identifier,
+        );
+    }
     assert!(
         theorem_prefix(
             &lean_source,
