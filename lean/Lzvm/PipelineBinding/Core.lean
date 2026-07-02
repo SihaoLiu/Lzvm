@@ -5,4 +5,5 @@ Authors: Sihao Liu
 -/
 
 import Lzvm.PipelineBinding.Core.Base
+import Lzvm.PipelineBinding.Core.Evidence
 import Lzvm.PipelineBinding.Core.Derived
