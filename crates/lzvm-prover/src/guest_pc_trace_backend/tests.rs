@@ -3800,6 +3800,54 @@ fn parallel_lower_implies_trusted_runner_seed_snapshot() {
     assert!(guest_pc_trace_runner_seed_snapshot_trusted_enabled());
 }
 
+#[cfg(feature = "cuda")]
+#[test]
+fn auto_parallel_lower_selects_report_elision_unless_disabled() {
+    let _env_lock = GUEST_PC_TRACE_ENV_LOCK
+        .lock()
+        .expect("guest PC trace env lock should not be poisoned");
+    let _parallel_env = TestEnvVarGuard::unset("LZVM_GUEST_PC_TRACE_PARALLEL_LOWER");
+    let _work_units_env = TestEnvVarGuard::unset("LZVM_GUEST_PC_TRACE_PARALLEL_LOWER_WORK_UNITS");
+    let replay_env = TestEnvVarGuard::unset("LZVM_GUEST_PC_TRACE_PARALLEL_LOWER_REPLAY_ONLY");
+    let instruction_limit = DEFAULT_GUEST_PC_TRACE_AUTO_PARALLEL_LOWER_MIN_INSTRUCTIONS;
+
+    assert!(guest_pc_trace_parallel_lower_enabled_for_limit(
+        instruction_limit
+    ));
+    assert!(guest_pc_trace_parallel_lower_report_elision_enabled_for_limit(instruction_limit));
+    assert!(guest_pc_trace_parallel_lower_replay_snapshot_enabled_for_limit(instruction_limit));
+    assert!(!GuestPcTraceParallelLowerMode::from_runtime(instruction_limit).work_units);
+    assert!(GuestPcTraceParallelLowerMode::from_runtime(instruction_limit).replay_snapshot);
+
+    drop(replay_env);
+    let _replay_env = TestEnvVarGuard::set("LZVM_GUEST_PC_TRACE_PARALLEL_LOWER_REPLAY_ONLY", "0");
+    assert!(!guest_pc_trace_parallel_lower_report_elision_enabled_for_limit(instruction_limit));
+    assert!(!guest_pc_trace_parallel_lower_replay_snapshot_enabled_for_limit(instruction_limit));
+    assert!(!GuestPcTraceParallelLowerMode::from_runtime(instruction_limit).replay_snapshot);
+}
+
+#[cfg(feature = "cuda")]
+#[test]
+fn work_units_do_not_select_default_report_elision() {
+    let _env_lock = GUEST_PC_TRACE_ENV_LOCK
+        .lock()
+        .expect("guest PC trace env lock should not be poisoned");
+    let _parallel_env = TestEnvVarGuard::unset("LZVM_GUEST_PC_TRACE_PARALLEL_LOWER");
+    let _work_units_env =
+        TestEnvVarGuard::set("LZVM_GUEST_PC_TRACE_PARALLEL_LOWER_WORK_UNITS", "1");
+    let _replay_env = TestEnvVarGuard::unset("LZVM_GUEST_PC_TRACE_PARALLEL_LOWER_REPLAY_ONLY");
+    let instruction_limit = DEFAULT_GUEST_PC_TRACE_AUTO_PARALLEL_LOWER_MIN_INSTRUCTIONS;
+
+    assert!(guest_pc_trace_parallel_lower_enabled_for_limit(
+        instruction_limit
+    ));
+    assert!(guest_pc_trace_parallel_lower_work_units_enabled_for_limit(
+        instruction_limit
+    ));
+    assert!(!guest_pc_trace_parallel_lower_report_elision_enabled_for_limit(instruction_limit));
+    assert!(!guest_pc_trace_parallel_lower_replay_snapshot_enabled_for_limit(instruction_limit));
+}
+
 #[test]
 fn parallel_lower_work_units_selects_parallel_lower_without_replay_elision() {
     let _env_lock = GUEST_PC_TRACE_ENV_LOCK
