@@ -1017,20 +1017,6 @@ impl CudaDeviceBuffer {
         Ok(buffer)
     }
 
-    pub fn from_pinned_u64_words(words: &[u64]) -> Result<Self, AccelError> {
-        #[cfg(target_endian = "little")]
-        {
-            let pinned = CudaPinnedHostBuffer::from_u64_words(words)?;
-            let mut buffer = Self::new(pinned.len())?;
-            buffer.copy_from_pinned(&pinned)?;
-            Ok(buffer)
-        }
-        #[cfg(not(target_endian = "little"))]
-        {
-            Self::from_u64_words(words)
-        }
-    }
-
     #[track_caller]
     pub fn from_row_major_u64_slice(
         words: &[u64],
