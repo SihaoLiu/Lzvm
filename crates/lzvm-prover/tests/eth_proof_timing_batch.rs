@@ -381,6 +381,7 @@ fn eth_proof_timing_batch_dry_run_builds_small_command_from_env() {
         .env("LZVM_GUEST_TRACE_DETAIL_TIMING", "1")
         .env("LZVM_GUEST_TRACE_DETAIL_TIMING_SAMPLE_STRIDE", "7")
         .env("LZVM_GUEST_TRACE_SHAPE_TIMING", "1")
+        .env("LZVM_GUEST_TRACE_SHAPE_TIMING_SAMPLE_STRIDE", "11")
         .env("CUDA_VISIBLE_DEVICES", "");
     fixture.apply_env(&mut command, SMALL_PREFIX);
 
@@ -468,13 +469,15 @@ fn eth_proof_timing_batch_dry_run_builds_small_command_from_env() {
     assert!(
         stdout.contains("-u LZVM_GUEST_TRACE_DETAIL_TIMING")
             && stdout.contains("-u LZVM_GUEST_TRACE_DETAIL_TIMING_SAMPLE_STRIDE")
-            && stdout.contains("-u LZVM_GUEST_TRACE_SHAPE_TIMING"),
+            && stdout.contains("-u LZVM_GUEST_TRACE_SHAPE_TIMING")
+            && stdout.contains("-u LZVM_GUEST_TRACE_SHAPE_TIMING_SAMPLE_STRIDE"),
         "prove and verify commands should clear ambient trace diagnostic controls: {stdout}"
     );
     assert!(
         !stdout.contains("LZVM_GUEST_TRACE_DETAIL_TIMING=1")
             && !stdout.contains("LZVM_GUEST_TRACE_DETAIL_TIMING_SAMPLE_STRIDE=7")
             && !stdout.contains("LZVM_GUEST_TRACE_SHAPE_TIMING=1")
+            && !stdout.contains("LZVM_GUEST_TRACE_SHAPE_TIMING_SAMPLE_STRIDE=11")
             && stdout.contains("trace_shape_timing=false\n")
             && stdout.contains("trace_detail_timing=false\n")
             && stdout.contains("trace_detail_timing_sample_stride=\n"),
