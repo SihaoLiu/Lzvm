@@ -68,6 +68,10 @@ fn parse_summary_values(stdout: &str) -> BTreeMap<String, String> {
     let mut lines = stdout.lines();
     let header = parse_csv_line(lines.next().expect("summary should include a header"));
     let row = parse_csv_line(lines.next().expect("summary should include a data row"));
+    assert!(
+        lines.next().is_none(),
+        "summary should include exactly one data row: stdout={stdout}"
+    );
     assert_eq!(
         header.len(),
         row.len(),
@@ -285,127 +289,71 @@ fn prove_timing_root_summary_reports_stream_chunk_process_time() {
         "prove timing root summary should parse stream chunk input: stderr={}",
         String::from_utf8_lossy(&output.stderr)
     );
-    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
-    let mut lines = stdout.lines();
-    let headers = lines.next().expect("summary should include a header");
-    let row = lines.next().expect("summary should include a data row");
-    let headers = headers.split(',').collect::<Vec<_>>();
-    let row = row.split(',').collect::<Vec<_>>();
-    let index = headers
-        .iter()
-        .position(|header| *header == "parallel_lower_stream_chunk_process_ms")
-        .unwrap_or_else(|| panic!("missing stream chunk process header: {headers:?}"));
+    let values =
+        parse_summary_values(&String::from_utf8(output.stdout).expect("stdout should be utf-8"));
     assert_eq!(
-        row.get(index).copied(),
-        Some("123"),
+        expect_summary_value(&values, "parallel_lower_stream_chunk_process_ms"),
+        "123",
         "stream chunk process timing should be surfaced in root summary"
     );
-    let stream_segment_index = headers
-        .iter()
-        .position(|header| *header == "parallel_lower_stream_segments")
-        .unwrap_or_else(|| panic!("missing stream segment count header: {headers:?}"));
     assert_eq!(
-        row.get(stream_segment_index).copied(),
-        Some("4"),
+        expect_summary_value(&values, "parallel_lower_stream_segments"),
+        "4",
         "stream segment count should be surfaced in root summary"
     );
-    let stream_chunk_index = headers
-        .iter()
-        .position(|header| *header == "parallel_lower_stream_chunks")
-        .unwrap_or_else(|| panic!("missing stream chunk count header: {headers:?}"));
     assert_eq!(
-        row.get(stream_chunk_index).copied(),
-        Some("512"),
+        expect_summary_value(&values, "parallel_lower_stream_chunks"),
+        "512",
         "stream chunk count should be surfaced in root summary"
     );
-    let chunks_per_segment_index = headers
-        .iter()
-        .position(|header| *header == "parallel_lower_stream_chunks_per_segment")
-        .unwrap_or_else(|| panic!("missing stream chunks-per-segment header: {headers:?}"));
     assert_eq!(
-        row.get(chunks_per_segment_index).copied(),
-        Some("128.000"),
+        expect_summary_value(&values, "parallel_lower_stream_chunks_per_segment"),
+        "128.000",
         "stream chunks per segment should be surfaced in root summary"
     );
-    let reports_per_chunk_index = headers
-        .iter()
-        .position(|header| *header == "parallel_lower_stream_reports_per_chunk")
-        .unwrap_or_else(|| panic!("missing stream reports-per-chunk header: {headers:?}"));
     assert_eq!(
-        row.get(reports_per_chunk_index).copied(),
-        Some("4096.000"),
+        expect_summary_value(&values, "parallel_lower_stream_reports_per_chunk"),
+        "4096.000",
         "stream reports per chunk should be surfaced in root summary"
     );
-    let stream_shape_index = headers
-        .iter()
-        .position(|header| *header == "parallel_lower_stream_shape_hint")
-        .unwrap_or_else(|| panic!("missing stream shape hint header: {headers:?}"));
     assert_eq!(
-        row.get(stream_shape_index).copied(),
-        Some("many_chunks_per_segment"),
+        expect_summary_value(&values, "parallel_lower_stream_shape_hint"),
+        "many_chunks_per_segment",
         "stream shape hint should identify segment-internal chunk serialization pressure"
     );
-    let stream_fallback_index = headers
-        .iter()
-        .position(|header| *header == "parallel_lower_stream_fallbacks")
-        .unwrap_or_else(|| panic!("missing stream fallback count header: {headers:?}"));
     assert_eq!(
-        row.get(stream_fallback_index).copied(),
-        Some("1"),
+        expect_summary_value(&values, "parallel_lower_stream_fallbacks"),
+        "1",
         "stream fallback count should be surfaced in root summary"
     );
-    let stream_retained_index = headers
-        .iter()
-        .position(|header| *header == "parallel_lower_stream_retained_reports")
-        .unwrap_or_else(|| panic!("missing stream retained report count header: {headers:?}"));
     assert_eq!(
-        row.get(stream_retained_index).copied(),
-        Some("7"),
+        expect_summary_value(&values, "parallel_lower_stream_retained_reports"),
+        "7",
         "stream retained report count should be surfaced in root summary"
     );
-    let owned_lower_index = headers
-        .iter()
-        .position(|header| *header == "owned_streaming_lower_segments")
-        .unwrap_or_else(|| panic!("missing owned lower segment count header: {headers:?}"));
     assert_eq!(
-        row.get(owned_lower_index).copied(),
-        Some("3"),
+        expect_summary_value(&values, "owned_streaming_lower_segments"),
+        "3",
         "owned streaming lower segment count should be surfaced in root summary"
     );
-    let receive_wait_index = headers
-        .iter()
-        .position(|header| *header == "parallel_lower_job_receive_wait_ms")
-        .unwrap_or_else(|| panic!("missing worker job receive wait header: {headers:?}"));
     assert_eq!(
-        row.get(receive_wait_index).copied(),
-        Some("456"),
+        expect_summary_value(&values, "parallel_lower_job_receive_wait_ms"),
+        "456",
         "worker job receive wait timing should be surfaced in root summary"
     );
-    let send_wait_index = headers
-        .iter()
-        .position(|header| *header == "parallel_lower_result_send_wait_ms")
-        .unwrap_or_else(|| panic!("missing worker result send wait header: {headers:?}"));
     assert_eq!(
-        row.get(send_wait_index).copied(),
-        Some("789"),
+        expect_summary_value(&values, "parallel_lower_result_send_wait_ms"),
+        "789",
         "worker result send wait timing should be surfaced in root summary"
     );
-    let apply_index = headers
-        .iter()
-        .position(|header| *header == "trace_report_apply_ms")
-        .unwrap_or_else(|| panic!("missing report apply header: {headers:?}"));
     assert_eq!(
-        row.get(apply_index).copied(),
-        Some("111"),
+        expect_summary_value(&values, "trace_report_apply_ms"),
+        "111",
         "report apply timing should be surfaced in root summary"
     );
-    let summary_index = headers
-        .iter()
-        .position(|header| *header == "trace_unit_summary_ms")
-        .unwrap_or_else(|| panic!("missing unit summary header: {headers:?}"));
     assert_eq!(
-        row.get(summary_index).copied(),
-        Some("12"),
+        expect_summary_value(&values, "trace_unit_summary_ms"),
+        "12",
         "unit summary timing should be surfaced in root summary"
     );
 }
@@ -600,39 +548,47 @@ fn prove_timing_root_summary_reports_fri_transcript_and_contribution_work() {
         success,
         "prove timing root summary should parse final proof input: stderr={stderr}"
     );
-    let mut lines = stdout.lines();
-    let headers = parse_csv_line(lines.next().expect("summary should include a header"));
-    let row = parse_csv_line(lines.next().expect("summary should include a data row"));
-    assert_eq!(
-        headers.len(),
-        row.len(),
-        "summary header and row should have matching column counts"
-    );
-    let value = |name: &str| -> &str {
-        let index = headers
-            .iter()
-            .position(|header| header == name)
-            .unwrap_or_else(|| panic!("missing {name} header: {headers:?}"));
-        row.get(index)
-            .map(String::as_str)
-            .unwrap_or_else(|| panic!("missing {name} value: {row:?}"))
-    };
+    let values = parse_summary_values(&stdout);
 
-    assert_eq!(value("fri_transcript_unit_build_ms"), "4");
-    assert_eq!(value("fri_transcript_layer_tree_ms"), "2");
-    assert_eq!(value("fri_transcript_fold_ms"), "1");
-    assert_eq!(value("fri_transcript_units"), "1");
-    assert_eq!(value("fri_transcript_layers"), "2");
-    assert_eq!(value("fri_transcript_layers_per_unit"), "2.000");
-    assert_eq!(value("contribution_segment_ms"), "5");
-    assert_eq!(value("contribution_verify_ms"), "6");
-    assert_eq!(value("contribution_challenge_ms"), "7");
-    assert_eq!(value("contribution_total_ms"), "18");
-    assert_eq!(value("fri_opening_total_pct"), "10.000");
-    assert_eq!(value("fri_transcript_unit_build_total_pct"), "4.000");
-    assert_eq!(value("contribution_total_pct"), "18.000");
     assert_eq!(
-        value("final_proof_timing_hint"),
+        expect_summary_value(&values, "fri_transcript_unit_build_ms"),
+        "4"
+    );
+    assert_eq!(
+        expect_summary_value(&values, "fri_transcript_layer_tree_ms"),
+        "2"
+    );
+    assert_eq!(expect_summary_value(&values, "fri_transcript_fold_ms"), "1");
+    assert_eq!(expect_summary_value(&values, "fri_transcript_units"), "1");
+    assert_eq!(expect_summary_value(&values, "fri_transcript_layers"), "2");
+    assert_eq!(
+        expect_summary_value(&values, "fri_transcript_layers_per_unit"),
+        "2.000"
+    );
+    assert_eq!(
+        expect_summary_value(&values, "contribution_segment_ms"),
+        "5"
+    );
+    assert_eq!(expect_summary_value(&values, "contribution_verify_ms"), "6");
+    assert_eq!(
+        expect_summary_value(&values, "contribution_challenge_ms"),
+        "7"
+    );
+    assert_eq!(expect_summary_value(&values, "contribution_total_ms"), "18");
+    assert_eq!(
+        expect_summary_value(&values, "fri_opening_total_pct"),
+        "10.000"
+    );
+    assert_eq!(
+        expect_summary_value(&values, "fri_transcript_unit_build_total_pct"),
+        "4.000"
+    );
+    assert_eq!(
+        expect_summary_value(&values, "contribution_total_pct"),
+        "18.000"
+    );
+    assert_eq!(
+        expect_summary_value(&values, "final_proof_timing_hint"),
         "profile_final_proof_contribution"
     );
 }
