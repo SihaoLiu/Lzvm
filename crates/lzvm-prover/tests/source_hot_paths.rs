@@ -10892,6 +10892,13 @@ fn guest_pc_report_level_fast_path_dispatches_by_instruction() {
         body.contains("match report.instruction"),
         "report-level fast path should dispatch by instruction before calling matchers"
     );
+    assert!(
+        compact_source_contains(
+            body,
+            "kind: RiscvOpImmKind::Addi, rd, rs1, immediate, } if rd != 0 && (rs1 == 0 || immediate == 0)"
+        ),
+        "report-level dispatch should only probe simple-copy matching for copy-shaped addi rows"
+    );
     let load_copy_index = body
         .find("load_copy_indirect_register_store_fast_path_parts")
         .expect("report-level dispatch should include unsigned load rows");

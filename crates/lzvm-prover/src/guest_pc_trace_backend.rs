@@ -11554,20 +11554,21 @@ fn report_level_fast_path_parts(
         })),
         RiscvInstruction::OpImm {
             kind: RiscvOpImmKind::Addi,
+            rd,
+            rs1,
+            immediate,
+        } if rd != 0 && (rs1 == 0 || immediate == 0) => Ok(
+            simple_copy_register_store_fast_path_parts(row, report)?.map(
+                |(instruction, b_index, store_index)| {
+                    MainReportFastPathParts::SimpleCopy(instruction, b_index, store_index)
+                },
+            ),
+        ),
+        RiscvInstruction::OpImm {
+            kind: RiscvOpImmKind::Addi,
             ..
-        } => {
-            if let Some((instruction, b_index, store_index)) =
-                simple_copy_register_store_fast_path_parts(row, report)?
-            {
-                return Ok(Some(MainReportFastPathParts::SimpleCopy(
-                    instruction,
-                    b_index,
-                    store_index,
-                )));
-            }
-            Ok(arithmetic_fast_path_parts(row, report)?
-                .map(|(instruction, parts)| MainReportFastPathParts::NoMemory(instruction, parts)))
-        }
+        } => Ok(arithmetic_fast_path_parts(row, report)?
+            .map(|(instruction, parts)| MainReportFastPathParts::NoMemory(instruction, parts))),
         RiscvInstruction::OpImm { .. }
         | RiscvInstruction::OpImm32 { .. }
         | RiscvInstruction::Op { .. }
