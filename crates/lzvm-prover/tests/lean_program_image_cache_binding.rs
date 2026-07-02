@@ -47,6 +47,10 @@ fn lean_program_image_cache_binding_exports_core_contract_projection() {
             "runtime_program_image_cache_binding_checked_acceptance_structural_obligations",
             "runtime_program_image_cache_binding_checked_acceptance_full_contract",
             "runtime_program_image_cache_binding_checked_acceptance_evidence_core_and_sound",
+            concat!(
+                "runtime_program_image_cache_binding_checked_acceptance_",
+                "concrete_core_sound_contract"
+            ),
             "runtime_program_image_cache_binding_audited_finalized_core_sound_witness_contract",
             "runtime_program_image_cache_binding_audited_finalized_concrete_segment_ids_contract",
             "runtime_program_image_cache_binding_checked_acceptance_unit_values_trace_identity_coverage",
@@ -229,6 +233,50 @@ fn lean_program_image_cache_binding_exports_core_contract_projection() {
         "runtime_program_image_cache_binding_checked_acceptance_evidence_core_and_sound",
         &["sound_witness_implies_verifier_core_contract"],
     );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        concat!(
+            "runtime_program_image_cache_binding_checked_acceptance_",
+            "concrete_core_sound_contract"
+        ),
+        &[
+            "RuntimeProgramImageCacheBindingCheckedAcceptance",
+            "RuntimeProofArtifactConcreteSegmentIdBinding",
+            "validation.proofArtifactBindingValidation",
+            "RuntimeProgramImageCacheBindingEvidence",
+            "RuntimeProofArtifactBindingEvidence",
+            "RuntimeProgramImageCacheBindingStructuralObligations",
+            "RuntimeArtifactEvidence",
+            "RuntimeVerifierCoreContract system publicInput proof",
+            "SoundWitness system publicInput proof",
+            "RuntimeProofArtifactConcreteSegmentIdsAllowed proof",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        concat!(
+            "runtime_program_image_cache_binding_checked_acceptance_",
+            "concrete_core_sound_contract"
+        ),
+        &[
+            "runtime_program_image_cache_binding_checked_acceptance_evidence_core_and_sound",
+            "runtime_program_image_cache_binding_checked_acceptance_concrete_segment_ids_allowed",
+        ],
+    );
+    for identifier in [
+        "runtime_program_image_cache_binding_checked_acceptance_sound",
+        "sound_witness_implies_verifier_core_contract",
+        "abstract_verifier_sound",
+    ] {
+        lean_binding::assert_theorem_body_omits_identifier(
+            &lean_source,
+            concat!(
+                "runtime_program_image_cache_binding_checked_acceptance_",
+                "concrete_core_sound_contract"
+            ),
+            identifier,
+        );
+    }
     lean_binding::assert_theorem_prefix_contains(
         &lean_source,
         "runtime_program_image_cache_binding_audited_finalized_core_sound_witness_contract",
