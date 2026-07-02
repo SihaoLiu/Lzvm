@@ -10503,7 +10503,6 @@ enum MainReportFastPathParts {
     StoreCopy(ZiskMainInstruction, u8, u8, i64),
     SimpleCopy(ZiskMainInstruction, Option<u8>, u8),
     Jump(ZiskMainInstruction, MainJumpFastPathParts),
-    PcRelative(ZiskMainInstruction, MainJumpFastPathParts),
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -10683,18 +10682,6 @@ fn validate_and_apply_zisk_main_report(
                     )?;
                 }
                 MainReportFastPathParts::Jump(instruction, parts) => {
-                    apply_jump_fast_path(
-                        row,
-                        instruction,
-                        effects,
-                        report.next_pc,
-                        parts,
-                        state,
-                        context,
-                        &mut visit,
-                    )?;
-                }
-                MainReportFastPathParts::PcRelative(instruction, parts) => {
                     apply_jump_fast_path(
                         row,
                         instruction,
@@ -11477,7 +11464,7 @@ fn report_level_fast_path_parts(
             MainReportFastPathParts::StoreCopy(instruction, a_index, b_index, store_offset)
         })),
         RiscvInstruction::Auipc { .. } => Ok(pc_relative_fast_path_parts(row, report)?
-            .map(|(instruction, parts)| MainReportFastPathParts::PcRelative(instruction, parts))),
+            .map(|(instruction, parts)| MainReportFastPathParts::Jump(instruction, parts))),
         RiscvInstruction::Jal { .. } | RiscvInstruction::Jalr { .. } => {
             Ok(jump_fast_path_parts(row, report)?
                 .map(|(instruction, parts)| MainReportFastPathParts::Jump(instruction, parts)))
