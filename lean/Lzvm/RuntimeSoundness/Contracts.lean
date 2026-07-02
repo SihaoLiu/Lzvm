@@ -1345,4 +1345,86 @@ theorem runtime_soundness_required_external_source_artifact_audited_finalized_se
       segmentIdsUnique,
       unitValuesTraceIdentityCoverage⟩
 
+theorem
+runtime_soundness_required_external_source_artifact_audited_finalized_concrete_segment_ids_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeSoundnessValidation system)
+    (binding :
+      RuntimeProofArtifactConcreteSegmentIdBinding
+        validation.transcriptValidation.artifactBindingValidation) :
+    forall artifact publicInput proof (requiresExternalSource : Prop),
+      RuntimeSoundnessCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof
+          requiresExternalSource ->
+        requiresExternalSource ->
+          (let artifactValidation :=
+            validation.transcriptValidation.artifactBindingValidation
+           RuntimeArtifactEvidence
+            system
+            artifactValidation.runtimeValidation
+            artifact
+            publicInput
+            proof
+            /\ RequiredCryptographicAssumptionStatements assumptions.crypto
+            /\ RequiredSemanticAssumptionStatements assumptions.semantic
+            /\ RuntimeProofArtifactFinalized
+              system
+              artifactValidation
+              artifact
+              publicInput
+              proof
+            /\ ProofSystemSound system
+            /\ system.accepts publicInput proof
+            /\ ExternalSourceOpeningEvidence
+              system
+              validation.sourceValidation
+              publicInput
+              proof
+            /\ system.transcriptBound publicInput proof
+            /\ system.publicInputBound publicInput proof
+            /\ system.pcsOpeningsValid publicInput proof
+            /\ system.friQueriesValid publicInput proof
+            /\ RuntimeVerifierCoreContract system publicInput proof
+            /\ (exists witness trace constraints,
+              system.traceConsistent publicInput proof trace
+                /\ system.constraintsSatisfied constraints trace
+                /\ system.witnessMatchesTrace witness trace)
+            /\ SoundWitness system publicInput proof
+            /\ artifactValidation.proofContainerCanonical artifact publicInput proof
+            /\ artifactValidation.proofSegmentsPresent artifact publicInput proof
+            /\ artifactValidation.proofMetadataCanonical artifact publicInput proof
+            /\ artifactValidation.proofSegmentPayloadsNonempty artifact publicInput proof
+            /\ artifactValidation.proofSegmentIdsAllowed artifact publicInput proof
+            /\ artifactValidation.proofSegmentIdsUnique artifact publicInput proof
+            /\ artifactValidation.proofUnitValuesTraceIdentityCoverage
+              artifact
+              publicInput
+              proof)
+          /\ RuntimeProofArtifactConcreteSegmentIdsAllowed proof := by
+  intro artifact publicInput proof requiresExternalSource checked required
+  exact
+    And.intro
+      (runtime_soundness_required_external_source_artifact_audited_finalized_segment_ids_contract
+        assumptions
+        validation
+        artifact
+        publicInput
+        proof
+        requiresExternalSource
+        checked
+        required)
+      (runtime_soundness_checked_acceptance_concrete_segment_ids_allowed
+        validation
+        binding
+        artifact
+        publicInput
+        proof
+        requiresExternalSource
+        checked)
+
 end Lzvm
