@@ -56,6 +56,7 @@ fn lean_challenge_segment_binding_exports_core_contract_projection() {
             "runtime_challenge_segment_binding_checked_acceptance_verifier_core_contract",
             "runtime_challenge_segment_binding_checked_acceptance_challenge_and_core_contract",
             "runtime_challenge_segment_binding_checked_acceptance_evidence_core_and_sound",
+            "runtime_challenge_segment_binding_checked_acceptance_concrete_core_sound_contract",
         ],
     );
     lean_binding::assert_theorem_prefix_contains(
@@ -357,6 +358,36 @@ fn lean_challenge_segment_binding_exports_core_contract_projection() {
         &lean_source,
         "runtime_challenge_segment_binding_checked_acceptance_evidence_core_and_sound",
         &["sound_witness_implies_verifier_core_contract"],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_challenge_segment_binding_checked_acceptance_concrete_core_sound_contract",
+        &[
+            "RuntimeChallengeSegmentBindingCheckedAcceptance",
+            "RuntimeProofArtifactConcreteSegmentIdBinding",
+            "RuntimeChallengeSegmentBindingEvidence",
+            "RuntimeTranscriptBindingEvidence",
+            "system.transcriptBound publicInput proof",
+            "RuntimeVerifierCoreContract system publicInput proof",
+            "SoundWitness system publicInput proof",
+            "RuntimeProofArtifactConcreteSegmentIdsAllowed proof",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_challenge_segment_binding_checked_acceptance_concrete_core_sound_contract",
+        &[
+            "runtime_challenge_segment_binding_checked_acceptance_evidence_core_and_sound",
+            "runtime_challenge_segment_binding_checked_acceptance_concrete_segment_ids_allowed",
+        ],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &lean_source,
+        "runtime_challenge_segment_binding_checked_acceptance_concrete_core_sound_contract",
+        &[
+            "runtime_challenge_segment_binding_checked_acceptance_sound",
+            "sound_witness_implies_verifier_core_contract",
+        ],
     );
 }
 

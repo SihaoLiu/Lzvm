@@ -876,4 +876,53 @@ theorem runtime_challenge_segment_binding_checked_acceptance_evidence_core_and_s
         (And.intro checkedSound.right.right.left
           (And.intro coreContract checkedSound.right.right.right)))
 
+theorem
+  runtime_challenge_segment_binding_checked_acceptance_concrete_core_sound_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeChallengeSegmentBindingValidation system)
+    (binding :
+      RuntimeProofArtifactConcreteSegmentIdBinding
+        validation.transcriptValidation.artifactBindingValidation) :
+    forall artifact publicInput proof,
+      RuntimeChallengeSegmentBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        (RuntimeChallengeSegmentBindingEvidence
+            system
+            validation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeTranscriptBindingEvidence
+            system
+            validation.transcriptValidation
+            artifact
+            publicInput
+            proof
+          /\ system.transcriptBound publicInput proof
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof)
+          /\ RuntimeProofArtifactConcreteSegmentIdsAllowed proof := by
+  intro artifact publicInput proof accepted
+  exact
+    And.intro
+      (runtime_challenge_segment_binding_checked_acceptance_evidence_core_and_sound
+        assumptions
+        validation
+        artifact
+        publicInput
+        proof
+        accepted)
+      (runtime_challenge_segment_binding_checked_acceptance_concrete_segment_ids_allowed
+        validation
+        binding
+        artifact
+        publicInput
+        proof
+        accepted)
+
 end Lzvm
