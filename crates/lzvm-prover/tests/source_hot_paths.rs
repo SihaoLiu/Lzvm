@@ -10920,6 +10920,9 @@ fn guest_pc_report_level_fast_path_dispatches_by_instruction() {
     let special_index = body
         .find("special_no_memory_fast_path_parts")
         .expect("report-level dispatch should include special no-memory rows");
+    let fcall_result_index = body
+        .find("fcall_result_fast_path_parts")
+        .expect("report-level dispatch should include free-call result rows");
     let simple_copy_index = body
         .find("simple_copy_register_store_fast_path_parts")
         .expect("report-level dispatch should include simple copy rows");
@@ -10933,7 +10936,8 @@ fn guest_pc_report_level_fast_path_dispatches_by_instruction() {
             && pc_relative_index < jump_index
             && jump_index < branch_index
             && branch_index < special_index
-            && special_index < simple_copy_index
+            && special_index < fcall_result_index
+            && fcall_result_index < simple_copy_index
             && simple_copy_index < arithmetic_index,
         "report-level dispatch should avoid unrelated matcher probes on common rows"
     );
