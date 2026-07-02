@@ -49,6 +49,10 @@ fn lean_eth_block_public_input_binding_exports_core_contract_projection() {
             "runtime_eth_block_public_input_binding_checked_acceptance_structural_obligations",
             "runtime_eth_block_public_input_binding_checked_acceptance_full_contract",
             "runtime_eth_block_public_input_binding_checked_acceptance_evidence_core_and_sound",
+            concat!(
+                "runtime_eth_block_public_input_binding_checked_acceptance_",
+                "concrete_core_sound_contract"
+            ),
         ],
     );
     lean_binding::assert_theorem_prefix_contains(
@@ -246,5 +250,39 @@ fn lean_eth_block_public_input_binding_exports_core_contract_projection() {
         &lean_source,
         "runtime_eth_block_public_input_binding_checked_acceptance_evidence_core_and_sound",
         &["sound_witness_implies_verifier_core_contract"],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_eth_block_public_input_binding_checked_acceptance_concrete_core_sound_contract",
+        &[
+            "RuntimeEthBlockPublicInputBindingCheckedAcceptance",
+            "RuntimeProofArtifactConcreteSegmentIdBinding",
+            "RuntimeEthBlockPublicInputBindingEvidence",
+            "RuntimeProofArtifactBindingEvidence",
+            "RuntimeEthBlockPublicInputBindingStructuralObligations",
+            "RuntimeArtifactEvidence",
+            "RuntimeVerifierCoreContract system publicInput proof",
+            "SoundWitness system publicInput proof",
+            "RuntimeProofArtifactConcreteSegmentIdsAllowed proof",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_eth_block_public_input_binding_checked_acceptance_concrete_core_sound_contract",
+        &[
+            "runtime_eth_block_public_input_binding_checked_acceptance_evidence_core_and_sound",
+            concat!(
+                "runtime_eth_block_public_input_binding_checked_acceptance_",
+                "concrete_segment_ids_allowed"
+            ),
+        ],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &lean_source,
+        "runtime_eth_block_public_input_binding_checked_acceptance_concrete_core_sound_contract",
+        &[
+            "runtime_eth_block_public_input_binding_checked_acceptance_sound",
+            "sound_witness_implies_verifier_core_contract",
+        ],
     );
 }
