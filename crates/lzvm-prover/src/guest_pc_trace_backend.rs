@@ -52,6 +52,13 @@ const ZISK_RAM_ADDRESS: u64 = 0xa000_0000;
 const ZISK_RAM_SIZE: u64 = 0x2000_0000;
 const ZISK_MAIN_REGISTER_START: usize = 1;
 const ZISK_MAIN_REGISTER_COUNT: usize = 31;
+
+#[inline(always)]
+fn valid_main_register_index(index: u8) -> bool {
+    let index = usize::from(index);
+    index >= ZISK_MAIN_REGISTER_START && index < ZISK_MAIN_REGISTER_START + ZISK_MAIN_REGISTER_COUNT
+}
+
 const ZISK_MAIN_RESERVED_MEM_STEPS: u64 = 1;
 const ZISK_MAIN_MEM_STEPS_PER_ROW: u64 = 4;
 const ZISK_MAIN_A_MEM_STEP_OFFSET: u64 = 0;
@@ -12184,14 +12191,10 @@ fn apply_copy_indirect_register_store_fast_path(
             ),
         });
     }
-    if !(ZISK_MAIN_REGISTER_START..ZISK_MAIN_REGISTER_START + ZISK_MAIN_REGISTER_COUNT)
-        .contains(&usize::from(a_index))
-    {
+    if !valid_main_register_index(a_index) {
         return Err(GuestPcTraceBackendError::UnsupportedZiskMainSource { row: output_row });
     }
-    if !(ZISK_MAIN_REGISTER_START..ZISK_MAIN_REGISTER_START + ZISK_MAIN_REGISTER_COUNT)
-        .contains(&usize::from(store_index))
-    {
+    if !valid_main_register_index(store_index) {
         return Err(GuestPcTraceBackendError::UnsupportedZiskMainStore { row: output_row });
     }
     let byte_len = usize::try_from(instruction.ind_width)
@@ -12499,9 +12502,7 @@ fn no_memory_fast_path_source_value(
         (ZiskMainSource::Immediate(value), None) => Ok(value),
         (ZiskMainSource::LastC, None) => Ok(state.last_c),
         (ZiskMainSource::Register(index), Some(expected)) if index == expected => {
-            if !(ZISK_MAIN_REGISTER_START..ZISK_MAIN_REGISTER_START + ZISK_MAIN_REGISTER_COUNT)
-                .contains(&usize::from(index))
-            {
+            if !valid_main_register_index(index) {
                 return Err(GuestPcTraceBackendError::UnsupportedZiskMainSource { row });
             }
             Ok(state.registers[usize::from(index)])
@@ -12555,9 +12556,7 @@ fn apply_no_memory_fast_path_register_accesses(
         ));
     }
     if let Some(index) = parts.store_index {
-        if !(ZISK_MAIN_REGISTER_START..ZISK_MAIN_REGISTER_START + ZISK_MAIN_REGISTER_COUNT)
-            .contains(&usize::from(index))
-        {
+        if !valid_main_register_index(index) {
             return Err(GuestPcTraceBackendError::UnsupportedZiskMainStore { row });
         }
         register_accesses.store_prev_value = Some(state.registers[usize::from(index)]);
@@ -12595,14 +12594,10 @@ fn apply_sign_extend_indirect_register_store_fast_path(
             ),
         });
     }
-    if !(ZISK_MAIN_REGISTER_START..ZISK_MAIN_REGISTER_START + ZISK_MAIN_REGISTER_COUNT)
-        .contains(&usize::from(a_index))
-    {
+    if !valid_main_register_index(a_index) {
         return Err(GuestPcTraceBackendError::UnsupportedZiskMainSource { row: output_row });
     }
-    if !(ZISK_MAIN_REGISTER_START..ZISK_MAIN_REGISTER_START + ZISK_MAIN_REGISTER_COUNT)
-        .contains(&usize::from(store_index))
-    {
+    if !valid_main_register_index(store_index) {
         return Err(GuestPcTraceBackendError::UnsupportedZiskMainStore { row: output_row });
     }
     let byte_len = usize::try_from(instruction.ind_width)
@@ -12719,15 +12714,11 @@ fn apply_simple_copy_register_store_fast_path(
     ) -> Result<(), GuestPcTraceBackendError>,
 ) -> Result<(), GuestPcTraceBackendError> {
     if let Some(index) = b_index {
-        if !(ZISK_MAIN_REGISTER_START..ZISK_MAIN_REGISTER_START + ZISK_MAIN_REGISTER_COUNT)
-            .contains(&usize::from(index))
-        {
+        if !valid_main_register_index(index) {
             return Err(GuestPcTraceBackendError::UnsupportedZiskMainSource { row: output_row });
         }
     }
-    if !(ZISK_MAIN_REGISTER_START..ZISK_MAIN_REGISTER_START + ZISK_MAIN_REGISTER_COUNT)
-        .contains(&usize::from(store_index))
-    {
+    if !valid_main_register_index(store_index) {
         return Err(GuestPcTraceBackendError::UnsupportedZiskMainStore { row: output_row });
     }
     if !effects.memory_accesses.is_empty() {
@@ -12843,14 +12834,10 @@ fn apply_copy_register_indirect_store_fast_path(
             ),
         });
     }
-    if !(ZISK_MAIN_REGISTER_START..ZISK_MAIN_REGISTER_START + ZISK_MAIN_REGISTER_COUNT)
-        .contains(&usize::from(a_index))
-    {
+    if !valid_main_register_index(a_index) {
         return Err(GuestPcTraceBackendError::UnsupportedZiskMainSource { row: output_row });
     }
-    if !(ZISK_MAIN_REGISTER_START..ZISK_MAIN_REGISTER_START + ZISK_MAIN_REGISTER_COUNT)
-        .contains(&usize::from(b_index))
-    {
+    if !valid_main_register_index(b_index) {
         return Err(GuestPcTraceBackendError::UnsupportedZiskMainSource { row: output_row });
     }
     let byte_len = usize::try_from(instruction.ind_width)
@@ -12956,9 +12943,7 @@ fn apply_copy_immediate_indirect_store_fast_path(
             ),
         });
     }
-    if !(ZISK_MAIN_REGISTER_START..ZISK_MAIN_REGISTER_START + ZISK_MAIN_REGISTER_COUNT)
-        .contains(&usize::from(a_index))
-    {
+    if !valid_main_register_index(a_index) {
         return Err(GuestPcTraceBackendError::UnsupportedZiskMainSource { row: output_row });
     }
     let byte_len = usize::try_from(instruction.ind_width)
@@ -13994,9 +13979,7 @@ fn zisk_main_store_register_index(
 }
 
 fn zisk_main_register_index(index: u8) -> Result<u8, ()> {
-    if (ZISK_MAIN_REGISTER_START..ZISK_MAIN_REGISTER_START + ZISK_MAIN_REGISTER_COUNT)
-        .contains(&usize::from(index))
-    {
+    if valid_main_register_index(index) {
         Ok(index)
     } else {
         Err(())
