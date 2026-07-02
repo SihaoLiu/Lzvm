@@ -2944,7 +2944,7 @@ pub(crate) fn build_guest_pc_trace_stage_source_devices_from_device_material_tim
             .as_mut()
             .map(|timing| &mut timing.descriptor_upload_duration),
         || {
-            CudaDeviceBuffer::from_u64_words(descriptors.words()).map_err(|error| {
+            CudaDeviceBuffer::from_pinned_u64_words(descriptors.words()).map_err(|error| {
                 guest_pc_device_trace_source_error(format!(
                     "CUDA trace descriptor upload failed: {error}"
                 ))

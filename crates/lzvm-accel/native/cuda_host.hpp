@@ -122,6 +122,10 @@ extern "C" int lzvm_cuda_allocator_clear_cache(void);
 extern "C" int lzvm_cuda_allocator_stats(LzvmCudaAllocatorStats* out);
 extern "C" int lzvm_cuda_memory_info(LzvmCudaMemoryInfo* out);
 extern "C" int lzvm_cuda_pinned_host_alloc(void** out, std::size_t bytes);
+extern "C" int lzvm_cuda_pinned_host_alloc_copy_from(
+    void** out,
+    const void* src,
+    std::size_t bytes);
 extern "C" void lzvm_cuda_pinned_host_free(void* ptr);
 extern "C" int lzvm_cuda_copy_h2d_bytes(void* dst, const void* src, std::size_t bytes);
 extern "C" int lzvm_cuda_copy_h2d_pinned_bytes(void* dst, const void* src, std::size_t bytes);

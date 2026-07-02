@@ -26,6 +26,11 @@ impl MainTraceDeviceLayout {
 
 unsafe extern "C" {
     fn lzvm_cuda_pinned_host_alloc(out: *mut *mut c_void, bytes: usize) -> i32;
+    safe fn lzvm_cuda_pinned_host_alloc_copy_from(
+        out: *mut *mut c_void,
+        src: *const c_void,
+        bytes: usize,
+    ) -> i32;
     fn lzvm_cuda_pinned_host_free(ptr: *mut c_void);
     fn lzvm_cuda_copy_h2d_bytes(dst: *mut c_void, src: *const c_void, bytes: usize) -> i32;
     fn lzvm_cuda_copy_h2d_pinned_bytes(dst: *mut c_void, src: *const c_void, bytes: usize) -> i32;
@@ -865,6 +870,18 @@ impl CudaPinnedHostBuffer {
         Ok(Self { ptr, len })
     }
 
+    #[cfg(target_endian = "little")]
+    pub fn from_u64_words(words: &[u64]) -> Result<Self, AccelError> {
+        let len = u64_word_byte_len(words.len())?;
+        let mut ptr = ptr::null_mut();
+        let code = lzvm_cuda_pinned_host_alloc_copy_from(&mut ptr, words.as_ptr().cast(), len);
+        cuda_status(code)?;
+        if len > 0 && ptr.is_null() {
+            return Err(AccelError::Cuda { code: -1 });
+        }
+        Ok(Self { ptr, len })
+    }
+
     pub fn len(&self) -> usize {
         self.len
     }
@@ -998,6 +1015,20 @@ impl CudaDeviceBuffer {
         let mut buffer = Self::new(u64_word_byte_len(words.len())?)?;
         buffer.copy_from_u64_words(words)?;
         Ok(buffer)
+    }
+
+    pub fn from_pinned_u64_words(words: &[u64]) -> Result<Self, AccelError> {
+        #[cfg(target_endian = "little")]
+        {
+            let pinned = CudaPinnedHostBuffer::from_u64_words(words)?;
+            let mut buffer = Self::new(pinned.len())?;
+            buffer.copy_from_pinned(&pinned)?;
+            Ok(buffer)
+        }
+        #[cfg(not(target_endian = "little"))]
+        {
+            Self::from_u64_words(words)
+        }
     }
 
     #[track_caller]
@@ -1324,7 +1355,7 @@ impl CudaDeviceBuffer {
                 rhs: expected_descriptor_words,
             });
         }
-        let descriptor_buffer = Self::from_u64_words(descriptors)?;
+        let descriptor_buffer = Self::from_pinned_u64_words(descriptors)?;
         Self::from_zisk_main_trace_descriptors_device(
             &descriptor_buffer,
             descriptor_words,
@@ -1358,7 +1389,7 @@ impl CudaDeviceBuffer {
             start_word,
             slice_width_words,
         )?;
-        let descriptor_buffer = Self::from_u64_words(descriptors)?;
+        let descriptor_buffer = Self::from_pinned_u64_words(descriptors)?;
         Self::from_zisk_main_trace_descriptors_device_selected_row_major_u64_slice(
             &descriptor_buffer,
             descriptor_words,
@@ -1387,7 +1418,7 @@ impl CudaDeviceBuffer {
             row_count,
             row_width_words,
         )?;
-        let descriptor_buffer = Self::from_u64_words(descriptors)?;
+        let descriptor_buffer = Self::from_pinned_u64_words(descriptors)?;
         let high_buffer = Self::from_u64_words(high_words)?;
         Self::from_sparse_zisk_main_trace_descriptors_device(
             &descriptor_buffer,
@@ -1419,7 +1450,7 @@ impl CudaDeviceBuffer {
             row_count,
             row_width_words,
         )?;
-        let descriptor_buffer = Self::from_u64_words(descriptors)?;
+        let descriptor_buffer = Self::from_pinned_u64_words(descriptors)?;
         Self::from_main_trace_descriptors_device_with_layout(
             &descriptor_buffer,
             descriptor_words,
@@ -1448,7 +1479,7 @@ impl CudaDeviceBuffer {
             row_count,
             row_width_words,
         )?;
-        let descriptor_buffer = Self::from_u64_words(descriptors)?;
+        let descriptor_buffer = Self::from_pinned_u64_words(descriptors)?;
         let high_buffer = Self::from_u64_words(high_words)?;
         let buffer = Self::new(output_byte_len)?;
         if row_count == 0 {
@@ -3164,14 +3195,8 @@ mod tests {
             .map(|value| value.wrapping_mul(0x1_0000_0001))
             .collect::<Vec<_>>();
         let byte_len = words.len() * std::mem::size_of::<u64>();
-        let mut pinned =
-            CudaPinnedHostBuffer::new(byte_len).expect("pinned host buffer should allocate");
-        for (chunk, word) in unsafe { pinned.as_mut_bytes() }
-            .chunks_exact_mut(std::mem::size_of::<u64>())
-            .zip(words.iter())
-        {
-            chunk.copy_from_slice(&word.to_le_bytes());
-        }
+        let pinned = CudaPinnedHostBuffer::from_u64_words(&words)
+            .expect("pinned host words should allocate");
         let mut device = CudaDeviceBuffer::new(byte_len).expect("device buffer should allocate");
 
         device
