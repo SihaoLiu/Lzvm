@@ -1790,8 +1790,7 @@ fn try_advance_guest_machine_report_fast_path(
             rs1,
             immediate,
         } => {
-            let value = execute_op_imm(kind, state.read_decoded_register(rs1), immediate)
-                .expect("decoded immediate op should be supported");
+            let value = execute_op_imm(kind, state.read_decoded_register(rs1), immediate);
             register_write = write_fast_reported_register(state, rd, value);
         }
         RiscvInstruction::Op { kind, rd, rs1, rs2 } => {
@@ -2123,12 +2122,7 @@ fn execute_guest_instruction(
             rs1,
             immediate,
         } => {
-            let value = execute_op_imm(kind, state.read_decoded_register(rs1), immediate).ok_or(
-                GuestMachineError::UnsupportedInstruction {
-                    address,
-                    instruction,
-                },
-            )?;
+            let value = execute_op_imm(kind, state.read_decoded_register(rs1), immediate);
             write_reported_register(state, effects, rd, value);
         }
         RiscvInstruction::Op { kind, rd, rs1, rs2 } => {
@@ -2806,11 +2800,10 @@ fn read_csr(csr: RiscvCsr, retired_instructions: u64) -> u64 {
     }
 }
 
-fn execute_op_imm(kind: RiscvOpImmKind, rs1: u64, immediate: i32) -> Option<u64> {
-    let wide_immediate = i64::from(immediate);
-    let value = match kind {
-        RiscvOpImmKind::Addi => rs1.wrapping_add_signed(wide_immediate),
-        RiscvOpImmKind::Slti => u64::from((rs1 as i64) < wide_immediate),
+fn execute_op_imm(kind: RiscvOpImmKind, rs1: u64, immediate: i32) -> u64 {
+    match kind {
+        RiscvOpImmKind::Addi => rs1.wrapping_add_signed(i64::from(immediate)),
+        RiscvOpImmKind::Slti => u64::from((rs1 as i64) < i64::from(immediate)),
         RiscvOpImmKind::Sltiu => u64::from(rs1 < immediate as u64),
         RiscvOpImmKind::Xori => rs1 ^ immediate as u64,
         RiscvOpImmKind::Ori => rs1 | immediate as u64,
@@ -2818,8 +2811,7 @@ fn execute_op_imm(kind: RiscvOpImmKind, rs1: u64, immediate: i32) -> Option<u64>
         RiscvOpImmKind::Slli => rs1.wrapping_shl((immediate as u32) & 0x3f),
         RiscvOpImmKind::Srli => rs1.wrapping_shr((immediate as u32) & 0x3f),
         RiscvOpImmKind::Srai => ((rs1 as i64) >> ((immediate as u32) & 0x3f)) as u64,
-    };
-    Some(value)
+    }
 }
 
 fn execute_op_imm_32(kind: RiscvOpImm32Kind, rs1: u64, immediate: i32) -> u64 {
