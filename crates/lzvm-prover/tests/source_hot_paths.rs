@@ -11059,9 +11059,12 @@ fn guest_machine_load_reads_memory_once_after_shape_decode() {
         "guest load decoding should make exactly one memory read after selecting load shape"
     );
     assert!(
-        load_body.contains("let memory_value = memory.read_u64_le(address, byte_len)?;")
-            && load_body.contains("let register_value = guest_load_register_value("),
-        "guest load decoding should normalize byte length and sign extension before reading memory"
+        load_body.contains("let byte_len = guest_load_byte_len(kind);")
+            && load_body.contains(
+                "let memory_value = memory.read_u64_le(address, usize::from(byte_len))?;"
+            )
+            && load_body.contains("let register_value = match kind"),
+        "guest load decoding should select byte length before its single memory read"
     );
 }
 
@@ -11071,11 +11074,7 @@ fn guest_machine_load_helpers_are_inlined_on_runner_hot_path() {
     let source_path = crate_root.join("src/guest_machine/mod.rs");
     let source = std::fs::read_to_string(&source_path).expect("guest machine source should read");
 
-    for function_name in [
-        "read_guest_load",
-        "guest_load_shape",
-        "guest_load_register_value",
-    ] {
+    for function_name in ["read_guest_load", "guest_load_byte_len"] {
         let needle = format!("#[inline(always)]\nfn {function_name}");
         assert!(
             source.contains(&needle),
@@ -11094,7 +11093,11 @@ fn guest_machine_store_writes_use_scalar_memory_helper() {
     let memory_source =
         std::fs::read_to_string(&memory_path).expect("guest machine memory source should read");
 
-    let store_body = function_body(&machine_source, "fn write_guest_store", "fn store_byte_len");
+    let store_body = function_body(
+        &machine_source,
+        "fn write_guest_store",
+        "fn low_bytes_value",
+    );
     for width in ["1", "2", "4", "8"] {
         assert!(
             store_body.contains(&format!("memory.write_u64_le::<{width}>")),
