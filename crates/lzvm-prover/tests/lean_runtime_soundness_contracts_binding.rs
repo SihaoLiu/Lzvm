@@ -89,6 +89,53 @@ fn lean_runtime_soundness_contracts_exports_artifact_audited_segment_contract() 
 }
 
 #[test]
+fn lean_runtime_soundness_contracts_exports_concrete_segment_contract() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let lean_path = crate_root.join("../../lean/Lzvm/RuntimeSoundness/Contracts.lean");
+    let lean_source = std::fs::read_to_string(&lean_path)
+        .expect("Lean runtime soundness contracts source should read");
+
+    lean_binding::assert_theorem_declarations(
+        &lean_source,
+        &["runtime_soundness_checked_acceptance_artifact_audited_concrete_segment_ids_contract"],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_soundness_checked_acceptance_artifact_audited_concrete_segment_ids_contract",
+        &[
+            "RuntimeProofArtifactConcreteSegmentIdBinding",
+            "RuntimeSoundnessCheckedAcceptance",
+            "RuntimeArtifactEvidence",
+            "RequiredCryptographicAssumptionStatements assumptions.crypto",
+            "RequiredSemanticAssumptionStatements assumptions.semantic",
+            "ProofSystemSound system",
+            "RuntimeVerifierCoreContract system publicInput proof",
+            "SoundWitness system publicInput proof",
+            "proofSegmentIdsAllowed artifact publicInput proof",
+            "proofUnitValuesTraceIdentityCoverage",
+            "RuntimeProofArtifactConcreteSegmentIdsAllowed proof",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_soundness_checked_acceptance_artifact_audited_concrete_segment_ids_contract",
+        &[
+            "runtime_soundness_checked_acceptance_artifact_audited_segment_ids_contract",
+            "runtime_soundness_checked_acceptance_concrete_segment_ids_allowed",
+        ],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &lean_source,
+        "runtime_soundness_checked_acceptance_artifact_audited_concrete_segment_ids_contract",
+        &[
+            "assumptions.crypto.transcript_binding",
+            "assumptions.semantic.public_input_binding",
+            "sound_witness_implies_verifier_core_contract",
+        ],
+    );
+}
+
+#[test]
 fn lean_runtime_soundness_contracts_exports_required_source_finalized_segment_contract() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let lean_path = crate_root.join("../../lean/Lzvm/RuntimeSoundness/Contracts.lean");
