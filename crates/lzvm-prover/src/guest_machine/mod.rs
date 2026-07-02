@@ -3052,8 +3052,11 @@ mod tests {
         state
     }
 
-    fn assert_report_fast_path_matches_generic(instruction: RiscvInstruction) {
-        let mut fast_memory = guest_machine_memory_with_words(&[0x0000_0073]);
+    fn assert_report_fast_path_matches_generic_with_words(
+        instruction: RiscvInstruction,
+        words: &[u32],
+    ) {
+        let mut fast_memory = guest_machine_memory_with_words(words);
         let mut generic_memory = fast_memory.clone();
         let mut fast_state = report_fast_path_test_state();
         let mut generic_state = fast_state.clone();
@@ -3083,6 +3086,10 @@ mod tests {
         assert_eq!(fast, generic);
         assert_eq!(fast_state, generic_state);
         assert_eq!(fast_memory, generic_memory);
+    }
+
+    fn assert_report_fast_path_matches_generic(instruction: RiscvInstruction) {
+        assert_report_fast_path_matches_generic_with_words(instruction, &[0x0000_0073]);
     }
 
     fn assert_pending_dma_fast_path_matches_generic(
@@ -3217,6 +3224,83 @@ mod tests {
                 mode: 0,
                 predecessor: 0,
                 successor: 0,
+            },
+        ] {
+            assert_report_fast_path_matches_generic(instruction);
+        }
+    }
+
+    #[test]
+    fn prepared_load_width_fast_paths_match_timed_generic_advance() {
+        for (kind, words) in [
+            (RiscvLoadKind::Lb, &[0x0000_0080, 0][..]),
+            (RiscvLoadKind::Lh, &[0x0000_8000, 0][..]),
+            (RiscvLoadKind::Lw, &[0x8000_0000, 0][..]),
+            (RiscvLoadKind::Ld, &[0xffff_ffff, 0x8000_0000][..]),
+            (RiscvLoadKind::Lbu, &[0x0000_00ff, 0][..]),
+            (RiscvLoadKind::Lhu, &[0x0000_ffff, 0][..]),
+            (RiscvLoadKind::Lwu, &[0xffff_ffff, 0][..]),
+        ] {
+            assert_report_fast_path_matches_generic_with_words(
+                RiscvInstruction::Load {
+                    kind,
+                    rd: 8,
+                    rs1: 6,
+                    offset: 0,
+                },
+                words,
+            );
+        }
+    }
+
+    #[test]
+    fn prepared_store_width_fast_paths_match_timed_generic_advance() {
+        for kind in [
+            RiscvStoreKind::Sb,
+            RiscvStoreKind::Sh,
+            RiscvStoreKind::Sw,
+            RiscvStoreKind::Sd,
+        ] {
+            assert_report_fast_path_matches_generic_with_words(
+                RiscvInstruction::Store {
+                    kind,
+                    rs1: 6,
+                    rs2: 3,
+                    offset: 0,
+                },
+                &[0, 0],
+            );
+        }
+    }
+
+    #[test]
+    fn prepared_zero_destination_fast_paths_match_timed_generic_advance() {
+        for instruction in [
+            RiscvInstruction::Lui {
+                rd: 0,
+                immediate: 0x1234_5000,
+            },
+            RiscvInstruction::Jal { rd: 0, offset: 16 },
+            RiscvInstruction::Jalr {
+                rd: 0,
+                rs1: 7,
+                offset: 3,
+            },
+            RiscvInstruction::OpImm {
+                kind: RiscvOpImmKind::Addi,
+                rd: 0,
+                rs1: 3,
+                immediate: 4,
+            },
+            RiscvInstruction::Load {
+                kind: RiscvLoadKind::Lwu,
+                rd: 0,
+                rs1: 6,
+                offset: 0,
+            },
+            RiscvInstruction::CsrRead {
+                csr: RiscvCsr::Cycle,
+                rd: 0,
             },
         ] {
             assert_report_fast_path_matches_generic(instruction);
