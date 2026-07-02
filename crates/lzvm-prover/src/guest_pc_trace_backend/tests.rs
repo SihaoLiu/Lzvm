@@ -6653,6 +6653,192 @@ fn simple_copy_fast_path_parts_fall_back_for_non_copy_rows() {
 }
 
 #[test]
+fn report_level_fast_path_parts_routes_representative_rows() {
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    enum ReportLevelRoute {
+        LoadCopy,
+        LoadSignExtend,
+        StoreCopy,
+        NoMemory,
+        SimpleCopy,
+        Jump,
+        PcRelative,
+    }
+
+    let mut signed_load = memory_read(0x108, 0xffff_ff80);
+    signed_load.byte_len = 4;
+    let cases = vec![
+        (
+            GuestMachineReport {
+                address_and_instruction_len:
+                    crate::guest_machine::pack_report_address_and_instruction_len(0x8000_0000, 4),
+                instruction: RiscvInstruction::Load {
+                    kind: RiscvLoadKind::Ld,
+                    rd: 3,
+                    rs1: 2,
+                    offset: 8,
+                },
+                next_pc: 0x8000_0004,
+                register_write_value: GuestRegisterWriteValue::new(0xaa55),
+                memory_accesses: vec![memory_read(0x108, 0xaa55)].into(),
+            },
+            ReportLevelRoute::LoadCopy,
+        ),
+        (
+            GuestMachineReport {
+                address_and_instruction_len:
+                    crate::guest_machine::pack_report_address_and_instruction_len(0x8000_0004, 4),
+                instruction: RiscvInstruction::Load {
+                    kind: RiscvLoadKind::Lw,
+                    rd: 3,
+                    rs1: 2,
+                    offset: 8,
+                },
+                next_pc: 0x8000_0008,
+                register_write_value: GuestRegisterWriteValue::new(0xffff_ffff_ffff_ff80),
+                memory_accesses: vec![signed_load].into(),
+            },
+            ReportLevelRoute::LoadSignExtend,
+        ),
+        (
+            GuestMachineReport {
+                address_and_instruction_len:
+                    crate::guest_machine::pack_report_address_and_instruction_len(0x8000_0008, 4),
+                instruction: RiscvInstruction::Store {
+                    kind: RiscvStoreKind::Sd,
+                    rs1: 2,
+                    rs2: 3,
+                    offset: 8,
+                },
+                next_pc: 0x8000_000c,
+                register_write_value: GuestRegisterWriteValue::default(),
+                memory_accesses: vec![memory_write(0x108, 0xaa55)].into(),
+            },
+            ReportLevelRoute::StoreCopy,
+        ),
+        (
+            GuestMachineReport {
+                address_and_instruction_len:
+                    crate::guest_machine::pack_report_address_and_instruction_len(0x8000_000c, 4),
+                instruction: RiscvInstruction::Auipc {
+                    rd: 5,
+                    immediate: 0x40,
+                },
+                next_pc: 0x8000_0010,
+                register_write_value: GuestRegisterWriteValue::new(0x8000_004c),
+                memory_accesses: vec![].into(),
+            },
+            ReportLevelRoute::PcRelative,
+        ),
+        (
+            GuestMachineReport {
+                address_and_instruction_len:
+                    crate::guest_machine::pack_report_address_and_instruction_len(0x8000_0010, 4),
+                instruction: RiscvInstruction::Jal { rd: 5, offset: 16 },
+                next_pc: 0x8000_0020,
+                register_write_value: GuestRegisterWriteValue::new(0x8000_0014),
+                memory_accesses: vec![].into(),
+            },
+            ReportLevelRoute::Jump,
+        ),
+        (
+            GuestMachineReport {
+                address_and_instruction_len:
+                    crate::guest_machine::pack_report_address_and_instruction_len(0x8000_0014, 4),
+                instruction: RiscvInstruction::Branch {
+                    kind: RiscvBranchKind::Beq,
+                    rs1: 2,
+                    rs2: 3,
+                    offset: 16,
+                },
+                next_pc: 0x8000_0018,
+                register_write_value: GuestRegisterWriteValue::default(),
+                memory_accesses: vec![].into(),
+            },
+            ReportLevelRoute::NoMemory,
+        ),
+        (
+            GuestMachineReport {
+                address_and_instruction_len:
+                    crate::guest_machine::pack_report_address_and_instruction_len(0x8000_0018, 4),
+                instruction: RiscvInstruction::Fence {
+                    kind: RiscvFenceKind::Fence,
+                    mode: 0,
+                    predecessor: 0,
+                    successor: 0,
+                },
+                next_pc: 0x8000_001c,
+                register_write_value: GuestRegisterWriteValue::default(),
+                memory_accesses: vec![].into(),
+            },
+            ReportLevelRoute::NoMemory,
+        ),
+        (
+            GuestMachineReport {
+                address_and_instruction_len:
+                    crate::guest_machine::pack_report_address_and_instruction_len(0x8000_001c, 4),
+                instruction: RiscvInstruction::OpImm {
+                    kind: RiscvOpImmKind::Addi,
+                    rd: 3,
+                    rs1: 2,
+                    immediate: 0,
+                },
+                next_pc: 0x8000_0020,
+                register_write_value: GuestRegisterWriteValue::new(0xaa55),
+                memory_accesses: vec![].into(),
+            },
+            ReportLevelRoute::SimpleCopy,
+        ),
+        (
+            GuestMachineReport {
+                address_and_instruction_len:
+                    crate::guest_machine::pack_report_address_and_instruction_len(0x8000_0020, 4),
+                instruction: RiscvInstruction::OpImm {
+                    kind: RiscvOpImmKind::Addi,
+                    rd: 3,
+                    rs1: 2,
+                    immediate: 8,
+                },
+                next_pc: 0x8000_0024,
+                register_write_value: GuestRegisterWriteValue::new(0xaa5d),
+                memory_accesses: vec![].into(),
+            },
+            ReportLevelRoute::NoMemory,
+        ),
+    ];
+
+    for (report, expected_route) in cases {
+        let expected_instruction = lower_guest_report(&report).expect("lowering should succeed");
+        let parts = report_level_fast_path_parts(3, &report)
+            .expect("routing should not fail")
+            .expect("row should route to a fast path");
+        let (actual_route, actual_instruction) = match parts {
+            MainReportFastPathParts::LoadCopy(instruction, ..) => {
+                (ReportLevelRoute::LoadCopy, instruction)
+            }
+            MainReportFastPathParts::LoadSignExtend(instruction, ..) => {
+                (ReportLevelRoute::LoadSignExtend, instruction)
+            }
+            MainReportFastPathParts::NoMemory(instruction, _) => {
+                (ReportLevelRoute::NoMemory, instruction)
+            }
+            MainReportFastPathParts::StoreCopy(instruction, ..) => {
+                (ReportLevelRoute::StoreCopy, instruction)
+            }
+            MainReportFastPathParts::SimpleCopy(instruction, ..) => {
+                (ReportLevelRoute::SimpleCopy, instruction)
+            }
+            MainReportFastPathParts::Jump(instruction, _) => (ReportLevelRoute::Jump, instruction),
+            MainReportFastPathParts::PcRelative(instruction, _) => {
+                (ReportLevelRoute::PcRelative, instruction)
+            }
+        };
+        assert_eq!(actual_route, expected_route);
+        assert_eq!(actual_instruction, expected_instruction);
+    }
+}
+
+#[test]
 fn simple_copy_register_store_fast_path_preserves_row_effects() {
     let writes = [GuestRegisterWrite {
         index: 3,
