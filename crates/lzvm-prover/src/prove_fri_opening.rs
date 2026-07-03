@@ -276,10 +276,10 @@ fn build_pcs_fri_opening_segment_from_value_refs_with_timing<'a>(
     let mut units = Vec::with_capacity(value_count);
     for input in values {
         if !seen_units.insert((input.unit_index, input.trace_instance_index)) {
-            return Err(ProvePcsFriOpeningSegmentError::DuplicateUnitIdentity {
-                unit_index: input.unit_index,
-                trace_instance_index: input.trace_instance_index,
-            });
+            return Err(duplicate_fri_opening_unit_error(
+                input.unit_index,
+                input.trace_instance_index,
+            ));
         }
         let unit = schedule.units.get(input.unit_index).ok_or(
             ProvePcsFriOpeningSegmentError::UnitIndexOutOfRange {
@@ -321,6 +321,20 @@ fn build_pcs_fri_opening_segment_from_value_refs_with_timing<'a>(
         id: PCS_FRI_OPENING_SEGMENT_ID,
         data: encode_pcs_fri_opening_segment(&segment)?,
     })
+}
+
+fn duplicate_fri_opening_unit_error(
+    unit_index: usize,
+    trace_instance_index: u32,
+) -> ProvePcsFriOpeningSegmentError {
+    if trace_instance_index == 0 {
+        ProvePcsFriOpeningSegmentError::DuplicateUnitIndex { unit_index }
+    } else {
+        ProvePcsFriOpeningSegmentError::DuplicateUnitIdentity {
+            unit_index,
+            trace_instance_index,
+        }
+    }
 }
 
 pub fn build_pcs_fri_transcript_values_from_trace(
@@ -702,10 +716,10 @@ fn build_pcs_fri_opening_segment_from_transcript_values_cached_with_timing(
     let mut units = Vec::with_capacity(values.len());
     for input in values {
         if !seen_units.insert((input.unit_index, input.trace_instance_index)) {
-            return Err(ProvePcsFriOpeningSegmentError::DuplicateUnitIdentity {
-                unit_index: input.unit_index,
-                trace_instance_index: input.trace_instance_index,
-            });
+            return Err(duplicate_fri_opening_unit_error(
+                input.unit_index,
+                input.trace_instance_index,
+            ));
         }
         let unit = schedule.units.get(input.unit_index).ok_or(
             ProvePcsFriOpeningSegmentError::UnitIndexOutOfRange {

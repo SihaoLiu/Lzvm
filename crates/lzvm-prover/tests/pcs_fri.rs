@@ -764,6 +764,17 @@ fn builds_duplicate_fri_queries_from_cached_rows_without_changing_shape() {
         })
         .expect("query plan should encode"),
     };
+    let base_query_segment = ProofSegment {
+        id: PCS_QUERY_PLAN_SEGMENT_ID,
+        data: encode_pcs_query_plan_segment(&PcsQueryPlanSegment {
+            units: vec![PcsQueryPlanUnit {
+                unit_index: 0,
+                trace_instance_index: 0,
+                queries: query_rows.to_vec(),
+            }],
+        })
+        .expect("base query plan should encode"),
+    };
     let polynomial = (0_u64..8)
         .map(|index| Ext3::from_u64s([index + 1, index + 11, index + 21]))
         .collect::<Vec<_>>();
@@ -790,6 +801,30 @@ fn builds_duplicate_fri_queries_from_cached_rows_without_changing_shape() {
     )
     .expect("FRI transcript commitments should build");
     let fold_challenges = commitments.challenges.clone();
+    let base_duplicate_error = build_pcs_fri_opening_segment(
+        &schedule,
+        &base_query_segment,
+        &[
+            ProvePcsFriOpeningValues {
+                unit_index: 0,
+                trace_instance_index: 0,
+                challenges: commitments.challenges.clone(),
+                polynomial: polynomial.clone(),
+            },
+            ProvePcsFriOpeningValues {
+                unit_index: 0,
+                trace_instance_index: 0,
+                challenges: commitments.challenges.clone(),
+                polynomial: polynomial.clone(),
+            },
+        ],
+    )
+    .expect_err("base duplicate FRI opening identity should retain legacy error");
+
+    assert_eq!(
+        base_duplicate_error,
+        ProvePcsFriOpeningSegmentError::DuplicateUnitIndex { unit_index: 0 }
+    );
     let duplicate_error = build_pcs_fri_opening_segment(
         &schedule,
         &query_segment,
@@ -812,6 +847,33 @@ fn builds_duplicate_fri_queries_from_cached_rows_without_changing_shape() {
 
     assert_eq!(
         duplicate_error,
+        ProvePcsFriOpeningSegmentError::DuplicateUnitIdentity {
+            unit_index: 0,
+            trace_instance_index: 2,
+        }
+    );
+    let retained_duplicate_error = build_pcs_fri_opening_segment_from_transcript_values(
+        &schedule,
+        &query_segment,
+        &[
+            ProvePcsFriTranscriptValues {
+                unit_index: 0,
+                trace_instance_index: 2,
+                polynomial: polynomial.clone(),
+                commitments: commitments.clone(),
+            },
+            ProvePcsFriTranscriptValues {
+                unit_index: 0,
+                trace_instance_index: 2,
+                polynomial: polynomial.clone(),
+                commitments: commitments.clone(),
+            },
+        ],
+    )
+    .expect_err("duplicate retained FRI opening identity should reject");
+
+    assert_eq!(
+        retained_duplicate_error,
         ProvePcsFriOpeningSegmentError::DuplicateUnitIdentity {
             unit_index: 0,
             trace_instance_index: 2,
