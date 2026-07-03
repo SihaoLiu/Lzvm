@@ -458,7 +458,7 @@ fn absorb_stage_unit_values(
 ) -> Result<(), PcsTranscriptError> {
     let mut offset = 0_usize;
     for (value_index, value) in value_map.iter().enumerate() {
-        let width = if value.stage == 1 { 1 } else { 3 };
+        let width = stage_value_packed_width(value)?;
         let end = offset
             .checked_add(width)
             .ok_or(PcsTranscriptError::LengthOverflow)?;
@@ -482,6 +482,26 @@ fn absorb_stage_unit_values(
         });
     }
     Ok(())
+}
+
+fn stage_value_packed_width(value: &StageValue) -> Result<usize, PcsTranscriptError> {
+    let dimension = value
+        .lengths
+        .iter()
+        .try_fold(1_usize, |dimension, length| {
+            let length =
+                usize::try_from(*length).map_err(|_| PcsTranscriptError::LengthOverflow)?;
+            if length == 0 {
+                return Err(PcsTranscriptError::LengthOverflow);
+            }
+            dimension
+                .checked_mul(length)
+                .ok_or(PcsTranscriptError::LengthOverflow)
+        })?;
+    let element_width = if value.stage == 1 { 1 } else { 3 };
+    dimension
+        .checked_mul(element_width)
+        .ok_or(PcsTranscriptError::LengthOverflow)
 }
 
 fn draw_fields(transcript: &mut PoseidonTranscript, count: usize, out: &mut Vec<Ext3>) {

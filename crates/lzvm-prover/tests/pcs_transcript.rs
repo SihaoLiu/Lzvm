@@ -249,10 +249,10 @@ fn absorbs_unit_values_after_matching_stage_roots() {
         StageValue {
             name: "unit.beta".to_owned(),
             stage: 2,
-            lengths: Vec::new(),
+            lengths: vec![2],
         },
     ];
-    let unit_values = values(&[101, 201, 202, 203]);
+    let unit_values = values(&[101, 201, 202, 203, 204, 205, 206]);
     let final_polynomial = vec![ext(80)];
 
     let actual = derive_pcs_transcript_challenges(PcsTranscriptInputs {
@@ -282,7 +282,7 @@ fn absorbs_unit_values_after_matching_stage_roots() {
         &mut expected_challenges,
     );
     expected.put(&witness_roots[1]);
-    expected.put(&values(&[201, 202, 203]));
+    expected.put(&values(&[201, 202, 203, 204, 205, 206]));
     record(&mut expected, 1, &mut expected_challenges);
     put_root_and_record(
         &mut expected,
