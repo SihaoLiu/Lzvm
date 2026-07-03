@@ -7,6 +7,7 @@ import shlex
 import shutil
 import subprocess
 import sys
+import time
 from pathlib import Path
 from typing import NamedTuple
 
@@ -23,6 +24,8 @@ DEFAULT_NCU_SET = "basic"
 DEFAULT_NCU_TARGET_PROCESSES = "all"
 DEFAULT_NVIDIA_SMI_COMMAND = "nvidia-smi"
 DEFAULT_MIN_GPU_FREE_MIB = 1024
+DEFAULT_GPU_MEMORY_WAIT_TIMEOUT_S = 0.0
+DEFAULT_GPU_MEMORY_WAIT_POLL_S = 5.0
 DEFAULT_EXTRA_RUN_BUDGET = 2
 EXTERNAL_SOURCE_OPENING_BATCH_ENV = (
     "LZVM_WITNESS_OPENING_EXTERNAL_SOURCE_BATCH_SIZE"
@@ -879,6 +882,7 @@ def next_command_parts(
     if args.min_gpu_free_mib != DEFAULT_MIN_GPU_FREE_MIB:
         parts.extend(["--min-gpu-free-mib", str(args.min_gpu_free_mib)])
     parts.extend(gpu_memory_cli_parts(args, root))
+    parts.extend(gpu_memory_wait_cli_parts(args))
     if args.enforce_targets:
         parts.append("--enforce-targets")
     if args.skip_targets:
@@ -1134,6 +1138,19 @@ def gpu_memory_cli_parts(args: argparse.Namespace, root: Path) -> list[str]:
     return ["--nvidia-smi-command", profile_tool_command_arg(raw, root)]
 
 
+def gpu_memory_wait_cli_parts(args: argparse.Namespace) -> list[str]:
+    parts: list[str] = []
+    timeout_s = getattr(
+        args, "gpu_memory_wait_timeout_s", DEFAULT_GPU_MEMORY_WAIT_TIMEOUT_S
+    )
+    poll_s = getattr(args, "gpu_memory_wait_poll_s", DEFAULT_GPU_MEMORY_WAIT_POLL_S)
+    if timeout_s != DEFAULT_GPU_MEMORY_WAIT_TIMEOUT_S:
+        parts.extend(["--gpu-memory-wait-timeout-s", str(timeout_s)])
+    if poll_s != DEFAULT_GPU_MEMORY_WAIT_POLL_S:
+        parts.extend(["--gpu-memory-wait-poll-s", str(poll_s)])
+    return parts
+
+
 def cuda_visible_devices_command_prefix() -> list[str]:
     visible_devices = os.environ.get("CUDA_VISIBLE_DEVICES")
     if not visible_devices:
@@ -1202,7 +1219,7 @@ def first_diagnostic_line(text: str) -> str:
     return lines[0][:200] if lines else ""
 
 
-def print_gpu_memory_check(args: argparse.Namespace, root: Path) -> bool:
+def print_gpu_memory_check_once(args: argparse.Namespace, root: Path) -> bool:
     source, raw = gpu_memory_tool_spec(args)
     resolved = resolve_profile_tool(raw, root)
     print(f"gpu_memory_source={source}")
@@ -1263,6 +1280,30 @@ def print_gpu_memory_check(args: argparse.Namespace, root: Path) -> bool:
     ready = selected.free >= args.min_gpu_free_mib
     print(f"gpu_memory_status={'ready' if ready else 'low'}")
     return ready
+
+
+def print_gpu_memory_check(args: argparse.Namespace, root: Path) -> bool:
+    wait_timeout_s = getattr(
+        args, "gpu_memory_wait_timeout_s", DEFAULT_GPU_MEMORY_WAIT_TIMEOUT_S
+    )
+    if wait_timeout_s <= 0.0:
+        return print_gpu_memory_check_once(args, root)
+    wait_poll_s = getattr(args, "gpu_memory_wait_poll_s", DEFAULT_GPU_MEMORY_WAIT_POLL_S)
+    print(f"gpu_memory_wait_timeout_s={wait_timeout_s}")
+    print(f"gpu_memory_wait_poll_s={wait_poll_s}")
+    deadline = time.monotonic() + wait_timeout_s
+    attempt = 1
+    while True:
+        print(f"gpu_memory_wait_attempt={attempt}")
+        if print_gpu_memory_check_once(args, root):
+            print("gpu_memory_wait_status=ready")
+            return True
+        remaining_s = deadline - time.monotonic()
+        if remaining_s <= 0.0:
+            print("gpu_memory_wait_status=timeout")
+            return False
+        time.sleep(min(wait_poll_s, remaining_s))
+        attempt += 1
 
 
 def print_profile_tool_checks(args: argparse.Namespace, root: Path) -> bool:
@@ -1338,6 +1379,7 @@ def profile_command_for_env(
     if args.min_gpu_free_mib != DEFAULT_MIN_GPU_FREE_MIB:
         profiler_command.extend(["--min-gpu-free-mib", str(args.min_gpu_free_mib)])
     profiler_command.extend(gpu_memory_cli_parts(args, root))
+    profiler_command.extend(gpu_memory_wait_cli_parts(args))
     return [
         *cuda_visible_devices_command_prefix(),
         "scripts/run-proof-profile.py",
@@ -1857,6 +1899,8 @@ def self_test() -> None:
         print_env_template=False,
         check_profile_tools=False,
         check_gpu_memory=False,
+        gpu_memory_wait_timeout_s=DEFAULT_GPU_MEMORY_WAIT_TIMEOUT_S,
+        gpu_memory_wait_poll_s=DEFAULT_GPU_MEMORY_WAIT_POLL_S,
         print_profile_commands=False,
         min_gpu_free_mib=DEFAULT_MIN_GPU_FREE_MIB,
         nvidia_smi_command=None,
@@ -2001,6 +2045,16 @@ def main() -> None:
     parser.add_argument("--print-profile-commands", action="store_true")
     parser.add_argument("--check-gpu-memory", action="store_true")
     parser.add_argument("--min-gpu-free-mib", type=positive_mib, default=DEFAULT_MIN_GPU_FREE_MIB)
+    parser.add_argument(
+        "--gpu-memory-wait-timeout-s",
+        type=nonnegative_float,
+        default=DEFAULT_GPU_MEMORY_WAIT_TIMEOUT_S,
+    )
+    parser.add_argument(
+        "--gpu-memory-wait-poll-s",
+        type=positive_timeout,
+        default=DEFAULT_GPU_MEMORY_WAIT_POLL_S,
+    )
     parser.add_argument("--nvidia-smi-command")
     parser.add_argument("--profile-output-dir", default=DEFAULT_PROFILE_OUTPUT_DIR)
     parser.add_argument("--nsys-command")

@@ -2171,6 +2171,70 @@ fn eth_proof_timing_batch_check_gpu_memory_fails_when_free_memory_is_low() {
 }
 
 #[test]
+fn eth_proof_timing_batch_check_gpu_memory_waits_until_ready() {
+    let fixture = ProofFixture::new("eth-proof-timing-batch-gpu-memory-wait");
+    let state_path = fixture.dir.join("smi-count");
+    let smi_source = format!(
+        concat!(
+            "#!/usr/bin/env python3\n",
+            "from pathlib import Path\n",
+            "state = Path(r'{}')\n",
+            "count = int(state.read_text()) if state.exists() else 0\n",
+            "state.write_text(str(count + 1))\n",
+            "if count == 0:\n",
+            "    print('0, 24576, 24288, 288')\n",
+            "else:\n",
+            "    print('0, 24576, 4096, 20480')\n",
+        ),
+        state_path.display()
+    );
+    let smi_path = write_executable_script(&fixture.dir, "nvidia-smi-wait", &smi_source);
+    let mut command = Command::new(script_path());
+    command
+        .arg("--check-gpu-memory")
+        .arg("--min-gpu-free-mib")
+        .arg("1024")
+        .arg("--gpu-memory-wait-timeout-s")
+        .arg("2")
+        .arg("--gpu-memory-wait-poll-s")
+        .arg("0.01")
+        .arg("--nvidia-smi-command")
+        .arg(&smi_path);
+    command.env_remove("CUDA_VISIBLE_DEVICES");
+    clear_env(&mut command, SMALL_PREFIX);
+    clear_env(&mut command, LARGE_PREFIX);
+
+    let output = command
+        .output()
+        .expect("ETH proof timing batch waiting GPU memory check should run");
+    let success = output.status.success();
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    let attempt_count =
+        std::fs::read_to_string(&state_path).expect("GPU memory fixture count should write");
+    fixture.cleanup();
+
+    assert!(
+        success,
+        "GPU memory check should pass after waiting: stderr={stderr}"
+    );
+    assert_eq!(
+        attempt_count, "2",
+        "GPU memory wait should retry after the initial low-memory sample"
+    );
+    assert!(
+        stdout.contains("gpu_memory_wait_timeout_s=2.0\n")
+            && stdout.contains("gpu_memory_wait_poll_s=0.01\n")
+            && stdout.contains("gpu_memory_wait_attempt=1\n")
+            && stdout.contains("gpu_memory_status=low\n")
+            && stdout.contains("gpu_memory_wait_attempt=2\n")
+            && stdout.contains("gpu_memory_status=ready\n")
+            && stdout.contains("gpu_memory_wait_status=ready\n"),
+        "GPU memory wait should report low and ready samples: {stdout}"
+    );
+}
+
+#[test]
 fn eth_proof_timing_batch_check_gpu_memory_uses_default_cuda_device() {
     let fixture = ProofFixture::new("eth-proof-timing-batch-gpu-memory-default-device");
     let smi_path = write_executable_script(
@@ -2321,6 +2385,10 @@ fn eth_proof_timing_batch_check_env_gpu_memory_ready_preserves_next_commands() {
         .arg("--check-gpu-memory")
         .arg("--min-gpu-free-mib")
         .arg("2048")
+        .arg("--gpu-memory-wait-timeout-s")
+        .arg("30")
+        .arg("--gpu-memory-wait-poll-s")
+        .arg("0.5")
         .arg("--nvidia-smi-command")
         .arg(&smi_path)
         .arg("--skip-targets");
@@ -2359,6 +2427,8 @@ fn eth_proof_timing_batch_check_env_gpu_memory_ready_preserves_next_commands() {
         assert!(
             line.contains("--check-gpu-memory")
                 && line.contains("--min-gpu-free-mib 2048")
+                && line.contains("--gpu-memory-wait-timeout-s 30.0")
+                && line.contains("--gpu-memory-wait-poll-s 0.5")
                 && line.contains(&format!("--nvidia-smi-command {smi_rel}")),
             "next command should preserve GPU memory preflight flags: {stdout}"
         );
