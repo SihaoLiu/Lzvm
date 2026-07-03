@@ -3305,6 +3305,42 @@ fn write_stale_setup_manifest_count(root: &Path) -> PathBuf {
     manifest_path
 }
 
+fn write_legacy_v3_setup_manifest(root: &Path) -> PathBuf {
+    let manifest_path = root.join(SETUP_DIRECTORY_MANIFEST_FILE);
+    let manifest =
+        read_setup_directory_manifest_file(&manifest_path).expect("manifest should parse");
+    let mut payload = Vec::new();
+    for value in [
+        manifest.unit_count,
+        manifest.global_constraint_count,
+        manifest.fixed_byte_count,
+        manifest.pcs_material_unit_count,
+        manifest.pcs_material_byte_count,
+        u64::from(manifest.source_fixed_file_manifest_present),
+        manifest.source_fixed_file_manifest_entry_count,
+        u64::from(manifest.source_program_archive_present),
+        manifest.source_program_archive_source_count,
+        manifest.source_program_archive_edge_count,
+    ] {
+        payload.extend_from_slice(&value.to_le_bytes());
+    }
+    payload.extend_from_slice(&manifest.catalog_digest);
+    fs::write(
+        &manifest_path,
+        encode_sectioned_file(&SectionedFile {
+            kind: *b"sdmf",
+            version: 3,
+            sections: vec![SectionedSection {
+                id: 1,
+                data: payload,
+            }],
+        })
+        .expect("legacy setup manifest should encode"),
+    )
+    .expect("legacy setup manifest should be written");
+    manifest_path
+}
+
 fn remove_setup_manifest(root: &Path) -> PathBuf {
     let manifest_path = root.join(SETUP_DIRECTORY_MANIFEST_FILE);
     fs::remove_file(&manifest_path).expect("setup directory manifest should be removed");
@@ -3919,6 +3955,61 @@ fn rejects_prove_plan_with_stale_setup_directory_manifest_counts() {
             manifest_path.display()
         )
     );
+}
+
+#[test]
+fn accepts_legacy_setup_directory_manifest_for_prove_plan_with_source_companions() {
+    let dir = temp_dir("legacy-manifest-plan-source-companions");
+    let _ = fs::remove_dir_all(&dir);
+    write_setup_directory(&dir);
+    let root = dir.to_str().expect("path should be utf-8");
+    run_setup_command(&["setup", "generate-key", root]);
+
+    let source_dir = dir.join("source");
+    let main_path = source_dir.join("main.pil");
+    let child_path = source_dir.join("shared.pil");
+    write_bytes(
+        &main_path,
+        "include \"shared.pil\";\n\
+         col witness main.trace;",
+    );
+    write_bytes(&child_path, "col fixed shared = [1, 2];");
+    run_setup_command(&[
+        "setup",
+        "write-source-companions",
+        main_path.to_str().expect("main path should be utf-8"),
+        root,
+    ]);
+    let refreshed_manifest =
+        read_setup_directory_manifest_file(dir.join(SETUP_DIRECTORY_MANIFEST_FILE))
+            .expect("manifest should parse");
+    assert!(refreshed_manifest.source_fixed_file_manifest_present);
+    assert!(refreshed_manifest.source_fixed_file_manifest_byte_count > 0);
+    assert!(refreshed_manifest.source_program_archive_present);
+    assert!(refreshed_manifest.source_program_archive_byte_count > 0);
+    write_legacy_v3_setup_manifest(&dir);
+    let output_dir = dir.join("proof-out");
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "prove",
+            "plan",
+            root,
+            output_dir.to_str().expect("output path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 0);
+    assert!(stderr.is_empty());
+    let stdout_text = String::from_utf8(stdout).expect("stdout should be utf-8");
+    assert!(stdout_text.contains("source_fixed_file_manifest=present\n"));
+    assert!(stdout_text.contains("source_program_archive=present\n"));
 }
 
 #[test]
