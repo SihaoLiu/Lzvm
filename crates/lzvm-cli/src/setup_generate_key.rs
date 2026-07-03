@@ -142,23 +142,17 @@ fn parse_args(args: &[&str]) -> Result<ParsedArgs, ParseError> {
         match args[index] {
             "--backend" => {
                 index += 1;
-                let value = args
-                    .get(index)
-                    .ok_or_else(|| ParseError::Invalid("missing --backend value".to_owned()))?;
+                let value = required_option_value(args.get(index), "--backend")?;
                 backend = parse_backend(value)?;
             }
             "--source" => {
                 index += 1;
-                let value = args
-                    .get(index)
-                    .ok_or_else(|| ParseError::Invalid("missing --source value".to_owned()))?;
+                let value = required_option_value(args.get(index), "--source")?;
                 source = Some(PathBuf::from(value));
             }
             "--include-path" => {
                 index += 1;
-                let value = args.get(index).ok_or_else(|| {
-                    ParseError::Invalid("missing --include-path value".to_owned())
-                })?;
+                let value = required_option_value(args.get(index), "--include-path")?;
                 include_paths.push(PathBuf::from(value));
             }
             "--include-path-first" => include_path_first = true,
@@ -187,6 +181,16 @@ fn parse_args(args: &[&str]) -> Result<ParsedArgs, ParseError> {
         include_paths,
         include_path_first,
     })
+}
+
+fn required_option_value<'a>(value: Option<&&'a str>, option: &str) -> Result<&'a str, ParseError> {
+    let Some(value) = value else {
+        return Err(ParseError::Invalid(format!("missing {option} value")));
+    };
+    if value.starts_with("--") {
+        return Err(ParseError::Invalid(format!("missing {option} value")));
+    }
+    Ok(value)
 }
 
 fn parse_backend(value: &str) -> Result<FixedExtensionBackend, ParseError> {
@@ -267,8 +271,14 @@ mod tests {
     fn rejects_missing_source_option_values_during_parse() {
         for (args, expected) in [
             (&["--backend"][..], "missing --backend value"),
+            (&["--backend", "--source"][..], "missing --backend value"),
             (&["--source"][..], "missing --source value"),
+            (&["--source", "--include-path"][..], "missing --source value"),
             (&["--include-path"][..], "missing --include-path value"),
+            (
+                &["--include-path", "--include-path-first"][..],
+                "missing --include-path value",
+            ),
         ] {
             let result = parse_args(args);
 

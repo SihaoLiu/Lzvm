@@ -105,11 +105,7 @@ fn parse_args(args: &[&str]) -> Result<ParsedArgs, ParseError> {
         match args[index] {
             "--input-data" => {
                 index += 1;
-                let Some(value) = args.get(index) else {
-                    return Err(ParseError::Invalid(
-                        "--input-data requires a value".to_owned(),
-                    ));
-                };
+                let value = required_option_value(args.get(index), "--input-data")?;
                 if input_data.replace(PathBuf::from(value)).is_some() {
                     return Err(ParseError::Invalid(
                         "duplicate --input-data option".to_owned(),
@@ -134,6 +130,16 @@ fn parse_args(args: &[&str]) -> Result<ParsedArgs, ParseError> {
         instruction_limit,
         guest_image: PathBuf::from(positionals[1]),
     })
+}
+
+fn required_option_value<'a>(value: Option<&&'a str>, option: &str) -> Result<&'a str, ParseError> {
+    let Some(value) = value else {
+        return Err(ParseError::Invalid(format!("{option} requires a value")));
+    };
+    if value.starts_with("--") {
+        return Err(ParseError::Invalid(format!("{option} requires a value")));
+    }
+    Ok(value)
 }
 
 fn read_input_data(path: &Option<PathBuf>) -> Result<Vec<u8>, String> {
@@ -165,12 +171,14 @@ mod tests {
 
     #[test]
     fn rejects_missing_input_data_value_during_parse() {
-        let result = parse_args(&["--input-data"]);
+        for args in [&["--input-data"][..], &["--input-data", "--input-data"][..]] {
+            let result = parse_args(args);
 
-        assert!(matches!(
-            result,
-            Err(ParseError::Invalid(message)) if message == "--input-data requires a value"
-        ));
+            assert!(matches!(
+                result,
+                Err(ParseError::Invalid(message)) if message == "--input-data requires a value"
+            ));
+        }
     }
 
     #[test]
