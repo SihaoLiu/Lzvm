@@ -164,6 +164,9 @@ pub enum SetupInfoError {
     MissingSectionWidth {
         name: String,
     },
+    InvalidSectionWidth {
+        name: String,
+    },
     InvalidDomainBits {
         n_bits: u32,
         n_bits_ext: u32,
@@ -228,6 +231,9 @@ impl fmt::Display for SetupInfoError {
             }
             Self::MissingSectionWidth { name } => {
                 write!(f, "missing setup-info section width: {name}")
+            }
+            Self::InvalidSectionWidth { name } => {
+                write!(f, "invalid setup-info section width: {name}")
             }
             Self::InvalidDomainBits { n_bits, n_bits_ext } => write!(
                 f,
@@ -302,7 +308,10 @@ impl UnitSetupInfo {
             let width = *self
                 .section_widths
                 .get(&name)
-                .ok_or(SetupInfoError::MissingSectionWidth { name })?;
+                .ok_or_else(|| SetupInfoError::MissingSectionWidth { name: name.clone() })?;
+            if width == 0 {
+                return Err(SetupInfoError::InvalidSectionWidth { name });
+            }
             widths.push(width);
         }
         Ok(widths)
@@ -806,6 +815,7 @@ fn validate_domains(stark: &StarkStruct) -> Result<(), SetupInfoError> {
 
 fn validate_unit_setup_info(info: &UnitSetupInfo) -> Result<(), SetupInfoError> {
     validate_constant_columns(info.n_constants, &info.constant_columns)?;
+    info.stage_commit_widths()?;
     validate_commitment_columns(info)?;
     let max_stage = info
         .n_stages
@@ -814,7 +824,6 @@ fn validate_unit_setup_info(info: &UnitSetupInfo) -> Result<(), SetupInfoError> 
     validate_stage_values("unit-value-map", &info.unit_value_map, max_stage)?;
     validate_stage_values("group-value-map", &info.group_value_map, max_stage)?;
     validate_domains(&info.stark)?;
-    info.stage_commit_widths()?;
     Ok(())
 }
 
