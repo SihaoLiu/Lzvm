@@ -158,6 +158,42 @@ fn invalid_regular_span_file() -> Vec<u8> {
     wrap_regular_section(section)
 }
 
+fn regular_zero_destination_dimension_file() -> Vec<u8> {
+    let mut section = counted_section(0, 0, 0, 1);
+
+    push_u32(&mut section, 1);
+    push_u32(&mut section, 0);
+    push_u32(&mut section, 0);
+    push_u32(&mut section, 0);
+    push_u32(&mut section, 1);
+    push_u32(&mut section, 0);
+    push_u32(&mut section, 0);
+    push_u32(&mut section, 0);
+    push_u32(&mut section, 0);
+    push_u32(&mut section, 0);
+    push_u32(&mut section, 0);
+    push_u32(&mut section, 0);
+    push_string(&mut section, "zero dimension");
+
+    wrap_regular_section(section)
+}
+
+fn global_zero_destination_dimension_file() -> Vec<u8> {
+    let mut section = counted_section(0, 0, 0, 1);
+
+    push_u32(&mut section, 0);
+    push_u32(&mut section, 0);
+    push_u32(&mut section, 0);
+    push_u32(&mut section, 0);
+    push_u32(&mut section, 0);
+    push_u32(&mut section, 0);
+    push_u32(&mut section, 0);
+    push_u32(&mut section, 0);
+    push_string(&mut section, "zero dimension");
+
+    wrap_global_section(section)
+}
+
 fn truncated_regular_payload_file() -> Vec<u8> {
     let mut section = Vec::new();
     push_u32(&mut section, 1);
@@ -223,6 +259,52 @@ fn rejects_invalid_regular_operation_spans() {
     assert!(matches!(
         parse_regular_constraint_program(&invalid_regular_span_file()),
         Err(ConstraintProgramError::OperationSpanOutOfBounds { .. })
+    ));
+}
+
+#[test]
+fn rejects_zero_regular_destination_dimensions_when_encoding() {
+    let mut program = sample_regular_program();
+    program.entries[1].destination_dimension = 0;
+
+    assert!(matches!(
+        encode_regular_constraint_program(&program),
+        Err(ConstraintProgramError::ZeroDestinationDimension {
+            constraint_index: 1
+        })
+    ));
+}
+
+#[test]
+fn rejects_zero_regular_destination_dimensions_when_parsing() {
+    assert!(matches!(
+        parse_regular_constraint_program(&regular_zero_destination_dimension_file()),
+        Err(ConstraintProgramError::ZeroDestinationDimension {
+            constraint_index: 0
+        })
+    ));
+}
+
+#[test]
+fn rejects_zero_global_destination_dimensions_when_encoding() {
+    let mut program = sample_global_program();
+    program.entries[0].destination_dimension = 0;
+
+    assert!(matches!(
+        encode_global_constraint_program(&program),
+        Err(ConstraintProgramError::ZeroDestinationDimension {
+            constraint_index: 0
+        })
+    ));
+}
+
+#[test]
+fn rejects_zero_global_destination_dimensions_when_parsing() {
+    assert!(matches!(
+        parse_global_constraint_program(&global_zero_destination_dimension_file()),
+        Err(ConstraintProgramError::ZeroDestinationDimension {
+            constraint_index: 0
+        })
     ));
 }
 

@@ -89,6 +89,9 @@ pub enum ConstraintProgramError {
         index: usize,
         source: FieldError,
     },
+    ZeroDestinationDimension {
+        constraint_index: usize,
+    },
     OperationSpanOutOfBounds {
         constraint_index: usize,
     },
@@ -128,6 +131,10 @@ impl fmt::Display for ConstraintProgramError {
                 f,
                 "constraint program number {index} is non-canonical: {source}"
             ),
+            Self::ZeroDestinationDimension { constraint_index } => write!(
+                f,
+                "constraint program destination dimension is zero for constraint {constraint_index}"
+            ),
             Self::OperationSpanOutOfBounds { constraint_index } => write!(
                 f,
                 "operation span is out of bounds for constraint {constraint_index}"
@@ -153,6 +160,7 @@ impl std::error::Error for ConstraintProgramError {
             | Self::StringContainsNul { .. }
             | Self::LengthOverflow
             | Self::Io { .. }
+            | Self::ZeroDestinationDimension { .. }
             | Self::OperationSpanOutOfBounds { .. }
             | Self::ArgumentSpanOutOfBounds { .. } => None,
         }
@@ -454,6 +462,7 @@ fn validate_number(index: usize, value: u64) -> Result<(), ConstraintProgramErro
 
 fn validate_regular_spans(program: &ConstraintProgram) -> Result<(), ConstraintProgramError> {
     for (index, entry) in program.entries.iter().enumerate() {
+        validate_destination_dimension(index, entry.destination_dimension)?;
         validate_span(
             index,
             entry.ops_offset,
@@ -474,6 +483,7 @@ fn validate_regular_spans(program: &ConstraintProgram) -> Result<(), ConstraintP
 
 fn validate_global_spans(program: &GlobalConstraintProgram) -> Result<(), ConstraintProgramError> {
     for (index, entry) in program.entries.iter().enumerate() {
+        validate_destination_dimension(index, entry.destination_dimension)?;
         validate_span(
             index,
             entry.ops_offset,
@@ -490,6 +500,17 @@ fn validate_global_spans(program: &GlobalConstraintProgram) -> Result<(), Constr
         )?;
     }
     Ok(())
+}
+
+fn validate_destination_dimension(
+    constraint_index: usize,
+    destination_dimension: u32,
+) -> Result<(), ConstraintProgramError> {
+    if destination_dimension == 0 {
+        Err(ConstraintProgramError::ZeroDestinationDimension { constraint_index })
+    } else {
+        Ok(())
+    }
 }
 
 fn validate_span(
