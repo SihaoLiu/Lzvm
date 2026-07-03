@@ -2924,6 +2924,8 @@ fn prove_timing_root_summary_reports_source_row_value_extend_priority() {
         "timing_finish_witness_opening_external_source_count=120",
         "timing_finish_witness_opening_embedded_source_count=120",
         "timing_finish_witness_opening_row_values_source_rows=77",
+        "timing_finish_witness_opening_row_value_source_extend_calls=7",
+        "timing_finish_witness_opening_row_value_source_extend_max_rows=11",
         "timing_finish_witness_opening_row_value_source_extend_ms=1134",
     ]
     .join("\n");
@@ -2973,6 +2975,12 @@ fn prove_timing_root_summary_reports_source_row_value_extend_priority() {
     };
 
     assert_eq!(value("opening_row_value_source_extend_ms"), "1134");
+    assert_eq!(value("opening_row_value_source_extend_calls"), "7");
+    assert_eq!(value("opening_row_value_source_extend_max_rows"), "11");
+    assert_eq!(
+        value("opening_row_value_source_extend_rows_per_call"),
+        "11.000"
+    );
     assert_eq!(value("opening_row_value_source_extend_pct"), "2.181");
     assert_eq!(
         value("opening_source_row_value_action_hint"),
