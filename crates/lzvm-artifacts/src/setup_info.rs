@@ -5,6 +5,7 @@ use std::path::Path;
 use crate::sectioned::{
     encode_sectioned_file, parse_sectioned_file, SectionedError, SectionedFile, SectionedSection,
 };
+use crate::transcript_parameters::is_supported_transcript_arity;
 
 const SETUP_INFO_KIND: [u8; 4] = *b"uinf";
 const SETUP_INFO_VERSION: u32 = 3;
@@ -869,7 +870,7 @@ fn validate_domains(stark: &StarkStruct) -> Result<(), SetupInfoError> {
 
 fn validate_stark_parameters(stark: &StarkStruct) -> Result<(), SetupInfoError> {
     if let Some(arity) = stark.transcript_arity {
-        if !matches!(arity, 2 | 4) {
+        if !is_supported_transcript_arity(arity) {
             return Err(SetupInfoError::InvalidTranscriptArity { arity });
         }
     }

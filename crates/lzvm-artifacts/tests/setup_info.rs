@@ -114,7 +114,7 @@ fn required_prefix_through_boundaries() -> Vec<u8> {
     section
 }
 
-fn push_minimal_stark(section: &mut Vec<u8>) {
+fn push_minimal_stark_with_transcript_arity(section: &mut Vec<u8>, transcript_arity: Option<u32>) {
     push_u32(section, 10);
     push_u32(section, 13);
     push_u32(section, 1);
@@ -125,8 +125,12 @@ fn push_minimal_stark(section: &mut Vec<u8>) {
     push_u32(section, 0);
     push_u32(section, 2);
     push_optional_string(section, None);
-    push_optional_u32(section, None);
+    push_optional_u32(section, transcript_arity);
     push_optional_bool(section, None);
+}
+
+fn push_minimal_stark(section: &mut Vec<u8>) {
+    push_minimal_stark_with_transcript_arity(section, None);
 }
 
 fn minimal_required_section() -> Vec<u8> {
@@ -733,6 +737,18 @@ fn rejects_invalid_setup_transcript_arities() {
 
     assert_eq!(
         encode_unit_setup_info(&info),
+        Err(SetupInfoError::InvalidTranscriptArity { arity: 3 })
+    );
+}
+
+#[test]
+fn rejects_invalid_setup_transcript_arities_when_parsing() {
+    let mut section = required_prefix_through_boundaries();
+    push_minimal_stark_with_transcript_arity(&mut section, Some(3));
+    let bytes = setup_info_file(section, 3);
+
+    assert_eq!(
+        parse_unit_setup_info(&bytes),
         Err(SetupInfoError::InvalidTranscriptArity { arity: 3 })
     );
 }

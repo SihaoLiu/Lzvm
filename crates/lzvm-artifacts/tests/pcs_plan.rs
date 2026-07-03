@@ -12,6 +12,8 @@ mod fixtures;
 const STAGE_WIDTH_COUNT_END: usize = 54;
 const OPENING_POINT_COUNT_END: usize = 62;
 const FRI_LAYER_COUNT_END: usize = 66;
+const SECTIONED_FILE_HEADER_BYTES: usize = 24;
+const TRANSCRIPT_ARITY_VALUE_OFFSET: usize = SECTIONED_FILE_HEADER_BYTES + 45;
 const STAGE_COMMIT_WIDTH_BYTES: usize = 4;
 const OPENING_POINT_BYTES: usize = 8;
 const FRI_LAYER_BYTES: usize = 4 + 4 + 8;
@@ -191,6 +193,20 @@ fn rejects_invalid_pcs_plan_transcript_arities() {
 
     assert_eq!(
         encode_pcs_setup_plan(&plan),
+        Err(PcsPlanError::InvalidTranscriptArity { arity: 3 })
+    );
+}
+
+#[test]
+fn rejects_invalid_pcs_plan_transcript_arities_when_parsing() {
+    let setup = fixtures::sample_pcs_plan_setup_info();
+    let plan = derive_pcs_setup_plan(&setup).expect("plan should derive");
+    let mut encoded = encode_pcs_setup_plan(&plan).expect("plan should encode");
+    encoded[TRANSCRIPT_ARITY_VALUE_OFFSET..TRANSCRIPT_ARITY_VALUE_OFFSET + 4]
+        .copy_from_slice(&3_u32.to_le_bytes());
+
+    assert_eq!(
+        parse_pcs_setup_plan(&encoded),
         Err(PcsPlanError::InvalidTranscriptArity { arity: 3 })
     );
 }

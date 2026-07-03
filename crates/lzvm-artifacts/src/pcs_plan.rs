@@ -5,6 +5,7 @@ use crate::sectioned::{
     encode_sectioned_file, parse_sectioned_file, SectionedError, SectionedFile, SectionedSection,
 };
 use crate::setup_info::{SetupInfoError, UnitSetupInfo};
+use crate::transcript_parameters::is_supported_transcript_arity;
 
 const PCS_PLAN_KIND: [u8; 4] = *b"pcsp";
 const PCS_PLAN_VERSION: u32 = 2;
@@ -475,7 +476,7 @@ fn validate_pcs_setup_plan(value: &PcsSetupPlan) -> Result<(), PcsPlanError> {
 
 fn validate_transcript_arity(arity: Option<u32>) -> Result<(), PcsPlanError> {
     if let Some(arity) = arity {
-        if !matches!(arity, 2 | 4) {
+        if !is_supported_transcript_arity(arity) {
             return Err(PcsPlanError::InvalidTranscriptArity { arity });
         }
     }
