@@ -754,7 +754,10 @@ fn validate_stage_values(
     max_stage: u32,
 ) -> Result<(), SetupInfoError> {
     for (index, value) in values.iter().enumerate() {
-        if value.stage == 0 || value.stage > max_stage {
+        if value.stage == 0
+            || value.stage > max_stage
+            || value.lengths.iter().any(|length| *length == 0)
+        {
             return Err(SetupInfoError::InvalidStageValue { field, index });
         }
     }

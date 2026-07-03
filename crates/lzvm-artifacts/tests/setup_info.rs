@@ -581,6 +581,28 @@ fn rejects_stage_value_length_count_that_exceeds_remaining_lengths() {
 }
 
 #[test]
+fn rejects_zero_unit_value_lengths() {
+    let mut section = minimal_required_section();
+    push_u32(&mut section, 0);
+    push_u32(&mut section, 1);
+    push_string(&mut section, "unit.empty");
+    push_u32(&mut section, 1);
+    push_u32(&mut section, 1);
+    push_u32(&mut section, 0);
+    push_u32(&mut section, 0);
+    push_u32(&mut section, 0);
+    let bytes = setup_info_file(section, 3);
+
+    assert_eq!(
+        parse_unit_setup_info(&bytes),
+        Err(SetupInfoError::InvalidStageValue {
+            field: "unit-value-map",
+            index: 0,
+        })
+    );
+}
+
+#[test]
 fn rejects_group_value_count_that_exceeds_remaining_records() {
     let mut section = minimal_required_section();
     push_u32(&mut section, 0);
@@ -592,6 +614,28 @@ fn rejects_group_value_count_that_exceeds_remaining_records() {
         parse_unit_setup_info(&bytes),
         Err(SetupInfoError::UnexpectedEof { .. })
     ));
+}
+
+#[test]
+fn rejects_zero_group_value_lengths() {
+    let mut section = minimal_required_section();
+    push_u32(&mut section, 0);
+    push_u32(&mut section, 0);
+    push_u32(&mut section, 1);
+    push_string(&mut section, "group.empty");
+    push_u32(&mut section, 1);
+    push_u32(&mut section, 1);
+    push_u32(&mut section, 0);
+    push_u32(&mut section, 0);
+    let bytes = setup_info_file(section, 3);
+
+    assert_eq!(
+        parse_unit_setup_info(&bytes),
+        Err(SetupInfoError::InvalidStageValue {
+            field: "group-value-map",
+            index: 0,
+        })
+    );
 }
 
 #[test]
