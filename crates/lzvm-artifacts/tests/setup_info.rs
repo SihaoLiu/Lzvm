@@ -399,6 +399,41 @@ fn rejects_zero_commitment_column_lengths() {
 }
 
 #[test]
+fn rejects_overlapping_commitment_columns() {
+    let mut info = fixtures::sample_setup_info_fixture();
+    let mut overlapping = info.commitment_columns[0].clone();
+    overlapping.name = "trace.overlap".to_owned();
+    info.commitment_columns.push(overlapping);
+
+    assert_eq!(
+        encode_unit_setup_info(&info),
+        Err(SetupInfoError::InvalidCommitmentColumn { index: 2 })
+    );
+}
+
+#[test]
+fn rejects_overlapping_commitment_columns_when_parsing() {
+    let mut section = minimal_required_section();
+    push_u32(&mut section, 2);
+    for (name, pols_map_id) in [("trace.a", 0_u32), ("trace.overlap", 1_u32)] {
+        push_string(&mut section, name);
+        push_u32(&mut section, 1);
+        push_u32(&mut section, 1);
+        push_u32(&mut section, pols_map_id);
+        push_u32(&mut section, pols_map_id);
+        push_u32(&mut section, 0);
+        push_u8(&mut section, 0);
+        push_u32(&mut section, 0);
+    }
+    let bytes = setup_info_file(section, 3);
+
+    assert_eq!(
+        parse_unit_setup_info(&bytes),
+        Err(SetupInfoError::InvalidCommitmentColumn { index: 1 })
+    );
+}
+
+#[test]
 fn rejects_zero_version_unit_setup_info_binary() {
     let mut bytes = sample_setup_info_binary();
     bytes[4..8].copy_from_slice(&0_u32.to_le_bytes());
