@@ -678,6 +678,12 @@ OPENING_STAGE_ROW_VALUE_DEVICE_DOWNLOAD_BATCH_RE = re.compile(
 OPENING_STAGE_ROW_VALUE_DEVICE_SINGLE_DOWNLOAD_RE = re.compile(
     r"^timing_finish_witness_stage_(\d+)_opening_row_values_device_single_downloads$"
 )
+OPENING_STAGE_ROW_VALUE_SOURCE_EXTEND_CALLS_RE = re.compile(
+    r"^timing_finish_witness_stage_(\d+)_opening_row_value_source_extend_calls$"
+)
+OPENING_STAGE_ROW_VALUE_SOURCE_EXTEND_MAX_ROWS_RE = re.compile(
+    r"^timing_finish_witness_stage_(\d+)_opening_row_value_source_extend_max_rows$"
+)
 LEAF_KERNEL_MS_KEY = "timing_guest_stage_leaf_kernel_work_ms"
 LEAF_COSET_CALLS_KEY = "timing_guest_stage_leaf_coset_extend_calls"
 LEAF_COSET_COLUMNS_KEY = "timing_guest_stage_leaf_coset_extend_columns"
@@ -1915,6 +1921,8 @@ def parse_timing_log(text: str) -> dict[str, int | str]:
             key not in TIMING_KEYS
             and OPENING_STAGE_ROW_VALUE_DEVICE_DOWNLOAD_BATCH_RE.match(key) is None
             and OPENING_STAGE_ROW_VALUE_DEVICE_SINGLE_DOWNLOAD_RE.match(key) is None
+            and OPENING_STAGE_ROW_VALUE_SOURCE_EXTEND_CALLS_RE.match(key) is None
+            and OPENING_STAGE_ROW_VALUE_SOURCE_EXTEND_MAX_ROWS_RE.match(key) is None
         ):
             continue
         try:

@@ -714,6 +714,8 @@ fn proof_artifact_timing_reports_per_stage_opening_work_shape() {
         "timing_finish_witness_stage_7_opening_row_values_device_rows=30\n",
         "timing_finish_witness_stage_7_opening_row_values_device_download_batches=40\n",
         "timing_finish_witness_stage_7_opening_row_values_device_single_downloads=12\n",
+        "timing_finish_witness_stage_7_opening_row_value_source_extend_calls=13\n",
+        "timing_finish_witness_stage_7_opening_row_value_source_extend_max_rows=17\n",
         "timing_finish_witness_stage_7_opening_row_values_source_rows=31\n",
         "timing_finish_witness_stage_7_opening_row_values_words=32\n",
         "timing_finish_witness_stage_7_opening_row_values_bytes=33\n",
