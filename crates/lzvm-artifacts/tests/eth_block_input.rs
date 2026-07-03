@@ -80,6 +80,35 @@ fn rejects_unknown_eth_block_input_sections() {
 }
 
 #[test]
+fn rejects_duplicate_eth_block_input_sections() {
+    let block_rlp = sample_block_rlp_with_transactions(
+        hex32("e52f61e61ebdce920205cfca55e00c70bf219b45ea432febbf96152313e61db5"),
+        vec![rlp_list(&[rlp_bytes(&[1])])],
+    );
+    let input = build_eth_block_input(&block_rlp).expect("block input should build");
+    let encoded = encode_eth_block_input(&input).expect("block input should encode");
+    let mut file = parse_sectioned_file(&encoded, ETH_BLOCK_INPUT_KIND, ETH_BLOCK_INPUT_VERSION)
+        .expect("sectioned input should parse");
+    let metadata = file
+        .sections
+        .iter()
+        .find(|section| section.id == METADATA_SECTION_ID)
+        .expect("metadata section should exist")
+        .clone();
+    file.sections.push(metadata);
+    let encoded = encode_sectioned_file(&file).expect("sectioned input should encode");
+
+    let error = parse_eth_block_input(&encoded).expect_err("duplicate section should reject");
+
+    assert_eq!(
+        error,
+        EthBlockInputError::DuplicateSection {
+            id: METADATA_SECTION_ID
+        }
+    );
+}
+
+#[test]
 fn builds_withdrawals_eth_block_inputs() {
     let block_rlp = sample_block_rlp_with_withdrawals(
         hex32("51c445cba96d0dfd446eec8b2b94f104608cf8443a92f7f87c76a383d6687300"),
