@@ -192,7 +192,7 @@ pub fn parse_source_program_archive(
     }
 
     let version = reader.read_u32()?;
-    if version > SOURCE_PROGRAM_ARCHIVE_VERSION {
+    if version == 0 || version > SOURCE_PROGRAM_ARCHIVE_VERSION {
         return Err(SourceProgramArchiveError::UnsupportedVersion {
             found: version,
             max: SOURCE_PROGRAM_ARCHIVE_VERSION,
