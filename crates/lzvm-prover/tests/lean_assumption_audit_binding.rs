@@ -24,7 +24,14 @@ fn lean_assumption_audit_exports_runtime_soundness_coverage() {
     let soundness_path = crate_root.join("../../lean/Lzvm/Soundness.lean");
     let soundness_source =
         std::fs::read_to_string(&soundness_path).expect("Lean soundness source should read");
+    let top_level_path = crate_root.join("../../lean/Lzvm.lean");
+    let top_level_source =
+        std::fs::read_to_string(&top_level_path).expect("Lean top-level source should read");
 
+    assert!(
+        lean_binding::contains_import(&top_level_source, "Lzvm.AssumptionAudit"),
+        "top-level Lean module should import assumption audit"
+    );
     assert!(
         lean_binding::contains_import(&runtime_source, "Lzvm.AssumptionAudit"),
         "runtime soundness should import the centralized assumption audit"
