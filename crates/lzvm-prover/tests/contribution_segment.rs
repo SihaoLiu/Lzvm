@@ -331,6 +331,17 @@ fn builds_internal_contribution_input_from_array_unit_values() {
 }
 
 #[test]
+fn rejects_zero_length_internal_contribution_unit_value_dimensions() {
+    let verification_key = VerificationKeyRoot::FieldElements(vec![11, 22, 33, 44]);
+    let unit_value_map = vec![array_stage_value("local_zero", 1, &[0])];
+
+    assert!(matches!(
+        build_internal_contribution_input([Felt::ZERO; 4], &verification_key, &unit_value_map, &[]),
+        Err(ContributionChallengeError::LengthOverflow)
+    ));
+}
+
+#[test]
 fn rejects_internal_contribution_input_unit_value_count_mismatch() {
     let verification_key = VerificationKeyRoot::FieldElements(vec![11, 22, 33, 44]);
     let unit_value_map = vec![
@@ -544,6 +555,22 @@ fn derives_global_challenge_from_array_stage_one_proof_values() {
         .expect("global challenge should derive"),
         expected
     );
+}
+
+#[test]
+fn rejects_zero_length_contribution_proof_value_dimensions() {
+    let global_info = sample_global_info(3, vec![array_proof_value("stage_one_zero", 1, &[0])]);
+    let entries = vec![ProveContributionEntry {
+        worker_index: 0,
+        group_id: 0,
+        aggregated: false,
+        values: vec![Felt::from_u64(1), Felt::from_u64(2), Felt::from_u64(3)],
+    }];
+
+    assert!(matches!(
+        derive_global_challenge_from_contributions(&global_info, &[], &[], &entries),
+        Err(ContributionChallengeError::LengthOverflow)
+    ));
 }
 
 #[test]

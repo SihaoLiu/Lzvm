@@ -1129,6 +1129,9 @@ fn stage_value_dimension(entry: &StageValue) -> Result<usize, ContributionChalle
     entry.lengths.iter().try_fold(1_usize, |dimension, length| {
         let length =
             usize::try_from(*length).map_err(|_| ContributionChallengeError::LengthOverflow)?;
+        if length == 0 {
+            return Err(ContributionChallengeError::LengthOverflow);
+        }
         dimension
             .checked_mul(length)
             .ok_or(ContributionChallengeError::LengthOverflow)
@@ -1216,6 +1219,9 @@ fn proof_value_dimension(entry: &NamedStageValue) -> Result<usize, ContributionC
     entry.lengths.iter().try_fold(1_usize, |dimension, length| {
         let length =
             usize::try_from(*length).map_err(|_| ContributionChallengeError::LengthOverflow)?;
+        if length == 0 {
+            return Err(ContributionChallengeError::LengthOverflow);
+        }
         dimension
             .checked_mul(length)
             .ok_or(ContributionChallengeError::LengthOverflow)
