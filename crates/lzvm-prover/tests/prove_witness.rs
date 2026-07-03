@@ -131,9 +131,10 @@ use lzvm_prover::{
     run_prove_witness_commitments_with_trace, run_prove_witness_commitments_with_trace_backend,
     run_prove_witness_commitments_with_trace_bytes, GpuRunOptions, ProveExecutionInputArtifacts,
     ProvePartitionPlan, ProvePassRequest, ProvePcsEvaluationValues, ProvePcsFriOpeningTraceValues,
-    ProvePcsFriOpeningValues, ProvePcsFriTranscriptTraceValues, ProvePcsQueryPlanSegmentError,
-    ProveRunOptions, ProveRunRequest, ProveSchedule, ProveWitnessAuxiliaryInputs,
-    ProveWitnessCommitmentError, ProveWitnessSegmentError,
+    ProvePcsFriOpeningValues, ProvePcsFriTranscriptTraceValues,
+    ProvePcsFriTranscriptTraceValuesError, ProvePcsQueryPlanSegmentError, ProveRunOptions,
+    ProveRunRequest, ProveSchedule, ProveWitnessAuxiliaryInputs, ProveWitnessCommitmentError,
+    ProveWitnessSegmentError,
 };
 use sha2::{Digest, Sha256};
 
@@ -7369,23 +7370,35 @@ fn builds_pcs_fri_transcript_values_from_execution_material() {
     };
     let evaluations = vec![Ext3::from_u64s([30, 31, 32]), Ext3::from_u64s([40, 41, 42])];
     let auxiliary = ProveWitnessAuxiliaryInputs::default();
-
-    let values = build_pcs_fri_transcript_values_from_trace(
+    let transcript_input = ProvePcsFriTranscriptTraceValues {
+        unit_index: 0,
+        execution_unit: &plan.units[0],
+        trace: &trace,
+        publics: &[],
+        auxiliary_inputs: &auxiliary,
+        constant_root,
+        witness_roots: &witness_roots,
+        evaluation_values: &evaluations,
+        xi_challenge: Ext3::from_u64s([3, 0, 0]),
+        binding_segments: &[],
+    };
+    let duplicate_error = build_pcs_fri_transcript_values_from_trace(
         &plan.run_plan.schedule,
-        &[ProvePcsFriTranscriptTraceValues {
-            unit_index: 0,
-            execution_unit: &plan.units[0],
-            trace: &trace,
-            publics: &[],
-            auxiliary_inputs: &auxiliary,
-            constant_root,
-            witness_roots: &witness_roots,
-            evaluation_values: &evaluations,
-            xi_challenge: Ext3::from_u64s([3, 0, 0]),
-            binding_segments: &[],
-        }],
+        &[transcript_input, transcript_input],
     )
-    .expect("FRI transcript values should build");
+    .expect_err("duplicate FRI transcript input should reject");
+
+    assert_eq!(
+        duplicate_error,
+        ProvePcsFriTranscriptTraceValuesError::DuplicateUnitIdentity {
+            unit_index: 0,
+            trace_instance_index: 0,
+        }
+    );
+
+    let values =
+        build_pcs_fri_transcript_values_from_trace(&plan.run_plan.schedule, &[transcript_input])
+            .expect("FRI transcript values should build");
     let transcript_value = &values[0];
     let nonce_segment = build_pcs_query_nonce_segment(
         &plan.run_plan.schedule,
