@@ -76,6 +76,9 @@ pub enum PcsPlanError {
     InvalidMerkleTreeArity {
         arity: u32,
     },
+    InvalidTranscriptArity {
+        arity: u32,
+    },
     EmptyFriSchedule,
     InvalidFirstFriLayer {
         expected: u32,
@@ -137,6 +140,9 @@ impl fmt::Display for PcsPlanError {
             Self::InvalidQueryCount => write!(f, "PCS setup plan query count is invalid"),
             Self::InvalidMerkleTreeArity { arity } => {
                 write!(f, "PCS setup plan merkle-tree arity is invalid: {arity}")
+            }
+            Self::InvalidTranscriptArity { arity } => {
+                write!(f, "PCS setup plan transcript arity is invalid: {arity}")
             }
             Self::EmptyFriSchedule => write!(f, "PCS setup plan FRI schedule is empty"),
             Self::InvalidFirstFriLayer { expected, found } => write!(
@@ -225,6 +231,7 @@ pub fn derive_pcs_setup_plan(setup: &UnitSetupInfo) -> Result<PcsSetupPlan, PcsP
             arity: setup.stark.merkle_tree_arity,
         });
     }
+    validate_transcript_arity(setup.stark.transcript_arity)?;
     if setup.stark.n_bits_ext < setup.stark.n_bits {
         return Err(PcsPlanError::InvalidDomainBits {
             base_bits: setup.stark.n_bits,
@@ -399,6 +406,7 @@ fn validate_pcs_setup_plan(value: &PcsSetupPlan) -> Result<(), PcsPlanError> {
             arity: value.merkle_tree_arity,
         });
     }
+    validate_transcript_arity(value.transcript_arity)?;
     if value.extended_domain_bits < value.base_domain_bits {
         return Err(PcsPlanError::InvalidDomainBits {
             base_bits: value.base_domain_bits,
@@ -461,6 +469,15 @@ fn validate_pcs_setup_plan(value: &PcsSetupPlan) -> Result<(), PcsPlanError> {
             expected: expected_final_layer,
             found: value.final_layer_bits,
         });
+    }
+    Ok(())
+}
+
+fn validate_transcript_arity(arity: Option<u32>) -> Result<(), PcsPlanError> {
+    if let Some(arity) = arity {
+        if !matches!(arity, 2 | 4) {
+            return Err(PcsPlanError::InvalidTranscriptArity { arity });
+        }
     }
     Ok(())
 }

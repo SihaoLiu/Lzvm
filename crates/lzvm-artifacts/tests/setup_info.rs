@@ -705,6 +705,17 @@ fn rejects_stage_count_overflow() {
 }
 
 #[test]
+fn rejects_invalid_setup_transcript_arities() {
+    let mut info = fixtures::sample_setup_info_fixture();
+    info.stark.transcript_arity = Some(3);
+
+    assert_eq!(
+        encode_unit_setup_info(&info),
+        Err(SetupInfoError::InvalidTranscriptArity { arity: 3 })
+    );
+}
+
+#[test]
 fn rejects_opening_point_count_that_exceeds_remaining_points() {
     let mut section = minimal_header_prefix();
     push_u32(&mut section, 1);

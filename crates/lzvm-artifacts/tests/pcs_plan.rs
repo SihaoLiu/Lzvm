@@ -173,6 +173,29 @@ fn rejects_invalid_pcs_folding_schedule() {
 }
 
 #[test]
+fn rejects_invalid_setup_transcript_arity_when_deriving_pcs_plans() {
+    let mut setup = fixtures::sample_pcs_plan_setup_info();
+    setup.stark.transcript_arity = Some(3);
+
+    assert_eq!(
+        derive_pcs_setup_plan(&setup),
+        Err(PcsPlanError::InvalidTranscriptArity { arity: 3 })
+    );
+}
+
+#[test]
+fn rejects_invalid_pcs_plan_transcript_arities() {
+    let setup = fixtures::sample_pcs_plan_setup_info();
+    let mut plan = derive_pcs_setup_plan(&setup).expect("plan should derive");
+    plan.transcript_arity = Some(3);
+
+    assert_eq!(
+        encode_pcs_setup_plan(&plan),
+        Err(PcsPlanError::InvalidTranscriptArity { arity: 3 })
+    );
+}
+
+#[test]
 fn rejects_stage_commit_width_count_that_exceeds_remaining_widths() {
     let mut section = section_prefix();
     push_u32(&mut section, 1);

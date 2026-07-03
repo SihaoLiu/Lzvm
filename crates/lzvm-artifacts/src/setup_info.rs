@@ -172,6 +172,9 @@ pub enum SetupInfoError {
         n_bits_ext: u32,
     },
     InvalidFriSteps,
+    InvalidTranscriptArity {
+        arity: u32,
+    },
     ConstantColumnCountMismatch {
         expected: u32,
         found: usize,
@@ -244,6 +247,9 @@ impl fmt::Display for SetupInfoError {
                 "invalid setup-info domain bits: n_bits {n_bits}, n_bits_ext {n_bits_ext}"
             ),
             Self::InvalidFriSteps => write!(f, "invalid setup-info FRI steps"),
+            Self::InvalidTranscriptArity { arity } => {
+                write!(f, "invalid setup-info transcript arity: {arity}")
+            }
             Self::ConstantColumnCountMismatch { expected, found } => write!(
                 f,
                 "setup-info constant-column count mismatch: expected {expected}, found {found}"
@@ -852,6 +858,15 @@ fn validate_domains(stark: &StarkStruct) -> Result<(), SetupInfoError> {
     Ok(())
 }
 
+fn validate_stark_parameters(stark: &StarkStruct) -> Result<(), SetupInfoError> {
+    if let Some(arity) = stark.transcript_arity {
+        if !matches!(arity, 2 | 4) {
+            return Err(SetupInfoError::InvalidTranscriptArity { arity });
+        }
+    }
+    Ok(())
+}
+
 fn validate_unit_setup_info(info: &UnitSetupInfo) -> Result<(), SetupInfoError> {
     validate_constant_columns(info.n_constants, &info.constant_columns)?;
     info.stage_commit_widths()?;
@@ -864,6 +879,7 @@ fn validate_unit_setup_info(info: &UnitSetupInfo) -> Result<(), SetupInfoError> 
     validate_stage_values("group-value-map", &info.group_value_map, max_stage)?;
     validate_setup_value_names(info)?;
     validate_evaluation_map(info)?;
+    validate_stark_parameters(&info.stark)?;
     validate_domains(&info.stark)?;
     Ok(())
 }
