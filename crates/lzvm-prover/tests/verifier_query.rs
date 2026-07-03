@@ -27,7 +27,6 @@ use lzvm_artifacts::witness_opening_segment::{
     WITNESS_OPENING_SEGMENT_ID,
 };
 use lzvm_field::{Ext3, Felt, SHIFT};
-use lzvm_prover::constant_opening::LoadConstantOpeningUnitError;
 use lzvm_prover::pcs_transcript_segments::PcsTranscriptUnitChallenges;
 use lzvm_prover::verifier_query::{
     assemble_verifier_query_eval_input, evaluate_verifier_unit_queries,
@@ -1079,9 +1078,7 @@ fn rejects_verifier_query_outputs_duplicate_query_units() {
 
     assert_eq!(
         error,
-        VerifierFriQueryOutputSegmentsError::ConstantOpeningUnit(
-            LoadConstantOpeningUnitError::UnexpectedUnit { unit_index: 0 }
-        )
+        VerifierFriQueryOutputSegmentsError::UnitMismatch { unit_index: 0 }
     );
 }
 

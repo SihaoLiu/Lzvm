@@ -363,9 +363,6 @@ pub(crate) fn validate_unit_values_units_match_query_units_from_segment(
     query_units: &[PcsQueryPlanUnit],
     parsed: Option<&UnitValuesSegment>,
 ) -> Result<(), LoadUnitValuesSegmentError> {
-    let Some(parsed) = parsed else {
-        return Ok(());
-    };
     let mut query_identities = BTreeSet::new();
     for unit in query_units {
         let identity = (unit.unit_index, unit.trace_instance_index);
@@ -378,6 +375,9 @@ pub(crate) fn validate_unit_values_units_match_query_units_from_segment(
             return Err(LoadUnitValuesSegmentError::UnexpectedUnit { unit_index });
         }
     }
+    let Some(parsed) = parsed else {
+        return Ok(());
+    };
     let mut unit_value_identities = BTreeSet::new();
     for unit in &parsed.units {
         let identity = (unit.unit_index, unit.trace_instance_index);
@@ -489,6 +489,19 @@ mod tests {
         let error =
             validate_unit_values_units_match_query_units_from_segment(&query_units, Some(&parsed))
                 .expect_err("duplicate query identity should reject");
+
+        assert_eq!(
+            error,
+            LoadUnitValuesSegmentError::UnexpectedUnit { unit_index: 0 }
+        );
+    }
+
+    #[test]
+    fn unit_values_match_query_units_rejects_duplicate_query_identity_without_segment() {
+        let query_units = vec![query_unit(0, 1), query_unit(0, 1)];
+
+        let error = validate_unit_values_units_match_query_units_from_segment(&query_units, None)
+            .expect_err("duplicate query identity should reject without unit values");
 
         assert_eq!(
             error,

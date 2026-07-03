@@ -697,6 +697,7 @@ fn validate_verifier_query_outputs_from_segments_inner(
     request: VerifierFriQueryOutputSegmentsRequest<'_>,
     preloaded_proof_values: Option<&[Ext3]>,
 ) -> Result<(), VerifierFriQueryOutputSegmentsError> {
+    let query_identities = verifier_query_unit_identities(request.query_units)?;
     let required_constant_query_units =
         constant_opening_query_units_for_verifier(request.units, request.query_units)?;
     let constant_opening = match load_constant_opening_segment_from_segments(request.segments) {
@@ -734,7 +735,6 @@ fn validate_verifier_query_outputs_from_segments_inner(
         &witness_opening,
     )
     .map_err(VerifierFriQueryOutputSegmentsError::WitnessOpeningUnit)?;
-    let query_identities = verifier_query_unit_identities(request.query_units)?;
     validate_verifier_query_unit_identities_match_query_units(
         &query_identities,
         request.opening_units,
