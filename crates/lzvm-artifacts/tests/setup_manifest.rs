@@ -160,6 +160,62 @@ fn rejects_legacy_setup_directory_manifests_with_encoded_mismatches() {
 }
 
 #[test]
+fn rejects_legacy_setup_directory_manifests_with_source_archive_mismatches() {
+    let path = temp_file_path("legacy-archive-mismatch");
+    fs::write(
+        &path,
+        encode_legacy_manifest(3, &[4, 3, 128, 4, 512, 1, 7, 1, 4, 2]),
+    )
+    .expect("fixture should be written");
+
+    let error = validate_setup_directory_manifest_file(&path, &sample_manifest())
+        .expect_err("encoded source archive mismatch should reject");
+
+    assert!(matches!(
+        error,
+        SetupDirectoryManifestError::Mismatch { .. }
+    ));
+    fs::remove_file(&path).expect("fixture should be removed");
+}
+
+#[test]
+fn rejects_current_setup_directory_manifests_with_source_companion_byte_mismatches() {
+    let cases: [(&str, fn(&mut SetupDirectoryManifest)); 2] = [
+        (
+            "fixed-source-bytes",
+            |manifest: &mut SetupDirectoryManifest| {
+                manifest.source_fixed_file_manifest_byte_count += 1;
+            },
+        ),
+        (
+            "archive-source-bytes",
+            |manifest: &mut SetupDirectoryManifest| {
+                manifest.source_program_archive_byte_count += 1;
+            },
+        ),
+    ];
+    for (name, mutate) in cases {
+        let path = temp_file_path(name);
+        let mut manifest = sample_manifest();
+        mutate(&mut manifest);
+        fs::write(
+            &path,
+            encode_setup_directory_manifest(&manifest).expect("fixture should encode"),
+        )
+        .expect("fixture should be written");
+
+        let error = validate_setup_directory_manifest_file(&path, &sample_manifest())
+            .expect_err("encoded byte-count mismatch should reject");
+
+        assert!(matches!(
+            error,
+            SetupDirectoryManifestError::Mismatch { .. }
+        ));
+        fs::remove_file(&path).expect("fixture should be removed");
+    }
+}
+
+#[test]
 fn reads_setup_directory_manifest_from_a_file_path() {
     let path = temp_file_path("manifest.bin");
     fs::write(

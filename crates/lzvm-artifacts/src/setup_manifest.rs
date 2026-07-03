@@ -391,28 +391,28 @@ fn setup_directory_manifest_matches_version(
     expected: &SetupDirectoryManifest,
     version: u32,
 ) -> bool {
-    found.unit_count == expected.unit_count
-        && found.global_constraint_count == expected.global_constraint_count
-        && found.fixed_byte_count == expected.fixed_byte_count
-        && found.pcs_material_unit_count == expected.pcs_material_unit_count
-        && found.pcs_material_byte_count == expected.pcs_material_byte_count
-        && (version < 2
-            || (found.source_fixed_file_manifest_present
-                == expected.source_fixed_file_manifest_present
-                && found.source_fixed_file_manifest_entry_count
-                    == expected.source_fixed_file_manifest_entry_count))
-        && (version < 3
-            || (found.source_program_archive_present == expected.source_program_archive_present
-                && found.source_program_archive_source_count
-                    == expected.source_program_archive_source_count
-                && found.source_program_archive_edge_count
-                    == expected.source_program_archive_edge_count))
-        && (version < 4
-            || (found.source_fixed_file_manifest_byte_count
-                == expected.source_fixed_file_manifest_byte_count
-                && found.source_program_archive_byte_count
-                    == expected.source_program_archive_byte_count))
-        && found.catalog_digest == expected.catalog_digest
+    *found == setup_directory_manifest_for_version(expected, version)
+}
+
+fn setup_directory_manifest_for_version(
+    expected: &SetupDirectoryManifest,
+    version: u32,
+) -> SetupDirectoryManifest {
+    let mut projected = expected.clone();
+    if version < 2 {
+        projected.source_fixed_file_manifest_present = false;
+        projected.source_fixed_file_manifest_entry_count = 0;
+    }
+    if version < 3 {
+        projected.source_program_archive_present = false;
+        projected.source_program_archive_source_count = 0;
+        projected.source_program_archive_edge_count = 0;
+    }
+    if version < 4 {
+        projected.source_fixed_file_manifest_byte_count = 0;
+        projected.source_program_archive_byte_count = 0;
+    }
+    projected
 }
 
 fn parse_setup_directory_manifest_payload(
