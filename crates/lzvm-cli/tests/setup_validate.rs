@@ -7077,7 +7077,7 @@ fn guest_pc_trace_witness_uses_supported_unit_when_default_unit_is_unmapped() {
     assert_eq!(
         String::from_utf8(stdout).expect("stdout should be utf-8"),
         format!(
-            "status=ok\npass=full\nunits=4\nfixed_bytes=128\npcs_material_units=4\npcs_material_bytes={material_bytes}\nqueries=4\nmax_extended_domain_bits=2\npartitions=1\npartition_ids=0\nworker=0\ninput_data=none\naggregate=false\nremote_aggregation=false\nfinal_wrap=false\nverify_outputs=true\nsave_outputs=false\nminimal_memory=false\noutput={}\ngpu_preallocate=false\n{CUDA_BACKEND_SUMMARY_LINE}gpu_streams=20\nwitness_thread_pools=32\nstored_witnesses=4\npack_trace=true\nsetup_hash={setup_hash}\nunit_index=1\ninput_bytes=0\ntrace_rows=2\ntrace_columns=2\nstage_count=2\n{}",
+            "status=ok\npass=full\nunits=4\nfixed_bytes=128\npcs_material_units=4\npcs_material_bytes={material_bytes}\nqueries=4\nmax_extended_domain_bits=2\npartitions=1\npartition_ids=0\nworker=0\ninput_data=none\naggregate=false\nremote_aggregation=false\nfinal_wrap=false\nverify_outputs=true\nsave_outputs=false\nminimal_memory=false\noutput={}\ngpu_preallocate=false\n{CUDA_BACKEND_SUMMARY_LINE}gpu_streams=20\nwitness_thread_pools=32\nstored_witnesses=4\npack_trace=true\nsetup_hash={setup_hash}\nguest_pc_trace_instruction_limit=8\nguest_pc_trace_selected_unit=1\nguest_pc_trace_layout_rows=2\nguest_pc_trace_layout_row_width=2\nguest_pc_trace_layout_instruction_capacity=2\nguest_pc_trace_segmented=false\nunit_index=1\ninput_bytes=0\ntrace_rows=2\ntrace_columns=2\nstage_count=2\n{}",
             output_dir.display(),
             expected_stages
         )
@@ -8421,10 +8421,10 @@ fn saves_prove_witness_commitment_outputs_when_requested() {
     let expected_constant_opening_segment =
         build_constant_opening_segment(&catalog, &plan.run_plan.schedule, &proof.segments[1])
             .expect("constant opening segment should build");
-    let constant_opening = parse_constant_opening_segment(&proof.segments[2].data)
+    let constant_opening = parse_constant_opening_segment(&proof.segments[5].data)
         .expect("constant opening segment should parse");
-    assert_eq!(proof.segments[2].id, CONSTANT_OPENING_SEGMENT_ID);
-    assert_eq!(proof.segments[2], expected_constant_opening_segment);
+    assert_eq!(proof.segments[5].id, CONSTANT_OPENING_SEGMENT_ID);
+    assert_eq!(proof.segments[5], expected_constant_opening_segment);
     assert_eq!(constant_opening.units.len(), 1);
     assert_eq!(
         constant_opening.units[0].queries.len(),
@@ -8433,17 +8433,17 @@ fn saves_prove_witness_commitment_outputs_when_requested() {
     let expected_opening_segment =
         build_witness_opening_segment(&plan.run_plan.schedule, &proof.segments[1], &output)
             .expect("opening segment should build");
-    let opening = parse_witness_opening_segment(&proof.segments[3].data)
+    let opening = parse_witness_opening_segment(&proof.segments[2].data)
         .expect("opening segment should parse");
-    assert_eq!(proof.segments[3].id, WITNESS_OPENING_SEGMENT_ID);
-    assert_eq!(proof.segments[3], expected_opening_segment);
+    assert_eq!(proof.segments[2].id, WITNESS_OPENING_SEGMENT_ID);
+    assert_eq!(proof.segments[2], expected_opening_segment);
     assert_eq!(opening.units.len(), 1);
     assert_eq!(
         opening.units[0].queries.len(),
         query_plan.units[0].queries.len()
     );
-    assert_eq!(proof.segments[4].id, TRACE_CONSTRAINT_SEGMENT_ID);
-    assert_eq!(proof.segments[5], expected_segment);
+    assert_eq!(proof.segments[3].id, TRACE_CONSTRAINT_SEGMENT_ID);
+    assert_eq!(proof.segments[4], expected_segment);
     assert!(proof
         .segments
         .iter()
