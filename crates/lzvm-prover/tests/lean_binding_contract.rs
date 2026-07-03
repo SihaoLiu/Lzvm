@@ -182,13 +182,31 @@ fn source_hot_paths_does_not_own_lean_binding_theorem_exports() {
         "runtime_query_plan_binding_checked_acceptance_sound",
         "runtime_query_plan_binding_evidence_implies_bound_contract",
         "runtime_query_plan_binding_checked_acceptance_bound_contract",
+        "runtime_query_plan_binding_evidence_implies_material_manifest_contract",
+        "runtime_query_plan_binding_evidence_implies_material_manifest_matches_schedule",
+        "runtime_query_plan_binding_audited_finalized_manifest_core_sound_witness_contract",
         "runtime_pipeline_binding_checked_acceptance_sound",
+        "runtime_pipeline_binding_checked_acceptance_query_plan_material_manifest_components",
+        "runtime_pipeline_binding_required_external_source_contracts_manifest_core_contract",
     ] {
         assert!(
             !source_hot_paths.contains(theorem),
             "dedicated Lean binding tests should own theorem export check for {theorem}"
         );
     }
+}
+
+#[test]
+fn query_plan_binding_uses_theorem_declaration_export_checks() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let query_plan_binding =
+        std::fs::read_to_string(crate_root.join("tests/lean_query_plan_binding.rs"))
+            .expect("query plan binding test source should read");
+
+    assert!(
+        query_plan_binding.contains("lean_binding::assert_theorem_declarations"),
+        "query plan binding should use theorem declaration checks for exported theorem names"
+    );
 }
 
 #[test]

@@ -2229,8 +2229,8 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
         "runtime_pipeline_binding_checked_acceptance_query_plan_material_manifest_components",
         &[
             "runtime_pipeline_binding_checked_acceptance_query_plan_material_manifest_contract",
-            "runtime_query_plan_material_manifest_contract_implies_segment_canonical",
-            "runtime_query_plan_material_manifest_contract_implies_matches_schedule",
+            "materialManifest.left",
+            "materialManifest.right",
         ],
     );
     for name in [

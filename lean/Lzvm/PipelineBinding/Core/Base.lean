@@ -804,18 +804,8 @@ theorem runtime_pipeline_binding_checked_acceptance_query_plan_material_manifest
       accepted
   exact
     ⟨materialManifest,
-      runtime_query_plan_material_manifest_contract_implies_segment_canonical
-        validation.queryPlanBindingValidation
-        artifact
-        publicInput
-        proof
-        materialManifest,
-      runtime_query_plan_material_manifest_contract_implies_matches_schedule
-        validation.queryPlanBindingValidation
-        artifact
-        publicInput
-        proof
-        materialManifest⟩
+      materialManifest.left,
+      materialManifest.right⟩
 
 theorem runtime_pipeline_binding_checked_acceptance_query_plan_segment_canonical
     {system : VerifierModel}
