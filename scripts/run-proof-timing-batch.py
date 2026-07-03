@@ -34,6 +34,15 @@ def load_timing_summary_required_keys() -> tuple[str, ...]:
 TIMING_SUMMARY_REQUIRED_KEYS = load_timing_summary_required_keys()
 
 TIMING_TOTAL_RE = re.compile(r"^timing_total_ms=(\d+)\s*$", re.MULTILINE)
+INHERITED_RUNTIME_ENV_NAMES = (
+    "LZVM_CUDA_RETAINED_SOURCE_BYTES",
+    "LZVM_CUDA_RETAIN_FRI_STAGE_SOURCES",
+    "LZVM_CUDA_FRI_STAGE_SOURCE_DEBUG",
+    "LZVM_CUDA_RETAINED_DESCRIPTOR_BYTES",
+    "LZVM_CUDA_RETAINED_LEAF_DIGEST_BYTES",
+    "LZVM_CUDA_RETAINED_PARENT_CHECKPOINT_BYTES",
+    "LZVM_CUDA_RETAINED_PARENT_CHECKPOINT_MAX_STATES",
+)
 
 
 def workspace_root() -> Path:
@@ -161,6 +170,15 @@ def write_combined_log(path: Path, stdout: str, stderr: str) -> None:
     if stderr and not stderr.endswith("\n"):
         combined.append("\n")
     write_text_no_follow(path, "".join(combined))
+
+
+def inherited_runtime_env() -> dict[str, str]:
+    values = {}
+    for name in INHERITED_RUNTIME_ENV_NAMES:
+        value = os.environ.get(name)
+        if value is not None:
+            values[name] = value
+    return values
 
 
 def first_diagnostic_line(text: str) -> str:
@@ -962,6 +980,7 @@ def write_batch_json(
         "max_relative_spread": args.max_relative_spread,
         "small_max_avg_s": args.small_max_avg_s,
         "large_max_avg_s": args.large_max_avg_s,
+        "inherited_runtime_env": inherited_runtime_env(),
         "append_max_average_rejections": args.append_max_average_rejections,
         "commit": commit,
         "summary": args.summary,
@@ -1339,6 +1358,12 @@ def self_test() -> None:
         work_dir=str(work_dir / "runs"),
         large_require_text=[],
     )
+    previous_runtime_env = {
+        name: os.environ.get(name) for name in INHERITED_RUNTIME_ENV_NAMES
+    }
+    for name in INHERITED_RUNTIME_ENV_NAMES:
+        os.environ.pop(name, None)
+    os.environ["LZVM_CUDA_RETAINED_SOURCE_BYTES"] = "123456"
     try:
         batch_dir = run_batch(args)
         contents = (work_dir / "improve-log.csv").read_text(encoding="utf-8")
@@ -1357,6 +1382,9 @@ def self_test() -> None:
         if "aggregate,total_count,valid_total_count" not in stable_summary_text:
             raise SystemExit("self-test stable timing summary missing aggregate row")
         batch_payload = json.loads((batch_dir / "batch.json").read_text(encoding="utf-8"))
+        expected_runtime_env = {"LZVM_CUDA_RETAINED_SOURCE_BYTES": "123456"}
+        if batch_payload.get("inherited_runtime_env") != expected_runtime_env:
+            raise SystemExit("self-test batch json should record inherited runtime env")
         for key in [
             "small_stable_spread_s",
             "large_stable_spread_s",
@@ -1383,6 +1411,11 @@ def self_test() -> None:
             if batch_payload.get(key) != [1.0, 1.0, 1.0]:
                 raise SystemExit(f"self-test batch json {key} should record samples")
     finally:
+        for name, value in previous_runtime_env.items():
+            if value is None:
+                os.environ.pop(name, None)
+            else:
+                os.environ[name] = value
         shutil.rmtree(work_dir, ignore_errors=True)
 
 

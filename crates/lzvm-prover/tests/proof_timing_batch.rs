@@ -207,6 +207,7 @@ fn proof_timing_batch_runs_commands_and_appends_stable_log() {
         ))
         .arg("--summary")
         .arg("batch timing")
+        .env("LZVM_CUDA_RETAINED_SOURCE_BYTES", "123456")
         .output()
         .expect("proof timing batch should run");
     assert!(
@@ -292,6 +293,11 @@ fn proof_timing_batch_runs_commands_and_appends_stable_log() {
     assert!(
         batch_json.contains("\"runs\": 3") && batch_json.contains("\"max_runs\": 3"),
         "batch json should record the effective stable-run cap: {batch_json}"
+    );
+    assert!(
+        batch_json.contains("\"inherited_runtime_env\": {")
+            && batch_json.contains("\"LZVM_CUDA_RETAINED_SOURCE_BYTES\": \"123456\""),
+        "batch json should record inherited runtime env: {batch_json}"
     );
     assert!(
         batch_json.contains("\"small_run_count\": 3")
