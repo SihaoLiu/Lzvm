@@ -557,9 +557,13 @@ fn cuda_buffer_has_stream_zero_and_state_prefix_primitives() {
     let host_header_path = crate_root.join("../lzvm-accel/native/cuda_host.hpp");
     let host_header =
         std::fs::read_to_string(&host_header_path).expect("CUDA host header should read");
-    let host_source_path = crate_root.join("../lzvm-accel/native/cuda_host.cpp");
-    let host_source =
-        std::fs::read_to_string(&host_source_path).expect("CUDA host source should read");
+    let host_source = read_sources(
+        crate_root,
+        &[
+            "../lzvm-accel/native/cuda_host.cpp",
+            "../lzvm-accel/native/cuda_host_state_prefix.cuh",
+        ],
+    );
     let host_runtime_path = crate_root.join("../lzvm-accel/native/cuda_host_runtime.cpp");
     let host_runtime_source =
         std::fs::read_to_string(&host_runtime_path).expect("CUDA host runtime source should read");
@@ -734,13 +738,16 @@ fn witness_commitment_segments_use_logical_tree_byte_count() {
 #[test]
 fn cli_witness_summary_uses_logical_tree_byte_count() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let source_path = crate_root.join("../lzvm-cli/src/prove_witness.rs");
-    let source = std::fs::read_to_string(&source_path).expect("prove witness source should read");
+    let source_path = crate_root.join("../lzvm-cli/src/prove_witness/output_file.rs");
+    let source = format!(
+        "{}\nfn source_hot_path_sentinel",
+        std::fs::read_to_string(&source_path).expect("prove witness output source should read")
+    );
 
     let body = function_body(
         &source,
         "fn write_witness_output_summary_with_trace",
-        "fn finish_all_units_witness_run",
+        "fn source_hot_path_sentinel",
     );
 
     assert!(
@@ -4002,8 +4009,10 @@ fn guest_trace_detail_timing_keeps_aggregate_report_and_sampled_fields_separate(
     let backend_source =
         std::fs::read_to_string(&backend_path).expect("guest PC trace backend source should read");
     let cli_path = crate_root.join("../lzvm-cli/src/prove_witness/guest_pc_trace.rs");
-    let cli_source =
-        std::fs::read_to_string(&cli_path).expect("guest PC trace timing source should read");
+    let cli_source = format!(
+        "{}\nfn source_hot_path_sentinel",
+        std::fs::read_to_string(&cli_path).expect("guest PC trace timing source should read")
+    );
 
     let device_function_name = format!(
         "fn build_layout_{}_main_trace_segment_device_material",
@@ -4049,7 +4058,7 @@ fn guest_trace_detail_timing_keeps_aggregate_report_and_sampled_fields_separate(
     let cli_body = function_body(
         &cli_source,
         "pub(super) fn record_guest_pc_trace_timing",
-        "fn record_guest_stage_root_materialization_shape",
+        "fn source_hot_path_sentinel",
     );
     assert!(
         cli_source_records_sampled_duration(
