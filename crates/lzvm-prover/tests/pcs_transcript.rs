@@ -389,6 +389,37 @@ fn rejects_unit_values_for_missing_transcript_stage_root() {
 }
 
 #[test]
+fn rejects_stage_zero_transcript_unit_values() {
+    let error = derive_pcs_transcript_prefix_challenges(PcsTranscriptPrefixInputs {
+        arity: 4,
+        hash_values: false,
+        constant_root: root(1),
+        public_values: &[],
+        witness_roots: &[root(10)],
+        root_challenge_draws: &[1],
+        unit_value_map: &[StageValue {
+            name: "unit.zero".to_owned(),
+            stage: 0,
+            lengths: Vec::new(),
+        }],
+        unit_values: &values(&[101, 102, 103]),
+        evaluation_values: &[],
+        evaluation_challenge_draws: 0,
+        binding_segments: &[],
+    })
+    .expect_err("stage-zero unit values should reject");
+
+    assert_eq!(
+        error,
+        PcsTranscriptError::UnitValueStageOutOfRange {
+            value_index: 0,
+            stage: 0,
+            stage_count: 1,
+        }
+    );
+}
+
+#[test]
 fn multidimensional_stage_one_unit_values_do_not_change_challenges() {
     let constant_root = root(1);
     let witness_roots = vec![root(10)];
@@ -823,6 +854,93 @@ fn segment_challenge_derivation_rejects_witness_stage_index_mismatches() {
             field: "stage index",
             expected: 2,
             found: 3,
+        })
+    );
+}
+
+#[test]
+fn segment_challenge_derivation_rejects_witness_row_count_mismatches() {
+    let unit = sample_unit(Some(4), true);
+    let mut witness = sample_witness(0, &[10, 20, 30]);
+    witness.trace_rows = 512;
+
+    assert_eq!(
+        derive_pcs_final_query_challenge_from_segments(PcsTranscriptSegmentInputs {
+            unit_index: 0,
+            unit: &unit,
+            material: &sample_material(0, 1),
+            public_values: &[],
+            unit_values: &[],
+            witness: &witness,
+            evaluations: &sample_evaluations(0, &[40]),
+            fri: &sample_fri(0, &[], &[50]),
+            root_challenge_draws: &[1, 1, 1],
+            evaluation_challenge_draws: 1,
+            binding_segments: &[],
+        }),
+        Err(PcsTranscriptError::SegmentShapeMismatch {
+            segment: "witness",
+            field: "row count",
+            expected: 1024,
+            found: 512,
+        })
+    );
+}
+
+#[test]
+fn segment_challenge_derivation_rejects_witness_column_count_mismatches() {
+    let unit = sample_unit(Some(4), true);
+    let mut witness = sample_witness(0, &[10, 20, 30]);
+    witness.trace_columns = 5;
+
+    assert_eq!(
+        derive_pcs_final_query_challenge_from_segments(PcsTranscriptSegmentInputs {
+            unit_index: 0,
+            unit: &unit,
+            material: &sample_material(0, 1),
+            public_values: &[],
+            unit_values: &[],
+            witness: &witness,
+            evaluations: &sample_evaluations(0, &[40]),
+            fri: &sample_fri(0, &[], &[50]),
+            root_challenge_draws: &[1, 1, 1],
+            evaluation_challenge_draws: 1,
+            binding_segments: &[],
+        }),
+        Err(PcsTranscriptError::SegmentShapeMismatch {
+            segment: "witness",
+            field: "column count",
+            expected: 6,
+            found: 5,
+        })
+    );
+}
+
+#[test]
+fn segment_challenge_derivation_rejects_witness_stage_arity_mismatches() {
+    let unit = sample_unit(Some(4), true);
+    let mut witness = sample_witness(0, &[10, 20, 30]);
+    witness.stages[1].arity = 8;
+
+    assert_eq!(
+        derive_pcs_final_query_challenge_from_segments(PcsTranscriptSegmentInputs {
+            unit_index: 0,
+            unit: &unit,
+            material: &sample_material(0, 1),
+            public_values: &[],
+            unit_values: &[],
+            witness: &witness,
+            evaluations: &sample_evaluations(0, &[40]),
+            fri: &sample_fri(0, &[], &[50]),
+            root_challenge_draws: &[1, 1, 1],
+            evaluation_challenge_draws: 1,
+            binding_segments: &[],
+        }),
+        Err(PcsTranscriptError::SegmentShapeMismatch {
+            segment: "witness",
+            field: "stage arity",
+            expected: 4,
+            found: 8,
         })
     );
 }
