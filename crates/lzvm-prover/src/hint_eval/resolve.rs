@@ -443,10 +443,10 @@ fn proof_value_offset(
     let mut offset = 0usize;
     for (index, entry) in global_info.proof_values_map.iter().enumerate() {
         let width = if entry.stage == 1 { 1 } else { 3 };
+        let dimension = proof_value_dimension(entry)?;
         if index == id {
             return Ok((offset, width));
         }
-        let dimension = proof_value_dimension(entry)?;
         let field_width = dimension
             .checked_mul(width)
             .ok_or(HintEvalError::LengthOverflow)?;
@@ -466,6 +466,9 @@ fn proof_value_offset(
 fn proof_value_dimension(entry: &NamedStageValue) -> Result<usize, HintEvalError> {
     entry.lengths.iter().try_fold(1_usize, |dimension, length| {
         let length = usize::try_from(*length).map_err(|_| HintEvalError::LengthOverflow)?;
+        if length == 0 {
+            return Err(HintEvalError::LengthOverflow);
+        }
         dimension
             .checked_mul(length)
             .ok_or(HintEvalError::LengthOverflow)
@@ -570,6 +573,9 @@ fn stage_value_offset(
 fn stage_value_dimension(entry: &StageValue) -> Result<usize, HintEvalError> {
     entry.lengths.iter().try_fold(1_usize, |dimension, length| {
         let length = usize::try_from(*length).map_err(|_| HintEvalError::LengthOverflow)?;
+        if length == 0 {
+            return Err(HintEvalError::LengthOverflow);
+        }
         dimension
             .checked_mul(length)
             .ok_or(HintEvalError::LengthOverflow)

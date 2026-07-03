@@ -142,6 +142,18 @@ fn rejects_global_proof_value_zero_array_dimensions() {
 }
 
 #[test]
+fn rejects_global_proof_value_zero_array_dimensions_without_stage_counters() {
+    let mut global = fixtures::sample_metadata_bundle_global_info();
+    global.proof_values_map[0].lengths = vec![0];
+    global.num_proof_values.clear();
+
+    assert!(matches!(
+        validate_global_metadata(&global),
+        Err(MetadataValidationError::ProofValueCountOverflow)
+    ));
+}
+
+#[test]
 fn rejects_global_metadata_without_challenge_counters() {
     let mut global = fixtures::sample_metadata_bundle_global_info();
     global.num_challenges.clear();

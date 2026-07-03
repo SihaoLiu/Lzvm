@@ -119,6 +119,7 @@ pub fn validate_global_metadata(global: &GlobalInfo) -> Result<(), MetadataValid
         return Err(MetadataValidationError::NoChallengeStages);
     }
 
+    let found = proof_value_count(global)?;
     if !global.num_proof_values.is_empty() {
         let expected = global
             .num_proof_values
@@ -128,7 +129,6 @@ pub fn validate_global_metadata(global: &GlobalInfo) -> Result<(), MetadataValid
                     .checked_add(*value)
                     .ok_or(MetadataValidationError::ProofValueCountOverflow)
             })?;
-        let found = proof_value_count(global)?;
         if expected != found {
             return Err(MetadataValidationError::ProofValueCountMismatch { expected, found });
         }

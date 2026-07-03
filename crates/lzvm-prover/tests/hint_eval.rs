@@ -143,6 +143,40 @@ fn resolves_global_hint_proof_value_offsets_with_array_lengths() {
 }
 
 #[test]
+fn rejects_global_hint_zero_length_proof_value_dimensions() {
+    let program = HintProgram {
+        hints: vec![Hint {
+            name: "hint-a".to_owned(),
+            fields: vec![HintField {
+                name: "values".to_owned(),
+                values: vec![HintValue {
+                    operand: HintOperand::ProofValue { id: 0 },
+                    positions: vec![0],
+                }],
+            }],
+        }],
+    };
+    let mut global = sample_global_info();
+    global.proof_values_map[0].lengths = vec![0];
+
+    assert!(matches!(
+        resolve_global_hint_field(
+            &global,
+            &program,
+            0,
+            "values",
+            GlobalConstraintInputs {
+                publics: &[],
+                proof_values: &[felt(13)],
+                challenges: &[],
+                group_values: &[],
+            },
+        ),
+        Err(HintEvalError::LengthOverflow)
+    ));
+}
+
+#[test]
 fn rejects_global_hint_temporaries_without_expression_inputs() {
     let program = HintProgram {
         hints: vec![Hint {
@@ -613,6 +647,74 @@ fn resolves_regular_hint_group_value_offsets_with_array_lengths() {
             positions: vec![0],
         }]
     );
+}
+
+#[test]
+fn rejects_regular_hint_zero_length_unit_value_dimensions() {
+    let program = HintProgram {
+        hints: vec![Hint {
+            name: "hint-a".to_owned(),
+            fields: vec![HintField {
+                name: "values".to_owned(),
+                values: vec![HintValue {
+                    operand: HintOperand::AirValue { id: 0 },
+                    positions: vec![0],
+                }],
+            }],
+        }],
+    };
+    let mut setup = sample_unit_setup_info();
+    setup.unit_value_map[0].lengths = vec![0];
+
+    assert!(matches!(
+        resolve_regular_hint_field(
+            &setup,
+            &program,
+            0,
+            "values",
+            0,
+            RegularConstraintInputs {
+                domain_size: 1,
+                unit_values: &[felt(801)],
+                ..RegularConstraintInputs::default()
+            },
+        ),
+        Err(HintEvalError::LengthOverflow)
+    ));
+}
+
+#[test]
+fn rejects_regular_hint_zero_length_group_value_dimensions() {
+    let program = HintProgram {
+        hints: vec![Hint {
+            name: "hint-a".to_owned(),
+            fields: vec![HintField {
+                name: "values".to_owned(),
+                values: vec![HintValue {
+                    operand: HintOperand::AirGroupValue { id: 0 },
+                    positions: vec![0],
+                }],
+            }],
+        }],
+    };
+    let mut setup = sample_unit_setup_info();
+    setup.group_value_map[0].lengths = vec![0];
+
+    assert!(matches!(
+        resolve_regular_hint_field(
+            &setup,
+            &program,
+            0,
+            "values",
+            0,
+            RegularConstraintInputs {
+                domain_size: 1,
+                group_values: &[ext([1101, 1102, 1103])],
+                ..RegularConstraintInputs::default()
+            },
+        ),
+        Err(HintEvalError::LengthOverflow)
+    ));
 }
 
 #[test]
