@@ -1,3 +1,4 @@
+use std::collections::BTreeSet;
 use std::fmt;
 use std::path::Path;
 
@@ -117,6 +118,11 @@ pub enum VerifierInfoError {
         temporary_id: u32,
         temporary_count: u32,
     },
+    TemporaryReadBeforeWrite {
+        temporary_id: u32,
+        dimension: u32,
+        operation_index: usize,
+    },
     EmptyCodeBlock {
         field: &'static str,
     },
@@ -176,6 +182,14 @@ impl fmt::Display for VerifierInfoError {
                 f,
                 "temporary reference {temporary_id} is out of bounds for count {temporary_count}"
             ),
+            Self::TemporaryReadBeforeWrite {
+                temporary_id,
+                dimension,
+                operation_index,
+            } => write!(
+                f,
+                "temporary reference {temporary_id} with dimension {dimension} is read before write at operation {operation_index}"
+            ),
             Self::EmptyCodeBlock { field } => write!(f, "empty verifier-info code block: {field}"),
             Self::InvalidMagic => write!(f, "invalid verifier-info file magic"),
             Self::UnsupportedVersion { found, max } => {
@@ -234,6 +248,7 @@ impl std::error::Error for VerifierInfoError {
         match self {
             Self::NumberNonCanonical { source, .. } => Some(source),
             Self::TemporaryReferenceOutOfBounds { .. }
+            | Self::TemporaryReadBeforeWrite { .. }
             | Self::EmptyCodeBlock { .. }
             | Self::InvalidMagic
             | Self::UnsupportedVersion { .. }
@@ -421,11 +436,25 @@ fn validate_verifier_code(
     if value.operations.is_empty() {
         return Err(VerifierInfoError::EmptyCodeBlock { field });
     }
-    for operation in &value.operations {
+    let mut defined = BTreeSet::new();
+    for (operation_index, operation) in value.operations.iter().enumerate() {
         validate_destination(&operation.destination, value.temporary_count)?;
         for (source_index, source) in operation.sources.iter().enumerate() {
             validate_operand(source, value.temporary_count, source_index)?;
+            if let VerifierOperand::Temporary { id, dimension } = source {
+                if !defined.contains(&(*id, *dimension)) {
+                    return Err(VerifierInfoError::TemporaryReadBeforeWrite {
+                        temporary_id: *id,
+                        dimension: *dimension,
+                        operation_index,
+                    });
+                }
+            }
         }
+        defined.insert((
+            operation.destination.temporary_id,
+            operation.destination.dimension,
+        ));
     }
     Ok(())
 }

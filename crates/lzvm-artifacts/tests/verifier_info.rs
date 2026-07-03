@@ -2,6 +2,7 @@ use lzvm_artifacts::sectioned::{encode_sectioned_file, SectionedFile, SectionedS
 use lzvm_artifacts::verifier_info::{
     encode_verifier_info, parse_verifier_info, read_verifier_info_binary_file,
     read_verifier_info_file, VerifierDestination, VerifierInfoError, VerifierOperand,
+    VerifierOperation, VerifierOperationKind,
 };
 use lzvm_field::FieldError;
 use std::fs;
@@ -108,6 +109,36 @@ fn verifier_code_with_number_dimension(dimension: u32) -> Vec<u8> {
     section.push(2);
     push_u64(&mut section, 1);
     push_u32(&mut section, dimension);
+    section
+}
+
+fn verifier_code_with_temporary_read_before_write() -> Vec<u8> {
+    let mut section = Vec::new();
+    section.push(0);
+    section.push(0);
+    push_string(&mut section, "");
+    push_u32(&mut section, 2);
+    push_u32(&mut section, 2);
+
+    section.push(4);
+    push_u32(&mut section, 0);
+    push_u32(&mut section, 1);
+    push_u32(&mut section, 1);
+    section.push(2);
+    push_u64(&mut section, 1);
+    push_u32(&mut section, 1);
+
+    section.push(1);
+    push_u32(&mut section, 0);
+    push_u32(&mut section, 1);
+    push_u32(&mut section, 2);
+    section.push(1);
+    push_u32(&mut section, 0);
+    push_u32(&mut section, 1);
+    section.push(1);
+    push_u32(&mut section, 1);
+    push_u32(&mut section, 1);
+
     section
 }
 
@@ -225,6 +256,50 @@ fn rejects_zero_verifier_operand_dimensions_when_parsing() {
     assert!(matches!(
         parse_verifier_info(&bytes),
         Err(VerifierInfoError::ZeroOperandDimension { source_index: 0 })
+    ));
+}
+
+#[test]
+fn rejects_temporary_sources_before_definition() {
+    let mut info = fixtures::sample_verifier_info_fixture();
+    info.quotient.temporary_count = 2;
+    info.quotient.operations = vec![
+        VerifierOperation {
+            op: VerifierOperationKind::Copy,
+            destination: VerifierDestination::temporary(0, 1),
+            sources: vec![VerifierOperand::number(1, 1)],
+        },
+        VerifierOperation {
+            op: VerifierOperationKind::Add,
+            destination: VerifierDestination::temporary(0, 1),
+            sources: vec![
+                VerifierOperand::temporary(0, 1),
+                VerifierOperand::temporary(1, 1),
+            ],
+        },
+    ];
+
+    assert!(matches!(
+        encode_verifier_info(&info),
+        Err(VerifierInfoError::TemporaryReadBeforeWrite {
+            temporary_id: 1,
+            dimension: 1,
+            operation_index: 1
+        })
+    ));
+}
+
+#[test]
+fn rejects_temporary_sources_before_definition_when_parsing() {
+    let bytes = verifier_info_with_first_code(verifier_code_with_temporary_read_before_write());
+
+    assert!(matches!(
+        parse_verifier_info(&bytes),
+        Err(VerifierInfoError::TemporaryReadBeforeWrite {
+            temporary_id: 1,
+            dimension: 1,
+            operation_index: 1
+        })
     ));
 }
 
