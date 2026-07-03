@@ -476,20 +476,60 @@ fn rejects_combined_eth_block_and_public_input_options() {
 }
 
 #[test]
-fn rejects_missing_eth_public_input_value_during_parse() {
-    let result = parse_verify_proof_args(&[
-        "--eth-public-input",
-        "--program-image-cache",
-        "cache.bin",
-        "setup",
-        "proof.bin",
-        "public-values.bin",
-    ]);
+fn rejects_missing_binding_option_values_for_verify_proof_args() {
+    for (args, expected) in [
+        (
+            &[
+                "--eth-block-input",
+                "--program-image-cache",
+                "cache.bin",
+                "setup",
+                "proof.bin",
+                "public-values.bin",
+            ][..],
+            "missing --eth-block-input value",
+        ),
+        (
+            &[
+                "--eth-public-input",
+                "--program-image-cache",
+                "cache.bin",
+                "setup",
+                "proof.bin",
+                "public-values.bin",
+            ],
+            "missing --eth-public-input value",
+        ),
+        (
+            &[
+                "--program-image-cache",
+                "--eth-public-input",
+                "public.bin",
+                "setup",
+                "proof.bin",
+                "public-values.bin",
+            ],
+            "missing --program-image-cache value",
+        ),
+        (
+            &[
+                "--input-data",
+                "--program-image-cache",
+                "cache.bin",
+                "setup",
+                "proof.bin",
+                "public-values.bin",
+            ],
+            "missing --input-data value",
+        ),
+    ] {
+        let result = parse_verify_proof_args(args);
 
-    assert!(matches!(
-        result,
-        Err(SetupValidationArgError::Invalid(message)) if message == "missing --eth-public-input value"
-    ));
+        assert!(matches!(
+            result,
+            Err(SetupValidationArgError::Invalid(message)) if message == expected
+        ));
+    }
 }
 
 #[test]
