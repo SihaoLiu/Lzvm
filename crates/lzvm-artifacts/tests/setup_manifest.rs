@@ -4,8 +4,8 @@ use std::path::PathBuf;
 use lzvm_artifacts::sectioned::{encode_sectioned_file, SectionedFile, SectionedSection};
 use lzvm_artifacts::setup_manifest::{
     encode_setup_directory_manifest, parse_setup_directory_manifest,
-    read_setup_directory_manifest_file, validate_setup_directory_manifest_file,
-    SetupDirectoryManifest, SetupDirectoryManifestError,
+    read_setup_directory_manifest_file, validate_required_setup_directory_manifest_file,
+    validate_setup_directory_manifest_file, SetupDirectoryManifest, SetupDirectoryManifestError,
 };
 
 fn sample_manifest() -> SetupDirectoryManifest {
@@ -185,6 +185,17 @@ fn rejects_setup_directory_manifest_directory_paths() {
 
     assert!(matches!(error, SetupDirectoryManifestError::Io { .. }));
     fs::remove_dir_all(&path).expect("fixture directory should be removed");
+}
+
+#[test]
+fn rejects_missing_required_setup_directory_manifest_paths() {
+    let path = temp_file_path("required-missing");
+    let _ = fs::remove_file(&path);
+
+    let error = validate_required_setup_directory_manifest_file(&path, &sample_manifest())
+        .expect_err("missing required manifest should reject");
+
+    assert!(matches!(error, SetupDirectoryManifestError::Io { .. }));
 }
 
 #[test]

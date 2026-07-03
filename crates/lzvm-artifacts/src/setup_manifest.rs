@@ -274,8 +274,16 @@ pub fn validate_setup_directory_manifest_file(
     {
         return Ok(());
     }
+    validate_required_setup_directory_manifest_file(path, expected)
+}
+
+pub fn validate_required_setup_directory_manifest_file(
+    path: impl AsRef<Path>,
+    expected: &SetupDirectoryManifest,
+) -> Result<(), SetupDirectoryManifestError> {
+    let path = path.as_ref();
     let bytes = std::fs::read(path).map_err(|error| SetupDirectoryManifestError::Io {
-        message: error.to_string(),
+        message: format!("{}: {error}", path.display()),
     })?;
     let (version, found) = parse_setup_directory_manifest_with_version(&bytes)?;
     if !setup_directory_manifest_matches_version(&found, expected, version) {
