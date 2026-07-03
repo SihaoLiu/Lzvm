@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
 use lzvm_artifacts::expression_info::CodeOperand;
@@ -19,6 +19,9 @@ pub(crate) struct SourceChallengeSlotMetadata {
 pub(crate) enum SourceScalarSlotError {
     LengthOverflow(&'static str),
     UnknownValue {
+        name: String,
+    },
+    DuplicateValueName {
         name: String,
     },
     UnsupportedValueShape {
@@ -126,7 +129,7 @@ impl SourceScalarSlots {
                     dimension: column.dimension,
                     lengths: column.lengths.clone(),
                 },
-            );
+            )?;
         }
 
         let mut unit_values = BTreeMap::new();
@@ -144,7 +147,7 @@ impl SourceScalarSlots {
                     operand_dimension: if value.stage == 1 { 1 } else { 3 },
                     lengths: value.lengths.clone(),
                 },
-            );
+            )?;
             unit_value_id = unit_value_id.checked_add(source_dimension).ok_or(
                 SourceScalarSlotError::LengthOverflow("source unit value id overflow"),
             )?;
@@ -165,7 +168,7 @@ impl SourceScalarSlots {
                     operand_dimension: if value.stage == 1 { 1 } else { 3 },
                     lengths: value.lengths.clone(),
                 },
-            );
+            )?;
             group_value_id = group_value_id.checked_add(source_dimension).ok_or(
                 SourceScalarSlotError::LengthOverflow("source group value id overflow"),
             )?;
@@ -182,7 +185,7 @@ impl SourceScalarSlots {
                     dimension: column.dimension,
                     lengths: column.lengths.clone(),
                 },
-            );
+            )?;
         }
 
         let mut publics = BTreeMap::new();
@@ -199,28 +202,26 @@ impl SourceScalarSlots {
                     dimension,
                     lengths,
                 },
-            );
+            )?;
             public_offset = public_offset.checked_add(dimension).ok_or(
                 SourceScalarSlotError::LengthOverflow("source public value offset overflow"),
             )?;
         }
 
-        let challenges = challenge_values
-            .iter()
-            .fold(BTreeMap::new(), |mut slots, value| {
-                insert_source_scalar_slot(
-                    &mut slots,
-                    value.name.clone(),
-                    SourceChallengeSlot {
-                        id: value.id,
-                        stage: value.stage,
-                        stage_id: value.stage_id,
-                        dimension: value.dimension,
-                        lengths: value.lengths.clone(),
-                    },
-                );
-                slots
-            });
+        let mut challenges = BTreeMap::new();
+        for value in challenge_values {
+            insert_source_scalar_slot(
+                &mut challenges,
+                value.name.clone(),
+                SourceChallengeSlot {
+                    id: value.id,
+                    stage: value.stage,
+                    stage_id: value.stage_id,
+                    dimension: value.dimension,
+                    lengths: value.lengths.clone(),
+                },
+            )?;
+        }
 
         let mut proof_value_slots = BTreeMap::new();
         let mut proof_value_offset = 0_u32;
@@ -244,7 +245,7 @@ impl SourceScalarSlots {
                     operand_dimension,
                     lengths,
                 },
-            );
+            )?;
             proof_value_offset = proof_value_offset.checked_add(field_width).ok_or(
                 SourceScalarSlotError::LengthOverflow("source proof value offset overflow"),
             )?;
@@ -279,7 +280,7 @@ impl SourceScalarSlots {
                     dimension,
                     lengths,
                 },
-            );
+            )?;
             public_offset = public_offset.checked_add(dimension).ok_or(
                 SourceScalarSlotError::LengthOverflow("source public value offset overflow"),
             )?;
@@ -307,11 +308,15 @@ impl SourceScalarSlots {
                     operand_dimension,
                     lengths,
                 },
-            );
+            )?;
             proof_value_offset = proof_value_offset.checked_add(field_width).ok_or(
                 SourceScalarSlotError::LengthOverflow("source proof value offset overflow"),
             )?;
         }
+
+        let mut names = BTreeSet::new();
+        insert_source_scalar_names(&mut names, publics.keys())?;
+        insert_source_scalar_names(&mut names, proof_value_slots.keys())?;
 
         Ok(Self {
             commitments: BTreeMap::new(),
@@ -821,6 +826,9 @@ impl fmt::Display for SourceScalarSlotError {
             Self::UnknownValue { name } => {
                 write!(f, "source constraint references unknown value {name}")
             }
+            Self::DuplicateValueName { name } => {
+                write!(f, "duplicate source constraint value name {name}")
+            }
             Self::UnsupportedValueShape { name } => write!(
                 f,
                 "source boolean constraints require scalar source values: {name}"
@@ -851,6 +859,18 @@ impl fmt::Display for SourceScalarSlotError {
 
 impl std::error::Error for SourceScalarSlotError {}
 
+fn insert_source_scalar_names<'a>(
+    seen: &mut BTreeSet<&'a str>,
+    names: impl IntoIterator<Item = &'a String>,
+) -> Result<(), SourceScalarSlotError> {
+    for name in names {
+        if !seen.insert(name.as_str()) {
+            return Err(SourceScalarSlotError::DuplicateValueName { name: name.clone() });
+        }
+    }
+    Ok(())
+}
+
 fn usize_to_u32(value: usize, message: &'static str) -> Result<u32, SourceScalarSlotError> {
     u32::try_from(value).map_err(|_| SourceScalarSlotError::LengthOverflow(message))
 }
@@ -865,14 +885,31 @@ fn stage_value_dimension(
     })
 }
 
-fn insert_source_scalar_slot<T: Clone>(slots: &mut BTreeMap<String, T>, name: String, slot: T) {
+fn insert_source_scalar_slot<T: Clone>(
+    slots: &mut BTreeMap<String, T>,
+    name: String,
+    slot: T,
+) -> Result<(), SourceScalarSlotError> {
     let local_name = name
         .rsplit_once('.')
-        .map(|(_, local_name)| local_name.to_owned());
+        .map(|(_, local_name)| local_name)
+        .filter(|local_name| !local_name.is_empty())
+        .map(str::to_owned);
+    if slots.contains_key(&name) {
+        return Err(SourceScalarSlotError::DuplicateValueName { name });
+    }
+    if let Some(local_name) = local_name.as_ref() {
+        if slots.contains_key(local_name) {
+            return Err(SourceScalarSlotError::DuplicateValueName {
+                name: local_name.clone(),
+            });
+        }
+    }
     slots.insert(name, slot.clone());
     if let Some(local_name) = local_name {
-        slots.entry(local_name).or_insert(slot);
+        slots.insert(local_name, slot);
     }
+    Ok(())
 }
 
 fn source_slot_get<'a, T>(slots: &'a BTreeMap<String, T>, name: &str) -> Option<&'a T> {
@@ -957,4 +994,45 @@ fn linear_source_index(
                     "source indexed value offset overflow",
                 ))
         })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rejects_duplicate_local_slot_names() {
+        let mut slots = BTreeMap::new();
+        insert_source_scalar_slot(&mut slots, "left.value".to_owned(), 1_u32)
+            .expect("first slot should insert");
+
+        assert_eq!(
+            insert_source_scalar_slot(&mut slots, "right.value".to_owned(), 2_u32),
+            Err(SourceScalarSlotError::DuplicateValueName {
+                name: "value".to_owned(),
+            })
+        );
+    }
+
+    #[test]
+    fn rejects_global_public_and_proof_local_name_collisions() {
+        let publics = vec![PublicValue {
+            name: "publics.value".to_owned(),
+            stage: 1,
+            lengths: Vec::new(),
+        }];
+        let proof_values = vec![NamedStageValue {
+            name: "proof.value".to_owned(),
+            stage: 1,
+            id: None,
+            lengths: Vec::new(),
+        }];
+
+        assert_eq!(
+            SourceScalarSlots::from_global(&publics, &proof_values),
+            Err(SourceScalarSlotError::DuplicateValueName {
+                name: "value".to_owned(),
+            })
+        );
+    }
 }
