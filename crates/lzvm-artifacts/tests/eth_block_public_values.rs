@@ -2,7 +2,7 @@ use lzvm_artifacts::eth_block_input::EthBlockInput;
 use lzvm_artifacts::eth_block_public_values::{
     public_values_from_eth_block_input, public_values_from_eth_block_input_for_metadata,
     try_public_values_from_eth_block_input, validate_eth_block_public_values,
-    validate_program_image_cache_public_values,
+    validate_program_image_cache_public_values, EthBlockPublicValuesError,
 };
 use lzvm_artifacts::eth_trie::IndexedTrieBuild;
 use lzvm_artifacts::global_info::{CurveKind, GlobalInfo, PublicValue};
@@ -161,6 +161,23 @@ fn rejects_unsupported_metadata_without_masking_it_as_missing_binding() {
     assert_eq!(
         error.to_string(),
         "unsupported ETH block public metadata: application_value"
+    );
+}
+
+#[test]
+fn rejects_zero_length_public_metadata_counts() {
+    let input = sample_block_input();
+    let global_info = global_info_with_public("eth_block_hash_u32_be", 0);
+
+    let error =
+        public_values_from_eth_block_input_for_metadata([0x44; 32], &input, &global_info, None)
+            .expect_err("zero public metadata dimensions should reject");
+
+    assert_eq!(
+        error,
+        EthBlockPublicValuesError::PublicMetadataCountOverflow {
+            name: "eth_block_hash_u32_be".to_owned(),
+        }
     );
 }
 

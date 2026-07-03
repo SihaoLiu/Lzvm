@@ -316,6 +316,11 @@ fn public_value_element_count(metadata: &PublicValue) -> Result<usize, EthBlockP
         1_u64
     } else {
         metadata.lengths.iter().try_fold(1_u64, |count, length| {
+            if *length == 0 {
+                return Err(EthBlockPublicValuesError::PublicMetadataCountOverflow {
+                    name: metadata.name.clone(),
+                });
+            }
             count.checked_mul(*length).ok_or_else(|| {
                 EthBlockPublicValuesError::PublicMetadataCountOverflow {
                     name: metadata.name.clone(),
