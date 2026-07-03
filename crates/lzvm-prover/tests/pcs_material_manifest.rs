@@ -61,6 +61,46 @@ fn rejects_pcs_material_manifest_mismatches() {
     );
 }
 
+#[test]
+fn rejects_pcs_material_manifest_unit_index_out_of_range() {
+    let schedule = sample_schedule();
+    let segment = build_pcs_material_manifest_segment(&schedule).expect("segment should build");
+    let mut manifest =
+        parse_pcs_material_manifest_segment(&segment.data).expect("segment should parse");
+    manifest.units[0].unit_index = 1;
+
+    let error = validate_pcs_material_manifest_segments(
+        &schedule,
+        &[encode_pcs_material_manifest_proof_segment(&manifest)],
+    )
+    .expect_err("unit index should stay inside the schedule");
+
+    assert_eq!(
+        error,
+        ValidatePcsMaterialManifestSegmentsError::UnitMismatch { unit_index: 1 }
+    );
+}
+
+#[test]
+fn rejects_pcs_material_manifest_unit_order_mismatch() {
+    let schedule = sample_schedule_with_two_units();
+    let segment = build_pcs_material_manifest_segment(&schedule).expect("segment should build");
+    let mut manifest =
+        parse_pcs_material_manifest_segment(&segment.data).expect("segment should parse");
+    manifest.units.swap(0, 1);
+
+    let error = validate_pcs_material_manifest_segments(
+        &schedule,
+        &[encode_pcs_material_manifest_proof_segment(&manifest)],
+    )
+    .expect_err("unit indices should follow schedule order");
+
+    assert_eq!(
+        error,
+        ValidatePcsMaterialManifestSegmentsError::UnitMismatch { unit_index: 0 }
+    );
+}
+
 fn encode_pcs_material_manifest_proof_segment(
     manifest: &PcsMaterialManifestSegment,
 ) -> ProofSegment {
@@ -80,6 +120,29 @@ fn sample_schedule() -> ProveSchedule {
         total_query_count: 2,
         max_extended_domain_bits: 2,
         units: vec![sample_unit()],
+    }
+}
+
+fn sample_schedule_with_two_units() -> ProveSchedule {
+    let mut second_unit = sample_unit();
+    second_unit.group_id = Some(1);
+    second_unit.unit_id = Some(1);
+    second_unit.group_name = Some("group-b".to_owned());
+    second_unit.unit_name = Some("unit-b".to_owned());
+    second_unit.pcs_material_plan_digest = Some([11; 32]);
+    second_unit.pcs_material_fixed_column_digest = Some([12; 32]);
+    second_unit.pcs_material_constant_tree_digest = Some([13; 32]);
+    second_unit.pcs_material_constant_tree_root = Some([14, 15, 16, 17]);
+
+    ProveSchedule {
+        setup_hash: [0; 32],
+        unit_count: 2,
+        total_fixed_bytes: 128,
+        total_pcs_material_bytes: 448,
+        pcs_material_unit_count: 2,
+        total_query_count: 4,
+        max_extended_domain_bits: 2,
+        units: vec![sample_unit(), second_unit],
     }
 }
 
