@@ -5,6 +5,7 @@ use std::path::Path;
 use crate::sectioned::{
     encode_sectioned_file, parse_sectioned_file, SectionedError, SectionedFile, SectionedSection,
 };
+use crate::transcript_parameters::is_supported_transcript_arity_u64;
 
 const GLOBAL_INFO_KIND: [u8; 4] = *b"ginf";
 const GLOBAL_INFO_VERSION: u32 = 1;
@@ -577,7 +578,7 @@ pub(crate) fn validate_global_info(value: &GlobalInfo) -> Result<(), GlobalInfoE
             found: public_count,
         });
     }
-    if value.transcript_arity == 0 {
+    if !is_supported_transcript_arity_u64(value.transcript_arity) {
         return Err(GlobalInfoError::InvalidTranscriptArity);
     }
     Ok(())

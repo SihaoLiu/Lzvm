@@ -151,6 +151,17 @@ fn encodes_public_value_counts_with_array_lengths() {
 }
 
 #[test]
+fn rejects_invalid_transcript_arities_when_encoding() {
+    let mut info = fixtures::sample_global_info_fixture();
+    info.transcript_arity = 3;
+
+    assert_eq!(
+        encode_global_info(&info),
+        Err(GlobalInfoError::InvalidTranscriptArity)
+    );
+}
+
+#[test]
 fn rejects_duplicate_proof_value_names_when_encoding() {
     let mut info = fixtures::sample_global_info_fixture();
     info.proof_values_map[1].name = info.proof_values_map[0].name.clone();
@@ -564,6 +575,28 @@ fn rejects_proof_and_public_value_name_collisions_when_parsing() {
             field: "globalValues",
             name: "shared-value".to_owned(),
         })
+    );
+}
+
+#[test]
+fn rejects_invalid_transcript_arities_when_parsing() {
+    let mut section = Vec::new();
+    push_string(&mut section, "");
+    section.push(0);
+    section.push(0);
+    push_u64(&mut section, 3);
+    push_u64(&mut section, 0);
+    push_valid_air_layout(&mut section);
+    push_empty_aggregation(&mut section);
+    push_u64_vec(&mut section, &[]);
+    push_u64_vec(&mut section, &[]);
+    push_u32(&mut section, 0);
+    push_u32(&mut section, 0);
+    let bytes = global_info_file(section);
+
+    assert_eq!(
+        parse_global_info(&bytes),
+        Err(GlobalInfoError::InvalidTranscriptArity)
     );
 }
 
