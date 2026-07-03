@@ -548,6 +548,12 @@ pub enum ExpressionInfoError {
         field_index: usize,
         value_index: usize,
     },
+    InvalidOperationSourceCount {
+        operation: OperationKind,
+        operation_index: usize,
+        expected: usize,
+        found: usize,
+    },
     MissingFrameBoundaryOffsets,
     InvalidMagic,
     UnsupportedVersion {
@@ -627,6 +633,15 @@ impl fmt::Display for ExpressionInfoError {
             } => write!(
                 f,
                 "expression-info hint dimension is zero at hint {hint_index}, field {field_index}, value {value_index}"
+            ),
+            Self::InvalidOperationSourceCount {
+                operation,
+                operation_index,
+                expected,
+                found,
+            } => write!(
+                f,
+                "expression-info operation {operation:?} at index {operation_index} expected {expected} sources, found {found}"
             ),
             Self::MissingFrameBoundaryOffsets => {
                 write!(f, "frame boundary is missing offset bounds")
@@ -827,6 +842,7 @@ fn validate_operations(
     let mut defined = BTreeSet::new();
     for (operation_index, operation) in operations.iter().enumerate() {
         validate_destination(&operation.destination, temporary_count)?;
+        validate_operation_source_count(operation, operation_index)?;
         for (source_index, source) in operation.sources.iter().enumerate() {
             validate_operand(source, temporary_count, source_index)?;
             if let CodeOperand::Temporary { id, dimension } = source {
@@ -845,6 +861,27 @@ fn validate_operations(
     }
     Ok(())
 }
+
+fn validate_operation_source_count(
+    operation: &CodeOperation,
+    operation_index: usize,
+) -> Result<(), ExpressionInfoError> {
+    let expected = match operation.op {
+        OperationKind::Copy => 1,
+        OperationKind::Add | OperationKind::Sub | OperationKind::Mul => 2,
+    };
+    let found = operation.sources.len();
+    if found != expected {
+        return Err(ExpressionInfoError::InvalidOperationSourceCount {
+            operation: operation.op,
+            operation_index,
+            expected,
+            found,
+        });
+    }
+    Ok(())
+}
+
 fn validate_destination(
     value: &CodeDestination,
     temporary_count: u32,

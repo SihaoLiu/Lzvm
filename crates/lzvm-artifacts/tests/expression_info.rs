@@ -124,6 +124,22 @@ fn minimal_operation_with_number_dimension(dimension: u32) -> Vec<u8> {
     section
 }
 
+fn minimal_operation_with_number_sources(operation_tag: u8, source_count: u32) -> Vec<u8> {
+    let mut section = minimal_expression_prefix(1);
+    section.push(operation_tag);
+    section.push(1);
+    push_u32(&mut section, 0);
+    push_u32(&mut section, 1);
+    push_u32(&mut section, source_count);
+    for _ in 0..source_count {
+        section.push(2);
+        push_u64(&mut section, 1);
+        push_u32(&mut section, 1);
+    }
+    push_u32(&mut section, 0);
+    section
+}
+
 fn temporary_read_before_write_section() -> Vec<u8> {
     let mut section = empty_hint_sections();
     push_u32(&mut section, 1);
@@ -391,6 +407,41 @@ fn rejects_zero_code_operand_dimensions_when_parsing() {
     assert!(matches!(
         parse_expression_info(&bytes),
         Err(ExpressionInfoError::ZeroOperandDimension { source_index: 0 })
+    ));
+}
+
+#[test]
+fn rejects_invalid_operation_source_counts_when_encoding() {
+    let mut info = fixtures::sample_expression_info_fixture();
+    info.expressions[0].operations[0] = CodeOperation {
+        op: OperationKind::Add,
+        destination: CodeDestination::temporary(0, 1),
+        sources: vec![CodeOperand::number(1, 1)],
+    };
+
+    assert!(matches!(
+        encode_expression_info(&info),
+        Err(ExpressionInfoError::InvalidOperationSourceCount {
+            operation: OperationKind::Add,
+            operation_index: 0,
+            expected: 2,
+            found: 1
+        })
+    ));
+}
+
+#[test]
+fn rejects_invalid_operation_source_counts_when_parsing() {
+    let bytes = expression_info_file(minimal_operation_with_number_sources(1, 1));
+
+    assert!(matches!(
+        parse_expression_info(&bytes),
+        Err(ExpressionInfoError::InvalidOperationSourceCount {
+            operation: OperationKind::Add,
+            operation_index: 0,
+            expected: 2,
+            found: 1
+        })
     ));
 }
 
