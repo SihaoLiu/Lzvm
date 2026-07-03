@@ -118,6 +118,8 @@ pub(crate) struct WitnessStageOpeningWorkTiming {
     pub(crate) row_values_device_row_count: usize,
     pub(crate) row_values_device_download_batch_count: usize,
     pub(crate) row_values_device_single_download_count: usize,
+    pub(crate) row_values_source_extend_call_count: usize,
+    pub(crate) row_values_source_extend_max_row_count: usize,
     pub(crate) row_values_source_row_count: usize,
     pub(crate) row_values_word_count: usize,
     pub(crate) row_values_byte_count: usize,
@@ -248,6 +250,13 @@ impl WitnessStageOpeningWorkTiming {
     #[cfg_attr(not(feature = "cuda"), allow(dead_code))]
     pub(crate) fn record_device_row_value_single_download(&mut self) {
         self.row_values_device_single_download_count += 1;
+    }
+
+    #[cfg_attr(not(feature = "cuda"), allow(dead_code))]
+    pub(crate) fn record_source_row_value_extend(&mut self, row_count: usize) {
+        self.row_values_source_extend_call_count += 1;
+        self.row_values_source_extend_max_row_count =
+            self.row_values_source_extend_max_row_count.max(row_count);
     }
 
     #[cfg_attr(not(feature = "cuda"), allow(dead_code))]
@@ -2141,6 +2150,9 @@ impl WitnessStageCompactTreeStorage {
                 Ok(row_buffer)
             },
         )?;
+        if let Some(timing) = timing.as_deref_mut() {
+            timing.record_source_row_value_extend(1);
+        }
         record_row_value_duration(timing, RowValueTimingKind::SourceDownload, || {
             let words = row_buffer
                 .to_u64_words()
@@ -2245,6 +2257,9 @@ impl WitnessStageCompactTreeStorage {
                 Ok(row_buffer)
             },
         )?;
+        if let Some(timing) = timing.as_deref_mut() {
+            timing.record_source_row_value_extend(rows.len());
+        }
         let values = record_row_value_duration(
             timing.as_deref_mut(),
             RowValueTimingKind::SourceDownload,
@@ -3895,6 +3910,8 @@ mod tests {
 
         assert_eq!(batch_rows, single_rows);
         assert_eq!(timing.row_values_source_row_count, rows.len());
+        assert_eq!(timing.row_values_source_extend_call_count, 1);
+        assert_eq!(timing.row_values_source_extend_max_row_count, rows.len());
         assert_eq!(timing.row_values_device_row_count, 0);
         assert_eq!(timing.row_values_word_count, rows.len() * columns);
         assert_eq!(
@@ -3966,6 +3983,8 @@ mod tests {
 
         assert_eq!(batch_rows, single_rows);
         assert_eq!(timing.row_values_source_row_count, rows.len());
+        assert_eq!(timing.row_values_source_extend_call_count, 1);
+        assert_eq!(timing.row_values_source_extend_max_row_count, rows.len());
         assert_eq!(timing.row_values_device_row_count, 0);
         assert_eq!(timing.row_values_word_count, rows.len() * columns);
     }

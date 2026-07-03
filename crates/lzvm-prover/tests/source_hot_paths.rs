@@ -5940,6 +5940,14 @@ fn guest_pc_trace_timing_reports_descriptor_upload_shape() {
             "witness_opening_row_values_device_single_download_count",
         ),
         (
+            "\"finish_witness_opening_row_value_source_extend_calls\"",
+            "witness_opening_row_values_source_extend_call_count",
+        ),
+        (
+            "\"finish_witness_opening_row_value_source_extend_max_rows\"",
+            "witness_opening_row_values_source_extend_max_row_count",
+        ),
+        (
             "\"finish_witness_opening_row_value_source_extend\"",
             "witness_opening_row_values_source_extend",
         ),
@@ -6114,6 +6122,14 @@ fn guest_pc_trace_timing_reports_descriptor_upload_shape() {
         (
             "finish_witness_stage_{}_opening_row_values_device_single_downloads",
             "row_values_device_single_download_count",
+        ),
+        (
+            "finish_witness_stage_{}_opening_row_value_source_extend_calls",
+            "row_values_source_extend_call_count",
+        ),
+        (
+            "finish_witness_stage_{}_opening_row_value_source_extend_max_rows",
+            "row_values_source_extend_max_row_count",
         ),
         (
             "finish_witness_stage_{}_opening_row_value_source_extend",

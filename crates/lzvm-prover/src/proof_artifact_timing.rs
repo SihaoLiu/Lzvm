@@ -75,6 +75,8 @@ pub struct WitnessProofArtifactTiming {
     pub witness_opening_row_values_device_row_count: usize,
     pub witness_opening_row_values_device_download_batch_count: usize,
     pub witness_opening_row_values_device_single_download_count: usize,
+    pub witness_opening_row_values_source_extend_call_count: usize,
+    pub witness_opening_row_values_source_extend_max_row_count: usize,
     pub witness_opening_row_values_source_row_count: usize,
     pub witness_opening_row_values_word_count: usize,
     pub witness_opening_row_values_byte_count: usize,
@@ -167,6 +169,8 @@ pub struct WitnessProofStageOpeningWork {
     pub row_values_device_row_count: usize,
     pub row_values_device_download_batch_count: usize,
     pub row_values_device_single_download_count: usize,
+    pub row_values_source_extend_call_count: usize,
+    pub row_values_source_extend_max_row_count: usize,
     pub row_values_source_row_count: usize,
     pub row_values_word_count: usize,
     pub row_values_byte_count: usize,
@@ -259,6 +263,10 @@ impl WitnessProofStageOpeningWork {
             timing.row_values_device_download_batch_count;
         self.row_values_device_single_download_count +=
             timing.row_values_device_single_download_count;
+        self.row_values_source_extend_call_count += timing.row_values_source_extend_call_count;
+        self.row_values_source_extend_max_row_count = self
+            .row_values_source_extend_max_row_count
+            .max(timing.row_values_source_extend_max_row_count);
         self.row_values_source_row_count += timing.row_values_source_row_count;
         self.row_values_word_count += timing.row_values_word_count;
         self.row_values_byte_count += timing.row_values_byte_count;
@@ -462,6 +470,11 @@ impl WitnessProofArtifactTiming {
             timing.row_values_device_download_batch_count;
         self.witness_opening_row_values_device_single_download_count +=
             timing.row_values_device_single_download_count;
+        self.witness_opening_row_values_source_extend_call_count +=
+            timing.row_values_source_extend_call_count;
+        self.witness_opening_row_values_source_extend_max_row_count = self
+            .witness_opening_row_values_source_extend_max_row_count
+            .max(timing.row_values_source_extend_max_row_count);
         self.witness_opening_row_values_source_row_count += timing.row_values_source_row_count;
         self.witness_opening_row_values_word_count += timing.row_values_word_count;
         self.witness_opening_row_values_byte_count += timing.row_values_byte_count;

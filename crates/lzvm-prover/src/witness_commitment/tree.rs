@@ -3555,15 +3555,22 @@ mod tests {
         assert_eq!(timings[1].row_dedup_input_row_count, rows_b.len());
         assert_eq!(timings[1].row_dedup_unique_row_count, 2);
         assert_eq!(timings[1].row_dedup_elided_row_count, 1);
-        assert_eq!(timings[0].row_values_source_row_count, rows_a.len());
-        assert_eq!(timings[1].row_values_source_row_count, 2);
+        assert_eq!(timings[0].row_values_source_row_count, rows_a.len() * arity);
+        assert_eq!(timings[1].row_values_source_row_count, 2 * arity);
+        assert_eq!(timings[0].row_values_source_extend_call_count, 1);
+        assert_eq!(timings[1].row_values_source_extend_call_count, 1);
+        assert_eq!(
+            timings[0].row_values_source_extend_max_row_count,
+            rows_a.len() * arity
+        );
+        assert_eq!(timings[1].row_values_source_extend_max_row_count, 2 * arity);
         assert_eq!(timings[0].row_values_device_row_count, 0);
         assert_eq!(timings[1].row_values_device_row_count, 0);
         assert_eq!(
             timings[0].row_values_word_count,
-            rows_a.len() * column_count
+            rows_a.len() * arity * column_count
         );
-        assert_eq!(timings[1].row_values_word_count, 2 * column_count);
+        assert_eq!(timings[1].row_values_word_count, 2 * arity * column_count);
         assert_eq!(timings[0].row_values_device_download_batch_count, 0);
         assert_eq!(timings[1].row_values_device_download_batch_count, 0);
         assert_eq!(
@@ -3675,6 +3682,11 @@ mod tests {
         assert_eq!(batch_timing.leaf_coset_extend_call_count, 0);
         assert_eq!(batch_timing.leaf_hash_rows, 0);
         assert_eq!(batch_timing.row_values_source_row_count, rows.len() * arity);
+        assert_eq!(batch_timing.row_values_source_extend_call_count, 1);
+        assert_eq!(
+            batch_timing.row_values_source_extend_max_row_count,
+            rows.len() * arity
+        );
         assert_eq!(batch_timing.row_values_device_row_count, 0);
         assert_eq!(batch_timing.row_values_device_download_batch_count, 0);
         assert_eq!(
@@ -3713,6 +3725,8 @@ mod tests {
         assert_eq!(single_timing.leaf_coset_extend_call_count, 0);
         assert_eq!(single_timing.leaf_hash_rows, 0);
         assert_eq!(single_timing.row_values_source_row_count, arity);
+        assert_eq!(single_timing.row_values_source_extend_call_count, 1);
+        assert_eq!(single_timing.row_values_source_extend_max_row_count, arity);
         assert_eq!(single_timing.row_values_device_row_count, 0);
         assert_eq!(single_timing.row_values_device_download_batch_count, 0);
     }

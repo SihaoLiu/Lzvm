@@ -4767,6 +4767,14 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "witness_opening_row_values_device_single_download_count",
         ),
         (
+            "\"finish_witness_opening_row_value_source_extend_calls\"",
+            "witness_opening_row_values_source_extend_call_count",
+        ),
+        (
+            "\"finish_witness_opening_row_value_source_extend_max_rows\"",
+            "witness_opening_row_values_source_extend_max_row_count",
+        ),
+        (
             "\"finish_witness_opening_row_values_source_rows\"",
             "witness_opening_row_values_source_row_count",
         ),

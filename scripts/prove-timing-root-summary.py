@@ -592,6 +592,12 @@ OPENING_EMBEDDED_SOURCE_COUNT_KEY = "timing_finish_witness_opening_embedded_sour
 OPENING_MISSING_SOURCE_COUNT_KEY = "timing_finish_witness_opening_missing_source_count"
 OPENING_ROW_VALUE_DEVICE_ROWS_KEY = "timing_finish_witness_opening_row_values_device_rows"
 OPENING_ROW_VALUE_SOURCE_ROWS_KEY = "timing_finish_witness_opening_row_values_source_rows"
+OPENING_ROW_VALUE_SOURCE_EXTEND_CALLS_KEY = (
+    "timing_finish_witness_opening_row_value_source_extend_calls"
+)
+OPENING_ROW_VALUE_SOURCE_EXTEND_MAX_ROWS_KEY = (
+    "timing_finish_witness_opening_row_value_source_extend_max_rows"
+)
 OPENING_ROW_VALUE_SOURCE_EXTEND_MS_KEY = (
     "timing_finish_witness_opening_row_value_source_extend_ms"
 )
@@ -961,7 +967,10 @@ HEADER = (
     "source_retention_max_rejected_exceeds_device_memory,"
     "opening_source_rebuild_hint,opening_external_source_descriptor_action_hint,"
     "opening_row_value_device_rows,"
-    "opening_row_value_source_rows,opening_row_value_source_extend_ms,"
+    "opening_row_value_source_rows,opening_row_value_source_extend_calls,"
+    "opening_row_value_source_extend_max_rows,"
+    "opening_row_value_source_extend_rows_per_call,"
+    "opening_row_value_source_extend_ms,"
     "opening_row_value_source_extend_pct,opening_source_row_value_action_hint,"
     "opening_row_dedup_input_rows,opening_row_dedup_unique_rows,"
     "opening_row_dedup_elided_rows,opening_row_dedup_elided_pct,"
@@ -5468,6 +5477,17 @@ def summarize_profile_values(
     retained_trace_artifact_ms = values.get(RETAINED_TRACE_ARTIFACT_MS_KEY, 0)
     opening_row_value_device_rows = values.get(OPENING_ROW_VALUE_DEVICE_ROWS_KEY, 0)
     opening_row_value_source_rows = values.get(OPENING_ROW_VALUE_SOURCE_ROWS_KEY, 0)
+    opening_row_value_source_extend_calls = values.get(
+        OPENING_ROW_VALUE_SOURCE_EXTEND_CALLS_KEY, 0
+    )
+    opening_row_value_source_extend_max_rows = values.get(
+        OPENING_ROW_VALUE_SOURCE_EXTEND_MAX_ROWS_KEY, 0
+    )
+    opening_row_value_source_extend_rows_per_call = (
+        opening_row_value_source_rows / opening_row_value_source_extend_calls
+        if opening_row_value_source_extend_calls
+        else 0.0
+    )
     opening_row_value_source_extend_ms = values.get(
         OPENING_ROW_VALUE_SOURCE_EXTEND_MS_KEY, 0
     )
@@ -6144,7 +6164,10 @@ def summarize_profile_values(
         f"{source_retention_max_exceeds_device_memory},"
         f"{source_rebuild_hint},{opening_external_source_descriptor_action},"
         f"{opening_row_value_device_rows},"
-        f"{opening_row_value_source_rows},{opening_row_value_source_extend_ms},"
+        f"{opening_row_value_source_rows},{opening_row_value_source_extend_calls},"
+        f"{opening_row_value_source_extend_max_rows},"
+        f"{opening_row_value_source_extend_rows_per_call:.3f},"
+        f"{opening_row_value_source_extend_ms},"
         f"{opening_row_value_source_extend_pct:.3f},{opening_source_row_value_hint},"
         f"{opening_row_dedup_input_rows},{opening_row_dedup_unique_rows},"
         f"{opening_row_dedup_elided_rows},{opening_row_dedup_elided_pct:.3f},"
