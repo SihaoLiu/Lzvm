@@ -170,6 +170,13 @@ fn parses_binding_options_for_verify_contribution_set_args() {
 }
 
 #[test]
+fn rejects_missing_proof_for_verify_contribution_set_args() {
+    let result = parse_verify_contribution_set_args(&["setup", "public-values.bin"]);
+
+    assert!(matches!(result, Err(SetupValidationArgError::Usage)));
+}
+
+#[test]
 fn rejects_conflicting_binding_options_for_verify_contribution_set_args() {
     let result = parse_verify_contribution_set_args(&[
         "--eth-block-input",
