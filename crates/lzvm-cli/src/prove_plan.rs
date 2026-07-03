@@ -681,6 +681,30 @@ mod tests {
     }
 
     #[test]
+    fn rejects_duplicate_program_image_cache_option() {
+        let result = parse_run_args(
+            &[
+                "--program-image-cache",
+                "cache-a.bin",
+                "--program-image-cache",
+                "cache-b.bin",
+                "setup-dir",
+                "out-dir",
+                "witness.so",
+                "guest.elf",
+            ],
+            4,
+            5,
+        );
+
+        assert!(matches!(
+            result,
+            Err(ParseError::Invalid(message))
+                if message == "duplicate --program-image-cache option"
+        ));
+    }
+
+    #[test]
     fn rejects_program_image_cache_option_for_plan_args() {
         let result = parse_args(&["--program-image-cache", "cache.bin", "setup-dir", "out-dir"]);
 
