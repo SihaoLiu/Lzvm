@@ -10,6 +10,7 @@ import shutil
 import subprocess
 import sys
 import threading
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import NamedTuple
@@ -37,6 +38,8 @@ SAFE_NAME_RE = re.compile(r"^[A-Za-z0-9._-]+$")
 TIMING_TOTAL_RE = re.compile(r"^timing_total_ms=", re.MULTILINE)
 DEFAULT_NVIDIA_SMI_COMMAND = "nvidia-smi"
 DEFAULT_MIN_GPU_FREE_MIB = 1024
+DEFAULT_GPU_MEMORY_WAIT_TIMEOUT_S = 0.0
+DEFAULT_GPU_MEMORY_WAIT_POLL_S = 5.0
 
 
 class GpuMemoryRow(NamedTuple):
@@ -119,6 +122,26 @@ def positive_mib(raw: str) -> int:
         raise argparse.ArgumentTypeError(f"invalid MiB value: {raw!r}") from error
     if value <= 0:
         raise argparse.ArgumentTypeError("MiB value must be positive")
+    return value
+
+
+def positive_timeout(raw: str) -> float:
+    try:
+        value = float(raw)
+    except ValueError as error:
+        raise argparse.ArgumentTypeError(f"invalid timeout: {raw!r}") from error
+    if value <= 0.0:
+        raise argparse.ArgumentTypeError("timeout must be positive")
+    return value
+
+
+def nonnegative_float(raw: str) -> float:
+    try:
+        value = float(raw)
+    except ValueError as error:
+        raise argparse.ArgumentTypeError(f"invalid float: {raw!r}") from error
+    if value < 0.0:
+        raise argparse.ArgumentTypeError("value must be nonnegative")
     return value
 
 
@@ -754,7 +777,14 @@ def first_diagnostic_line(text: str) -> str:
     return lines[0][:200] if lines else ""
 
 
-def gpu_memory_check_payload(
+def gpu_memory_wait_requested(args: argparse.Namespace) -> bool:
+    return (
+        args.gpu_memory_wait_timeout_s != DEFAULT_GPU_MEMORY_WAIT_TIMEOUT_S
+        or args.gpu_memory_wait_poll_s != DEFAULT_GPU_MEMORY_WAIT_POLL_S
+    )
+
+
+def gpu_memory_check_payload_once(
     args: argparse.Namespace,
     root: Path,
 ) -> tuple[bool, dict[str, object]]:
@@ -822,6 +852,31 @@ def gpu_memory_check_payload(
     return ready, payload
 
 
+def gpu_memory_check_payload(
+    args: argparse.Namespace,
+    root: Path,
+) -> tuple[bool, dict[str, object]]:
+    wait_timeout_s = args.gpu_memory_wait_timeout_s
+    if wait_timeout_s <= 0.0:
+        return gpu_memory_check_payload_once(args, root)
+    deadline = time.monotonic() + wait_timeout_s
+    attempt = 1
+    while True:
+        ready, payload = gpu_memory_check_payload_once(args, root)
+        payload["wait_timeout_s"] = wait_timeout_s
+        payload["wait_poll_s"] = args.gpu_memory_wait_poll_s
+        payload["wait_attempts"] = attempt
+        if ready:
+            payload["wait_status"] = "ready"
+            return True, payload
+        remaining_s = deadline - time.monotonic()
+        if remaining_s <= 0.0:
+            payload["wait_status"] = "timeout"
+            return False, payload
+        time.sleep(min(args.gpu_memory_wait_poll_s, remaining_s))
+        attempt += 1
+
+
 def print_gpu_memory_payload(payload: dict[str, object]) -> None:
     for key, output_name in [
         ("source", "gpu_memory_source"),
@@ -836,6 +891,10 @@ def print_gpu_memory_payload(payload: dict[str, object]) -> None:
         ("used_mib", "gpu_memory_used_mib"),
         ("free_mib", "gpu_memory_free_mib"),
         ("status", "gpu_memory_status"),
+        ("wait_timeout_s", "gpu_memory_wait_timeout_s"),
+        ("wait_poll_s", "gpu_memory_wait_poll_s"),
+        ("wait_attempts", "gpu_memory_wait_attempts"),
+        ("wait_status", "gpu_memory_wait_status"),
         ("exit_code", "gpu_memory_exit_code"),
         ("error", "gpu_memory_error"),
     ]:
@@ -1220,6 +1279,8 @@ def self_test() -> None:
             "proof_timing_summary": False,
             "require_proof_timing_summary": False,
             "check_gpu_memory": False,
+            "gpu_memory_wait_timeout_s": DEFAULT_GPU_MEMORY_WAIT_TIMEOUT_S,
+            "gpu_memory_wait_poll_s": DEFAULT_GPU_MEMORY_WAIT_POLL_S,
             "min_gpu_free_mib": DEFAULT_MIN_GPU_FREE_MIB,
             "nvidia_smi_command": None,
         }
@@ -1522,6 +1583,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--check-tool", action="store_true")
     parser.add_argument("--check-gpu-memory", action="store_true")
     parser.add_argument("--min-gpu-free-mib", type=positive_mib, default=DEFAULT_MIN_GPU_FREE_MIB)
+    parser.add_argument(
+        "--gpu-memory-wait-timeout-s",
+        type=nonnegative_float,
+        default=DEFAULT_GPU_MEMORY_WAIT_TIMEOUT_S,
+    )
+    parser.add_argument(
+        "--gpu-memory-wait-poll-s",
+        type=positive_timeout,
+        default=DEFAULT_GPU_MEMORY_WAIT_POLL_S,
+    )
     parser.add_argument("--nvidia-smi-command")
     parser.add_argument("--self-test", action="store_true")
     parser.add_argument("command", nargs=argparse.REMAINDER)
@@ -1532,6 +1603,8 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> int:
     args = parse_args()
+    if not args.check_gpu_memory and gpu_memory_wait_requested(args):
+        raise SystemExit("--gpu-memory-wait-* requires --check-gpu-memory")
     if args.self_test:
         self_test()
         return 0

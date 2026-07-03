@@ -628,6 +628,99 @@ fn proof_profile_check_gpu_memory_fails_when_free_memory_is_low() {
 
 #[cfg(unix)]
 #[test]
+fn proof_profile_rejects_gpu_memory_wait_without_check() {
+    let output = Command::new(script_path())
+        .arg("--gpu-memory-wait-timeout-s")
+        .arg("1")
+        .arg("--gpu-memory-wait-poll-s")
+        .arg("0.1")
+        .output()
+        .expect("proof profile GPU memory wait validation should run");
+    let success = output.status.success();
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+
+    assert!(
+        !success,
+        "GPU memory wait flags should require the GPU memory check"
+    );
+    assert!(
+        stdout.is_empty(),
+        "GPU memory wait validation should fail before printing status: {stdout}"
+    );
+    assert!(
+        stderr.contains("--gpu-memory-wait-* requires --check-gpu-memory"),
+        "GPU memory wait validation should explain the required flag: stderr={stderr}"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn proof_profile_check_gpu_memory_waits_until_ready() {
+    let output_dir = workspace_root().join(format!(
+        "temp/proof-profile-gpu-memory-wait-{}",
+        std::process::id()
+    ));
+    let state_path = output_dir.join("smi-count");
+    let smi_path = output_dir.join("nvidia-smi-wait");
+    let _ = std::fs::remove_dir_all(&output_dir);
+    std::fs::create_dir_all(&output_dir).expect("fixture dir should be created");
+    let smi_source = format!(
+        concat!(
+            "#!/usr/bin/env python3\n",
+            "from pathlib import Path\n",
+            "state = Path(r'{}')\n",
+            "count = int(state.read_text()) if state.exists() else 0\n",
+            "state.write_text(str(count + 1))\n",
+            "if count == 0:\n",
+            "    print('0, GPU-low, 24576, 24288, 288')\n",
+            "else:\n",
+            "    print('0, GPU-free, 24576, 4096, 20480')\n",
+        ),
+        state_path.display()
+    );
+    write_executable_script(&smi_path, &smi_source);
+
+    let output = Command::new(script_path())
+        .arg("--check-gpu-memory")
+        .arg("--min-gpu-free-mib")
+        .arg("1024")
+        .arg("--gpu-memory-wait-timeout-s")
+        .arg("2")
+        .arg("--gpu-memory-wait-poll-s")
+        .arg("0.01")
+        .arg("--nvidia-smi-command")
+        .arg(&smi_path)
+        .env_remove("CUDA_VISIBLE_DEVICES")
+        .output()
+        .expect("proof profile waiting GPU memory check should run");
+    let success = output.status.success();
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    let attempt_count =
+        std::fs::read_to_string(&state_path).expect("GPU memory fixture count should write");
+    let _ = std::fs::remove_dir_all(&output_dir);
+
+    assert!(
+        success,
+        "GPU memory check should pass after waiting: stderr={stderr}"
+    );
+    assert_eq!(
+        attempt_count, "2",
+        "GPU memory wait should retry after the initial low-memory sample"
+    );
+    assert!(
+        stdout.contains("gpu_memory_status=ready\n")
+            && stdout.contains("gpu_memory_wait_timeout_s=2.0\n")
+            && stdout.contains("gpu_memory_wait_poll_s=0.01\n")
+            && stdout.contains("gpu_memory_wait_attempts=2\n")
+            && stdout.contains("gpu_memory_wait_status=ready\n"),
+        "GPU memory wait should report the final ready sample and wait metadata: {stdout}"
+    );
+}
+
+#[cfg(unix)]
+#[test]
 fn proof_profile_check_gpu_memory_uses_first_visible_cuda_device() {
     let output_dir = workspace_root().join(format!(
         "temp/proof-profile-gpu-memory-visible-device-{}",
@@ -691,10 +784,22 @@ fn proof_profile_check_tool_can_include_gpu_memory_preflight() {
     let _ = std::fs::remove_dir_all(&output_dir);
     std::fs::create_dir_all(&output_dir).expect("fixture dir should be created");
     write_executable(&tool_path);
-    write_executable_script(
-        &smi_path,
-        "#!/usr/bin/env python3\nprint('0, GPU-free, 24576, 4096, 20480')\n",
+    let smi_state_path = output_dir.join("smi-count");
+    let smi_source = format!(
+        concat!(
+            "#!/usr/bin/env python3\n",
+            "from pathlib import Path\n",
+            "state = Path(r'{}')\n",
+            "count = int(state.read_text()) if state.exists() else 0\n",
+            "state.write_text(str(count + 1))\n",
+            "if count == 0:\n",
+            "    print('0, GPU-low, 24576, 24288, 288')\n",
+            "else:\n",
+            "    print('0, GPU-free, 24576, 4096, 20480')\n",
+        ),
+        smi_state_path.display()
     );
+    write_executable_script(&smi_path, &smi_source);
 
     let output = Command::new(script_path())
         .arg("--tool")
@@ -705,6 +810,12 @@ fn proof_profile_check_tool_can_include_gpu_memory_preflight() {
         .arg(output_dir.join("profiles"))
         .arg("--check-tool")
         .arg("--check-gpu-memory")
+        .arg("--min-gpu-free-mib")
+        .arg("1024")
+        .arg("--gpu-memory-wait-timeout-s")
+        .arg("2")
+        .arg("--gpu-memory-wait-poll-s")
+        .arg("0.01")
         .arg("--nvidia-smi-command")
         .arg(&smi_path)
         .env_remove("CUDA_VISIBLE_DEVICES")
@@ -736,6 +847,7 @@ fn proof_profile_records_gpu_memory_preflight_in_json() {
     ));
     let profiler_path = output_dir.join("fake-nsys");
     let smi_path = output_dir.join("nvidia-smi-ready");
+    let smi_state_path = output_dir.join("smi-count");
     let profile_dir = output_dir.join("profiles");
     let _ = std::fs::remove_dir_all(&output_dir);
     std::fs::create_dir_all(&output_dir).expect("fixture dir should be created");
@@ -754,10 +866,21 @@ fn proof_profile_records_gpu_memory_preflight_in_json() {
             "        raise SystemExit(subprocess.run(command).returncode)\n",
         ),
     );
-    write_executable_script(
-        &smi_path,
-        "#!/usr/bin/env python3\nprint('0, GPU-free, 24576, 4096, 20480')\n",
+    let smi_source = format!(
+        concat!(
+            "#!/usr/bin/env python3\n",
+            "from pathlib import Path\n",
+            "state = Path(r'{}')\n",
+            "count = int(state.read_text()) if state.exists() else 0\n",
+            "state.write_text(str(count + 1))\n",
+            "if count == 0:\n",
+            "    print('0, GPU-low, 24576, 24288, 288')\n",
+            "else:\n",
+            "    print('0, GPU-free, 24576, 4096, 20480')\n",
+        ),
+        smi_state_path.display()
     );
+    write_executable_script(&smi_path, &smi_source);
 
     let output = Command::new(script_path())
         .arg("--tool")
@@ -766,6 +889,12 @@ fn proof_profile_records_gpu_memory_preflight_in_json() {
         .arg(&profiler_path)
         .arg("--skip-nsys-export")
         .arg("--check-gpu-memory")
+        .arg("--min-gpu-free-mib")
+        .arg("1024")
+        .arg("--gpu-memory-wait-timeout-s")
+        .arg("2")
+        .arg("--gpu-memory-wait-poll-s")
+        .arg("0.01")
         .arg("--nvidia-smi-command")
         .arg(&smi_path)
         .arg("--output-dir")
@@ -784,6 +913,8 @@ fn proof_profile_records_gpu_memory_preflight_in_json() {
     let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
     let json_path = profile_dir.join("json-gpu.profile.json");
     let json_text = std::fs::read_to_string(&json_path).unwrap_or_default();
+    let attempt_count =
+        std::fs::read_to_string(&smi_state_path).expect("GPU memory fixture count should write");
     let _ = std::fs::remove_dir_all(&output_dir);
 
     assert!(
@@ -794,9 +925,15 @@ fn proof_profile_records_gpu_memory_preflight_in_json() {
         stdout.contains("gpu_memory_status=ready\n"),
         "profile stdout should report the GPU memory preflight: {stdout}"
     );
+    assert_eq!(
+        attempt_count, "2",
+        "GPU memory preflight should retry once before profiling"
+    );
     assert!(
         json_text.contains("\"gpu_memory_check\"")
             && json_text.contains("\"status\": \"ready\"")
+            && json_text.contains("\"wait_status\": \"ready\"")
+            && json_text.contains("\"wait_attempts\": 2")
             && json_text.contains("\"free_mib\": 20480")
             && json_text.contains("\"selected_uuid\": \"GPU-free\""),
         "profile JSON should record GPU memory preflight details: {json_text}"
