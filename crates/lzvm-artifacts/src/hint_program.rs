@@ -146,6 +146,9 @@ pub enum HintProgramError {
         value_index: usize,
         source: FieldError,
     },
+    ZeroTemporaryDimension {
+        value_index: usize,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -195,6 +198,10 @@ impl fmt::Display for HintProgramError {
                 f,
                 "hint number at value index {value_index} is non-canonical: {source}"
             ),
+            Self::ZeroTemporaryDimension { value_index } => write!(
+                f,
+                "hint temporary operand at value index {value_index} has zero dimension"
+            ),
         }
     }
 }
@@ -214,7 +221,8 @@ impl std::error::Error for HintProgramError {
             | Self::InvalidOperandSection { .. }
             | Self::MissingOperandField { .. }
             | Self::LengthOverflow
-            | Self::Io { .. } => None,
+            | Self::Io { .. }
+            | Self::ZeroTemporaryDimension { .. } => None,
         }
     }
 }
@@ -563,7 +571,11 @@ fn read_hint_value(
         "tmp" => {
             let id = reader.read_u32()?;
             let dimension = match kind {
-                HintSectionKind::Regular => Some(reader.read_u32()?),
+                HintSectionKind::Regular => {
+                    let dimension = Some(reader.read_u32()?);
+                    validate_temporary_dimension(value_index, dimension)?;
+                    dimension
+                }
                 HintSectionKind::Global => None,
             };
             HintOperand::Temporary { id, dimension }
@@ -717,6 +729,7 @@ fn write_hint_value(
             write_string(out, "tmp")?;
             write_u32(out, *id);
             if kind == HintSectionKind::Regular {
+                validate_temporary_dimension(value_index, *dimension)?;
                 write_u32(out, dimension.unwrap_or(1));
             }
         }
@@ -747,6 +760,16 @@ fn validate_number(value_index: usize, value: u64) -> Result<(), HintProgramErro
             value_index,
             source,
         })
+}
+
+fn validate_temporary_dimension(
+    value_index: usize,
+    dimension: Option<u32>,
+) -> Result<(), HintProgramError> {
+    match dimension {
+        Some(0) => Err(HintProgramError::ZeroTemporaryDimension { value_index }),
+        _ => Ok(()),
+    }
 }
 
 fn invalid_operand_section(op: &'static str, kind: HintSectionKind) -> HintProgramError {

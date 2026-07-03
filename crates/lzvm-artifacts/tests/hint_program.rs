@@ -184,6 +184,20 @@ fn number_value_section(value: u64) -> Vec<u8> {
     section
 }
 
+fn temporary_value_section(dimension: u32) -> Vec<u8> {
+    let mut section = Vec::new();
+    push_u32(&mut section, 1);
+    push_string(&mut section, "hint");
+    push_u32(&mut section, 1);
+    push_string(&mut section, "field");
+    push_u32(&mut section, 1);
+    push_string(&mut section, "tmp");
+    push_u32(&mut section, 7);
+    push_u32(&mut section, dimension);
+    push_u32(&mut section, 0);
+    section
+}
+
 fn unknown_operand_file() -> Vec<u8> {
     let mut section = Vec::new();
     push_u32(&mut section, 1);
@@ -719,6 +733,47 @@ fn rejects_non_canonical_global_hint_numbers_when_parsing() {
             },
         })
     ));
+}
+
+#[test]
+fn rejects_zero_regular_hint_temporary_dimensions() {
+    let program = one_value_program(HintOperand::Temporary {
+        id: 7,
+        dimension: Some(0),
+    });
+
+    assert!(matches!(
+        encode_regular_hint_program(&program),
+        Err(HintProgramError::ZeroTemporaryDimension { value_index: 0 })
+    ));
+}
+
+#[test]
+fn rejects_zero_regular_hint_temporary_dimensions_when_parsing() {
+    let bytes = wrap_regular_hint_section(temporary_value_section(0));
+
+    assert!(matches!(
+        parse_regular_hint_program(&bytes),
+        Err(HintProgramError::ZeroTemporaryDimension { value_index: 0 })
+    ));
+}
+
+#[test]
+fn accepts_omitted_regular_hint_temporary_dimensions() {
+    let program = one_value_program(HintOperand::Temporary {
+        id: 7,
+        dimension: None,
+    });
+    let bytes = encode_regular_hint_program(&program).expect("program should encode");
+    let parsed = parse_regular_hint_program(&bytes).expect("program should parse");
+
+    assert_eq!(
+        parsed.hints[0].fields[0].values[0].operand,
+        HintOperand::Temporary {
+            id: 7,
+            dimension: Some(1)
+        }
+    );
 }
 
 #[test]
