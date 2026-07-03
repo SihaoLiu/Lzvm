@@ -273,7 +273,10 @@ mod tests {
             (&["--backend"][..], "missing --backend value"),
             (&["--backend", "--source"][..], "missing --backend value"),
             (&["--source"][..], "missing --source value"),
-            (&["--source", "--include-path"][..], "missing --source value"),
+            (
+                &["--source", "--include-path"][..],
+                "missing --source value",
+            ),
             (&["--include-path"][..], "missing --include-path value"),
             (
                 &["--include-path", "--include-path-first"][..],
