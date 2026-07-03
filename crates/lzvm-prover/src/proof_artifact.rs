@@ -11,7 +11,7 @@ use lzvm_artifacts::eth_block_input_segment::{
     encode_eth_block_input_segment, ETH_BLOCK_INPUT_SEGMENT_ID,
 };
 use lzvm_artifacts::guest_input_segment::FRAMED_GUEST_INPUT_SEGMENT_ID;
-use lzvm_artifacts::key_directory::KeyDirectoryCatalog;
+use lzvm_artifacts::key_directory::{key_directory_catalog_digest, KeyDirectoryCatalog};
 use lzvm_artifacts::pcs_evaluation_segment::parse_pcs_evaluation_segment;
 use lzvm_artifacts::pcs_nonce_segment::parse_pcs_query_nonce_segment;
 use lzvm_artifacts::program_image::ProgramImageCommitmentCache;
@@ -1206,6 +1206,11 @@ fn validate_proof_request_public_values(
     schedule: &ProveSchedule,
     public_values: &PublicValues,
 ) -> Result<[u8; 32], String> {
+    let catalog_hash = key_directory_catalog_digest(catalog)
+        .map_err(|error| format!("hash catalog failed: {error}"))?;
+    if catalog_hash != schedule.setup_hash {
+        return Err("catalog setup hash mismatch".to_owned());
+    }
     if public_values.setup_hash != schedule.setup_hash {
         return Err("public inputs setup hash mismatch".to_owned());
     }
