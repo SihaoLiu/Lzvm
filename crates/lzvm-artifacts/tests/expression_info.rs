@@ -249,6 +249,20 @@ fn rejects_stale_expression_info_format_headers() {
 }
 
 #[test]
+fn rejects_future_expression_info_format_headers() {
+    let info = fixtures::sample_expression_info_fixture();
+    let mut bytes = encode_expression_info(&info).expect("fixture should encode");
+    bytes[4..8].copy_from_slice(&9_u32.to_le_bytes());
+
+    let error = parse_expression_info(&bytes).expect_err("future format should be rejected");
+
+    assert!(matches!(
+        error,
+        ExpressionInfoError::UnsupportedVersion { found: 9, max: 8 }
+    ));
+}
+
+#[test]
 fn reads_expression_info_binary_from_a_file_path() {
     let info = fixtures::sample_expression_info_fixture();
     let bytes = encode_expression_info(&info).expect("fixture should encode");
