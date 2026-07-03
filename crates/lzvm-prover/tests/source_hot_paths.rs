@@ -10384,19 +10384,26 @@ fn lean_query_plan_binding_tracks_runtime_transcript_opening_checks() {
                 .contains("load_pcs_evaluation_unit_for_identity_from_parsed_segment")
             && transcript_segments_source
                 .contains("load_unit_values_for_identity_from_parsed_segment")
-            && transcript_segments_source.contains("use crate::indexing::index_first_by_key")
+            && transcript_segments_source.contains(
+                "use crate::indexing::{collect_unique_query_identities, index_first_by_key};"
+            )
             && transcript_segments_source
                 .matches("index_first_by_key(")
                 .count()
-                == 3
+                == 2
             && transcript_segments_source
                 .matches("material_units_by_index(&material.units)")
                 .count()
                 == 2
             && transcript_segments_source
-                .contains("witness_segments_by_identity(&witness_segments)")
+                .contains("witness_segments_by_identity(&query_plan.units, &witness_segments)")
             && transcript_segments_source
-                .contains("witness_segments_by_identity(witness_segments)")
+                .contains("witness_segments_by_identity(&query_plan.units, witness_segments)")
+            && transcript_segments_source.contains("collect_unique_query_identities(")
+            && compact_source_contains(
+                &transcript_segments_source,
+                "indexed.insert(witness_identity, segment).is_some()"
+            )
             && transcript_segments_source
                 .matches("fri_units_by_identity(&fri.units)")
                 .count()

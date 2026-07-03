@@ -178,6 +178,29 @@ fn derives_loaded_witness_transcript_challenge_by_trace_identity() {
 }
 
 #[test]
+fn rejects_loaded_witness_transcript_challenge_duplicate_witness_identity() {
+    let schedule = sample_schedule();
+    let segments = transcript_segments(0);
+    let mut witness_segments =
+        load_witness_commitment_segment_refs_with_shapes(&schedule.units, &segments)
+            .expect("witness segments should load");
+    witness_segments.push(witness_segments[0].clone());
+
+    let error = derive_pcs_transcript_unit_challenges_from_loaded_witness_segments(
+        &schedule,
+        &[],
+        &segments,
+        &witness_segments,
+    )
+    .expect_err("duplicate loaded witness identity should be rejected");
+
+    assert_eq!(
+        error,
+        PcsTranscriptProofSegmentsError::UnitMismatch { unit_index: 0 }
+    );
+}
+
+#[test]
 fn rejects_transcript_challenge_extra_fri_opening_units() {
     let schedule = sample_schedule();
     let mut segments = transcript_segments(0);

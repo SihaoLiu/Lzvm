@@ -5,11 +5,12 @@ use lzvm_artifacts::pcs_material_segment::{
     parse_pcs_material_manifest_segment, PcsMaterialManifestSegment,
     PcsMaterialManifestSegmentError, PcsMaterialManifestUnit, PCS_MATERIAL_MANIFEST_SEGMENT_ID,
 };
+use lzvm_artifacts::pcs_query_segment::PcsQueryPlanUnit;
 use lzvm_artifacts::proof::ProofSegment;
 use lzvm_artifacts::witness_segment::WitnessCommitmentSegmentError;
 use lzvm_field::{Ext3, Felt};
 
-use crate::indexing::index_first_by_key;
+use crate::indexing::{collect_unique_query_identities, index_first_by_key};
 use crate::pcs_evaluation::{
     load_pcs_evaluation_segment_from_segments,
     load_pcs_evaluation_unit_for_identity_from_parsed_segment,
@@ -169,7 +170,8 @@ pub fn derive_pcs_transcript_unit_challenges_from_proof_segments(
     let unit_values_segment = load_unit_values_segment_from_segments(segments)
         .map_err(PcsTranscriptProofSegmentsError::UnitValues)?;
     let material_units = material_units_by_index(&material.units);
-    let witness_segments_by_identity = witness_segments_by_identity(&witness_segments);
+    let witness_segments_by_identity =
+        witness_segments_by_identity(&query_plan.units, &witness_segments)?;
     let fri_units = fri_units_by_identity(&fri.units);
     let mut units = Vec::new();
 
@@ -274,7 +276,8 @@ pub fn derive_pcs_transcript_unit_challenges_from_loaded_witness_segments<'a>(
     let unit_values_segment = load_unit_values_segment_from_segments(segments)
         .map_err(PcsTranscriptProofSegmentsError::UnitValues)?;
     let material_units = material_units_by_index(&material.units);
-    let witness_segments_by_identity = witness_segments_by_identity(witness_segments);
+    let witness_segments_by_identity =
+        witness_segments_by_identity(&query_plan.units, witness_segments)?;
     let fri_units = fri_units_by_identity(&fri.units);
     let mut units = Vec::new();
 
@@ -389,14 +392,40 @@ fn map_material_manifest_schedule_error(
 }
 
 fn witness_segments_by_identity<'loaded, 'segment>(
+    query_units: &[PcsQueryPlanUnit],
     witness_segments: &'loaded [LoadedWitnessCommitmentSegmentRef<'segment>],
-) -> BTreeMap<(u32, u32), &'loaded LoadedWitnessCommitmentSegmentRef<'segment>> {
-    index_first_by_key(witness_segments, |segment| {
-        (
+) -> Result<
+    BTreeMap<(u32, u32), &'loaded LoadedWitnessCommitmentSegmentRef<'segment>>,
+    PcsTranscriptProofSegmentsError,
+> {
+    let query_identities = collect_unique_query_identities(
+        query_units,
+        || PcsTranscriptProofSegmentsError::UnitIndexOverflow,
+        |unit_index| PcsTranscriptProofSegmentsError::UnitMismatch { unit_index },
+    )?;
+    let mut indexed = BTreeMap::new();
+    for segment in witness_segments {
+        let witness_identity = (
             segment.identity.unit_index,
             segment.identity.trace_instance_index,
-        )
-    })
+        );
+        if !query_identities.contains(&witness_identity) {
+            continue;
+        }
+        let unit_index = usize::try_from(segment.identity.unit_index)
+            .map_err(|_| PcsTranscriptProofSegmentsError::UnitIndexOverflow)?;
+        if indexed.insert(witness_identity, segment).is_some() {
+            return Err(PcsTranscriptProofSegmentsError::UnitMismatch { unit_index });
+        }
+    }
+    for identity in query_identities {
+        if !indexed.contains_key(&identity) {
+            let unit_index = usize::try_from(identity.0)
+                .map_err(|_| PcsTranscriptProofSegmentsError::UnitIndexOverflow)?;
+            return Err(PcsTranscriptProofSegmentsError::UnitMismatch { unit_index });
+        }
+    }
+    Ok(indexed)
 }
 
 fn fri_units_by_identity(
