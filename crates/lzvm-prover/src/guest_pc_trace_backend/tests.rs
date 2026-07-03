@@ -6661,6 +6661,7 @@ fn report_level_fast_path_parts_routes_representative_rows() {
         StoreCopy,
         NoMemory,
         SimpleCopy,
+        FcallResult,
         Jump,
     }
 
@@ -6792,13 +6793,24 @@ fn report_level_fast_path_parts_routes_representative_rows() {
             GuestMachineReport {
                 address_and_instruction_len:
                     crate::guest_machine::pack_report_address_and_instruction_len(0x8000_0020, 4),
+                instruction: RiscvInstruction::ZiskFcallResult { rd: 6 },
+                next_pc: 0x8000_0024,
+                register_write_value: GuestRegisterWriteValue::new(0xfeed_face),
+                memory_accesses: vec![].into(),
+            },
+            ReportLevelRoute::FcallResult,
+        ),
+        (
+            GuestMachineReport {
+                address_and_instruction_len:
+                    crate::guest_machine::pack_report_address_and_instruction_len(0x8000_0024, 4),
                 instruction: RiscvInstruction::OpImm {
                     kind: RiscvOpImmKind::Addi,
                     rd: 3,
                     rs1: 2,
                     immediate: 8,
                 },
-                next_pc: 0x8000_0024,
+                next_pc: 0x8000_0028,
                 register_write_value: GuestRegisterWriteValue::new(0xaa5d),
                 memory_accesses: vec![].into(),
             },
@@ -6827,11 +6839,96 @@ fn report_level_fast_path_parts_routes_representative_rows() {
             MainReportFastPathParts::SimpleCopy(instruction, ..) => {
                 (ReportLevelRoute::SimpleCopy, instruction)
             }
+            MainReportFastPathParts::FcallResult(instruction, ..) => {
+                (ReportLevelRoute::FcallResult, instruction)
+            }
             MainReportFastPathParts::Jump(instruction, _) => (ReportLevelRoute::Jump, instruction),
         };
         assert_eq!(actual_route, expected_route);
         assert_eq!(actual_instruction, expected_instruction);
     }
+}
+
+#[test]
+fn fcall_result_fast_path_parts_match_generic_lowering() {
+    let report =
+        GuestMachineReport {
+            address_and_instruction_len:
+                crate::guest_machine::pack_report_address_and_instruction_len(0x8000_0000, 4),
+            instruction: RiscvInstruction::ZiskFcallResult { rd: 10 },
+            next_pc: 0x8000_0004,
+            register_write_value: GuestRegisterWriteValue::new(0xfeed_face),
+            memory_accesses: vec![].into(),
+        };
+
+    let (instruction, store_index) = fcall_result_register_store_fast_path_parts(3, &report)
+        .expect("fast path detection should succeed")
+        .expect("returned word into a register should match");
+
+    assert_eq!(store_index, 10);
+    assert_eq!(
+        instruction,
+        lower_guest_report(&report).expect("generic lowering should match")
+    );
+}
+
+#[test]
+fn fcall_result_register_store_fast_path_preserves_row_effects() {
+    let report =
+        GuestMachineReport {
+            address_and_instruction_len:
+                crate::guest_machine::pack_report_address_and_instruction_len(0x8000_0000, 4),
+            instruction: RiscvInstruction::ZiskFcallResult { rd: 7 },
+            next_pc: 0x8000_0004,
+            register_write_value: GuestRegisterWriteValue::new(0x1122_3344_5566_7788),
+            memory_accesses: vec![].into(),
+        };
+    let instruction = lower_guest_report(&report).expect("generic lowering should succeed");
+    let effects = ZiskMainReportEffects::from_report(&report);
+    let mut state = ZiskMainTraceState::new();
+    state.registers[7] = 0xaa55;
+    state.register_mem_steps[7] = 44;
+    let mut context = ZiskMainReportValidationContext::new(
+        None,
+        16,
+        ZiskMainTraceSegmentInfo {
+            trace_instance_index: 0,
+            is_last_segment: false,
+            previous_c: 0,
+        },
+    )
+    .expect("context should initialize");
+    let mut visited = None;
+    apply_fcall_result_register_store_fast_path(
+        3,
+        instruction,
+        effects,
+        0x8000_0004,
+        7,
+        &mut state,
+        &mut context,
+        &mut |row, values, timing| {
+            assert_eq!(row, 3);
+            assert!(timing.is_none());
+            visited = Some(values);
+            Ok(())
+        },
+    )
+    .expect("returned word row should take fast path");
+
+    assert_eq!(state.registers[7], 0x1122_3344_5566_7788);
+    assert_eq!(state.last_c, 0x1122_3344_5566_7788);
+    assert_eq!(state.next_pc, 0x8000_0004);
+    assert_eq!(state.register_mem_steps[7], 15);
+    let values = visited.expect("fast path should emit row values");
+    assert_eq!(values.a, 0);
+    assert_eq!(values.b, 0x1122_3344_5566_7788);
+    assert_eq!(values.c, 0x1122_3344_5566_7788);
+    assert!(!values.flag);
+    assert_eq!(values.register_accesses.a_prev_mem_step, None);
+    assert_eq!(values.register_accesses.b_prev_mem_step, None);
+    assert_eq!(values.register_accesses.store_prev_mem_step, Some(44));
+    assert_eq!(values.register_accesses.store_prev_value, Some(0xaa55));
 }
 
 #[test]

@@ -10442,6 +10442,7 @@ struct ZiskMainReportValidationContext<'a> {
     columns: Option<&'a ZiskMainTraceColumns<'a>>,
     row_count: usize,
     row_mem_step_cursor: GuestPcTraceRowMemStepCursor,
+    b_memory_source_columns_available: bool,
     indirect_memory_columns_available: bool,
 }
 
@@ -10453,6 +10454,8 @@ impl<'a> ZiskMainReportValidationContext<'a> {
     ) -> Result<Self, GuestPcTraceBackendError> {
         let indirect_memory_columns_available =
             columns.is_none_or(ZiskMainTraceColumns::has_required_indirect_memory_columns);
+        let b_memory_source_columns_available =
+            columns.is_none_or(ZiskMainTraceColumns::has_required_b_memory_source_columns);
         Ok(Self {
             columns,
             row_count,
@@ -10460,6 +10463,7 @@ impl<'a> ZiskMainReportValidationContext<'a> {
                 row_count,
                 segment.trace_instance_index,
             )?,
+            b_memory_source_columns_available,
             indirect_memory_columns_available,
         })
     }
@@ -10471,6 +10475,10 @@ impl<'a> ZiskMainReportValidationContext<'a> {
 
     fn indirect_memory_columns_available(&self) -> bool {
         self.indirect_memory_columns_available
+    }
+
+    fn b_memory_source_columns_available(&self) -> bool {
+        self.b_memory_source_columns_available
     }
 }
 
@@ -10497,6 +10505,7 @@ struct MainJumpFastPathParts {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum MainReportFastPathParts {
+    FcallResult(ZiskMainInstruction, u8),
     LoadCopy(ZiskMainInstruction, u8, i64, u8),
     LoadSignExtend(ZiskMainInstruction, u8, i64, u8),
     NoMemory(ZiskMainInstruction, ZiskMainNoMemoryFastPathParts),
@@ -10609,6 +10618,18 @@ fn validate_and_apply_zisk_main_report(
         if let Some(fast_path) = report_level_fast_path_parts(row, report)? {
             let effects = ZiskMainReportEffects::from_report(report);
             match fast_path {
+                MainReportFastPathParts::FcallResult(instruction, store_index) => {
+                    apply_fcall_result_register_store_fast_path(
+                        row,
+                        instruction,
+                        effects,
+                        report.next_pc,
+                        store_index,
+                        state,
+                        context,
+                        &mut visit,
+                    )?;
+                }
                 MainReportFastPathParts::LoadCopy(instruction, a_index, b_offset, store_index) => {
                     apply_copy_indirect_register_store_fast_path(
                         row,
@@ -11220,6 +11241,28 @@ fn simple_copy_register_store_fast_path_parts(
 }
 
 #[inline(always)]
+fn fcall_result_register_store_fast_path_parts(
+    row: usize,
+    report: &GuestMachineReport,
+) -> Result<Option<(ZiskMainInstruction, u8)>, GuestPcTraceBackendError> {
+    let RiscvInstruction::ZiskFcallResult { rd } = report.instruction else {
+        return Ok(None);
+    };
+    if rd == 0
+        || !report.memory_accesses.is_empty()
+        || !report.precompile_memory_accesses().is_empty()
+    {
+        return Ok(None);
+    }
+    let Some(_) = sequential_report_fast_path_instruction_size(row, report)? else {
+        return Ok(None);
+    };
+    let instruction = lower_guest_report(report)
+        .map_err(|source| GuestPcTraceBackendError::ZiskMainLower { row, source })?;
+    Ok(Some((instruction, rd)))
+}
+
+#[inline(always)]
 fn copy_indirect_register_store_fast_path_parts(
     instruction: &ZiskMainInstruction,
     effects: ZiskMainReportEffects<'_>,
@@ -11488,6 +11531,13 @@ fn report_level_fast_path_parts(
         .map(|(instruction, b_index, store_index)| {
             MainReportFastPathParts::SimpleCopy(instruction, b_index, store_index)
         })),
+        RiscvInstruction::ZiskFcallResult { .. } => Ok(
+            fcall_result_register_store_fast_path_parts(row, report)?.map(
+                |(instruction, store_index)| {
+                    MainReportFastPathParts::FcallResult(instruction, store_index)
+                },
+            ),
+        ),
         RiscvInstruction::OpImm {
             kind: RiscvOpImmKind::Addi,
             rd,
@@ -12693,6 +12743,114 @@ fn apply_simple_copy_register_store_fast_path(
             register_accesses: ZiskMainRegisterAccessValues {
                 a_prev_mem_step: None,
                 b_prev_mem_step,
+                store_prev_mem_step: Some(store_prev_mem_step),
+                store_prev_value: Some(store_prev_value),
+            },
+        },
+        None,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+#[inline(always)]
+fn apply_fcall_result_register_store_fast_path(
+    output_row: usize,
+    instruction: ZiskMainInstruction,
+    effects: ZiskMainReportEffects<'_>,
+    expected_next_pc: u64,
+    store_index: u8,
+    state: &mut ZiskMainTraceState,
+    context: &mut ZiskMainReportValidationContext<'_>,
+    visit: &mut impl FnMut(
+        usize,
+        ZiskMainReportTraceValues,
+        Option<&mut GuestPcTraceStreamTiming>,
+    ) -> Result<(), GuestPcTraceBackendError>,
+) -> Result<(), GuestPcTraceBackendError> {
+    if !context.b_memory_source_columns_available() {
+        return Err(GuestPcTraceBackendError::InvalidPcTraceLayout {
+            message: format!(
+                "Zisk Main memory source rows require b_src_mem and b_offset_imm0 columns at row {output_row}"
+            ),
+        });
+    }
+    if !valid_main_register_index(store_index) {
+        return Err(GuestPcTraceBackendError::UnsupportedZiskMainStore { row: output_row });
+    }
+    if !effects.memory_accesses.is_empty() {
+        return Err(GuestPcTraceBackendError::ZiskMainEffectMismatch {
+            row: output_row,
+            message: format!(
+                "expected 0 memory accesses, found {}",
+                effects.memory_accesses.len()
+            ),
+        });
+    }
+    if !effects.precompile_memory_accesses.is_empty() {
+        return Err(GuestPcTraceBackendError::ZiskMainEffectMismatch {
+            row: output_row,
+            message: "free-call result row reported precompile memory accesses".to_owned(),
+        });
+    }
+    let [write] = effects.register_writes.as_slice() else {
+        return Err(GuestPcTraceBackendError::ZiskMainEffectMismatch {
+            row: output_row,
+            message: format!(
+                "free-call result row reported {} register writes",
+                effects.register_writes.len()
+            ),
+        });
+    };
+    if write.index != store_index {
+        return Err(GuestPcTraceBackendError::ZiskMainEffectMismatch {
+            row: output_row,
+            message: format!(
+                "expected free-call result in x{store_index}, found x{}",
+                write.index
+            ),
+        });
+    }
+    let b = write.value;
+    let c = b;
+    let flag = false;
+    let computed_next_pc = instruction.pc.wrapping_add_signed(instruction.jmp_offset2);
+    if expected_next_pc != computed_next_pc {
+        return Err(GuestPcTraceBackendError::ZiskMainEffectMismatch {
+            row: output_row,
+            message: format!("expected next pc {computed_next_pc}, found {expected_next_pc}"),
+        });
+    }
+
+    let row_mem_step_base = context.row_mem_step_base(output_row)?;
+    if row_mem_step_base
+        .checked_add(ZISK_MAIN_STORE_MEM_STEP_OFFSET)
+        .is_none()
+    {
+        return Err(GuestPcTraceBackendError::InvalidPcTraceLayout {
+            message: "Zisk Main memory step is too large".to_owned(),
+        });
+    }
+    let store_prev_value = state.registers[usize::from(store_index)];
+    let store_prev_mem_step = read_then_update_register_mem_step(
+        &mut state.register_mem_steps,
+        store_index,
+        row_mem_step_base + ZISK_MAIN_STORE_MEM_STEP_OFFSET,
+    );
+    state.registers[usize::from(store_index)] = c;
+    state.last_c = c;
+    state.next_pc = expected_next_pc;
+
+    visit(
+        output_row,
+        ZiskMainReportTraceValues {
+            instruction,
+            a: 0,
+            b,
+            c,
+            flag,
+            register_accesses: ZiskMainRegisterAccessValues {
+                a_prev_mem_step: None,
+                b_prev_mem_step: None,
                 store_prev_mem_step: Some(store_prev_mem_step),
                 store_prev_value: Some(store_prev_value),
             },
