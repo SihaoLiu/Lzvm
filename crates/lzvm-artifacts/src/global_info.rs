@@ -560,6 +560,14 @@ fn validate_global_info(value: &GlobalInfo) -> Result<(), GlobalInfoError> {
         "publicsMap",
         value.publics_map.iter().map(|entry| entry.name.as_str()),
     )?;
+    validate_disjoint_value_names(
+        "globalValues",
+        value
+            .proof_values_map
+            .iter()
+            .map(|entry| entry.name.as_str()),
+        value.publics_map.iter().map(|entry| entry.name.as_str()),
+    )?;
     let public_count = global_public_count(&value.publics_map)?;
     if value.n_publics != public_count {
         return Err(GlobalInfoError::PublicCountMismatch {
@@ -569,6 +577,23 @@ fn validate_global_info(value: &GlobalInfo) -> Result<(), GlobalInfoError> {
     }
     if value.transcript_arity == 0 {
         return Err(GlobalInfoError::InvalidTranscriptArity);
+    }
+    Ok(())
+}
+
+fn validate_disjoint_value_names<'a>(
+    field: &'static str,
+    left: impl IntoIterator<Item = &'a str>,
+    right: impl IntoIterator<Item = &'a str>,
+) -> Result<(), GlobalInfoError> {
+    let seen = left.into_iter().collect::<BTreeSet<_>>();
+    for name in right {
+        if seen.contains(name) {
+            return Err(GlobalInfoError::DuplicateValueName {
+                field,
+                name: name.to_owned(),
+            });
+        }
     }
     Ok(())
 }

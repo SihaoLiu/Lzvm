@@ -179,6 +179,20 @@ fn rejects_duplicate_public_value_names_when_encoding() {
 }
 
 #[test]
+fn rejects_proof_and_public_value_name_collisions_when_encoding() {
+    let mut info = fixtures::sample_global_info_fixture();
+    info.publics_map[0].name = info.proof_values_map[0].name.clone();
+
+    assert_eq!(
+        encode_global_info(&info),
+        Err(GlobalInfoError::DuplicateValueName {
+            field: "globalValues",
+            name: "proof-a".to_owned(),
+        })
+    );
+}
+
+#[test]
 fn rejects_unsupported_global_info_file_versions() {
     let info = fixtures::sample_global_info_fixture();
     let bytes = encode_global_info(&info).expect("fixture should encode");
@@ -441,6 +455,26 @@ fn rejects_duplicate_public_value_names_when_parsing() {
         Err(GlobalInfoError::DuplicateValueName {
             field: "publicsMap",
             name: "duplicate-public".to_owned(),
+        })
+    );
+}
+
+#[test]
+fn rejects_proof_and_public_value_name_collisions_when_parsing() {
+    let mut section = section_after_aggregation_with_public_count(1);
+    push_u64_vec(&mut section, &[]);
+    push_u64_vec(&mut section, &[]);
+    push_u32(&mut section, 1);
+    push_named_stage_value(&mut section, "shared-value", 1, &[]);
+    push_u32(&mut section, 1);
+    push_public_value(&mut section, "shared-value", 1, &[]);
+    let bytes = global_info_file(section);
+
+    assert_eq!(
+        parse_global_info(&bytes),
+        Err(GlobalInfoError::DuplicateValueName {
+            field: "globalValues",
+            name: "shared-value".to_owned(),
         })
     );
 }
