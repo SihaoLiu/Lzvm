@@ -577,6 +577,9 @@ pub fn raw_fixed_column_layout(
     let byte_count = expected_raw_fixed_column_byte_count(setup)?;
     let columns = constant_column_specs(setup);
     for column in &columns {
+        if column.dimensions.iter().any(|dimension| *dimension == 0) {
+            return Err(FixedColumnError::LengthOverflow);
+        }
         if column.index >= column_count {
             return Err(FixedColumnError::RawColumnIndexOutOfBounds {
                 column: column.name.clone(),

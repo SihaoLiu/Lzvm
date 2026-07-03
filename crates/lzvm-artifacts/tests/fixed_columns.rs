@@ -378,6 +378,30 @@ fn rejects_raw_fixed_encoding_when_dimensions_do_not_match_setup() {
 }
 
 #[test]
+fn rejects_raw_fixed_layout_with_zero_setup_column_lengths() {
+    let mut setup = fixtures::sample_fixed_columns_setup_info();
+    setup.constant_columns[1].lengths = vec![0];
+
+    assert_eq!(
+        raw_fixed_column_layout(&setup, "group-a", "unit-a"),
+        Err(FixedColumnError::LengthOverflow)
+    );
+}
+
+#[test]
+fn rejects_raw_fixed_encoding_with_zero_setup_column_lengths() {
+    let mut setup = fixtures::sample_fixed_columns_setup_info();
+    setup.constant_columns[1].lengths = vec![0];
+    let mut columns = sample_raw_columns();
+    columns.columns[0].dimensions = vec![0];
+
+    assert_eq!(
+        encode_raw_fixed_columns(&columns, &setup),
+        Err(FixedColumnError::LengthOverflow)
+    );
+}
+
+#[test]
 fn rejects_fixed_encoding_with_zero_dimensions() {
     let mut columns = sample_raw_columns();
     columns.columns[0].dimensions = vec![0];
