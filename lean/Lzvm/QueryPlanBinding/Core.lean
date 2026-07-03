@@ -319,6 +319,88 @@ theorem runtime_query_plan_binding_evidence_implies_material_manifest_contract
   intro _artifact _publicInput _proof evidence
   exact evidence.right.left
 
+theorem runtime_query_plan_material_manifest_contract_implies_segment_canonical
+    {system : VerifierModel}
+    (validation : RuntimeQueryPlanBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeQueryPlanMaterialManifestContract
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        validation.queryPlanSegmentCanonical artifact publicInput proof := by
+  intro artifact publicInput proof materialManifest
+  exact materialManifest.left
+
+theorem runtime_query_plan_material_manifest_contract_implies_matches_schedule
+    {system : VerifierModel}
+    (validation : RuntimeQueryPlanBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeQueryPlanMaterialManifestContract
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        validation.queryPlanMaterialManifestMatchesSchedule artifact publicInput proof := by
+  intro artifact publicInput proof materialManifest
+  exact materialManifest.right
+
+theorem runtime_query_plan_binding_evidence_implies_segment_canonical
+    {system : VerifierModel}
+    (validation : RuntimeQueryPlanBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeQueryPlanBindingEvidence
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        validation.queryPlanSegmentCanonical artifact publicInput proof := by
+  intro artifact publicInput proof evidence
+  have materialManifest :=
+    runtime_query_plan_binding_evidence_implies_material_manifest_contract
+      validation
+      artifact
+      publicInput
+      proof
+      evidence
+  exact
+    runtime_query_plan_material_manifest_contract_implies_segment_canonical
+      validation
+      artifact
+      publicInput
+      proof
+      materialManifest
+
+theorem runtime_query_plan_binding_evidence_implies_material_manifest_matches_schedule
+    {system : VerifierModel}
+    (validation : RuntimeQueryPlanBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeQueryPlanBindingEvidence
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        validation.queryPlanMaterialManifestMatchesSchedule artifact publicInput proof := by
+  intro artifact publicInput proof evidence
+  have materialManifest :=
+    runtime_query_plan_binding_evidence_implies_material_manifest_contract
+      validation
+      artifact
+      publicInput
+      proof
+      evidence
+  exact
+    runtime_query_plan_material_manifest_contract_implies_matches_schedule
+      validation
+      artifact
+      publicInput
+      proof
+      materialManifest
+
 theorem runtime_query_plan_binding_seeded_contract_implies_seed_binds_witness_tree_digests
     {system : VerifierModel}
     (validation : RuntimeQueryPlanBindingValidation system) :

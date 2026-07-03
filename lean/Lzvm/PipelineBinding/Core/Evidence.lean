@@ -407,6 +407,97 @@ theorem runtime_pipeline_binding_evidence_implies_seeded_query_plan_contract
       proof
       queryPlanEvidence
 
+theorem runtime_pipeline_binding_evidence_implies_query_plan_material_manifest_contract
+    {system : VerifierModel}
+    {validation : RuntimePipelineBindingValidation system}
+    {artifact : RuntimeArtifact}
+    {publicInput : PublicInput}
+    {proof : Proof}
+    {requiresExternalSource : Prop} :
+    RuntimePipelineBindingEvidence
+        system
+        validation
+        artifact
+        publicInput
+        proof
+        requiresExternalSource ->
+      RuntimeQueryPlanMaterialManifestContract
+        system
+        validation.queryPlanBindingValidation
+        artifact
+        publicInput
+        proof := by
+  intro evidence
+  have queryPlanEvidence :=
+    runtime_pipeline_binding_evidence_implies_query_plan_evidence evidence
+  exact
+    runtime_query_plan_binding_evidence_implies_material_manifest_contract
+      validation.queryPlanBindingValidation
+      artifact
+      publicInput
+      proof
+      queryPlanEvidence
+
+theorem runtime_pipeline_binding_evidence_implies_query_plan_segment_canonical
+    {system : VerifierModel}
+    {validation : RuntimePipelineBindingValidation system}
+    {artifact : RuntimeArtifact}
+    {publicInput : PublicInput}
+    {proof : Proof}
+    {requiresExternalSource : Prop} :
+    RuntimePipelineBindingEvidence
+        system
+        validation
+        artifact
+        publicInput
+        proof
+        requiresExternalSource ->
+      validation.queryPlanBindingValidation.queryPlanSegmentCanonical
+        artifact
+        publicInput
+        proof := by
+  intro evidence
+  have materialManifest :=
+    runtime_pipeline_binding_evidence_implies_query_plan_material_manifest_contract
+      evidence
+  exact
+    runtime_query_plan_material_manifest_contract_implies_segment_canonical
+      validation.queryPlanBindingValidation
+      artifact
+      publicInput
+      proof
+      materialManifest
+
+theorem runtime_pipeline_binding_evidence_implies_query_plan_material_manifest_matches_schedule
+    {system : VerifierModel}
+    {validation : RuntimePipelineBindingValidation system}
+    {artifact : RuntimeArtifact}
+    {publicInput : PublicInput}
+    {proof : Proof}
+    {requiresExternalSource : Prop} :
+    RuntimePipelineBindingEvidence
+        system
+        validation
+        artifact
+        publicInput
+        proof
+        requiresExternalSource ->
+      validation.queryPlanBindingValidation.queryPlanMaterialManifestMatchesSchedule
+        artifact
+        publicInput
+        proof := by
+  intro evidence
+  have materialManifest :=
+    runtime_pipeline_binding_evidence_implies_query_plan_material_manifest_contract
+      evidence
+  exact
+    runtime_query_plan_material_manifest_contract_implies_matches_schedule
+      validation.queryPlanBindingValidation
+      artifact
+      publicInput
+      proof
+      materialManifest
+
 theorem runtime_pipeline_binding_evidence_implies_trace_semantic_evidence_complete
     {system : VerifierModel}
     {validation : RuntimePipelineBindingValidation system}
