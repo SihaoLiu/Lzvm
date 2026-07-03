@@ -345,6 +345,17 @@ fn rejects_missing_evaluation_map_entries_when_evaluations_are_declared() {
 }
 
 #[test]
+fn rejects_v3_binary_without_declared_evaluation_map() {
+    let mut bytes = sample_setup_info_binary();
+    bytes[4..8].copy_from_slice(&3_u32.to_le_bytes());
+
+    assert_eq!(
+        parse_unit_setup_info(&bytes),
+        Err(SetupInfoError::InvalidEvaluationMap { index: 0 })
+    );
+}
+
+#[test]
 fn rejects_evaluation_map_opening_positions_outside_opening_points() {
     let mut info = fixtures::sample_setup_info_fixture_with_evaluation_map();
     info.evaluation_map[0].opening_position = 3;
