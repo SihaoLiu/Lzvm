@@ -488,11 +488,7 @@ fn parse_unit_setup_info_section(
     let evaluation_map = if version < 3 {
         default_evaluation_map(eval_count)
     } else if reader.position() == bytes.len() {
-        if eval_count == 0 {
-            Vec::new()
-        } else {
-            return Err(SetupInfoError::InvalidEvaluationMap { index: 0 });
-        }
+        Vec::new()
     } else {
         read_evaluation_map(&mut reader)?
     };
