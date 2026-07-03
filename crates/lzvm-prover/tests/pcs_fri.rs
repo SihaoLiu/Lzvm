@@ -33,7 +33,8 @@ use lzvm_prover::pcs_transcript_segments::{
 };
 use lzvm_prover::{
     build_pcs_fri_opening_segment, build_pcs_fri_opening_segment_from_transcript_values,
-    ProvePcsFriOpeningValues, ProvePcsFriTranscriptValues, ProveSchedule, ProveUnitSchedule,
+    ProvePcsFriOpeningSegmentError, ProvePcsFriOpeningValues, ProvePcsFriTranscriptValues,
+    ProveSchedule, ProveUnitSchedule,
 };
 
 #[test]
@@ -757,7 +758,7 @@ fn builds_duplicate_fri_queries_from_cached_rows_without_changing_shape() {
         data: encode_pcs_query_plan_segment(&PcsQueryPlanSegment {
             units: vec![PcsQueryPlanUnit {
                 unit_index: 0,
-                trace_instance_index: 0,
+                trace_instance_index: 2,
                 queries: query_rows.to_vec(),
             }],
         })
@@ -789,12 +790,39 @@ fn builds_duplicate_fri_queries_from_cached_rows_without_changing_shape() {
     )
     .expect("FRI transcript commitments should build");
     let fold_challenges = commitments.challenges.clone();
+    let duplicate_error = build_pcs_fri_opening_segment(
+        &schedule,
+        &query_segment,
+        &[
+            ProvePcsFriOpeningValues {
+                unit_index: 0,
+                trace_instance_index: 2,
+                challenges: commitments.challenges.clone(),
+                polynomial: polynomial.clone(),
+            },
+            ProvePcsFriOpeningValues {
+                unit_index: 0,
+                trace_instance_index: 2,
+                challenges: commitments.challenges.clone(),
+                polynomial: polynomial.clone(),
+            },
+        ],
+    )
+    .expect_err("duplicate FRI opening identity should reject");
+
+    assert_eq!(
+        duplicate_error,
+        ProvePcsFriOpeningSegmentError::DuplicateUnitIdentity {
+            unit_index: 0,
+            trace_instance_index: 2,
+        }
+    );
     let direct = build_pcs_fri_opening_segment(
         &schedule,
         &query_segment,
         &[ProvePcsFriOpeningValues {
             unit_index: 0,
-            trace_instance_index: 0,
+            trace_instance_index: 2,
             challenges: commitments.challenges.clone(),
             polynomial: polynomial.clone(),
         }],
@@ -805,7 +833,7 @@ fn builds_duplicate_fri_queries_from_cached_rows_without_changing_shape() {
         &query_segment,
         &[ProvePcsFriTranscriptValues {
             unit_index: 0,
-            trace_instance_index: 0,
+            trace_instance_index: 2,
             polynomial,
             commitments,
         }],
@@ -830,7 +858,7 @@ fn builds_duplicate_fri_queries_from_cached_rows_without_changing_shape() {
         &opening.units,
         &[PcsTranscriptUnitChallenges {
             unit_index: 0,
-            trace_instance_index: 0,
+            trace_instance_index: 2,
             challenges: fold_challenges,
         }],
     )

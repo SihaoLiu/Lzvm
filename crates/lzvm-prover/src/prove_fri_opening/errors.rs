@@ -29,8 +29,9 @@ pub enum ProvePcsFriOpeningSegmentError {
     MissingQueryUnit {
         unit_index: usize,
     },
-    DuplicateUnitIndex {
+    DuplicateUnitIdentity {
         unit_index: usize,
+        trace_instance_index: u32,
     },
     UnitIndexOverflow {
         unit_index: usize,
@@ -159,8 +160,14 @@ impl fmt::Display for ProvePcsFriOpeningSegmentError {
             Self::MissingQueryUnit { unit_index } => {
                 write!(f, "prove PCS FRI opening is missing query unit {unit_index}")
             }
-            Self::DuplicateUnitIndex { unit_index } => {
-                write!(f, "duplicate prove PCS FRI opening unit index: {unit_index}")
+            Self::DuplicateUnitIdentity {
+                unit_index,
+                trace_instance_index,
+            } => {
+                write!(
+                    f,
+                    "duplicate prove PCS FRI opening unit identity: unit {unit_index}, trace instance {trace_instance_index}"
+                )
             }
             Self::UnitIndexOverflow { unit_index } => write!(
                 f,
@@ -324,7 +331,7 @@ impl std::error::Error for ProvePcsFriOpeningSegmentError {
             Self::InvalidQuerySegmentId { .. }
             | Self::UnsupportedTraceInstance { .. }
             | Self::MissingQueryUnit { .. }
-            | Self::DuplicateUnitIndex { .. }
+            | Self::DuplicateUnitIdentity { .. }
             | Self::UnitIndexOverflow { .. }
             | Self::UnitIndexOutOfRange { .. } => None,
         }

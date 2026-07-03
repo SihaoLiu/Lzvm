@@ -276,8 +276,9 @@ fn build_pcs_fri_opening_segment_from_value_refs_with_timing<'a>(
     let mut units = Vec::with_capacity(value_count);
     for input in values {
         if !seen_units.insert((input.unit_index, input.trace_instance_index)) {
-            return Err(ProvePcsFriOpeningSegmentError::DuplicateUnitIndex {
+            return Err(ProvePcsFriOpeningSegmentError::DuplicateUnitIdentity {
                 unit_index: input.unit_index,
+                trace_instance_index: input.trace_instance_index,
             });
         }
         let unit = schedule.units.get(input.unit_index).ok_or(
@@ -701,8 +702,9 @@ fn build_pcs_fri_opening_segment_from_transcript_values_cached_with_timing(
     let mut units = Vec::with_capacity(values.len());
     for input in values {
         if !seen_units.insert((input.unit_index, input.trace_instance_index)) {
-            return Err(ProvePcsFriOpeningSegmentError::DuplicateUnitIndex {
+            return Err(ProvePcsFriOpeningSegmentError::DuplicateUnitIdentity {
                 unit_index: input.unit_index,
+                trace_instance_index: input.trace_instance_index,
             });
         }
         let unit = schedule.units.get(input.unit_index).ok_or(
