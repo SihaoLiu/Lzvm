@@ -124,7 +124,23 @@ fn rejects_stale_pcs_setup_plan_format_headers() {
     let mut encoded = encode_pcs_setup_plan(&plan).expect("plan should encode");
     encoded[4..8].copy_from_slice(&1_u32.to_le_bytes());
 
-    assert!(parse_pcs_setup_plan(&encoded).is_err());
+    assert_eq!(
+        parse_pcs_setup_plan(&encoded),
+        Err(PcsPlanError::UnsupportedVersion { found: 1, max: 2 })
+    );
+}
+
+#[test]
+fn rejects_future_pcs_setup_plan_format_headers() {
+    let setup = fixtures::sample_pcs_plan_setup_info();
+    let plan = derive_pcs_setup_plan(&setup).expect("plan should derive");
+    let mut encoded = encode_pcs_setup_plan(&plan).expect("plan should encode");
+    encoded[4..8].copy_from_slice(&3_u32.to_le_bytes());
+
+    assert_eq!(
+        parse_pcs_setup_plan(&encoded),
+        Err(PcsPlanError::UnsupportedVersion { found: 3, max: 2 })
+    );
 }
 
 #[test]

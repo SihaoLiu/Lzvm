@@ -44,6 +44,10 @@ pub struct PcsFriLayer {
 pub enum PcsPlanError {
     SetupInfo(SetupInfoError),
     Sectioned(SectionedError),
+    UnsupportedVersion {
+        found: u32,
+        max: u32,
+    },
     InvalidSectionCount {
         found: u32,
     },
@@ -104,6 +108,9 @@ impl fmt::Display for PcsPlanError {
         match self {
             Self::SetupInfo(error) => write!(f, "PCS setup plan metadata error: {error}"),
             Self::Sectioned(error) => write!(f, "PCS setup plan container error: {error}"),
+            Self::UnsupportedVersion { found, max } => {
+                write!(f, "unsupported PCS setup plan version {found}, max {max}")
+            }
             Self::InvalidSectionCount { found } => {
                 write!(f, "invalid PCS setup plan section count {found}")
             }
@@ -177,7 +184,12 @@ impl From<SetupInfoError> for PcsPlanError {
 
 impl From<SectionedError> for PcsPlanError {
     fn from(error: SectionedError) -> Self {
-        Self::Sectioned(error)
+        match error {
+            SectionedError::UnsupportedVersion { found, max } => {
+                Self::UnsupportedVersion { found, max }
+            }
+            error => Self::Sectioned(error),
+        }
     }
 }
 
@@ -191,12 +203,10 @@ pub fn read_pcs_setup_plan_file(path: impl AsRef<Path>) -> Result<PcsSetupPlan, 
 pub fn parse_pcs_setup_plan(bytes: &[u8]) -> Result<PcsSetupPlan, PcsPlanError> {
     let file = parse_sectioned_file(bytes, PCS_PLAN_KIND, PCS_PLAN_VERSION)?;
     if file.version != PCS_PLAN_VERSION {
-        return Err(PcsPlanError::Sectioned(
-            SectionedError::UnsupportedVersion {
-                found: file.version,
-                max: PCS_PLAN_VERSION,
-            },
-        ));
+        return Err(PcsPlanError::UnsupportedVersion {
+            found: file.version,
+            max: PCS_PLAN_VERSION,
+        });
     }
     if file.sections.len() != 1 {
         return Err(PcsPlanError::InvalidSectionCount {
