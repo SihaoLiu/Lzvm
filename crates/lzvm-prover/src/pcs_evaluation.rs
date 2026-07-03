@@ -258,10 +258,15 @@ pub(crate) fn validate_pcs_evaluation_units_match_query_units_from_segment(
     query_units: &[PcsQueryPlanUnit],
     evaluations: &PcsEvaluationSegment,
 ) -> Result<(), LoadPcsEvaluationUnitError> {
-    let query_identities = query_units
-        .iter()
-        .map(|unit| (unit.unit_index, unit.trace_instance_index))
-        .collect::<BTreeSet<_>>();
+    let mut query_identities = BTreeSet::new();
+    for unit in query_units {
+        let identity = (unit.unit_index, unit.trace_instance_index);
+        let unit_index = usize::try_from(unit.unit_index)
+            .map_err(|_| LoadPcsEvaluationUnitError::UnitIndexOverflow)?;
+        if !query_identities.insert(identity) {
+            return Err(LoadPcsEvaluationUnitError::UnexpectedUnit { unit_index });
+        }
+    }
     let mut evaluation_identities = BTreeSet::new();
     for unit in &evaluations.units {
         let identity = (unit.unit_index, unit.trace_instance_index);
@@ -379,6 +384,25 @@ mod tests {
             &evaluations,
         )
         .expect_err("duplicate PCS evaluation identity should reject");
+
+        assert_eq!(
+            error,
+            LoadPcsEvaluationUnitError::UnexpectedUnit { unit_index: 0 }
+        );
+    }
+
+    #[test]
+    fn evaluation_units_match_query_units_rejects_duplicate_query_identity() {
+        let query_units = vec![query_unit(0, 1), query_unit(0, 1)];
+        let evaluations = PcsEvaluationSegment {
+            units: vec![evaluation_unit(0, 1)],
+        };
+
+        let error = validate_pcs_evaluation_units_match_query_units_from_segment(
+            &query_units,
+            &evaluations,
+        )
+        .expect_err("duplicate query identity should reject");
 
         assert_eq!(
             error,
