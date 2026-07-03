@@ -714,6 +714,9 @@ fn public_value_dimension(value: &PublicValue) -> Result<usize, SetupPreflightEr
     value.lengths.iter().try_fold(1_usize, |dimension, length| {
         let length =
             usize::try_from(*length).map_err(|_| SetupPreflightError::PublicValueCountOverflow)?;
+        if length == 0 {
+            return Err(SetupPreflightError::PublicValueCountOverflow);
+        }
         dimension
             .checked_mul(length)
             .ok_or(SetupPreflightError::PublicValueCountOverflow)

@@ -1001,6 +1001,19 @@ fn rejects_setup_preflight_public_value_array_shape_mismatches() {
 }
 
 #[test]
+fn rejects_public_values_metadata_with_zero_array_dimensions() {
+    let mut catalog = sample_catalog();
+    catalog.layout.global_info.publics_map[1].lengths = vec![0];
+    let setup_hash = key_directory_catalog_digest(&catalog).expect("catalog digest should compute");
+    let public_values = sample_public_values(setup_hash);
+
+    let error = validate_public_values_metadata(&catalog.layout.global_info, &public_values)
+        .expect_err("setup metadata validation should reject zero public dimensions");
+
+    assert_eq!(error, SetupPreflightError::PublicValueCountOverflow);
+}
+
+#[test]
 fn rejects_public_values_metadata_with_duplicate_names() {
     let catalog = sample_catalog();
     let setup_hash = key_directory_catalog_digest(&catalog).expect("catalog digest should compute");
