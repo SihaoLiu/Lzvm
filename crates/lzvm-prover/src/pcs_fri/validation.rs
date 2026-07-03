@@ -53,6 +53,20 @@ fn validate_pcs_fri_opening_units(
         return Err(ValidatePcsFriOpeningSegmentsError::UnitCountMismatch);
     }
 
+    let query_identities = collect_unique_query_identities(
+        query_units,
+        || ValidatePcsFriOpeningSegmentsError::UnitIndexOverflow,
+        |unit_index| ValidatePcsFriOpeningSegmentsError::UnitMismatch { unit_index },
+    )?;
+    let mut opening_identities = BTreeSet::new();
+    for opening_unit in opening_units {
+        let identity = (opening_unit.unit_index, opening_unit.trace_instance_index);
+        let unit_index = usize::try_from(opening_unit.unit_index)
+            .map_err(|_| ValidatePcsFriOpeningSegmentsError::UnitIndexOverflow)?;
+        if !query_identities.contains(&identity) || !opening_identities.insert(identity) {
+            return Err(ValidatePcsFriOpeningSegmentsError::UnitMismatch { unit_index });
+        }
+    }
     let opening_units_by_identity = fri_opening_units_by_identity(opening_units);
     for query_unit in query_units {
         let unit_index = usize::try_from(query_unit.unit_index)
@@ -507,4 +521,54 @@ fn field_digest_from_words(
             Felt::from_canonical(value).map_err(ValidatePcsFriOpeningSegmentsError::FieldDigest)?;
     }
     Ok(out)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn opening_units_reject_duplicate_query_identity() {
+        let query_units = [query_unit(0, 0), query_unit(0, 0)];
+        let opening_units = [opening_unit(0, 0), opening_unit(0, 0)];
+
+        let error = validate_pcs_fri_opening_units(&[], &query_units, &opening_units)
+            .expect_err("opening units should reject duplicate query identity");
+
+        assert_eq!(
+            error,
+            ValidatePcsFriOpeningSegmentsError::UnitMismatch { unit_index: 0 }
+        );
+    }
+
+    #[test]
+    fn opening_units_reject_duplicate_opening_identity() {
+        let query_units = [query_unit(0, 0), query_unit(1, 0)];
+        let opening_units = [opening_unit(0, 0), opening_unit(0, 0)];
+
+        let error = validate_pcs_fri_opening_units(&[], &query_units, &opening_units)
+            .expect_err("opening units should reject duplicate opening identity");
+
+        assert_eq!(
+            error,
+            ValidatePcsFriOpeningSegmentsError::UnitMismatch { unit_index: 0 }
+        );
+    }
+
+    fn query_unit(unit_index: u32, trace_instance_index: u32) -> PcsQueryPlanUnit {
+        PcsQueryPlanUnit {
+            unit_index,
+            trace_instance_index,
+            queries: vec![0],
+        }
+    }
+
+    fn opening_unit(unit_index: u32, trace_instance_index: u32) -> PcsFriOpeningUnitSegment {
+        PcsFriOpeningUnitSegment {
+            unit_index,
+            trace_instance_index,
+            layers: Vec::new(),
+            final_polynomial: Vec::new(),
+        }
+    }
 }
