@@ -1287,6 +1287,43 @@ fn rejects_pcs_fri_opening_folds_with_unqueried_trace_identity() {
 }
 
 #[test]
+fn rejects_pcs_fri_opening_folds_with_duplicate_trace_identity() {
+    let (unit, segments) = valid_pcs_fri_opening_segments();
+    let query_plan = load_pcs_query_plan_from_segments(&segments).expect("query plan should load");
+    let opening =
+        load_pcs_fri_opening_segment_from_segments(&segments).expect("FRI opening should load");
+    let base_challenges = sample_fold_challenges();
+
+    let opening_units = [opening.units[0].clone(), opening.units[0].clone()];
+    let opening_error = validate_pcs_fri_opening_folds_from_units(
+        std::slice::from_ref(&unit),
+        &query_plan.units,
+        &opening_units,
+        std::slice::from_ref(&base_challenges),
+    )
+    .expect_err("FRI opening folds should reject duplicate opening identity");
+
+    assert_eq!(
+        opening_error,
+        ValidatePcsFriOpeningFoldUnitsError::UnitMismatch { unit_index: 0 }
+    );
+
+    let challenges = [base_challenges.clone(), base_challenges];
+    let challenge_error = validate_pcs_fri_opening_folds_from_units(
+        std::slice::from_ref(&unit),
+        &query_plan.units,
+        std::slice::from_ref(&opening.units[0]),
+        &challenges,
+    )
+    .expect_err("FRI opening folds should reject duplicate challenge identity");
+
+    assert_eq!(
+        challenge_error,
+        ValidatePcsFriOpeningFoldUnitsError::UnitMismatch { unit_index: 0 }
+    );
+}
+
+#[test]
 fn rejects_pcs_fri_opening_fold_mismatches_from_units() {
     let (unit, segments) = valid_pcs_fri_opening_segments();
     let query_plan = load_pcs_query_plan_from_segments(&segments).expect("query plan should load");

@@ -234,18 +234,27 @@ fn validate_fold_unit_identities_match_query_units(
     opening_units: &[PcsFriOpeningUnitSegment],
     transcript_challenges: &[PcsTranscriptUnitChallenges],
 ) -> Result<(), ValidatePcsFriOpeningFoldUnitsError> {
+    let mut opening_identities = BTreeSet::new();
     for unit in opening_units {
         let identity = (unit.unit_index, unit.trace_instance_index);
-        if !query_identities.contains(&identity) {
-            let unit_index = usize::try_from(unit.unit_index)
-                .map_err(|_| ValidatePcsFriOpeningFoldUnitsError::UnitIndexOverflow)?;
+        let unit_index = usize::try_from(unit.unit_index)
+            .map_err(|_| ValidatePcsFriOpeningFoldUnitsError::UnitIndexOverflow)?;
+        if !query_identities.contains(&identity) || !opening_identities.insert(identity) {
             return Err(ValidatePcsFriOpeningFoldUnitsError::UnitMismatch { unit_index });
         }
     }
+    let mut challenge_identities = BTreeSet::new();
     for unit in transcript_challenges {
         let identity = (unit.unit_index, unit.trace_instance_index);
-        if !query_identities.contains(&identity) {
-            let unit_index = usize::try_from(unit.unit_index)
+        let unit_index = usize::try_from(unit.unit_index)
+            .map_err(|_| ValidatePcsFriOpeningFoldUnitsError::UnitIndexOverflow)?;
+        if !query_identities.contains(&identity) || !challenge_identities.insert(identity) {
+            return Err(ValidatePcsFriOpeningFoldUnitsError::UnitMismatch { unit_index });
+        }
+    }
+    for identity in query_identities {
+        if !opening_identities.contains(identity) || !challenge_identities.contains(identity) {
+            let unit_index = usize::try_from(identity.0)
                 .map_err(|_| ValidatePcsFriOpeningFoldUnitsError::UnitIndexOverflow)?;
             return Err(ValidatePcsFriOpeningFoldUnitsError::UnitMismatch { unit_index });
         }

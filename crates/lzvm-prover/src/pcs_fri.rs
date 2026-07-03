@@ -1,3 +1,5 @@
+use std::collections::BTreeSet;
+
 mod build;
 mod errors;
 mod fold;
@@ -69,15 +71,65 @@ pub(crate) fn validate_pcs_fri_opening_units_match_query_units_from_segment(
     query_units: &[PcsQueryPlanUnit],
     opening: &PcsFriOpeningSegment,
 ) -> Result<(), LoadPcsFriOpeningUnitError> {
+    let query_identities = query_units
+        .iter()
+        .map(|unit| (unit.unit_index, unit.trace_instance_index))
+        .collect::<BTreeSet<_>>();
+    let mut opening_identities = BTreeSet::new();
     for unit in &opening.units {
-        if !query_units.iter().any(|query_unit| {
-            query_unit.unit_index == unit.unit_index
-                && query_unit.trace_instance_index == unit.trace_instance_index
-        }) {
-            let unit_index = usize::try_from(unit.unit_index)
-                .map_err(|_| LoadPcsFriOpeningUnitError::UnitIndexOverflow)?;
+        let identity = (unit.unit_index, unit.trace_instance_index);
+        let unit_index = usize::try_from(unit.unit_index)
+            .map_err(|_| LoadPcsFriOpeningUnitError::UnitIndexOverflow)?;
+        if !query_identities.contains(&identity) || !opening_identities.insert(identity) {
             return Err(LoadPcsFriOpeningUnitError::UnexpectedUnit { unit_index });
         }
     }
+    for query_unit in query_units {
+        let identity = (query_unit.unit_index, query_unit.trace_instance_index);
+        if !opening_identities.contains(&identity) {
+            let unit_index = usize::try_from(query_unit.unit_index)
+                .map_err(|_| LoadPcsFriOpeningUnitError::UnitIndexOverflow)?;
+            return Err(LoadPcsFriOpeningUnitError::MissingUnit { unit_index });
+        }
+    }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn fri_opening_units_match_query_units_rejects_duplicate_in_memory_identity() {
+        let query_units = vec![query_unit(0, 1)];
+        let opening = PcsFriOpeningSegment {
+            units: vec![opening_unit(0, 1), opening_unit(0, 1)],
+        };
+
+        let error =
+            validate_pcs_fri_opening_units_match_query_units_from_segment(&query_units, &opening)
+                .expect_err("duplicate FRI opening identity should reject");
+
+        assert_eq!(
+            error,
+            LoadPcsFriOpeningUnitError::UnexpectedUnit { unit_index: 0 }
+        );
+    }
+
+    fn query_unit(unit_index: u32, trace_instance_index: u32) -> PcsQueryPlanUnit {
+        PcsQueryPlanUnit {
+            unit_index,
+            trace_instance_index,
+            queries: vec![0],
+        }
+    }
+
+    fn opening_unit(unit_index: u32, trace_instance_index: u32) -> PcsFriOpeningUnitSegment {
+        PcsFriOpeningUnitSegment {
+            unit_index,
+            trace_instance_index,
+            layers: Vec::new(),
+            final_polynomial: Vec::new(),
+        }
+    }
 }
