@@ -104,7 +104,7 @@ fn generate_key_lowers_static_if_statements_selected_by_expression_degree() {
              folded === product;\n\
          }\n\
          airgroup GroupA { UnitA(); }\n\
-         col fixed main.left = [5, 1];",
+         col fixed main.anchor = [5, 1];",
     );
 
     let mut stdout = Vec::new();

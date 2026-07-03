@@ -59,7 +59,7 @@ fn modulo_weight_source() -> &'static str {
          lookup_assumes(7, [value], sel: selector);\n\
      }\n\
      airgroup GroupA { UnitA(); }\n\
-     col fixed main.left = [5, 1];"
+     col fixed main.anchor = [5, 1];"
 }
 
 fn comparison_weight_source() -> &'static str {
@@ -82,7 +82,7 @@ fn comparison_weight_source() -> &'static str {
          lookup_assumes(7, [value], sel: selector[5]);\n\
      }\n\
      airgroup GroupA { UnitA(); }\n\
-     col fixed main.left = [5, 1];"
+     col fixed main.anchor = [5, 1];"
 }
 
 fn bitwise_weight_source() -> &'static str {
@@ -99,7 +99,7 @@ fn bitwise_weight_source() -> &'static str {
          lookup_assumes(7, [value], sel: selector[2]);\n\
      }\n\
      airgroup GroupA { UnitA(); }\n\
-     col fixed main.left = [5, 1];"
+     col fixed main.anchor = [5, 1];"
 }
 
 fn shift_weight_source() -> &'static str {
@@ -131,7 +131,7 @@ fn logical_weight_source() -> &'static str {
          lookup_assumes(7, [value], sel: selector[2]);\n\
      }\n\
      airgroup GroupA { UnitA(); }\n\
-     col fixed main.left = [5, 1];"
+     col fixed main.anchor = [5, 1];"
 }
 
 fn generate_key(source: &str, dir: &Path) -> (i32, Vec<u8>, Vec<u8>) {

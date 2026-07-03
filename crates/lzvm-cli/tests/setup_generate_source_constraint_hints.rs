@@ -174,7 +174,7 @@ fn generate_key_lowers_constraints_using_deferred_expr_alias_assignments() {
              selector * diff === 0;\n\
          }\n\
          airgroup GroupA { UnitA(); }\n\
-         col fixed main.left = [5, 1, 0, 0, 0, 0, 0, 0];",
+         col fixed main.anchor = [5, 1, 0, 0, 0, 0, 0, 0];",
     );
 
     let mut stdout = Vec::new();
@@ -224,7 +224,7 @@ fn generate_key_lowers_constraints_using_scoped_deferred_expr_alias_assignments(
              selector * diff === 0;\n\
          }\n\
          airgroup GroupA { UnitA(); }\n\
-         col fixed main.left = [5, 1];",
+         col fixed main.anchor = [5, 1];",
     );
 
     let mut stdout = Vec::new();
@@ -275,7 +275,7 @@ fn generate_key_lowers_constraints_using_scoped_deferred_expr_array_assignments(
              selector * (values[0] + values[1]) === 0;\n\
          }\n\
          airgroup GroupA { UnitA(); }\n\
-         col fixed main.left = [5, 1];",
+         col fixed main.anchor = [5, 1];",
     );
 
     let mut stdout = Vec::new();
@@ -2441,7 +2441,7 @@ fn generate_key_lowers_returned_array_constraints_with_call_scoped_aliases() {
              }\n\
          }\n\
          airgroup GroupA { UnitA(); }\n\
-         col fixed main.left = [5, 1, 0, 0, 0, 0, 0, 0];",
+         col fixed main.anchor = [5, 1, 0, 0, 0, 0, 0, 0];",
     );
 
     let mut stdout = Vec::new();
@@ -2638,7 +2638,7 @@ fn generate_key_lowers_constraints_using_multiple_deferred_expr_alias_assignment
              (1 - flag_alias) * diff === 0;\n\
          }\n\
          airgroup GroupA { UnitA(); }\n\
-         col fixed main.left = [5, 1];",
+         col fixed main.anchor = [5, 1];",
     );
 
     let mut stdout = Vec::new();

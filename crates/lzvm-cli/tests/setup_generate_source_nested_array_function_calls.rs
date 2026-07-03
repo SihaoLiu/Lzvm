@@ -237,7 +237,7 @@ fn generate_key_lowers_static_switch_expression_alias_updates() {
              active * (value - left) === 0;\n\
          }\n\
          airgroup GroupA { UnitA(); }\n\
-         col fixed main.left = [5, 1, 0, 0, 0, 0, 0, 0];",
+         col fixed main.anchor = [5, 1, 0, 0, 0, 0, 0, 0];",
     );
 
     let mut stdout = Vec::new();
@@ -300,7 +300,7 @@ fn generate_key_lowers_static_switch_multi_case_expression_alias_updates() {
              active * (value - left) === 0;\n\
          }\n\
          airgroup GroupA { UnitA(); }\n\
-         col fixed main.left = [5, 1, 0, 0, 0, 0, 0, 0];",
+         col fixed main.anchor = [5, 1, 0, 0, 0, 0, 0, 0];",
     );
 
     let mut stdout = Vec::new();

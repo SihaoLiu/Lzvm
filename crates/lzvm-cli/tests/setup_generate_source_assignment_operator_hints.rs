@@ -214,7 +214,7 @@ fn bitwise_source() -> &'static str {
          out[2] = left | right;\n\
      }\n\
      airgroup GroupA { UnitA(); }\n\
-     col fixed main.left = [5, 1];"
+     col fixed main.anchor = [5, 1];"
 }
 
 fn shift_source() -> &'static str {
@@ -239,7 +239,7 @@ fn logical_source() -> &'static str {
          out[2] = left || right;\n\
      }\n\
      airgroup GroupA { UnitA(); }\n\
-     col fixed main.left = [5, 1];"
+     col fixed main.anchor = [5, 1];"
 }
 
 fn dynamic_power_source() -> &'static str {
