@@ -358,6 +358,37 @@ fn rejects_short_transcript_unit_values() {
 }
 
 #[test]
+fn rejects_unit_values_for_missing_transcript_stage_root() {
+    let error = derive_pcs_transcript_prefix_challenges(PcsTranscriptPrefixInputs {
+        arity: 4,
+        hash_values: false,
+        constant_root: root(1),
+        public_values: &[],
+        witness_roots: &[root(10)],
+        root_challenge_draws: &[1],
+        unit_value_map: &[StageValue {
+            name: "unit.beta".to_owned(),
+            stage: 2,
+            lengths: Vec::new(),
+        }],
+        unit_values: &values(&[201, 202, 203]),
+        evaluation_values: &[],
+        evaluation_challenge_draws: 0,
+        binding_segments: &[],
+    })
+    .expect_err("unit values for missing stage roots should reject");
+
+    assert_eq!(
+        error,
+        PcsTranscriptError::UnitValueStageOutOfRange {
+            value_index: 0,
+            stage: 2,
+            stage_count: 1,
+        }
+    );
+}
+
+#[test]
 fn multidimensional_stage_one_unit_values_do_not_change_challenges() {
     let constant_root = root(1);
     let witness_roots = vec![root(10)];

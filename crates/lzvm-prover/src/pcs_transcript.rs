@@ -92,6 +92,11 @@ pub enum PcsTranscriptError {
         expected: usize,
         found: usize,
     },
+    UnitValueStageOutOfRange {
+        value_index: usize,
+        stage: u32,
+        stage_count: usize,
+    },
     EmptyFinalPolynomial,
     LengthOverflow,
 }
@@ -142,6 +147,14 @@ impl fmt::Display for PcsTranscriptError {
             Self::UnitValueLengthMismatch { expected, found } => write!(
                 f,
                 "PCS transcript unit value length mismatch: expected {expected}, found {found}"
+            ),
+            Self::UnitValueStageOutOfRange {
+                value_index,
+                stage,
+                stage_count,
+            } => write!(
+                f,
+                "PCS transcript unit value {value_index} stage {stage} is outside stage count {stage_count}"
             ),
             Self::EmptyFinalPolynomial => write!(f, "PCS transcript final polynomial is empty"),
             Self::LengthOverflow => write!(f, "PCS transcript length overflow"),
@@ -318,6 +331,7 @@ pub(crate) fn build_pcs_transcript_prefix(
             found: input.unit_values.len(),
         });
     }
+    validate_stage_unit_value_stages(input.unit_value_map, input.witness_roots.len())?;
 
     let mut transcript = PoseidonTranscript::new(input.arity)?;
     let challenge_capacity = input.root_challenge_draws.iter().try_fold(
@@ -491,6 +505,24 @@ fn expected_stage_unit_value_len(value_map: &[StageValue]) -> Result<usize, PcsT
             .checked_add(stage_value_packed_width(value)?)
             .ok_or(PcsTranscriptError::LengthOverflow)
     })
+}
+
+fn validate_stage_unit_value_stages(
+    value_map: &[StageValue],
+    stage_count: usize,
+) -> Result<(), PcsTranscriptError> {
+    for (value_index, value) in value_map.iter().enumerate() {
+        if value.stage == 0
+            || usize::try_from(value.stage).map_or(true, |stage| stage > stage_count)
+        {
+            return Err(PcsTranscriptError::UnitValueStageOutOfRange {
+                value_index,
+                stage: value.stage,
+                stage_count,
+            });
+        }
+    }
+    Ok(())
 }
 
 fn stage_value_packed_width(value: &StageValue) -> Result<usize, PcsTranscriptError> {
