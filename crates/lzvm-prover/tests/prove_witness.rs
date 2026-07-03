@@ -4539,6 +4539,118 @@ fn rejects_public_values_metadata_mismatch_in_prover_unit_request() {
 }
 
 #[test]
+fn rejects_public_values_metadata_mismatch_in_all_units_and_contribution_requests() {
+    let dir = temp_dir("proof-artifact-shared-public-metadata-mismatch");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let witness_library = build_shared_library(&dir, "witness", witness_source());
+    let guest_image = dir.join("guest.elf");
+    let input_data = dir.join("input.bin");
+    fs::write(&guest_image, sample_guest_image()).expect("guest image should be written");
+    fs::write(&input_data, [5_u8]).expect("input data should be written");
+
+    let mut unit = sample_unit();
+    unit.paths.constant_tree = dir.join("unit.consttree");
+    let constant_tree_bytes =
+        expected_constant_tree_byte_count(&unit.metadata.setup).expect("tree size should derive");
+    write_constant_tree_bytes_for_unit(&mut unit, vec![0_u8; constant_tree_bytes]);
+    let mut catalog = sample_catalog(unit);
+    catalog.layout.global_info.lattice_size = Some(32);
+    declare_sample_public_value_metadata(&mut catalog);
+    let plan = derive_prove_execution_plan(
+        &catalog,
+        sample_request(dir.join("out"), Some(input_data)),
+        ProveExecutionInputArtifacts {
+            witness_library: Some(witness_library),
+            guest_image,
+            public_inputs: None,
+        },
+    )
+    .expect("execution plan should derive");
+    let output =
+        run_prove_witness_commitments_with_trace(&plan, 0, ProveWitnessAuxiliaryInputs::default())
+            .expect("witness commitments should run");
+    let outputs = vec![output.clone()];
+    let public_values = PublicValues {
+        schema_version: 1,
+        setup_hash: plan.run_plan.schedule.setup_hash,
+        values: vec![PublicValueEntry {
+            name: "stale_public".to_owned(),
+            elements: vec![19],
+        }],
+    };
+
+    let all_units_error = lzvm_prover::build_witness_proof_artifact_for_all_units(
+        &lzvm_prover::WitnessAllUnitsProofRequest {
+            catalog: &catalog,
+            schedule: &plan.run_plan.schedule,
+            constant_tree_material_summaries: None,
+            execution_units: &plan.units,
+            gpu_streams: plan.run_plan.gpu.max_streams,
+            public_values: Some(&public_values),
+            outputs: &outputs,
+            auxiliary_inputs: &ProveWitnessAuxiliaryInputs::default(),
+            unit_values: &[],
+            evaluation_values_segment: None,
+            verify_outputs: false,
+            program_image_cache: None,
+            eth_block_input: None,
+            framed_guest_input: None,
+            challenge_values_segment: None,
+            include_contribution_segment: false,
+        },
+    )
+    .expect_err("all-units public values metadata mismatch should reject");
+    let contribution_unit_error = lzvm_prover::build_witness_contribution_proof_artifact_for_unit(
+        &lzvm_prover::WitnessProofRequest {
+            catalog: &catalog,
+            schedule: &plan.run_plan.schedule,
+            constant_tree_material_summaries: None,
+            execution_unit: &plan.units[0],
+            gpu_streams: plan.run_plan.gpu.max_streams,
+            public_values: Some(&public_values),
+            unit_values: None,
+            output: &output,
+            verify_outputs: false,
+            program_image_cache: None,
+            eth_block_input: None,
+            framed_guest_input: None,
+            challenge_values_segment: None,
+            include_contribution_segment: false,
+        },
+    )
+    .expect_err("contribution unit public values metadata mismatch should reject");
+    let contribution_all_units_error =
+        lzvm_prover::build_witness_contribution_proof_artifact_for_all_units(
+            &lzvm_prover::WitnessAllUnitsProofRequest {
+                catalog: &catalog,
+                schedule: &plan.run_plan.schedule,
+                constant_tree_material_summaries: None,
+                execution_units: &plan.units,
+                gpu_streams: plan.run_plan.gpu.max_streams,
+                public_values: Some(&public_values),
+                outputs: &outputs,
+                auxiliary_inputs: &ProveWitnessAuxiliaryInputs::default(),
+                unit_values: &[],
+                evaluation_values_segment: None,
+                verify_outputs: false,
+                program_image_cache: None,
+                eth_block_input: None,
+                framed_guest_input: None,
+                challenge_values_segment: None,
+                include_contribution_segment: false,
+            },
+        )
+        .expect_err("contribution all-units public values metadata mismatch should reject");
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    let expected = "public inputs metadata mismatch: public-values entry 0 name mismatch: expected sample_public, found stale_public";
+    assert_eq!(all_units_error, expected);
+    assert_eq!(contribution_unit_error, expected);
+    assert_eq!(contribution_all_units_error, expected);
+}
+
+#[test]
 fn rejects_catalog_schedule_mismatch_in_prover_unit_request() {
     let dir = temp_dir("proof-artifact-unit-catalog-schedule-mismatch");
     let _ = fs::remove_dir_all(&dir);
@@ -4597,6 +4709,114 @@ fn rejects_catalog_schedule_mismatch_in_prover_unit_request() {
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 
     assert_eq!(error, "catalog setup hash mismatch");
+}
+
+#[test]
+fn rejects_catalog_schedule_mismatch_in_all_units_and_contribution_requests() {
+    let dir = temp_dir("proof-artifact-shared-catalog-schedule-mismatch");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let witness_library = build_shared_library(&dir, "witness", witness_source());
+    let guest_image = dir.join("guest.elf");
+    let input_data = dir.join("input.bin");
+    fs::write(&guest_image, sample_guest_image()).expect("guest image should be written");
+    fs::write(&input_data, [5_u8]).expect("input data should be written");
+
+    let mut unit = sample_unit();
+    unit.paths.constant_tree = dir.join("unit.consttree");
+    let constant_tree_bytes =
+        expected_constant_tree_byte_count(&unit.metadata.setup).expect("tree size should derive");
+    write_constant_tree_bytes_for_unit(&mut unit, vec![0_u8; constant_tree_bytes]);
+    let mut catalog = sample_catalog(unit);
+    catalog.layout.global_info.lattice_size = Some(32);
+    let plan = derive_prove_execution_plan(
+        &catalog,
+        sample_request(dir.join("out"), Some(input_data)),
+        ProveExecutionInputArtifacts {
+            witness_library: Some(witness_library),
+            guest_image,
+            public_inputs: None,
+        },
+    )
+    .expect("execution plan should derive");
+    let output =
+        run_prove_witness_commitments_with_trace(&plan, 0, ProveWitnessAuxiliaryInputs::default())
+            .expect("witness commitments should run");
+    let outputs = vec![output.clone()];
+    let public_values = PublicValues {
+        schema_version: 1,
+        setup_hash: plan.run_plan.schedule.setup_hash,
+        values: Vec::new(),
+    };
+    catalog.layout.global_info.name = "mutated-program".to_owned();
+
+    let all_units_error = lzvm_prover::build_witness_proof_artifact_for_all_units(
+        &lzvm_prover::WitnessAllUnitsProofRequest {
+            catalog: &catalog,
+            schedule: &plan.run_plan.schedule,
+            constant_tree_material_summaries: None,
+            execution_units: &plan.units,
+            gpu_streams: plan.run_plan.gpu.max_streams,
+            public_values: Some(&public_values),
+            outputs: &outputs,
+            auxiliary_inputs: &ProveWitnessAuxiliaryInputs::default(),
+            unit_values: &[],
+            evaluation_values_segment: None,
+            verify_outputs: false,
+            program_image_cache: None,
+            eth_block_input: None,
+            framed_guest_input: None,
+            challenge_values_segment: None,
+            include_contribution_segment: false,
+        },
+    )
+    .expect_err("all-units catalog and schedule mismatch should reject");
+    let contribution_unit_error = lzvm_prover::build_witness_contribution_proof_artifact_for_unit(
+        &lzvm_prover::WitnessProofRequest {
+            catalog: &catalog,
+            schedule: &plan.run_plan.schedule,
+            constant_tree_material_summaries: None,
+            execution_unit: &plan.units[0],
+            gpu_streams: plan.run_plan.gpu.max_streams,
+            public_values: Some(&public_values),
+            unit_values: None,
+            output: &output,
+            verify_outputs: false,
+            program_image_cache: None,
+            eth_block_input: None,
+            framed_guest_input: None,
+            challenge_values_segment: None,
+            include_contribution_segment: false,
+        },
+    )
+    .expect_err("contribution unit catalog and schedule mismatch should reject");
+    let contribution_all_units_error =
+        lzvm_prover::build_witness_contribution_proof_artifact_for_all_units(
+            &lzvm_prover::WitnessAllUnitsProofRequest {
+                catalog: &catalog,
+                schedule: &plan.run_plan.schedule,
+                constant_tree_material_summaries: None,
+                execution_units: &plan.units,
+                gpu_streams: plan.run_plan.gpu.max_streams,
+                public_values: Some(&public_values),
+                outputs: &outputs,
+                auxiliary_inputs: &ProveWitnessAuxiliaryInputs::default(),
+                unit_values: &[],
+                evaluation_values_segment: None,
+                verify_outputs: false,
+                program_image_cache: None,
+                eth_block_input: None,
+                framed_guest_input: None,
+                challenge_values_segment: None,
+                include_contribution_segment: false,
+            },
+        )
+        .expect_err("contribution all-units catalog and schedule mismatch should reject");
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(all_units_error, "catalog setup hash mismatch");
+    assert_eq!(contribution_unit_error, "catalog setup hash mismatch");
+    assert_eq!(contribution_all_units_error, "catalog setup hash mismatch");
 }
 
 struct PublicProofArtifactBuilderFixture {
