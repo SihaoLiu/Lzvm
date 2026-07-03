@@ -169,8 +169,29 @@ fn rejects_encoding_withdrawal_preimages_without_root() {
 
     assert!(matches!(
         error,
-        EthBlockInputError::UnexpectedWithdrawalsRoot
+        EthBlockInputError::MissingWithdrawalsRoot
     ));
+}
+
+#[test]
+fn rejects_withdrawal_preimages_without_metadata_root() {
+    let input = build_eth_block_input(&sample_block_rlp_with_transactions(
+        empty_trie_root(),
+        Vec::new(),
+    ))
+    .expect("block input should build");
+    let encoded = encode_eth_block_input(&input).expect("block input should encode");
+    let mut file = parse_sectioned_file(&encoded, ETH_BLOCK_INPUT_KIND, ETH_BLOCK_INPUT_VERSION)
+        .expect("sectioned input should parse");
+    file.sections.push(SectionedSection {
+        id: WITHDRAWAL_PREIMAGES_SECTION_ID,
+        data: Vec::new(),
+    });
+    let encoded = encode_sectioned_file(&file).expect("sectioned input should encode");
+
+    let error = parse_eth_block_input(&encoded).expect_err("block input should reject withdrawals");
+
+    assert!(matches!(error, EthBlockInputError::MissingWithdrawalsRoot));
 }
 
 #[test]

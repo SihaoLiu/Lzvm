@@ -701,7 +701,8 @@ fn validate_withdrawal_sections(
     has_withdrawal_preimages: bool,
 ) -> Result<(), EthBlockInputError> {
     match (has_withdrawals_root, has_withdrawal_preimages) {
-        (true, false) | (false, true) => Err(EthBlockInputError::UnexpectedWithdrawalsRoot),
+        (true, false) => Err(EthBlockInputError::UnexpectedWithdrawalsRoot),
+        (false, true) => Err(EthBlockInputError::MissingWithdrawalsRoot),
         _ => Ok(()),
     }
 }
