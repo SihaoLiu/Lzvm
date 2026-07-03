@@ -258,3 +258,40 @@ fn write_usage(stderr: &mut dyn Write) -> i32 {
     );
     2
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rejects_missing_source_option_values_during_parse() {
+        for (args, expected) in [
+            (&["--backend"][..], "missing --backend value"),
+            (&["--source"][..], "missing --source value"),
+            (&["--include-path"][..], "missing --include-path value"),
+        ] {
+            let result = parse_args(args);
+
+            assert!(
+                matches!(result, Err(ParseError::Invalid(message)) if message == expected),
+                "{expected}"
+            );
+        }
+    }
+
+    #[test]
+    fn rejects_source_include_options_without_source_during_parse() {
+        for args in [
+            &["--include-path", "include", "setup-dir"][..],
+            &["--include-path-first", "setup-dir"][..],
+        ] {
+            let result = parse_args(args);
+
+            assert!(matches!(
+                result,
+                Err(ParseError::Invalid(message))
+                    if message == "source include options require --source"
+            ));
+        }
+    }
+}
