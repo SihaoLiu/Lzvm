@@ -1,7 +1,7 @@
 use lzvm_artifacts::sectioned::{encode_sectioned_file, SectionedFile, SectionedSection};
 use lzvm_artifacts::verifier_info::{
     encode_verifier_info, parse_verifier_info, read_verifier_info_binary_file,
-    read_verifier_info_file, VerifierInfoError, VerifierOperand,
+    read_verifier_info_file, VerifierDestination, VerifierInfoError, VerifierOperand,
 };
 use lzvm_field::FieldError;
 use std::fs;
@@ -87,10 +87,38 @@ fn verifier_code_with_number(value: u64) -> Vec<u8> {
     section
 }
 
-fn verifier_info_with_number(value: u64) -> Vec<u8> {
-    let mut section = verifier_code_with_number(value);
+fn verifier_code_with_destination_dimension(dimension: u32) -> Vec<u8> {
+    let mut section = verifier_code_prefix(1);
+    section.push(4);
+    push_u32(&mut section, 0);
+    push_u32(&mut section, dimension);
+    push_u32(&mut section, 1);
+    section.push(2);
+    push_u64(&mut section, 1);
+    push_u32(&mut section, 1);
+    section
+}
+
+fn verifier_code_with_number_dimension(dimension: u32) -> Vec<u8> {
+    let mut section = verifier_code_prefix(1);
+    section.push(4);
+    push_u32(&mut section, 0);
+    push_u32(&mut section, 1);
+    push_u32(&mut section, 1);
+    section.push(2);
+    push_u64(&mut section, 1);
+    push_u32(&mut section, dimension);
+    section
+}
+
+fn verifier_info_with_first_code(code: Vec<u8>) -> Vec<u8> {
+    let mut section = code;
     section.extend_from_slice(&verifier_code_with_number(1));
     verifier_info_file(section)
+}
+
+fn verifier_info_with_number(value: u64) -> Vec<u8> {
+    verifier_info_with_first_code(verifier_code_with_number(value))
 }
 
 #[test]
@@ -155,6 +183,48 @@ fn rejects_non_canonical_verifier_numbers_when_parsing() {
                 value: NON_CANONICAL_FIELD
             },
         })
+    ));
+}
+
+#[test]
+fn rejects_zero_verifier_destination_dimensions() {
+    let mut info = fixtures::sample_verifier_info_fixture();
+    info.quotient.operations[0].destination = VerifierDestination::temporary(0, 0);
+
+    assert!(matches!(
+        encode_verifier_info(&info),
+        Err(VerifierInfoError::ZeroDestinationDimension { temporary_id: 0 })
+    ));
+}
+
+#[test]
+fn rejects_zero_verifier_destination_dimensions_when_parsing() {
+    let bytes = verifier_info_with_first_code(verifier_code_with_destination_dimension(0));
+
+    assert!(matches!(
+        parse_verifier_info(&bytes),
+        Err(VerifierInfoError::ZeroDestinationDimension { temporary_id: 0 })
+    ));
+}
+
+#[test]
+fn rejects_zero_verifier_operand_dimensions() {
+    let mut info = fixtures::sample_verifier_info_fixture();
+    info.quotient.operations[0].sources[0] = VerifierOperand::number(1, 0);
+
+    assert!(matches!(
+        encode_verifier_info(&info),
+        Err(VerifierInfoError::ZeroOperandDimension { source_index: 0 })
+    ));
+}
+
+#[test]
+fn rejects_zero_verifier_operand_dimensions_when_parsing() {
+    let bytes = verifier_info_with_first_code(verifier_code_with_number_dimension(0));
+
+    assert!(matches!(
+        parse_verifier_info(&bytes),
+        Err(VerifierInfoError::ZeroOperandDimension { source_index: 0 })
     ));
 }
 

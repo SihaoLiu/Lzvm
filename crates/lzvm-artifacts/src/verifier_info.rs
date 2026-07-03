@@ -158,6 +158,12 @@ pub enum VerifierInfoError {
         source_index: usize,
         source: FieldError,
     },
+    ZeroDestinationDimension {
+        temporary_id: u32,
+    },
+    ZeroOperandDimension {
+        source_index: usize,
+    },
 }
 
 impl fmt::Display for VerifierInfoError {
@@ -211,6 +217,14 @@ impl fmt::Display for VerifierInfoError {
                 f,
                 "verifier-info number source {source_index} is non-canonical: {source}"
             ),
+            Self::ZeroDestinationDimension { temporary_id } => write!(
+                f,
+                "verifier-info destination dimension is zero for temporary {temporary_id}"
+            ),
+            Self::ZeroOperandDimension { source_index } => write!(
+                f,
+                "verifier-info source dimension is zero at source {source_index}"
+            ),
         }
     }
 }
@@ -232,7 +246,9 @@ impl std::error::Error for VerifierInfoError {
             | Self::InvalidFlag { .. }
             | Self::InvalidOperationTag { .. }
             | Self::InvalidOperandTag { .. }
-            | Self::Io { .. } => None,
+            | Self::Io { .. }
+            | Self::ZeroDestinationDimension { .. }
+            | Self::ZeroOperandDimension { .. } => None,
         }
     }
 }
@@ -498,6 +514,11 @@ fn validate_destination(
     value: &VerifierDestination,
     temporary_count: u32,
 ) -> Result<(), VerifierInfoError> {
+    if value.dimension == 0 {
+        return Err(VerifierInfoError::ZeroDestinationDimension {
+            temporary_id: value.temporary_id,
+        });
+    }
     if value.temporary_id >= temporary_count {
         return Err(VerifierInfoError::TemporaryReferenceOutOfBounds {
             temporary_id: value.temporary_id,
@@ -512,6 +533,10 @@ fn validate_operand(
     temporary_count: u32,
     source_index: usize,
 ) -> Result<(), VerifierInfoError> {
+    if operand_dimension(value) == 0 {
+        return Err(VerifierInfoError::ZeroOperandDimension { source_index });
+    }
+
     match value {
         VerifierOperand::Temporary { id, .. } => {
             if *id >= temporary_count {
@@ -525,6 +550,21 @@ fn validate_operand(
         _ => {}
     }
     Ok(())
+}
+
+fn operand_dimension(value: &VerifierOperand) -> u32 {
+    match value {
+        VerifierOperand::Temporary { dimension, .. }
+        | VerifierOperand::Number { dimension, .. }
+        | VerifierOperand::Evaluation { dimension, .. }
+        | VerifierOperand::Challenge { dimension, .. }
+        | VerifierOperand::Public { dimension, .. }
+        | VerifierOperand::Constant { dimension, .. }
+        | VerifierOperand::Commitment { dimension, .. }
+        | VerifierOperand::BoundaryZerofier { dimension, .. }
+        | VerifierOperand::ProofValue { dimension, .. }
+        | VerifierOperand::OpeningDenominator { dimension, .. } => *dimension,
+    }
 }
 
 fn validate_number(source_index: usize, value: u64) -> Result<(), VerifierInfoError> {
