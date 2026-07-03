@@ -467,6 +467,9 @@ fn encode_fixed_columns_section(value: &FixedColumns) -> Result<Vec<u8>, FixedCo
             u32::try_from(column.dimensions.len()).map_err(|_| FixedColumnError::LengthOverflow)?;
         write_u32(&mut section, dimension_count);
         for dimension in &column.dimensions {
+            if *dimension == 0 {
+                return Err(FixedColumnError::LengthOverflow);
+            }
             write_u32(&mut section, *dimension);
         }
         for (row, entry) in column.values.iter().copied().enumerate() {
@@ -686,7 +689,11 @@ fn parse_fixed_columns_section(bytes: &[u8]) -> Result<FixedColumns, FixedColumn
         let dimension_count = read_bounded_count(&mut reader, U32_BYTES)?;
         let mut dimensions = Vec::with_capacity(dimension_count);
         for _ in 0..dimension_count {
-            dimensions.push(reader.read_u32()?);
+            let dimension = reader.read_u32()?;
+            if dimension == 0 {
+                return Err(FixedColumnError::LengthOverflow);
+            }
+            dimensions.push(dimension);
         }
 
         let mut values = Vec::with_capacity(rows);

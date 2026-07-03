@@ -148,6 +148,20 @@ fn parses_fixed_columns_with_names_dimensions_and_values() {
 }
 
 #[test]
+fn rejects_zero_fixed_column_dimensions() {
+    let mut section = fixed_columns_prefix(0, 1);
+    push_string(&mut section, "main.empty");
+    push_u32(&mut section, 1);
+    push_u32(&mut section, 0);
+    let bytes = fixed_columns_file(section);
+
+    assert_eq!(
+        parse_fixed_columns(&bytes),
+        Err(FixedColumnError::LengthOverflow)
+    );
+}
+
+#[test]
 fn rejects_unsupported_fixed_column_file_versions() {
     let mut bytes = sample_file();
     bytes[4..8].copy_from_slice(&0_u32.to_le_bytes());
@@ -361,6 +375,17 @@ fn rejects_raw_fixed_encoding_when_dimensions_do_not_match_setup() {
             found
         }) if column == "main.right" && expected == vec![2] && found == vec![3]
     ));
+}
+
+#[test]
+fn rejects_fixed_encoding_with_zero_dimensions() {
+    let mut columns = sample_raw_columns();
+    columns.columns[0].dimensions = vec![0];
+
+    assert_eq!(
+        encode_fixed_columns(&columns),
+        Err(FixedColumnError::LengthOverflow)
+    );
 }
 
 #[test]
