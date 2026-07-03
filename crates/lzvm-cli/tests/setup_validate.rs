@@ -3292,6 +3292,12 @@ fn write_stale_setup_manifest(root: &Path, value: u8) -> PathBuf {
     manifest_path
 }
 
+fn remove_setup_manifest(root: &Path) -> PathBuf {
+    let manifest_path = root.join(SETUP_DIRECTORY_MANIFEST_FILE);
+    fs::remove_file(&manifest_path).expect("setup directory manifest should be removed");
+    manifest_path
+}
+
 #[test]
 fn validates_a_complete_setup_directory() {
     let dir = temp_dir("valid");
@@ -3867,6 +3873,42 @@ fn rejects_prove_plan_with_stale_setup_directory_manifest() {
 }
 
 #[test]
+fn rejects_prove_plan_without_setup_directory_manifest() {
+    let dir = temp_dir("missing-manifest-plan");
+    let _ = fs::remove_dir_all(&dir);
+    write_setup_directory(&dir);
+    let root = dir.to_str().expect("path should be utf-8");
+    let output_dir = dir.join("proof-out");
+    run_setup_command(&["setup", "generate-key", root]);
+    let manifest_path = remove_setup_manifest(&dir);
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "prove",
+            "plan",
+            root,
+            output_dir.to_str().expect("output path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 1);
+    assert!(stdout.is_empty());
+    assert_eq!(
+        String::from_utf8(stderr).expect("stderr should be utf-8"),
+        format!(
+            "prove plan failed: setup directory manifest missing at {}\n",
+            manifest_path.display()
+        )
+    );
+}
+
+#[test]
 fn rejects_prove_inputs_with_stale_setup_directory_manifest() {
     let dir = temp_dir("stale-manifest-inputs");
     let _ = fs::remove_dir_all(&dir);
@@ -3904,6 +3946,49 @@ fn rejects_prove_inputs_with_stale_setup_directory_manifest() {
         String::from_utf8(stderr).expect("stderr should be utf-8"),
         format!(
             "prove inputs failed: setup directory manifest mismatch at {}\n",
+            manifest_path.display()
+        )
+    );
+}
+
+#[test]
+fn rejects_prove_inputs_without_setup_directory_manifest() {
+    let dir = temp_dir("missing-manifest-inputs");
+    let _ = fs::remove_dir_all(&dir);
+    write_setup_directory(&dir);
+    let root = dir.to_str().expect("path should be utf-8");
+    let output_dir = dir.join("proof-out");
+    let witness_library = build_shared_library(&dir, "witness", sample_witness_source());
+    let guest_image = dir.join("guest.elf");
+    write_bytes(&guest_image, sample_guest_image());
+    run_setup_command(&["setup", "generate-key", root]);
+    let manifest_path = remove_setup_manifest(&dir);
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "prove",
+            "inputs",
+            root,
+            output_dir.to_str().expect("output path should be utf-8"),
+            witness_library
+                .to_str()
+                .expect("witness path should be utf-8"),
+            guest_image.to_str().expect("guest path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 1);
+    assert!(stdout.is_empty());
+    assert_eq!(
+        String::from_utf8(stderr).expect("stderr should be utf-8"),
+        format!(
+            "prove inputs failed: setup directory manifest missing at {}\n",
             manifest_path.display()
         )
     );
@@ -3960,6 +4045,62 @@ fn rejects_prove_witness_with_stale_setup_directory_manifest() {
         String::from_utf8(stderr).expect("stderr should be utf-8"),
         format!(
             "prove witness failed: setup directory manifest mismatch at {}\n",
+            manifest_path.display()
+        )
+    );
+}
+
+#[test]
+fn rejects_prove_witness_without_setup_directory_manifest() {
+    let dir = temp_dir("missing-manifest-witness");
+    let _ = fs::remove_dir_all(&dir);
+    write_execution_ready_setup_directory(&dir);
+    let catalog = read_key_directory_catalog(&dir).expect("catalog should load");
+    let setup_hash = key_directory_catalog_digest(&catalog).expect("digest should compute");
+    let output_dir = dir.join("proof-out");
+    let witness_library = build_shared_library(&dir, "witness", sample_witness_source());
+    let guest_image = dir.join("guest.elf");
+    let input_data = dir.join("input.bin");
+    let public_values_path = dir.join("public_values.bin");
+    write_bytes(&guest_image, sample_guest_image());
+    write_bytes(&input_data, [7_u8]);
+    write_bytes(
+        &public_values_path,
+        encode_public_values(&sample_public_values(setup_hash))
+            .expect("public values should encode"),
+    );
+    let manifest_path = remove_setup_manifest(&dir);
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "prove",
+            "witness",
+            "--input-data",
+            input_data.to_str().expect("input path should be utf-8"),
+            dir.to_str().expect("path should be utf-8"),
+            output_dir.to_str().expect("output path should be utf-8"),
+            witness_library
+                .to_str()
+                .expect("witness path should be utf-8"),
+            guest_image.to_str().expect("guest path should be utf-8"),
+            public_values_path
+                .to_str()
+                .expect("public values path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 1);
+    assert!(stdout.is_empty());
+    assert_eq!(
+        String::from_utf8(stderr).expect("stderr should be utf-8"),
+        format!(
+            "prove witness failed: setup directory manifest missing at {}\n",
             manifest_path.display()
         )
     );

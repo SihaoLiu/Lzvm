@@ -90,11 +90,11 @@ pub(crate) fn read_checked_setup_catalog(path: &Path) -> Result<KeyDirectoryCata
 pub(crate) fn read_prove_setup_catalog(path: &Path) -> Result<KeyDirectoryCatalog, String> {
     let catalog = read_key_directory_catalog_trusting_pcs_material_digests(path)
         .map_err(|error| error.to_string())?;
-    validate_stored_setup_manifest_digest_if_present(path, &catalog)?;
+    validate_required_stored_setup_manifest_digest(path, &catalog)?;
     Ok(catalog)
 }
 
-fn validate_stored_setup_manifest_digest_if_present(
+fn validate_required_stored_setup_manifest_digest(
     root: &Path,
     catalog: &KeyDirectoryCatalog,
 ) -> Result<(), String> {
@@ -103,7 +103,13 @@ fn validate_stored_setup_manifest_digest_if_present(
         .try_exists()
         .map_err(|error| format!("{}: {error}", path.display()))?
     {
-        return Ok(());
+        if !catalog.units.iter().any(|unit| unit.pcs_material_present) {
+            return Ok(());
+        }
+        return Err(format!(
+            "setup directory manifest missing at {}",
+            path.display()
+        ));
     }
     let found = read_setup_directory_manifest_file(&path).map_err(|error| error.to_string())?;
     let digest = key_directory_catalog_digest(catalog).map_err(|error| error.to_string())?;
