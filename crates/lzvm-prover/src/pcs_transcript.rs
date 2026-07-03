@@ -88,6 +88,10 @@ pub enum PcsTranscriptError {
         width: usize,
         len: usize,
     },
+    UnitValueLengthMismatch {
+        expected: usize,
+        found: usize,
+    },
     EmptyFinalPolynomial,
     LengthOverflow,
 }
@@ -134,6 +138,10 @@ impl fmt::Display for PcsTranscriptError {
             } => write!(
                 f,
                 "PCS transcript unit value {value_index} offset {offset} with width {width} is outside length {len}"
+            ),
+            Self::UnitValueLengthMismatch { expected, found } => write!(
+                f,
+                "PCS transcript unit value length mismatch: expected {expected}, found {found}"
             ),
             Self::EmptyFinalPolynomial => write!(f, "PCS transcript final polynomial is empty"),
             Self::LengthOverflow => write!(f, "PCS transcript length overflow"),
@@ -466,6 +474,12 @@ fn absorb_stage_unit_values(
             transcript.put(&values[offset..end]);
         }
         offset = end;
+    }
+    if offset != values.len() {
+        return Err(PcsTranscriptError::UnitValueLengthMismatch {
+            expected: offset,
+            found: values.len(),
+        });
     }
     Ok(())
 }

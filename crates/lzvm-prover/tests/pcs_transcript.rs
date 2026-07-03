@@ -195,7 +195,7 @@ fn prefix_challenges_do_not_depend_on_evaluation_values() {
     let constant_root = root(1);
     let public_values = values(&[7, 8]);
     let witness_roots = vec![root(10), root(20)];
-    let unit_values = values(&[30, 31]);
+    let unit_values = values(&[30]);
     let unit_value_map = vec![StageValue {
         name: "unit.a".to_owned(),
         stage: 1,
@@ -295,6 +295,36 @@ fn absorbs_unit_values_after_matching_stage_roots() {
     expected_challenges.push(expected.get_field());
 
     assert_eq!(actual, expected_challenges);
+}
+
+#[test]
+fn rejects_extra_transcript_unit_values() {
+    let error = derive_pcs_transcript_prefix_challenges(PcsTranscriptPrefixInputs {
+        arity: 4,
+        hash_values: false,
+        constant_root: root(1),
+        public_values: &[],
+        witness_roots: &[root(10)],
+        root_challenge_draws: &[1],
+        unit_value_map: &[StageValue {
+            name: "unit.alpha".to_owned(),
+            stage: 1,
+            lengths: Vec::new(),
+        }],
+        unit_values: &values(&[101, 102]),
+        evaluation_values: &[],
+        evaluation_challenge_draws: 0,
+        binding_segments: &[],
+    })
+    .expect_err("extra unit values should reject");
+
+    assert_eq!(
+        error,
+        PcsTranscriptError::UnitValueLengthMismatch {
+            expected: 1,
+            found: 2,
+        }
+    );
 }
 
 #[test]
