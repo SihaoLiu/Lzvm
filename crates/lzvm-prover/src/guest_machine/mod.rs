@@ -1641,17 +1641,32 @@ fn advance_guest_machine_prepared_inner_report_shape_at_pc_into(
     let sequential_pc = address
         .checked_add(byte_len as u64)
         .ok_or(GuestMachineError::ProgramCounterOverflow { address, byte_len })?;
-    if timing.is_none() {
-        if let Some(shape) = try_advance_guest_machine_report_fast_path(
-            memory,
-            state,
-            address,
-            byte_len,
-            sequential_pc,
-            instruction,
-            report,
-        )? {
+    let fast_path_started = advance_timing_started(&timing);
+    match try_advance_guest_machine_report_fast_path(
+        memory,
+        state,
+        address,
+        byte_len,
+        sequential_pc,
+        instruction,
+        report,
+    ) {
+        Ok(Some(shape)) => {
+            record_advance_timing(fast_path_started, timing.as_deref_mut(), |timing| {
+                &mut timing.execute_duration
+            });
             return Ok(shape);
+        }
+        Ok(None) => {
+            record_advance_timing(fast_path_started, timing.as_deref_mut(), |timing| {
+                &mut timing.setup_duration
+            });
+        }
+        Err(error) => {
+            record_advance_timing(fast_path_started, timing.as_deref_mut(), |timing| {
+                &mut timing.execute_duration
+            });
+            return Err(error);
         }
     }
     let setup_started = advance_timing_started(&timing);
@@ -3115,6 +3130,36 @@ mod tests {
 
     fn assert_report_fast_path_matches_generic(instruction: RiscvInstruction) {
         assert_report_fast_path_matches_generic_with_words(instruction, &[0x0000_0073]);
+    }
+
+    #[test]
+    fn timed_prepared_advance_keeps_report_fast_path_enabled() {
+        let instruction = RiscvInstruction::Lui {
+            rd: 8,
+            immediate: 0x1234_5000,
+        };
+        let mut memory = guest_machine_memory_with_words(&[0x0000_0073]);
+        let mut state = report_fast_path_test_state();
+        let prepared = GuestMachinePreparedInstruction {
+            address: TEST_ENTRY,
+            byte_len: 4,
+            instruction,
+        };
+        let mut timing = GuestMachineAdvanceTiming::default();
+
+        let advanced = advance_guest_machine_prepared_inner_with_report_shape(
+            &mut memory,
+            &mut state,
+            None,
+            prepared,
+            Some(&mut timing),
+        )
+        .expect("timed fast-path advance should succeed");
+
+        assert_eq!(advanced.shape.instruction, instruction);
+        assert_eq!(state.pc(), TEST_ENTRY + 4);
+        assert_eq!(timing.setup_duration, Duration::ZERO);
+        assert_eq!(timing.report_duration, Duration::ZERO);
     }
 
     fn assert_pending_dma_fast_path_matches_generic(
