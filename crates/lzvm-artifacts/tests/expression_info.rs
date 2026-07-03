@@ -140,6 +140,12 @@ fn minimal_operation_with_number_sources(operation_tag: u8, source_count: u32) -
     section
 }
 
+fn empty_expression_code_section() -> Vec<u8> {
+    let mut section = minimal_expression_prefix(0);
+    push_u32(&mut section, 0);
+    section
+}
+
 fn temporary_read_before_write_section() -> Vec<u8> {
     let mut section = empty_hint_sections();
     push_u32(&mut section, 1);
@@ -355,6 +361,33 @@ fn rejects_operation_count_that_exceeds_remaining_operation_records() {
     assert!(matches!(
         parse_expression_info(&bytes),
         Err(ExpressionInfoError::UnexpectedEof { .. })
+    ));
+}
+
+#[test]
+fn rejects_empty_expression_code_when_encoding() {
+    let mut info = fixtures::sample_expression_info_fixture();
+    info.expressions[0].operations.clear();
+
+    assert!(matches!(
+        encode_expression_info(&info),
+        Err(ExpressionInfoError::EmptyCodeBlock {
+            item: "expression",
+            index: 0
+        })
+    ));
+}
+
+#[test]
+fn rejects_empty_expression_code_when_parsing() {
+    let bytes = expression_info_file(empty_expression_code_section());
+
+    assert!(matches!(
+        parse_expression_info(&bytes),
+        Err(ExpressionInfoError::EmptyCodeBlock {
+            item: "expression",
+            index: 0
+        })
     ));
 }
 

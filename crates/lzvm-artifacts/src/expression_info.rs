@@ -554,6 +554,10 @@ pub enum ExpressionInfoError {
         expected: usize,
         found: usize,
     },
+    EmptyCodeBlock {
+        item: &'static str,
+        index: usize,
+    },
     MissingFrameBoundaryOffsets,
     InvalidMagic,
     UnsupportedVersion {
@@ -643,6 +647,9 @@ impl fmt::Display for ExpressionInfoError {
                 f,
                 "expression-info operation {operation:?} at index {operation_index} expected {expected} sources, found {found}"
             ),
+            Self::EmptyCodeBlock { item, index } => {
+                write!(f, "expression-info {item} {index} has no operations")
+            }
             Self::MissingFrameBoundaryOffsets => {
                 write!(f, "frame boundary is missing offset bounds")
             }
@@ -782,19 +789,31 @@ pub fn encode_expression_info(value: &ExpressionInfo) -> Result<Vec<u8>, Express
 fn validate_expression_info(value: &ExpressionInfo) -> Result<(), ExpressionInfoError> {
     validate_hints(&value.hints)?;
     let mut seen = BTreeSet::new();
-    for expression in &value.expressions {
+    for (index, expression) in value.expressions.iter().enumerate() {
         if !seen.insert(expression.expression_id) {
             return Err(ExpressionInfoError::DuplicateExpressionId {
                 expression_id: expression.expression_id,
             });
         }
+        if expression.operations.is_empty() {
+            return Err(ExpressionInfoError::EmptyCodeBlock {
+                item: "expression",
+                index,
+            });
+        }
         validate_operations(&expression.operations, expression.temporary_count)?;
     }
-    for constraint in &value.constraints {
+    for (index, constraint) in value.constraints.iter().enumerate() {
         if constraint.boundary == BoundaryKind::EveryFrame
             && (constraint.offset_min.is_none() || constraint.offset_max.is_none())
         {
             return Err(ExpressionInfoError::MissingFrameBoundaryOffsets);
+        }
+        if constraint.operations.is_empty() {
+            return Err(ExpressionInfoError::EmptyCodeBlock {
+                item: "constraint",
+                index,
+            });
         }
         validate_operations(&constraint.operations, constraint.temporary_count)?;
     }
