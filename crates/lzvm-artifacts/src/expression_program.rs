@@ -65,6 +65,9 @@ pub enum ExpressionProgramError {
         index: usize,
         source: FieldError,
     },
+    ZeroDestinationDimension {
+        expression_id: u32,
+    },
     OperationSpanOutOfBounds {
         expression_id: u32,
     },
@@ -102,6 +105,10 @@ impl fmt::Display for ExpressionProgramError {
                 f,
                 "expression program number {index} is non-canonical: {source}"
             ),
+            Self::ZeroDestinationDimension { expression_id } => write!(
+                f,
+                "expression program destination dimension is zero for expression {expression_id}"
+            ),
             Self::OperationSpanOutOfBounds { expression_id } => {
                 write!(f, "operation span is out of bounds for expression {expression_id}")
             }
@@ -125,6 +132,7 @@ impl std::error::Error for ExpressionProgramError {
             | Self::StringContainsNul { .. }
             | Self::LengthOverflow
             | Self::Io { .. }
+            | Self::ZeroDestinationDimension { .. }
             | Self::OperationSpanOutOfBounds { .. }
             | Self::ArgumentSpanOutOfBounds { .. } => None,
         }
@@ -301,6 +309,12 @@ fn encode_expression_section(
 
 fn validate_spans(program: &ExpressionProgram) -> Result<(), ExpressionProgramError> {
     for entry in &program.entries {
+        if entry.destination_dimension == 0 {
+            return Err(ExpressionProgramError::ZeroDestinationDimension {
+                expression_id: entry.expression_id,
+            });
+        }
+
         let ops_offset = usize::try_from(entry.ops_offset)
             .map_err(|_| ExpressionProgramError::LengthOverflow)?;
         let ops_count =

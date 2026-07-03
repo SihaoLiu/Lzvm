@@ -133,6 +133,24 @@ fn invalid_span_file() -> Vec<u8> {
     wrap_expression_section(section)
 }
 
+fn zero_destination_dimension_file() -> Vec<u8> {
+    let mut section = counted_section(0, 0, 0, 1);
+
+    push_u32(&mut section, 42);
+    push_u32(&mut section, 0);
+    push_u32(&mut section, 0);
+    push_u32(&mut section, 1);
+    push_u32(&mut section, 0);
+    push_u32(&mut section, 0);
+    push_u32(&mut section, 0);
+    push_u32(&mut section, 0);
+    push_u32(&mut section, 0);
+    push_u32(&mut section, 0);
+    push_string(&mut section, "zero dimension");
+
+    wrap_expression_section(section)
+}
+
 fn section_truncated_payload_file() -> Vec<u8> {
     let mut section = Vec::new();
     push_u32(&mut section, 0);
@@ -191,6 +209,25 @@ fn rejects_invalid_operation_spans() {
     assert!(matches!(
         parse_expression_program(&invalid_span_file()),
         Err(ExpressionProgramError::OperationSpanOutOfBounds { .. })
+    ));
+}
+
+#[test]
+fn rejects_zero_destination_dimensions_when_encoding() {
+    let mut program = sample_program();
+    program.entries[1].destination_dimension = 0;
+
+    assert!(matches!(
+        encode_expression_program(&program),
+        Err(ExpressionProgramError::ZeroDestinationDimension { expression_id: 18 })
+    ));
+}
+
+#[test]
+fn rejects_zero_destination_dimensions_when_parsing() {
+    assert!(matches!(
+        parse_expression_program(&zero_destination_dimension_file()),
+        Err(ExpressionProgramError::ZeroDestinationDimension { expression_id: 42 })
     ));
 }
 
