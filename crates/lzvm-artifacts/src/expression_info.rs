@@ -538,6 +538,11 @@ pub enum ExpressionInfoError {
     ZeroOperandDimension {
         source_index: usize,
     },
+    ZeroHintPayloadDimension {
+        hint_index: usize,
+        field_index: usize,
+        value_index: usize,
+    },
     MissingFrameBoundaryOffsets,
     InvalidMagic,
     UnsupportedVersion {
@@ -601,6 +606,14 @@ impl fmt::Display for ExpressionInfoError {
             Self::ZeroOperandDimension { source_index } => write!(
                 f,
                 "expression-info source dimension is zero at source {source_index}"
+            ),
+            Self::ZeroHintPayloadDimension {
+                hint_index,
+                field_index,
+                value_index,
+            } => write!(
+                f,
+                "expression-info hint dimension is zero at hint {hint_index}, field {field_index}, value {value_index}"
             ),
             Self::MissingFrameBoundaryOffsets => {
                 write!(f, "frame boundary is missing offset bounds")
@@ -739,6 +752,7 @@ pub fn encode_expression_info(value: &ExpressionInfo) -> Result<Vec<u8>, Express
 }
 
 fn validate_expression_info(value: &ExpressionInfo) -> Result<(), ExpressionInfoError> {
+    validate_hints(&value.hints)?;
     let mut seen = BTreeSet::new();
     for expression in &value.expressions {
         if !seen.insert(expression.expression_id) {
@@ -757,6 +771,40 @@ fn validate_expression_info(value: &ExpressionInfo) -> Result<(), ExpressionInfo
         validate_operations(&constraint.operations, constraint.temporary_count)?;
     }
     Ok(())
+}
+
+fn validate_hints(hints: &[HintInfo]) -> Result<(), ExpressionInfoError> {
+    for (hint_index, hint) in hints.iter().enumerate() {
+        for (field_index, field) in hint.fields.iter().enumerate() {
+            for (value_index, value) in field.values.iter().enumerate() {
+                if hint_payload_dimension(&value.payload).is_some_and(|dimension| dimension == 0) {
+                    return Err(ExpressionInfoError::ZeroHintPayloadDimension {
+                        hint_index,
+                        field_index,
+                        value_index,
+                    });
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+fn hint_payload_dimension(value: &HintPayload) -> Option<u32> {
+    match value {
+        HintPayload::Temporary { dimension, .. }
+        | HintPayload::Commitment { dimension, .. }
+        | HintPayload::CommitmentElement { dimension, .. }
+        | HintPayload::CustomCommitment { dimension, .. }
+        | HintPayload::Constant { dimension, .. }
+        | HintPayload::AirGroupValue { dimension, .. }
+        | HintPayload::AirValue { dimension, .. }
+        | HintPayload::ProofValue { dimension, .. } => *dimension,
+        HintPayload::Number { .. }
+        | HintPayload::String { .. }
+        | HintPayload::Challenge { .. }
+        | HintPayload::Public { .. } => None,
+    }
 }
 
 fn validate_operations(

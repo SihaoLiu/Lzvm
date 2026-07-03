@@ -1,6 +1,6 @@
 use lzvm_artifacts::expression_info::{
     encode_expression_info, parse_expression_info, read_expression_info_binary_file,
-    read_expression_info_file, CodeDestination, CodeOperand, ExpressionInfoError,
+    read_expression_info_file, CodeDestination, CodeOperand, ExpressionInfoError, HintPayload,
 };
 use lzvm_artifacts::sectioned::{encode_sectioned_file, SectionedFile, SectionedSection};
 use std::fs;
@@ -41,6 +41,16 @@ fn push_u32(out: &mut Vec<u8>, value: u32) {
 
 fn push_u64(out: &mut Vec<u8>, value: u64) {
     out.extend_from_slice(&value.to_le_bytes());
+}
+
+fn push_optional_u32(out: &mut Vec<u8>, value: Option<u32>) {
+    match value {
+        Some(value) => {
+            out.push(1);
+            push_u32(out, value);
+        }
+        None => out.push(0),
+    }
 }
 
 fn push_string(out: &mut Vec<u8>, value: &str) {
@@ -109,6 +119,22 @@ fn minimal_operation_with_number_dimension(dimension: u32) -> Vec<u8> {
     section.push(2);
     push_u64(&mut section, 1);
     push_u32(&mut section, dimension);
+    push_u32(&mut section, 0);
+    section
+}
+
+fn hint_temporary_dimension_section(dimension: Option<u32>) -> Vec<u8> {
+    let mut section = Vec::new();
+    push_u32(&mut section, 1);
+    push_string(&mut section, "");
+    push_u32(&mut section, 1);
+    push_string(&mut section, "");
+    push_u32(&mut section, 1);
+    section.push(3);
+    push_u32(&mut section, 7);
+    push_optional_u32(&mut section, dimension);
+    push_u32(&mut section, 0);
+    push_u32(&mut section, 0);
     push_u32(&mut section, 0);
     section
 }
@@ -330,4 +356,40 @@ fn rejects_zero_code_operand_dimensions_when_parsing() {
         parse_expression_info(&bytes),
         Err(ExpressionInfoError::ZeroOperandDimension { source_index: 0 })
     ));
+}
+
+#[test]
+fn rejects_zero_hint_payload_dimensions_when_encoding() {
+    let mut info = fixtures::sample_expression_info_fixture();
+    info.hints[0].fields[0].values[2].payload = HintPayload::temporary(3, Some(0));
+
+    assert!(matches!(
+        encode_expression_info(&info),
+        Err(ExpressionInfoError::ZeroHintPayloadDimension {
+            hint_index: 0,
+            field_index: 0,
+            value_index: 2
+        })
+    ));
+}
+
+#[test]
+fn rejects_zero_hint_payload_dimensions_when_parsing() {
+    let bytes = expression_info_file(hint_temporary_dimension_section(Some(0)));
+
+    assert!(matches!(
+        parse_expression_info(&bytes),
+        Err(ExpressionInfoError::ZeroHintPayloadDimension {
+            hint_index: 0,
+            field_index: 0,
+            value_index: 0
+        })
+    ));
+}
+
+#[test]
+fn accepts_omitted_hint_payload_dimensions() {
+    let bytes = expression_info_file(hint_temporary_dimension_section(None));
+
+    parse_expression_info(&bytes).expect("omitted hint dimension should default later");
 }
