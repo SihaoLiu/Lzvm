@@ -7,7 +7,7 @@ fn expected_top_level_usage() -> &'static str {
         "groups:\n",
         "  eth     block input and public input helpers\n",
         "  pil     PIL archive, summary, and graph helpers\n",
-        "  prove   plan, inputs, witness, and schedule commands\n",
+        "  prove   plan, inputs, witness, guest-run, and schedule commands\n",
         "  setup   validate, fingerprint, and setup artifact writers\n",
         "  verify  setup preflight, proof, and contribution checks\n",
     )
