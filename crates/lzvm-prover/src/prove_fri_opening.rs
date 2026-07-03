@@ -365,6 +365,7 @@ fn build_pcs_fri_transcript_values_from_trace_refs_with_fixed_cache(
     fixed_columns_cache: &mut PcsFriFixedColumnsCache,
     mut timing: Option<&mut PcsFriOpeningBuildTiming>,
 ) -> Result<Vec<ProvePcsFriTranscriptValues>, ProvePcsFriTranscriptTraceValuesError> {
+    let mut seen_units = BTreeSet::new();
     let mut out = Vec::with_capacity(values.len());
     for input in values {
         let unit = schedule.units.get(input.unit_index).ok_or(
@@ -373,6 +374,14 @@ fn build_pcs_fri_transcript_values_from_trace_refs_with_fixed_cache(
                 unit_count: schedule.units.len(),
             },
         )?;
+        if !seen_units.insert((input.unit_index, 0)) {
+            return Err(
+                ProvePcsFriTranscriptTraceValuesError::DuplicateUnitIdentity {
+                    unit_index: input.unit_index,
+                    trace_instance_index: 0,
+                },
+            );
+        }
         let arity = unit.transcript_arity.ok_or(
             ProvePcsFriTranscriptTraceValuesError::MissingTranscriptArity {
                 unit_index: input.unit_index,
@@ -484,6 +493,7 @@ pub(crate) fn build_pcs_fri_transcript_values_from_trace_segment_refs_with_timin
     mut timing: Option<&mut PcsFriOpeningBuildTiming>,
 ) -> Result<Vec<ProvePcsFriTranscriptValues>, ProvePcsFriTranscriptTraceValuesError> {
     let mut out = Vec::with_capacity(values.len());
+    let mut seen_units = BTreeSet::new();
     let mut material_cache = MaterialSegmentCache::new();
     let mut evaluation_cache = EvaluationSegmentCache::new();
     let mut fixed_columns_cache = PcsFriFixedColumnsCache::default();
@@ -499,6 +509,14 @@ pub(crate) fn build_pcs_fri_transcript_values_from_trace_segment_refs_with_timin
                 unit_index: input.unit_index,
             }
         })?;
+        if !seen_units.insert((input.unit_index, input.trace_instance_index)) {
+            return Err(
+                ProvePcsFriTranscriptTraceValuesError::DuplicateUnitIdentity {
+                    unit_index: input.unit_index,
+                    trace_instance_index: input.trace_instance_index,
+                },
+            );
+        }
         let arity = unit.transcript_arity.ok_or(
             ProvePcsFriTranscriptTraceValuesError::MissingTranscriptArity {
                 unit_index: input.unit_index,

@@ -35,7 +35,7 @@ use lzvm_prover::{
     build_pcs_material_manifest_segment, build_pcs_query_nonce_segment,
     build_pcs_query_plan_segment_from_challenge, derive_prove_schedule,
     ProveExecutionUnitArtifacts, ProvePcsEvaluationValues, ProvePcsFriTranscriptTraceSegmentValues,
-    ProveWitnessAuxiliaryInputs,
+    ProvePcsFriTranscriptTraceValuesError, ProveWitnessAuxiliaryInputs,
 };
 
 #[test]
@@ -121,23 +121,35 @@ fn derives_fri_transcript_values_from_trace_and_proof_segments() {
     )
     .expect("evaluation segment should build");
     let auxiliary = ProveWitnessAuxiliaryInputs::default();
-
-    let values = build_pcs_fri_transcript_values_from_trace_segments(
+    let transcript_input = ProvePcsFriTranscriptTraceSegmentValues {
+        unit_index: 0,
+        trace_instance_index: 1,
+        execution_unit: &execution_unit,
+        trace: &trace,
+        publics: &[],
+        auxiliary_inputs: &auxiliary,
+        material_segment: &material_segment,
+        witness_segment: &witness_segment,
+        evaluation_segment: &evaluation_segment,
+        binding_segments: &[],
+    };
+    let duplicate_error = build_pcs_fri_transcript_values_from_trace_segments(
         &schedule,
-        &[ProvePcsFriTranscriptTraceSegmentValues {
+        &[transcript_input, transcript_input],
+    )
+    .expect_err("duplicate FRI transcript input should reject");
+
+    assert_eq!(
+        duplicate_error,
+        ProvePcsFriTranscriptTraceValuesError::DuplicateUnitIdentity {
             unit_index: 0,
             trace_instance_index: 1,
-            execution_unit: &execution_unit,
-            trace: &trace,
-            publics: &[],
-            auxiliary_inputs: &auxiliary,
-            material_segment: &material_segment,
-            witness_segment: &witness_segment,
-            evaluation_segment: &evaluation_segment,
-            binding_segments: &[],
-        }],
-    )
-    .expect("FRI transcript values should build from proof segments");
+        }
+    );
+
+    let values =
+        build_pcs_fri_transcript_values_from_trace_segments(&schedule, &[transcript_input])
+            .expect("FRI transcript values should build from proof segments");
 
     let transcript_value = &values[0];
     let constant_root = unit

@@ -73,6 +73,10 @@ pub enum ProvePcsFriTranscriptTraceValuesError {
         unit_index: usize,
         unit_count: usize,
     },
+    DuplicateUnitIdentity {
+        unit_index: usize,
+        trace_instance_index: u32,
+    },
     MissingTranscriptArity {
         unit_index: usize,
     },
@@ -218,6 +222,13 @@ impl fmt::Display for ProvePcsFriTranscriptTraceValuesError {
                 f,
                 "prove PCS FRI transcript unit index {unit_index} is outside unit count {unit_count}"
             ),
+            Self::DuplicateUnitIdentity {
+                unit_index,
+                trace_instance_index,
+            } => write!(
+                f,
+                "duplicate prove PCS FRI transcript unit identity: unit {unit_index}, trace instance {trace_instance_index}"
+            ),
             Self::MissingTranscriptArity { unit_index } => write!(
                 f,
                 "prove PCS FRI transcript unit {unit_index} is missing transcript arity"
@@ -344,6 +355,7 @@ impl std::error::Error for ProvePcsFriTranscriptTraceValuesError {
             Self::Transcript { source, .. } => Some(source.as_ref()),
             Self::UnitIndexOverflow { .. }
             | Self::UnitIndexOutOfRange { .. }
+            | Self::DuplicateUnitIdentity { .. }
             | Self::MissingTranscriptArity { .. }
             | Self::InvalidMaterialSegmentId { .. }
             | Self::InvalidWitnessSegmentId { .. }

@@ -9094,6 +9094,11 @@ fn fri_transcript_segment_builder_indexes_payload_units() {
         "pub(crate) fn build_pcs_fri_transcript_values_from_trace_segment_refs_with_timing",
         "pub fn build_pcs_fri_opening_segment_from_transcript_values",
     );
+    let direct_body = function_body(
+        &source,
+        "fn build_pcs_fri_transcript_values_from_trace_refs_with_fixed_cache",
+        "pub fn build_pcs_fri_transcript_values_from_trace_segments",
+    );
     let material_check = body
         .find("validate_material_segment_id(input.material_segment)")
         .expect("material segment ID check should be present");
@@ -9119,9 +9124,14 @@ fn fri_transcript_segment_builder_indexes_payload_units() {
             && evaluation_check < material_lookup
             && evaluation_check < witness_load
             && evaluation_check < evaluation_lookup
+            && direct_body.contains("let mut seen_units = BTreeSet::new()")
+            && direct_body.contains("!seen_units.insert((input.unit_index, 0))")
+            && body.contains("let mut seen_units = BTreeSet::new()")
+            && body.contains("!seen_units.insert((input.unit_index, input.trace_instance_index))")
+            && body.contains("DuplicateUnitIdentity")
             && !body.contains(".units\n            .iter()\n            .find")
             && !body.contains(".units.iter().find"),
-        "FRI transcript segment assembly should use cached unit indexes"
+        "FRI transcript segment assembly should use cached unit indexes and reject duplicate identities"
     );
 }
 
