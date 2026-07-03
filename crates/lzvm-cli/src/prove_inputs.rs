@@ -7,7 +7,6 @@ use lzvm_artifacts::eth_block_public_values::{
     validate_eth_block_public_values_with_program_image_cache,
 };
 use lzvm_artifacts::key_directory::{key_directory_catalog_digest, KeyDirectoryCatalog};
-use lzvm_artifacts::program_image::read_program_image_commitment_cache_file;
 use lzvm_artifacts::public_values::{
     encode_public_values, public_values_digest, read_public_values_file, PublicValues,
 };
@@ -29,6 +28,12 @@ use crate::prove_plan::{
     write_run_plan_summary, ParseError, ParsedRunArgs, GUEST_PC_TRACE_WITNESS_THREAD_POOLS,
 };
 use crate::trace_input_shape::validate_trace_input_shapes;
+
+mod program_image_cache_input;
+mod usage;
+
+use program_image_cache_input::read_optional_program_image_cache;
+use usage::write_usage;
 
 pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32 {
     let mut parsed = match parse_inputs_args(args) {
@@ -573,20 +578,6 @@ fn prepare_public_inputs(
     })
 }
 
-fn read_optional_program_image_cache(
-    path: Option<&Path>,
-) -> Result<Option<lzvm_artifacts::program_image::ProgramImageCommitmentCache>, String> {
-    path.map(|path| {
-        read_program_image_commitment_cache_file(path).map_err(|error| {
-            format!(
-                "read program-image cache failed: {}: {error}",
-                path.display()
-            )
-        })
-    })
-    .transpose()
-}
-
 #[derive(Debug, Clone, Copy)]
 struct TraceBytesMetadata {
     file_bytes: u64,
@@ -650,14 +641,6 @@ fn validate_trace_bundle(
     let bundle = read_trace_bundle_file(path)
         .map_err(|error| format!("trace bundle failed: {}: {error}", path.display()))?;
     Ok(Some((path.clone(), bundle, metadata.len())))
-}
-
-fn write_usage(stderr: &mut dyn Write) -> i32 {
-    let _ = writeln!(
-        stderr,
-        "usage: lzvm prove inputs [options] <setup-dir> <output-dir> <witness-library> <guest-image> [public-inputs]\n       lzvm prove inputs --trace-bytes <trace-bin> [options] <setup-dir> <output-dir> <guest-image> [public-inputs]\n       lzvm prove inputs --trace-bundle <bundle-bin> [options] <setup-dir> <output-dir> <guest-image> [public-inputs]\n       lzvm prove inputs --guest-pc-trace <instruction-limit> [options] <setup-dir> <output-dir> <guest-image> [public-inputs]\n  --eth-block-input <block-input>\n  --eth-public-input <public-input>\n  --eth-public-input-allow-trailing\n  --program-image-cache <cache-bin>\n  --trace-bytes <trace-bin>\n  --trace-bundle <bundle-bin>\n  --guest-pc-trace <instruction-limit>"
-    );
-    2
 }
 
 #[cfg(test)]

@@ -68,7 +68,10 @@ use eth_inputs::{
 };
 use gpu_preflight::{validate_large_guest_pc_gpu, validate_large_guest_pc_runtime_gpu};
 use guest_pc_trace::{record_guest_pc_trace_timing, run_guest_pc_trace_witness};
-use output_file::{write_output_file, write_proof_output};
+use output_file::{
+    write_output_file, write_proof_output, write_witness_output_summary,
+    write_witness_output_summary_with_trace,
+};
 use proof_timing::record_proof_artifact_timing;
 use timing::{write_timing_summary_with_allocator, TimingRecorder};
 use usage::write_usage;
@@ -962,48 +965,6 @@ fn witness_segment_output_path(
             commitments.unit_index(),
             commitments.trace_instance_index()
         ))
-    }
-}
-
-fn write_witness_output_summary(stdout: &mut dyn Write, commitments: &ProveWitnessCommitments) {
-    write_witness_output_summary_with_trace(stdout, commitments, false);
-}
-
-fn write_witness_output_summary_with_trace(
-    stdout: &mut dyn Write,
-    commitments: &ProveWitnessCommitments,
-    include_trace_instance: bool,
-) {
-    let _ = writeln!(stdout, "unit_index={}", commitments.unit_index());
-    if include_trace_instance {
-        let _ = writeln!(
-            stdout,
-            "trace_instance_index={}",
-            commitments.trace_instance_index()
-        );
-    }
-    let _ = writeln!(stdout, "input_bytes={}", commitments.input_byte_count());
-    let _ = writeln!(stdout, "trace_rows={}", commitments.trace_row_count());
-    let _ = writeln!(stdout, "trace_columns={}", commitments.trace_column_count());
-    let _ = writeln!(
-        stdout,
-        "stage_count={}",
-        commitments.stage_commitments().stage_count()
-    );
-    for commitment in commitments.stage_commitments().commitments() {
-        let root = commitment
-            .root()
-            .iter()
-            .map(|value| value.to_u64().to_string())
-            .collect::<Vec<_>>()
-            .join(",");
-        let _ = writeln!(stdout, "stage_{}_root={root}", commitment.stage_index());
-        let _ = writeln!(
-            stdout,
-            "stage_{}_tree_bytes={}",
-            commitment.stage_index(),
-            commitment.tree_byte_count()
-        );
     }
 }
 
