@@ -54,7 +54,7 @@ fn sample_global_info_with_options(proof_value: bool, group_value: bool) -> Glob
         },
         n_publics: 1,
         num_challenges: vec![1],
-        num_proof_values: if proof_value { vec![1] } else { Vec::new() },
+        num_proof_values: if proof_value { vec![0, 1] } else { Vec::new() },
         proof_values_map: if proof_value {
             vec![NamedStageValue {
                 name: "proof-a".to_owned(),
