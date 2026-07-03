@@ -163,13 +163,15 @@ fn rejects_zero_fixed_column_dimensions() {
 
 #[test]
 fn rejects_unsupported_fixed_column_file_versions() {
-    let mut bytes = sample_file();
-    bytes[4..8].copy_from_slice(&0_u32.to_le_bytes());
+    for version in [0_u32, 2] {
+        let mut bytes = sample_file();
+        bytes[4..8].copy_from_slice(&version.to_le_bytes());
 
-    assert!(matches!(
-        parse_fixed_columns(&bytes),
-        Err(FixedColumnError::UnsupportedVersion { found: 0, max: 1 })
-    ));
+        assert!(matches!(
+            parse_fixed_columns(&bytes),
+            Err(FixedColumnError::UnsupportedVersion { found, max: 1 }) if found == version
+        ));
+    }
 }
 
 #[test]
