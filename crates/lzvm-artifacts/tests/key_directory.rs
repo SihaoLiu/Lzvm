@@ -789,6 +789,42 @@ fn reads_key_directory_catalog_with_no_challenge_counters() {
 }
 
 #[test]
+fn hashes_challenge_free_catalogs_with_source_companions() {
+    let dir = temp_dir("catalog-no-challenges-source-companions");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("fixture root should be created");
+    let mut global = fixtures::sample_key_directory_catalog_global_info();
+    global.num_challenges.clear();
+    write_global_metadata(&dir.join("pilout.globalInfo.bin"), &global);
+    fs::write(
+        dir.join("pilout.globalConstraints.bin"),
+        global_constraint_program_file(&empty_hint_program()),
+    )
+    .expect("global constraints program should be written");
+
+    let layout = read_key_directory_layout(&dir).expect("layout should parse");
+    for unit in &layout.units {
+        write_catalog_unit_files(unit);
+    }
+    let fixed_manifest = sample_source_fixed_file_manifest("unit-a.fixed");
+    let program_archive = sample_source_program_archive(
+        "include \"shared.pil\";\ncol fixed padded = [1, 2, 3, 4, 5, 6];",
+    );
+    write_source_fixed_file_manifest_fixture(&layout.source_fixed_file_manifest, &fixed_manifest);
+    write_source_program_archive_fixture(&layout.source_program_archive, &program_archive);
+
+    let catalog = read_key_directory_catalog(&dir).expect("catalog should load");
+    let digest = key_directory_catalog_digest(&catalog).expect("digest should compute");
+    let repeat_digest = key_directory_catalog_digest(&catalog).expect("digest should recompute");
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert!(catalog.layout.global_info.num_challenges.is_empty());
+    assert_eq!(catalog.source_fixed_file_manifest, Some(fixed_manifest));
+    assert_eq!(catalog.source_program_archive, Some(program_archive));
+    assert_eq!(repeat_digest, digest);
+}
+
+#[test]
 fn validates_external_key_directory_when_requested() {
     let Some(root) = std::env::var_os("LZVM_EXTERNAL_KEY_DIR") else {
         return;
