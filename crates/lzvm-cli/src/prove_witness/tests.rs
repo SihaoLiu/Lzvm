@@ -876,6 +876,139 @@ fn rejects_duplicate_unit_index_during_parse() {
 }
 
 #[test]
+fn rejects_duplicate_witness_input_options_during_parse() {
+    for (option, first, second, expected) in [
+        (
+            "--trace-bytes",
+            "trace-a.bin",
+            "trace-b.bin",
+            "duplicate --trace-bytes option",
+        ),
+        (
+            "--trace-bundle",
+            "bundle-a.bin",
+            "bundle-b.bin",
+            "duplicate --trace-bundle option",
+        ),
+        (
+            "--guest-pc-trace",
+            "64",
+            "128",
+            "duplicate --guest-pc-trace option",
+        ),
+        (
+            "--unit-values",
+            "unit-values-a.bin",
+            "unit-values-b.bin",
+            "duplicate --unit-values option",
+        ),
+        (
+            "--unit-values-segment",
+            "unit-values-segment-a.bin",
+            "unit-values-segment-b.bin",
+            "duplicate --unit-values-segment option",
+        ),
+        (
+            "--proof-values",
+            "proof-values-a.bin",
+            "proof-values-b.bin",
+            "duplicate --proof-values option",
+        ),
+        (
+            "--proof-values-segment",
+            "proof-values-segment-a.bin",
+            "proof-values-segment-b.bin",
+            "duplicate --proof-values-segment option",
+        ),
+        (
+            "--group-values",
+            "group-values-a.bin",
+            "group-values-b.bin",
+            "duplicate --group-values option",
+        ),
+        (
+            "--group-values-segment",
+            "group-values-segment-a.bin",
+            "group-values-segment-b.bin",
+            "duplicate --group-values-segment option",
+        ),
+        (
+            "--challenge-values",
+            "challenge-values-a.bin",
+            "challenge-values-b.bin",
+            "duplicate --challenge-values option",
+        ),
+        (
+            "--challenge-values-segment",
+            "challenge-values-segment-a.bin",
+            "challenge-values-segment-b.bin",
+            "duplicate --challenge-values-segment option",
+        ),
+        (
+            "--evaluation-values",
+            "evaluation-values-a.bin",
+            "evaluation-values-b.bin",
+            "duplicate --evaluation-values option",
+        ),
+        (
+            "--evaluation-values-segment",
+            "evaluation-values-segment-a.bin",
+            "evaluation-values-segment-b.bin",
+            "duplicate --evaluation-values-segment option",
+        ),
+        (
+            "--eth-block-input",
+            "block-a.input",
+            "block-b.input",
+            "duplicate --eth-block-input option",
+        ),
+        (
+            "--eth-public-input",
+            "public-a.bin",
+            "public-b.bin",
+            "duplicate --eth-public-input option",
+        ),
+        (
+            "--program-image-cache",
+            "cache-a.bin",
+            "cache-b.bin",
+            "duplicate --program-image-cache option",
+        ),
+    ] {
+        let result = parse_witness_args(&[
+            option,
+            first,
+            option,
+            second,
+            "setup-dir",
+            "out-dir",
+            "witness.so",
+            "guest.elf",
+        ]);
+
+        assert!(
+            matches!(result, Err(ParseError::Invalid(message)) if message == expected),
+            "{option} should reject duplicate values"
+        );
+    }
+
+    let result = parse_witness_args(&[
+        "--eth-public-input-allow-trailing",
+        "--eth-public-input-allow-trailing",
+        "setup-dir",
+        "out-dir",
+        "witness.so",
+        "guest.elf",
+    ]);
+
+    assert!(matches!(
+        result,
+        Err(ParseError::Invalid(message))
+            if message == "duplicate --eth-public-input-allow-trailing option"
+    ));
+}
+
+#[test]
 fn rejects_guest_pc_trace_with_trace_bytes_during_parse() {
     let result = parse_witness_args(&[
         "--guest-pc-trace",
