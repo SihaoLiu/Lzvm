@@ -151,7 +151,12 @@ impl std::error::Error for SetupDirectoryManifestError {
 
 impl From<SectionedError> for SetupDirectoryManifestError {
     fn from(error: SectionedError) -> Self {
-        Self::Sectioned(error)
+        match error {
+            SectionedError::UnsupportedVersion { found, max } => {
+                Self::UnsupportedVersion { found, max }
+            }
+            error => Self::Sectioned(error),
+        }
     }
 }
 

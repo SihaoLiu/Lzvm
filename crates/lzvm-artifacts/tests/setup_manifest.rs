@@ -93,6 +93,16 @@ fn rejects_zero_version_setup_directory_manifests() {
 }
 
 #[test]
+fn rejects_future_setup_directory_manifest_versions() {
+    let bytes = encode_legacy_manifest(5, &[4, 3, 128, 4, 512]);
+
+    assert_eq!(
+        parse_setup_directory_manifest(&bytes).expect_err("future version manifest should reject"),
+        SetupDirectoryManifestError::UnsupportedVersion { found: 5, max: 4 }
+    );
+}
+
+#[test]
 fn parses_legacy_setup_directory_manifests_without_source_program_archive_counts() {
     let bytes = encode_legacy_manifest(2, &[4, 3, 128, 4, 512, 1, 7]);
 
