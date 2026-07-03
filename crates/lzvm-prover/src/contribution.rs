@@ -1268,7 +1268,7 @@ mod tests {
     use lzvm_artifacts::program_image_segment::PROGRAM_IMAGE_CACHE_SEGMENT_ID;
     use lzvm_artifacts::proof::ProofSegment;
 
-    use super::validate_contribution_proof_segment_ids;
+    use super::{contribution_bound_segments, validate_contribution_proof_segment_ids};
     use crate::contribution::CONTRIBUTION_SEGMENT_ID;
 
     #[test]
@@ -1318,5 +1318,54 @@ mod tests {
             error.to_string(),
             format!("unexpected contribution proof segment id {PCS_MATERIAL_MANIFEST_SEGMENT_ID}")
         );
+    }
+
+    #[test]
+    fn binds_only_pipeline_input_segments_for_contribution_challenges() {
+        let segments = vec![
+            ProofSegment {
+                id: CHALLENGE_VALUES_SEGMENT_ID,
+                data: vec![1],
+            },
+            ProofSegment {
+                id: FRAMED_GUEST_INPUT_SEGMENT_ID,
+                data: vec![2],
+            },
+            ProofSegment {
+                id: PCS_PROOF_VALUES_SEGMENT_ID,
+                data: vec![3],
+            },
+            ProofSegment {
+                id: ETH_BLOCK_INPUT_SEGMENT_ID,
+                data: vec![4],
+            },
+            ProofSegment {
+                id: CONTRIBUTION_SEGMENT_ID,
+                data: vec![5],
+            },
+            ProofSegment {
+                id: PROGRAM_IMAGE_CACHE_SEGMENT_ID,
+                data: vec![6],
+            },
+        ];
+
+        let bound = contribution_bound_segments(&segments);
+        let mut expected = vec![
+            ProofSegment {
+                id: PROGRAM_IMAGE_CACHE_SEGMENT_ID,
+                data: vec![6],
+            },
+            ProofSegment {
+                id: ETH_BLOCK_INPUT_SEGMENT_ID,
+                data: vec![4],
+            },
+            ProofSegment {
+                id: FRAMED_GUEST_INPUT_SEGMENT_ID,
+                data: vec![2],
+            },
+        ];
+        expected.sort_by_key(|segment| segment.id);
+
+        assert_eq!(bound, expected);
     }
 }
