@@ -1146,6 +1146,23 @@ AGGREGATE_MEAN_PROFILE_COLUMNS = (
     "witness_ms",
     "top_level_unattributed_ms",
     "runner_ms",
+    "trace_runner_detail_samples",
+    "trace_runner_detail_sample_pct",
+    "trace_runner_detail_avg_ns",
+    "trace_runner_prepare_instruction_sampled_ns",
+    "trace_runner_pre_boundary_sampled_ns",
+    "trace_runner_row_plan_sampled_ns",
+    "trace_runner_cache_policy_sampled_ns",
+    "trace_runner_advance_sampled_ns",
+    "trace_runner_advance_setup_sampled_ns",
+    "trace_runner_advance_execute_sampled_ns",
+    "trace_runner_advance_report_sampled_ns",
+    "trace_runner_cache_update_sampled_ns",
+    "trace_runner_row_count_sampled_ns",
+    "trace_runner_post_boundary_sampled_ns",
+    "trace_runner_counter_update_sampled_ns",
+    "trace_runner_detail_hotspot_pct",
+    "trace_runner_detail_residual_pct",
     "lowerer_ms",
     "trace_lower_ms",
     "stream_elapsed_ms",
@@ -1176,7 +1193,11 @@ AGGREGATE_HEADER = (
     "dominant_segment_commit_memory_pressure_hint,"
     "segment_commit_memory_pressure_consensus,"
     "dominant_segment_commit_memory_diagnostic_hint,"
-    "segment_commit_memory_diagnostic_consensus"
+    "segment_commit_memory_diagnostic_consensus,"
+    "dominant_trace_runner_detail_hotspot,"
+    "trace_runner_detail_hotspot_consensus,"
+    "dominant_trace_runner_detail_action_hint,"
+    "trace_runner_detail_action_consensus"
 ) + AGGREGATE_MEAN_HEADER_SUFFIX
 AGGREGATE_BY_INPUT_BYTES_HEADER = (
     "aggregate_by_input_bytes,input_bytes,total_count,valid_total_count,total_min_ms,"
@@ -1187,7 +1208,11 @@ AGGREGATE_BY_INPUT_BYTES_HEADER = (
     "dominant_segment_commit_memory_pressure_hint,"
     "segment_commit_memory_pressure_consensus,"
     "dominant_segment_commit_memory_diagnostic_hint,"
-    "segment_commit_memory_diagnostic_consensus"
+    "segment_commit_memory_diagnostic_consensus,"
+    "dominant_trace_runner_detail_hotspot,"
+    "trace_runner_detail_hotspot_consensus,"
+    "dominant_trace_runner_detail_action_hint,"
+    "trace_runner_detail_action_consensus"
 ) + AGGREGATE_MEAN_HEADER_SUFFIX
 CLOSE_SAMPLE_SPREAD_PCT = 5.0
 OUTLIER_RATIO_THRESHOLD = 1.5
@@ -6374,7 +6399,7 @@ def summarize_total_samples(
     if not totals:
         return (
             f"aggregate,{total_count},0,0,0.000,0.000,0,0.000,no,no,"
-            "none,no,none,no,none,no,none,no,none,no"
+            "none,no,none,no,none,no,none,no,none,no,none,no,none,no"
             f"{aggregate_mean_suffix([])}"
         )
 
@@ -6431,6 +6456,20 @@ def summarize_total_samples(
     dominant_segment_memory_diagnostic, segment_memory_diagnostic_consensus = (
         dominant_hint_and_consensus(segment_memory_diagnostic_hints)
     )
+    runner_detail_hotspots = [
+        profile_row.get("trace_runner_detail_hotspot", "none") or "none"
+        for _, _, profile_row in valid_inputs
+    ]
+    dominant_runner_detail_hotspot, runner_detail_hotspot_consensus = (
+        dominant_hint_and_consensus(runner_detail_hotspots)
+    )
+    runner_detail_action_hints = [
+        profile_row.get("trace_runner_detail_action_hint", "none") or "none"
+        for _, _, profile_row in valid_inputs
+    ]
+    dominant_runner_detail_action, runner_detail_action_consensus = (
+        dominant_hint_and_consensus(runner_detail_action_hints)
+    )
     mean_suffix = aggregate_mean_suffix([profile_row for _, _, profile_row in valid_inputs])
     return (
         f"aggregate,{total_count},{valid_total_count},{total_min_ms},"
@@ -6440,7 +6479,9 @@ def summarize_total_samples(
         f"{dominant_trace_structure_hint},{trace_structure_consensus},"
         f"{dominant_transfer_hint},{transfer_consensus},"
         f"{dominant_segment_memory_hint},{segment_memory_consensus},"
-        f"{dominant_segment_memory_diagnostic},{segment_memory_diagnostic_consensus}"
+        f"{dominant_segment_memory_diagnostic},{segment_memory_diagnostic_consensus},"
+        f"{dominant_runner_detail_hotspot},{runner_detail_hotspot_consensus},"
+        f"{dominant_runner_detail_action},{runner_detail_action_consensus}"
         f"{mean_suffix}"
     )
 

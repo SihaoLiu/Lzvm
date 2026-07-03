@@ -9231,6 +9231,110 @@ fn prove_timing_root_summary_reports_runner_detail_hotspot() {
 }
 
 #[test]
+fn prove_timing_root_summary_aggregates_runner_detail_hotspot() {
+    let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let script_path = crate_root.join("../../scripts/prove-timing-root-summary.py");
+    let dir = crate_root.join("../../temp/prove-timing-runner-detail-aggregate");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("timing summary fixture directory should be created");
+
+    let sample = |total_ms: u64| {
+        [
+            format!("timing_total_ms={total_ms}"),
+            "timing_guest_stage_tree_commit_root_count=1".to_owned(),
+            "timing_guest_stage_tree_commit_root_materialization_groups=1".to_owned(),
+            "timing_guest_stage_tree_commit_root_materialization_max_group_size=1".to_owned(),
+            "timing_guest_trace_runner_ms=8000".to_owned(),
+            "timing_guest_trace_reports=1000".to_owned(),
+            "timing_guest_trace_runner_detail_samples=10".to_owned(),
+            "timing_guest_trace_runner_detail_sampled_ns=1000000".to_owned(),
+            "timing_guest_trace_runner_prepare_instruction_sampled_ns=100000".to_owned(),
+            "timing_guest_trace_runner_pre_boundary_sampled_ns=40000".to_owned(),
+            "timing_guest_trace_runner_row_plan_sampled_ns=100000".to_owned(),
+            "timing_guest_trace_runner_cache_policy_sampled_ns=30000".to_owned(),
+            "timing_guest_trace_runner_advance_sampled_ns=500000".to_owned(),
+            "timing_guest_trace_runner_advance_setup_sampled_ns=70000".to_owned(),
+            "timing_guest_trace_runner_advance_execute_sampled_ns=350000".to_owned(),
+            "timing_guest_trace_runner_advance_report_sampled_ns=40000".to_owned(),
+            "timing_guest_trace_runner_cache_update_sampled_ns=50000".to_owned(),
+            "timing_guest_trace_runner_row_count_sampled_ns=50000".to_owned(),
+            "timing_guest_trace_runner_post_boundary_sampled_ns=60000".to_owned(),
+            "timing_guest_trace_runner_counter_update_sampled_ns=20000".to_owned(),
+        ]
+        .join("\n")
+    };
+    let paths = [10_000_u64, 10_050, 10_100]
+        .into_iter()
+        .enumerate()
+        .map(|(index, total_ms)| {
+            let path = dir.join(format!("sample-{index}.log"));
+            std::fs::write(&path, sample(total_ms)).expect("sample timing log should be written");
+            path
+        })
+        .collect::<Vec<_>>();
+
+    let output = Command::new("python3")
+        .arg(&script_path)
+        .args(&paths)
+        .output()
+        .expect("prove timing root summary should run");
+    let _ = std::fs::remove_dir_all(&dir);
+
+    assert!(
+        output.status.success(),
+        "prove timing root summary should pass: stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    let lines = stdout.lines().collect::<Vec<_>>();
+    assert!(
+        lines.len() >= 6,
+        "multi-sample summary should include data and aggregate rows: stdout={stdout}"
+    );
+    let aggregate_headers = parse_csv_line(lines[4]);
+    let aggregate_fields = parse_csv_line(lines[5]);
+    let aggregate_value = |name: &str| {
+        let index = aggregate_headers
+            .iter()
+            .position(|header| header == name)
+            .unwrap_or_else(|| panic!("aggregate summary should expose {name}: stdout={stdout}"));
+        aggregate_fields
+            .get(index)
+            .map(String::as_str)
+            .unwrap_or_else(|| panic!("aggregate row should contain {name}: stdout={stdout}"))
+    };
+
+    assert_eq!(
+        aggregate_value("dominant_trace_runner_detail_hotspot"),
+        "advance"
+    );
+    assert_eq!(
+        aggregate_value("trace_runner_detail_hotspot_consensus"),
+        "yes"
+    );
+    assert_eq!(
+        aggregate_value("dominant_trace_runner_detail_action_hint"),
+        "profile_guest_machine_advance"
+    );
+    assert_eq!(
+        aggregate_value("trace_runner_detail_action_consensus"),
+        "yes"
+    );
+    assert_eq!(
+        aggregate_value("trace_runner_detail_samples_mean"),
+        "10.000"
+    );
+    assert_eq!(
+        aggregate_value("trace_runner_advance_execute_sampled_ns_mean"),
+        "350000.000"
+    );
+    assert_eq!(
+        aggregate_value("trace_runner_detail_hotspot_pct_mean"),
+        "50.000"
+    );
+}
+
+#[test]
 fn prove_timing_root_summary_reports_constant_material_overlap() {
     let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
     let script_path = crate_root.join("../../scripts/prove-timing-root-summary.py");
