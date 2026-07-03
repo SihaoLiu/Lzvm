@@ -705,6 +705,7 @@ fn validate_constant_columns(
             .ok_or(SetupInfoError::InvalidConstantColumn { index })?;
         if column.stage != 0
             || column.dimension == 0
+            || column.lengths.iter().any(|length| *length == 0)
             || end > seen.len()
             || seen[id..end].iter().any(|occupied| *occupied)
             || column.stage_id != column.pols_map_id
@@ -730,7 +731,11 @@ fn validate_commitment_columns(info: &UnitSetupInfo) -> Result<(), SetupInfoErro
         .checked_add(1)
         .ok_or(SetupInfoError::LengthOverflow)?;
     for (index, column) in info.commitment_columns.iter().enumerate() {
-        if column.stage == 0 || column.stage > max_stage || column.dimension == 0 {
+        if column.stage == 0
+            || column.stage > max_stage
+            || column.dimension == 0
+            || column.lengths.iter().any(|length| *length == 0)
+        {
             return Err(SetupInfoError::InvalidCommitmentColumn { index });
         }
         let name = format!("cm{}", column.stage);

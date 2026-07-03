@@ -377,6 +377,28 @@ fn parses_unit_setup_info_binary() {
 }
 
 #[test]
+fn rejects_zero_constant_column_lengths() {
+    let mut info = fixtures::sample_setup_info_fixture();
+    info.constant_columns[0].lengths = vec![0];
+
+    assert_eq!(
+        encode_unit_setup_info(&info),
+        Err(SetupInfoError::InvalidConstantColumn { index: 0 })
+    );
+}
+
+#[test]
+fn rejects_zero_commitment_column_lengths() {
+    let mut info = fixtures::sample_setup_info_fixture();
+    info.commitment_columns[0].lengths = vec![0];
+
+    assert_eq!(
+        encode_unit_setup_info(&info),
+        Err(SetupInfoError::InvalidCommitmentColumn { index: 0 })
+    );
+}
+
+#[test]
 fn rejects_zero_version_unit_setup_info_binary() {
     let mut bytes = sample_setup_info_binary();
     bytes[4..8].copy_from_slice(&0_u32.to_le_bytes());
