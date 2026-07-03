@@ -212,35 +212,56 @@ fn rejects_eth_public_input_allow_trailing_without_eth_public_input_for_verify_p
 }
 
 #[test]
-fn rejects_missing_eth_public_input_value_for_verify_preflight_args() {
-    let result = parse_verify_preflight_args(&[
-        "--eth-public-input",
-        "--program-image-cache",
-        "cache.bin",
-        "proof.bin",
-        "public-values.bin",
-    ]);
+fn rejects_missing_binding_option_values_for_verify_preflight_args() {
+    for (args, expected) in [
+        (
+            &[
+                "--eth-block-input",
+                "--program-image-cache",
+                "cache.bin",
+                "proof.bin",
+                "public-values.bin",
+            ][..],
+            "missing --eth-block-input value",
+        ),
+        (
+            &[
+                "--eth-public-input",
+                "--program-image-cache",
+                "cache.bin",
+                "proof.bin",
+                "public-values.bin",
+            ],
+            "missing --eth-public-input value",
+        ),
+        (
+            &[
+                "--program-image-cache",
+                "--eth-public-input",
+                "public.bin",
+                "proof.bin",
+                "public-values.bin",
+            ],
+            "missing --program-image-cache value",
+        ),
+        (
+            &[
+                "--input-data",
+                "--program-image-cache",
+                "cache.bin",
+                "proof.bin",
+                "public-values.bin",
+            ],
+            "missing --input-data value",
+        ),
+    ] {
+        let result = parse_verify_preflight_args(args);
 
-    assert!(matches!(
-        result,
-        Err(SetupValidationArgError::Invalid(message)) if message == "missing --eth-public-input value"
-    ));
-}
-
-#[test]
-fn rejects_missing_input_data_value_for_verify_preflight_args() {
-    let result = parse_verify_preflight_args(&[
-        "--input-data",
-        "--program-image-cache",
-        "cache.bin",
-        "proof.bin",
-        "public-values.bin",
-    ]);
-
-    assert!(matches!(
-        result,
-        Err(SetupValidationArgError::Invalid(message)) if message == "missing --input-data value"
-    ));
+        assert!(matches!(
+            result,
+            Err(SetupValidationArgError::Invalid(message)) if message == expected
+        ));
+    }
 }
 
 #[test]
