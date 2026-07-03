@@ -532,6 +532,11 @@ pub enum ExpressionInfoError {
         temporary_id: u32,
         temporary_count: u32,
     },
+    TemporaryReadBeforeWrite {
+        temporary_id: u32,
+        dimension: u32,
+        operation_index: usize,
+    },
     ZeroDestinationDimension {
         destination_id: u32,
     },
@@ -598,6 +603,14 @@ impl fmt::Display for ExpressionInfoError {
             } => write!(
                 f,
                 "temporary reference {temporary_id} is out of bounds for count {temporary_count}"
+            ),
+            Self::TemporaryReadBeforeWrite {
+                temporary_id,
+                dimension,
+                operation_index,
+            } => write!(
+                f,
+                "temporary reference {temporary_id} with dimension {dimension} is read before write at operation {operation_index}"
             ),
             Self::ZeroDestinationDimension { destination_id } => write!(
                 f,
@@ -811,10 +824,23 @@ fn validate_operations(
     operations: &[CodeOperation],
     temporary_count: u32,
 ) -> Result<(), ExpressionInfoError> {
-    for operation in operations {
+    let mut defined = BTreeSet::new();
+    for (operation_index, operation) in operations.iter().enumerate() {
         validate_destination(&operation.destination, temporary_count)?;
         for (source_index, source) in operation.sources.iter().enumerate() {
             validate_operand(source, temporary_count, source_index)?;
+            if let CodeOperand::Temporary { id, dimension } = source {
+                if !defined.contains(&(*id, *dimension)) {
+                    return Err(ExpressionInfoError::TemporaryReadBeforeWrite {
+                        temporary_id: *id,
+                        dimension: *dimension,
+                        operation_index,
+                    });
+                }
+            }
+        }
+        if let CodeDestination::Temporary { id, dimension } = &operation.destination {
+            defined.insert((*id, *dimension));
         }
     }
     Ok(())

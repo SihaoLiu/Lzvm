@@ -1,6 +1,7 @@
 use lzvm_artifacts::expression_info::{
     encode_expression_info, parse_expression_info, read_expression_info_binary_file,
-    read_expression_info_file, CodeDestination, CodeOperand, ExpressionInfoError, HintPayload,
+    read_expression_info_file, CodeDestination, CodeOperand, CodeOperation, ExpressionInfoError,
+    HintPayload, OperationKind,
 };
 use lzvm_artifacts::sectioned::{encode_sectioned_file, SectionedFile, SectionedSection};
 use std::fs;
@@ -119,6 +120,41 @@ fn minimal_operation_with_number_dimension(dimension: u32) -> Vec<u8> {
     section.push(2);
     push_u64(&mut section, 1);
     push_u32(&mut section, dimension);
+    push_u32(&mut section, 0);
+    section
+}
+
+fn temporary_read_before_write_section() -> Vec<u8> {
+    let mut section = empty_hint_sections();
+    push_u32(&mut section, 1);
+    push_u32(&mut section, 0);
+    push_u32(&mut section, 0);
+    push_string(&mut section, "");
+    push_u32(&mut section, 2);
+    section.push(0);
+    push_u32(&mut section, 2);
+
+    section.push(4);
+    section.push(1);
+    push_u32(&mut section, 0);
+    push_u32(&mut section, 1);
+    push_u32(&mut section, 1);
+    section.push(2);
+    push_u64(&mut section, 1);
+    push_u32(&mut section, 1);
+
+    section.push(1);
+    section.push(1);
+    push_u32(&mut section, 0);
+    push_u32(&mut section, 1);
+    push_u32(&mut section, 2);
+    section.push(1);
+    push_u32(&mut section, 0);
+    push_u32(&mut section, 1);
+    section.push(1);
+    push_u32(&mut section, 1);
+    push_u32(&mut section, 1);
+
     push_u32(&mut section, 0);
     section
 }
@@ -355,6 +391,47 @@ fn rejects_zero_code_operand_dimensions_when_parsing() {
     assert!(matches!(
         parse_expression_info(&bytes),
         Err(ExpressionInfoError::ZeroOperandDimension { source_index: 0 })
+    ));
+}
+
+#[test]
+fn rejects_temporary_sources_before_definition_when_encoding() {
+    let mut info = fixtures::sample_expression_info_fixture();
+    info.expressions[0].temporary_count = 2;
+    info.expressions[0].operations = vec![
+        CodeOperation {
+            op: OperationKind::Copy,
+            destination: CodeDestination::temporary(0, 1),
+            sources: vec![CodeOperand::number(1, 1)],
+        },
+        CodeOperation {
+            op: OperationKind::Add,
+            destination: CodeDestination::temporary(0, 1),
+            sources: vec![CodeOperand::temporary(0, 1), CodeOperand::temporary(1, 1)],
+        },
+    ];
+
+    assert!(matches!(
+        encode_expression_info(&info),
+        Err(ExpressionInfoError::TemporaryReadBeforeWrite {
+            temporary_id: 1,
+            dimension: 1,
+            operation_index: 1
+        })
+    ));
+}
+
+#[test]
+fn rejects_temporary_sources_before_definition_when_parsing() {
+    let bytes = expression_info_file(temporary_read_before_write_section());
+
+    assert!(matches!(
+        parse_expression_info(&bytes),
+        Err(ExpressionInfoError::TemporaryReadBeforeWrite {
+            temporary_id: 1,
+            dimension: 1,
+            operation_index: 1
+        })
     ));
 }
 
