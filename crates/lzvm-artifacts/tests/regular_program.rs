@@ -437,7 +437,18 @@ fn rejects_zero_length_unit_value_dimensions_when_lowering_sources() {
         }],
     };
     let mut setup = setup_info_with_values();
-    setup.unit_value_map[0].lengths = vec![0];
+    setup.unit_value_map = vec![
+        StageValue {
+            name: "unit.zero".to_owned(),
+            stage: 1,
+            lengths: vec![0],
+        },
+        StageValue {
+            name: "unit.actual".to_owned(),
+            stage: 1,
+            lengths: Vec::new(),
+        },
+    ];
 
     assert_eq!(
         regular_program_from_expression_info(&info, &setup),

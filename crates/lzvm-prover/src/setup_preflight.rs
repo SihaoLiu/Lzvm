@@ -1181,10 +1181,15 @@ mod tests {
         encode_challenge_values_segment, ChallengeValuesSegment, ChallengeValuesSegmentError,
         CHALLENGE_VALUES_SEGMENT_ID,
     };
+    use lzvm_artifacts::global_info::{CurveKind, GlobalInfo, PublicValue};
     use lzvm_artifacts::proof::{ProofArtifact, ProofSegment};
+    use lzvm_artifacts::public_values::{PublicValueEntry, PublicValues};
     use lzvm_field::{FieldError, MODULUS};
 
-    use super::{validate_optional_challenge_values_segment, SetupPreflightError};
+    use super::{
+        validate_optional_challenge_values_segment,
+        validate_public_values_metadata_with_field_count, SetupPreflightError,
+    };
 
     const FIRST_CHALLENGE_VALUE_OFFSET: usize = 12;
 
@@ -1204,6 +1209,54 @@ mod tests {
 
         validate_optional_challenge_values_segment(&proof)
             .expect("challenge values segment should validate");
+    }
+
+    #[test]
+    fn public_values_metadata_rejects_zero_dimensions_before_field_count_accepts() {
+        let global_info = GlobalInfo {
+            name: "global".to_owned(),
+            air_groups: Vec::new(),
+            airs: Vec::new(),
+            curve: CurveKind::None,
+            lattice_size: None,
+            aggregation_types: Vec::new(),
+            n_publics: 1,
+            num_challenges: Vec::new(),
+            num_proof_values: Vec::new(),
+            proof_values_map: Vec::new(),
+            publics_map: vec![
+                PublicValue {
+                    name: "scalar".to_owned(),
+                    stage: 1,
+                    lengths: Vec::new(),
+                },
+                PublicValue {
+                    name: "zero".to_owned(),
+                    stage: 1,
+                    lengths: vec![0],
+                },
+            ],
+            transcript_arity: 4,
+        };
+        let public_values = PublicValues {
+            schema_version: 1,
+            setup_hash: [0; 32],
+            values: vec![
+                PublicValueEntry {
+                    name: "scalar".to_owned(),
+                    elements: vec![7],
+                },
+                PublicValueEntry {
+                    name: "zero".to_owned(),
+                    elements: Vec::new(),
+                },
+            ],
+        };
+
+        assert_eq!(
+            validate_public_values_metadata_with_field_count(&global_info, &public_values, 1),
+            Err(SetupPreflightError::PublicValueCountOverflow)
+        );
     }
 
     #[test]
