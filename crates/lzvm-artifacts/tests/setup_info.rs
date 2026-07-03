@@ -75,16 +75,20 @@ fn push_optional_bool(out: &mut Vec<u8>, value: Option<bool>) {
     }
 }
 
-fn minimal_header_prefix() -> Vec<u8> {
+fn minimal_header_prefix_with_constants(n_constants: u32) -> Vec<u8> {
     let mut section = Vec::new();
     push_u32(&mut section, 2);
-    push_u32(&mut section, 0);
+    push_u32(&mut section, n_constants);
     push_optional_u32(&mut section, None);
     push_optional_u32(&mut section, None);
     push_u32(&mut section, 7);
     push_u32(&mut section, 0);
     push_u32(&mut section, 0);
     section
+}
+
+fn minimal_header_prefix() -> Vec<u8> {
+    minimal_header_prefix_with_constants(0)
 }
 
 fn push_minimal_section_widths(section: &mut Vec<u8>) {
@@ -388,6 +392,45 @@ fn rejects_zero_constant_column_lengths() {
     assert_eq!(
         encode_unit_setup_info(&info),
         Err(SetupInfoError::InvalidConstantColumn { index: 0 })
+    );
+}
+
+#[test]
+fn rejects_missing_constant_columns() {
+    let mut info = fixtures::sample_setup_info_fixture();
+    info.constant_columns.clear();
+
+    assert_eq!(
+        encode_unit_setup_info(&info),
+        Err(SetupInfoError::ConstantColumnCountMismatch {
+            expected: 5,
+            found: 0,
+        })
+    );
+}
+
+#[test]
+fn rejects_sparse_constant_columns_without_width_sized_allocation() {
+    let mut section = minimal_header_prefix_with_constants(u32::MAX);
+    push_u32(&mut section, 0);
+    push_minimal_section_widths(&mut section);
+    push_u32(&mut section, 1);
+    push_string(&mut section, "main.a");
+    push_u32(&mut section, 0);
+    push_u32(&mut section, 1);
+    push_u32(&mut section, 0);
+    push_u32(&mut section, 0);
+    push_u32(&mut section, 0);
+    push_u32(&mut section, 0);
+    push_minimal_stark(&mut section);
+    let bytes = setup_info_file(section, 3);
+
+    assert_eq!(
+        parse_unit_setup_info(&bytes),
+        Err(SetupInfoError::ConstantColumnCountMismatch {
+            expected: u32::MAX,
+            found: 1,
+        })
     );
 }
 

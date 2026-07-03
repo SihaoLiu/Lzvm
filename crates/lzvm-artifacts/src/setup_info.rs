@@ -708,33 +708,44 @@ fn validate_constant_columns(
     columns: &[ConstantColumn],
 ) -> Result<(), SetupInfoError> {
     if columns.is_empty() {
-        return Ok(());
+        if n_constants == 0 {
+            return Ok(());
+        }
+        return Err(SetupInfoError::ConstantColumnCountMismatch {
+            expected: n_constants,
+            found: 0,
+        });
     }
     let expected = n_constants;
-    let constant_width = u32_to_usize(n_constants)?;
-    let mut seen = vec![false; constant_width];
+    let mut ranges = Vec::<(u32, u32)>::new();
+    let mut occupied = 0_u32;
     for (index, column) in columns.iter().enumerate() {
-        let id = u32_to_usize(column.pols_map_id)?;
-        let dimension = u32_to_usize(column.dimension)?;
-        let end = id
-            .checked_add(dimension)
-            .ok_or(SetupInfoError::InvalidConstantColumn { index })?;
+        let Some(end) = column.pols_map_id.checked_add(column.dimension) else {
+            return Err(SetupInfoError::InvalidConstantColumn { index });
+        };
         if column.stage != 0
             || column.dimension == 0
             || column.lengths.iter().any(|length| *length == 0)
-            || end > seen.len()
-            || seen[id..end].iter().any(|occupied| *occupied)
+            || end > n_constants
             || column.stage_id != column.pols_map_id
         {
             return Err(SetupInfoError::InvalidConstantColumn { index });
         }
-        seen[id..end].fill(true);
+        if ranges
+            .iter()
+            .any(|(start, previous_end)| column.pols_map_id < *previous_end && *start < end)
+        {
+            return Err(SetupInfoError::InvalidConstantColumn { index });
+        }
+        ranges.push((column.pols_map_id, end));
+        occupied = occupied
+            .checked_add(column.dimension)
+            .ok_or(SetupInfoError::LengthOverflow)?;
     }
-    let occupied = seen.iter().filter(|occupied| **occupied).count();
-    if occupied != constant_width {
+    if occupied != n_constants {
         return Err(SetupInfoError::ConstantColumnCountMismatch {
             expected,
-            found: occupied,
+            found: u32_to_usize(occupied)?,
         });
     }
 
