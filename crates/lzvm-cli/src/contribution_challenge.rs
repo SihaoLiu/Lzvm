@@ -342,3 +342,28 @@ pub(crate) fn write_verify_usage(stderr: &mut dyn Write) -> i32 {
     );
     2
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rejects_missing_proof_for_write_contribution_challenges_args() {
+        let result = parse_write_args(&["setup", "public-values.bin", "challenge-values.bin"]);
+
+        assert!(matches!(
+            result,
+            Err(verify_commands::SetupValidationArgError::Usage)
+        ));
+    }
+
+    #[test]
+    fn rejects_missing_proof_for_verify_contribution_challenge_args() {
+        let result = parse_verify_args(&["setup", "public-values.bin", "challenge-values.bin"]);
+
+        assert!(matches!(
+            result,
+            Err(verify_commands::SetupValidationArgError::Usage)
+        ));
+    }
+}
