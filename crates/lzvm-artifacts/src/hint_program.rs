@@ -309,7 +309,8 @@ fn hint_field_from_expression_info(
     let values = field
         .values
         .iter()
-        .map(|value| hint_value_from_expression_info(value, kind))
+        .enumerate()
+        .map(|(value_index, value)| hint_value_from_expression_info(value, kind, value_index))
         .collect::<Result<Vec<_>, _>>()?;
     Ok(HintField {
         name: field.name.clone(),
@@ -320,9 +321,10 @@ fn hint_field_from_expression_info(
 fn hint_value_from_expression_info(
     value: &HintValueInfo,
     kind: HintSectionKind,
+    value_index: usize,
 ) -> Result<HintValue, HintProgramError> {
     Ok(HintValue {
-        operand: hint_operand_from_payload(&value.payload, kind)?,
+        operand: hint_operand_from_payload(&value.payload, kind, value_index)?,
         positions: value.positions.clone(),
     })
 }
@@ -330,18 +332,20 @@ fn hint_value_from_expression_info(
 fn hint_operand_from_payload(
     payload: &HintPayload,
     kind: HintSectionKind,
+    value_index: usize,
 ) -> Result<HintOperand, HintProgramError> {
     match payload {
         HintPayload::Number { value } => Ok(HintOperand::Number(*value)),
         HintPayload::String { value } => Ok(HintOperand::String(value.clone())),
-        HintPayload::Temporary { id, dimension } => Ok(HintOperand::Temporary {
-            id: *id,
-            dimension: if kind == HintSectionKind::Regular {
+        HintPayload::Temporary { id, dimension } => {
+            let dimension = if kind == HintSectionKind::Regular {
                 *dimension
             } else {
                 None
-            },
-        }),
+            };
+            validate_temporary_dimension(value_index, dimension)?;
+            Ok(HintOperand::Temporary { id: *id, dimension })
+        }
         HintPayload::Commitment {
             id,
             row_offset_index,

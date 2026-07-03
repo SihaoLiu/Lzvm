@@ -544,6 +544,25 @@ fn builds_global_hint_program_from_expression_info_payloads() {
 }
 
 #[test]
+fn rejects_zero_regular_expression_hint_temporary_dimensions() {
+    let info = expression_info_with_hint_payloads(vec![
+        HintValueInfo {
+            positions: vec![0],
+            payload: HintPayload::number(42),
+        },
+        HintValueInfo {
+            positions: vec![1],
+            payload: HintPayload::temporary(11, Some(0)),
+        },
+    ]);
+
+    assert!(matches!(
+        regular_hint_program_from_expression_info(&info),
+        Err(HintProgramError::ZeroTemporaryDimension { value_index: 1 })
+    ));
+}
+
+#[test]
 fn rejects_regular_expression_hint_payloads_without_row_offset_indexes() {
     let info = expression_info_with_hint_payloads(vec![HintValueInfo {
         positions: vec![0],
