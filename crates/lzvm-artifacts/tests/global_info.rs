@@ -162,6 +162,37 @@ fn rejects_invalid_transcript_arities_when_encoding() {
 }
 
 #[test]
+fn rejects_out_of_u32_transcript_arities_when_encoding_and_parsing() {
+    let invalid_arity = u64::from(u32::MAX) + 1;
+    let mut info = fixtures::sample_global_info_fixture();
+    info.transcript_arity = invalid_arity;
+
+    assert_eq!(
+        encode_global_info(&info),
+        Err(GlobalInfoError::InvalidTranscriptArity)
+    );
+
+    let mut section = Vec::new();
+    push_string(&mut section, "");
+    section.push(0);
+    section.push(0);
+    push_u64(&mut section, invalid_arity);
+    push_u64(&mut section, 0);
+    push_valid_air_layout(&mut section);
+    push_empty_aggregation(&mut section);
+    push_u64_vec(&mut section, &[]);
+    push_u64_vec(&mut section, &[]);
+    push_u32(&mut section, 0);
+    push_u32(&mut section, 0);
+    let bytes = global_info_file(section);
+
+    assert_eq!(
+        parse_global_info(&bytes),
+        Err(GlobalInfoError::InvalidTranscriptArity)
+    );
+}
+
+#[test]
 fn rejects_duplicate_proof_value_names_when_encoding() {
     let mut info = fixtures::sample_global_info_fixture();
     info.proof_values_map[1].name = info.proof_values_map[0].name.clone();

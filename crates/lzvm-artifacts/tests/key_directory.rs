@@ -762,12 +762,40 @@ fn rejects_mutated_key_directory_layout_with_stale_global_paths() {
 }
 
 #[test]
+fn rejects_mutated_key_directory_layout_with_stale_global_constraints_path() {
+    let dir = temp_dir("mutated-global-constraints-path");
+    let _ = fs::remove_dir_all(&dir);
+    write_catalog_global_files(&dir);
+    let mut layout = read_key_directory_layout(&dir).expect("layout should parse");
+    layout.global_paths.constraints_program = dir.join("stale.globalConstraints.bin");
+
+    let error = validate_key_directory_layout(&layout).expect_err("layout should be rejected");
+
+    assert!(matches!(error, KeyDirectoryError::UnitPathMismatch));
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+}
+
+#[test]
 fn rejects_mutated_key_directory_layout_with_stale_source_paths() {
     let dir = temp_dir("mutated-source-paths");
     let _ = fs::remove_dir_all(&dir);
     write_catalog_global_files(&dir);
     let mut layout = read_key_directory_layout(&dir).expect("layout should parse");
     layout.source_program_archive = dir.join("stale-source-archive");
+
+    let error = validate_key_directory_layout(&layout).expect_err("layout should be rejected");
+
+    assert!(matches!(error, KeyDirectoryError::UnitPathMismatch));
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+}
+
+#[test]
+fn rejects_mutated_key_directory_layout_with_stale_source_fixed_file_manifest_path() {
+    let dir = temp_dir("mutated-source-fixed-file-manifest-path");
+    let _ = fs::remove_dir_all(&dir);
+    write_catalog_global_files(&dir);
+    let mut layout = read_key_directory_layout(&dir).expect("layout should parse");
+    layout.source_fixed_file_manifest = dir.join("stale-source-fixed-file-manifest");
 
     let error = validate_key_directory_layout(&layout).expect_err("layout should be rejected");
 

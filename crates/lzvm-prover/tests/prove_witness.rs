@@ -843,6 +843,35 @@ fn declare_sample_public_value_metadata(catalog: &mut KeyDirectoryCatalog) {
     }];
 }
 
+fn declare_rom_root_public_value_metadata(catalog: &mut KeyDirectoryCatalog) {
+    catalog.layout.global_info.n_publics = 4;
+    catalog.layout.global_info.publics_map = vec![PublicValue {
+        name: "rom_root".to_owned(),
+        stage: 1,
+        lengths: vec![4],
+    }];
+}
+
+fn declare_public_value_metadata_from_entries(
+    catalog: &mut KeyDirectoryCatalog,
+    public_values: &PublicValues,
+) {
+    catalog.layout.global_info.n_publics = public_values
+        .values
+        .iter()
+        .map(|entry| u64::try_from(entry.elements.len()).expect("fixture length should fit"))
+        .sum();
+    catalog.layout.global_info.publics_map = public_values
+        .values
+        .iter()
+        .map(|entry| PublicValue {
+            name: entry.name.clone(),
+            stage: 1,
+            lengths: vec![u64::try_from(entry.elements.len()).expect("fixture length should fit")],
+        })
+        .collect();
+}
+
 fn write_sample_fixed_columns(path: &Path, setup: &UnitSetupInfo, unit_name: &str) {
     let fixed_columns = sample_fixed_columns(unit_name);
     write_raw_fixed_columns_file(path, &fixed_columns, setup)
@@ -4393,6 +4422,13 @@ fn rejects_mismatched_eth_block_public_values_in_prover_unit_request() {
     write_constant_tree_bytes_for_unit(&mut unit, vec![0_u8; constant_tree_bytes]);
     let mut catalog = sample_catalog(unit);
     catalog.layout.global_info.lattice_size = Some(32);
+    let public_block_input = build_eth_block_input(&sample_block_rlp_with_parent([0x11; 32]))
+        .expect("public block input should build");
+    let proof_block_input = build_eth_block_input(&sample_block_rlp_with_parent([0x22; 32]))
+        .expect("proof block input should build");
+    let public_values_template =
+        public_values_from_eth_block_input([0_u8; 32], &public_block_input);
+    declare_public_value_metadata_from_entries(&mut catalog, &public_values_template);
     let plan = derive_prove_execution_plan(
         &catalog,
         sample_request(dir.join("out"), Some(input_data)),
@@ -4406,10 +4442,6 @@ fn rejects_mismatched_eth_block_public_values_in_prover_unit_request() {
     let output =
         run_prove_witness_commitments_with_trace(&plan, 0, ProveWitnessAuxiliaryInputs::default())
             .expect("witness commitments should run");
-    let public_block_input = build_eth_block_input(&sample_block_rlp_with_parent([0x11; 32]))
-        .expect("public block input should build");
-    let proof_block_input = build_eth_block_input(&sample_block_rlp_with_parent([0x22; 32]))
-        .expect("proof block input should build");
     let public_values =
         public_values_from_eth_block_input(plan.run_plan.schedule.setup_hash, &public_block_input);
 
@@ -4436,6 +4468,73 @@ fn rejects_mismatched_eth_block_public_values_in_prover_unit_request() {
     assert_eq!(
         error,
         "ETH block public value mismatch: eth_block_hash_u32_be"
+    );
+}
+
+#[test]
+fn rejects_public_values_metadata_mismatch_in_prover_unit_request() {
+    let dir = temp_dir("proof-artifact-unit-public-metadata-mismatch");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let witness_library = build_shared_library(&dir, "witness", witness_source());
+    let guest_image = dir.join("guest.elf");
+    let input_data = dir.join("input.bin");
+    fs::write(&guest_image, sample_guest_image()).expect("guest image should be written");
+    fs::write(&input_data, [5_u8]).expect("input data should be written");
+
+    let mut unit = sample_unit();
+    unit.paths.constant_tree = dir.join("unit.consttree");
+    let constant_tree_bytes =
+        expected_constant_tree_byte_count(&unit.metadata.setup).expect("tree size should derive");
+    write_constant_tree_bytes_for_unit(&mut unit, vec![0_u8; constant_tree_bytes]);
+    let mut catalog = sample_catalog(unit);
+    catalog.layout.global_info.lattice_size = Some(32);
+    declare_sample_public_value_metadata(&mut catalog);
+    let plan = derive_prove_execution_plan(
+        &catalog,
+        sample_request(dir.join("out"), Some(input_data)),
+        ProveExecutionInputArtifacts {
+            witness_library: Some(witness_library),
+            guest_image,
+            public_inputs: None,
+        },
+    )
+    .expect("execution plan should derive");
+    let output =
+        run_prove_witness_commitments_with_trace(&plan, 0, ProveWitnessAuxiliaryInputs::default())
+            .expect("witness commitments should run");
+    let public_values = PublicValues {
+        schema_version: 1,
+        setup_hash: plan.run_plan.schedule.setup_hash,
+        values: vec![PublicValueEntry {
+            name: "stale_public".to_owned(),
+            elements: vec![19],
+        }],
+    };
+
+    let error =
+        lzvm_prover::build_witness_proof_artifact_for_unit(&lzvm_prover::WitnessProofRequest {
+            catalog: &catalog,
+            schedule: &plan.run_plan.schedule,
+            constant_tree_material_summaries: None,
+            execution_unit: &plan.units[0],
+            gpu_streams: plan.run_plan.gpu.max_streams,
+            public_values: Some(&public_values),
+            unit_values: None,
+            output: &output,
+            verify_outputs: false,
+            program_image_cache: None,
+            eth_block_input: None,
+            framed_guest_input: None,
+            challenge_values_segment: None,
+            include_contribution_segment: false,
+        })
+        .expect_err("public values metadata mismatch should reject");
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(
+        error,
+        "public inputs metadata mismatch: public-values entry 0 name mismatch: expected sample_public, found stale_public"
     );
 }
 
@@ -4576,6 +4675,7 @@ fn rejects_unbound_program_image_cache_public_values_in_prover_unit_request() {
     write_constant_tree_bytes_for_unit(&mut unit, vec![0_u8; constant_tree_bytes]);
     let mut catalog = sample_catalog(unit);
     catalog.layout.global_info.lattice_size = Some(32);
+    declare_rom_root_public_value_metadata(&mut catalog);
     let plan = derive_prove_execution_plan(
         &catalog,
         sample_request(dir.join("out"), Some(input_data)),

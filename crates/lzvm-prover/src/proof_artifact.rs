@@ -59,7 +59,9 @@ use crate::prove_fri_opening::{
     build_pcs_fri_transcript_values_from_trace_segment_refs_with_timing,
     ProvePcsFriTranscriptTraceSegmentValueRef,
 };
-use crate::setup_preflight::{validate_setup_preflight, validate_setup_preflight_hashes};
+use crate::setup_preflight::{
+    validate_public_values_metadata, validate_setup_preflight, validate_setup_preflight_hashes,
+};
 use crate::unit_values::{
     build_unit_values_segment_from_packed_values_batch,
     build_unit_values_segment_from_packed_values_for_identity, ProveUnitValues,
@@ -519,11 +521,8 @@ fn build_witness_proof_artifact_for_unit_inner(
     let Some(public_values) = request.public_values else {
         return Ok(None);
     };
-    if public_values.setup_hash != request.schedule.setup_hash {
-        return Err("public inputs setup hash mismatch".to_owned());
-    }
-    let public_values_hash = public_values_digest(public_values)
-        .map_err(|error| format!("hash public inputs failed: {error}"))?;
+    let public_values_hash =
+        validate_proof_request_public_values(request.catalog, request.schedule, public_values)?;
     let proof_bindings = validate_proof_bindings(
         public_values,
         request.program_image_cache,
@@ -824,11 +823,8 @@ pub fn build_witness_contribution_proof_artifact_for_unit(
     let Some(public_values) = request.public_values else {
         return Ok(None);
     };
-    if public_values.setup_hash != request.schedule.setup_hash {
-        return Err("public inputs setup hash mismatch".to_owned());
-    }
-    let public_values_hash = public_values_digest(public_values)
-        .map_err(|error| format!("hash public inputs failed: {error}"))?;
+    let public_values_hash =
+        validate_proof_request_public_values(request.catalog, request.schedule, public_values)?;
     let proof_bindings = validate_proof_bindings(
         public_values,
         request.program_image_cache,
@@ -917,11 +913,8 @@ pub fn build_witness_contribution_proof_artifact_for_all_units(
     let Some(public_values) = request.public_values else {
         return Ok(None);
     };
-    if public_values.setup_hash != request.schedule.setup_hash {
-        return Err("public inputs setup hash mismatch".to_owned());
-    }
-    let public_values_hash = public_values_digest(public_values)
-        .map_err(|error| format!("hash public inputs failed: {error}"))?;
+    let public_values_hash =
+        validate_proof_request_public_values(request.catalog, request.schedule, public_values)?;
     let proof_bindings = validate_proof_bindings(
         public_values,
         request.program_image_cache,
@@ -1015,11 +1008,8 @@ fn build_witness_proof_artifact_for_all_units_inner(
     let Some(public_values) = request.public_values else {
         return Ok(None);
     };
-    if public_values.setup_hash != request.schedule.setup_hash {
-        return Err("public inputs setup hash mismatch".to_owned());
-    }
-    let public_values_hash = public_values_digest(public_values)
-        .map_err(|error| format!("hash public inputs failed: {error}"))?;
+    let public_values_hash =
+        validate_proof_request_public_values(request.catalog, request.schedule, public_values)?;
     let proof_bindings = validate_proof_bindings(
         public_values,
         request.program_image_cache,
@@ -1209,6 +1199,20 @@ fn validate_proof_bindings<'a>(
         eth_block_input,
         framed_guest_input,
     })
+}
+
+fn validate_proof_request_public_values(
+    catalog: &KeyDirectoryCatalog,
+    schedule: &ProveSchedule,
+    public_values: &PublicValues,
+) -> Result<[u8; 32], String> {
+    if public_values.setup_hash != schedule.setup_hash {
+        return Err("public inputs setup hash mismatch".to_owned());
+    }
+    validate_public_values_metadata(&catalog.layout.global_info, public_values)
+        .map_err(|error| format!("public inputs metadata mismatch: {error}"))?;
+    public_values_digest(public_values)
+        .map_err(|error| format!("hash public inputs failed: {error}"))
 }
 
 mod proof_binding_validation {
