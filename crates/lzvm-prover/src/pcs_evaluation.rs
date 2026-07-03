@@ -8,6 +8,7 @@ use lzvm_artifacts::pcs_query_segment::PcsQueryPlanUnit;
 use lzvm_artifacts::proof::ProofSegment;
 use lzvm_field::{Ext3, Felt, FieldError};
 
+use crate::indexing::collect_unique_query_identities;
 use crate::ProveSchedule;
 use crate::ProveUnitSchedule;
 
@@ -258,15 +259,11 @@ pub(crate) fn validate_pcs_evaluation_units_match_query_units_from_segment(
     query_units: &[PcsQueryPlanUnit],
     evaluations: &PcsEvaluationSegment,
 ) -> Result<(), LoadPcsEvaluationUnitError> {
-    let mut query_identities = BTreeSet::new();
-    for unit in query_units {
-        let identity = (unit.unit_index, unit.trace_instance_index);
-        let unit_index = usize::try_from(unit.unit_index)
-            .map_err(|_| LoadPcsEvaluationUnitError::UnitIndexOverflow)?;
-        if !query_identities.insert(identity) {
-            return Err(LoadPcsEvaluationUnitError::UnexpectedUnit { unit_index });
-        }
-    }
+    let query_identities = collect_unique_query_identities(
+        query_units,
+        || LoadPcsEvaluationUnitError::UnitIndexOverflow,
+        |unit_index| LoadPcsEvaluationUnitError::UnexpectedUnit { unit_index },
+    )?;
     let mut evaluation_identities = BTreeSet::new();
     for unit in &evaluations.units {
         let identity = (unit.unit_index, unit.trace_instance_index);

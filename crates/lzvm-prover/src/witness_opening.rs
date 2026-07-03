@@ -19,6 +19,7 @@ use crate::guest_pc_trace_backend::{
     build_guest_pc_trace_stage_source_devices_from_device_material_timing,
     GuestPcDeviceSourceBuildTiming,
 };
+use crate::indexing::collect_unique_query_identities;
 use crate::pcs_query_plan::{load_pcs_query_plan_from_segments, LoadPcsQueryPlanSegmentError};
 #[cfg(feature = "cuda")]
 use crate::proof_artifact_timing::WitnessOpeningSourceKind;
@@ -380,15 +381,11 @@ pub(crate) fn validate_witness_opening_units_match_query_units_from_segment(
     query_units: &[PcsQueryPlanUnit],
     opening: &WitnessOpeningSegment,
 ) -> Result<(), LoadWitnessOpeningUnitError> {
-    let mut query_identities = BTreeSet::new();
-    for unit in query_units {
-        let identity = (unit.unit_index, unit.trace_instance_index);
-        let unit_index = usize::try_from(unit.unit_index)
-            .map_err(|_| LoadWitnessOpeningUnitError::UnitIndexOverflow)?;
-        if !query_identities.insert(identity) {
-            return Err(LoadWitnessOpeningUnitError::UnexpectedUnit { unit_index });
-        }
-    }
+    let query_identities = collect_unique_query_identities(
+        query_units,
+        || LoadWitnessOpeningUnitError::UnitIndexOverflow,
+        |unit_index| LoadWitnessOpeningUnitError::UnexpectedUnit { unit_index },
+    )?;
     let mut opening_identities = BTreeSet::new();
     for unit in &opening.units {
         let identity = (unit.unit_index, unit.trace_instance_index);

@@ -28,6 +28,8 @@ pub use validation::{
     validate_pcs_fri_opening_segments,
 };
 
+use crate::indexing::collect_unique_query_identities;
+
 pub fn load_pcs_fri_opening_segment_from_segments(
     segments: &[ProofSegment],
 ) -> Result<PcsFriOpeningSegment, LoadPcsFriOpeningSegmentError> {
@@ -71,15 +73,11 @@ pub(crate) fn validate_pcs_fri_opening_units_match_query_units_from_segment(
     query_units: &[PcsQueryPlanUnit],
     opening: &PcsFriOpeningSegment,
 ) -> Result<(), LoadPcsFriOpeningUnitError> {
-    let mut query_identities = BTreeSet::new();
-    for unit in query_units {
-        let identity = (unit.unit_index, unit.trace_instance_index);
-        let unit_index = usize::try_from(unit.unit_index)
-            .map_err(|_| LoadPcsFriOpeningUnitError::UnitIndexOverflow)?;
-        if !query_identities.insert(identity) {
-            return Err(LoadPcsFriOpeningUnitError::UnexpectedUnit { unit_index });
-        }
-    }
+    let query_identities = collect_unique_query_identities(
+        query_units,
+        || LoadPcsFriOpeningUnitError::UnitIndexOverflow,
+        |unit_index| LoadPcsFriOpeningUnitError::UnexpectedUnit { unit_index },
+    )?;
     let mut opening_identities = BTreeSet::new();
     for unit in &opening.units {
         let identity = (unit.unit_index, unit.trace_instance_index);

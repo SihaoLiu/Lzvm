@@ -9,6 +9,8 @@ use lzvm_artifacts::unit_values_segment::{
 };
 use lzvm_field::{Felt, FieldError};
 
+use crate::indexing::collect_unique_query_identities;
+
 const EXTENSION_WORDS: usize = 3;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -363,18 +365,13 @@ pub(crate) fn validate_unit_values_units_match_query_units_from_segment(
     query_units: &[PcsQueryPlanUnit],
     parsed: Option<&UnitValuesSegment>,
 ) -> Result<(), LoadUnitValuesSegmentError> {
-    let mut query_identities = BTreeSet::new();
-    for unit in query_units {
-        let identity = (unit.unit_index, unit.trace_instance_index);
-        let unit_index = usize::try_from(unit.unit_index).map_err(|_| {
-            LoadUnitValuesSegmentError::UnitIndexOverflow {
-                unit_index: usize::MAX,
-            }
-        })?;
-        if !query_identities.insert(identity) {
-            return Err(LoadUnitValuesSegmentError::UnexpectedUnit { unit_index });
-        }
-    }
+    let query_identities = collect_unique_query_identities(
+        query_units,
+        || LoadUnitValuesSegmentError::UnitIndexOverflow {
+            unit_index: usize::MAX,
+        },
+        |unit_index| LoadUnitValuesSegmentError::UnexpectedUnit { unit_index },
+    )?;
     let Some(parsed) = parsed else {
         return Ok(());
     };
