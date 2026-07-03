@@ -311,6 +311,13 @@ pub(crate) fn build_pcs_transcript_prefix(
             draw_count: input.root_challenge_draws.len(),
         });
     }
+    let expected_unit_value_len = expected_stage_unit_value_len(input.unit_value_map)?;
+    if expected_unit_value_len != input.unit_values.len() {
+        return Err(PcsTranscriptError::UnitValueLengthMismatch {
+            expected: expected_unit_value_len,
+            found: input.unit_values.len(),
+        });
+    }
 
     let mut transcript = PoseidonTranscript::new(input.arity)?;
     let challenge_capacity = input.root_challenge_draws.iter().try_fold(
@@ -475,13 +482,15 @@ fn absorb_stage_unit_values(
         }
         offset = end;
     }
-    if offset != values.len() {
-        return Err(PcsTranscriptError::UnitValueLengthMismatch {
-            expected: offset,
-            found: values.len(),
-        });
-    }
     Ok(())
+}
+
+fn expected_stage_unit_value_len(value_map: &[StageValue]) -> Result<usize, PcsTranscriptError> {
+    value_map.iter().try_fold(0_usize, |count, value| {
+        count
+            .checked_add(stage_value_packed_width(value)?)
+            .ok_or(PcsTranscriptError::LengthOverflow)
+    })
 }
 
 fn stage_value_packed_width(value: &StageValue) -> Result<usize, PcsTranscriptError> {

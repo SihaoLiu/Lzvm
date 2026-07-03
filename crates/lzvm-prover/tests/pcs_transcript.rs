@@ -304,8 +304,8 @@ fn rejects_extra_transcript_unit_values() {
         hash_values: false,
         constant_root: root(1),
         public_values: &[],
-        witness_roots: &[root(10)],
-        root_challenge_draws: &[1],
+        witness_roots: &[],
+        root_challenge_draws: &[],
         unit_value_map: &[StageValue {
             name: "unit.alpha".to_owned(),
             stage: 1,
