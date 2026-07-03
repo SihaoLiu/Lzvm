@@ -1023,6 +1023,122 @@ theorem runtime_pipeline_required_external_source_audited_finalized_core_sound_w
       executionObligations,
       soundWitness⟩
 
+theorem runtime_pipeline_required_external_source_audited_manifest_core_sound_witness_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimePipelineBindingValidation system) :
+    forall artifact publicInput proof (requiresExternalSource : Prop),
+      RuntimePipelineBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        requiresExternalSource ->
+          let queryPlanValidation := validation.queryPlanBindingValidation
+          let artifactValidation :=
+            queryPlanValidation.challengeValidation.transcriptValidation.artifactBindingValidation
+          RequiredCryptographicAssumptionStatements assumptions.crypto
+            /\ RequiredSemanticAssumptionStatements assumptions.semantic
+            /\ RuntimeQueryPlanMaterialManifestContract
+              system
+              queryPlanValidation
+              artifact
+              publicInput
+              proof
+            /\ queryPlanValidation.queryPlanSegmentCanonical artifact publicInput proof
+            /\ queryPlanValidation.queryPlanMaterialManifestMatchesSchedule
+              artifact
+              publicInput
+              proof
+            /\ RuntimeProofArtifactFinalized
+              system
+              artifactValidation
+              artifact
+              publicInput
+              proof
+            /\ ExternalSourceOpeningEvidence
+              system
+              (runtime_pipeline_trace_source_validation validation)
+              publicInput
+              proof
+            /\ ExternalSourceOpeningEvidence
+              system
+              (runtime_pipeline_opening_source_validation validation)
+              publicInput
+              proof
+            /\ queryPlanValidation.queryPlanSeedBindsWitnessTreeDigests
+              artifact
+              publicInput
+              proof
+            /\ queryPlanValidation.queryPlanSeededFriOpeningRequirementsChecked
+              artifact
+              publicInput
+              proof
+            /\ RuntimeVerifierCoreContract system publicInput proof
+            /\ (exists witness trace constraints,
+              system.traceConsistent publicInput proof trace
+                /\ system.constraintsSatisfied constraints trace
+                /\ system.witnessMatchesTrace witness trace)
+            /\ SoundWitness system publicInput proof := by
+  intro artifact publicInput proof requiresExternalSource accepted required
+  have finalizedCore :=
+    runtime_pipeline_required_external_source_audited_finalized_core_sound_witness_contract
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      accepted
+      required
+  have materialManifest :=
+    runtime_pipeline_binding_checked_acceptance_query_plan_material_manifest_contract
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have segmentCanonical :=
+    runtime_query_plan_material_manifest_contract_implies_segment_canonical
+      validation.queryPlanBindingValidation
+      artifact
+      publicInput
+      proof
+      materialManifest
+  have materialManifestMatches :=
+    runtime_query_plan_material_manifest_contract_implies_matches_schedule
+      validation.queryPlanBindingValidation
+      artifact
+      publicInput
+      proof
+      materialManifest
+  rcases finalizedCore with
+    ⟨cryptoEvidence,
+      semanticEvidence,
+      artifactFinalized,
+      traceExternalEvidence,
+      openingExternalEvidence,
+      seedBinds,
+      seededFriOpeningChecked,
+      verifierCore,
+      executionObligations,
+      soundWitness⟩
+  exact
+    ⟨cryptoEvidence,
+      semanticEvidence,
+      materialManifest,
+      segmentCanonical,
+      materialManifestMatches,
+      artifactFinalized,
+      traceExternalEvidence,
+      openingExternalEvidence,
+      seedBinds,
+      seededFriOpeningChecked,
+      verifierCore,
+      executionObligations,
+      soundWitness⟩
+
 theorem runtime_pipeline_binding_required_external_source_audited_seeded_query_requirements_contract
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
