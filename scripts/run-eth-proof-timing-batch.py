@@ -1138,7 +1138,16 @@ def gpu_memory_cli_parts(args: argparse.Namespace, root: Path) -> list[str]:
     return ["--nvidia-smi-command", profile_tool_command_arg(raw, root)]
 
 
+def gpu_memory_wait_requested(args: argparse.Namespace) -> bool:
+    return (
+        args.gpu_memory_wait_timeout_s != DEFAULT_GPU_MEMORY_WAIT_TIMEOUT_S
+        or args.gpu_memory_wait_poll_s != DEFAULT_GPU_MEMORY_WAIT_POLL_S
+    )
+
+
 def gpu_memory_wait_cli_parts(args: argparse.Namespace) -> list[str]:
+    if not args.check_gpu_memory:
+        return []
     parts: list[str] = []
     timeout_s = getattr(
         args, "gpu_memory_wait_timeout_s", DEFAULT_GPU_MEMORY_WAIT_TIMEOUT_S
@@ -1612,6 +1621,8 @@ def run(args: argparse.Namespace) -> int:
         raise SystemExit("--skip-targets conflicts with --enforce-targets")
     if effective_max_runs(args) < args.runs:
         raise SystemExit("--max-runs must be at least --runs")
+    if not args.check_gpu_memory and gpu_memory_wait_requested(args):
+        raise SystemExit("--gpu-memory-wait-* requires --check-gpu-memory")
     if (
         args.env_file is not None
         and (args.print_env_template or args.write_env_template is not None)

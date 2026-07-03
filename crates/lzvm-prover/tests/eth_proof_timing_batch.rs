@@ -2171,6 +2171,38 @@ fn eth_proof_timing_batch_check_gpu_memory_fails_when_free_memory_is_low() {
 }
 
 #[test]
+fn eth_proof_timing_batch_rejects_gpu_memory_wait_without_check() {
+    let mut command = Command::new(script_path());
+    command
+        .arg("--gpu-memory-wait-timeout-s")
+        .arg("1")
+        .arg("--gpu-memory-wait-poll-s")
+        .arg("0.1");
+    clear_env(&mut command, SMALL_PREFIX);
+    clear_env(&mut command, LARGE_PREFIX);
+
+    let output = command
+        .output()
+        .expect("ETH proof timing batch GPU memory wait validation should run");
+    let success = output.status.success();
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+
+    assert!(
+        !success,
+        "GPU memory wait flags should require the GPU memory check"
+    );
+    assert!(
+        stdout.is_empty(),
+        "GPU memory wait validation should fail before printing status: {stdout}"
+    );
+    assert!(
+        stderr.contains("--gpu-memory-wait-* requires --check-gpu-memory"),
+        "GPU memory wait validation should explain the required flag: stderr={stderr}"
+    );
+}
+
+#[test]
 fn eth_proof_timing_batch_check_gpu_memory_waits_until_ready() {
     let fixture = ProofFixture::new("eth-proof-timing-batch-gpu-memory-wait");
     let state_path = fixture.dir.join("smi-count");
