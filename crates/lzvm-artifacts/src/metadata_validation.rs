@@ -143,6 +143,12 @@ pub fn validate_global_metadata(global: &GlobalInfo) -> Result<(), MetadataValid
         return Err(MetadataValidationError::NoChallengeStages);
     }
 
+    validate_global_proof_value_counts(global)
+}
+
+pub(crate) fn validate_global_proof_value_counts(
+    global: &GlobalInfo,
+) -> Result<(), MetadataValidationError> {
     let found = proof_value_count(global)?;
     if global.num_proof_values.is_empty() {
         if found != 0 {

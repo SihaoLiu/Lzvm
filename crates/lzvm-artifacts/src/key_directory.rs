@@ -18,7 +18,7 @@ use crate::hint_program::{
 use crate::metadata_bundle::{
     read_unit_metadata_bundle, MetadataBundleError, UnitMetadataBundle, UnitMetadataPaths,
 };
-use crate::metadata_validation::{validate_global_metadata, MetadataValidationError};
+use crate::metadata_validation::{validate_global_proof_value_counts, MetadataValidationError};
 use crate::pcs_material::{read_pcs_setup_material_file, PcsSetupMaterial, PcsSetupMaterialError};
 use crate::pcs_plan::{
     derive_pcs_setup_plan, encode_pcs_setup_plan, read_pcs_setup_plan_file, PcsPlanError,
@@ -659,7 +659,7 @@ impl GlobalKeyPaths {
 
 fn read_global_info_path(paths: &GlobalKeyPaths) -> Result<GlobalInfo, KeyDirectoryError> {
     let info = read_global_info_binary_file(&paths.info).map_err(KeyDirectoryError::GlobalInfo)?;
-    validate_global_metadata(&info).map_err(KeyDirectoryError::GlobalValidation)?;
+    validate_global_proof_value_counts(&info).map_err(KeyDirectoryError::GlobalValidation)?;
     Ok(info)
 }
 
