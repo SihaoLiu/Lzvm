@@ -748,6 +748,34 @@ fn rejects_mutated_key_directory_layout_with_stale_unit_paths() {
 }
 
 #[test]
+fn rejects_mutated_key_directory_layout_with_stale_global_paths() {
+    let dir = temp_dir("mutated-global-paths");
+    let _ = fs::remove_dir_all(&dir);
+    write_catalog_global_files(&dir);
+    let mut layout = read_key_directory_layout(&dir).expect("layout should parse");
+    layout.global_paths.info = dir.join("stale.globalInfo.bin");
+
+    let error = validate_key_directory_layout(&layout).expect_err("layout should be rejected");
+
+    assert!(matches!(error, KeyDirectoryError::UnitPathMismatch));
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+}
+
+#[test]
+fn rejects_mutated_key_directory_layout_with_stale_source_paths() {
+    let dir = temp_dir("mutated-source-paths");
+    let _ = fs::remove_dir_all(&dir);
+    write_catalog_global_files(&dir);
+    let mut layout = read_key_directory_layout(&dir).expect("layout should parse");
+    layout.source_program_archive = dir.join("stale-source-archive");
+
+    let error = validate_key_directory_layout(&layout).expect_err("layout should be rejected");
+
+    assert!(matches!(error, KeyDirectoryError::UnitPathMismatch));
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+}
+
+#[test]
 fn reads_key_directory_layout_with_no_challenge_counters() {
     let dir = temp_dir("global-no-challenges");
     let _ = fs::remove_dir_all(&dir);

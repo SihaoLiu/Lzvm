@@ -317,7 +317,7 @@ impl fmt::Display for KeyDirectoryError {
                 write!(f, "missing derived key-directory {role} for {unit}")
             }
             Self::UnitPathMismatch => {
-                write!(f, "key-directory unit paths do not match global metadata")
+                write!(f, "key-directory derived paths do not match root and global metadata")
             }
             Self::FixedByteCountMismatch {
                 kind,
@@ -570,6 +570,12 @@ pub fn read_key_directory_layout(
 
 pub fn validate_key_directory_layout(layout: &KeyDirectoryLayout) -> Result<(), KeyDirectoryError> {
     validate_key_directory_global_info(&layout.global_info)?;
+    if layout.global_paths != GlobalKeyPaths::from_root(&layout.root)
+        || layout.source_fixed_file_manifest != layout.root.join(SOURCE_FIXED_FILE_MANIFEST_FILE)
+        || layout.source_program_archive != layout.root.join(SOURCE_PROGRAM_ARCHIVE_FILE)
+    {
+        return Err(KeyDirectoryError::UnitPathMismatch);
+    }
     let expected_units = derive_unit_paths(&layout.root, &layout.global_info)?;
     if expected_units != layout.units {
         return Err(KeyDirectoryError::UnitPathMismatch);
