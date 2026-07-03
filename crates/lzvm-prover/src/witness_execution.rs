@@ -57,6 +57,7 @@ use crate::regular_constraints::try_evaluate_regular_constraints_cuda_base;
 use crate::regular_constraints::{
     RegularColumnMatrix, RegularConstraintEvalError, RegularConstraintInputs, RegularStageColumns,
 };
+use crate::setup_preflight::{validate_public_values_metadata, SetupPreflightError};
 use crate::source_assignment_hints::validate_source_assignment_hints;
 use crate::source_lookup_hints::{SourceLookupBalance, SourceLookupHintError};
 #[cfg(feature = "cuda")]
@@ -3675,6 +3676,10 @@ pub enum ProveWitnessCommitmentError {
         path: PathBuf,
         source: PublicValuesError,
     },
+    PublicInputsMetadata {
+        path: PathBuf,
+        source: SetupPreflightError,
+    },
     PublicInputsSetupHashMismatch,
     PublicInputNonCanonical {
         index: usize,
@@ -3805,6 +3810,11 @@ impl fmt::Display for ProveWitnessCommitmentError {
             Self::PublicInputs { path, source } => {
                 write!(f, "read public inputs failed: {}: {source}", path.display())
             }
+            Self::PublicInputsMetadata { path, source } => write!(
+                f,
+                "public inputs metadata validation failed: {}: {source}",
+                path.display()
+            ),
             Self::PublicInputsSetupHashMismatch => {
                 write!(f, "public inputs setup hash mismatch")
             }
@@ -3975,6 +3985,7 @@ impl std::error::Error for ProveWitnessCommitmentError {
             Self::Layout(error) => Some(error),
             Self::WitnessRun(error) => Some(error),
             Self::PublicInputs { source, .. } => Some(source),
+            Self::PublicInputsMetadata { source, .. } => Some(source),
             Self::FixedColumns { source, .. } => Some(source),
             Self::RegularConstraintDomainHelper { source, .. } => Some(source),
             Self::RegularConstraintEval(error) => Some(error),
@@ -7374,6 +7385,12 @@ fn load_public_inputs(plan: &ProveExecutionPlan) -> Result<Vec<Felt>, ProveWitne
     if public_values.setup_hash != plan.run_plan.schedule.setup_hash {
         return Err(ProveWitnessCommitmentError::PublicInputsSetupHashMismatch);
     }
+    validate_public_values_metadata(&plan.global_info, &public_values).map_err(|source| {
+        ProveWitnessCommitmentError::PublicInputsMetadata {
+            path: path.clone(),
+            source,
+        }
+    })?;
     public_values_to_fields(&public_values)
 }
 

@@ -76,7 +76,8 @@ use lzvm_artifacts::public_values::{
     encode_public_values, public_values_digest, PublicValueEntry, PublicValues,
 };
 use lzvm_artifacts::setup_info::{
-    CommitmentColumn, EvaluationMapEntry, FriStep, StageValue, StarkStruct, UnitSetupInfo,
+    CommitmentColumn, ConstantColumn, EvaluationMapEntry, FriStep, StageValue, StarkStruct,
+    UnitSetupInfo,
 };
 use lzvm_artifacts::trace_bundle::{TraceBundle, TraceBundleUnit};
 use lzvm_artifacts::trace_constraint_segment::{
@@ -471,7 +472,24 @@ fn sample_setup() -> UnitSetupInfo {
     UnitSetupInfo {
         n_stages: 1,
         n_constants: 2,
-        constant_columns: Vec::new(),
+        constant_columns: vec![
+            ConstantColumn {
+                name: "const_0".to_owned(),
+                stage: 0,
+                dimension: 1,
+                pols_map_id: 0,
+                stage_id: 0,
+                lengths: Vec::new(),
+            },
+            ConstantColumn {
+                name: "const_1".to_owned(),
+                stage: 0,
+                dimension: 1,
+                pols_map_id: 1,
+                stage_id: 1,
+                lengths: Vec::new(),
+            },
+        ],
         commitment_columns: Vec::new(),
         n_publics: Some(0),
         n_constraints: Some(0),
@@ -1036,12 +1054,12 @@ fn sample_fixed_columns(unit_name: &str) -> FixedColumns {
         columns: vec![
             FixedColumn {
                 name: "const_0".to_owned(),
-                dimensions: Vec::new(),
+                dimensions: vec![1],
                 values: (0..16).map(|row| row + 10).collect(),
             },
             FixedColumn {
                 name: "const_1".to_owned(),
-                dimensions: Vec::new(),
+                dimensions: vec![1],
                 values: vec![0; 16],
             },
         ],
@@ -6575,6 +6593,56 @@ fn uses_public_inputs_when_checking_regular_constraints() {
 }
 
 #[test]
+fn rejects_public_inputs_metadata_bypass_during_witness_execution() {
+    let dir = temp_dir("public-input-runtime-metadata");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let guest_image = dir.join("guest.elf");
+    let input_data = dir.join("input.bin");
+    let public_inputs = dir.join("public-values.bin");
+    fs::write(&guest_image, sample_guest_image()).expect("guest image should be written");
+    fs::write(&input_data, [7_u8]).expect("input data should be written");
+
+    let mut catalog = sample_catalog(sample_unit());
+    declare_sample_public_value_metadata(&mut catalog);
+    let setup_hash = key_directory_catalog_digest(&catalog).expect("catalog digest should compute");
+    write_public_values(&public_inputs, setup_hash, vec![8]);
+    let plan = derive_prove_execution_plan(
+        &catalog,
+        sample_request(dir.join("out"), Some(input_data)),
+        ProveExecutionInputArtifacts {
+            witness_library: None,
+            guest_image,
+            public_inputs: Some(public_inputs.clone()),
+        },
+    )
+    .expect("execution plan should derive");
+    write_public_values(&public_inputs, setup_hash, vec![8, 9]);
+    let backend = TraceBytesBackend::new(sample_trace_bytes(7));
+
+    let result = run_prove_witness_commitments_with_trace_backend(
+        &plan,
+        0,
+        ProveWitnessAuxiliaryInputs::default(),
+        &backend,
+    );
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert!(matches!(
+        result,
+        Err(ProveWitnessCommitmentError::PublicInputsMetadata {
+            source:
+                lzvm_prover::setup_preflight::SetupPreflightError::PublicValueElementCountMismatch {
+                    name,
+                    expected: 1,
+                    found: 2,
+                },
+            ..
+        }) if name == "sample_public"
+    ));
+}
+
+#[test]
 fn uses_domain_helpers_when_checking_regular_constraints() {
     let dir = temp_dir("domain-helper-constraint");
     let _ = fs::remove_dir_all(&dir);
@@ -7124,12 +7192,12 @@ fn builds_pcs_fri_polynomial_from_execution_material() {
         columns: vec![
             FixedColumn {
                 name: "const_0".to_owned(),
-                dimensions: Vec::new(),
+                dimensions: vec![1],
                 values: fixed_left.clone(),
             },
             FixedColumn {
                 name: "const_1".to_owned(),
-                dimensions: Vec::new(),
+                dimensions: vec![1],
                 values: vec![0; 16],
             },
         ],
@@ -7217,12 +7285,12 @@ fn builds_pcs_fri_opening_segments_from_execution_material() {
         columns: vec![
             FixedColumn {
                 name: "const_0".to_owned(),
-                dimensions: Vec::new(),
+                dimensions: vec![1],
                 values: (0..16).map(|row| row + 10).collect(),
             },
             FixedColumn {
                 name: "const_1".to_owned(),
-                dimensions: Vec::new(),
+                dimensions: vec![1],
                 values: vec![0; 16],
             },
         ],
@@ -7319,12 +7387,12 @@ fn builds_pcs_fri_transcript_values_from_execution_material() {
         columns: vec![
             FixedColumn {
                 name: "const_0".to_owned(),
-                dimensions: Vec::new(),
+                dimensions: vec![1],
                 values: (0..16).map(|row| row + 10).collect(),
             },
             FixedColumn {
                 name: "const_1".to_owned(),
-                dimensions: Vec::new(),
+                dimensions: vec![1],
                 values: vec![0; 16],
             },
         ],
