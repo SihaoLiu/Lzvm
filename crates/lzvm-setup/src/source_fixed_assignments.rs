@@ -230,6 +230,20 @@ impl<'a> SourceFixedAssignmentValues<'a> {
         }
     }
 
+    fn fixed_constant_values_for_scalar_names(
+        &self,
+        names: &BTreeSet<String>,
+    ) -> SourceFixedConstantValues {
+        let scalars = names
+            .iter()
+            .filter_map(|name| self.scalar_value(name).map(|value| (name.clone(), value)))
+            .collect();
+        SourceFixedConstantValues {
+            scalars,
+            arrays: self.arrays.clone(),
+        }
+    }
+
     fn replace_scalars(&mut self, scalars: BTreeMap<String, FixedFileTemplateValue>) {
         self.overlays = scalars
             .into_iter()

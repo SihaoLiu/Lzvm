@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use lzvm_pil::{
     parse_expression_tokens, parse_function_statement_tokens, BinaryOperator, Expression,
@@ -292,6 +292,13 @@ pub(super) fn collect_source_fixed_dynamic_for_assignment(
             }
             return Ok(());
         };
+        let constant_values = source_fixed_dynamic_operation_constant_values(
+            assignment_values,
+            &prefix_statements,
+            &[],
+            &[],
+            &expression,
+        );
         operations.push(SourceFixedDynamicOperation {
             source_name: context.module.source_name.clone(),
             source: context.module.source.contents.clone(),
@@ -307,7 +314,7 @@ pub(super) fn collect_source_fixed_dynamic_for_assignment(
             conditions: Vec::new(),
             guarded_prefix_statements: Vec::new(),
             expression,
-            constant_values: assignment_values.fixed_constant_values(),
+            constant_values,
         });
     }
     dynamic_operations.extend(operations);
@@ -410,6 +417,13 @@ fn collect_source_fixed_dynamic_guarded_statement_list(
             &loop_info.variable_name,
             assignment_values,
         )? {
+            let constant_values = source_fixed_dynamic_operation_constant_values(
+                assignment_values,
+                common_prefix,
+                conditions,
+                guarded_prefix,
+                &expression,
+            );
             operations.push(SourceFixedDynamicOperation {
                 source_name: context.module.source_name.clone(),
                 source: context.module.source.contents.clone(),
@@ -425,7 +439,7 @@ fn collect_source_fixed_dynamic_guarded_statement_list(
                 conditions: conditions.to_vec(),
                 guarded_prefix_statements: guarded_prefix.clone(),
                 expression,
-                constant_values: assignment_values.fixed_constant_values(),
+                constant_values,
             });
             progressed = true;
             continue;
@@ -471,6 +485,125 @@ fn collect_source_fixed_dynamic_guarded_statement_list(
         return Ok(false);
     }
     Ok(progressed)
+}
+
+fn source_fixed_dynamic_operation_constant_values(
+    assignment_values: &SourceFixedAssignmentValues<'_>,
+    prefix_statements: &[SourceFixedDynamicLocalStatement],
+    conditions: &[SourceFixedDynamicCondition],
+    guarded_prefix_statements: &[SourceFixedDynamicLocalStatement],
+    expression: &Expression,
+) -> SourceFixedConstantValues {
+    let mut names = BTreeSet::new();
+    for statement in prefix_statements {
+        collect_source_fixed_dynamic_local_statement_names(statement, &mut names);
+    }
+    for condition in conditions {
+        collect_source_fixed_dynamic_expression_names(&condition.expression, &mut names);
+    }
+    for statement in guarded_prefix_statements {
+        collect_source_fixed_dynamic_local_statement_names(statement, &mut names);
+    }
+    collect_source_fixed_dynamic_expression_names(expression, &mut names);
+    assignment_values.fixed_constant_values_for_scalar_names(&names)
+}
+
+fn collect_source_fixed_dynamic_local_statement_names(
+    statement: &SourceFixedDynamicLocalStatement,
+    names: &mut BTreeSet<String>,
+) {
+    match statement {
+        SourceFixedDynamicLocalStatement::Declaration { expression, .. }
+        | SourceFixedDynamicLocalStatement::Assignment { expression, .. } => {
+            collect_source_fixed_dynamic_expression_names(expression, names);
+        }
+        SourceFixedDynamicLocalStatement::Increment { name, .. } => {
+            names.insert(name.clone());
+        }
+        SourceFixedDynamicLocalStatement::DeclarationBatch { declarations } => {
+            for (_, expression) in declarations {
+                collect_source_fixed_dynamic_expression_names(expression, names);
+            }
+        }
+        SourceFixedDynamicLocalStatement::If { branches } => {
+            for branch in branches {
+                if let Some(condition) = &branch.condition {
+                    collect_source_fixed_dynamic_expression_names(condition, names);
+                }
+                for statement in &branch.statements {
+                    collect_source_fixed_dynamic_local_statement_names(statement, names);
+                }
+            }
+        }
+        SourceFixedDynamicLocalStatement::Switch {
+            expression,
+            branches,
+        } => {
+            collect_source_fixed_dynamic_expression_names(expression, names);
+            for branch in branches {
+                for expression in &branch.matches {
+                    collect_source_fixed_dynamic_expression_names(expression, names);
+                }
+                if let Some(statements) = &branch.statements {
+                    for statement in statements {
+                        collect_source_fixed_dynamic_local_statement_names(statement, names);
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn collect_source_fixed_dynamic_expression_names(
+    expression: &Expression,
+    names: &mut BTreeSet<String>,
+) {
+    match &expression.kind {
+        ExpressionKind::Name(name) => {
+            names.insert(name.clone());
+        }
+        ExpressionKind::Group(inner) => collect_source_fixed_dynamic_expression_names(inner, names),
+        ExpressionKind::Array(values) => {
+            for value in values {
+                collect_source_fixed_dynamic_expression_names(value, names);
+            }
+        }
+        ExpressionKind::Unary { expr, .. } => {
+            collect_source_fixed_dynamic_expression_names(expr, names);
+        }
+        ExpressionKind::Binary { left, right, .. } => {
+            collect_source_fixed_dynamic_expression_names(left, names);
+            collect_source_fixed_dynamic_expression_names(right, names);
+        }
+        ExpressionKind::Ternary {
+            condition,
+            then_expr,
+            else_expr,
+        } => {
+            collect_source_fixed_dynamic_expression_names(condition, names);
+            collect_source_fixed_dynamic_expression_names(then_expr, names);
+            collect_source_fixed_dynamic_expression_names(else_expr, names);
+        }
+        ExpressionKind::Call { callee, args } => {
+            collect_source_fixed_dynamic_expression_names(callee, names);
+            for argument in args {
+                collect_source_fixed_dynamic_expression_names(&argument.value, names);
+            }
+        }
+        ExpressionKind::Index { target, index } => {
+            collect_source_fixed_dynamic_expression_names(target, names);
+            collect_source_fixed_dynamic_expression_names(index, names);
+        }
+        ExpressionKind::RowOffset { target, offset, .. } => {
+            collect_source_fixed_dynamic_expression_names(target, names);
+            collect_source_fixed_dynamic_expression_names(offset, names);
+        }
+        ExpressionKind::Integer(_)
+        | ExpressionKind::HexInteger(_)
+        | ExpressionKind::StringLiteral(_)
+        | ExpressionKind::TemplateLiteral(_)
+        | ExpressionKind::PositionalParam(_) => {}
+    }
 }
 
 #[allow(clippy::too_many_arguments)]

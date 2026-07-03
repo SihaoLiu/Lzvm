@@ -110,7 +110,7 @@ fn many_scalar_static_if_fixed_assignment_source(
     for offset in 0..assignments_per_iteration {
         source.push_str(&format!(
             "        if (1) {{\n\
-                     table.value[outer * {assignments_per_iteration} + {offset}] = outer + {offset};\n\
+                     table.value[outer * {assignments_per_iteration} + {offset}] = outer + {offset} + scalar0;\n\
                  }}\n"
         ));
     }
