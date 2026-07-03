@@ -330,29 +330,34 @@ impl SourceScalarSlots {
     }
 
     pub(crate) fn source_dimension(&self, name: &str) -> Option<u32> {
-        if let Some(slot) = source_slot_get(&self.commitments, name) {
+        if self.source_slot_match_count(name) > 1 {
+            return None;
+        }
+        let allow_local = self.exact_source_slot_count(name) == 0;
+        if let Some(slot) = source_slot_get(&self.commitments, name, allow_local) {
             return Some(slot.dimension);
         }
-        if let Some(slot) = source_slot_get(&self.unit_values, name) {
+        if let Some(slot) = source_slot_get(&self.unit_values, name, allow_local) {
             return Some(slot.source_dimension);
         }
-        if let Some(slot) = source_slot_get(&self.group_values, name) {
+        if let Some(slot) = source_slot_get(&self.group_values, name, allow_local) {
             return Some(slot.source_dimension);
         }
-        if let Some(slot) = source_slot_get(&self.constants, name) {
+        if let Some(slot) = source_slot_get(&self.constants, name, allow_local) {
             return Some(slot.dimension);
         }
-        if let Some(slot) = source_slot_get(&self.publics, name) {
+        if let Some(slot) = source_slot_get(&self.publics, name, allow_local) {
             return Some(slot.dimension);
         }
-        if let Some(slot) = source_slot_get(&self.challenges, name) {
+        if let Some(slot) = source_slot_get(&self.challenges, name, allow_local) {
             return Some(slot.dimension);
         }
-        source_slot_get(&self.proof_values, name).map(|slot| slot.source_dimension)
+        source_slot_get(&self.proof_values, name, allow_local).map(|slot| slot.source_dimension)
     }
 
     pub(crate) fn operand(&self, name: &str) -> Result<CodeOperand, SourceScalarSlotError> {
-        if let Some(slot) = source_slot_get(&self.commitments, name) {
+        let allow_local = self.source_slot_lookup_uses_local(name)?;
+        if let Some(slot) = source_slot_get(&self.commitments, name, allow_local) {
             if !slot.lengths.is_empty() {
                 return Err(SourceScalarSlotError::UnsupportedValueShape {
                     name: name.to_owned(),
@@ -361,7 +366,7 @@ impl SourceScalarSlots {
             return Ok(CodeOperand::commitment(slot.id, slot.dimension));
         }
 
-        if let Some(slot) = source_slot_get(&self.unit_values, name) {
+        if let Some(slot) = source_slot_get(&self.unit_values, name, allow_local) {
             if slot.source_dimension != 1 {
                 return Err(SourceScalarSlotError::UnsupportedValueShape {
                     name: name.to_owned(),
@@ -375,7 +380,7 @@ impl SourceScalarSlots {
             ));
         }
 
-        if let Some(slot) = source_slot_get(&self.group_values, name) {
+        if let Some(slot) = source_slot_get(&self.group_values, name, allow_local) {
             if slot.source_dimension != 1 {
                 return Err(SourceScalarSlotError::UnsupportedValueShape {
                     name: name.to_owned(),
@@ -389,7 +394,7 @@ impl SourceScalarSlots {
             ));
         }
 
-        if let Some(slot) = source_slot_get(&self.constants, name) {
+        if let Some(slot) = source_slot_get(&self.constants, name, allow_local) {
             if slot.stage != 0 || slot.dimension != 1 {
                 return Err(SourceScalarSlotError::UnsupportedValueShape {
                     name: name.to_owned(),
@@ -398,7 +403,7 @@ impl SourceScalarSlots {
             return Ok(CodeOperand::constant(slot.id, 1));
         }
 
-        if let Some(slot) = source_slot_get(&self.publics, name) {
+        if let Some(slot) = source_slot_get(&self.publics, name, allow_local) {
             if slot.stage != 1 || slot.dimension != 1 {
                 return Err(SourceScalarSlotError::UnsupportedValueShape {
                     name: name.to_owned(),
@@ -407,7 +412,7 @@ impl SourceScalarSlots {
             return Ok(CodeOperand::public(slot.offset, 1));
         }
 
-        if let Some(slot) = source_slot_get(&self.challenges, name) {
+        if let Some(slot) = source_slot_get(&self.challenges, name, allow_local) {
             if slot.dimension != 1 {
                 return Err(SourceScalarSlotError::UnsupportedValueShape {
                     name: name.to_owned(),
@@ -421,7 +426,7 @@ impl SourceScalarSlots {
             ));
         }
 
-        if let Some(slot) = source_slot_get(&self.proof_values, name) {
+        if let Some(slot) = source_slot_get(&self.proof_values, name, allow_local) {
             if slot.source_dimension != 1 {
                 return Err(SourceScalarSlotError::UnsupportedValueShape {
                     name: name.to_owned(),
@@ -448,7 +453,8 @@ impl SourceScalarSlots {
             return self.operand(name);
         }
 
-        if let Some(slot) = source_slot_get(&self.commitments, name) {
+        let allow_local = self.source_slot_lookup_uses_local(name)?;
+        if let Some(slot) = source_slot_get(&self.commitments, name, allow_local) {
             if slot.stage != 1 || slot.dimension != 1 {
                 return Err(SourceScalarSlotError::UnsupportedValueShape {
                     name: name.to_owned(),
@@ -457,7 +463,7 @@ impl SourceScalarSlots {
             return Ok(CodeOperand::commitment_at(slot.id, Some(row_offset), 1));
         }
 
-        if let Some(slot) = source_slot_get(&self.constants, name) {
+        if let Some(slot) = source_slot_get(&self.constants, name, allow_local) {
             if slot.stage != 0 || slot.dimension != 1 {
                 return Err(SourceScalarSlotError::UnsupportedValueShape {
                     name: name.to_owned(),
@@ -476,7 +482,8 @@ impl SourceScalarSlots {
         name: &str,
         row_offset: i64,
     ) -> Result<Vec<CodeOperand>, SourceScalarSlotError> {
-        if let Some(slot) = source_slot_get(&self.commitments, name) {
+        let allow_local = self.source_slot_lookup_uses_local(name)?;
+        if let Some(slot) = source_slot_get(&self.commitments, name, allow_local) {
             if slot.stage != 1 {
                 return Err(SourceScalarSlotError::UnsupportedValueShape {
                     name: name.to_owned(),
@@ -487,7 +494,7 @@ impl SourceScalarSlots {
                 .collect();
         }
 
-        if let Some(slot) = source_slot_get(&self.publics, name) {
+        if let Some(slot) = source_slot_get(&self.publics, name, allow_local) {
             if slot.stage != 1 {
                 return Err(SourceScalarSlotError::UnsupportedValueShape {
                     name: name.to_owned(),
@@ -503,7 +510,7 @@ impl SourceScalarSlots {
                 .collect();
         }
 
-        if let Some(slot) = source_slot_get(&self.challenges, name) {
+        if let Some(slot) = source_slot_get(&self.challenges, name, allow_local) {
             if row_offset != 0 {
                 return Err(SourceScalarSlotError::UnsupportedRowOffset {
                     name: name.to_owned(),
@@ -514,7 +521,7 @@ impl SourceScalarSlots {
                 .collect();
         }
 
-        if let Some(slot) = source_slot_get(&self.unit_values, name) {
+        if let Some(slot) = source_slot_get(&self.unit_values, name, allow_local) {
             if row_offset != 0 {
                 return Err(SourceScalarSlotError::UnsupportedRowOffset {
                     name: name.to_owned(),
@@ -525,7 +532,7 @@ impl SourceScalarSlots {
                 .collect();
         }
 
-        if let Some(slot) = source_slot_get(&self.group_values, name) {
+        if let Some(slot) = source_slot_get(&self.group_values, name, allow_local) {
             if row_offset != 0 {
                 return Err(SourceScalarSlotError::UnsupportedRowOffset {
                     name: name.to_owned(),
@@ -536,7 +543,7 @@ impl SourceScalarSlots {
                 .collect();
         }
 
-        if let Some(slot) = source_slot_get(&self.constants, name) {
+        if let Some(slot) = source_slot_get(&self.constants, name, allow_local) {
             if slot.stage != 0 {
                 return Err(SourceScalarSlotError::UnsupportedValueShape {
                     name: name.to_owned(),
@@ -547,7 +554,7 @@ impl SourceScalarSlots {
                 .collect();
         }
 
-        if let Some(slot) = source_slot_get(&self.proof_values, name) {
+        if let Some(slot) = source_slot_get(&self.proof_values, name, allow_local) {
             if row_offset != 0 {
                 return Err(SourceScalarSlotError::UnsupportedRowOffset {
                     name: name.to_owned(),
@@ -567,7 +574,8 @@ impl SourceScalarSlots {
         index: u32,
         row_offset: i64,
     ) -> Result<CodeOperand, SourceScalarSlotError> {
-        if let Some(slot) = source_slot_get(&self.commitments, name) {
+        let allow_local = self.source_slot_lookup_uses_local(name)?;
+        if let Some(slot) = source_slot_get(&self.commitments, name, allow_local) {
             if slot.stage != 1 {
                 return Err(SourceScalarSlotError::UnsupportedValueShape {
                     name: name.to_owned(),
@@ -595,7 +603,7 @@ impl SourceScalarSlots {
             ));
         }
 
-        if let Some(slot) = source_slot_get(&self.publics, name) {
+        if let Some(slot) = source_slot_get(&self.publics, name, allow_local) {
             if slot.stage != 1 {
                 return Err(SourceScalarSlotError::UnsupportedValueShape {
                     name: name.to_owned(),
@@ -622,7 +630,7 @@ impl SourceScalarSlots {
             return Ok(CodeOperand::public(offset, 1));
         }
 
-        if let Some(slot) = source_slot_get(&self.challenges, name) {
+        if let Some(slot) = source_slot_get(&self.challenges, name, allow_local) {
             if row_offset != 0 {
                 return Err(SourceScalarSlotError::UnsupportedRowOffset {
                     name: name.to_owned(),
@@ -655,7 +663,7 @@ impl SourceScalarSlots {
             ));
         }
 
-        if let Some(slot) = source_slot_get(&self.unit_values, name) {
+        if let Some(slot) = source_slot_get(&self.unit_values, name, allow_local) {
             if row_offset != 0 {
                 return Err(SourceScalarSlotError::UnsupportedRowOffset {
                     name: name.to_owned(),
@@ -682,7 +690,7 @@ impl SourceScalarSlots {
             ));
         }
 
-        if let Some(slot) = source_slot_get(&self.group_values, name) {
+        if let Some(slot) = source_slot_get(&self.group_values, name, allow_local) {
             if row_offset != 0 {
                 return Err(SourceScalarSlotError::UnsupportedRowOffset {
                     name: name.to_owned(),
@@ -709,7 +717,7 @@ impl SourceScalarSlots {
             ));
         }
 
-        if let Some(slot) = source_slot_get(&self.constants, name) {
+        if let Some(slot) = source_slot_get(&self.constants, name, allow_local) {
             if slot.stage != 0 {
                 return Err(SourceScalarSlotError::UnsupportedValueShape {
                     name: name.to_owned(),
@@ -734,7 +742,7 @@ impl SourceScalarSlots {
             return Ok(CodeOperand::constant_at(id, Some(row_offset), 1));
         }
 
-        if let Some(slot) = source_slot_get(&self.proof_values, name) {
+        if let Some(slot) = source_slot_get(&self.proof_values, name, allow_local) {
             if row_offset != 0 {
                 return Err(SourceScalarSlotError::UnsupportedRowOffset {
                     name: name.to_owned(),
@@ -778,37 +786,38 @@ impl SourceScalarSlots {
             return self.operand_index_at(name, indices[0], row_offset);
         }
 
-        if let Some(slot) = source_slot_get(&self.commitments, name) {
+        let allow_local = self.source_slot_lookup_uses_local(name)?;
+        if let Some(slot) = source_slot_get(&self.commitments, name, allow_local) {
             let index = linear_source_index(name, indices, &slot.lengths)?;
             return self.operand_index_at(name, index, row_offset);
         }
 
-        if let Some(slot) = source_slot_get(&self.constants, name) {
+        if let Some(slot) = source_slot_get(&self.constants, name, allow_local) {
             let index = linear_source_index(name, indices, &slot.lengths)?;
             return self.operand_index_at(name, index, row_offset);
         }
 
-        if let Some(slot) = source_slot_get(&self.publics, name) {
+        if let Some(slot) = source_slot_get(&self.publics, name, allow_local) {
             let index = linear_source_index(name, indices, &slot.lengths)?;
             return self.operand_index_at(name, index, row_offset);
         }
 
-        if let Some(slot) = source_slot_get(&self.unit_values, name) {
+        if let Some(slot) = source_slot_get(&self.unit_values, name, allow_local) {
             let index = linear_source_index(name, indices, &slot.lengths)?;
             return self.operand_index_at(name, index, row_offset);
         }
 
-        if let Some(slot) = source_slot_get(&self.group_values, name) {
+        if let Some(slot) = source_slot_get(&self.group_values, name, allow_local) {
             let index = linear_source_index(name, indices, &slot.lengths)?;
             return self.operand_index_at(name, index, row_offset);
         }
 
-        if let Some(slot) = source_slot_get(&self.proof_values, name) {
+        if let Some(slot) = source_slot_get(&self.proof_values, name, allow_local) {
             let index = linear_source_index(name, indices, &slot.lengths)?;
             return self.operand_index_at(name, index, row_offset);
         }
 
-        if let Some(slot) = source_slot_get(&self.challenges, name) {
+        if let Some(slot) = source_slot_get(&self.challenges, name, allow_local) {
             let index = linear_source_index(name, indices, &slot.lengths)?;
             return self.operand_index_at(name, index, row_offset);
         }
@@ -816,6 +825,50 @@ impl SourceScalarSlots {
         Err(SourceScalarSlotError::UnsupportedIndex {
             name: name.to_owned(),
         })
+    }
+
+    fn source_slot_lookup_uses_local(&self, name: &str) -> Result<bool, SourceScalarSlotError> {
+        let match_count = self.source_slot_match_count(name);
+        if match_count > 1 {
+            return Err(SourceScalarSlotError::DuplicateValueName {
+                name: name.to_owned(),
+            });
+        }
+        Ok(self.exact_source_slot_count(name) == 0)
+    }
+
+    fn source_slot_match_count(&self, name: &str) -> usize {
+        let exact_count = self.exact_source_slot_count(name);
+        if exact_count > 0 {
+            return exact_count;
+        }
+        [
+            source_slot_get(&self.commitments, name, true).is_some(),
+            source_slot_get(&self.unit_values, name, true).is_some(),
+            source_slot_get(&self.group_values, name, true).is_some(),
+            source_slot_get(&self.constants, name, true).is_some(),
+            source_slot_get(&self.publics, name, true).is_some(),
+            source_slot_get(&self.challenges, name, true).is_some(),
+            source_slot_get(&self.proof_values, name, true).is_some(),
+        ]
+        .into_iter()
+        .filter(|matched| *matched)
+        .count()
+    }
+
+    fn exact_source_slot_count(&self, name: &str) -> usize {
+        [
+            self.commitments.contains_key(name),
+            self.unit_values.contains_key(name),
+            self.group_values.contains_key(name),
+            self.constants.contains_key(name),
+            self.publics.contains_key(name),
+            self.challenges.contains_key(name),
+            self.proof_values.contains_key(name),
+        ]
+        .into_iter()
+        .filter(|matched| *matched)
+        .count()
     }
 }
 
@@ -912,8 +965,15 @@ fn insert_source_scalar_slot<T: Clone>(
     Ok(())
 }
 
-fn source_slot_get<'a, T>(slots: &'a BTreeMap<String, T>, name: &str) -> Option<&'a T> {
+fn source_slot_get<'a, T>(
+    slots: &'a BTreeMap<String, T>,
+    name: &str,
+    allow_local: bool,
+) -> Option<&'a T> {
     slots.get(name).or_else(|| {
+        if !allow_local {
+            return None;
+        }
         name.rsplit_once('.')
             .map(|(_, local_name)| local_name)
             .filter(|local_name| !local_name.is_empty())
@@ -1000,6 +1060,45 @@ fn linear_source_index(
 mod tests {
     use super::*;
 
+    fn slots_with_unit_and_group_local_collision() -> SourceScalarSlots {
+        let mut unit_values = BTreeMap::new();
+        insert_source_scalar_slot(
+            &mut unit_values,
+            "air.late".to_owned(),
+            SourceUnitValueSlot {
+                id: 0,
+                stage: 1,
+                source_dimension: 1,
+                operand_dimension: 1,
+                lengths: Vec::new(),
+            },
+        )
+        .expect("unit value should insert");
+        let mut group_values = BTreeMap::new();
+        insert_source_scalar_slot(
+            &mut group_values,
+            "group.late".to_owned(),
+            SourceGroupValueSlot {
+                id: 0,
+                stage: 1,
+                source_dimension: 1,
+                operand_dimension: 1,
+                lengths: Vec::new(),
+            },
+        )
+        .expect("group value should insert");
+
+        SourceScalarSlots {
+            commitments: BTreeMap::new(),
+            unit_values,
+            group_values,
+            constants: BTreeMap::new(),
+            publics: BTreeMap::new(),
+            challenges: BTreeMap::new(),
+            proof_values: BTreeMap::new(),
+        }
+    }
+
     #[test]
     fn rejects_duplicate_local_slot_names() {
         let mut slots = BTreeMap::new();
@@ -1012,6 +1111,26 @@ mod tests {
                 name: "value".to_owned(),
             })
         );
+    }
+
+    #[test]
+    fn rejects_ambiguous_local_names_at_lookup_time() {
+        let slots = slots_with_unit_and_group_local_collision();
+
+        assert_eq!(
+            slots.operand("late"),
+            Err(SourceScalarSlotError::DuplicateValueName {
+                name: "late".to_owned(),
+            })
+        );
+    }
+
+    #[test]
+    fn resolves_qualified_names_when_local_names_collide() {
+        let slots = slots_with_unit_and_group_local_collision();
+
+        assert!(slots.operand("air.late").is_ok());
+        assert!(slots.operand("group.late").is_ok());
     }
 
     #[test]
