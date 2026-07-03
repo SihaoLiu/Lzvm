@@ -970,6 +970,7 @@ HEADER = (
     "opening_row_value_source_rows,opening_row_value_source_extend_calls,"
     "opening_row_value_source_extend_max_rows,"
     "opening_row_value_source_extend_rows_per_call,"
+    "opening_row_value_source_extend_ms_per_call,"
     "opening_row_value_source_extend_ms,"
     "opening_row_value_source_extend_pct,opening_source_row_value_action_hint,"
     "opening_row_dedup_input_rows,opening_row_dedup_unique_rows,"
@@ -5493,6 +5494,11 @@ def summarize_profile_values(
     opening_row_value_source_extend_ms = values.get(
         OPENING_ROW_VALUE_SOURCE_EXTEND_MS_KEY, 0
     )
+    opening_row_value_source_extend_ms_per_call = (
+        opening_row_value_source_extend_ms / opening_row_value_source_extend_calls
+        if opening_row_value_source_extend_calls
+        else 0.0
+    )
     opening_row_value_source_extend_pct = (
         opening_row_value_source_extend_ms * 100.0 / total_ms if total_ms else 0.0
     )
@@ -6169,6 +6175,7 @@ def summarize_profile_values(
         f"{opening_row_value_source_rows},{opening_row_value_source_extend_calls},"
         f"{opening_row_value_source_extend_max_rows},"
         f"{opening_row_value_source_extend_rows_per_call:.3f},"
+        f"{opening_row_value_source_extend_ms_per_call:.3f},"
         f"{opening_row_value_source_extend_ms},"
         f"{opening_row_value_source_extend_pct:.3f},{opening_source_row_value_hint},"
         f"{opening_row_dedup_input_rows},{opening_row_dedup_unique_rows},"
