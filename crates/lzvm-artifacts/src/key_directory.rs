@@ -18,6 +18,7 @@ use crate::hint_program::{
 use crate::metadata_bundle::{
     read_unit_metadata_bundle, MetadataBundleError, UnitMetadataBundle, UnitMetadataPaths,
 };
+use crate::metadata_validation::{validate_global_metadata, MetadataValidationError};
 use crate::pcs_material::{read_pcs_setup_material_file, PcsSetupMaterial, PcsSetupMaterialError};
 use crate::pcs_plan::{
     derive_pcs_setup_plan, encode_pcs_setup_plan, read_pcs_setup_plan_file, PcsPlanError,
@@ -128,6 +129,7 @@ pub struct RequiredPath {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum KeyDirectoryError {
     GlobalInfo(GlobalInfoError),
+    GlobalValidation(MetadataValidationError),
     GlobalConstraints(ConstraintProgramError),
     GlobalHints(HintProgramError),
     RegularConstraints(ConstraintProgramError),
@@ -226,6 +228,9 @@ impl fmt::Display for KeyDirectoryError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::GlobalInfo(error) => write!(f, "key-directory global metadata error: {error}"),
+            Self::GlobalValidation(error) => {
+                write!(f, "key-directory global metadata validation error: {error}")
+            }
             Self::GlobalConstraints(error) => {
                 write!(f, "key-directory global constraint program error: {error}")
             }
@@ -653,7 +658,9 @@ impl GlobalKeyPaths {
 }
 
 fn read_global_info_path(paths: &GlobalKeyPaths) -> Result<GlobalInfo, KeyDirectoryError> {
-    read_global_info_binary_file(&paths.info).map_err(KeyDirectoryError::GlobalInfo)
+    let info = read_global_info_binary_file(&paths.info).map_err(KeyDirectoryError::GlobalInfo)?;
+    validate_global_metadata(&info).map_err(KeyDirectoryError::GlobalValidation)?;
+    Ok(info)
 }
 
 fn optional_path_exists(path: &Path, role: &'static str) -> Result<bool, KeyDirectoryError> {

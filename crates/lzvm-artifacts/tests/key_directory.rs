@@ -7,7 +7,7 @@ use lzvm_artifacts::expression_info::{encode_expression_info, ExpressionInfo};
 use lzvm_artifacts::expression_program::{
     encode_expression_program, ExpressionEntry, ExpressionProgram,
 };
-use lzvm_artifacts::global_info::{encode_global_info, GlobalInfo};
+use lzvm_artifacts::global_info::{encode_global_info, GlobalInfo, NamedStageValue};
 use lzvm_artifacts::hint_program::{
     encode_global_hint_program, encode_regular_hint_program,
     regular_hint_program_from_expression_info, Hint, HintField, HintOperand, HintProgram,
@@ -18,6 +18,7 @@ use lzvm_artifacts::key_directory::{
     read_key_directory_catalog_trusting_pcs_material_digests, read_key_directory_layout,
     validate_key_directory_layout, KeyDirectoryError, KeyUnitKind, KeyUnitPaths,
 };
+use lzvm_artifacts::metadata_validation::MetadataValidationError;
 use lzvm_artifacts::pcs_material::{
     build_pcs_setup_material, encode_pcs_setup_material, read_pcs_setup_material_file,
     PcsSetupMaterialError,
@@ -635,6 +636,44 @@ fn rejects_key_directory_layout_without_binary_global_metadata() {
     let error = read_key_directory_layout(&dir).expect_err("layout should be rejected");
 
     assert!(matches!(error, KeyDirectoryError::GlobalInfo(_)));
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+}
+
+#[test]
+fn rejects_key_directory_layout_with_invalid_global_metadata_counts() {
+    let dir = temp_dir("global-proof-value-counts");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("fixture root should be created");
+    let mut global = fixtures::sample_key_directory_catalog_global_info();
+    global.num_proof_values = vec![2, 0];
+    global.proof_values_map = vec![
+        NamedStageValue {
+            name: "proof-a".to_owned(),
+            stage: 1,
+            id: None,
+            lengths: Vec::new(),
+        },
+        NamedStageValue {
+            name: "proof-b".to_owned(),
+            stage: 2,
+            id: None,
+            lengths: Vec::new(),
+        },
+    ];
+    write_global_metadata(&dir.join("pilout.globalInfo.bin"), &global);
+
+    let error = read_key_directory_layout(&dir).expect_err("layout should be rejected");
+
+    assert!(matches!(
+        error,
+        KeyDirectoryError::GlobalValidation(
+            MetadataValidationError::ProofValueStageCountMismatch {
+                stage: 1,
+                expected: 2,
+                found: 1,
+            }
+        )
+    ));
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 }
 
