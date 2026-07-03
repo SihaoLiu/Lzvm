@@ -1,6 +1,6 @@
 use lzvm_artifacts::expression_info::{
     encode_expression_info, parse_expression_info, read_expression_info_binary_file,
-    read_expression_info_file, ExpressionInfoError,
+    read_expression_info_file, CodeDestination, CodeOperand, ExpressionInfoError,
 };
 use lzvm_artifacts::sectioned::{encode_sectioned_file, SectionedFile, SectionedSection};
 use std::fs;
@@ -82,6 +82,34 @@ fn minimal_operation_with_source_count(source_count: u32) -> Vec<u8> {
     push_u32(&mut section, 0);
     push_u32(&mut section, 1);
     push_u32(&mut section, source_count);
+    section
+}
+
+fn minimal_operation_with_destination_dimension(dimension: u32) -> Vec<u8> {
+    let mut section = minimal_expression_prefix(1);
+    section.push(4);
+    section.push(1);
+    push_u32(&mut section, 0);
+    push_u32(&mut section, dimension);
+    push_u32(&mut section, 1);
+    section.push(2);
+    push_u64(&mut section, 1);
+    push_u32(&mut section, 1);
+    push_u32(&mut section, 0);
+    section
+}
+
+fn minimal_operation_with_number_dimension(dimension: u32) -> Vec<u8> {
+    let mut section = minimal_expression_prefix(1);
+    section.push(4);
+    section.push(1);
+    push_u32(&mut section, 0);
+    push_u32(&mut section, 1);
+    push_u32(&mut section, 1);
+    section.push(2);
+    push_u64(&mut section, 1);
+    push_u32(&mut section, dimension);
+    push_u32(&mut section, 0);
     section
 }
 
@@ -259,5 +287,47 @@ fn rejects_source_count_that_exceeds_remaining_source_operands() {
     assert!(matches!(
         parse_expression_info(&bytes),
         Err(ExpressionInfoError::UnexpectedEof { .. })
+    ));
+}
+
+#[test]
+fn rejects_zero_code_destination_dimensions_when_encoding() {
+    let mut info = fixtures::sample_expression_info_fixture();
+    info.expressions[0].operations[0].destination = CodeDestination::temporary(0, 0);
+
+    assert!(matches!(
+        encode_expression_info(&info),
+        Err(ExpressionInfoError::ZeroDestinationDimension { destination_id: 0 })
+    ));
+}
+
+#[test]
+fn rejects_zero_code_destination_dimensions_when_parsing() {
+    let bytes = expression_info_file(minimal_operation_with_destination_dimension(0));
+
+    assert!(matches!(
+        parse_expression_info(&bytes),
+        Err(ExpressionInfoError::ZeroDestinationDimension { destination_id: 0 })
+    ));
+}
+
+#[test]
+fn rejects_zero_code_operand_dimensions_when_encoding() {
+    let mut info = fixtures::sample_expression_info_fixture();
+    info.expressions[0].operations[0].sources[0] = CodeOperand::number(1, 0);
+
+    assert!(matches!(
+        encode_expression_info(&info),
+        Err(ExpressionInfoError::ZeroOperandDimension { source_index: 0 })
+    ));
+}
+
+#[test]
+fn rejects_zero_code_operand_dimensions_when_parsing() {
+    let bytes = expression_info_file(minimal_operation_with_number_dimension(0));
+
+    assert!(matches!(
+        parse_expression_info(&bytes),
+        Err(ExpressionInfoError::ZeroOperandDimension { source_index: 0 })
     ));
 }

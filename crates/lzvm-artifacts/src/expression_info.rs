@@ -532,6 +532,12 @@ pub enum ExpressionInfoError {
         temporary_id: u32,
         temporary_count: u32,
     },
+    ZeroDestinationDimension {
+        destination_id: u32,
+    },
+    ZeroOperandDimension {
+        source_index: usize,
+    },
     MissingFrameBoundaryOffsets,
     InvalidMagic,
     UnsupportedVersion {
@@ -587,6 +593,14 @@ impl fmt::Display for ExpressionInfoError {
             } => write!(
                 f,
                 "temporary reference {temporary_id} is out of bounds for count {temporary_count}"
+            ),
+            Self::ZeroDestinationDimension { destination_id } => write!(
+                f,
+                "expression-info destination dimension is zero for destination {destination_id}"
+            ),
+            Self::ZeroOperandDimension { source_index } => write!(
+                f,
+                "expression-info source dimension is zero at source {source_index}"
             ),
             Self::MissingFrameBoundaryOffsets => {
                 write!(f, "frame boundary is missing offset bounds")
@@ -751,8 +765,8 @@ fn validate_operations(
 ) -> Result<(), ExpressionInfoError> {
     for operation in operations {
         validate_destination(&operation.destination, temporary_count)?;
-        for source in &operation.sources {
-            validate_operand(source, temporary_count)?;
+        for (source_index, source) in operation.sources.iter().enumerate() {
+            validate_operand(source, temporary_count, source_index)?;
         }
     }
     Ok(())
@@ -761,6 +775,11 @@ fn validate_destination(
     value: &CodeDestination,
     temporary_count: u32,
 ) -> Result<(), ExpressionInfoError> {
+    let (destination_id, destination_dimension) = destination_id_and_dimension(value);
+    if destination_dimension == 0 {
+        return Err(ExpressionInfoError::ZeroDestinationDimension { destination_id });
+    }
+
     if let CodeDestination::Temporary { id, .. } = value {
         if *id >= temporary_count {
             return Err(ExpressionInfoError::TemporaryReferenceOutOfBounds {
@@ -772,7 +791,15 @@ fn validate_destination(
     Ok(())
 }
 
-fn validate_operand(value: &CodeOperand, temporary_count: u32) -> Result<(), ExpressionInfoError> {
+fn validate_operand(
+    value: &CodeOperand,
+    temporary_count: u32,
+    source_index: usize,
+) -> Result<(), ExpressionInfoError> {
+    if operand_dimension(value) == 0 {
+        return Err(ExpressionInfoError::ZeroOperandDimension { source_index });
+    }
+
     if let CodeOperand::Temporary { id, .. } = value {
         if *id >= temporary_count {
             return Err(ExpressionInfoError::TemporaryReferenceOutOfBounds {
@@ -782,4 +809,32 @@ fn validate_operand(value: &CodeOperand, temporary_count: u32) -> Result<(), Exp
         }
     }
     Ok(())
+}
+
+fn destination_id_and_dimension(value: &CodeDestination) -> (u32, u32) {
+    match value {
+        CodeDestination::Temporary { id, dimension }
+        | CodeDestination::Quotient { id, dimension }
+        | CodeDestination::FriExpression { id, dimension } => (*id, *dimension),
+    }
+}
+
+fn operand_dimension(value: &CodeOperand) -> u32 {
+    match value {
+        CodeOperand::Temporary { dimension, .. }
+        | CodeOperand::Number { dimension, .. }
+        | CodeOperand::Evaluation { dimension, .. }
+        | CodeOperand::Challenge { dimension, .. }
+        | CodeOperand::Public { dimension, .. }
+        | CodeOperand::Constant { dimension, .. }
+        | CodeOperand::ConstantAt { dimension, .. }
+        | CodeOperand::Commitment { dimension, .. }
+        | CodeOperand::CommitmentElement { dimension, .. }
+        | CodeOperand::BoundaryZerofier { dimension, .. }
+        | CodeOperand::ProofValue { dimension, .. }
+        | CodeOperand::OpeningDenominator { dimension, .. }
+        | CodeOperand::CustomCommitment { dimension, .. }
+        | CodeOperand::AirGroupValue { dimension, .. }
+        | CodeOperand::AirValue { dimension, .. } => *dimension,
+    }
 }
