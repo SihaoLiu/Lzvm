@@ -139,9 +139,7 @@ fn parse_args(args: &[&str]) -> Result<ParsedArgs, ParseError> {
         match args[index] {
             "--include-path" => {
                 index += 1;
-                let value = args.get(index).ok_or_else(|| {
-                    ParseError::Invalid("missing --include-path value".to_owned())
-                })?;
+                let value = required_option_value(args.get(index), "--include-path")?;
                 include_paths.push(PathBuf::from(value));
             }
             "--include-path-first" => include_path_first = true,
@@ -167,10 +165,41 @@ fn parse_args(args: &[&str]) -> Result<ParsedArgs, ParseError> {
     })
 }
 
+fn required_option_value<'a>(value: Option<&&'a str>, option: &str) -> Result<&'a str, ParseError> {
+    let Some(value) = value else {
+        return Err(ParseError::Invalid(format!("missing {option} value")));
+    };
+    if value.starts_with("--") {
+        return Err(ParseError::Invalid(format!("missing {option} value")));
+    }
+    Ok(value)
+}
+
 fn write_usage(stderr: &mut dyn Write) -> i32 {
     let _ = writeln!(
         stderr,
         "usage: lzvm setup write-source-companions [--include-path <dir>] [--include-path-first] [--refresh-manifest] <main-file> <setup-dir>"
     );
     2
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rejects_missing_include_path_value_during_parse() {
+        for args in [
+            &["--include-path"][..],
+            &["--include-path", "--include-path-first"][..],
+            &["--include-path", "--refresh-manifest"][..],
+        ] {
+            let result = parse_args(args);
+
+            assert!(matches!(
+                result,
+                Err(ParseError::Invalid(message)) if message == "missing --include-path value"
+            ));
+        }
+    }
 }
