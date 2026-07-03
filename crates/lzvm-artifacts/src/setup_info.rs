@@ -400,7 +400,9 @@ fn parse_unit_setup_info_section(
     for _ in 0..section_width_count {
         let name = reader.read_string()?;
         let width = reader.read_u32()?;
-        section_widths.insert(name, width);
+        if section_widths.insert(name.clone(), width).is_some() {
+            return Err(SetupInfoError::InvalidSectionWidth { name });
+        }
     }
 
     let constant_column_count = read_bounded_count(&mut reader, CONSTANT_COLUMN_MIN_BYTES)?;

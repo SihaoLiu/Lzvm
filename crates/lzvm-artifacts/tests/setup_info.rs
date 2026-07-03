@@ -601,6 +601,32 @@ fn rejects_zero_commitment_stage_widths_when_parsing() {
 }
 
 #[test]
+fn rejects_duplicate_commitment_stage_widths_when_parsing() {
+    let mut section = minimal_header_prefix();
+    push_u32(&mut section, 0);
+    push_u32(&mut section, 4);
+    push_string(&mut section, "cm1");
+    push_u32(&mut section, 1);
+    push_string(&mut section, "cm1");
+    push_u32(&mut section, 1);
+    push_string(&mut section, "cm2");
+    push_u32(&mut section, 1);
+    push_string(&mut section, "cm3");
+    push_u32(&mut section, 1);
+    push_u32(&mut section, 0);
+    push_u32(&mut section, 0);
+    push_minimal_stark(&mut section);
+    let bytes = setup_info_file(section, 3);
+
+    assert_eq!(
+        parse_unit_setup_info(&bytes),
+        Err(SetupInfoError::InvalidSectionWidth {
+            name: "cm1".to_owned()
+        })
+    );
+}
+
+#[test]
 fn rejects_zero_version_unit_setup_info_binary() {
     let mut bytes = sample_setup_info_binary();
     bytes[4..8].copy_from_slice(&0_u32.to_le_bytes());
