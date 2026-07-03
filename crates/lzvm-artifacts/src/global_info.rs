@@ -120,6 +120,10 @@ pub enum GlobalInfoError {
         field: &'static str,
         index: usize,
     },
+    InvalidLength {
+        field: &'static str,
+        index: usize,
+    },
     PublicCountMismatch {
         expected: u64,
         found: u64,
@@ -185,6 +189,9 @@ impl fmt::Display for GlobalInfoError {
             ),
             Self::InvalidStage { field, index } => {
                 write!(f, "global-info {field} stage is invalid at index {index}")
+            }
+            Self::InvalidLength { field, index } => {
+                write!(f, "global-info {field} length is invalid at index {index}")
             }
             Self::PublicCountMismatch { expected, found } => write!(
                 f,
@@ -516,6 +523,24 @@ fn validate_global_info(value: &GlobalInfo) -> Result<(), GlobalInfoError> {
             }
         }
     }
+    for (index, entry) in value.proof_values_map.iter().enumerate() {
+        if entry.stage == 0 {
+            return Err(GlobalInfoError::InvalidStage {
+                field: "proofValuesMap",
+                index,
+            });
+        }
+        validate_nonzero_lengths("proofValuesMap", index, &entry.lengths)?;
+    }
+    for (index, entry) in value.publics_map.iter().enumerate() {
+        if entry.stage == 0 {
+            return Err(GlobalInfoError::InvalidStage {
+                field: "publicsMap",
+                index,
+            });
+        }
+        validate_nonzero_lengths("publicsMap", index, &entry.lengths)?;
+    }
     let public_count = global_public_count(&value.publics_map)?;
     if value.n_publics != public_count {
         return Err(GlobalInfoError::PublicCountMismatch {
@@ -526,21 +551,16 @@ fn validate_global_info(value: &GlobalInfo) -> Result<(), GlobalInfoError> {
     if value.transcript_arity == 0 {
         return Err(GlobalInfoError::InvalidTranscriptArity);
     }
-    for (index, entry) in value.proof_values_map.iter().enumerate() {
-        if entry.stage == 0 {
-            return Err(GlobalInfoError::InvalidStage {
-                field: "proofValuesMap",
-                index,
-            });
-        }
-    }
-    for (index, entry) in value.publics_map.iter().enumerate() {
-        if entry.stage == 0 {
-            return Err(GlobalInfoError::InvalidStage {
-                field: "publicsMap",
-                index,
-            });
-        }
+    Ok(())
+}
+
+fn validate_nonzero_lengths(
+    field: &'static str,
+    index: usize,
+    lengths: &[u64],
+) -> Result<(), GlobalInfoError> {
+    if lengths.iter().any(|length| *length == 0) {
+        return Err(GlobalInfoError::InvalidLength { field, index });
     }
     Ok(())
 }

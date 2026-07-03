@@ -272,6 +272,29 @@ fn rejects_named_stage_value_length_count_that_exceeds_remaining_lengths() {
 }
 
 #[test]
+fn rejects_zero_named_stage_value_lengths() {
+    let mut section = section_after_aggregation();
+    push_u32(&mut section, 0);
+    push_u32(&mut section, 0);
+    push_u32(&mut section, 1);
+    push_string(&mut section, "proof-array");
+    push_u64(&mut section, 1);
+    section.push(0);
+    push_u32(&mut section, 1);
+    push_u64(&mut section, 0);
+    push_u32(&mut section, 0);
+    let bytes = global_info_file(section);
+
+    assert_eq!(
+        parse_global_info(&bytes),
+        Err(GlobalInfoError::InvalidLength {
+            field: "proofValuesMap",
+            index: 0,
+        })
+    );
+}
+
+#[test]
 fn rejects_public_value_count_that_exceeds_remaining_records() {
     let mut section = section_after_aggregation();
     push_u32(&mut section, 0);
@@ -284,6 +307,28 @@ fn rejects_public_value_count_that_exceeds_remaining_records() {
         parse_global_info(&bytes),
         Err(GlobalInfoError::UnexpectedEof { .. })
     ));
+}
+
+#[test]
+fn rejects_zero_public_value_lengths() {
+    let mut section = section_after_aggregation();
+    push_u32(&mut section, 0);
+    push_u32(&mut section, 0);
+    push_u32(&mut section, 0);
+    push_u32(&mut section, 1);
+    push_string(&mut section, "public-array");
+    push_u64(&mut section, 1);
+    push_u32(&mut section, 1);
+    push_u64(&mut section, 0);
+    let bytes = global_info_file(section);
+
+    assert_eq!(
+        parse_global_info(&bytes),
+        Err(GlobalInfoError::InvalidLength {
+            field: "publicsMap",
+            index: 0,
+        })
+    );
 }
 
 #[test]
