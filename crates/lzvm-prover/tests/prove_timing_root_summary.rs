@@ -895,6 +895,8 @@ fn prove_timing_root_summary_reports_root_grouping_shape() {
         "segment_commit_memory_diagnostic_consensus",
         "copy_summary_gpu_residency_hint",
         "copy_summary_small_d2h_batching_hint",
+        "copy_summary_host_registration_api_ms",
+        "copy_summary_host_registration_hint",
         "kernel_graph_fusion_priority_hint",
         "kernel_next_action_hint",
         "kernel_graph_fusion_upper_bound_ms",
@@ -1573,6 +1575,8 @@ fn prove_timing_root_summary_reads_sibling_nsys_copy_small_d2h_hints() {
             "metric,value,detail",
             "gpu_residency_hint,batch_or_keep_small_d2h_on_device,prioritize data residency before relying on Graph or fusion speedups",
             "small_d2h_batching_hint,batch_small_d2h_by_size,bytes=1152 calls=41 host_api_ms=3387.322 previous_kernel=poseidon2_merkle_digest_parent_kernel",
+            "host_registration_api_ms,3143.741,host time spent registering or allocating page-locked host memory",
+            "host_registration_hint,cache_or_reuse_pinned_host_memory,host registration overhead is a meaningful transfer-side cost",
             "cuda_api_backtrace_hint",
             "missing_callchain_calls,missing_host_api_ms,recommended_nsys_options",
             "1182,626.112,--trace=cuda,nvtx,osrt --sample=process-tree --cudabacktrace=memory:80000",
@@ -1626,6 +1630,11 @@ fn prove_timing_root_summary_reads_sibling_nsys_copy_small_d2h_hints() {
     assert_eq!(
         value("copy_summary_cuda_api_backtrace_hint"),
         "--trace=cuda|nvtx|osrt_--sample=process-tree_--cudabacktrace=memory:80000"
+    );
+    assert_eq!(value("copy_summary_host_registration_api_ms"), "3143.741");
+    assert_eq!(
+        value("copy_summary_host_registration_hint"),
+        "cache_or_reuse_pinned_host_memory"
     );
 }
 

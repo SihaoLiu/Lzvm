@@ -746,6 +746,8 @@ NSYS_COPY_GPU_RESIDENCY_HINT_KEY = "nsys_copy_gpu_residency_hint"
 NSYS_COPY_H2D_BULK_APP_FRAME_HINT_KEY = "nsys_copy_h2d_bulk_app_frame_hint"
 NSYS_COPY_SMALL_D2H_BATCHING_HINT_KEY = "nsys_copy_small_d2h_batching_hint"
 NSYS_COPY_CUDA_API_BACKTRACE_HINT_KEY = "nsys_copy_cuda_api_backtrace_hint"
+NSYS_COPY_HOST_REGISTRATION_API_MS_KEY = "nsys_copy_host_registration_api_ms"
+NSYS_COPY_HOST_REGISTRATION_HINT_KEY = "nsys_copy_host_registration_hint"
 NSYS_KERNEL_GRAPH_FUSION_PRIORITY_HINT_KEY = (
     "nsys_kernel_graph_fusion_priority_hint"
 )
@@ -1097,6 +1099,7 @@ HEADER = (
     "copy_summary_gpu_residency_hint,copy_summary_h2d_bulk_app_frame_hint,"
     "copy_summary_small_d2h_batching_hint,"
     "copy_summary_cuda_api_backtrace_hint,"
+    "copy_summary_host_registration_api_ms,copy_summary_host_registration_hint,"
     "kernel_graph_fusion_priority_hint,kernel_next_action_hint,"
     "kernel_graph_fusion_upper_bound_ms,"
     "kernel_top_stream_idle_ms,kernel_separation_hint,"
@@ -1177,6 +1180,7 @@ AGGREGATE_MEAN_PROFILE_COLUMNS = (
     "direct_d2h_wait_ms",
     "descriptor_upload_ms",
     "cuda_host_register_wait_ms",
+    "copy_summary_host_registration_api_ms",
     "cuda_h2d_bytes",
     "cuda_allocator_d2h_wait_ms",
     "proof_12s_gap_ms",
@@ -1722,6 +1726,15 @@ def parse_timing_log(text: str) -> dict[str, int | str]:
                 values[NSYS_COPY_GPU_RESIDENCY_HINT_KEY] = row[1].strip()
             elif len(row) >= 2 and row[0].strip() == "small_d2h_batching_hint":
                 values[NSYS_COPY_SMALL_D2H_BATCHING_HINT_KEY] = row[1].strip()
+            elif len(row) >= 2 and row[0].strip() == "host_registration_api_ms":
+                try:
+                    values[NSYS_COPY_HOST_REGISTRATION_API_MS_KEY] = str(
+                        float(row[1].strip())
+                    )
+                except ValueError:
+                    pass
+            elif len(row) >= 2 and row[0].strip() == "host_registration_hint":
+                values[NSYS_COPY_HOST_REGISTRATION_HINT_KEY] = row[1].strip()
             elif (
                 len(row) >= 3
                 and row[0].strip() == "h2d_bulk_app_frame_hint"
@@ -5838,6 +5851,12 @@ def summarize_profile_values(
     copy_summary_cuda_api_backtrace_hint = str(
         values.get(NSYS_COPY_CUDA_API_BACKTRACE_HINT_KEY, "none")
     )
+    copy_summary_host_registration_api_ms = str(
+        values.get(NSYS_COPY_HOST_REGISTRATION_API_MS_KEY, "0.000")
+    )
+    copy_summary_host_registration_hint = str(
+        values.get(NSYS_COPY_HOST_REGISTRATION_HINT_KEY, "none")
+    )
     kernel_graph_fusion_priority_hint = str(
         values.get(NSYS_KERNEL_GRAPH_FUSION_PRIORITY_HINT_KEY, "none")
     )
@@ -6279,6 +6298,7 @@ def summarize_profile_values(
         f"{copy_summary_gpu_residency_hint},{copy_summary_h2d_bulk_app_frame_hint},"
         f"{copy_summary_small_d2h_batching_hint},"
         f"{copy_summary_cuda_api_backtrace_hint},"
+        f"{copy_summary_host_registration_api_ms},{copy_summary_host_registration_hint},"
         f"{kernel_graph_fusion_priority_hint},{kernel_next_action_hint},"
         f"{kernel_graph_fusion_upper_bound_ms},"
         f"{kernel_top_stream_idle_ms},{kernel_separation_hint},"
