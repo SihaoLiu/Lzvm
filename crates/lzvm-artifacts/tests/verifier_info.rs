@@ -446,6 +446,20 @@ fn rejects_stale_verifier_info_format_headers() {
 }
 
 #[test]
+fn rejects_future_verifier_info_format_headers() {
+    let info = fixtures::sample_verifier_info_fixture();
+    let mut bytes = encode_verifier_info(&info).expect("fixture should encode");
+    bytes[4..8].copy_from_slice(&3_u32.to_le_bytes());
+
+    let error = parse_verifier_info(&bytes).expect_err("future format should be rejected");
+
+    assert!(matches!(
+        error,
+        VerifierInfoError::UnsupportedVersion { found: 3, max: 2 }
+    ));
+}
+
+#[test]
 fn reads_verifier_info_binary_from_a_file_path() {
     let info = fixtures::sample_verifier_info_fixture();
     let bytes = encode_verifier_info(&info).expect("fixture should encode");
