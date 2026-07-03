@@ -117,7 +117,13 @@ impl std::error::Error for PcsSetupMaterialError {
 
 impl From<SectionedError> for PcsSetupMaterialError {
     fn from(error: SectionedError) -> Self {
-        Self::Sectioned(error)
+        match error {
+            SectionedError::UnsupportedVersion { found, .. } => Self::UnsupportedVersion {
+                found,
+                expected: PCS_MATERIAL_VERSION,
+            },
+            error => Self::Sectioned(error),
+        }
     }
 }
 

@@ -120,22 +120,26 @@ fn rejects_unsupported_pcs_setup_material_versions() {
     let encoded = encode_pcs_setup_material(&material).expect("material should encode");
     let parsed = lzvm_artifacts::sectioned::parse_sectioned_file(&encoded, *b"pcsm", 1)
         .expect("sectioned material should parse");
-    let encoded = lzvm_artifacts::sectioned::encode_sectioned_file(
-        &lzvm_artifacts::sectioned::SectionedFile {
-            kind: *b"pcsm",
-            version: 0,
-            sections: parsed.sections,
-        },
-    )
-    .expect("sectioned material should encode");
 
-    assert_eq!(
-        parse_pcs_setup_material(&encoded).expect_err("unsupported material version should reject"),
-        PcsSetupMaterialError::UnsupportedVersion {
-            found: 0,
-            expected: 1,
-        }
-    );
+    for version in [0, 2] {
+        let encoded = lzvm_artifacts::sectioned::encode_sectioned_file(
+            &lzvm_artifacts::sectioned::SectionedFile {
+                kind: *b"pcsm",
+                version,
+                sections: parsed.sections.clone(),
+            },
+        )
+        .expect("sectioned material should encode");
+
+        assert_eq!(
+            parse_pcs_setup_material(&encoded)
+                .expect_err("unsupported material version should reject"),
+            PcsSetupMaterialError::UnsupportedVersion {
+                found: version,
+                expected: 1,
+            }
+        );
+    }
 }
 
 #[test]
