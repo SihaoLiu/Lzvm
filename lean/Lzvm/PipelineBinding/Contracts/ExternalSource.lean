@@ -219,27 +219,15 @@ theorem runtime_pipeline_required_external_source_concrete_manifest_contract
       requiresExternalSource
       accepted
       required
-  have materialManifest :=
-    runtime_pipeline_binding_checked_acceptance_query_plan_material_manifest_contract
+  have materialManifestComponents :=
+    runtime_pipeline_binding_checked_acceptance_query_plan_material_manifest_components
       validation
       artifact
       publicInput
       proof
       accepted
-  have segmentCanonical :=
-    runtime_query_plan_material_manifest_contract_implies_segment_canonical
-      validation.queryPlanBindingValidation
-      artifact
-      publicInput
-      proof
-      materialManifest
-  have materialManifestMatches :=
-    runtime_query_plan_material_manifest_contract_implies_matches_schedule
-      validation.queryPlanBindingValidation
-      artifact
-      publicInput
-      proof
-      materialManifest
+  rcases materialManifestComponents with
+    ⟨materialManifest, segmentCanonical, materialManifestMatches⟩
   rcases coreContract with
     ⟨auditedAssumptions,
       proofSystemSound,
@@ -483,27 +471,15 @@ theorem runtime_pipeline_required_external_source_hash_manifest_contract
       requiresExternalSource
       accepted
       required
-  have materialManifest :=
-    runtime_pipeline_binding_checked_acceptance_query_plan_material_manifest_contract
+  have materialManifestComponents :=
+    runtime_pipeline_binding_checked_acceptance_query_plan_material_manifest_components
       validation
       artifact
       publicInput
       proof
       accepted
-  have segmentCanonical :=
-    runtime_query_plan_material_manifest_contract_implies_segment_canonical
-      validation.queryPlanBindingValidation
-      artifact
-      publicInput
-      proof
-      materialManifest
-  have materialManifestMatches :=
-    runtime_query_plan_material_manifest_contract_implies_matches_schedule
-      validation.queryPlanBindingValidation
-      artifact
-      publicInput
-      proof
-      materialManifest
+  rcases materialManifestComponents with
+    ⟨materialManifest, segmentCanonical, materialManifestMatches⟩
   rcases coreContract with
     ⟨auditedAssumptions,
       proofSystemSound,

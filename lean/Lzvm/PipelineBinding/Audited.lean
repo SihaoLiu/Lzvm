@@ -870,27 +870,15 @@ theorem runtime_pipeline_binding_checked_acceptance_audited_manifest_core_sound_
       proof
       _requiresExternalSource
       accepted
-  have materialManifest :=
-    runtime_pipeline_binding_checked_acceptance_query_plan_material_manifest_contract
+  have materialManifestComponents :=
+    runtime_pipeline_binding_checked_acceptance_query_plan_material_manifest_components
       validation
       artifact
       publicInput
       proof
       accepted
-  have segmentCanonical :=
-    runtime_query_plan_material_manifest_contract_implies_segment_canonical
-      validation.queryPlanBindingValidation
-      artifact
-      publicInput
-      proof
-      materialManifest
-  have materialManifestMatches :=
-    runtime_query_plan_material_manifest_contract_implies_matches_schedule
-      validation.queryPlanBindingValidation
-      artifact
-      publicInput
-      proof
-      materialManifest
+  rcases materialManifestComponents with
+    ⟨materialManifest, segmentCanonical, materialManifestMatches⟩
   rcases finalizedCore with
     ⟨cryptoEvidence,
       semanticEvidence,
@@ -1092,27 +1080,15 @@ theorem runtime_pipeline_required_external_source_audited_manifest_core_sound_wi
       requiresExternalSource
       accepted
       required
-  have materialManifest :=
-    runtime_pipeline_binding_checked_acceptance_query_plan_material_manifest_contract
+  have materialManifestComponents :=
+    runtime_pipeline_binding_checked_acceptance_query_plan_material_manifest_components
       validation
       artifact
       publicInput
       proof
       accepted
-  have segmentCanonical :=
-    runtime_query_plan_material_manifest_contract_implies_segment_canonical
-      validation.queryPlanBindingValidation
-      artifact
-      publicInput
-      proof
-      materialManifest
-  have materialManifestMatches :=
-    runtime_query_plan_material_manifest_contract_implies_matches_schedule
-      validation.queryPlanBindingValidation
-      artifact
-      publicInput
-      proof
-      materialManifest
+  rcases materialManifestComponents with
+    ⟨materialManifest, segmentCanonical, materialManifestMatches⟩
   rcases finalizedCore with
     ⟨cryptoEvidence,
       semanticEvidence,

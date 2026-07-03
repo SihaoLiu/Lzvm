@@ -245,27 +245,15 @@ theorem runtime_pipeline_binding_checked_acceptance_audited_manifest_query_openi
       openingEvidence,
       verifierCore,
       soundWitness⟩
-  have materialManifest :=
-    runtime_query_plan_binding_evidence_implies_material_manifest_contract
-      validation.queryPlanBindingValidation
+  have materialManifestComponents :=
+    runtime_pipeline_binding_checked_acceptance_query_plan_material_manifest_components
+      validation
       artifact
       publicInput
       proof
-      queryPlanEvidence
-  have segmentCanonical :=
-    runtime_query_plan_material_manifest_contract_implies_segment_canonical
-      validation.queryPlanBindingValidation
-      artifact
-      publicInput
-      proof
-      materialManifest
-  have materialManifestMatches :=
-    runtime_query_plan_material_manifest_contract_implies_matches_schedule
-      validation.queryPlanBindingValidation
-      artifact
-      publicInput
-      proof
-      materialManifest
+      accepted
+  rcases materialManifestComponents with
+    ⟨materialManifest, segmentCanonical, materialManifestMatches⟩
   exact
     ⟨auditedAssumptions,
       proofSystemSound,

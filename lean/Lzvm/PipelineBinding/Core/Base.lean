@@ -770,6 +770,53 @@ theorem runtime_pipeline_binding_checked_acceptance_query_plan_material_manifest
       proof
       queryPlanAccepted
 
+theorem runtime_pipeline_binding_checked_acceptance_query_plan_material_manifest_components
+    {system : VerifierModel}
+    (validation : RuntimePipelineBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimePipelineBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeQueryPlanMaterialManifestContract
+          system
+          validation.queryPlanBindingValidation
+          artifact
+          publicInput
+          proof
+          /\ validation.queryPlanBindingValidation.queryPlanSegmentCanonical
+            artifact
+            publicInput
+            proof
+          /\ validation.queryPlanBindingValidation.queryPlanMaterialManifestMatchesSchedule
+            artifact
+            publicInput
+            proof := by
+  intro artifact publicInput proof accepted
+  have materialManifest :=
+    runtime_pipeline_binding_checked_acceptance_query_plan_material_manifest_contract
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  exact
+    ⟨materialManifest,
+      runtime_query_plan_material_manifest_contract_implies_segment_canonical
+        validation.queryPlanBindingValidation
+        artifact
+        publicInput
+        proof
+        materialManifest,
+      runtime_query_plan_material_manifest_contract_implies_matches_schedule
+        validation.queryPlanBindingValidation
+        artifact
+        publicInput
+        proof
+        materialManifest⟩
+
 theorem runtime_pipeline_binding_checked_acceptance_query_plan_segment_canonical
     {system : VerifierModel}
     (validation : RuntimePipelineBindingValidation system) :
@@ -785,20 +832,14 @@ theorem runtime_pipeline_binding_checked_acceptance_query_plan_segment_canonical
           publicInput
           proof := by
   intro artifact publicInput proof accepted
-  have materialManifest :=
-    runtime_pipeline_binding_checked_acceptance_query_plan_material_manifest_contract
+  have components :=
+    runtime_pipeline_binding_checked_acceptance_query_plan_material_manifest_components
       validation
       artifact
       publicInput
       proof
       accepted
-  exact
-    runtime_query_plan_material_manifest_contract_implies_segment_canonical
-      validation.queryPlanBindingValidation
-      artifact
-      publicInput
-      proof
-      materialManifest
+  exact components.right.left
 
 theorem runtime_pipeline_binding_checked_acceptance_query_plan_material_manifest_matches_schedule
     {system : VerifierModel}
@@ -815,20 +856,14 @@ theorem runtime_pipeline_binding_checked_acceptance_query_plan_material_manifest
           publicInput
           proof := by
   intro artifact publicInput proof accepted
-  have materialManifest :=
-    runtime_pipeline_binding_checked_acceptance_query_plan_material_manifest_contract
+  have components :=
+    runtime_pipeline_binding_checked_acceptance_query_plan_material_manifest_components
       validation
       artifact
       publicInput
       proof
       accepted
-  exact
-    runtime_query_plan_material_manifest_contract_implies_matches_schedule
-      validation.queryPlanBindingValidation
-      artifact
-      publicInput
-      proof
-      materialManifest
+  exact components.right.right
 
 theorem runtime_pipeline_binding_checked_acceptance_artifact_finalized
     {system : VerifierModel}
