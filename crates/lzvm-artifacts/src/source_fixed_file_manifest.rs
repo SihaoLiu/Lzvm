@@ -227,7 +227,13 @@ impl std::error::Error for SourceFixedFileManifestError {
 
 impl From<SectionedError> for SourceFixedFileManifestError {
     fn from(error: SectionedError) -> Self {
-        Self::Sectioned(error)
+        match error {
+            SectionedError::UnsupportedVersion { found, .. } => Self::UnsupportedVersion {
+                found,
+                expected: SOURCE_FIXED_FILE_MANIFEST_VERSION,
+            },
+            error => Self::Sectioned(error),
+        }
     }
 }
 

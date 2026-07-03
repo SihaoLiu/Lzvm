@@ -74,21 +74,24 @@ fn rejects_unsupported_source_fixed_file_manifest_versions() {
         encode_source_fixed_file_manifest(&sample_manifest()).expect("manifest should encode");
     let parsed = lzvm_artifacts::sectioned::parse_sectioned_file(&encoded, *b"sffm", 1)
         .expect("sectioned manifest should parse");
-    let encoded = encode_sectioned_file(&SectionedFile {
-        kind: *b"sffm",
-        version: 0,
-        sections: parsed.sections,
-    })
-    .expect("sectioned manifest should encode");
 
-    assert_eq!(
-        parse_source_fixed_file_manifest(&encoded)
-            .expect_err("unsupported manifest version should reject"),
-        SourceFixedFileManifestError::UnsupportedVersion {
-            found: 0,
-            expected: 1,
-        }
-    );
+    for version in [0, 2] {
+        let encoded = encode_sectioned_file(&SectionedFile {
+            kind: *b"sffm",
+            version,
+            sections: parsed.sections.clone(),
+        })
+        .expect("sectioned manifest should encode");
+
+        assert_eq!(
+            parse_source_fixed_file_manifest(&encoded)
+                .expect_err("unsupported manifest version should reject"),
+            SourceFixedFileManifestError::UnsupportedVersion {
+                found: version,
+                expected: 1,
+            }
+        );
+    }
 }
 
 #[test]
