@@ -748,7 +748,7 @@ fn global_info_with_values() -> GlobalInfo {
         aggregation_types: vec![Vec::<AggregationType>::new()],
         n_publics: 1,
         num_challenges: vec![1],
-        num_proof_values: vec![2],
+        num_proof_values: vec![1, 1],
         proof_values_map: vec![
             NamedStageValue {
                 name: "proof-a".to_owned(),

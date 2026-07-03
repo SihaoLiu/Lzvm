@@ -1,5 +1,5 @@
 use crate::expression_info::ExpressionInfo;
-use crate::global_info::GlobalInfo;
+use crate::global_info::{GlobalInfo, NamedStageValue};
 use crate::setup_info::UnitSetupInfo;
 use crate::verifier_info::VerifierInfo;
 use std::collections::BTreeSet;
@@ -37,6 +37,15 @@ pub enum MetadataValidationError {
     },
     NoChallengeStages,
     ProofValueCountMismatch {
+        expected: u64,
+        found: u64,
+    },
+    ProofValueStageOutOfRange {
+        stage: u64,
+        declared_stages: usize,
+    },
+    ProofValueStageCountMismatch {
+        stage: u64,
         expected: u64,
         found: u64,
     },
@@ -87,6 +96,21 @@ impl fmt::Display for MetadataValidationError {
                 f,
                 "metadata proof value count mismatch: expected {expected}, found {found}"
             ),
+            Self::ProofValueStageOutOfRange {
+                stage,
+                declared_stages,
+            } => write!(
+                f,
+                "metadata proof value uses stage {stage}, but only {declared_stages} proof value stages are declared"
+            ),
+            Self::ProofValueStageCountMismatch {
+                stage,
+                expected,
+                found,
+            } => write!(
+                f,
+                "metadata proof value stage {stage} count mismatch: expected {expected}, found {found}"
+            ),
             Self::ProofValueCountOverflow => write!(f, "metadata proof value count overflow"),
         }
     }
@@ -120,7 +144,11 @@ pub fn validate_global_metadata(global: &GlobalInfo) -> Result<(), MetadataValid
     }
 
     let found = proof_value_count(global)?;
-    if !global.num_proof_values.is_empty() {
+    if global.num_proof_values.is_empty() {
+        if found != 0 {
+            return Err(MetadataValidationError::ProofValueCountMismatch { expected: 0, found });
+        }
+    } else {
         let expected = global
             .num_proof_values
             .iter()
@@ -132,6 +160,7 @@ pub fn validate_global_metadata(global: &GlobalInfo) -> Result<(), MetadataValid
         if expected != found {
             return Err(MetadataValidationError::ProofValueCountMismatch { expected, found });
         }
+        validate_proof_value_stage_counts(global)?;
     }
 
     Ok(())
@@ -142,18 +171,60 @@ fn proof_value_count(global: &GlobalInfo) -> Result<u64, MetadataValidationError
         .proof_values_map
         .iter()
         .try_fold(0_u64, |count, entry| {
-            let dimension = entry.lengths.iter().try_fold(1_u64, |dimension, length| {
-                if *length == 0 {
-                    return Err(MetadataValidationError::ProofValueCountOverflow);
-                }
-                dimension
-                    .checked_mul(*length)
-                    .ok_or(MetadataValidationError::ProofValueCountOverflow)
-            })?;
+            let dimension = proof_value_dimension(entry)?;
             count
                 .checked_add(dimension)
                 .ok_or(MetadataValidationError::ProofValueCountOverflow)
         })
+}
+
+fn validate_proof_value_stage_counts(global: &GlobalInfo) -> Result<(), MetadataValidationError> {
+    let mut found_by_stage = vec![0_u64; global.num_proof_values.len()];
+    for entry in &global.proof_values_map {
+        let stage_index = usize::try_from(entry.stage)
+            .ok()
+            .and_then(|stage| stage.checked_sub(1))
+            .filter(|stage_index| *stage_index < found_by_stage.len())
+            .ok_or(MetadataValidationError::ProofValueStageOutOfRange {
+                stage: entry.stage,
+                declared_stages: found_by_stage.len(),
+            })?;
+        let dimension = proof_value_dimension(entry)?;
+        found_by_stage[stage_index] = found_by_stage[stage_index]
+            .checked_add(dimension)
+            .ok_or(MetadataValidationError::ProofValueCountOverflow)?;
+    }
+
+    for (stage_index, (expected, found)) in global
+        .num_proof_values
+        .iter()
+        .zip(found_by_stage.iter())
+        .enumerate()
+    {
+        if expected != found {
+            return Err(MetadataValidationError::ProofValueStageCountMismatch {
+                stage: u64::try_from(stage_index)
+                    .ok()
+                    .and_then(|stage| stage.checked_add(1))
+                    .ok_or(MetadataValidationError::ProofValueCountOverflow)?,
+                expected: *expected,
+                found: *found,
+            });
+        }
+    }
+
+    Ok(())
+}
+
+fn proof_value_dimension(entry: &NamedStageValue) -> Result<u64, MetadataValidationError> {
+    entry.lengths.iter().try_fold(1_u64, |dimension, length| {
+        if *length == 0 {
+            return Err(MetadataValidationError::ProofValueCountOverflow);
+        }
+        dimension
+            .checked_mul(*length)
+            .ok_or(MetadataValidationError::ProofValueCountOverflow)
+    })
 }
 
 fn validate_expression_stages(

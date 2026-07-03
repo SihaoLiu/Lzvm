@@ -102,7 +102,7 @@ fn validates_consistent_global_metadata() {
 fn validates_global_proof_value_counts_with_array_lengths() {
     let mut global = fixtures::sample_metadata_bundle_global_info();
     global.proof_values_map[0].lengths = vec![2];
-    global.num_proof_values = vec![3];
+    global.num_proof_values = vec![2, 1];
 
     validate_global_metadata(&global).expect("metadata should agree");
 }
@@ -165,6 +165,20 @@ fn rejects_global_metadata_without_challenge_counters() {
 }
 
 #[test]
+fn rejects_global_proof_values_without_stage_counters() {
+    let mut global = fixtures::sample_metadata_bundle_global_info();
+    global.num_proof_values.clear();
+
+    assert!(matches!(
+        validate_global_metadata(&global),
+        Err(MetadataValidationError::ProofValueCountMismatch {
+            expected: 0,
+            found: 2
+        })
+    ));
+}
+
+#[test]
 fn rejects_global_proof_value_count_mismatches() {
     let mut global = fixtures::sample_metadata_bundle_global_info();
     global.num_proof_values = vec![1];
@@ -174,6 +188,35 @@ fn rejects_global_proof_value_count_mismatches() {
         Err(MetadataValidationError::ProofValueCountMismatch {
             expected: 1,
             found: 2
+        })
+    ));
+}
+
+#[test]
+fn rejects_global_proof_value_stage_count_mismatches() {
+    let mut global = fixtures::sample_metadata_bundle_global_info();
+    global.num_proof_values = vec![2, 0];
+
+    assert!(matches!(
+        validate_global_metadata(&global),
+        Err(MetadataValidationError::ProofValueStageCountMismatch {
+            stage: 1,
+            expected: 2,
+            found: 1
+        })
+    ));
+}
+
+#[test]
+fn rejects_global_proof_value_stages_without_declared_counters() {
+    let mut global = fixtures::sample_metadata_bundle_global_info();
+    global.num_proof_values = vec![2];
+
+    assert!(matches!(
+        validate_global_metadata(&global),
+        Err(MetadataValidationError::ProofValueStageOutOfRange {
+            stage: 2,
+            declared_stages: 1
         })
     ));
 }

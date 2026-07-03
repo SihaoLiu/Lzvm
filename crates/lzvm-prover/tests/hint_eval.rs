@@ -779,7 +779,7 @@ fn sample_global_info() -> GlobalInfo {
         ],
         n_publics: 2,
         num_challenges: vec![1],
-        num_proof_values: vec![2],
+        num_proof_values: vec![1, 1],
         proof_values_map: vec![
             NamedStageValue {
                 name: "pv-a".to_owned(),
