@@ -143,6 +143,9 @@ fn proof_value_count(global: &GlobalInfo) -> Result<u64, MetadataValidationError
         .iter()
         .try_fold(0_u64, |count, entry| {
             let dimension = entry.lengths.iter().try_fold(1_u64, |dimension, length| {
+                if *length == 0 {
+                    return Err(MetadataValidationError::ProofValueCountOverflow);
+                }
                 dimension
                     .checked_mul(*length)
                     .ok_or(MetadataValidationError::ProofValueCountOverflow)
