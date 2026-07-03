@@ -3,8 +3,8 @@ use std::fmt;
 
 use crate::constraint_program::{ConstraintEntry, ConstraintProgram};
 use crate::expression_info::{
-    BoundaryKind, CodeDestination, CodeOperand, CodeOperation, ConstraintCode, ExpressionCode,
-    ExpressionInfo, OperationKind,
+    validate_expression_info, BoundaryKind, CodeDestination, CodeOperand, CodeOperation,
+    ConstraintCode, ExpressionCode, ExpressionInfo, ExpressionInfoError, OperationKind,
 };
 use crate::expression_program::{ExpressionEntry, ExpressionProgram};
 use crate::global_info::{GlobalInfo, NamedStageValue};
@@ -79,6 +79,7 @@ pub enum RegularProgramLoweringError {
         value: u32,
     },
     LengthOverflow,
+    Expression(ExpressionInfoError),
     Hints(HintProgramError),
     Verifier(VerifierInfoError),
 }
@@ -161,6 +162,7 @@ impl fmt::Display for RegularProgramLoweringError {
                 write!(f, "regular program value does not fit in u16: {value}")
             }
             Self::LengthOverflow => write!(f, "regular program lowering length overflow"),
+            Self::Expression(error) => write!(f, "{error}"),
             Self::Hints(error) => write!(f, "{error}"),
             Self::Verifier(error) => write!(f, "{error}"),
         }
@@ -168,6 +170,12 @@ impl fmt::Display for RegularProgramLoweringError {
 }
 
 impl std::error::Error for RegularProgramLoweringError {}
+
+impl From<ExpressionInfoError> for RegularProgramLoweringError {
+    fn from(error: ExpressionInfoError) -> Self {
+        Self::Expression(error)
+    }
+}
 
 impl From<HintProgramError> for RegularProgramLoweringError {
     fn from(error: HintProgramError) -> Self {
@@ -185,6 +193,7 @@ pub fn regular_program_from_expression_info(
     info: &ExpressionInfo,
     setup: &UnitSetupInfo,
 ) -> Result<RegularProgram, RegularProgramLoweringError> {
+    validate_expression_info(info)?;
     let mut expression_numbers = Vec::new();
     let mut expression_program = ExpressionProgram {
         max_tmp1: 0,

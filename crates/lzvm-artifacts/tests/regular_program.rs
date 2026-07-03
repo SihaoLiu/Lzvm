@@ -15,7 +15,7 @@ use lzvm_artifacts::regular_program::{
 use lzvm_artifacts::{
     expression_info::{
         BoundaryKind, CodeDestination, CodeOperand, CodeOperation, ConstraintCode, ExpressionCode,
-        ExpressionInfo, OperationKind,
+        ExpressionInfo, ExpressionInfoError, OperationKind,
     },
     global_info::{
         AggregationType, CurveKind, GlobalAir, GlobalInfo, NamedStageValue, PublicValue,
@@ -207,6 +207,34 @@ fn builds_regular_program_from_expression_info() {
 }
 
 #[test]
+fn rejects_duplicate_expression_ids_when_lowering() {
+    let expression = ExpressionCode {
+        expression_id: 11,
+        stage: 1,
+        line: "public plus constant".to_owned(),
+        temporary_count: 1,
+        destination: None,
+        operations: vec![CodeOperation {
+            op: OperationKind::Add,
+            destination: CodeDestination::temporary(0, 1),
+            sources: vec![CodeOperand::public(0, 1), CodeOperand::number(5, 1)],
+        }],
+    };
+    let info = ExpressionInfo {
+        hints: Vec::new(),
+        expressions: vec![expression.clone(), expression],
+        constraints: Vec::new(),
+    };
+
+    assert_eq!(
+        regular_program_from_expression_info(&info, &minimal_setup_info()),
+        Err(RegularProgramLoweringError::Expression(
+            ExpressionInfoError::DuplicateExpressionId { expression_id: 11 }
+        ))
+    );
+}
+
+#[test]
 fn lowers_extension_constraint_sources_in_canonical_order() {
     let info = ExpressionInfo {
         hints: Vec::new(),
@@ -312,11 +340,13 @@ fn rejects_temporary_sources_before_definition() {
 
     assert_eq!(
         regular_program_from_expression_info(&info, &minimal_setup_info()),
-        Err(RegularProgramLoweringError::TemporaryReadBeforeWrite {
-            id: 1,
-            dimension: 1,
-            operation_index: 1
-        })
+        Err(RegularProgramLoweringError::Expression(
+            ExpressionInfoError::TemporaryReadBeforeWrite {
+                temporary_id: 1,
+                dimension: 1,
+                operation_index: 1
+            }
+        ))
     );
 }
 

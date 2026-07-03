@@ -779,7 +779,7 @@ pub fn encode_expression_info(value: &ExpressionInfo) -> Result<Vec<u8>, Express
     encode_sectioned_file(&file).map_err(ExpressionInfoError::from)
 }
 
-fn validate_expression_info(value: &ExpressionInfo) -> Result<(), ExpressionInfoError> {
+pub(crate) fn validate_expression_info(value: &ExpressionInfo) -> Result<(), ExpressionInfoError> {
     validate_hints(&value.hints)?;
     let mut seen = BTreeSet::new();
     for expression in &value.expressions {
