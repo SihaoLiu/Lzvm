@@ -88,13 +88,17 @@ fn minimal_header_prefix() -> Vec<u8> {
 }
 
 fn push_minimal_section_widths(section: &mut Vec<u8>) {
+    push_stage_section_widths(section, 1, 1, 1);
+}
+
+fn push_stage_section_widths(section: &mut Vec<u8>, cm1: u32, cm2: u32, cm3: u32) {
     push_u32(section, 3);
     push_string(section, "cm1");
-    push_u32(section, 1);
+    push_u32(section, cm1);
     push_string(section, "cm2");
-    push_u32(section, 1);
+    push_u32(section, cm2);
     push_string(section, "cm3");
-    push_u32(section, 1);
+    push_u32(section, cm3);
 }
 
 fn required_prefix_through_boundaries() -> Vec<u8> {
@@ -414,6 +418,33 @@ fn rejects_overlapping_commitment_columns() {
 #[test]
 fn rejects_overlapping_commitment_columns_when_parsing() {
     let mut section = minimal_required_section();
+    push_u32(&mut section, 2);
+    for (name, pols_map_id) in [("trace.a", 0_u32), ("trace.overlap", 1_u32)] {
+        push_string(&mut section, name);
+        push_u32(&mut section, 1);
+        push_u32(&mut section, 1);
+        push_u32(&mut section, pols_map_id);
+        push_u32(&mut section, pols_map_id);
+        push_u32(&mut section, 0);
+        push_u8(&mut section, 0);
+        push_u32(&mut section, 0);
+    }
+    let bytes = setup_info_file(section, 3);
+
+    assert_eq!(
+        parse_unit_setup_info(&bytes),
+        Err(SetupInfoError::InvalidCommitmentColumn { index: 1 })
+    );
+}
+
+#[test]
+fn rejects_overlapping_commitment_columns_without_width_sized_allocation() {
+    let mut section = minimal_header_prefix();
+    push_u32(&mut section, 0);
+    push_stage_section_widths(&mut section, u32::MAX, 1, 1);
+    push_u32(&mut section, 0);
+    push_u32(&mut section, 0);
+    push_minimal_stark(&mut section);
     push_u32(&mut section, 2);
     for (name, pols_map_id) in [("trace.a", 0_u32), ("trace.overlap", 1_u32)] {
         push_string(&mut section, name);

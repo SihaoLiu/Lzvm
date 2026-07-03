@@ -739,7 +739,7 @@ fn validate_commitment_columns(info: &UnitSetupInfo) -> Result<(), SetupInfoErro
         .n_stages
         .checked_add(1)
         .ok_or(SetupInfoError::LengthOverflow)?;
-    let mut stage_occupancy = BTreeMap::<u32, Vec<bool>>::new();
+    let mut stage_occupancy = BTreeMap::<u32, Vec<(u32, u32)>>::new();
     for (index, column) in info.commitment_columns.iter().enumerate() {
         if column.stage == 0
             || column.stage > max_stage
@@ -759,16 +759,14 @@ fn validate_commitment_columns(info: &UnitSetupInfo) -> Result<(), SetupInfoErro
         if end > width {
             return Err(SetupInfoError::InvalidCommitmentColumn { index });
         }
-        let start = u32_to_usize(column.stage_position)?;
-        let end = u32_to_usize(end)?;
-        let width = u32_to_usize(width)?;
-        let occupied = stage_occupancy
-            .entry(column.stage)
-            .or_insert_with(|| vec![false; width]);
-        if occupied[start..end].iter().any(|occupied| *occupied) {
+        let ranges = stage_occupancy.entry(column.stage).or_default();
+        if ranges
+            .iter()
+            .any(|(start, previous_end)| column.stage_position < *previous_end && *start < end)
+        {
             return Err(SetupInfoError::InvalidCommitmentColumn { index });
         }
-        occupied[start..end].fill(true);
+        ranges.push((column.stage_position, end));
     }
     Ok(())
 }
