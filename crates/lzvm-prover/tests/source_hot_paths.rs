@@ -9908,11 +9908,13 @@ fn proof_artifact_unit_values_coverage_matches_lean_binding_contract() {
         coverage_body.contains("collect::<BTreeSet<(usize, u32)>>()")
             && coverage_body.contains("let mut explicit_identities = BTreeSet::new()")
             && coverage_body.contains("!output_identities.contains(&identity)")
+            && coverage_body.contains("!explicit_identities.insert(identity)")
             && coverage_body
                 .contains("!explicit_identities.contains(&(unit_index, trace_instance_index))")
             && coverage_body.contains("unexpected explicit unit values")
+            && coverage_body.contains("duplicate explicit unit values")
             && coverage_body.contains("missing explicit unit values"),
-        "explicit unit values coverage should reject missing and unexpected trace identities"
+        "explicit unit values coverage should reject missing, duplicate, and unexpected trace identities"
     );
 
     assert!(

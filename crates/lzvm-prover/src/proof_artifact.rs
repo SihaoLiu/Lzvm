@@ -2092,7 +2092,12 @@ fn validate_explicit_unit_values_trace_identity_coverage(
                 "unexpected explicit unit values for unit {unit_index} trace instance {trace_instance_index}"
             ));
         }
-        explicit_identities.insert(identity);
+        if !explicit_identities.insert(identity) {
+            let (unit_index, trace_instance_index) = identity;
+            return Err(format!(
+                "duplicate explicit unit values for unit {unit_index} trace instance {trace_instance_index}"
+            ));
+        }
     }
 
     for (unit_index, trace_instance_index) in output_identities {
@@ -2266,6 +2271,33 @@ mod tests {
 
         validate_explicit_unit_values_trace_identity_coverage([(0, 0), (0, 1)], &explicit_values)
             .expect("complete explicit values should validate");
+    }
+
+    #[test]
+    fn rejects_duplicate_explicit_unit_values_identity() {
+        let explicit_values = [
+            ProveUnitValues {
+                unit_index: 0,
+                trace_instance_index: 1,
+                unit_value_map: Vec::new(),
+                packed_values: vec![Felt::from_u64(11)],
+            },
+            ProveUnitValues {
+                unit_index: 0,
+                trace_instance_index: 1,
+                unit_value_map: Vec::new(),
+                packed_values: vec![Felt::from_u64(13)],
+            },
+        ];
+
+        let error =
+            validate_explicit_unit_values_trace_identity_coverage([(0, 1)], &explicit_values)
+                .expect_err("duplicate explicit unit values should reject");
+
+        assert_eq!(
+            error,
+            "duplicate explicit unit values for unit 0 trace instance 1"
+        );
     }
 
     #[test]
