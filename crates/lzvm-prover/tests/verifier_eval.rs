@@ -324,6 +324,52 @@ fn evaluates_verifier_code_with_duplicate_opened_stages_by_first_match() {
 }
 
 #[test]
+fn rejects_verifier_temporary_sources_before_definition() {
+    let code = code(
+        1,
+        vec![operation(
+            VerifierOperationKind::Copy,
+            destination(0),
+            vec![tmp(0)],
+        )],
+    );
+
+    assert_eq!(
+        evaluate_verifier_code(&code, &VerifierEvalInputs::default()),
+        Err(VerifierEvalError::TemporaryReadBeforeWrite {
+            temporary_id: 0,
+            dimension: 3,
+            operation_index: 0
+        })
+    );
+}
+
+#[test]
+fn rejects_mixed_verifier_temporary_dimensions() {
+    let code = code(
+        1,
+        vec![
+            operation(
+                VerifierOperationKind::Copy,
+                VerifierDestination::temporary(0, 1),
+                vec![number(1)],
+            ),
+            operation(VerifierOperationKind::Copy, destination(0), vec![number(1)]),
+        ],
+    );
+
+    assert_eq!(
+        evaluate_verifier_code(&code, &VerifierEvalInputs::default()),
+        Err(VerifierEvalError::TemporaryDimensionMismatch {
+            temporary_id: 0,
+            expected_dimension: 1,
+            found_dimension: 3,
+            operation_index: 1
+        })
+    );
+}
+
+#[test]
 fn rejects_verifier_code_source_indexes_outside_inputs() {
     let code = code(
         1,

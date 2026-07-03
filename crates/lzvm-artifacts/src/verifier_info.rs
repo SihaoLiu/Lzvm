@@ -1,4 +1,4 @@
-use std::collections::BTreeSet;
+use std::collections::BTreeMap;
 use std::fmt;
 use std::path::Path;
 
@@ -123,6 +123,12 @@ pub enum VerifierInfoError {
         dimension: u32,
         operation_index: usize,
     },
+    TemporaryDimensionMismatch {
+        temporary_id: u32,
+        expected_dimension: u32,
+        found_dimension: u32,
+        operation_index: usize,
+    },
     EmptyCodeBlock {
         field: &'static str,
     },
@@ -190,6 +196,15 @@ impl fmt::Display for VerifierInfoError {
                 f,
                 "temporary reference {temporary_id} with dimension {dimension} is read before write at operation {operation_index}"
             ),
+            Self::TemporaryDimensionMismatch {
+                temporary_id,
+                expected_dimension,
+                found_dimension,
+                operation_index,
+            } => write!(
+                f,
+                "temporary reference {temporary_id} has dimension {found_dimension} at operation {operation_index}, expected {expected_dimension}"
+            ),
             Self::EmptyCodeBlock { field } => write!(f, "empty verifier-info code block: {field}"),
             Self::InvalidMagic => write!(f, "invalid verifier-info file magic"),
             Self::UnsupportedVersion { found, max } => {
@@ -249,6 +264,7 @@ impl std::error::Error for VerifierInfoError {
             Self::NumberNonCanonical { source, .. } => Some(source),
             Self::TemporaryReferenceOutOfBounds { .. }
             | Self::TemporaryReadBeforeWrite { .. }
+            | Self::TemporaryDimensionMismatch { .. }
             | Self::EmptyCodeBlock { .. }
             | Self::InvalidMagic
             | Self::UnsupportedVersion { .. }
@@ -424,7 +440,7 @@ fn encode_verifier_info_section(value: &VerifierInfo) -> Result<Vec<u8>, Verifie
     Ok(out)
 }
 
-fn validate_verifier_info(value: &VerifierInfo) -> Result<(), VerifierInfoError> {
+pub(crate) fn validate_verifier_info(value: &VerifierInfo) -> Result<(), VerifierInfoError> {
     validate_verifier_code(&value.quotient, "qVerifier")?;
     validate_verifier_code(&value.query, "queryVerifier")
 }
@@ -436,27 +452,66 @@ fn validate_verifier_code(
     if value.operations.is_empty() {
         return Err(VerifierInfoError::EmptyCodeBlock { field });
     }
-    let mut defined = BTreeSet::new();
+    let mut temporary_dimensions = BTreeMap::new();
     for (operation_index, operation) in value.operations.iter().enumerate() {
         validate_destination(&operation.destination, value.temporary_count)?;
         for (source_index, source) in operation.sources.iter().enumerate() {
             validate_operand(source, value.temporary_count, source_index)?;
             if let VerifierOperand::Temporary { id, dimension } = source {
-                if !defined.contains(&(*id, *dimension)) {
-                    return Err(VerifierInfoError::TemporaryReadBeforeWrite {
-                        temporary_id: *id,
-                        dimension: *dimension,
-                        operation_index,
-                    });
-                }
+                validate_temporary_read(&temporary_dimensions, *id, *dimension, operation_index)?;
             }
         }
-        defined.insert((
+        define_temporary(
+            &mut temporary_dimensions,
             operation.destination.temporary_id,
             operation.destination.dimension,
-        ));
+            operation_index,
+        )?;
     }
     Ok(())
+}
+
+fn validate_temporary_read(
+    temporary_dimensions: &BTreeMap<u32, u32>,
+    temporary_id: u32,
+    dimension: u32,
+    operation_index: usize,
+) -> Result<(), VerifierInfoError> {
+    match temporary_dimensions.get(&temporary_id) {
+        Some(expected_dimension) if *expected_dimension == dimension => Ok(()),
+        Some(expected_dimension) => Err(VerifierInfoError::TemporaryDimensionMismatch {
+            temporary_id,
+            expected_dimension: *expected_dimension,
+            found_dimension: dimension,
+            operation_index,
+        }),
+        None => Err(VerifierInfoError::TemporaryReadBeforeWrite {
+            temporary_id,
+            dimension,
+            operation_index,
+        }),
+    }
+}
+
+fn define_temporary(
+    temporary_dimensions: &mut BTreeMap<u32, u32>,
+    temporary_id: u32,
+    dimension: u32,
+    operation_index: usize,
+) -> Result<(), VerifierInfoError> {
+    match temporary_dimensions.get(&temporary_id) {
+        Some(expected_dimension) if *expected_dimension == dimension => Ok(()),
+        Some(expected_dimension) => Err(VerifierInfoError::TemporaryDimensionMismatch {
+            temporary_id,
+            expected_dimension: *expected_dimension,
+            found_dimension: dimension,
+            operation_index,
+        }),
+        None => {
+            temporary_dimensions.insert(temporary_id, dimension);
+            Ok(())
+        }
+    }
 }
 
 fn read_verifier_code(reader: &mut Reader<'_>) -> Result<VerifierCode, VerifierInfoError> {

@@ -12,7 +12,8 @@ use crate::hint_program::{regular_hint_program_from_expression_info, HintProgram
 use crate::regular_program::RegularProgram;
 use crate::setup_info::{StageValue, UnitSetupInfo};
 use crate::verifier_info::{
-    VerifierCode, VerifierInfo, VerifierOperand, VerifierOperation, VerifierOperationKind,
+    validate_verifier_info, VerifierCode, VerifierInfo, VerifierInfoError, VerifierOperand,
+    VerifierOperation, VerifierOperationKind,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -79,6 +80,7 @@ pub enum RegularProgramLoweringError {
     },
     LengthOverflow,
     Hints(HintProgramError),
+    Verifier(VerifierInfoError),
 }
 
 impl fmt::Display for RegularProgramLoweringError {
@@ -160,6 +162,7 @@ impl fmt::Display for RegularProgramLoweringError {
             }
             Self::LengthOverflow => write!(f, "regular program lowering length overflow"),
             Self::Hints(error) => write!(f, "{error}"),
+            Self::Verifier(error) => write!(f, "{error}"),
         }
     }
 }
@@ -169,6 +172,12 @@ impl std::error::Error for RegularProgramLoweringError {}
 impl From<HintProgramError> for RegularProgramLoweringError {
     fn from(error: HintProgramError) -> Self {
         Self::Hints(error)
+    }
+}
+
+impl From<VerifierInfoError> for RegularProgramLoweringError {
+    fn from(error: VerifierInfoError) -> Self {
+        Self::Verifier(error)
     }
 }
 
@@ -220,6 +229,7 @@ pub fn verifier_program_from_verifier_info(
     setup: &UnitSetupInfo,
     global: &GlobalInfo,
 ) -> Result<ExpressionProgram, RegularProgramLoweringError> {
+    validate_verifier_info(info)?;
     let proof_value_offsets = proof_value_offsets(global)?;
     let mut numbers = Vec::new();
     let mut program = ExpressionProgram {

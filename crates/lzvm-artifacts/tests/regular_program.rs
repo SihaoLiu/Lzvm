@@ -22,8 +22,8 @@ use lzvm_artifacts::{
     },
     setup_info::{CommitmentColumn, FriStep, StageValue, StarkStruct, UnitSetupInfo},
     verifier_info::{
-        VerifierCode, VerifierDestination, VerifierInfo, VerifierOperand, VerifierOperation,
-        VerifierOperationKind,
+        VerifierCode, VerifierDestination, VerifierInfo, VerifierInfoError, VerifierOperand,
+        VerifierOperation, VerifierOperationKind,
     },
 };
 use std::collections::BTreeMap;
@@ -545,6 +545,57 @@ fn builds_verifier_program_from_verifier_info() {
     assert_eq!(program.entries[1].expression_id, 9);
     assert_eq!(program.entries[1].stage, 3);
     assert_eq!(program.entries[1].source_line, "query check");
+}
+
+#[test]
+fn rejects_mixed_verifier_temporary_dimensions_when_lowering() {
+    let info = VerifierInfo {
+        quotient: VerifierCode {
+            expression_id: None,
+            stage: None,
+            line: "quotient check".to_owned(),
+            temporary_count: 1,
+            operations: vec![
+                VerifierOperation {
+                    op: VerifierOperationKind::Copy,
+                    destination: VerifierDestination::temporary(0, 1),
+                    sources: vec![VerifierOperand::number(1, 1)],
+                },
+                VerifierOperation {
+                    op: VerifierOperationKind::Copy,
+                    destination: VerifierDestination::temporary(0, 3),
+                    sources: vec![VerifierOperand::number(1, 1)],
+                },
+            ],
+        },
+        query: VerifierCode {
+            expression_id: None,
+            stage: None,
+            line: "query check".to_owned(),
+            temporary_count: 1,
+            operations: vec![VerifierOperation {
+                op: VerifierOperationKind::Copy,
+                destination: VerifierDestination::temporary(0, 3),
+                sources: vec![VerifierOperand::number(1, 1)],
+            }],
+        },
+    };
+
+    assert_eq!(
+        verifier_program_from_verifier_info(
+            &info,
+            &minimal_setup_info(),
+            &global_info_with_values()
+        ),
+        Err(RegularProgramLoweringError::Verifier(
+            VerifierInfoError::TemporaryDimensionMismatch {
+                temporary_id: 0,
+                expected_dimension: 1,
+                found_dimension: 3,
+                operation_index: 1
+            }
+        ))
+    );
 }
 
 #[test]

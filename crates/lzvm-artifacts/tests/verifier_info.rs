@@ -142,6 +142,33 @@ fn verifier_code_with_temporary_read_before_write() -> Vec<u8> {
     section
 }
 
+fn verifier_code_with_temporary_dimension_mismatch() -> Vec<u8> {
+    let mut section = Vec::new();
+    section.push(0);
+    section.push(0);
+    push_string(&mut section, "");
+    push_u32(&mut section, 1);
+    push_u32(&mut section, 2);
+
+    section.push(4);
+    push_u32(&mut section, 0);
+    push_u32(&mut section, 1);
+    push_u32(&mut section, 1);
+    section.push(2);
+    push_u64(&mut section, 1);
+    push_u32(&mut section, 1);
+
+    section.push(4);
+    push_u32(&mut section, 0);
+    push_u32(&mut section, 3);
+    push_u32(&mut section, 1);
+    section.push(2);
+    push_u64(&mut section, 1);
+    push_u32(&mut section, 1);
+
+    section
+}
+
 fn verifier_info_with_first_code(code: Vec<u8>) -> Vec<u8> {
     let mut section = code;
     section.extend_from_slice(&verifier_code_with_number(1));
@@ -298,6 +325,49 @@ fn rejects_temporary_sources_before_definition_when_parsing() {
         Err(VerifierInfoError::TemporaryReadBeforeWrite {
             temporary_id: 1,
             dimension: 1,
+            operation_index: 1
+        })
+    ));
+}
+
+#[test]
+fn rejects_mixed_temporary_dimensions() {
+    let mut info = fixtures::sample_verifier_info_fixture();
+    info.quotient.temporary_count = 1;
+    info.quotient.operations = vec![
+        VerifierOperation {
+            op: VerifierOperationKind::Copy,
+            destination: VerifierDestination::temporary(0, 1),
+            sources: vec![VerifierOperand::number(1, 1)],
+        },
+        VerifierOperation {
+            op: VerifierOperationKind::Copy,
+            destination: VerifierDestination::temporary(0, 3),
+            sources: vec![VerifierOperand::number(1, 1)],
+        },
+    ];
+
+    assert!(matches!(
+        encode_verifier_info(&info),
+        Err(VerifierInfoError::TemporaryDimensionMismatch {
+            temporary_id: 0,
+            expected_dimension: 1,
+            found_dimension: 3,
+            operation_index: 1
+        })
+    ));
+}
+
+#[test]
+fn rejects_mixed_temporary_dimensions_when_parsing() {
+    let bytes = verifier_info_with_first_code(verifier_code_with_temporary_dimension_mismatch());
+
+    assert!(matches!(
+        parse_verifier_info(&bytes),
+        Err(VerifierInfoError::TemporaryDimensionMismatch {
+            temporary_id: 0,
+            expected_dimension: 1,
+            found_dimension: 3,
             operation_index: 1
         })
     ));

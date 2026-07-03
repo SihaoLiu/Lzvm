@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::fmt;
 
 use lzvm_artifacts::verifier_info::{
@@ -67,6 +68,17 @@ pub enum VerifierEvalError {
         expected: usize,
         found: usize,
     },
+    TemporaryReadBeforeWrite {
+        temporary_id: u32,
+        dimension: u32,
+        operation_index: usize,
+    },
+    TemporaryDimensionMismatch {
+        temporary_id: u32,
+        expected_dimension: u32,
+        found_dimension: u32,
+        operation_index: usize,
+    },
 }
 
 impl fmt::Display for VerifierEvalError {
@@ -110,6 +122,23 @@ impl fmt::Display for VerifierEvalError {
                 f,
                 "verifier evaluation operation {op:?} expected {expected} sources, found {found}"
             ),
+            Self::TemporaryReadBeforeWrite {
+                temporary_id,
+                dimension,
+                operation_index,
+            } => write!(
+                f,
+                "verifier evaluation temporary {temporary_id} with dimension {dimension} is read before write at operation {operation_index}"
+            ),
+            Self::TemporaryDimensionMismatch {
+                temporary_id,
+                expected_dimension,
+                found_dimension,
+                operation_index,
+            } => write!(
+                f,
+                "verifier evaluation temporary {temporary_id} has dimension {found_dimension} at operation {operation_index}, expected {expected_dimension}"
+            ),
         }
     }
 }
@@ -120,6 +149,7 @@ pub fn evaluate_verifier_code(
     code: &VerifierCode,
     inputs: &VerifierEvalInputs<'_>,
 ) -> Result<Ext3, VerifierEvalError> {
+    validate_temporary_metadata(code)?;
     let mut temporaries = vec![Ext3::ZERO; code.temporary_count as usize];
     for operation in &code.operations {
         let destination = destination_index(&operation.destination, temporaries.len())?;
@@ -150,6 +180,67 @@ pub fn evaluate_verifier_code(
         .first()
         .copied()
         .ok_or(VerifierEvalError::MissingResultTemporary)
+}
+
+fn validate_temporary_metadata(code: &VerifierCode) -> Result<(), VerifierEvalError> {
+    let mut temporary_dimensions = BTreeMap::new();
+    for (operation_index, operation) in code.operations.iter().enumerate() {
+        for source in &operation.sources {
+            if let VerifierOperand::Temporary { id, dimension } = source {
+                validate_temporary_read(&temporary_dimensions, *id, *dimension, operation_index)?;
+            }
+        }
+        define_temporary(
+            &mut temporary_dimensions,
+            operation.destination.temporary_id,
+            operation.destination.dimension,
+            operation_index,
+        )?;
+    }
+    Ok(())
+}
+
+fn validate_temporary_read(
+    temporary_dimensions: &BTreeMap<u32, u32>,
+    temporary_id: u32,
+    dimension: u32,
+    operation_index: usize,
+) -> Result<(), VerifierEvalError> {
+    match temporary_dimensions.get(&temporary_id) {
+        Some(expected_dimension) if *expected_dimension == dimension => Ok(()),
+        Some(expected_dimension) => Err(VerifierEvalError::TemporaryDimensionMismatch {
+            temporary_id,
+            expected_dimension: *expected_dimension,
+            found_dimension: dimension,
+            operation_index,
+        }),
+        None => Err(VerifierEvalError::TemporaryReadBeforeWrite {
+            temporary_id,
+            dimension,
+            operation_index,
+        }),
+    }
+}
+
+fn define_temporary(
+    temporary_dimensions: &mut BTreeMap<u32, u32>,
+    temporary_id: u32,
+    dimension: u32,
+    operation_index: usize,
+) -> Result<(), VerifierEvalError> {
+    match temporary_dimensions.get(&temporary_id) {
+        Some(expected_dimension) if *expected_dimension == dimension => Ok(()),
+        Some(expected_dimension) => Err(VerifierEvalError::TemporaryDimensionMismatch {
+            temporary_id,
+            expected_dimension: *expected_dimension,
+            found_dimension: dimension,
+            operation_index,
+        }),
+        None => {
+            temporary_dimensions.insert(temporary_id, dimension);
+            Ok(())
+        }
+    }
 }
 
 fn expect_arity(
