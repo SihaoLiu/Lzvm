@@ -45,14 +45,18 @@ fn push_string(out: &mut Vec<u8>, value: &str) {
     out.push(0);
 }
 
-fn section_prefix() -> Vec<u8> {
+fn section_prefix_with_public_count(n_publics: u64) -> Vec<u8> {
     let mut section = Vec::new();
     push_string(&mut section, "");
     section.push(0);
     section.push(0);
     push_u64(&mut section, 1);
-    push_u64(&mut section, 0);
+    push_u64(&mut section, n_publics);
     section
+}
+
+fn section_prefix() -> Vec<u8> {
+    section_prefix_with_public_count(0)
 }
 
 fn push_valid_air_layout(out: &mut Vec<u8>) {
@@ -75,6 +79,48 @@ fn section_after_aggregation() -> Vec<u8> {
     push_valid_air_layout(&mut section);
     push_empty_aggregation(&mut section);
     section
+}
+
+fn section_after_aggregation_with_public_count(n_publics: u64) -> Vec<u8> {
+    let mut section = section_prefix_with_public_count(n_publics);
+    push_valid_air_layout(&mut section);
+    push_empty_aggregation(&mut section);
+    section
+}
+
+fn push_u64_vec(out: &mut Vec<u8>, values: &[u64]) {
+    push_u32(
+        out,
+        values.len().try_into().expect("fixture count should fit"),
+    );
+    for value in values {
+        push_u64(out, *value);
+    }
+}
+
+fn push_named_stage_value(out: &mut Vec<u8>, name: &str, stage: u64, lengths: &[u64]) {
+    push_string(out, name);
+    push_u64(out, stage);
+    out.push(0);
+    push_u32(
+        out,
+        lengths.len().try_into().expect("fixture count should fit"),
+    );
+    for length in lengths {
+        push_u64(out, *length);
+    }
+}
+
+fn push_public_value(out: &mut Vec<u8>, name: &str, stage: u64, lengths: &[u64]) {
+    push_string(out, name);
+    push_u64(out, stage);
+    push_u32(
+        out,
+        lengths.len().try_into().expect("fixture count should fit"),
+    );
+    for length in lengths {
+        push_u64(out, *length);
+    }
 }
 
 #[test]
@@ -102,6 +148,34 @@ fn encodes_public_value_counts_with_array_lengths() {
     let parsed = parse_global_info(&bytes).expect("array public counts should parse");
 
     assert_eq!(parsed.n_publics, 7);
+}
+
+#[test]
+fn rejects_duplicate_proof_value_names_when_encoding() {
+    let mut info = fixtures::sample_global_info_fixture();
+    info.proof_values_map[1].name = info.proof_values_map[0].name.clone();
+
+    assert_eq!(
+        encode_global_info(&info),
+        Err(GlobalInfoError::DuplicateValueName {
+            field: "proofValuesMap",
+            name: "proof-a".to_owned(),
+        })
+    );
+}
+
+#[test]
+fn rejects_duplicate_public_value_names_when_encoding() {
+    let mut info = fixtures::sample_global_info_fixture();
+    info.publics_map[1].name = info.publics_map[0].name.clone();
+
+    assert_eq!(
+        encode_global_info(&info),
+        Err(GlobalInfoError::DuplicateValueName {
+            field: "publicsMap",
+            name: "public-a".to_owned(),
+        })
+    );
 }
 
 #[test]
@@ -295,6 +369,26 @@ fn rejects_zero_named_stage_value_lengths() {
 }
 
 #[test]
+fn rejects_duplicate_proof_value_names_when_parsing() {
+    let mut section = section_after_aggregation();
+    push_u64_vec(&mut section, &[]);
+    push_u64_vec(&mut section, &[]);
+    push_u32(&mut section, 2);
+    push_named_stage_value(&mut section, "duplicate-proof", 1, &[]);
+    push_named_stage_value(&mut section, "duplicate-proof", 1, &[]);
+    push_u32(&mut section, 0);
+    let bytes = global_info_file(section);
+
+    assert_eq!(
+        parse_global_info(&bytes),
+        Err(GlobalInfoError::DuplicateValueName {
+            field: "proofValuesMap",
+            name: "duplicate-proof".to_owned(),
+        })
+    );
+}
+
+#[test]
 fn rejects_public_value_count_that_exceeds_remaining_records() {
     let mut section = section_after_aggregation();
     push_u32(&mut section, 0);
@@ -327,6 +421,26 @@ fn rejects_zero_public_value_lengths() {
         Err(GlobalInfoError::InvalidLength {
             field: "publicsMap",
             index: 0,
+        })
+    );
+}
+
+#[test]
+fn rejects_duplicate_public_value_names_when_parsing() {
+    let mut section = section_after_aggregation_with_public_count(2);
+    push_u64_vec(&mut section, &[]);
+    push_u64_vec(&mut section, &[]);
+    push_u32(&mut section, 0);
+    push_u32(&mut section, 2);
+    push_public_value(&mut section, "duplicate-public", 1, &[]);
+    push_public_value(&mut section, "duplicate-public", 1, &[]);
+    let bytes = global_info_file(section);
+
+    assert_eq!(
+        parse_global_info(&bytes),
+        Err(GlobalInfoError::DuplicateValueName {
+            field: "publicsMap",
+            name: "duplicate-public".to_owned(),
         })
     );
 }

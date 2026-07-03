@@ -1,3 +1,4 @@
+use std::collections::BTreeSet;
 use std::fmt;
 use std::path::Path;
 
@@ -124,6 +125,10 @@ pub enum GlobalInfoError {
         field: &'static str,
         index: usize,
     },
+    DuplicateValueName {
+        field: &'static str,
+        name: String,
+    },
     PublicCountMismatch {
         expected: u64,
         found: u64,
@@ -192,6 +197,9 @@ impl fmt::Display for GlobalInfoError {
             }
             Self::InvalidLength { field, index } => {
                 write!(f, "global-info {field} length is invalid at index {index}")
+            }
+            Self::DuplicateValueName { field, name } => {
+                write!(f, "global-info {field} has duplicate value name {name}")
             }
             Self::PublicCountMismatch { expected, found } => write!(
                 f,
@@ -532,6 +540,13 @@ fn validate_global_info(value: &GlobalInfo) -> Result<(), GlobalInfoError> {
         }
         validate_nonzero_lengths("proofValuesMap", index, &entry.lengths)?;
     }
+    validate_unique_value_names(
+        "proofValuesMap",
+        value
+            .proof_values_map
+            .iter()
+            .map(|entry| entry.name.as_str()),
+    )?;
     for (index, entry) in value.publics_map.iter().enumerate() {
         if entry.stage == 0 {
             return Err(GlobalInfoError::InvalidStage {
@@ -541,6 +556,10 @@ fn validate_global_info(value: &GlobalInfo) -> Result<(), GlobalInfoError> {
         }
         validate_nonzero_lengths("publicsMap", index, &entry.lengths)?;
     }
+    validate_unique_value_names(
+        "publicsMap",
+        value.publics_map.iter().map(|entry| entry.name.as_str()),
+    )?;
     let public_count = global_public_count(&value.publics_map)?;
     if value.n_publics != public_count {
         return Err(GlobalInfoError::PublicCountMismatch {
@@ -550,6 +569,22 @@ fn validate_global_info(value: &GlobalInfo) -> Result<(), GlobalInfoError> {
     }
     if value.transcript_arity == 0 {
         return Err(GlobalInfoError::InvalidTranscriptArity);
+    }
+    Ok(())
+}
+
+fn validate_unique_value_names<'a>(
+    field: &'static str,
+    names: impl IntoIterator<Item = &'a str>,
+) -> Result<(), GlobalInfoError> {
+    let mut seen = BTreeSet::new();
+    for name in names {
+        if !seen.insert(name) {
+            return Err(GlobalInfoError::DuplicateValueName {
+                field,
+                name: name.to_owned(),
+            });
+        }
     }
     Ok(())
 }
