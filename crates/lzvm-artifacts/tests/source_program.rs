@@ -94,6 +94,17 @@ fn rejects_zero_version_source_program_archives() {
 }
 
 #[test]
+fn rejects_future_source_program_archive_versions() {
+    let mut bytes = archive_header(0, 0);
+    bytes[4..8].copy_from_slice(&2_u32.to_le_bytes());
+
+    assert_eq!(
+        parse_source_program_archive(&bytes),
+        Err(SourceProgramArchiveError::UnsupportedVersion { found: 2, max: 1 })
+    );
+}
+
+#[test]
 fn rejects_source_program_archive_counts_larger_than_payload() {
     assert!(matches!(
         parse_source_program_archive(&archive_header(1, 0)),
