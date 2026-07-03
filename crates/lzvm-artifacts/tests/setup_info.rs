@@ -345,6 +345,17 @@ fn rejects_evaluation_map_opening_positions_outside_opening_points() {
 }
 
 #[test]
+fn rejects_evaluation_map_primes_that_do_not_match_opening_points() {
+    let mut info = fixtures::sample_setup_info_fixture_with_evaluation_map();
+    info.evaluation_map[0].prime = 1;
+
+    assert_eq!(
+        encode_unit_setup_info(&info),
+        Err(SetupInfoError::InvalidEvaluationMap { index: 0 })
+    );
+}
+
+#[test]
 fn reads_unit_setup_info_from_a_file_path() {
     let path = temp_file_path("unit.generic.setup.bin");
     fs::write(&path, sample_setup_info_binary()).expect("fixture should be written");

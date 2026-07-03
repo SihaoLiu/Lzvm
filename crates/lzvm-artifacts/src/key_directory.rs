@@ -10,7 +10,9 @@ use crate::expression_program::{
     read_expression_program_file, ExpressionProgram, ExpressionProgramError,
 };
 use crate::fixed::{expected_raw_fixed_column_byte_count, FixedColumnError};
-use crate::global_info::{read_global_info_binary_file, GlobalInfo, GlobalInfoError};
+use crate::global_info::{
+    read_global_info_binary_file, validate_global_info, GlobalInfo, GlobalInfoError,
+};
 use crate::hint_program::{
     read_global_hint_program_file, read_regular_hint_program_file,
     regular_hint_program_from_expression_info, HintProgram, HintProgramError,
@@ -563,8 +565,7 @@ pub fn read_key_directory_layout(
 }
 
 pub fn validate_key_directory_layout(layout: &KeyDirectoryLayout) -> Result<(), KeyDirectoryError> {
-    validate_global_proof_value_counts(&layout.global_info)
-        .map_err(KeyDirectoryError::GlobalValidation)?;
+    validate_key_directory_global_info(&layout.global_info)?;
     let mut seen = BTreeSet::new();
     for required in layout.required_paths() {
         if !seen.insert(required.path.clone()) {
@@ -661,8 +662,13 @@ impl GlobalKeyPaths {
 
 fn read_global_info_path(paths: &GlobalKeyPaths) -> Result<GlobalInfo, KeyDirectoryError> {
     let info = read_global_info_binary_file(&paths.info).map_err(KeyDirectoryError::GlobalInfo)?;
-    validate_global_proof_value_counts(&info).map_err(KeyDirectoryError::GlobalValidation)?;
+    validate_key_directory_global_info(&info)?;
     Ok(info)
+}
+
+fn validate_key_directory_global_info(global_info: &GlobalInfo) -> Result<(), KeyDirectoryError> {
+    validate_global_info(global_info).map_err(KeyDirectoryError::GlobalInfo)?;
+    validate_global_proof_value_counts(global_info).map_err(KeyDirectoryError::GlobalValidation)
 }
 
 fn optional_path_exists(path: &Path, role: &'static str) -> Result<bool, KeyDirectoryError> {

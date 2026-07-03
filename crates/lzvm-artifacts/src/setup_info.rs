@@ -821,6 +821,9 @@ fn validate_evaluation_map(info: &UnitSetupInfo) -> Result<(), SetupInfoError> {
         if opening_position >= info.opening_points.len() {
             return Err(SetupInfoError::InvalidEvaluationMap { index });
         }
+        if entry.prime != info.opening_points[opening_position] {
+            return Err(SetupInfoError::InvalidEvaluationMap { index });
+        }
     }
     Ok(())
 }

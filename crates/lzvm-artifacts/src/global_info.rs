@@ -519,7 +519,7 @@ fn write_u64_vec(out: &mut Vec<u8>, values: &[u64]) -> Result<(), GlobalInfoErro
     Ok(())
 }
 
-fn validate_global_info(value: &GlobalInfo) -> Result<(), GlobalInfoError> {
+pub(crate) fn validate_global_info(value: &GlobalInfo) -> Result<(), GlobalInfoError> {
     validate_air_group_shape(&value.air_groups, &value.airs, &value.aggregation_types)?;
     validate_unique_value_names("airGroups", value.air_groups.iter().map(String::as_str))?;
     for (airgroup_id, units) in value.airs.iter().enumerate() {

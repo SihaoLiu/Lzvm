@@ -7,7 +7,9 @@ use lzvm_artifacts::expression_info::{encode_expression_info, ExpressionInfo};
 use lzvm_artifacts::expression_program::{
     encode_expression_program, ExpressionEntry, ExpressionProgram,
 };
-use lzvm_artifacts::global_info::{encode_global_info, GlobalInfo, NamedStageValue};
+use lzvm_artifacts::global_info::{
+    encode_global_info, GlobalInfo, GlobalInfoError, NamedStageValue,
+};
 use lzvm_artifacts::hint_program::{
     encode_global_hint_program, encode_regular_hint_program,
     regular_hint_program_from_expression_info, Hint, HintField, HintOperand, HintProgram,
@@ -710,6 +712,23 @@ fn rejects_mutated_key_directory_layout_with_invalid_global_metadata_counts() {
                 found: 1,
             }
         )
+    ));
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+}
+
+#[test]
+fn rejects_mutated_key_directory_layout_with_invalid_global_metadata_shape() {
+    let dir = temp_dir("mutated-global-transcript-arity");
+    let _ = fs::remove_dir_all(&dir);
+    write_catalog_global_files(&dir);
+    let mut layout = read_key_directory_layout(&dir).expect("layout should parse");
+    layout.global_info.transcript_arity = 0;
+
+    let error = validate_key_directory_layout(&layout).expect_err("layout should be rejected");
+
+    assert!(matches!(
+        error,
+        KeyDirectoryError::GlobalInfo(GlobalInfoError::InvalidTranscriptArity)
     ));
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 }
