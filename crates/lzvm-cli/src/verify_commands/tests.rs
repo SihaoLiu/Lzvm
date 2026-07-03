@@ -237,6 +237,74 @@ fn rejects_missing_input_data_value_for_verify_preflight_args() {
 }
 
 #[test]
+fn rejects_duplicate_binding_options_for_verify_preflight_args() {
+    for (args, expected) in [
+        (
+            &[
+                "--eth-block-input",
+                "block-a.input",
+                "--eth-block-input",
+                "block-b.input",
+                "proof.bin",
+                "public-values.bin",
+            ][..],
+            "duplicate --eth-block-input option",
+        ),
+        (
+            &[
+                "--eth-public-input",
+                "public-a.bin",
+                "--eth-public-input",
+                "public-b.bin",
+                "proof.bin",
+                "public-values.bin",
+            ],
+            "duplicate --eth-public-input option",
+        ),
+        (
+            &[
+                "--eth-public-input",
+                "public.bin",
+                "--eth-public-input-allow-trailing",
+                "--eth-public-input-allow-trailing",
+                "proof.bin",
+                "public-values.bin",
+            ],
+            "duplicate --eth-public-input-allow-trailing option",
+        ),
+        (
+            &[
+                "--program-image-cache",
+                "cache-a.bin",
+                "--program-image-cache",
+                "cache-b.bin",
+                "proof.bin",
+                "public-values.bin",
+            ],
+            "duplicate --program-image-cache option",
+        ),
+        (
+            &[
+                "--input-data",
+                "input-a.bin",
+                "--input-data",
+                "input-b.bin",
+                "proof.bin",
+                "public-values.bin",
+            ],
+            "duplicate --input-data option",
+        ),
+    ] {
+        let result = parse_verify_preflight_args(args);
+
+        assert!(matches!(
+            result,
+            Err(SetupValidationArgError::Invalid(message)) if message == expected
+        ));
+    }
+}
+
+#[test]
 fn input_data_file_matches_framed_guest_segment_bytes() {
     let dir = test_fixture_dir("framed-input-match");
     let _ = std::fs::remove_dir_all(&dir);
