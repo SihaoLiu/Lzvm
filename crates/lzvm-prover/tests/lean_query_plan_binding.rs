@@ -14,6 +14,9 @@ fn lean_query_plan_binding_exports_opening_segment_projections() {
             "../../lean/Lzvm/QueryPlanBinding/Soundness.lean",
         ],
     );
+    let top_level_path = crate_root.join("../../lean/Lzvm.lean");
+    let top_level_source =
+        std::fs::read_to_string(&top_level_path).expect("Lean top-level source should read");
     let query_plan_path = crate_root.join("src/pcs_query_plan.rs");
     let query_plan_source =
         std::fs::read_to_string(&query_plan_path).expect("PCS query plan source should read");
@@ -45,6 +48,10 @@ fn lean_query_plan_binding_exports_opening_segment_projections() {
         "def RuntimeQueryPlanBindingCheckedAcceptance",
     );
 
+    assert!(
+        lean_binding::contains_import(&top_level_source, "Lzvm.QueryPlanBinding"),
+        "top-level Lean module should import query plan binding"
+    );
     assert!(
         lean_source
             .contains("runtime_query_plan_binding_checked_acceptance_opening_segment_evidence")
