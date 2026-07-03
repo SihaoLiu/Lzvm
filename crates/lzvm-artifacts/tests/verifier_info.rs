@@ -112,6 +112,20 @@ fn verifier_code_with_number_dimension(dimension: u32) -> Vec<u8> {
     section
 }
 
+fn verifier_code_with_number_sources(operation_tag: u8, source_count: u32) -> Vec<u8> {
+    let mut section = verifier_code_prefix(1);
+    section.push(operation_tag);
+    push_u32(&mut section, 0);
+    push_u32(&mut section, 1);
+    push_u32(&mut section, source_count);
+    for _ in 0..source_count {
+        section.push(2);
+        push_u64(&mut section, 1);
+        push_u32(&mut section, 1);
+    }
+    section
+}
+
 fn verifier_code_with_temporary_read_before_write() -> Vec<u8> {
     let mut section = Vec::new();
     section.push(0);
@@ -283,6 +297,41 @@ fn rejects_zero_verifier_operand_dimensions_when_parsing() {
     assert!(matches!(
         parse_verifier_info(&bytes),
         Err(VerifierInfoError::ZeroOperandDimension { source_index: 0 })
+    ));
+}
+
+#[test]
+fn rejects_invalid_operation_source_counts() {
+    let mut info = fixtures::sample_verifier_info_fixture();
+    info.quotient.operations[0] = VerifierOperation {
+        op: VerifierOperationKind::Add,
+        destination: VerifierDestination::temporary(0, 1),
+        sources: vec![VerifierOperand::number(1, 1)],
+    };
+
+    assert!(matches!(
+        encode_verifier_info(&info),
+        Err(VerifierInfoError::InvalidOperationSourceCount {
+            operation: VerifierOperationKind::Add,
+            operation_index: 0,
+            expected: 2,
+            found: 1
+        })
+    ));
+}
+
+#[test]
+fn rejects_invalid_operation_source_counts_when_parsing() {
+    let bytes = verifier_info_with_first_code(verifier_code_with_number_sources(1, 1));
+
+    assert!(matches!(
+        parse_verifier_info(&bytes),
+        Err(VerifierInfoError::InvalidOperationSourceCount {
+            operation: VerifierOperationKind::Add,
+            operation_index: 0,
+            expected: 2,
+            found: 1
+        })
     ));
 }
 

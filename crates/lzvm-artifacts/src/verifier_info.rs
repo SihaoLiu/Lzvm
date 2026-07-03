@@ -129,6 +129,12 @@ pub enum VerifierInfoError {
         found_dimension: u32,
         operation_index: usize,
     },
+    InvalidOperationSourceCount {
+        operation: VerifierOperationKind,
+        operation_index: usize,
+        expected: usize,
+        found: usize,
+    },
     EmptyCodeBlock {
         field: &'static str,
     },
@@ -205,6 +211,15 @@ impl fmt::Display for VerifierInfoError {
                 f,
                 "temporary reference {temporary_id} has dimension {found_dimension} at operation {operation_index}, expected {expected_dimension}"
             ),
+            Self::InvalidOperationSourceCount {
+                operation,
+                operation_index,
+                expected,
+                found,
+            } => write!(
+                f,
+                "verifier-info operation {operation:?} at index {operation_index} expected {expected} sources, found {found}"
+            ),
             Self::EmptyCodeBlock { field } => write!(f, "empty verifier-info code block: {field}"),
             Self::InvalidMagic => write!(f, "invalid verifier-info file magic"),
             Self::UnsupportedVersion { found, max } => {
@@ -265,6 +280,7 @@ impl std::error::Error for VerifierInfoError {
             Self::TemporaryReferenceOutOfBounds { .. }
             | Self::TemporaryReadBeforeWrite { .. }
             | Self::TemporaryDimensionMismatch { .. }
+            | Self::InvalidOperationSourceCount { .. }
             | Self::EmptyCodeBlock { .. }
             | Self::InvalidMagic
             | Self::UnsupportedVersion { .. }
@@ -455,6 +471,7 @@ fn validate_verifier_code(
     let mut temporary_dimensions = BTreeMap::new();
     for (operation_index, operation) in value.operations.iter().enumerate() {
         validate_destination(&operation.destination, value.temporary_count)?;
+        validate_operation_source_count(operation, operation_index)?;
         for (source_index, source) in operation.sources.iter().enumerate() {
             validate_operand(source, value.temporary_count, source_index)?;
             if let VerifierOperand::Temporary { id, dimension } = source {
@@ -467,6 +484,26 @@ fn validate_verifier_code(
             operation.destination.dimension,
             operation_index,
         )?;
+    }
+    Ok(())
+}
+
+fn validate_operation_source_count(
+    operation: &VerifierOperation,
+    operation_index: usize,
+) -> Result<(), VerifierInfoError> {
+    let expected = match operation.op {
+        VerifierOperationKind::Copy => 1,
+        VerifierOperationKind::Add | VerifierOperationKind::Sub | VerifierOperationKind::Mul => 2,
+    };
+    let found = operation.sources.len();
+    if found != expected {
+        return Err(VerifierInfoError::InvalidOperationSourceCount {
+            operation: operation.op,
+            operation_index,
+            expected,
+            found,
+        });
     }
     Ok(())
 }
