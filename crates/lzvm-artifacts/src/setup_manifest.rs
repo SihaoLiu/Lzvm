@@ -274,8 +274,11 @@ pub fn validate_setup_directory_manifest_file(
     {
         return Ok(());
     }
-    let found = read_setup_directory_manifest_file(path)?;
-    if &found != expected {
+    let bytes = std::fs::read(path).map_err(|error| SetupDirectoryManifestError::Io {
+        message: error.to_string(),
+    })?;
+    let (version, found) = parse_setup_directory_manifest_with_version(&bytes)?;
+    if !setup_directory_manifest_matches_version(&found, expected, version) {
         return Err(SetupDirectoryManifestError::Mismatch {
             path: path.to_path_buf(),
         });
@@ -286,6 +289,12 @@ pub fn validate_setup_directory_manifest_file(
 pub fn parse_setup_directory_manifest(
     bytes: &[u8],
 ) -> Result<SetupDirectoryManifest, SetupDirectoryManifestError> {
+    parse_setup_directory_manifest_with_version(bytes).map(|(_, manifest)| manifest)
+}
+
+fn parse_setup_directory_manifest_with_version(
+    bytes: &[u8],
+) -> Result<(u32, SetupDirectoryManifest), SetupDirectoryManifestError> {
     let file = parse_sectioned_file(
         bytes,
         SETUP_DIRECTORY_MANIFEST_KIND,
@@ -309,7 +318,7 @@ pub fn parse_setup_directory_manifest(
     }
     let out = parse_setup_directory_manifest_payload(file.version, &section.data)?;
     validate_setup_directory_manifest(&out)?;
-    Ok(out)
+    Ok((file.version, out))
 }
 
 pub fn encode_setup_directory_manifest(
@@ -367,6 +376,35 @@ fn validate_setup_directory_manifest(
         );
     }
     Ok(())
+}
+
+fn setup_directory_manifest_matches_version(
+    found: &SetupDirectoryManifest,
+    expected: &SetupDirectoryManifest,
+    version: u32,
+) -> bool {
+    found.unit_count == expected.unit_count
+        && found.global_constraint_count == expected.global_constraint_count
+        && found.fixed_byte_count == expected.fixed_byte_count
+        && found.pcs_material_unit_count == expected.pcs_material_unit_count
+        && found.pcs_material_byte_count == expected.pcs_material_byte_count
+        && (version < 2
+            || (found.source_fixed_file_manifest_present
+                == expected.source_fixed_file_manifest_present
+                && found.source_fixed_file_manifest_entry_count
+                    == expected.source_fixed_file_manifest_entry_count))
+        && (version < 3
+            || (found.source_program_archive_present == expected.source_program_archive_present
+                && found.source_program_archive_source_count
+                    == expected.source_program_archive_source_count
+                && found.source_program_archive_edge_count
+                    == expected.source_program_archive_edge_count))
+        && (version < 4
+            || (found.source_fixed_file_manifest_byte_count
+                == expected.source_fixed_file_manifest_byte_count
+                && found.source_program_archive_byte_count
+                    == expected.source_program_archive_byte_count))
+        && found.catalog_digest == expected.catalog_digest
 }
 
 fn parse_setup_directory_manifest_payload(

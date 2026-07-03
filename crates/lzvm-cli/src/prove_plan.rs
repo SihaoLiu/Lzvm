@@ -6,8 +6,7 @@ use lzvm_artifacts::key_directory::{
     KeyDirectoryCatalog,
 };
 use lzvm_artifacts::setup_manifest::{
-    build_setup_directory_manifest, read_setup_directory_manifest_file,
-    SetupDirectoryManifestError, SETUP_DIRECTORY_MANIFEST_FILE,
+    validate_setup_directory_manifest_file, SETUP_DIRECTORY_MANIFEST_FILE,
 };
 use lzvm_prover::guest_pc_trace_backend::{
     guest_pc_trace_layout_capacity, guest_pc_trace_segmented_layout_requirements,
@@ -112,12 +111,9 @@ fn validate_required_stored_setup_manifest(
             path.display()
         ));
     }
-    let found = read_setup_directory_manifest_file(&path).map_err(|error| error.to_string())?;
-    let expected = build_setup_directory_manifest(catalog).map_err(|error| error.to_string())?;
-    if found != expected {
-        return Err(SetupDirectoryManifestError::Mismatch { path }.to_string());
-    }
-    Ok(())
+    let expected = lzvm_artifacts::setup_manifest::build_setup_directory_manifest(catalog)
+        .map_err(|error| error.to_string())?;
+    validate_setup_directory_manifest_file(&path, &expected).map_err(|error| error.to_string())
 }
 
 #[derive(Debug)]

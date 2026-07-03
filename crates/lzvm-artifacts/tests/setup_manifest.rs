@@ -38,6 +38,23 @@ fn temp_file_path(name: &str) -> PathBuf {
     path
 }
 
+fn encode_legacy_manifest(version: u32, values: &[u64]) -> Vec<u8> {
+    let mut payload = Vec::new();
+    for value in values {
+        payload.extend_from_slice(&value.to_le_bytes());
+    }
+    payload.extend_from_slice(&[0x55; 32]);
+    encode_sectioned_file(&SectionedFile {
+        kind: *b"sdmf",
+        version,
+        sections: vec![SectionedSection {
+            id: 1,
+            data: payload,
+        }],
+    })
+    .expect("legacy manifest should encode")
+}
+
 #[test]
 fn encodes_and_parses_setup_directory_manifest() {
     let encoded =
@@ -50,20 +67,7 @@ fn encodes_and_parses_setup_directory_manifest() {
 
 #[test]
 fn parses_legacy_setup_directory_manifests_without_source_fixed_file_counts() {
-    let mut payload = Vec::new();
-    for value in [4_u64, 3, 128, 4, 512] {
-        payload.extend_from_slice(&value.to_le_bytes());
-    }
-    payload.extend_from_slice(&[0x55; 32]);
-    let bytes = encode_sectioned_file(&SectionedFile {
-        kind: *b"sdmf",
-        version: 1,
-        sections: vec![SectionedSection {
-            id: 1,
-            data: payload,
-        }],
-    })
-    .expect("legacy manifest should encode");
+    let bytes = encode_legacy_manifest(1, &[4, 3, 128, 4, 512]);
 
     let parsed = parse_setup_directory_manifest(&bytes).expect("legacy manifest should parse");
 
@@ -80,20 +84,7 @@ fn parses_legacy_setup_directory_manifests_without_source_fixed_file_counts() {
 
 #[test]
 fn rejects_zero_version_setup_directory_manifests() {
-    let mut payload = Vec::new();
-    for value in [4_u64, 3, 128, 4, 512] {
-        payload.extend_from_slice(&value.to_le_bytes());
-    }
-    payload.extend_from_slice(&[0x55; 32]);
-    let bytes = encode_sectioned_file(&SectionedFile {
-        kind: *b"sdmf",
-        version: 0,
-        sections: vec![SectionedSection {
-            id: 1,
-            data: payload,
-        }],
-    })
-    .expect("zero version manifest should encode");
+    let bytes = encode_legacy_manifest(0, &[4, 3, 128, 4, 512]);
 
     assert_eq!(
         parse_setup_directory_manifest(&bytes).expect_err("zero version manifest should reject"),
@@ -103,20 +94,7 @@ fn rejects_zero_version_setup_directory_manifests() {
 
 #[test]
 fn parses_legacy_setup_directory_manifests_without_source_program_archive_counts() {
-    let mut payload = Vec::new();
-    for value in [4_u64, 3, 128, 4, 512, 1, 7] {
-        payload.extend_from_slice(&value.to_le_bytes());
-    }
-    payload.extend_from_slice(&[0x55; 32]);
-    let bytes = encode_sectioned_file(&SectionedFile {
-        kind: *b"sdmf",
-        version: 2,
-        sections: vec![SectionedSection {
-            id: 1,
-            data: payload,
-        }],
-    })
-    .expect("legacy manifest should encode");
+    let bytes = encode_legacy_manifest(2, &[4, 3, 128, 4, 512, 1, 7]);
 
     let parsed = parse_setup_directory_manifest(&bytes).expect("legacy manifest should parse");
 
@@ -133,20 +111,7 @@ fn parses_legacy_setup_directory_manifests_without_source_program_archive_counts
 
 #[test]
 fn parses_legacy_setup_directory_manifests_without_source_companion_byte_counts() {
-    let mut payload = Vec::new();
-    for value in [4_u64, 3, 128, 4, 512, 1, 7, 1, 3, 2] {
-        payload.extend_from_slice(&value.to_le_bytes());
-    }
-    payload.extend_from_slice(&[0x55; 32]);
-    let bytes = encode_sectioned_file(&SectionedFile {
-        kind: *b"sdmf",
-        version: 3,
-        sections: vec![SectionedSection {
-            id: 1,
-            data: payload,
-        }],
-    })
-    .expect("legacy manifest should encode");
+    let bytes = encode_legacy_manifest(3, &[4, 3, 128, 4, 512, 1, 7, 1, 3, 2]);
 
     let parsed = parse_setup_directory_manifest(&bytes).expect("legacy manifest should parse");
 
@@ -159,6 +124,39 @@ fn parses_legacy_setup_directory_manifests_without_source_companion_byte_counts(
     assert_eq!(parsed.source_program_archive_byte_count, 0);
     assert_eq!(parsed.unit_count, 4);
     assert_eq!(parsed.catalog_digest, [0x55; 32]);
+}
+
+#[test]
+fn validates_legacy_setup_directory_manifests_without_unencoded_byte_counts() {
+    for (name, version, values) in [
+        ("v2", 2, vec![4, 3, 128, 4, 512, 1, 7]),
+        ("v3", 3, vec![4, 3, 128, 4, 512, 1, 7, 1, 3, 2]),
+    ] {
+        let path = temp_file_path(name);
+        fs::write(&path, encode_legacy_manifest(version, &values))
+            .expect("fixture should be written");
+
+        validate_setup_directory_manifest_file(&path, &sample_manifest())
+            .expect("legacy manifest should validate");
+
+        fs::remove_file(&path).expect("fixture should be removed");
+    }
+}
+
+#[test]
+fn rejects_legacy_setup_directory_manifests_with_encoded_mismatches() {
+    let path = temp_file_path("legacy-mismatch");
+    fs::write(&path, encode_legacy_manifest(2, &[4, 3, 128, 4, 512, 1, 8]))
+        .expect("fixture should be written");
+
+    let error = validate_setup_directory_manifest_file(&path, &sample_manifest())
+        .expect_err("encoded count mismatch should reject");
+
+    assert!(matches!(
+        error,
+        SetupDirectoryManifestError::Mismatch { .. }
+    ));
+    fs::remove_file(&path).expect("fixture should be removed");
 }
 
 #[test]
