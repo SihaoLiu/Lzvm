@@ -58,16 +58,19 @@ fn validate_pcs_fri_opening_units(
         || ValidatePcsFriOpeningSegmentsError::UnitIndexOverflow,
         |unit_index| ValidatePcsFriOpeningSegmentsError::UnitMismatch { unit_index },
     )?;
-    let mut opening_identities = BTreeSet::new();
+    let mut opening_units_by_identity = BTreeMap::new();
     for opening_unit in opening_units {
         let identity = (opening_unit.unit_index, opening_unit.trace_instance_index);
         let unit_index = usize::try_from(opening_unit.unit_index)
             .map_err(|_| ValidatePcsFriOpeningSegmentsError::UnitIndexOverflow)?;
-        if !query_identities.contains(&identity) || !opening_identities.insert(identity) {
+        if !query_identities.contains(&identity)
+            || opening_units_by_identity
+                .insert(identity, opening_unit)
+                .is_some()
+        {
             return Err(ValidatePcsFriOpeningSegmentsError::UnitMismatch { unit_index });
         }
     }
-    let opening_units_by_identity = fri_opening_units_by_identity(opening_units);
     for query_unit in query_units {
         let unit_index = usize::try_from(query_unit.unit_index)
             .map_err(|_| ValidatePcsFriOpeningSegmentsError::UnitIndexOverflow)?;
@@ -526,13 +529,14 @@ fn field_digest_from_words(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use lzvm_artifacts::key_directory::KeyUnitKind;
 
     #[test]
     fn opening_units_reject_duplicate_query_identity() {
         let query_units = [query_unit(0, 0), query_unit(0, 0)];
         let opening_units = [opening_unit(0, 0), opening_unit(0, 0)];
 
-        let error = validate_pcs_fri_opening_units(&[], &query_units, &opening_units)
+        let error = validate_pcs_fri_opening_units(&[sample_unit()], &query_units, &opening_units)
             .expect_err("opening units should reject duplicate query identity");
 
         assert_eq!(
@@ -546,8 +550,12 @@ mod tests {
         let query_units = [query_unit(0, 0), query_unit(1, 0)];
         let opening_units = [opening_unit(0, 0), opening_unit(0, 0)];
 
-        let error = validate_pcs_fri_opening_units(&[], &query_units, &opening_units)
-            .expect_err("opening units should reject duplicate opening identity");
+        let error = validate_pcs_fri_opening_units(
+            &[sample_unit(), sample_unit()],
+            &query_units,
+            &opening_units,
+        )
+        .expect_err("opening units should reject duplicate opening identity");
 
         assert_eq!(
             error,
@@ -568,7 +576,52 @@ mod tests {
             unit_index,
             trace_instance_index,
             layers: Vec::new(),
-            final_polynomial: Vec::new(),
+            final_polynomial: vec![[0, 0, 0]],
+        }
+    }
+
+    fn sample_unit() -> ProveUnitSchedule {
+        ProveUnitSchedule {
+            kind: KeyUnitKind::Basic,
+            group_id: None,
+            unit_id: None,
+            group_name: None,
+            unit_name: None,
+            base_domain_bits: 0,
+            extended_domain_bits: 0,
+            base_domain_size: 1,
+            extended_domain_size: 1,
+            blowup_factor: 1,
+            query_count: 1,
+            proof_of_work_bits: 0,
+            merkle_tree_arity: 2,
+            last_level_verification: 0,
+            transcript_arity: Some(2),
+            hash_commits: false,
+            transcript_root_challenge_draws: Vec::new(),
+            challenge_count: 0,
+            evaluation_value_count: 0,
+            evaluation_map: Vec::new(),
+            transcript_evaluation_challenge_draws: 0,
+            constant_width: 0,
+            stage_commit_widths: Vec::new(),
+            commitment_columns: Vec::new(),
+            unit_value_map: Vec::new(),
+            group_value_map: Vec::new(),
+            opening_points: Vec::new(),
+            fri_layers: Vec::new(),
+            final_layer_bits: 0,
+            fixed_bytes: 0,
+            constant_tree_root: None,
+            pcs_material_bytes: None,
+            pcs_material_plan_digest: None,
+            pcs_material_fixed_column_digest: None,
+            pcs_material_constant_tree_digest: None,
+            pcs_material_constant_tree_root: None,
+            pcs_material_fixed_byte_count: None,
+            pcs_material_constant_tree_byte_count: None,
+            pcs_material_leaf_byte_count: None,
+            pcs_material_node_byte_count: None,
         }
     }
 }

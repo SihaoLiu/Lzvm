@@ -10116,15 +10116,15 @@ fn lean_opening_segment_binding_tracks_runtime_opening_checks() {
                 "witness_segment.witness.stages.get(stage_slot)"
             )
             && !witness_opening_validation.contains(".find(|witness_stage|")
-            && fri_opening_source.contains("index_first_by_key")
+            && fri_opening_source.contains(
+                "use crate::indexing::{collect_unique_query_identities, index_first_by_key};"
+            )
             && fri_opening_source.matches("index_first_by_key(").count() == 2
             && fri_opening_units_validation.contains("collect_unique_query_identities(")
             && compact_source_contains(
                 fri_opening_units_validation,
-                "opening_identities.insert(identity)"
+                "opening_units_by_identity.insert(identity, opening_unit).is_some()"
             )
-            && fri_opening_units_validation
-                .contains("fri_opening_units_by_identity(opening_units)")
             && fri_opening_units_validation.contains(
                 "let identity = (query_unit.unit_index, query_unit.trace_instance_index)"
             )
@@ -10191,7 +10191,8 @@ fn lean_opening_segment_binding_tracks_runtime_opening_checks() {
                 .contains("validate_constant_opening_units_match_query_units_from_segment")
             && verifier_query_validation
                 .contains("validate_witness_opening_units_match_query_units_from_segment")
-            && verifier_query_source.contains("index_first_by_key")
+            && verifier_query_source
+                .contains("use crate::indexing::{collect_unique_query_identities, index_first_by_key};")
             && verifier_query_source.matches("index_first_by_key(").count() == 4
             && verifier_query_validation
                 .contains("fri_opening_units_by_identity(request.opening_units)")
