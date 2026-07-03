@@ -195,6 +195,7 @@ fn build_witness_proof_core_artifact_with_bindings_and_material_summaries(
     binding_segments: &[ProofSegment],
     constant_tree_material_summaries: Option<&[Option<ConstantTreeFileSummary>]>,
 ) -> Result<ProofArtifact, String> {
+    validate_proof_catalog_schedule(catalog, schedule)?;
     let material_segment = build_pcs_material_manifest_segment(schedule)
         .map_err(|error| format!("build material manifest segment failed: {error}"))?;
     let mut witness_segments = Vec::with_capacity(witness_outputs.len());
@@ -339,6 +340,7 @@ fn build_witness_proof_artifact_from_trace_outputs_with_bindings_and_material_su
     constant_tree_material_summaries: Option<&[Option<ConstantTreeFileSummary>]>,
     mut timing: Option<&mut WitnessProofArtifactTiming>,
 ) -> Result<ProofArtifact, String> {
+    validate_proof_catalog_schedule(catalog, schedule)?;
     let material_segment = build_pcs_material_manifest_segment(schedule)
         .map_err(|error| format!("build material manifest segment failed: {error}"))?;
     let mut witness_segments = Vec::with_capacity(outputs.len());
@@ -1206,11 +1208,7 @@ fn validate_proof_request_public_values(
     schedule: &ProveSchedule,
     public_values: &PublicValues,
 ) -> Result<[u8; 32], String> {
-    let catalog_hash = key_directory_catalog_digest(catalog)
-        .map_err(|error| format!("hash catalog failed: {error}"))?;
-    if catalog_hash != schedule.setup_hash {
-        return Err("catalog setup hash mismatch".to_owned());
-    }
+    validate_proof_catalog_schedule(catalog, schedule)?;
     if public_values.setup_hash != schedule.setup_hash {
         return Err("public inputs setup hash mismatch".to_owned());
     }
@@ -1218,6 +1216,18 @@ fn validate_proof_request_public_values(
         .map_err(|error| format!("public inputs metadata mismatch: {error}"))?;
     public_values_digest(public_values)
         .map_err(|error| format!("hash public inputs failed: {error}"))
+}
+
+fn validate_proof_catalog_schedule(
+    catalog: &KeyDirectoryCatalog,
+    schedule: &ProveSchedule,
+) -> Result<(), String> {
+    let catalog_hash = key_directory_catalog_digest(catalog)
+        .map_err(|error| format!("hash catalog failed: {error}"))?;
+    if catalog_hash != schedule.setup_hash {
+        return Err("catalog setup hash mismatch".to_owned());
+    }
+    Ok(())
 }
 
 mod proof_binding_validation {

@@ -4683,6 +4683,36 @@ fn preserves_binding_segments_in_public_proof_artifact_builder() {
 }
 
 #[test]
+fn rejects_catalog_schedule_mismatch_in_public_proof_artifact_builder() {
+    let mut fixture =
+        public_proof_artifact_builder_fixture("proof-artifact-public-builder-catalog-mismatch");
+    let public_values = PublicValues {
+        schema_version: 1,
+        setup_hash: fixture.plan.run_plan.schedule.setup_hash,
+        values: Vec::new(),
+    };
+    fixture.catalog.layout.global_info.name = "mutated-program".to_owned();
+    let witness_outputs = vec![&fixture.output];
+
+    let error = lzvm_prover::build_witness_proof_artifact_with_bindings(
+        &fixture.catalog,
+        &fixture.plan.run_plan.schedule,
+        public_values_digest(&public_values).expect("digest should compute"),
+        &witness_outputs,
+        lzvm_prover::ProofArtifactInputs {
+            proof_values: &[],
+            group_values: &[],
+            unit_values: &[],
+            binding_segments: &[],
+        },
+    )
+    .expect_err("catalog and schedule mismatch should reject");
+    fs::remove_dir_all(&fixture.dir).expect("fixture directory should be removed");
+
+    assert_eq!(error, "catalog setup hash mismatch");
+}
+
+#[test]
 fn rejects_invalid_binding_segments_in_public_proof_artifact_builder() {
     let fixture =
         public_proof_artifact_builder_fixture("proof-artifact-public-builder-invalid-binding");
