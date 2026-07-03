@@ -17,7 +17,7 @@ use super::{
     load_pcs_fri_opening_segment_from_segments, verify_fri_last_level_root,
     verify_fri_opening_folds, verify_fri_query_path,
 };
-use crate::indexing::index_first_by_key;
+use crate::indexing::{collect_unique_query_identities, index_first_by_key};
 use crate::pcs_query_plan::{
     load_pcs_query_plan_from_segments, uses_transcript_pcs_query_plan_inputs,
 };
@@ -220,16 +220,11 @@ pub fn validate_pcs_fri_opening_folds_from_units(
 fn pcs_query_unit_identities(
     units: &[PcsQueryPlanUnit],
 ) -> Result<BTreeSet<(u32, u32)>, ValidatePcsFriOpeningFoldUnitsError> {
-    let mut identities = BTreeSet::new();
-    for unit in units {
-        let unit_index = usize::try_from(unit.unit_index)
-            .map_err(|_| ValidatePcsFriOpeningFoldUnitsError::UnitIndexOverflow)?;
-        let identity = (unit.unit_index, unit.trace_instance_index);
-        if !identities.insert(identity) {
-            return Err(ValidatePcsFriOpeningFoldUnitsError::UnitMismatch { unit_index });
-        }
-    }
-    Ok(identities)
+    collect_unique_query_identities(
+        units,
+        || ValidatePcsFriOpeningFoldUnitsError::UnitIndexOverflow,
+        |unit_index| ValidatePcsFriOpeningFoldUnitsError::UnitMismatch { unit_index },
+    )
 }
 
 fn validate_fold_unit_identities_match_query_units(

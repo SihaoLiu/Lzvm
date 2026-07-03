@@ -20,7 +20,7 @@ use crate::constant_opening::{
     validate_constant_opening_units_match_query_units_from_segment,
     LoadConstantOpeningSegmentError, LoadConstantOpeningUnitError,
 };
-use crate::indexing::index_first_by_key;
+use crate::indexing::{collect_unique_query_identities, index_first_by_key};
 use crate::pcs_evaluation::{
     load_pcs_evaluation_segment_from_segments,
     load_pcs_evaluation_unit_for_identity_from_parsed_segment, LoadPcsEvaluationUnitError,
@@ -836,15 +836,11 @@ fn validate_verifier_query_outputs_from_segments_inner(
 fn verifier_query_unit_identities(
     units: &[PcsQueryPlanUnit],
 ) -> Result<BTreeSet<(u32, u32)>, VerifierFriQueryOutputSegmentsError> {
-    let mut identities = BTreeSet::new();
-    for unit in units {
-        let unit_index = usize::try_from(unit.unit_index)
-            .map_err(|_| VerifierFriQueryOutputSegmentsError::UnitIndexOverflow)?;
-        if !identities.insert((unit.unit_index, unit.trace_instance_index)) {
-            return Err(VerifierFriQueryOutputSegmentsError::UnitMismatch { unit_index });
-        }
-    }
-    Ok(identities)
+    collect_unique_query_identities(
+        units,
+        || VerifierFriQueryOutputSegmentsError::UnitIndexOverflow,
+        |unit_index| VerifierFriQueryOutputSegmentsError::UnitMismatch { unit_index },
+    )
 }
 
 fn constant_opening_query_units_for_verifier(
