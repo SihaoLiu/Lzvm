@@ -215,6 +215,10 @@ fn rejects_eth_public_input_allow_trailing_without_eth_public_input_for_verify_p
 fn rejects_missing_binding_option_values_for_verify_preflight_args() {
     for (args, expected) in [
         (
+            &["--eth-block-input"][..],
+            "missing --eth-block-input value",
+        ),
+        (
             &[
                 "--eth-block-input",
                 "--program-image-cache",
@@ -223,6 +227,10 @@ fn rejects_missing_binding_option_values_for_verify_preflight_args() {
                 "public-values.bin",
             ][..],
             "missing --eth-block-input value",
+        ),
+        (
+            &["--eth-public-input"][..],
+            "missing --eth-public-input value",
         ),
         (
             &[
@@ -235,6 +243,10 @@ fn rejects_missing_binding_option_values_for_verify_preflight_args() {
             "missing --eth-public-input value",
         ),
         (
+            &["--program-image-cache"][..],
+            "missing --program-image-cache value",
+        ),
+        (
             &[
                 "--program-image-cache",
                 "--eth-public-input",
@@ -244,6 +256,7 @@ fn rejects_missing_binding_option_values_for_verify_preflight_args() {
             ],
             "missing --program-image-cache value",
         ),
+        (&["--input-data"][..], "missing --input-data value"),
         (
             &[
                 "--input-data",
@@ -479,6 +492,10 @@ fn rejects_combined_eth_block_and_public_input_options() {
 fn rejects_missing_binding_option_values_for_verify_proof_args() {
     for (args, expected) in [
         (
+            &["--eth-block-input"][..],
+            "missing --eth-block-input value",
+        ),
+        (
             &[
                 "--eth-block-input",
                 "--program-image-cache",
@@ -488,6 +505,10 @@ fn rejects_missing_binding_option_values_for_verify_proof_args() {
                 "public-values.bin",
             ][..],
             "missing --eth-block-input value",
+        ),
+        (
+            &["--eth-public-input"][..],
+            "missing --eth-public-input value",
         ),
         (
             &[
@@ -501,6 +522,10 @@ fn rejects_missing_binding_option_values_for_verify_proof_args() {
             "missing --eth-public-input value",
         ),
         (
+            &["--program-image-cache"][..],
+            "missing --program-image-cache value",
+        ),
+        (
             &[
                 "--program-image-cache",
                 "--eth-public-input",
@@ -511,6 +536,7 @@ fn rejects_missing_binding_option_values_for_verify_proof_args() {
             ],
             "missing --program-image-cache value",
         ),
+        (&["--input-data"][..], "missing --input-data value"),
         (
             &[
                 "--input-data",
