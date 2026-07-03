@@ -217,14 +217,17 @@ fn parses_regular_constraint_sections() {
 fn rejects_unsupported_constraint_program_versions() {
     let mut encoded = encode_regular_constraint_program(&sample_regular_program())
         .expect("fixture should encode");
-    encoded[4..8].copy_from_slice(&0_u32.to_le_bytes());
 
-    assert!(matches!(
-        parse_regular_constraint_program(&encoded),
-        Err(ConstraintProgramError::Sectioned(
-            SectionedError::UnsupportedVersion { found: 0, max: 1 }
-        ))
-    ));
+    for version in [0_u32, 2] {
+        encoded[4..8].copy_from_slice(&version.to_le_bytes());
+
+        assert!(matches!(
+            parse_regular_constraint_program(&encoded),
+            Err(ConstraintProgramError::Sectioned(
+                SectionedError::UnsupportedVersion { found, max: 1 }
+            )) if found == version
+        ));
+    }
 }
 
 #[test]
