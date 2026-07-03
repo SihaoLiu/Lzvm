@@ -75,8 +75,16 @@ pub fn read_proof_artifact_file(
 }
 
 pub fn parse_proof_artifact(bytes: &[u8]) -> Result<ProofArtifact, ProofArtifactError> {
-    let file = parse_sectioned_file(bytes, PROOF_KIND, PROOF_VERSION)
-        .map_err(ProofArtifactError::Sectioned)?;
+    let file =
+        parse_sectioned_file(bytes, PROOF_KIND, PROOF_VERSION).map_err(|error| match error {
+            SectionedError::UnsupportedVersion { found, .. } => {
+                ProofArtifactError::UnsupportedVersion {
+                    found,
+                    expected: PROOF_VERSION,
+                }
+            }
+            error => ProofArtifactError::Sectioned(error),
+        })?;
     if file.version != PROOF_VERSION {
         return Err(ProofArtifactError::UnsupportedVersion {
             found: file.version,

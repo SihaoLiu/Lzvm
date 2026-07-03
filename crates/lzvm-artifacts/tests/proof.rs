@@ -223,7 +223,10 @@ fn rejects_proofs_with_newer_container_versions() {
 
     assert_parse_error(
         encoded,
-        ProofArtifactError::Sectioned(SectionedError::UnsupportedVersion { found: 2, max: 1 }),
+        ProofArtifactError::UnsupportedVersion {
+            found: 2,
+            expected: 1,
+        },
     );
 }
 
