@@ -158,6 +158,69 @@ theorem runtime_pipeline_binding_checked_acceptance_audited_segment_ids_contract
       segmentIdsUnique,
       unitValuesTraceIdentityCoverage⟩
 
+theorem runtime_pipeline_binding_checked_acceptance_audited_soundness_segment_ids_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimePipelineBindingValidation system) :
+    forall artifact publicInput proof (_requiresExternalSource : Prop),
+      RuntimePipelineBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        let queryPlanValidation := validation.queryPlanBindingValidation
+        let artifactValidation :=
+          queryPlanValidation.challengeValidation.transcriptValidation.artifactBindingValidation
+        let ethArtifactValidation :=
+          validation.ethBindingValidation.proofArtifactBindingValidation
+        RequiredCryptographicAssumptionStatements assumptions.crypto
+          /\ RequiredSemanticAssumptionStatements assumptions.semantic
+          /\ ProofSystemSound system
+          /\ system.accepts publicInput proof
+          /\ system.transcriptBound publicInput proof
+          /\ system.publicInputBound publicInput proof
+          /\ system.pcsOpeningsValid publicInput proof
+          /\ system.friQueriesValid publicInput proof
+          /\ validation.queryPlanBindingValidation.queryPlanSeedBindsWitnessTreeDigests
+            artifact
+            publicInput
+            proof
+          /\ validation.queryPlanBindingValidation.queryPlanSeededFriOpeningRequirementsChecked
+            artifact
+            publicInput
+            proof
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof
+          /\ RuntimeProofArtifactBindingValidationAgreement
+            ethArtifactValidation
+            artifactValidation
+          /\ artifactValidation.proofContainerCanonical artifact publicInput proof
+          /\ artifactValidation.proofSegmentsPresent artifact publicInput proof
+          /\ artifactValidation.proofMetadataCanonical artifact publicInput proof
+          /\ artifactValidation.proofSegmentPayloadsNonempty artifact publicInput proof
+          /\ artifactValidation.proofSegmentIdsAllowed artifact publicInput proof
+          /\ artifactValidation.proofSegmentIdsUnique artifact publicInput proof
+          /\ artifactValidation.proofUnitValuesTraceIdentityCoverage
+            artifact
+            publicInput
+            proof := by
+  intro artifact publicInput proof _requiresExternalSource accepted
+  have auditedContract :=
+    runtime_pipeline_binding_checked_acceptance_audited_segment_ids_contract
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      _requiresExternalSource
+      accepted
+  have auditedAssumptions :=
+    assumption_bundle_carries_required_evidence assumptions
+  exact
+    And.intro auditedAssumptions.left
+      (And.intro auditedAssumptions.right auditedContract.right)
+
 theorem runtime_pipeline_binding_checked_acceptance_concrete_core_sound_contract
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
@@ -259,6 +322,78 @@ theorem runtime_pipeline_binding_checked_acceptance_audited_concrete_segment_ids
   exact
     And.intro
       (runtime_pipeline_binding_checked_acceptance_audited_segment_ids_contract
+        assumptions
+        validation
+        artifact
+        publicInput
+        proof
+        _requiresExternalSource
+        accepted)
+      (runtime_pipeline_binding_checked_acceptance_concrete_segment_ids_allowed
+        validation
+        binding
+        artifact
+        publicInput
+        proof
+        accepted)
+
+theorem runtime_pipeline_binding_checked_acceptance_audited_soundness_concrete_segment_ids_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimePipelineBindingValidation system)
+    (binding :
+      let queryPlanValidation := validation.queryPlanBindingValidation
+      let challengeValidation := queryPlanValidation.challengeValidation
+      RuntimeProofArtifactConcreteSegmentIdBinding
+        challengeValidation.transcriptValidation.artifactBindingValidation) :
+    forall artifact publicInput proof (_requiresExternalSource : Prop),
+      RuntimePipelineBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        (let queryPlanValidation := validation.queryPlanBindingValidation
+         let artifactValidation :=
+          queryPlanValidation.challengeValidation.transcriptValidation.artifactBindingValidation
+         let ethArtifactValidation :=
+          validation.ethBindingValidation.proofArtifactBindingValidation
+         RequiredCryptographicAssumptionStatements assumptions.crypto
+          /\ RequiredSemanticAssumptionStatements assumptions.semantic
+          /\ ProofSystemSound system
+          /\ system.accepts publicInput proof
+          /\ system.transcriptBound publicInput proof
+          /\ system.publicInputBound publicInput proof
+          /\ system.pcsOpeningsValid publicInput proof
+          /\ system.friQueriesValid publicInput proof
+          /\ validation.queryPlanBindingValidation.queryPlanSeedBindsWitnessTreeDigests
+            artifact
+            publicInput
+            proof
+          /\ validation.queryPlanBindingValidation.queryPlanSeededFriOpeningRequirementsChecked
+            artifact
+            publicInput
+            proof
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof
+          /\ RuntimeProofArtifactBindingValidationAgreement
+            ethArtifactValidation
+            artifactValidation
+          /\ artifactValidation.proofContainerCanonical artifact publicInput proof
+          /\ artifactValidation.proofSegmentsPresent artifact publicInput proof
+          /\ artifactValidation.proofMetadataCanonical artifact publicInput proof
+          /\ artifactValidation.proofSegmentPayloadsNonempty artifact publicInput proof
+          /\ artifactValidation.proofSegmentIdsAllowed artifact publicInput proof
+          /\ artifactValidation.proofSegmentIdsUnique artifact publicInput proof
+          /\ artifactValidation.proofUnitValuesTraceIdentityCoverage
+            artifact
+            publicInput
+            proof)
+          /\ RuntimeProofArtifactConcreteSegmentIdsAllowed proof := by
+  intro artifact publicInput proof _requiresExternalSource accepted
+  exact
+    And.intro
+      (runtime_pipeline_binding_checked_acceptance_audited_soundness_segment_ids_contract
         assumptions
         validation
         artifact
