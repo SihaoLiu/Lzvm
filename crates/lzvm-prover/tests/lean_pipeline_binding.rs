@@ -184,6 +184,9 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
             "runtime_pipeline_binding_evidence_implies_opening_evidence",
             "runtime_pipeline_binding_evidence_implies_external_source_requirements",
             "runtime_pipeline_binding_evidence_implies_seeded_query_plan_contract",
+            "runtime_pipeline_binding_evidence_implies_query_plan_material_manifest_contract",
+            "runtime_pipeline_binding_evidence_implies_query_plan_segment_canonical",
+            "runtime_pipeline_binding_evidence_implies_query_plan_material_manifest_matches_schedule",
             "runtime_pipeline_binding_evidence_implies_trace_semantic_evidence_complete",
             "runtime_pipeline_binding_checked_acceptance_trace_preflight_evidence",
             "runtime_pipeline_binding_checked_acceptance_trace_payload_valid",
@@ -194,6 +197,9 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
             "runtime_pipeline_binding_checked_acceptance_query_opening_evidence_core_and_sound",
             "runtime_pipeline_binding_checked_acceptance_query_opening_contract",
             "runtime_pipeline_binding_checked_acceptance_query_plan_material_manifest_contract",
+            "runtime_pipeline_binding_checked_acceptance_query_plan_material_manifest_components",
+            "runtime_pipeline_binding_checked_acceptance_query_plan_segment_canonical",
+            "runtime_pipeline_binding_checked_acceptance_query_plan_material_manifest_matches_schedule",
             "runtime_pipeline_binding_checked_acceptance_seeded_query_plan_contract",
             "runtime_pipeline_binding_checked_acceptance_seed_binds_witness_tree_digests",
             "runtime_pipeline_binding_checked_acceptance_seeded_fri_opening_requirements_checked",
@@ -248,10 +254,12 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
             "runtime_pipeline_binding_evidence_audited_core_contract",
             "runtime_pipeline_binding_evidence_audited_soundness_core_contract",
             "runtime_pipeline_binding_checked_acceptance_audited_query_opening_core_sound_contract",
+            "runtime_pipeline_binding_checked_acceptance_audited_manifest_query_opening_contract",
             "runtime_pipeline_binding_checked_acceptance_audited_accepts_sound_witness_contract",
             "runtime_pipeline_binding_checked_acceptance_audited_soundness_accepts_contract",
             "runtime_pipeline_binding_checked_acceptance_audited_binding_pcs_fri_core_witness_contract",
             "runtime_pipeline_binding_checked_acceptance_audited_finalized_core_sound_witness_contract",
+            "runtime_pipeline_binding_checked_acceptance_audited_manifest_core_sound_witness_contract",
             "runtime_pipeline_binding_checked_acceptance_audited_segment_ids_contract",
             "runtime_pipeline_binding_checked_acceptance_audited_concrete_segment_ids_contract",
             "runtime_pipeline_binding_checked_acceptance_audited_finalized_segment_ids_contract",
@@ -267,17 +275,21 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
             "runtime_pipeline_binding_required_external_source_audited_soundness_proof_system_contract",
             "runtime_pipeline_binding_required_external_source_audited_proof_system_core_contract",
             "runtime_pipeline_required_external_source_concrete_opening_core_contract",
+            "runtime_pipeline_required_external_source_concrete_manifest_contract",
+            "runtime_pipeline_required_external_source_hash_manifest_contract",
             "runtime_pipeline_binding_required_external_source_audited_accepts_sound_witness_contract",
             "runtime_pipeline_binding_required_external_source_audited_pcs_accepts_sound_witness_contract",
             "runtime_pipeline_binding_required_external_source_audited_pcs_fri_witness_contract",
             "runtime_pipeline_binding_required_external_source_audited_pcs_fri_core_witness_contract",
             "runtime_pipeline_binding_required_external_source_audited_query_opening_core_sound_contract",
             "runtime_pipeline_required_external_source_audited_finalized_core_sound_witness_contract",
+            "runtime_pipeline_required_external_source_audited_manifest_core_sound_witness_contract",
             "runtime_pipeline_binding_required_external_source_audited_segment_ids_contract",
             "runtime_pipeline_binding_required_external_source_audited_concrete_segment_ids_contract",
             "runtime_pipeline_binding_required_external_source_audited_finalized_segment_ids_contract",
             "runtime_pipeline_binding_required_external_source_audited_finalized_concrete_segment_ids_contract",
             "runtime_pipeline_binding_required_external_source_audited_seeded_query_requirements_contract",
+            "runtime_pipeline_binding_required_external_source_contracts_manifest_core_contract",
             "runtime_pipeline_binding_required_external_source_artifact_contracts_core_contract",
             "runtime_pipeline_binding_required_external_source_artifact_audited_soundness_core_contract",
         ],
@@ -2198,6 +2210,90 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
             "runtime_query_plan_binding_checked_acceptance_material_manifest_contract",
         ],
     );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_pipeline_binding_checked_acceptance_query_plan_material_manifest_components",
+        &[
+            "RuntimeQueryPlanMaterialManifestContract",
+            "queryPlanSegmentCanonical",
+            "queryPlanMaterialManifestMatchesSchedule",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_omits(
+        &lean_source,
+        "runtime_pipeline_binding_checked_acceptance_query_plan_material_manifest_components",
+        &["AssumptionBundle"],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_pipeline_binding_checked_acceptance_query_plan_material_manifest_components",
+        &[
+            "runtime_pipeline_binding_checked_acceptance_query_plan_material_manifest_contract",
+            "runtime_query_plan_material_manifest_contract_implies_segment_canonical",
+            "runtime_query_plan_material_manifest_contract_implies_matches_schedule",
+        ],
+    );
+    for name in [
+        "runtime_pipeline_binding_evidence_implies_query_plan_material_manifest_contract",
+        "runtime_pipeline_binding_checked_acceptance_audited_manifest_query_opening_contract",
+        "runtime_pipeline_binding_checked_acceptance_audited_manifest_core_sound_witness_contract",
+        "runtime_pipeline_required_external_source_audited_manifest_core_sound_witness_contract",
+        "runtime_pipeline_binding_required_external_source_contracts_manifest_core_contract",
+        "runtime_pipeline_required_external_source_concrete_manifest_contract",
+        "runtime_pipeline_required_external_source_hash_manifest_contract",
+    ] {
+        lean_binding::assert_theorem_prefix_contains(
+            &lean_source,
+            name,
+            &["RuntimeQueryPlanMaterialManifestContract"],
+        );
+    }
+    for name in [
+        "runtime_pipeline_binding_evidence_implies_query_plan_segment_canonical",
+        "runtime_pipeline_binding_checked_acceptance_query_plan_segment_canonical",
+        "runtime_pipeline_binding_checked_acceptance_audited_manifest_query_opening_contract",
+        "runtime_pipeline_binding_checked_acceptance_audited_manifest_core_sound_witness_contract",
+        "runtime_pipeline_required_external_source_audited_manifest_core_sound_witness_contract",
+        "runtime_pipeline_binding_required_external_source_contracts_manifest_core_contract",
+        "runtime_pipeline_required_external_source_concrete_manifest_contract",
+        "runtime_pipeline_required_external_source_hash_manifest_contract",
+    ] {
+        lean_binding::assert_theorem_prefix_contains(
+            &lean_source,
+            name,
+            &["queryPlanSegmentCanonical"],
+        );
+    }
+    for name in [
+        "runtime_pipeline_binding_evidence_implies_query_plan_material_manifest_matches_schedule",
+        "runtime_pipeline_binding_checked_acceptance_query_plan_material_manifest_matches_schedule",
+        "runtime_pipeline_binding_checked_acceptance_audited_manifest_query_opening_contract",
+        "runtime_pipeline_binding_checked_acceptance_audited_manifest_core_sound_witness_contract",
+        "runtime_pipeline_required_external_source_audited_manifest_core_sound_witness_contract",
+        "runtime_pipeline_binding_required_external_source_contracts_manifest_core_contract",
+        "runtime_pipeline_required_external_source_concrete_manifest_contract",
+        "runtime_pipeline_required_external_source_hash_manifest_contract",
+    ] {
+        lean_binding::assert_theorem_prefix_contains(
+            &lean_source,
+            name,
+            &["queryPlanMaterialManifestMatchesSchedule"],
+        );
+    }
+    for name in [
+        "runtime_pipeline_binding_checked_acceptance_audited_manifest_query_opening_contract",
+        "runtime_pipeline_binding_checked_acceptance_audited_manifest_core_sound_witness_contract",
+        "runtime_pipeline_required_external_source_audited_manifest_core_sound_witness_contract",
+        "runtime_pipeline_binding_required_external_source_contracts_manifest_core_contract",
+        "runtime_pipeline_required_external_source_concrete_manifest_contract",
+        "runtime_pipeline_required_external_source_hash_manifest_contract",
+    ] {
+        lean_binding::assert_theorem_body_contains(
+            &lean_source,
+            name,
+            &["runtime_pipeline_binding_checked_acceptance_query_plan_material_manifest_components"],
+        );
+    }
     assert!(
         prefixes
             .prefix("runtime_pipeline_binding_checked_acceptance_seeded_query_plan_contract")
