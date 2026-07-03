@@ -158,3 +158,35 @@ fn write_usage(stderr: &mut dyn Write) -> i32 {
     );
     2
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rejects_missing_input_data_value_during_parse() {
+        let result = parse_args(&["--input-data"]);
+
+        assert!(matches!(
+            result,
+            Err(ParseError::Invalid(message)) if message == "--input-data requires a value"
+        ));
+    }
+
+    #[test]
+    fn rejects_duplicate_input_data_during_parse() {
+        let result = parse_args(&[
+            "--input-data",
+            "input-a.bin",
+            "--input-data",
+            "input-b.bin",
+            "8",
+            "guest.elf",
+        ]);
+
+        assert!(matches!(
+            result,
+            Err(ParseError::Invalid(message)) if message == "duplicate --input-data option"
+        ));
+    }
+}
