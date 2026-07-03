@@ -563,6 +563,8 @@ pub fn read_key_directory_layout(
 }
 
 pub fn validate_key_directory_layout(layout: &KeyDirectoryLayout) -> Result<(), KeyDirectoryError> {
+    validate_global_proof_value_counts(&layout.global_info)
+        .map_err(KeyDirectoryError::GlobalValidation)?;
     let mut seen = BTreeSet::new();
     for required in layout.required_paths() {
         if !seen.insert(required.path.clone()) {

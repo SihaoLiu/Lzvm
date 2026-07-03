@@ -678,6 +678,58 @@ fn rejects_key_directory_layout_with_invalid_global_metadata_counts() {
 }
 
 #[test]
+fn rejects_mutated_key_directory_layout_with_invalid_global_metadata_counts() {
+    let dir = temp_dir("mutated-global-proof-value-counts");
+    let _ = fs::remove_dir_all(&dir);
+    write_catalog_global_files(&dir);
+    let mut layout = read_key_directory_layout(&dir).expect("layout should parse");
+    layout.global_info.num_proof_values = vec![2, 0];
+    layout.global_info.proof_values_map = vec![
+        NamedStageValue {
+            name: "proof-a".to_owned(),
+            stage: 1,
+            id: None,
+            lengths: Vec::new(),
+        },
+        NamedStageValue {
+            name: "proof-b".to_owned(),
+            stage: 2,
+            id: None,
+            lengths: Vec::new(),
+        },
+    ];
+
+    let error = validate_key_directory_layout(&layout).expect_err("layout should be rejected");
+
+    assert!(matches!(
+        error,
+        KeyDirectoryError::GlobalValidation(
+            MetadataValidationError::ProofValueStageCountMismatch {
+                stage: 1,
+                expected: 2,
+                found: 1,
+            }
+        )
+    ));
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+}
+
+#[test]
+fn reads_key_directory_layout_with_no_challenge_counters() {
+    let dir = temp_dir("global-no-challenges");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("fixture root should be created");
+    let mut global = fixtures::sample_key_directory_catalog_global_info();
+    global.num_challenges.clear();
+    write_global_metadata(&dir.join("pilout.globalInfo.bin"), &global);
+
+    let layout = read_key_directory_layout(&dir).expect("layout should parse");
+
+    assert!(layout.global_info.num_challenges.is_empty());
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+}
+
+#[test]
 fn validates_external_key_directory_when_requested() {
     let Some(root) = std::env::var_os("LZVM_EXTERNAL_KEY_DIR") else {
         return;
