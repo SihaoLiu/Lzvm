@@ -1574,25 +1574,29 @@ fn canonical_witness_trace_output_refs<'a>(
 ) -> Result<Vec<&'a ProveWitnessTraceCommitments>, String> {
     let unit_count = u32::try_from(schedule.units.len())
         .map_err(|_| "witness segment unit count overflow".to_owned())?;
-    let mut sorted_outputs = outputs
-        .iter()
-        .map(|output| {
-            let commitments = output.commitments();
-            let unit_index = commitments.unit_index();
-            let unit_index_u32 = u32::try_from(unit_index).map_err(|_| {
-                format!("witness segment unit index does not fit u32: {unit_index}")
-            })?;
-            let segment_id = witness_commitment_segment_id(
-                unit_count,
-                WitnessCommitmentSegmentIdentity {
-                    unit_index: unit_index_u32,
-                    trace_instance_index: commitments.trace_instance_index(),
-                },
-            )
-            .map_err(|error| format!("witness segment id failed: {error}"))?;
-            Ok((segment_id, output))
-        })
-        .collect::<Result<Vec<_>, String>>()?;
+    let mut seen_identities = BTreeSet::new();
+    let mut sorted_outputs = Vec::with_capacity(outputs.len());
+    for output in outputs {
+        let commitments = output.commitments();
+        let unit_index = commitments.unit_index();
+        let unit_index_u32 = u32::try_from(unit_index)
+            .map_err(|_| format!("witness segment unit index does not fit u32: {unit_index}"))?;
+        let trace_instance_index = commitments.trace_instance_index();
+        if !seen_identities.insert((unit_index_u32, trace_instance_index)) {
+            return Err(format!(
+                "duplicate witness output for unit {unit_index} trace instance {trace_instance_index}"
+            ));
+        }
+        let segment_id = witness_commitment_segment_id(
+            unit_count,
+            WitnessCommitmentSegmentIdentity {
+                unit_index: unit_index_u32,
+                trace_instance_index,
+            },
+        )
+        .map_err(|error| format!("witness segment id failed: {error}"))?;
+        sorted_outputs.push((segment_id, output));
+    }
     sorted_outputs.sort_by_key(|(segment_id, _)| *segment_id);
     Ok(sorted_outputs
         .into_iter()

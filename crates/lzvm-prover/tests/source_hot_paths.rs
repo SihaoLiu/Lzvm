@@ -9677,6 +9677,19 @@ fn all_units_transcript_proof_borrows_auxiliary_vectors() {
         inner_body.contains("canonical_witness_trace_output_refs(request.schedule, request.outputs)"),
         "all-units proof construction should canonicalize output refs before transcript construction"
     );
+    let canonical_outputs_body = function_body(
+        &source,
+        "fn canonical_witness_trace_output_refs",
+        "fn build_witness_transcript_proof_artifact_for_all_units",
+    );
+    assert!(
+        canonical_outputs_body.contains("let mut seen_identities = BTreeSet::new()")
+            && canonical_outputs_body
+                .contains("!seen_identities.insert((unit_index_u32, trace_instance_index))")
+            && canonical_outputs_body.contains("duplicate witness output")
+            && canonical_outputs_body.contains("sorted_outputs.sort_by_key"),
+        "canonical witness output ordering should reject duplicate trace identities before sorting"
+    );
     assert!(
         source.contains("use std::borrow::Cow")
             && inner_body.contains("proof_values: proof_values.as_ref()")

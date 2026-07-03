@@ -5174,6 +5174,33 @@ fn builds_all_units_proof_output_with_multiple_trace_instances_for_unit() {
         16,
     )
     .expect("segmented guest PC trace commitments should run");
+    let duplicate_outputs = vec![outputs[0].clone(), outputs[0].clone()];
+    let duplicate_error = lzvm_prover::build_witness_proof_artifact_for_all_units(
+        &lzvm_prover::WitnessAllUnitsProofRequest {
+            catalog: &catalog,
+            schedule: &plan.run_plan.schedule,
+            constant_tree_material_summaries: None,
+            execution_units: &plan.units,
+            gpu_streams: plan.run_plan.gpu.max_streams,
+            public_values: Some(&public_values),
+            outputs: &duplicate_outputs,
+            auxiliary_inputs: &ProveWitnessAuxiliaryInputs::default(),
+            unit_values: &[],
+            evaluation_values_segment: None,
+            verify_outputs: false,
+            program_image_cache: None,
+            eth_block_input: None,
+            framed_guest_input: None,
+            challenge_values_segment: None,
+            include_contribution_segment: false,
+        },
+    )
+    .expect_err("duplicate witness outputs should reject before artifact finalization");
+
+    assert_eq!(
+        duplicate_error,
+        "duplicate witness output for unit 0 trace instance 0"
+    );
 
     let proof = lzvm_prover::build_witness_proof_artifact_for_all_units(
         &lzvm_prover::WitnessAllUnitsProofRequest {
