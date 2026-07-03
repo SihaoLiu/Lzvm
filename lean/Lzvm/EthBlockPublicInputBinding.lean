@@ -16,6 +16,7 @@ structure RuntimeEthBlockPublicInputBindingValidation (system : VerifierModel) w
   proofArtifactBindingValidation : RuntimeProofArtifactBindingValidation system
   ethBlockBindingAccepted : RuntimeArtifact -> PublicInput -> Proof -> Prop
   ethBlockInputSegmentPresent : RuntimeArtifact -> PublicInput -> Proof -> Prop
+  ethBlockInputSectionsUnique : RuntimeArtifact -> PublicInput -> Proof -> Prop
   ethBlockInputMatches : RuntimeArtifact -> PublicInput -> Proof -> Prop
   ethPublicValuesMatch : RuntimeArtifact -> PublicInput -> Proof -> Prop
   ethBindingAcceptedImpliesProofArtifactBindingAccepted :
@@ -26,6 +27,10 @@ structure RuntimeEthBlockPublicInputBindingValidation (system : VerifierModel) w
     forall artifact publicInput proof,
       ethBlockBindingAccepted artifact publicInput proof ->
         ethBlockInputSegmentPresent artifact publicInput proof
+  ethBindingAcceptedImpliesEthBlockInputSectionsUnique :
+    forall artifact publicInput proof,
+      ethBlockBindingAccepted artifact publicInput proof ->
+        ethBlockInputSectionsUnique artifact publicInput proof
   ethBindingAcceptedImpliesEthBlockInputMatches :
     forall artifact publicInput proof,
       ethBlockBindingAccepted artifact publicInput proof ->
@@ -42,6 +47,7 @@ def RuntimeEthBlockPublicInputBindingEvidence
     (publicInput : PublicInput)
     (proof : Proof) : Prop :=
   validation.ethBlockInputSegmentPresent artifact publicInput proof
+    /\ validation.ethBlockInputSectionsUnique artifact publicInput proof
     /\ validation.ethBlockInputMatches artifact publicInput proof
     /\ validation.ethPublicValuesMatch artifact publicInput proof
 
@@ -151,6 +157,11 @@ theorem runtime_eth_block_public_input_binding_checked_acceptance_evidence
         publicInput
         proof
         accepted,
+      (validation.ethBindingAcceptedImpliesEthBlockInputSectionsUnique
+        artifact
+        publicInput
+        proof
+        accepted),
       (validation.ethBindingAcceptedImpliesEthBlockInputMatches
         artifact
         publicInput
@@ -176,6 +187,25 @@ theorem runtime_eth_block_public_input_binding_checked_acceptance_input_segment_
   intro artifact publicInput proof accepted
   exact
     validation.ethBindingAcceptedImpliesEthBlockInputSegmentPresent
+      artifact
+      publicInput
+      proof
+      accepted
+
+theorem runtime_eth_block_public_input_binding_checked_acceptance_input_sections_unique
+    {system : VerifierModel}
+    (validation : RuntimeEthBlockPublicInputBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeEthBlockPublicInputBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        validation.ethBlockInputSectionsUnique artifact publicInput proof := by
+  intro artifact publicInput proof accepted
+  exact
+    validation.ethBindingAcceptedImpliesEthBlockInputSectionsUnique
       artifact
       publicInput
       proof

@@ -22,6 +22,7 @@ fn lean_eth_block_public_input_binding_exports_core_contract_projection() {
             && lean_source.contains("RuntimeEthBlockPublicInputBindingEvidence")
             && lean_source.contains("RuntimeEthBlockPublicInputBindingStructuralObligations")
             && lean_source.contains("ethBlockInputSegmentPresent")
+            && lean_source.contains("ethBlockInputSectionsUnique")
             && lean_source.contains("RuntimeProofArtifactBindingEvidence")
             && lean_source.contains("RuntimeProofArtifactBindingStructuralObligations")
             && lean_source.contains("RuntimeArtifactEvidence")
@@ -40,6 +41,7 @@ fn lean_eth_block_public_input_binding_exports_core_contract_projection() {
         &[
             "runtime_eth_block_public_input_binding_checked_acceptance_artifact_evidence_contract",
             "runtime_eth_block_public_input_binding_checked_acceptance_input_segment_present",
+            "runtime_eth_block_public_input_binding_checked_acceptance_input_sections_unique",
             "runtime_eth_block_public_input_binding_checked_acceptance_input_matches",
             "runtime_eth_block_public_input_binding_checked_acceptance_public_values_match",
             "runtime_eth_block_public_input_binding_checked_acceptance_artifact_wellformed_contract",
@@ -70,6 +72,19 @@ fn lean_eth_block_public_input_binding_exports_core_contract_projection() {
         &lean_source,
         "runtime_eth_block_public_input_binding_checked_acceptance_input_segment_present",
         &["validation.ethBindingAcceptedImpliesEthBlockInputSegmentPresent"],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_eth_block_public_input_binding_checked_acceptance_input_sections_unique",
+        &[
+            "RuntimeEthBlockPublicInputBindingCheckedAcceptance",
+            "validation.ethBlockInputSectionsUnique artifact publicInput proof",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains_identifier(
+        &lean_source,
+        "runtime_eth_block_public_input_binding_checked_acceptance_input_sections_unique",
+        "validation.ethBindingAcceptedImpliesEthBlockInputSectionsUnique",
     );
     lean_binding::assert_theorem_prefix_contains(
         &lean_source,
