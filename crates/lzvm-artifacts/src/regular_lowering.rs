@@ -840,6 +840,9 @@ fn proof_value_dimension(value: &NamedStageValue) -> Result<u32, RegularProgramL
     value.lengths.iter().try_fold(1_u32, |dimension, length| {
         let length =
             u32::try_from(*length).map_err(|_| RegularProgramLoweringError::LengthOverflow)?;
+        if length == 0 {
+            return Err(RegularProgramLoweringError::LengthOverflow);
+        }
         mul_u32(dimension, length)
     })
 }
@@ -1056,6 +1059,9 @@ fn stage_value_offset(
 
 fn stage_value_dimension(value: &StageValue) -> Result<u32, RegularProgramLoweringError> {
     value.lengths.iter().try_fold(1_u32, |dimension, length| {
+        if *length == 0 {
+            return Err(RegularProgramLoweringError::LengthOverflow);
+        }
         dimension
             .checked_mul(*length)
             .ok_or(RegularProgramLoweringError::LengthOverflow)

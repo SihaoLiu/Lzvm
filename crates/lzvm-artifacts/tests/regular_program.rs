@@ -10,6 +10,7 @@ use lzvm_artifacts::hint_program::{
 use lzvm_artifacts::regular_program::{
     encode_regular_program, parse_regular_program, read_regular_program_file,
     regular_program_from_expression_info, verifier_program_from_verifier_info, RegularProgram,
+    RegularProgramLoweringError,
 };
 use lzvm_artifacts::{
     expression_info::{
@@ -416,6 +417,35 @@ fn lowers_unit_and_group_value_sources() {
 }
 
 #[test]
+fn rejects_zero_length_unit_value_dimensions_when_lowering_sources() {
+    let info = ExpressionInfo {
+        hints: Vec::new(),
+        expressions: Vec::new(),
+        constraints: vec![ConstraintCode {
+            stage: 2,
+            boundary: BoundaryKind::EveryRow,
+            offset_min: None,
+            offset_max: None,
+            line: "value constraint".to_owned(),
+            intermediate: false,
+            temporary_count: 1,
+            operations: vec![CodeOperation {
+                op: OperationKind::Copy,
+                destination: CodeDestination::temporary(0, 1),
+                sources: vec![CodeOperand::air_value(0, Some(1), Some(0), 1)],
+            }],
+        }],
+    };
+    let mut setup = setup_info_with_values();
+    setup.unit_value_map[0].lengths = vec![0];
+
+    assert_eq!(
+        regular_program_from_expression_info(&info, &setup),
+        Err(RegularProgramLoweringError::LengthOverflow)
+    );
+}
+
+#[test]
 fn builds_verifier_program_from_verifier_info() {
     let info = VerifierInfo {
         quotient: VerifierCode {
@@ -506,6 +536,41 @@ fn lowers_verifier_proof_value_offsets_with_array_lengths() {
         .expect("verifier program should lower");
 
     assert_eq!(&program.args[10..14], &[10, 2, 0, 3]);
+}
+
+#[test]
+fn rejects_zero_length_verifier_proof_value_dimensions() {
+    let info = VerifierInfo {
+        quotient: VerifierCode {
+            expression_id: None,
+            stage: None,
+            line: "quotient check".to_owned(),
+            temporary_count: 1,
+            operations: vec![VerifierOperation {
+                op: VerifierOperationKind::Copy,
+                destination: VerifierDestination::temporary(0, 3),
+                sources: vec![VerifierOperand::number(1, 1)],
+            }],
+        },
+        query: VerifierCode {
+            expression_id: Some(9),
+            stage: Some(3),
+            line: "query check".to_owned(),
+            temporary_count: 1,
+            operations: vec![VerifierOperation {
+                op: VerifierOperationKind::Copy,
+                destination: VerifierDestination::temporary(0, 3),
+                sources: vec![VerifierOperand::proof_value(1, 3)],
+            }],
+        },
+    };
+    let mut global = global_info_with_values();
+    global.proof_values_map[0].lengths = vec![0];
+
+    assert_eq!(
+        verifier_program_from_verifier_info(&info, &minimal_setup_info(), &global),
+        Err(RegularProgramLoweringError::LengthOverflow)
+    );
 }
 
 fn minimal_setup_info() -> UnitSetupInfo {
