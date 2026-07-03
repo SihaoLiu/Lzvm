@@ -170,6 +170,116 @@ theorem runtime_pipeline_binding_checked_acceptance_audited_query_opening_core_s
       queryOpeningCore.right.right.right.right.left,
       queryOpeningCore.right.right.right.right.right⟩
 
+theorem runtime_pipeline_binding_checked_acceptance_audited_manifest_query_opening_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimePipelineBindingValidation system) :
+    forall artifact publicInput proof requiresExternalSource,
+      RuntimePipelineBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RequiredCryptographicAssumptionStatements assumptions.crypto
+          /\ ProofSystemSound system
+          /\ system.accepts publicInput proof
+          /\ RuntimeQueryPlanBindingEvidence
+            system
+            validation.queryPlanBindingValidation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeQueryPlanMaterialManifestContract
+            system
+            validation.queryPlanBindingValidation
+            artifact
+            publicInput
+            proof
+          /\ validation.queryPlanBindingValidation.queryPlanSegmentCanonical
+            artifact
+            publicInput
+            proof
+          /\ validation.queryPlanBindingValidation.queryPlanMaterialManifestMatchesSchedule
+            artifact
+            publicInput
+            proof
+          /\ RuntimeChallengeSegmentBindingEvidence
+            system
+            validation.queryPlanBindingValidation.challengeValidation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeOpeningSegmentBindingEvidence
+            system
+            validation.queryPlanBindingValidation.openingValidation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeOpeningEvidence
+            system
+            validation.queryPlanBindingValidation.openingValidation.openingValidation
+            artifact
+            publicInput
+            proof
+            requiresExternalSource
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro artifact publicInput proof requiresExternalSource accepted
+  have compactContract :=
+    runtime_pipeline_binding_checked_acceptance_audited_query_opening_core_sound_contract
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      accepted
+  rcases compactContract with
+    ⟨auditedAssumptions,
+      proofSystemSound,
+      verifierAccepts,
+      queryPlanEvidence,
+      challengeEvidence,
+      openingSegmentEvidence,
+      openingEvidence,
+      verifierCore,
+      soundWitness⟩
+  have materialManifest :=
+    runtime_query_plan_binding_evidence_implies_material_manifest_contract
+      validation.queryPlanBindingValidation
+      artifact
+      publicInput
+      proof
+      queryPlanEvidence
+  have segmentCanonical :=
+    runtime_query_plan_material_manifest_contract_implies_segment_canonical
+      validation.queryPlanBindingValidation
+      artifact
+      publicInput
+      proof
+      materialManifest
+  have materialManifestMatches :=
+    runtime_query_plan_material_manifest_contract_implies_matches_schedule
+      validation.queryPlanBindingValidation
+      artifact
+      publicInput
+      proof
+      materialManifest
+  exact
+    ⟨auditedAssumptions,
+      proofSystemSound,
+      verifierAccepts,
+      queryPlanEvidence,
+      materialManifest,
+      segmentCanonical,
+      materialManifestMatches,
+      challengeEvidence,
+      openingSegmentEvidence,
+      openingEvidence,
+      verifierCore,
+      soundWitness⟩
+
 theorem runtime_pipeline_binding_checked_acceptance_audited_binding_pcs_fri_core_witness_contract
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
