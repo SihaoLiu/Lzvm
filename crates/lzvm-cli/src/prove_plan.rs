@@ -2,11 +2,12 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use lzvm_artifacts::key_directory::{
-    key_directory_catalog_digest, read_key_directory_catalog,
-    read_key_directory_catalog_trusting_pcs_material_digests, KeyDirectoryCatalog,
+    read_key_directory_catalog, read_key_directory_catalog_trusting_pcs_material_digests,
+    KeyDirectoryCatalog,
 };
 use lzvm_artifacts::setup_manifest::{
-    read_setup_directory_manifest_file, SetupDirectoryManifestError, SETUP_DIRECTORY_MANIFEST_FILE,
+    build_setup_directory_manifest, read_setup_directory_manifest_file,
+    SetupDirectoryManifestError, SETUP_DIRECTORY_MANIFEST_FILE,
 };
 use lzvm_prover::guest_pc_trace_backend::{
     guest_pc_trace_layout_capacity, guest_pc_trace_segmented_layout_requirements,
@@ -112,8 +113,8 @@ fn validate_required_stored_setup_manifest_digest(
         ));
     }
     let found = read_setup_directory_manifest_file(&path).map_err(|error| error.to_string())?;
-    let digest = key_directory_catalog_digest(catalog).map_err(|error| error.to_string())?;
-    if found.catalog_digest != digest {
+    let expected = build_setup_directory_manifest(catalog).map_err(|error| error.to_string())?;
+    if found != expected {
         return Err(SetupDirectoryManifestError::Mismatch { path }.to_string());
     }
     Ok(())

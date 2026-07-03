@@ -3292,6 +3292,19 @@ fn write_stale_setup_manifest(root: &Path, value: u8) -> PathBuf {
     manifest_path
 }
 
+fn write_stale_setup_manifest_count(root: &Path) -> PathBuf {
+    let manifest_path = root.join(SETUP_DIRECTORY_MANIFEST_FILE);
+    let mut manifest =
+        read_setup_directory_manifest_file(&manifest_path).expect("manifest should parse");
+    manifest.fixed_byte_count += 1;
+    fs::write(
+        &manifest_path,
+        encode_setup_directory_manifest(&manifest).expect("manifest should encode"),
+    )
+    .expect("stale manifest should be written");
+    manifest_path
+}
+
 fn remove_setup_manifest(root: &Path) -> PathBuf {
     let manifest_path = root.join(SETUP_DIRECTORY_MANIFEST_FILE);
     fs::remove_file(&manifest_path).expect("setup directory manifest should be removed");
@@ -3845,6 +3858,42 @@ fn rejects_prove_plan_with_stale_setup_directory_manifest() {
     let output_dir = dir.join("proof-out");
     run_setup_command(&["setup", "generate-key", root]);
     let manifest_path = write_stale_setup_manifest(&dir, 0xbd);
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "prove",
+            "plan",
+            root,
+            output_dir.to_str().expect("output path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 1);
+    assert!(stdout.is_empty());
+    assert_eq!(
+        String::from_utf8(stderr).expect("stderr should be utf-8"),
+        format!(
+            "prove plan failed: setup directory manifest mismatch at {}\n",
+            manifest_path.display()
+        )
+    );
+}
+
+#[test]
+fn rejects_prove_plan_with_stale_setup_directory_manifest_counts() {
+    let dir = temp_dir("stale-manifest-plan-counts");
+    let _ = fs::remove_dir_all(&dir);
+    write_setup_directory(&dir);
+    let root = dir.to_str().expect("path should be utf-8");
+    let output_dir = dir.join("proof-out");
+    run_setup_command(&["setup", "generate-key", root]);
+    let manifest_path = write_stale_setup_manifest_count(&dir);
 
     let mut stdout = Vec::new();
     let mut stderr = Vec::new();
