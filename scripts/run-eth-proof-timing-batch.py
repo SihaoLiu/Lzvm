@@ -1388,7 +1388,6 @@ def profile_command_for_env(
     if args.min_gpu_free_mib != DEFAULT_MIN_GPU_FREE_MIB:
         profiler_command.extend(["--min-gpu-free-mib", str(args.min_gpu_free_mib)])
     profiler_command.extend(gpu_memory_cli_parts(args, root))
-    profiler_command.extend(gpu_memory_wait_cli_parts(args))
     return [
         *cuda_visible_devices_command_prefix(),
         "scripts/run-proof-profile.py",

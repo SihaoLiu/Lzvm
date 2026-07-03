@@ -3409,6 +3409,10 @@ fn eth_proof_timing_batch_prints_profile_commands_from_env() {
         .arg("--check-gpu-memory")
         .arg("--min-gpu-free-mib")
         .arg(min_gpu_free_mib)
+        .arg("--gpu-memory-wait-timeout-s")
+        .arg("30")
+        .arg("--gpu-memory-wait-poll-s")
+        .arg("0.5")
         .arg("--nvidia-smi-command")
         .arg(&smi_path)
         .arg("--gpu-preallocate")
@@ -3469,10 +3473,14 @@ fn eth_proof_timing_batch_prints_profile_commands_from_env() {
             && nsys_command.contains("--check-gpu-memory")
             && nsys_command.contains(&format!("--min-gpu-free-mib {min_gpu_free_mib}"))
             && nsys_command.contains("--nvidia-smi-command")
+            && !nsys_command.contains("--gpu-memory-wait-timeout-s")
+            && !nsys_command.contains("--gpu-memory-wait-poll-s")
             && ncu_command.contains("--check-gpu-memory")
             && ncu_command.contains(&format!("--min-gpu-free-mib {min_gpu_free_mib}"))
-            && ncu_command.contains("--nvidia-smi-command"),
-        "profile command output should preserve GPU memory preflight in downstream commands: {stdout}"
+            && ncu_command.contains("--nvidia-smi-command")
+            && !ncu_command.contains("--gpu-memory-wait-timeout-s")
+            && !ncu_command.contains("--gpu-memory-wait-poll-s"),
+        "profile command output should preserve supported GPU memory preflight flags without unsupported wait flags: {stdout}"
     );
     assert!(
         nsys_command.contains("--skip-nsys-export")
