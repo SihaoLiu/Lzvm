@@ -390,6 +390,55 @@ fn rejects_seeded_pcs_query_plan_material_mismatch() {
 }
 
 #[test]
+fn rejects_seeded_pcs_query_plan_extra_material_units() {
+    let schedule = sample_schedule();
+    let public_hash = [7; 32];
+    let material = material_manifest_segment(vec![material_unit(0), material_unit(1)]);
+    let witness = witness_segment(0);
+    let query = build_pcs_query_plan_segment(
+        &schedule,
+        public_hash,
+        &material,
+        std::slice::from_ref(&witness),
+    )
+    .expect("query plan should build");
+    let segments = vec![material, witness, query];
+
+    let error = validate_seeded_pcs_query_plan_segments(&schedule, public_hash, &segments)
+        .expect_err("extra material unit should be rejected");
+
+    assert_eq!(
+        error,
+        ValidatePcsQueryPlanSegmentsError::UnitMismatch { unit_index: 1 }
+    );
+}
+
+#[test]
+fn rejects_seeded_pcs_query_plan_material_unit_order_mismatch() {
+    let schedule = sample_schedule_with_two_units();
+    let public_hash = [7; 32];
+    let material = material_manifest_segment(vec![material_unit(1), material_unit(0)]);
+    let first_witness = witness_segment(0);
+    let second_witness = witness_segment(1);
+    let query = build_pcs_query_plan_segment(
+        &schedule,
+        public_hash,
+        &material,
+        &[first_witness.clone(), second_witness.clone()],
+    )
+    .expect("query plan should build");
+    let segments = vec![material, first_witness, second_witness, query];
+
+    let error = validate_seeded_pcs_query_plan_segments(&schedule, public_hash, &segments)
+        .expect_err("material units should follow schedule order");
+
+    assert_eq!(
+        error,
+        ValidatePcsQueryPlanSegmentsError::UnitMismatch { unit_index: 0 }
+    );
+}
+
+#[test]
 fn rejects_seeded_pcs_query_plan_mismatches() {
     let schedule = sample_schedule();
     let public_hash = [7; 32];
@@ -1787,6 +1836,18 @@ fn sample_schedule() -> ProveSchedule {
         max_extended_domain_bits: 2,
         units: vec![sample_unit()],
     }
+}
+
+fn sample_schedule_with_two_units() -> ProveSchedule {
+    let mut schedule = sample_schedule();
+    let mut second_unit = sample_unit();
+    second_unit.unit_id = Some(1);
+    second_unit.unit_name = Some("unit-b".to_owned());
+    schedule.unit_count = 2;
+    schedule.pcs_material_unit_count = 2;
+    schedule.total_query_count = 4;
+    schedule.units.push(second_unit);
+    schedule
 }
 
 fn query_sensitive_schedule() -> ProveSchedule {
