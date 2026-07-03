@@ -103,6 +103,10 @@ fn lean_query_plan_binding_exports_opening_segment_projections() {
             "runtime_query_plan_binding_evidence_implies_transcript_inputs_canonical",
             "runtime_query_plan_binding_evidence_implies_seeded_contract",
             "runtime_query_plan_binding_evidence_implies_material_manifest_contract",
+            "runtime_query_plan_material_manifest_contract_implies_segment_canonical",
+            "runtime_query_plan_material_manifest_contract_implies_matches_schedule",
+            "runtime_query_plan_binding_evidence_implies_segment_canonical",
+            "runtime_query_plan_binding_evidence_implies_material_manifest_matches_schedule",
             "runtime_query_plan_binding_seeded_contract_implies_seed_binds_witness_tree_digests",
             "runtime_query_plan_binding_seeded_contract_implies_seeded_fri_opening_requirements_checked",
             "runtime_query_plan_binding_checked_acceptance_bound_contract",
@@ -138,6 +142,7 @@ fn lean_query_plan_binding_exports_opening_segment_projections() {
             "runtime_query_plan_binding_checked_acceptance_seeded_concrete_opening_and_core_contract",
             "runtime_query_plan_binding_checked_acceptance_seeded_hash_concrete_opening_and_core_contract",
             "runtime_query_plan_binding_audited_finalized_core_sound_witness_contract",
+            "runtime_query_plan_binding_audited_finalized_manifest_core_sound_witness_contract",
             "runtime_query_plan_binding_audited_finalized_segment_ids_contract",
             "runtime_query_plan_binding_audited_finalized_concrete_segment_ids_contract",
         ],
@@ -245,6 +250,48 @@ fn lean_query_plan_binding_exports_opening_segment_projections() {
             "validation.queryPlanBindingAcceptedImpliesMaterialManifestMatchesSchedule",
         ],
     );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_query_plan_material_manifest_contract_implies_segment_canonical",
+        &[
+            "RuntimeQueryPlanMaterialManifestContract",
+            "validation.queryPlanSegmentCanonical artifact publicInput proof",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_query_plan_material_manifest_contract_implies_matches_schedule",
+        &[
+            "RuntimeQueryPlanMaterialManifestContract",
+            "validation.queryPlanMaterialManifestMatchesSchedule artifact publicInput proof",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_query_plan_binding_evidence_implies_segment_canonical",
+        &[
+            "RuntimeQueryPlanBindingEvidence",
+            "validation.queryPlanSegmentCanonical artifact publicInput proof",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_query_plan_binding_evidence_implies_material_manifest_matches_schedule",
+        &[
+            "RuntimeQueryPlanBindingEvidence",
+            "validation.queryPlanMaterialManifestMatchesSchedule artifact publicInput proof",
+        ],
+    );
+    for name in [
+        "runtime_query_plan_binding_evidence_implies_segment_canonical",
+        "runtime_query_plan_binding_evidence_implies_material_manifest_matches_schedule",
+    ] {
+        lean_binding::assert_theorem_body_contains(
+            &lean_source,
+            name,
+            &["runtime_query_plan_binding_evidence_implies_material_manifest_contract"],
+        );
+    }
     lean_binding::assert_theorem_body_contains(
         &lean_source,
         "runtime_query_plan_binding_checked_acceptance_opening_query_plan_bound",
@@ -430,6 +477,27 @@ fn lean_query_plan_binding_exports_opening_segment_projections() {
             "runtime_query_plan_binding_checked_acceptance_full_soundness_contract",
             "runtime_query_plan_binding_checked_acceptance_verifier_core_contract",
             "runtime_opening_segment_binding_checked_acceptance_full_soundness_contract",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_query_plan_binding_audited_finalized_manifest_core_sound_witness_contract",
+        &[
+            "RuntimeQueryPlanMaterialManifestContract",
+            "validation.queryPlanSegmentCanonical artifact publicInput proof",
+            "validation.queryPlanMaterialManifestMatchesSchedule artifact publicInput proof",
+            "RuntimeVerifierCoreContract system publicInput proof",
+            "SoundWitness system publicInput proof",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_query_plan_binding_audited_finalized_manifest_core_sound_witness_contract",
+        &[
+            "runtime_query_plan_binding_audited_finalized_core_sound_witness_contract",
+            "runtime_query_plan_binding_evidence_implies_material_manifest_contract",
+            "runtime_query_plan_material_manifest_contract_implies_segment_canonical",
+            "runtime_query_plan_material_manifest_contract_implies_matches_schedule",
         ],
     );
     lean_binding::assert_theorem_prefix_contains(
