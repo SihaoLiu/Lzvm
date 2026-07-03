@@ -749,6 +749,32 @@ fn reads_key_directory_layout_with_no_challenge_counters() {
 }
 
 #[test]
+fn reads_key_directory_catalog_with_no_challenge_counters() {
+    let dir = temp_dir("catalog-global-no-challenges");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("fixture root should be created");
+    let mut global = fixtures::sample_key_directory_catalog_global_info();
+    global.num_challenges.clear();
+    write_global_metadata(&dir.join("pilout.globalInfo.bin"), &global);
+    fs::write(
+        dir.join("pilout.globalConstraints.bin"),
+        global_constraint_program_file(&empty_hint_program()),
+    )
+    .expect("global constraints program should be written");
+
+    let layout = read_key_directory_layout(&dir).expect("layout should parse");
+    for unit in &layout.units {
+        write_catalog_unit_files(unit);
+    }
+
+    validate_key_directory_layout(&layout).expect("layout should validate");
+    let catalog = read_key_directory_catalog(&dir).expect("catalog should parse");
+
+    assert!(catalog.layout.global_info.num_challenges.is_empty());
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+}
+
+#[test]
 fn validates_external_key_directory_when_requested() {
     let Some(root) = std::env::var_os("LZVM_EXTERNAL_KEY_DIR") else {
         return;
