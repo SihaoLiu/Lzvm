@@ -267,6 +267,24 @@ fn rejects_packed_value_count_mismatches() {
     ));
 }
 
+#[test]
+fn rejects_zero_length_proof_value_dimensions() {
+    let global = sample_global_info(vec![sample_array_proof_value("empty-value", 1, &[0])]);
+
+    assert_eq!(
+        build_pcs_proof_values_segment_from_packed_values(&global, &[]),
+        Err(ProvePcsProofValuesSegmentError::LengthOverflow)
+    );
+    assert_eq!(
+        flatten_pcs_proof_values(&global, &[]),
+        Err(ProvePcsProofValuesSegmentError::LengthOverflow)
+    );
+    assert_eq!(
+        load_pcs_proof_values_from_segments(&global, &[]),
+        Err(LoadPcsProofValuesSegmentError::LengthOverflow)
+    );
+}
+
 fn sample_global_info(proof_values_map: Vec<NamedStageValue>) -> GlobalInfo {
     let num_proof_values = if proof_values_map.is_empty() {
         Vec::new()

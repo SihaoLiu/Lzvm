@@ -304,6 +304,9 @@ fn proof_value_dimension_for_load(
 fn proof_value_dimension(entry: &NamedStageValue) -> Option<usize> {
     entry.lengths.iter().try_fold(1_usize, |dimension, length| {
         let length = usize::try_from(*length).ok()?;
+        if length == 0 {
+            return None;
+        }
         dimension.checked_mul(length)
     })
 }
