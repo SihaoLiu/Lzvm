@@ -245,7 +245,13 @@ impl std::error::Error for ProgramImageCommitmentCacheError {
 
 impl From<SectionedError> for ProgramImageCommitmentCacheError {
     fn from(error: SectionedError) -> Self {
-        Self::Sectioned(error)
+        match error {
+            SectionedError::UnsupportedVersion { found, .. } => Self::UnsupportedVersion {
+                found,
+                expected: PROGRAM_IMAGE_VERSION,
+            },
+            error => Self::Sectioned(error),
+        }
     }
 }
 

@@ -202,23 +202,26 @@ fn rejects_unsupported_program_image_commitment_cache_versions() {
     let encoded = encoded_sample_cache();
     let parsed = lzvm_artifacts::sectioned::parse_sectioned_file(&encoded, *b"pimg", 1)
         .expect("sectioned cache should parse");
-    let encoded = lzvm_artifacts::sectioned::encode_sectioned_file(
-        &lzvm_artifacts::sectioned::SectionedFile {
-            kind: *b"pimg",
-            version: 0,
-            sections: parsed.sections,
-        },
-    )
-    .expect("sectioned cache should encode");
 
-    assert_eq!(
-        parse_program_image_commitment_cache(&encoded)
-            .expect_err("unsupported cache version should reject"),
-        ProgramImageCommitmentCacheError::UnsupportedVersion {
-            found: 0,
-            expected: 1,
-        }
-    );
+    for version in [0, 2] {
+        let encoded = lzvm_artifacts::sectioned::encode_sectioned_file(
+            &lzvm_artifacts::sectioned::SectionedFile {
+                kind: *b"pimg",
+                version,
+                sections: parsed.sections.clone(),
+            },
+        )
+        .expect("sectioned cache should encode");
+
+        assert_eq!(
+            parse_program_image_commitment_cache(&encoded)
+                .expect_err("unsupported cache version should reject"),
+            ProgramImageCommitmentCacheError::UnsupportedVersion {
+                found: version,
+                expected: 1,
+            }
+        );
+    }
 }
 
 #[test]
