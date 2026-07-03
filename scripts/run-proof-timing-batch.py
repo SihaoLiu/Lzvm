@@ -1367,6 +1367,7 @@ def self_test() -> None:
     for name in INHERITED_RUNTIME_ENV_NAMES:
         os.environ.pop(name, None)
     os.environ["LZVM_CUDA_RETAINED_SOURCE_BYTES"] = "123456"
+    os.environ["LZVM_GUEST_PC_TRACE_DESCRIPTOR_HIGH32_STATS"] = "1"
     try:
         batch_dir = run_batch(args)
         contents = (work_dir / "improve-log.csv").read_text(encoding="utf-8")
@@ -1385,7 +1386,10 @@ def self_test() -> None:
         if "aggregate,total_count,valid_total_count" not in stable_summary_text:
             raise SystemExit("self-test stable timing summary missing aggregate row")
         batch_payload = json.loads((batch_dir / "batch.json").read_text(encoding="utf-8"))
-        expected_runtime_env = {"LZVM_CUDA_RETAINED_SOURCE_BYTES": "123456"}
+        expected_runtime_env = {
+            "LZVM_CUDA_RETAINED_SOURCE_BYTES": "123456",
+            "LZVM_GUEST_PC_TRACE_DESCRIPTOR_HIGH32_STATS": "1",
+        }
         if batch_payload.get("inherited_runtime_env") != expected_runtime_env:
             raise SystemExit("self-test batch json should record inherited runtime env")
         for key in [

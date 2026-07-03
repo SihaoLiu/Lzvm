@@ -208,6 +208,7 @@ fn proof_timing_batch_runs_commands_and_appends_stable_log() {
         .arg("--summary")
         .arg("batch timing")
         .env("LZVM_CUDA_RETAINED_SOURCE_BYTES", "123456")
+        .env("LZVM_GUEST_PC_TRACE_DESCRIPTOR_HIGH32_STATS", "1")
         .output()
         .expect("proof timing batch should run");
     assert!(
@@ -296,7 +297,8 @@ fn proof_timing_batch_runs_commands_and_appends_stable_log() {
     );
     assert!(
         batch_json.contains("\"inherited_runtime_env\": {")
-            && batch_json.contains("\"LZVM_CUDA_RETAINED_SOURCE_BYTES\": \"123456\""),
+            && batch_json.contains("\"LZVM_CUDA_RETAINED_SOURCE_BYTES\": \"123456\"")
+            && batch_json.contains("\"LZVM_GUEST_PC_TRACE_DESCRIPTOR_HIGH32_STATS\": \"1\""),
         "batch json should record inherited runtime env: {batch_json}"
     );
     assert!(
