@@ -403,6 +403,40 @@ fn rejects_zero_commitment_column_lengths() {
 }
 
 #[test]
+fn rejects_duplicate_setup_value_names_when_encoding() {
+    let mut info = fixtures::sample_setup_info_fixture();
+    info.commitment_columns[0].name = info.constant_columns[0].name.clone();
+
+    assert_eq!(
+        encode_unit_setup_info(&info),
+        Err(SetupInfoError::DuplicateValueName {
+            field: "commitment-columns",
+            name: "main.a".to_owned(),
+        })
+    );
+}
+
+#[test]
+fn rejects_duplicate_setup_value_names_when_parsing() {
+    let mut bytes = sample_setup_info_binary();
+    let target = b"main.b\0";
+    let replacement = b"main.a\0";
+    let offset = bytes
+        .windows(target.len())
+        .position(|window| window == target)
+        .expect("fixture should contain the second constant name");
+    bytes[offset..offset + target.len()].copy_from_slice(replacement);
+
+    assert_eq!(
+        parse_unit_setup_info(&bytes),
+        Err(SetupInfoError::DuplicateValueName {
+            field: "constant-columns",
+            name: "main.a".to_owned(),
+        })
+    );
+}
+
+#[test]
 fn rejects_overlapping_commitment_columns() {
     let mut info = fixtures::sample_setup_info_fixture();
     let mut overlapping = info.commitment_columns[0].clone();

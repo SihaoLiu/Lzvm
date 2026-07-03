@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::path::Path;
 
@@ -186,6 +186,10 @@ pub enum SetupInfoError {
         field: &'static str,
         index: usize,
     },
+    DuplicateValueName {
+        field: &'static str,
+        name: String,
+    },
     InvalidEvaluationMap {
         index: usize,
     },
@@ -261,6 +265,9 @@ impl fmt::Display for SetupInfoError {
                     f,
                     "invalid setup-info {field} entry at index {index}"
                 )
+            }
+            Self::DuplicateValueName { field, name } => {
+                write!(f, "setup-info {field} has duplicate value name {name}")
             }
             Self::InvalidEvaluationMap { index } => {
                 write!(f, "invalid setup-info evaluation-map entry at index {index}")
@@ -821,7 +828,53 @@ fn validate_unit_setup_info(info: &UnitSetupInfo) -> Result<(), SetupInfoError> 
         .ok_or(SetupInfoError::LengthOverflow)?;
     validate_stage_values("unit-value-map", &info.unit_value_map, max_stage)?;
     validate_stage_values("group-value-map", &info.group_value_map, max_stage)?;
+    validate_setup_value_names(info)?;
     validate_domains(&info.stark)?;
+    Ok(())
+}
+
+fn validate_setup_value_names(info: &UnitSetupInfo) -> Result<(), SetupInfoError> {
+    let mut seen = BTreeSet::new();
+    insert_unique_value_names(
+        &mut seen,
+        "constant-columns",
+        info.constant_columns
+            .iter()
+            .map(|column| column.name.as_str()),
+    )?;
+    insert_unique_value_names(
+        &mut seen,
+        "commitment-columns",
+        info.commitment_columns
+            .iter()
+            .map(|column| column.name.as_str()),
+    )?;
+    insert_unique_value_names(
+        &mut seen,
+        "unit-value-map",
+        info.unit_value_map.iter().map(|value| value.name.as_str()),
+    )?;
+    insert_unique_value_names(
+        &mut seen,
+        "group-value-map",
+        info.group_value_map.iter().map(|value| value.name.as_str()),
+    )?;
+    Ok(())
+}
+
+fn insert_unique_value_names<'a>(
+    seen: &mut BTreeSet<&'a str>,
+    field: &'static str,
+    names: impl IntoIterator<Item = &'a str>,
+) -> Result<(), SetupInfoError> {
+    for name in names {
+        if !seen.insert(name) {
+            return Err(SetupInfoError::DuplicateValueName {
+                field,
+                name: name.to_owned(),
+            });
+        }
+    }
     Ok(())
 }
 
