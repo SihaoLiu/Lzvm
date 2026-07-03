@@ -815,7 +815,10 @@ fn validate_stage_values(
 
 fn validate_evaluation_map(info: &UnitSetupInfo) -> Result<(), SetupInfoError> {
     if info.evaluation_map.is_empty() {
-        return Ok(());
+        if info.eval_count == 0 {
+            return Ok(());
+        }
+        return Err(SetupInfoError::InvalidEvaluationMap { index: 0 });
     }
     if info.evaluation_map.len() != info.eval_count {
         return Err(SetupInfoError::InvalidEvaluationMap {

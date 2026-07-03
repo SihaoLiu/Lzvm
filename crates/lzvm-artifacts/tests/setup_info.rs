@@ -334,6 +334,17 @@ fn rejects_evaluation_map_count_mismatches() {
 }
 
 #[test]
+fn rejects_missing_evaluation_map_entries_when_evaluations_are_declared() {
+    let mut info = fixtures::sample_setup_info_fixture_with_evaluation_map();
+    info.evaluation_map.clear();
+
+    assert_eq!(
+        encode_unit_setup_info(&info),
+        Err(SetupInfoError::InvalidEvaluationMap { index: 0 })
+    );
+}
+
+#[test]
 fn rejects_evaluation_map_opening_positions_outside_opening_points() {
     let mut info = fixtures::sample_setup_info_fixture_with_evaluation_map();
     info.evaluation_map[0].opening_position = 3;
