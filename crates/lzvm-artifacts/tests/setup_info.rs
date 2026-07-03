@@ -323,6 +323,28 @@ fn parses_evaluation_map_entries_from_binary() {
 }
 
 #[test]
+fn rejects_evaluation_map_count_mismatches() {
+    let mut info = fixtures::sample_setup_info_fixture_with_evaluation_map();
+    info.eval_count = 2;
+
+    assert_eq!(
+        encode_unit_setup_info(&info),
+        Err(SetupInfoError::InvalidEvaluationMap { index: 3 })
+    );
+}
+
+#[test]
+fn rejects_evaluation_map_opening_positions_outside_opening_points() {
+    let mut info = fixtures::sample_setup_info_fixture_with_evaluation_map();
+    info.evaluation_map[0].opening_position = 3;
+
+    assert_eq!(
+        encode_unit_setup_info(&info),
+        Err(SetupInfoError::InvalidEvaluationMap { index: 0 })
+    );
+}
+
+#[test]
 fn reads_unit_setup_info_from_a_file_path() {
     let path = temp_file_path("unit.generic.setup.bin");
     fs::write(&path, sample_setup_info_binary()).expect("fixture should be written");

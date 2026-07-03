@@ -805,6 +805,24 @@ fn validate_stage_values(
     Ok(())
 }
 
+fn validate_evaluation_map(info: &UnitSetupInfo) -> Result<(), SetupInfoError> {
+    if info.evaluation_map.is_empty() {
+        return Ok(());
+    }
+    if info.evaluation_map.len() != info.eval_count {
+        return Err(SetupInfoError::InvalidEvaluationMap {
+            index: info.evaluation_map.len(),
+        });
+    }
+    for (index, entry) in info.evaluation_map.iter().enumerate() {
+        let opening_position = u32_to_usize(entry.opening_position)?;
+        if opening_position >= info.opening_points.len() {
+            return Err(SetupInfoError::InvalidEvaluationMap { index });
+        }
+    }
+    Ok(())
+}
+
 fn validate_domains(stark: &StarkStruct) -> Result<(), SetupInfoError> {
     if stark.n_bits_ext < stark.n_bits {
         return Err(SetupInfoError::InvalidDomainBits {
@@ -840,6 +858,7 @@ fn validate_unit_setup_info(info: &UnitSetupInfo) -> Result<(), SetupInfoError> 
     validate_stage_values("unit-value-map", &info.unit_value_map, max_stage)?;
     validate_stage_values("group-value-map", &info.group_value_map, max_stage)?;
     validate_setup_value_names(info)?;
+    validate_evaluation_map(info)?;
     validate_domains(&info.stark)?;
     Ok(())
 }
