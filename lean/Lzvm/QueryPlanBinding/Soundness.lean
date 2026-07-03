@@ -1106,6 +1106,104 @@ theorem runtime_query_plan_binding_audited_finalized_core_sound_witness_contract
                 (And.intro coreContract
                   (And.intro executionObligations soundWitness)))))))
 
+theorem runtime_query_plan_binding_audited_finalized_manifest_core_sound_witness_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeQueryPlanBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeQueryPlanBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RequiredCryptographicAssumptionStatements assumptions.crypto
+          /\ RequiredSemanticAssumptionStatements assumptions.semantic
+          /\ RuntimeQueryPlanBindingEvidence
+            system
+            validation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeQueryPlanMaterialManifestContract
+            system
+            validation
+            artifact
+            publicInput
+            proof
+          /\ validation.queryPlanSegmentCanonical artifact publicInput proof
+          /\ validation.queryPlanMaterialManifestMatchesSchedule artifact publicInput proof
+          /\ RuntimeProofArtifactFinalized
+            system
+            validation.challengeValidation.transcriptValidation.artifactBindingValidation
+            artifact
+            publicInput
+            proof
+          /\ validation.queryPlanSeedBindsWitnessTreeDigests artifact publicInput proof
+          /\ validation.queryPlanSeededFriOpeningRequirementsChecked
+            artifact
+            publicInput
+            proof
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ (exists witness trace constraints,
+            system.traceConsistent publicInput proof trace
+              /\ system.constraintsSatisfied constraints trace
+              /\ system.witnessMatchesTrace witness trace)
+          /\ SoundWitness system publicInput proof := by
+  intro artifact publicInput proof accepted
+  have finalizedCore :=
+    runtime_query_plan_binding_audited_finalized_core_sound_witness_contract
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  rcases finalizedCore with
+    ⟨cryptoEvidence,
+      semanticEvidence,
+      queryPlanEvidence,
+      artifactFinalized,
+      seedBinds,
+      seededFriOpeningChecked,
+      coreContract,
+      executionObligations,
+      soundWitness⟩
+  have materialManifest :=
+    runtime_query_plan_binding_evidence_implies_material_manifest_contract
+      validation
+      artifact
+      publicInput
+      proof
+      queryPlanEvidence
+  have segmentCanonical :=
+    runtime_query_plan_material_manifest_contract_implies_segment_canonical
+      validation
+      artifact
+      publicInput
+      proof
+      materialManifest
+  have materialManifestMatches :=
+    runtime_query_plan_material_manifest_contract_implies_matches_schedule
+      validation
+      artifact
+      publicInput
+      proof
+      materialManifest
+  exact
+    ⟨cryptoEvidence,
+      semanticEvidence,
+      queryPlanEvidence,
+      materialManifest,
+      segmentCanonical,
+      materialManifestMatches,
+      artifactFinalized,
+      seedBinds,
+      seededFriOpeningChecked,
+      coreContract,
+      executionObligations,
+      soundWitness⟩
+
 theorem runtime_query_plan_binding_audited_finalized_segment_ids_contract
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
