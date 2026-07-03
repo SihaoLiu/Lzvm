@@ -268,17 +268,20 @@ fn rejects_unsupported_global_info_file_versions() {
     let bytes = encode_global_info(&info).expect("fixture should encode");
     let parsed = lzvm_artifacts::sectioned::parse_sectioned_file(&bytes, *b"ginf", 1)
         .expect("sectioned global info should parse");
-    let bytes = encode_sectioned_file(&SectionedFile {
-        kind: *b"ginf",
-        version: 0,
-        sections: parsed.sections,
-    })
-    .expect("sectioned fixture should encode");
 
-    assert!(matches!(
-        parse_global_info(&bytes),
-        Err(GlobalInfoError::UnsupportedVersion { found: 0, max: 1 })
-    ));
+    for version in [0, 2] {
+        let bytes = encode_sectioned_file(&SectionedFile {
+            kind: *b"ginf",
+            version,
+            sections: parsed.sections.clone(),
+        })
+        .expect("sectioned fixture should encode");
+
+        assert!(matches!(
+            parse_global_info(&bytes),
+            Err(GlobalInfoError::UnsupportedVersion { found, max: 1 }) if found == version
+        ));
+    }
 }
 
 #[test]
