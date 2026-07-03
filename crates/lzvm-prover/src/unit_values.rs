@@ -1,4 +1,4 @@
-use std::fmt;
+use std::{collections::BTreeSet, fmt};
 
 use lzvm_artifacts::pcs_query_segment::PcsQueryPlanUnit;
 use lzvm_artifacts::proof::ProofSegment;
@@ -366,16 +366,19 @@ pub(crate) fn validate_unit_values_units_match_query_units_from_segment(
     let Some(parsed) = parsed else {
         return Ok(());
     };
+    let query_identities = query_units
+        .iter()
+        .map(|unit| (unit.unit_index, unit.trace_instance_index))
+        .collect::<BTreeSet<_>>();
+    let mut unit_value_identities = BTreeSet::new();
     for unit in &parsed.units {
-        if !query_units.iter().any(|query_unit| {
-            query_unit.unit_index == unit.unit_index
-                && query_unit.trace_instance_index == unit.trace_instance_index
-        }) {
-            let unit_index = usize::try_from(unit.unit_index).map_err(|_| {
-                LoadUnitValuesSegmentError::UnitIndexOverflow {
-                    unit_index: usize::MAX,
-                }
-            })?;
+        let identity = (unit.unit_index, unit.trace_instance_index);
+        let unit_index = usize::try_from(unit.unit_index).map_err(|_| {
+            LoadUnitValuesSegmentError::UnitIndexOverflow {
+                unit_index: usize::MAX,
+            }
+        })?;
+        if !query_identities.contains(&identity) || !unit_value_identities.insert(identity) {
             return Err(LoadUnitValuesSegmentError::UnexpectedUnit { unit_index });
         }
     }
@@ -449,5 +452,38 @@ mod tests {
                 source: FieldError::NonCanonical { value: MODULUS },
             }
         );
+    }
+
+    #[test]
+    fn unit_values_match_query_units_rejects_duplicate_in_memory_identity() {
+        let query_units = vec![query_unit(0, 1)];
+        let parsed = UnitValuesSegment {
+            units: vec![unit_values_unit(0, 1), unit_values_unit(0, 1)],
+        };
+
+        let error =
+            validate_unit_values_units_match_query_units_from_segment(&query_units, Some(&parsed))
+                .expect_err("duplicate unit values identity should reject");
+
+        assert_eq!(
+            error,
+            LoadUnitValuesSegmentError::UnexpectedUnit { unit_index: 0 }
+        );
+    }
+
+    fn query_unit(unit_index: u32, trace_instance_index: u32) -> PcsQueryPlanUnit {
+        PcsQueryPlanUnit {
+            unit_index,
+            trace_instance_index,
+            queries: vec![0],
+        }
+    }
+
+    fn unit_values_unit(unit_index: u32, trace_instance_index: u32) -> UnitValuesUnitSegment {
+        UnitValuesUnitSegment {
+            unit_index,
+            trace_instance_index,
+            values: Vec::new(),
+        }
     }
 }
