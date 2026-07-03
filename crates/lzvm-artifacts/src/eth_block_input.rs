@@ -532,8 +532,17 @@ pub fn eth_block_input_extra_field_counts(
 }
 
 pub fn parse_eth_block_input(bytes: &[u8]) -> Result<EthBlockInput, EthBlockInputError> {
-    let file = parse_sectioned_file(bytes, ETH_BLOCK_INPUT_KIND, ETH_BLOCK_INPUT_VERSION)
-        .map_err(EthBlockInputError::Sectioned)?;
+    let file = parse_sectioned_file(bytes, ETH_BLOCK_INPUT_KIND, ETH_BLOCK_INPUT_VERSION).map_err(
+        |error| match error {
+            SectionedError::UnsupportedVersion { found, .. } => {
+                EthBlockInputError::UnsupportedVersion {
+                    found,
+                    expected: ETH_BLOCK_INPUT_VERSION,
+                }
+            }
+            error => EthBlockInputError::Sectioned(error),
+        },
+    )?;
     if file.version != ETH_BLOCK_INPUT_VERSION {
         return Err(EthBlockInputError::UnsupportedVersion {
             found: file.version,

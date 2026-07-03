@@ -46,16 +46,20 @@ fn rejects_unsupported_eth_block_input_versions() {
     let encoded = encode_eth_block_input(&input).expect("block input should encode");
     let mut file = parse_sectioned_file(&encoded, ETH_BLOCK_INPUT_KIND, ETH_BLOCK_INPUT_VERSION)
         .expect("sectioned input should parse");
-    file.version = 0;
-    let encoded = encode_sectioned_file(&file).expect("sectioned input should encode");
 
-    assert_eq!(
-        parse_eth_block_input(&encoded).expect_err("unsupported block input version should reject"),
-        EthBlockInputError::UnsupportedVersion {
-            found: 0,
-            expected: ETH_BLOCK_INPUT_VERSION,
-        }
-    );
+    for version in [0, ETH_BLOCK_INPUT_VERSION + 1] {
+        file.version = version;
+        let encoded = encode_sectioned_file(&file).expect("sectioned input should encode");
+
+        assert_eq!(
+            parse_eth_block_input(&encoded)
+                .expect_err("unsupported block input version should reject"),
+            EthBlockInputError::UnsupportedVersion {
+                found: version,
+                expected: ETH_BLOCK_INPUT_VERSION,
+            }
+        );
+    }
 }
 
 #[test]
