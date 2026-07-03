@@ -734,6 +734,20 @@ fn rejects_mutated_key_directory_layout_with_invalid_global_metadata_shape() {
 }
 
 #[test]
+fn rejects_mutated_key_directory_layout_with_stale_unit_paths() {
+    let dir = temp_dir("mutated-global-unit-paths");
+    let _ = fs::remove_dir_all(&dir);
+    write_catalog_global_files(&dir);
+    let mut layout = read_key_directory_layout(&dir).expect("layout should parse");
+    layout.global_info.air_groups[0] = "renamed-group".to_owned();
+
+    let error = validate_key_directory_layout(&layout).expect_err("layout should be rejected");
+
+    assert!(matches!(error, KeyDirectoryError::UnitPathMismatch));
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+}
+
+#[test]
 fn reads_key_directory_layout_with_no_challenge_counters() {
     let dir = temp_dir("global-no-challenges");
     let _ = fs::remove_dir_all(&dir);

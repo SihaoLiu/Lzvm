@@ -181,6 +181,7 @@ pub enum KeyDirectoryError {
         role: &'static str,
         unit: KeyUnitKind,
     },
+    UnitPathMismatch,
     FixedByteCountMismatch {
         kind: KeyUnitKind,
         path: PathBuf,
@@ -314,6 +315,9 @@ impl fmt::Display for KeyDirectoryError {
             }
             Self::MissingDerivedPath { role, unit } => {
                 write!(f, "missing derived key-directory {role} for {unit}")
+            }
+            Self::UnitPathMismatch => {
+                write!(f, "key-directory unit paths do not match global metadata")
             }
             Self::FixedByteCountMismatch {
                 kind,
@@ -566,6 +570,10 @@ pub fn read_key_directory_layout(
 
 pub fn validate_key_directory_layout(layout: &KeyDirectoryLayout) -> Result<(), KeyDirectoryError> {
     validate_key_directory_global_info(&layout.global_info)?;
+    let expected_units = derive_unit_paths(&layout.root, &layout.global_info)?;
+    if expected_units != layout.units {
+        return Err(KeyDirectoryError::UnitPathMismatch);
+    }
     let mut seen = BTreeSet::new();
     for required in layout.required_paths() {
         if !seen.insert(required.path.clone()) {
