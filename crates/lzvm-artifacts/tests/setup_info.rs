@@ -675,6 +675,17 @@ fn rejects_zero_version_unit_setup_info_binary() {
 }
 
 #[test]
+fn rejects_future_version_unit_setup_info_binary() {
+    let mut bytes = sample_setup_info_binary();
+    bytes[4..8].copy_from_slice(&4_u32.to_le_bytes());
+
+    assert!(matches!(
+        parse_unit_setup_info(&bytes),
+        Err(SetupInfoError::UnsupportedVersion { found: 4, max: 3 })
+    ));
+}
+
+#[test]
 fn parses_unit_setup_info_binary_without_commitment_columns() {
     let info = parse_unit_setup_info(&sample_setup_info_binary_without_commitment_columns())
         .expect("fixture should parse");
