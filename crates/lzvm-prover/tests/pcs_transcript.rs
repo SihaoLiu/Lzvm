@@ -771,6 +771,62 @@ fn segment_challenge_derivation_rejects_trace_instance_mismatches() {
     );
 }
 
+#[test]
+fn segment_challenge_derivation_rejects_witness_stage_count_mismatches() {
+    let unit = sample_unit(Some(4), true);
+
+    assert_eq!(
+        derive_pcs_final_query_challenge_from_segments(PcsTranscriptSegmentInputs {
+            unit_index: 0,
+            unit: &unit,
+            material: &sample_material(0, 1),
+            public_values: &[],
+            unit_values: &[],
+            witness: &sample_witness(0, &[10, 20]),
+            evaluations: &sample_evaluations(0, &[30]),
+            fri: &sample_fri(0, &[], &[40]),
+            root_challenge_draws: &[1, 1],
+            evaluation_challenge_draws: 1,
+            binding_segments: &[],
+        }),
+        Err(PcsTranscriptError::SegmentShapeMismatch {
+            segment: "witness",
+            field: "stage count",
+            expected: 3,
+            found: 2,
+        })
+    );
+}
+
+#[test]
+fn segment_challenge_derivation_rejects_witness_stage_index_mismatches() {
+    let unit = sample_unit(Some(4), true);
+    let mut witness = sample_witness(0, &[10, 20, 30]);
+    witness.stages[1].stage_index = 3;
+
+    assert_eq!(
+        derive_pcs_final_query_challenge_from_segments(PcsTranscriptSegmentInputs {
+            unit_index: 0,
+            unit: &unit,
+            material: &sample_material(0, 1),
+            public_values: &[],
+            unit_values: &[],
+            witness: &witness,
+            evaluations: &sample_evaluations(0, &[40]),
+            fri: &sample_fri(0, &[], &[50]),
+            root_challenge_draws: &[1, 1, 1],
+            evaluation_challenge_draws: 1,
+            binding_segments: &[],
+        }),
+        Err(PcsTranscriptError::SegmentShapeMismatch {
+            segment: "witness",
+            field: "stage index",
+            expected: 2,
+            found: 3,
+        })
+    );
+}
+
 fn root(seed: u64) -> [Felt; 4] {
     [
         Felt::from_u64(seed),

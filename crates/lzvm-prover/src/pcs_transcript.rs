@@ -82,6 +82,12 @@ pub enum PcsTranscriptError {
         expected: u32,
         found: u32,
     },
+    SegmentShapeMismatch {
+        segment: &'static str,
+        field: &'static str,
+        expected: u64,
+        found: u64,
+    },
     UnitValueOutOfRange {
         value_index: usize,
         offset: usize,
@@ -134,6 +140,15 @@ impl fmt::Display for PcsTranscriptError {
             } => write!(
                 f,
                 "PCS transcript {segment} trace instance mismatch: expected {expected}, found {found}"
+            ),
+            Self::SegmentShapeMismatch {
+                segment,
+                field,
+                expected,
+                found,
+            } => write!(
+                f,
+                "PCS transcript {segment} {field} mismatch: expected {expected}, found {found}"
             ),
             Self::UnitValueOutOfRange {
                 value_index,
@@ -427,6 +442,7 @@ pub fn derive_pcs_transcript_challenges_from_segments(
         .ok_or(PcsTranscriptError::MissingTranscriptArity {
             unit_index: input.unit_index,
         })? as usize;
+    check_witness_segment_shape(input.unit, input.witness)?;
 
     let constant_root = root_from_words(input.material.constant_tree_root)?;
     let witness_roots = input
@@ -599,6 +615,71 @@ fn check_trace_instance(
     } else {
         Err(PcsTranscriptError::SegmentTraceInstanceMismatch {
             segment,
+            expected,
+            found,
+        })
+    }
+}
+
+fn check_witness_segment_shape(
+    unit: &ProveUnitSchedule,
+    witness: &WitnessCommitmentSegment,
+) -> Result<(), PcsTranscriptError> {
+    check_segment_shape_field(
+        "witness",
+        "row count",
+        unit.base_domain_size,
+        witness.trace_rows,
+    )?;
+    let trace_columns = unit
+        .stage_commit_widths
+        .iter()
+        .try_fold(0_u64, |acc, width| acc.checked_add(u64::from(*width)))
+        .ok_or(PcsTranscriptError::LengthOverflow)?;
+    check_segment_shape_field(
+        "witness",
+        "column count",
+        trace_columns,
+        witness.trace_columns,
+    )?;
+    check_segment_shape_field(
+        "witness",
+        "stage count",
+        u64::try_from(unit.stage_commit_widths.len())
+            .map_err(|_| PcsTranscriptError::LengthOverflow)?,
+        u64::try_from(witness.stages.len()).map_err(|_| PcsTranscriptError::LengthOverflow)?,
+    )?;
+    for (stage_index, stage) in witness.stages.iter().enumerate() {
+        let expected_stage_index =
+            u32::try_from(stage_index + 1).map_err(|_| PcsTranscriptError::LengthOverflow)?;
+        check_segment_shape_field(
+            "witness",
+            "stage index",
+            u64::from(expected_stage_index),
+            u64::from(stage.stage_index),
+        )?;
+        check_segment_shape_field(
+            "witness",
+            "stage arity",
+            u64::from(unit.merkle_tree_arity),
+            u64::from(stage.arity),
+        )?;
+    }
+    Ok(())
+}
+
+fn check_segment_shape_field(
+    segment: &'static str,
+    field: &'static str,
+    expected: u64,
+    found: u64,
+) -> Result<(), PcsTranscriptError> {
+    if found == expected {
+        Ok(())
+    } else {
+        Err(PcsTranscriptError::SegmentShapeMismatch {
+            segment,
+            field,
             expected,
             found,
         })
