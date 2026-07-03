@@ -91,11 +91,11 @@ pub(crate) fn read_checked_setup_catalog(path: &Path) -> Result<KeyDirectoryCata
 pub(crate) fn read_prove_setup_catalog(path: &Path) -> Result<KeyDirectoryCatalog, String> {
     let catalog = read_key_directory_catalog_trusting_pcs_material_digests(path)
         .map_err(|error| error.to_string())?;
-    validate_required_stored_setup_manifest_digest(path, &catalog)?;
+    validate_required_stored_setup_manifest(path, &catalog)?;
     Ok(catalog)
 }
 
-fn validate_required_stored_setup_manifest_digest(
+fn validate_required_stored_setup_manifest(
     root: &Path,
     catalog: &KeyDirectoryCatalog,
 ) -> Result<(), String> {
