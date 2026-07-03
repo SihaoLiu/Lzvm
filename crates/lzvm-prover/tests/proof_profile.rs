@@ -656,6 +656,37 @@ fn proof_profile_rejects_gpu_memory_wait_without_check() {
 
 #[cfg(unix)]
 #[test]
+fn proof_profile_rejects_nonfinite_gpu_memory_wait_values() {
+    for (flag, value) in [
+        ("--gpu-memory-wait-timeout-s", "nan"),
+        ("--gpu-memory-wait-poll-s", "inf"),
+    ] {
+        let output = Command::new(script_path())
+            .arg(flag)
+            .arg(value)
+            .output()
+            .expect("proof profile nonfinite wait validation should run");
+        let success = output.status.success();
+        let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+        let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+
+        assert!(
+            !success,
+            "nonfinite GPU memory wait value should be rejected for {flag}"
+        );
+        assert!(
+            stdout.is_empty(),
+            "nonfinite wait validation should fail before printing status: {stdout}"
+        );
+        assert!(
+            stderr.contains("must be finite"),
+            "nonfinite wait validation should explain finite floats: stderr={stderr}"
+        );
+    }
+}
+
+#[cfg(unix)]
+#[test]
 fn proof_profile_check_gpu_memory_waits_until_ready() {
     let output_dir = workspace_root().join(format!(
         "temp/proof-profile-gpu-memory-wait-{}",

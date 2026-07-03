@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import argparse
 import json
+import math
 import os
 import re
 import shlex
@@ -297,11 +298,18 @@ def positive_run_count(raw: str) -> int:
     return value
 
 
-def positive_timeout(raw: str) -> float:
+def finite_float(raw: str, label: str) -> float:
     try:
         value = float(raw)
     except ValueError as error:
-        raise argparse.ArgumentTypeError(f"invalid timeout: {raw!r}") from error
+        raise argparse.ArgumentTypeError(f"invalid {label}: {raw!r}") from error
+    if not math.isfinite(value):
+        raise argparse.ArgumentTypeError(f"{label} must be finite")
+    return value
+
+
+def positive_timeout(raw: str) -> float:
+    value = finite_float(raw, "timeout")
     if value <= 0.0:
         raise argparse.ArgumentTypeError("timeout must be positive")
     return value
@@ -328,10 +336,7 @@ def positive_integer(raw: str) -> int:
 
 
 def nonnegative_float(raw: str) -> float:
-    try:
-        value = float(raw)
-    except ValueError as error:
-        raise argparse.ArgumentTypeError(f"invalid float: {raw!r}") from error
+    value = finite_float(raw, "float")
     if value < 0.0:
         raise argparse.ArgumentTypeError("value must be nonnegative")
     return value
