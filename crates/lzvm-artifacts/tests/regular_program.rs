@@ -285,6 +285,42 @@ fn lowers_copy_operations_as_add_zero() {
 }
 
 #[test]
+fn rejects_temporary_sources_before_definition() {
+    let info = ExpressionInfo {
+        hints: Vec::new(),
+        expressions: vec![ExpressionCode {
+            expression_id: 12,
+            stage: 1,
+            line: "undefined temporary".to_owned(),
+            temporary_count: 2,
+            destination: None,
+            operations: vec![
+                CodeOperation {
+                    op: OperationKind::Copy,
+                    destination: CodeDestination::temporary(0, 1),
+                    sources: vec![CodeOperand::number(5, 1)],
+                },
+                CodeOperation {
+                    op: OperationKind::Add,
+                    destination: CodeDestination::temporary(0, 1),
+                    sources: vec![CodeOperand::temporary(0, 1), CodeOperand::temporary(1, 1)],
+                },
+            ],
+        }],
+        constraints: Vec::new(),
+    };
+
+    assert_eq!(
+        regular_program_from_expression_info(&info, &minimal_setup_info()),
+        Err(RegularProgramLoweringError::TemporaryReadBeforeWrite {
+            id: 1,
+            dimension: 1,
+            operation_index: 1
+        })
+    );
+}
+
+#[test]
 fn clamps_negative_frame_lower_bounds_to_first_row() {
     let info = ExpressionInfo {
         hints: Vec::new(),

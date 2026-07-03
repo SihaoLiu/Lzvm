@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
 use crate::constraint_program::{ConstraintEntry, ConstraintProgram};
@@ -53,6 +53,11 @@ pub enum RegularProgramLoweringError {
     MissingTemporary {
         id: u32,
         dimension: u32,
+    },
+    TemporaryReadBeforeWrite {
+        id: u32,
+        dimension: u32,
+        operation_index: usize,
     },
     MissingCommitmentColumn {
         id: u32,
@@ -125,6 +130,14 @@ impl fmt::Display for RegularProgramLoweringError {
             Self::MissingTemporary { id, dimension } => {
                 write!(f, "missing compact temporary id {id} with dimension {dimension}")
             }
+            Self::TemporaryReadBeforeWrite {
+                id,
+                dimension,
+                operation_index,
+            } => write!(
+                f,
+                "temporary source {id} with dimension {dimension} is read before write at operation {operation_index}"
+            ),
             Self::MissingCommitmentColumn { id } => {
                 write!(f, "missing commitment column {id}")
             }
@@ -1112,10 +1125,23 @@ impl TemporaryMap {
     fn build(operations: &[CodeOperation]) -> Result<Self, RegularProgramLoweringError> {
         let mut one = Vec::new();
         let mut three = Vec::new();
+        let mut defined = BTreeSet::new();
         for (index, operation) in operations.iter().enumerate() {
-            observe_destination(&operation.destination, index, &mut one, &mut three)?;
             for operand in &operation.sources {
                 observe_operand(operand, index, &mut one, &mut three)?;
+                if let CodeOperand::Temporary { id, dimension } = operand {
+                    if !defined.contains(&(*id, *dimension)) {
+                        return Err(RegularProgramLoweringError::TemporaryReadBeforeWrite {
+                            id: *id,
+                            dimension: *dimension,
+                            operation_index: index,
+                        });
+                    }
+                }
+            }
+            observe_destination(&operation.destination, index, &mut one, &mut three)?;
+            if let CodeDestination::Temporary { id, dimension } = &operation.destination {
+                defined.insert((*id, *dimension));
             }
         }
         let one = compact_segments(one)?;
