@@ -16,7 +16,9 @@ use lzvm_artifacts::pcs_nonce_segment::parse_pcs_query_nonce_segment;
 use lzvm_artifacts::pcs_plan::derive_pcs_setup_plan;
 use lzvm_artifacts::pcs_query_segment::parse_pcs_query_plan_segment;
 use lzvm_artifacts::proof::ProofSegment;
-use lzvm_artifacts::setup_info::{EvaluationMapEntry, FriStep, StarkStruct, UnitSetupInfo};
+use lzvm_artifacts::setup_info::{
+    ConstantColumn, EvaluationMapEntry, FriStep, StarkStruct, UnitSetupInfo,
+};
 use lzvm_artifacts::verification_key::VerificationKeyRoot;
 use lzvm_artifacts::verifier_info::{VerifierCode, VerifierInfo};
 use lzvm_artifacts::witness_segment::{
@@ -57,12 +59,12 @@ fn derives_fri_transcript_values_from_trace_and_proof_segments() {
         columns: vec![
             FixedColumn {
                 name: "const_0".to_owned(),
-                dimensions: Vec::new(),
+                dimensions: vec![1],
                 values: (0..16).map(|row| row + 10).collect(),
             },
             FixedColumn {
                 name: "const_1".to_owned(),
-                dimensions: Vec::new(),
+                dimensions: vec![1],
                 values: vec![0; 16],
             },
         ],
@@ -296,12 +298,12 @@ fn derives_fri_transcript_values_and_openings_for_multiple_units() {
         columns: vec![
             FixedColumn {
                 name: "const_0".to_owned(),
-                dimensions: Vec::new(),
+                dimensions: vec![1],
                 values: (0..16).map(|row| row + 10).collect(),
             },
             FixedColumn {
                 name: "const_1".to_owned(),
-                dimensions: Vec::new(),
+                dimensions: vec![1],
                 values: vec![0; 16],
             },
         ],
@@ -331,12 +333,12 @@ fn derives_fri_transcript_values_and_openings_for_multiple_units() {
         columns: vec![
             FixedColumn {
                 name: "const_0".to_owned(),
-                dimensions: Vec::new(),
+                dimensions: vec![1],
                 values: (0..16).map(|row| row + 110).collect(),
             },
             FixedColumn {
                 name: "const_1".to_owned(),
-                dimensions: Vec::new(),
+                dimensions: vec![1],
                 values: vec![1; 16],
             },
         ],
@@ -504,7 +506,7 @@ fn sample_setup() -> UnitSetupInfo {
     UnitSetupInfo {
         n_stages: 1,
         n_constants: 2,
-        constant_columns: Vec::new(),
+        constant_columns: sample_constant_columns(),
         commitment_columns: Vec::new(),
         n_publics: Some(0),
         n_constraints: Some(0),
@@ -531,6 +533,27 @@ fn sample_setup() -> UnitSetupInfo {
             merkle_tree_custom: Some(true),
         },
     }
+}
+
+fn sample_constant_columns() -> Vec<ConstantColumn> {
+    vec![
+        ConstantColumn {
+            name: "const_0".to_owned(),
+            stage: 0,
+            dimension: 1,
+            pols_map_id: 0,
+            stage_id: 0,
+            lengths: Vec::new(),
+        },
+        ConstantColumn {
+            name: "const_1".to_owned(),
+            stage: 0,
+            dimension: 1,
+            pols_map_id: 1,
+            stage_id: 1,
+            lengths: Vec::new(),
+        },
+    ]
 }
 
 fn empty_verifier_info() -> VerifierInfo {

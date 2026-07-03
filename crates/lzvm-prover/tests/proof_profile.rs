@@ -38,10 +38,6 @@ fn proof_profile_self_test_runs() {
     );
     assert!(
         stdout.contains("proof_timing_summary=skipped_missing_keys=")
-            && stdout.contains("timing_guest_stage_tree_commit_root_count")
-            && stdout.contains("timing_guest_stage_tree_commit_root_materialization_groups")
-            && stdout
-                .contains("timing_guest_stage_tree_commit_root_materialization_max_group_size")
             && stdout.contains("timing_finish_witness_opening_row_dedup_input_rows")
             && stdout.contains("timing_finish_fri_opening_query_count"),
         "self-test should skip incomplete proof timing summaries without failing: {stdout}"
@@ -420,7 +416,7 @@ fn proof_profile_requires_complete_proof_timing_summary() {
         json_text.contains("\"status\": \"summary_failed\"")
             && json_text.contains("\"require_proof_timing_summary\": true")
             && json_text.contains("\"proof_timing_summary_skip_reason\": \"missing_keys\"")
-            && json_text.contains("timing_guest_stage_tree_commit_root_count"),
+            && json_text.contains("timing_finish_witness_opening_row_dedup_input_rows"),
         "profile JSON should record the required summary failure: {json_text}"
     );
     assert!(

@@ -1360,7 +1360,7 @@ def self_test() -> None:
         if missing_json.get("proof_timing_summary_skip_reason") != "missing_keys":
             raise SystemExit("fake ncu missing-key profile json missed the skip reason")
         missing_keys = missing_json.get("proof_timing_summary_missing_keys", [])
-        if "timing_guest_stage_tree_commit_root_count" not in missing_keys:
+        if "timing_finish_witness_opening_row_dedup_input_rows" not in missing_keys:
             raise SystemExit("fake ncu missing-key profile json missed required keys")
 
         duplicate_base = dict(base)

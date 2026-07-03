@@ -557,12 +557,12 @@ fn cuda_buffer_has_stream_zero_and_state_prefix_primitives() {
     let host_header_path = crate_root.join("../lzvm-accel/native/cuda_host.hpp");
     let host_header =
         std::fs::read_to_string(&host_header_path).expect("CUDA host header should read");
-    let host_source = read_sources(
-        crate_root,
-        &[
-            "../lzvm-accel/native/cuda_host.cpp",
-            "../lzvm-accel/native/cuda_host_state_prefix.cuh",
-        ],
+    let state_prefix_path = crate_root.join("../lzvm-accel/native/cuda_host_state_prefix.cuh");
+    let state_prefix_source =
+        std::fs::read_to_string(&state_prefix_path).expect("CUDA state-prefix source should read");
+    let state_prefix_stream_body = braced_source_body(
+        &state_prefix_source,
+        "extern \"C\" int lzvm_cuda_expand_state_prefix_words_device_to_device_on_stream",
     );
     let host_runtime_path = crate_root.join("../lzvm-accel/native/cuda_host_runtime.cpp");
     let host_runtime_source =
@@ -579,9 +579,9 @@ fn cuda_buffer_has_stream_zero_and_state_prefix_primitives() {
     );
     assert!(
         host_header.contains("lzvm_cuda_expand_state_prefix_words_device_to_device_on_stream")
-            && host_source.contains("cudaMemcpy2DAsync")
-            && host_source
-                .contains("lzvm_cuda_expand_state_prefix_words_device_to_device_on_stream"),
+            && state_prefix_stream_body.contains("cudaMemsetAsync")
+            && state_prefix_stream_body.contains("cudaMemcpy2DAsync")
+            && state_prefix_stream_body.contains("cudaMemcpyDeviceToDevice, stream"),
         "CUDA host layer should expose stream-ordered state-prefix expansion"
     );
     assert!(
@@ -12327,6 +12327,36 @@ fn function_body<'a>(source: &'a str, start: &str, end: &str) -> &'a str {
     body.split_once(end)
         .unwrap_or_else(|| panic!("missing function end: {end}"))
         .0
+}
+
+fn braced_source_body<'a>(source: &'a str, start: &str) -> &'a str {
+    let start_index = source
+        .find(start)
+        .unwrap_or_else(|| panic!("missing source start: {start}"));
+    let open_index = source[start_index..]
+        .find('{')
+        .map(|offset| start_index + offset)
+        .unwrap_or_else(|| panic!("missing opening brace after source start: {start}"));
+    let close_index = matching_closing_brace(source, open_index)
+        .unwrap_or_else(|| panic!("missing closing brace after source start: {start}"));
+    &source[start_index..=close_index]
+}
+
+fn matching_closing_brace(source: &str, open_index: usize) -> Option<usize> {
+    let mut depth = 0_usize;
+    for (offset, ch) in source[open_index..].char_indices() {
+        match ch {
+            '{' => depth += 1,
+            '}' => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(open_index + offset);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
 }
 
 fn source_between<'a>(source: &'a str, start: &str, end: &str) -> &'a str {

@@ -26,7 +26,7 @@ use lzvm_artifacts::proof::{ProofArtifact, ProofArtifactError, ProofSegment};
 use lzvm_artifacts::public_values::{
     public_values_digest, PublicValueEntry, PublicValues, PublicValuesError,
 };
-use lzvm_artifacts::setup_info::{FriStep, StageValue, StarkStruct, UnitSetupInfo};
+use lzvm_artifacts::setup_info::{ConstantColumn, FriStep, StageValue, StarkStruct, UnitSetupInfo};
 use lzvm_artifacts::trace_constraint_segment::{
     encode_trace_constraint_segment, TraceConstraintSegment, TraceConstraintUnitSegment,
     TRACE_CONSTRAINT_SEGMENT_ID,
@@ -64,6 +64,7 @@ use lzvm_prover::witness_commitment::{
     WitnessStageOpening,
 };
 use lzvm_prover::witness_layout::derive_witness_trace_layout;
+use lzvm_prover::witness_opening::ValidateWitnessOpeningSegmentsError;
 use lzvm_prover::witness_trace::parse_witness_trace;
 use lzvm_prover::{build_pcs_material_manifest_segment, derive_prove_schedule, ProveScheduleError};
 
@@ -267,6 +268,27 @@ fn stage_value(name: &str, stage: u32) -> StageValue {
     }
 }
 
+fn sample_constant_columns() -> Vec<ConstantColumn> {
+    vec![
+        ConstantColumn {
+            name: "const_0".to_owned(),
+            stage: 0,
+            dimension: 1,
+            pols_map_id: 0,
+            stage_id: 0,
+            lengths: Vec::new(),
+        },
+        ConstantColumn {
+            name: "const_1".to_owned(),
+            stage: 0,
+            dimension: 1,
+            pols_map_id: 1,
+            stage_id: 1,
+            lengths: Vec::new(),
+        },
+    ]
+}
+
 fn sample_fri_setup() -> UnitSetupInfo {
     let mut section_widths = BTreeMap::new();
     section_widths.insert("cm1".to_owned(), 2);
@@ -275,7 +297,7 @@ fn sample_fri_setup() -> UnitSetupInfo {
     UnitSetupInfo {
         n_stages: 1,
         n_constants: 2,
-        constant_columns: Vec::new(),
+        constant_columns: sample_constant_columns(),
         commitment_columns: Vec::new(),
         n_publics: Some(0),
         n_constraints: Some(0),
@@ -1125,7 +1147,9 @@ fn rejects_seeded_proof_when_witness_root_is_forged_after_query_plan() {
 
     assert_eq!(
         error,
-        SetupPreflightError::PcsQueryPlan(ValidatePcsQueryPlanSegmentsError::QueryPlanMismatch)
+        SetupPreflightError::WitnessOpening(ValidateWitnessOpeningSegmentsError::UnitMismatch {
+            unit_index: 0
+        })
     );
 }
 

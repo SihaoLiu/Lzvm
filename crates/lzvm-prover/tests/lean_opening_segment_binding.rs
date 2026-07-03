@@ -19,6 +19,9 @@ fn lean_opening_segment_binding_exports_core_contract_projection() {
     let constant_opening_path = crate_root.join("src/constant_opening.rs");
     let constant_opening_source = std::fs::read_to_string(&constant_opening_path)
         .expect("constant opening source should read");
+    let indexing_path = crate_root.join("src/indexing.rs");
+    let indexing_source =
+        std::fs::read_to_string(&indexing_path).expect("indexing source should read");
     let witness_opening_path = crate_root.join("src/witness_opening.rs");
     let witness_opening_source =
         std::fs::read_to_string(&witness_opening_path).expect("witness opening source should read");
@@ -37,6 +40,10 @@ fn lean_opening_segment_binding_exports_core_contract_projection() {
     let pcs_fri_tests_path = crate_root.join("tests/pcs_fri.rs");
     let pcs_fri_tests_source =
         std::fs::read_to_string(&pcs_fri_tests_path).expect("FRI tests source should read");
+    let collect_query_identities_body = rust_function_body(
+        &indexing_source,
+        "pub(crate) fn collect_unique_query_identities",
+    );
     let constant_opening_query_units_body = rust_function_body(
         &constant_opening_source,
         "pub(crate) fn validate_constant_opening_units_match_query_units_from_segment",
@@ -100,15 +107,18 @@ fn lean_opening_segment_binding_exports_core_contract_projection() {
         "Lean opening segment binding should expose checked soundness and verifier core projection"
     );
     assert!(
-        constant_opening_query_units_body.matches("BTreeSet").count() >= 2
+        collect_query_identities_body.contains("let mut identities = BTreeSet::new()")
+            && collect_query_identities_body.contains("!identities.insert(identity)")
+            && collect_query_identities_body.contains("return Err(duplicate(unit_index));")
+            && constant_opening_query_units_body.contains("collect_unique_query_identities(")
             && constant_opening_query_units_body.contains("opening_identities.insert(identity)")
             && constant_opening_query_units_body.contains("LoadConstantOpeningUnitError::UnexpectedUnit")
             && constant_opening_query_units_body.contains("LoadConstantOpeningUnitError::MissingUnit")
-            && witness_opening_query_units_body.matches("BTreeSet").count() >= 2
+            && witness_opening_query_units_body.contains("collect_unique_query_identities(")
             && witness_opening_query_units_body.contains("opening_identities.insert(identity)")
             && witness_opening_query_units_body.contains("LoadWitnessOpeningUnitError::UnexpectedUnit")
             && witness_opening_query_units_body.contains("LoadWitnessOpeningUnitError::MissingUnit")
-            && pcs_evaluation_query_units_body.matches("BTreeSet").count() >= 2
+            && pcs_evaluation_query_units_body.contains("collect_unique_query_identities(")
             && pcs_evaluation_query_units_body.contains("evaluation_identities.insert(identity)")
             && pcs_evaluation_query_units_body.contains("LoadPcsEvaluationUnitError::UnexpectedUnit")
             && pcs_evaluation_query_units_body.contains("LoadPcsEvaluationUnitError::MissingUnit")
