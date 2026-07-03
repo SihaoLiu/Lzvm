@@ -995,6 +995,9 @@ fn proof_value_logical_offsets(
 fn proof_value_dimension(entry: &NamedStageValue) -> Result<u32, VerifierQueryEvalError> {
     entry.lengths.iter().try_fold(1_u32, |dimension, length| {
         let length = u32::try_from(*length).map_err(|_| VerifierQueryEvalError::LengthOverflow)?;
+        if length == 0 {
+            return Err(VerifierQueryEvalError::LengthOverflow);
+        }
         dimension
             .checked_mul(length)
             .ok_or(VerifierQueryEvalError::LengthOverflow)
@@ -1028,6 +1031,40 @@ impl VerifierQueryEvalInput {
             x_div_x_sub: &self.x_div_x_sub,
         };
         Ok(evaluate_verifier_code(code, &inputs)?)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use lzvm_artifacts::global_info::CurveKind;
+
+    #[test]
+    fn rejects_zero_length_proof_value_dimensions() {
+        let global_info = GlobalInfo {
+            name: "global".to_owned(),
+            air_groups: Vec::new(),
+            airs: Vec::new(),
+            curve: CurveKind::None,
+            lattice_size: None,
+            aggregation_types: Vec::new(),
+            n_publics: 0,
+            num_challenges: Vec::new(),
+            num_proof_values: Vec::new(),
+            proof_values_map: vec![NamedStageValue {
+                name: "zero".to_owned(),
+                stage: 1,
+                id: None,
+                lengths: vec![0],
+            }],
+            publics_map: Vec::new(),
+            transcript_arity: 4,
+        };
+
+        assert_eq!(
+            proof_value_logical_offsets(&global_info),
+            Err(VerifierQueryEvalError::LengthOverflow)
+        );
     }
 }
 
