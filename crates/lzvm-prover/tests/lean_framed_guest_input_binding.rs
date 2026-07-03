@@ -9,10 +9,36 @@ fn lean_framed_guest_input_binding_exports_soundness_structural_contract() {
     let lean_path = crate_root.join("../../lean/Lzvm/FramedGuestInputBinding.lean");
     let lean_source =
         std::fs::read_to_string(&lean_path).expect("Lean framed input source should read");
+    let top_level_path = crate_root.join("../../lean/Lzvm.lean");
+    let top_level_source =
+        std::fs::read_to_string(&top_level_path).expect("Lean top-level source should read");
 
+    assert!(
+        lean_binding::contains_import(&top_level_source, "Lzvm.FramedGuestInputBinding"),
+        "top-level Lean module should import framed guest input binding"
+    );
+    assert!(
+        lean_source.contains("RuntimeFramedGuestInputBindingValidation")
+            && lean_source.contains("RuntimeFramedGuestInputBindingEvidence")
+            && lean_source.contains("RuntimeFramedGuestInputBindingStructuralObligations")
+            && lean_source.contains("framedGuestInputProofSegmentPresent")
+            && lean_source.contains("framedGuestInputProofSegmentPayloadExact")
+            && lean_source.contains("framedGuestInputProofSegmentPayloadNonempty")
+            && lean_source.contains("framedGuestInputCoBoundWithEthBlock")
+            && lean_source.contains("framedGuestInputCoBoundWithProgramImage"),
+        "Lean framed guest input binding should expose checked evidence and co-binding clauses"
+    );
     lean_binding::assert_theorem_declarations(
         &lean_source,
         &[
+            "runtime_framed_guest_input_binding_checked_acceptance_eth_block_acceptance",
+            "runtime_framed_guest_input_binding_checked_acceptance_program_image_cache_acceptance",
+            "runtime_framed_guest_input_binding_checked_acceptance_evidence",
+            "runtime_framed_guest_input_binding_checked_acceptance_segment_present",
+            "runtime_framed_guest_input_binding_checked_acceptance_segment_payload_exact",
+            "runtime_framed_guest_input_binding_checked_acceptance_segment_payload_nonempty",
+            "runtime_framed_guest_input_binding_checked_acceptance_eth_block_co_binding",
+            "runtime_framed_guest_input_binding_checked_acceptance_program_image_cache_co_binding",
             "runtime_framed_guest_input_binding_checked_acceptance_concrete_segment_ids_allowed",
             "runtime_framed_guest_input_binding_checked_acceptance_runtime_shape_contract",
             "runtime_framed_guest_input_binding_checked_acceptance_soundness_and_structural_contract",
