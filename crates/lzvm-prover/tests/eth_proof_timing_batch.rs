@@ -2236,6 +2236,39 @@ fn eth_proof_timing_batch_rejects_nonfinite_gpu_memory_wait_values() {
 }
 
 #[test]
+fn eth_proof_timing_batch_rejects_nonfinite_numeric_values() {
+    for (flag, value) in [
+        ("--small-timeout", "nan"),
+        ("--large-max-avg-s", "inf"),
+        ("--max-relative-spread", "nan"),
+    ] {
+        let mut command = Command::new(script_path());
+        command.arg(flag).arg(value);
+        clear_env(&mut command, SMALL_PREFIX);
+        clear_env(&mut command, LARGE_PREFIX);
+
+        let output = command
+            .output()
+            .expect("ETH proof timing batch nonfinite validation should run");
+        let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+        let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+
+        assert!(
+            !output.status.success(),
+            "nonfinite value should be rejected for {flag}"
+        );
+        assert!(
+            stdout.is_empty(),
+            "nonfinite validation should fail before printing status: {stdout}"
+        );
+        assert!(
+            stderr.contains("must be finite"),
+            "nonfinite validation should explain finite floats: stderr={stderr}"
+        );
+    }
+}
+
+#[test]
 fn eth_proof_timing_batch_check_gpu_memory_waits_until_ready() {
     let fixture = ProofFixture::new("eth-proof-timing-batch-gpu-memory-wait");
     let state_path = fixture.dir.join("smi-count");

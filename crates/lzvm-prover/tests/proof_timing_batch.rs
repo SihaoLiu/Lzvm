@@ -52,6 +52,36 @@ fn single_batch_dir(dir: &std::path::Path) -> std::path::PathBuf {
 }
 
 #[test]
+fn proof_timing_batch_rejects_nonfinite_numeric_values() {
+    for (flag, value) in [
+        ("--small-timeout", "nan"),
+        ("--large-max-avg-s", "inf"),
+        ("--max-relative-spread", "nan"),
+    ] {
+        let output = Command::new(batch_script_path())
+            .arg(flag)
+            .arg(value)
+            .output()
+            .expect("proof timing batch nonfinite validation should run");
+        let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+        let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+
+        assert!(
+            !output.status.success(),
+            "nonfinite value should be rejected for {flag}"
+        );
+        assert!(
+            stdout.is_empty(),
+            "nonfinite validation should fail before printing status: {stdout}"
+        );
+        assert!(
+            stderr.contains("must be finite"),
+            "nonfinite validation should explain finite floats: stderr={stderr}"
+        );
+    }
+}
+
+#[test]
 fn proof_timing_batch_discovers_wide_run_status_paths() {
     let script_path = batch_script_path();
     let pycache_path = scripts_pycache_path();

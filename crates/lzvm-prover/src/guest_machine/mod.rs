@@ -1669,6 +1669,31 @@ fn advance_guest_machine_prepared_inner_report_shape_at_pc_into(
             return Err(error);
         }
     }
+    let advanced = advance_guest_machine_prepared_inner_report_shape_at_pc_generic(
+        memory,
+        state,
+        handler,
+        address,
+        byte_len,
+        sequential_pc,
+        instruction,
+        timing,
+    )?;
+    report.write(advanced.report);
+    Ok(advanced.shape)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn advance_guest_machine_prepared_inner_report_shape_at_pc_generic(
+    memory: &mut GuestMachineMemory,
+    state: &mut GuestMachineState,
+    handler: Option<&mut dyn GuestFcallHandler>,
+    address: u64,
+    byte_len: usize,
+    sequential_pc: u64,
+    instruction: RiscvInstruction,
+    mut timing: Option<&mut GuestMachineAdvanceTiming>,
+) -> Result<GuestMachineAdvanceReport, GuestMachineError> {
     let setup_started = advance_timing_started(&timing);
     let mut effects = GuestInstructionEffects::default();
     let checkpoint = GuestMachineStateCheckpoint::new(state, instruction);
@@ -1702,7 +1727,7 @@ fn advance_guest_machine_prepared_inner_report_shape_at_pc_into(
     let report_started = advance_timing_started(&timing);
     let shape = effects.report_shape(instruction);
 
-    report.write(GuestMachineReport::new(
+    let report = GuestMachineReport::new(
         address,
         guest_instruction_byte_len(byte_len),
         instruction,
@@ -1713,11 +1738,11 @@ fn advance_guest_machine_prepared_inner_report_shape_at_pc_into(
             effects.precompile_memory_accesses,
             effects.precompile_result,
         ),
-    ));
+    );
     record_advance_timing(report_started, timing.as_deref_mut(), |timing| {
         &mut timing.report_duration
     });
-    Ok(shape)
+    Ok(GuestMachineAdvanceReport { report, shape })
 }
 
 fn try_advance_guest_machine_report_fast_path(
@@ -3067,6 +3092,38 @@ mod tests {
         state
     }
 
+    fn advance_guest_machine_prepared_inner_with_report_shape_generic_for_test(
+        memory: &mut GuestMachineMemory,
+        state: &mut GuestMachineState,
+        handler: Option<&mut dyn GuestFcallHandler>,
+        prepared: GuestMachinePreparedInstruction,
+        timing: Option<&mut GuestMachineAdvanceTiming>,
+    ) -> Result<GuestMachineAdvanceReport, GuestMachineError> {
+        let pc = state.pc();
+        if prepared.address != pc {
+            return Err(GuestMachineError::PreparedInstructionPcMismatch {
+                expected: pc,
+                found: prepared.address,
+            });
+        }
+        let sequential_pc = pc.checked_add(prepared.byte_len as u64).ok_or(
+            GuestMachineError::ProgramCounterOverflow {
+                address: pc,
+                byte_len: prepared.byte_len,
+            },
+        )?;
+        advance_guest_machine_prepared_inner_report_shape_at_pc_generic(
+            memory,
+            state,
+            handler,
+            pc,
+            prepared.byte_len,
+            sequential_pc,
+            prepared.instruction,
+            timing,
+        )
+    }
+
     fn assert_report_fast_path_matches_generic_with_words(
         instruction: RiscvInstruction,
         words: &[u32],
@@ -3111,7 +3168,7 @@ mod tests {
         )
         .expect("fast prepared advance should succeed");
         let mut timing = GuestMachineAdvanceTiming::default();
-        let generic = advance_guest_machine_prepared_inner_with_report_shape(
+        let generic = advance_guest_machine_prepared_inner_with_report_shape_generic_for_test(
             &mut generic_memory,
             &mut generic_state,
             None,
@@ -3200,7 +3257,7 @@ mod tests {
         )
         .expect("fast prepared advance should succeed");
         let mut timing = GuestMachineAdvanceTiming::default();
-        let generic = advance_guest_machine_prepared_inner_with_report_shape(
+        let generic = advance_guest_machine_prepared_inner_with_report_shape_generic_for_test(
             &mut generic_memory,
             &mut generic_state,
             None,
