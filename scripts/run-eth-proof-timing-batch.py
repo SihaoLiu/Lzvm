@@ -1942,8 +1942,8 @@ def main() -> None:
         description="Build ETH proof timing commands from real proof environment variables."
     )
     parser.add_argument("--suite", choices=["small", "large", "both", "available"], default="both")
-    parser.add_argument("--small-mode", choices=sorted(MODE_ENV), default="combined")
-    parser.add_argument("--large-mode", choices=sorted(MODE_ENV), default="combined")
+    parser.add_argument("--small-mode", choices=sorted(MODE_ENV), default="default")
+    parser.add_argument("--large-mode", choices=sorted(MODE_ENV), default="default")
     parser.add_argument("--runs", type=positive_run_count, default=3)
     parser.add_argument("--max-runs", type=positive_run_count, default=None)
     parser.add_argument("--small-timeout", type=positive_timeout, default=60.0)

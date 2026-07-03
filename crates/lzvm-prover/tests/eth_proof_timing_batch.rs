@@ -492,8 +492,10 @@ fn eth_proof_timing_batch_dry_run_builds_small_command_from_env() {
         "diagnostic trace timing should stay off unless requested: {stdout}"
     );
     assert!(
-        stdout.contains("LZVM_GUEST_PC_TRACE_COMMIT_PIPELINE=1"),
-        "combined mode should set its mode environment: {stdout}"
+        stdout.contains("small_mode=default\n")
+            && !stdout.contains("LZVM_GUEST_PC_TRACE_PARALLEL_LOWER=1")
+            && !stdout.contains("LZVM_GUEST_PC_TRACE_COMMIT_PIPELINE=1"),
+        "default mode should avoid opt-in pipeline environment: {stdout}"
     );
     for assignment in [
         "LZVM_GUEST_PC_TRACE_PARALLEL_LOWER_WORKERS=2",
@@ -606,6 +608,8 @@ fn eth_proof_timing_batch_dry_run_applies_worker_overrides() {
     command
         .arg("--suite")
         .arg("small")
+        .arg("--small-mode")
+        .arg("combined")
         .arg("--dry-run")
         .arg("--parallel-lower-workers")
         .arg("6")
@@ -642,7 +646,10 @@ fn eth_proof_timing_batch_dry_run_applies_worker_overrides() {
     assert!(
         stdout.contains("parallel_lower_workers=6\n")
             && stdout.contains("parallel_lower_job_queue=12\n")
-            && stdout.contains("segment_commit_workers=3\n"),
+            && stdout.contains("segment_commit_workers=3\n")
+            && stdout.contains("small_mode=combined\n")
+            && stdout.contains("LZVM_GUEST_PC_TRACE_PARALLEL_LOWER=1")
+            && stdout.contains("LZVM_GUEST_PC_TRACE_COMMIT_PIPELINE=1"),
         "dry-run metadata should report worker overrides: {stdout}"
     );
 }
@@ -1160,7 +1167,7 @@ fn eth_proof_timing_batch_target_thresholds_follow_selected_suite() {
             && stdout.contains("runs=3\n")
             && stdout.contains("max_runs=5\n")
             && stdout.contains("verify_proof=true\n")
-            && stdout.contains("small_mode=combined\n")
+            && stdout.contains("small_mode=default\n")
             && stdout.contains("small_target_max_avg_s=10.0\n"),
         "dry-run metadata should report the effective target configuration: {stdout}"
     );
@@ -1416,7 +1423,7 @@ fn eth_proof_timing_batch_check_env_reports_ready_paths() {
     );
     assert!(stdout.contains("status=ok\n"), "{stdout}");
     assert!(stdout.contains("small=ready\n"), "{stdout}");
-    assert!(stdout.contains("small_mode=combined\n"), "{stdout}");
+    assert!(stdout.contains("small_mode=default\n"), "{stdout}");
     assert!(stdout.contains("small_verify_proof=true\n"), "{stdout}");
     assert!(
         stdout.contains("small_verify_required_text=verify_proof_status=ok\n")
@@ -1432,8 +1439,8 @@ fn eth_proof_timing_batch_check_env_reports_ready_paths() {
     assert!(stdout.contains("small_block_input="), "{stdout}");
     assert!(!stdout.contains("small_tmp_dir="), "{stdout}");
     let expected_next_base = concat!(
-        "scripts/run-eth-proof-timing-batch.py --suite small --small-mode combined ",
-        "--large-mode combined --runs 3 --max-runs 5 --small-timeout 60.0 ",
+        "scripts/run-eth-proof-timing-batch.py --suite small --small-mode default ",
+        "--large-mode default --runs 3 --max-runs 5 --small-timeout 60.0 ",
         "--large-timeout 180.0 --max-relative-spread 0.1 ",
         "--work-dir temp/proof-timing-batch --path temp/improve-log.csv"
     );
@@ -2853,7 +2860,7 @@ fn eth_proof_timing_batch_env_file_configures_dry_run() {
     );
     assert!(
         stdout.contains("selected=small\n")
-            && stdout.contains("small_mode=combined\n")
+            && stdout.contains("small_mode=default\n")
             && stdout.contains("&& env -u LZVM_GUEST_PC_TRACE_PARALLEL_LOWER"),
         "env-file dry-run should load proof paths and trace limit: {stdout}"
     );
