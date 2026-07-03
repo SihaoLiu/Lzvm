@@ -129,10 +129,6 @@ fn sample_schedule_with_two_units() -> ProveSchedule {
     second_unit.unit_id = Some(1);
     second_unit.group_name = Some("group-b".to_owned());
     second_unit.unit_name = Some("unit-b".to_owned());
-    second_unit.pcs_material_plan_digest = Some([11; 32]);
-    second_unit.pcs_material_fixed_column_digest = Some([12; 32]);
-    second_unit.pcs_material_constant_tree_digest = Some([13; 32]);
-    second_unit.pcs_material_constant_tree_root = Some([14, 15, 16, 17]);
 
     ProveSchedule {
         setup_hash: [0; 32],

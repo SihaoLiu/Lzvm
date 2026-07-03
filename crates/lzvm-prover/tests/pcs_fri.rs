@@ -1324,6 +1324,29 @@ fn rejects_pcs_fri_opening_folds_with_duplicate_trace_identity() {
 }
 
 #[test]
+fn rejects_pcs_fri_opening_folds_with_duplicate_query_trace_identity() {
+    let (unit, segments) = valid_pcs_fri_opening_segments();
+    let query_plan = load_pcs_query_plan_from_segments(&segments).expect("query plan should load");
+    let opening =
+        load_pcs_fri_opening_segment_from_segments(&segments).expect("FRI opening should load");
+    let challenges = sample_fold_challenges();
+    let query_units = [query_plan.units[0].clone(), query_plan.units[0].clone()];
+
+    let error = validate_pcs_fri_opening_folds_from_units(
+        std::slice::from_ref(&unit),
+        &query_units,
+        &opening.units,
+        std::slice::from_ref(&challenges),
+    )
+    .expect_err("FRI opening folds should reject duplicate query identity");
+
+    assert_eq!(
+        error,
+        ValidatePcsFriOpeningFoldUnitsError::UnitMismatch { unit_index: 0 }
+    );
+}
+
+#[test]
 fn rejects_pcs_fri_opening_fold_mismatches_from_units() {
     let (unit, segments) = valid_pcs_fri_opening_segments();
     let query_plan = load_pcs_query_plan_from_segments(&segments).expect("query plan should load");

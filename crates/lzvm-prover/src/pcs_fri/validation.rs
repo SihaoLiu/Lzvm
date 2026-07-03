@@ -222,9 +222,12 @@ fn pcs_query_unit_identities(
 ) -> Result<BTreeSet<(u32, u32)>, ValidatePcsFriOpeningFoldUnitsError> {
     let mut identities = BTreeSet::new();
     for unit in units {
-        usize::try_from(unit.unit_index)
+        let unit_index = usize::try_from(unit.unit_index)
             .map_err(|_| ValidatePcsFriOpeningFoldUnitsError::UnitIndexOverflow)?;
-        identities.insert((unit.unit_index, unit.trace_instance_index));
+        let identity = (unit.unit_index, unit.trace_instance_index);
+        if !identities.insert(identity) {
+            return Err(ValidatePcsFriOpeningFoldUnitsError::UnitMismatch { unit_index });
+        }
     }
     Ok(identities)
 }
