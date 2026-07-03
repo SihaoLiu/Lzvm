@@ -17389,8 +17389,10 @@ fn verifies_contribution_reports_bound_program_image_and_eth_block_input() {
             .data
             .len(),
     );
+    assert!(writer_stdout_text.contains("program_image_cache_match=ok\n"));
     assert!(writer_stdout_text.contains("framed_guest_input_match=ok\n"));
     assert!(writer_stdout_text.contains("pipeline_input_bindings=ok\n"));
+    assert!(challenge_stdout_text.contains("program_image_cache_match=ok\n"));
     assert!(challenge_stdout_text.contains("framed_guest_input_match=ok\n"));
     assert!(challenge_stdout_text.contains("pipeline_input_bindings=ok\n"));
     assert!(stdout_text.contains(&format!(
