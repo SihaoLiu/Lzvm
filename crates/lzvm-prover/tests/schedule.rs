@@ -23,7 +23,8 @@ use lzvm_artifacts::program_image::{
 };
 use lzvm_artifacts::public_values::{encode_public_values, PublicValueEntry, PublicValues};
 use lzvm_artifacts::setup_info::{
-    CommitmentColumn, EvaluationMapEntry, FriStep, StageValue, StarkStruct, UnitSetupInfo,
+    CommitmentColumn, ConstantColumn, EvaluationMapEntry, FriStep, StageValue, StarkStruct,
+    UnitSetupInfo,
 };
 use lzvm_artifacts::verification_key::VerificationKeyRoot;
 use lzvm_artifacts::verifier_info::{VerifierCode, VerifierInfo};
@@ -46,7 +47,24 @@ fn sample_setup(n_bits: u32, n_bits_ext: u32, query_count: u32) -> UnitSetupInfo
     UnitSetupInfo {
         n_stages: 1,
         n_constants: 2,
-        constant_columns: Vec::new(),
+        constant_columns: vec![
+            ConstantColumn {
+                name: "const_0".to_owned(),
+                stage: 0,
+                dimension: 1,
+                pols_map_id: 0,
+                stage_id: 0,
+                lengths: Vec::new(),
+            },
+            ConstantColumn {
+                name: "const_1".to_owned(),
+                stage: 0,
+                dimension: 1,
+                pols_map_id: 1,
+                stage_id: 1,
+                lengths: Vec::new(),
+            },
+        ],
         commitment_columns: vec![
             CommitmentColumn {
                 name: "trace.a".to_owned(),
@@ -524,6 +542,10 @@ fn derives_prove_schedule_from_key_directory_catalog() {
 fn distinguishes_evaluation_value_count_from_transcript_draws() {
     let mut unit = sample_unit(KeyUnitKind::Basic, 0, 64);
     unit.metadata.setup.eval_count = 5;
+    unit.metadata
+        .setup
+        .evaluation_map
+        .resize(5, EvaluationMapEntry::default());
     let catalog = sample_catalog(vec![unit]);
 
     let schedule = derive_prove_schedule(&catalog).expect("prove schedule should derive");

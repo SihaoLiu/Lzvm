@@ -69,6 +69,7 @@ use lzvm_artifacts::pcs_query_segment::{
     encode_pcs_query_plan_segment, parse_pcs_query_plan_segment, PcsQueryPlanSegment,
     PcsQueryPlanUnit, PCS_QUERY_PLAN_SEGMENT_ID,
 };
+use lzvm_artifacts::program_image::{ProgramImageCommitmentCache, ProgramImageGpuMode};
 use lzvm_artifacts::proof::{
     encode_proof_artifact, parse_proof_artifact, ProofArtifact, ProofSegment,
 };
@@ -133,9 +134,9 @@ use lzvm_prover::{
     run_prove_witness_commitments_with_trace_bytes, GpuRunOptions, ProveExecutionInputArtifacts,
     ProvePartitionPlan, ProvePassRequest, ProvePcsEvaluationValues, ProvePcsFriOpeningTraceValues,
     ProvePcsFriOpeningValues, ProvePcsFriTranscriptTraceValues,
-    ProvePcsFriTranscriptTraceValuesError, ProvePcsQueryPlanSegmentError, ProveRunOptions,
-    ProveRunRequest, ProveSchedule, ProveWitnessAuxiliaryInputs, ProveWitnessCommitmentError,
-    ProveWitnessSegmentError,
+    ProvePcsFriTranscriptTraceValuesError, ProvePcsQueryPlanSegmentError, ProveProgramImageCache,
+    ProveRunOptions, ProveRunRequest, ProveSchedule, ProveWitnessAuxiliaryInputs,
+    ProveWitnessCommitmentError, ProveWitnessSegmentError,
 };
 use sha2::{Digest, Sha256};
 
@@ -814,11 +815,15 @@ fn encode_trace_words(values: &[u64]) -> Vec<u8> {
 }
 
 fn write_public_values(path: &Path, setup_hash: [u8; 32], elements: Vec<u64>) {
+    write_named_public_values(path, setup_hash, "sample_public", elements);
+}
+
+fn write_named_public_values(path: &Path, setup_hash: [u8; 32], name: &str, elements: Vec<u64>) {
     let values = PublicValues {
         schema_version: 1,
         setup_hash,
         values: vec![PublicValueEntry {
-            name: "sample_public".to_owned(),
+            name: name.to_owned(),
             elements,
         }],
     };
@@ -6639,6 +6644,76 @@ fn rejects_public_inputs_metadata_bypass_during_witness_execution() {
                 },
             ..
         }) if name == "sample_public"
+    ));
+}
+
+#[test]
+fn rejects_program_image_cache_public_input_bypass_during_witness_execution() {
+    let dir = temp_dir("public-input-runtime-program-image-cache");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let guest_image = dir.join("guest.elf");
+    let input_data = dir.join("input.bin");
+    let public_inputs = dir.join("public-values.bin");
+    let cache_path = dir.join("program-image-cache.bin");
+    fs::write(&guest_image, sample_guest_image()).expect("guest image should be written");
+    fs::write(&input_data, [7_u8]).expect("input data should be written");
+
+    let mut catalog = sample_catalog(sample_unit());
+    catalog.layout.global_info.n_publics = 4;
+    catalog.layout.global_info.publics_map = vec![PublicValue {
+        name: "rom_root".to_owned(),
+        stage: 1,
+        lengths: vec![4],
+    }];
+    let setup_hash = key_directory_catalog_digest(&catalog).expect("catalog digest should compute");
+    write_named_public_values(&public_inputs, setup_hash, "rom_root", vec![3, 4, 5, 6]);
+    let plan = derive_prove_execution_plan(
+        &catalog,
+        sample_request(dir.join("out"), Some(input_data)),
+        ProveExecutionInputArtifacts {
+            witness_library: None,
+            guest_image,
+            public_inputs: None,
+        },
+    )
+    .expect("execution plan should derive");
+    let mut plan = plan;
+    plan.inputs.public_inputs = Some(public_inputs.clone());
+    plan.program_image_cache = Some(ProveProgramImageCache {
+        path: cache_path,
+        cache: ProgramImageCommitmentCache {
+            program_digest: [0x11; 32],
+            source_image_digest: plan.guest_image_info.digest,
+            constraint_system_digest: setup_hash,
+            tree_root: [3, 4, 5, 6],
+            trace_row_count: 1024,
+            trace_column_count: 17,
+            blowup_factor: 8,
+            merkle_tree_arity: 4,
+            gpu_mode: ProgramImageGpuMode::Cuda,
+        },
+    });
+    write_named_public_values(&public_inputs, setup_hash, "rom_root", vec![9, 4, 5, 6]);
+    let backend = TraceBytesBackend::new(sample_trace_bytes(7));
+
+    let result = run_prove_witness_commitments_with_trace_backend(
+        &plan,
+        0,
+        ProveWitnessAuxiliaryInputs::default(),
+        &backend,
+    );
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert!(matches!(
+        result,
+        Err(ProveWitnessCommitmentError::PublicInputsProgramImageCache {
+            source:
+                lzvm_artifacts::eth_block_public_values::EthBlockPublicValuesError::ProgramImageCacheMismatch {
+                    name,
+                },
+            ..
+        }) if name == "rom_root"
     ));
 }
 

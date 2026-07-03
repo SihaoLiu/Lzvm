@@ -10,6 +10,9 @@ use std::time::{Duration, Instant};
 
 #[cfg(feature = "cuda")]
 use lzvm_accel::CudaDeviceBuffer;
+use lzvm_artifacts::eth_block_public_values::{
+    validate_program_image_cache_public_values, EthBlockPublicValuesError,
+};
 use lzvm_artifacts::fixed::FixedColumns;
 use lzvm_artifacts::global_info::{GlobalInfo, NamedStageValue};
 use lzvm_artifacts::hint_program::{
@@ -3680,6 +3683,10 @@ pub enum ProveWitnessCommitmentError {
         path: PathBuf,
         source: SetupPreflightError,
     },
+    PublicInputsProgramImageCache {
+        path: PathBuf,
+        source: EthBlockPublicValuesError,
+    },
     PublicInputsSetupHashMismatch,
     PublicInputNonCanonical {
         index: usize,
@@ -3813,6 +3820,11 @@ impl fmt::Display for ProveWitnessCommitmentError {
             Self::PublicInputsMetadata { path, source } => write!(
                 f,
                 "public inputs metadata validation failed: {}: {source}",
+                path.display()
+            ),
+            Self::PublicInputsProgramImageCache { path, source } => write!(
+                f,
+                "public inputs program image cache validation failed: {}: {source}",
                 path.display()
             ),
             Self::PublicInputsSetupHashMismatch => {
@@ -3986,6 +3998,7 @@ impl std::error::Error for ProveWitnessCommitmentError {
             Self::WitnessRun(error) => Some(error),
             Self::PublicInputs { source, .. } => Some(source),
             Self::PublicInputsMetadata { source, .. } => Some(source),
+            Self::PublicInputsProgramImageCache { source, .. } => Some(source),
             Self::FixedColumns { source, .. } => Some(source),
             Self::RegularConstraintDomainHelper { source, .. } => Some(source),
             Self::RegularConstraintEval(error) => Some(error),
@@ -7391,6 +7404,16 @@ fn load_public_inputs(plan: &ProveExecutionPlan) -> Result<Vec<Felt>, ProveWitne
             source,
         }
     })?;
+    validate_program_image_cache_public_values(
+        &public_values,
+        plan.program_image_cache.as_ref().map(|cache| &cache.cache),
+    )
+    .map_err(
+        |source| ProveWitnessCommitmentError::PublicInputsProgramImageCache {
+            path: path.clone(),
+            source,
+        },
+    )?;
     public_values_to_fields(&public_values)
 }
 
