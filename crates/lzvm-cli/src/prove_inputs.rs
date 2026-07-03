@@ -842,6 +842,73 @@ mod tests {
     }
 
     #[test]
+    fn rejects_duplicate_input_binding_options_during_parse() {
+        for (option, first, second, expected) in [
+            (
+                "--trace-bytes",
+                "trace-a.bin",
+                "trace-b.bin",
+                "duplicate --trace-bytes option",
+            ),
+            (
+                "--trace-bundle",
+                "bundle-a.bin",
+                "bundle-b.bin",
+                "duplicate --trace-bundle option",
+            ),
+            (
+                "--guest-pc-trace",
+                "64",
+                "128",
+                "duplicate --guest-pc-trace option",
+            ),
+            (
+                "--eth-block-input",
+                "block-a.input",
+                "block-b.input",
+                "duplicate --eth-block-input option",
+            ),
+            (
+                "--eth-public-input",
+                "public-a.bin",
+                "public-b.bin",
+                "duplicate --eth-public-input option",
+            ),
+        ] {
+            let result = parse_inputs_args(&[
+                option,
+                first,
+                option,
+                second,
+                "setup-dir",
+                "out-dir",
+                "witness.so",
+                "guest.elf",
+            ]);
+
+            assert!(
+                matches!(result, Err(ParseError::Invalid(message)) if message == expected),
+                "{option} should reject duplicate values"
+            );
+        }
+
+        let result = parse_inputs_args(&[
+            "--eth-public-input-allow-trailing",
+            "--eth-public-input-allow-trailing",
+            "setup-dir",
+            "out-dir",
+            "witness.so",
+            "guest.elf",
+        ]);
+
+        assert!(matches!(
+            result,
+            Err(ParseError::Invalid(message))
+                if message == "duplicate --eth-public-input-allow-trailing option"
+        ));
+    }
+
+    #[test]
     fn rejects_missing_eth_public_input_value_during_parse() {
         let result = parse_inputs_args(&[
             "--eth-public-input",
