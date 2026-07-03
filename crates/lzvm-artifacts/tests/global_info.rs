@@ -193,6 +193,34 @@ fn rejects_proof_and_public_value_name_collisions_when_encoding() {
 }
 
 #[test]
+fn rejects_duplicate_air_group_names_when_encoding() {
+    let mut info = fixtures::sample_global_info_fixture();
+    info.air_groups[1] = info.air_groups[0].clone();
+
+    assert_eq!(
+        encode_global_info(&info),
+        Err(GlobalInfoError::DuplicateValueName {
+            field: "airGroups",
+            name: "group-a".to_owned(),
+        })
+    );
+}
+
+#[test]
+fn rejects_duplicate_air_unit_names_within_group_when_encoding() {
+    let mut info = fixtures::sample_global_info_fixture();
+    info.airs[0][1].name = info.airs[0][0].name.clone();
+
+    assert_eq!(
+        encode_global_info(&info),
+        Err(GlobalInfoError::DuplicateValueName {
+            field: "airs",
+            name: "unit-a".to_owned(),
+        })
+    );
+}
+
+#[test]
 fn rejects_unsupported_global_info_file_versions() {
     let info = fixtures::sample_global_info_fixture();
     let bytes = encode_global_info(&info).expect("fixture should encode");
@@ -300,6 +328,66 @@ fn rejects_aggregation_entry_count_that_exceeds_remaining_entries() {
         parse_global_info(&bytes),
         Err(GlobalInfoError::UnexpectedEof { .. })
     ));
+}
+
+#[test]
+fn rejects_duplicate_air_group_names_when_parsing() {
+    let mut section = section_prefix();
+    push_u32(&mut section, 2);
+    push_string(&mut section, "duplicate-group");
+    push_string(&mut section, "duplicate-group");
+    push_u32(&mut section, 2);
+    for name in ["unit-a", "unit-b"] {
+        push_u32(&mut section, 1);
+        push_string(&mut section, name);
+        push_u64(&mut section, 1);
+        section.push(0);
+    }
+    push_u32(&mut section, 2);
+    push_u32(&mut section, 0);
+    push_u32(&mut section, 0);
+    push_u64_vec(&mut section, &[]);
+    push_u64_vec(&mut section, &[]);
+    push_u32(&mut section, 0);
+    push_u32(&mut section, 0);
+    let bytes = global_info_file(section);
+
+    assert_eq!(
+        parse_global_info(&bytes),
+        Err(GlobalInfoError::DuplicateValueName {
+            field: "airGroups",
+            name: "duplicate-group".to_owned(),
+        })
+    );
+}
+
+#[test]
+fn rejects_duplicate_air_unit_names_within_group_when_parsing() {
+    let mut section = section_prefix();
+    push_u32(&mut section, 1);
+    push_string(&mut section, "group");
+    push_u32(&mut section, 1);
+    push_u32(&mut section, 2);
+    for _ in 0..2 {
+        push_string(&mut section, "duplicate-unit");
+        push_u64(&mut section, 1);
+        section.push(0);
+    }
+    push_u32(&mut section, 1);
+    push_u32(&mut section, 0);
+    push_u64_vec(&mut section, &[]);
+    push_u64_vec(&mut section, &[]);
+    push_u32(&mut section, 0);
+    push_u32(&mut section, 0);
+    let bytes = global_info_file(section);
+
+    assert_eq!(
+        parse_global_info(&bytes),
+        Err(GlobalInfoError::DuplicateValueName {
+            field: "airs",
+            name: "duplicate-unit".to_owned(),
+        })
+    );
 }
 
 #[test]

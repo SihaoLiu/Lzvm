@@ -521,7 +521,9 @@ fn write_u64_vec(out: &mut Vec<u8>, values: &[u64]) -> Result<(), GlobalInfoErro
 
 fn validate_global_info(value: &GlobalInfo) -> Result<(), GlobalInfoError> {
     validate_air_group_shape(&value.air_groups, &value.airs, &value.aggregation_types)?;
+    validate_unique_value_names("airGroups", value.air_groups.iter().map(String::as_str))?;
     for (airgroup_id, units) in value.airs.iter().enumerate() {
+        validate_unique_value_names("airs", units.iter().map(|unit| unit.name.as_str()))?;
         for (air_id, unit) in units.iter().enumerate() {
             if unit.num_rows == 0 {
                 return Err(GlobalInfoError::InvalidRowCount {
