@@ -4507,6 +4507,10 @@ fn prints_prove_run_plan_for_setup_directory() {
     let dir = temp_dir("prove-plan");
     let _ = fs::remove_dir_all(&dir);
     write_setup_directory(&dir);
+    assert!(
+        !dir.join(SETUP_DIRECTORY_MANIFEST_FILE).exists(),
+        "metadata-only setup fixture should not have a setup manifest"
+    );
     let catalog = read_key_directory_catalog(&dir).expect("catalog should load");
     let expected = key_directory_catalog_digest_hex(&catalog).expect("digest should encode");
     let input_path = dir.join("input.bin");
