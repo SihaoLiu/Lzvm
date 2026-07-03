@@ -92,7 +92,13 @@ impl std::error::Error for TraceBundleError {
 
 impl From<SectionedError> for TraceBundleError {
     fn from(error: SectionedError) -> Self {
-        Self::Sectioned(error)
+        match error {
+            SectionedError::UnsupportedVersion { found, .. } => Self::UnsupportedVersion {
+                found,
+                expected: TRACE_BUNDLE_VERSION,
+            },
+            error => Self::Sectioned(error),
+        }
     }
 }
 

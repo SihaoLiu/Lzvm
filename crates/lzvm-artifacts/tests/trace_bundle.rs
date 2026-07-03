@@ -73,27 +73,30 @@ fn parses_trace_bundle_refs_without_copying_unit_bytes() {
 
 #[test]
 fn rejects_unsupported_trace_bundle_versions() {
-    let encoded = sectioned_trace_bundle(
-        TRACE_BUNDLE_VERSION - 1,
-        vec![SectionedSection {
-            id: 0,
-            data: vec![1],
-        }],
-    );
-    let expected = TraceBundleError::UnsupportedVersion {
-        found: TRACE_BUNDLE_VERSION - 1,
-        expected: TRACE_BUNDLE_VERSION,
-    };
+    for version in [TRACE_BUNDLE_VERSION - 1, TRACE_BUNDLE_VERSION + 1] {
+        let encoded = sectioned_trace_bundle(
+            version,
+            vec![SectionedSection {
+                id: 0,
+                data: vec![1],
+            }],
+        );
+        let expected = TraceBundleError::UnsupportedVersion {
+            found: version,
+            expected: TRACE_BUNDLE_VERSION,
+        };
 
-    assert_eq!(
-        parse_trace_bundle(&encoded).expect_err("unsupported trace bundle version should reject"),
-        expected
-    );
-    assert_eq!(
-        parse_trace_bundle_ref(&encoded)
-            .expect_err("borrowed unsupported trace bundle version should reject"),
-        expected
-    );
+        assert_eq!(
+            parse_trace_bundle(&encoded)
+                .expect_err("unsupported trace bundle version should reject"),
+            expected
+        );
+        assert_eq!(
+            parse_trace_bundle_ref(&encoded)
+                .expect_err("borrowed unsupported trace bundle version should reject"),
+            expected
+        );
+    }
 }
 
 #[test]
