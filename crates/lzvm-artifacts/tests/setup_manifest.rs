@@ -156,6 +156,24 @@ fn validates_v1_setup_directory_manifests_without_unencoded_source_fields() {
 }
 
 #[test]
+fn validates_required_legacy_setup_directory_manifests_with_version_projection() {
+    for (name, version, values) in [
+        ("required-v1", 1, vec![4, 3, 128, 4, 512]),
+        ("required-v2", 2, vec![4, 3, 128, 4, 512, 1, 7]),
+        ("required-v3", 3, vec![4, 3, 128, 4, 512, 1, 7, 1, 3, 2]),
+    ] {
+        let path = temp_file_path(name);
+        fs::write(&path, encode_legacy_manifest(version, &values))
+            .expect("fixture should be written");
+
+        validate_required_setup_directory_manifest_file(&path, &sample_manifest())
+            .expect("required legacy manifest should validate");
+
+        fs::remove_file(&path).expect("fixture should be removed");
+    }
+}
+
+#[test]
 fn rejects_legacy_setup_directory_manifests_with_encoded_mismatches() {
     let path = temp_file_path("legacy-mismatch");
     fs::write(&path, encode_legacy_manifest(2, &[4, 3, 128, 4, 512, 1, 8]))
