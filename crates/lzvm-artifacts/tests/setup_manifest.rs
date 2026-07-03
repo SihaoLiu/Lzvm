@@ -144,6 +144,18 @@ fn validates_legacy_setup_directory_manifests_without_unencoded_byte_counts() {
 }
 
 #[test]
+fn validates_v1_setup_directory_manifests_without_unencoded_source_fields() {
+    let path = temp_file_path("v1");
+    fs::write(&path, encode_legacy_manifest(1, &[4, 3, 128, 4, 512]))
+        .expect("fixture should be written");
+
+    validate_setup_directory_manifest_file(&path, &sample_manifest())
+        .expect("v1 manifest should validate without source fields");
+
+    fs::remove_file(&path).expect("fixture should be removed");
+}
+
+#[test]
 fn rejects_legacy_setup_directory_manifests_with_encoded_mismatches() {
     let path = temp_file_path("legacy-mismatch");
     fs::write(&path, encode_legacy_manifest(2, &[4, 3, 128, 4, 512, 1, 8]))
