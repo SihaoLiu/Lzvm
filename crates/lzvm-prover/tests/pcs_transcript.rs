@@ -328,6 +328,80 @@ fn rejects_extra_transcript_unit_values() {
 }
 
 #[test]
+fn rejects_short_transcript_unit_values() {
+    let error = derive_pcs_transcript_prefix_challenges(PcsTranscriptPrefixInputs {
+        arity: 4,
+        hash_values: false,
+        constant_root: root(1),
+        public_values: &[],
+        witness_roots: &[root(10)],
+        root_challenge_draws: &[1],
+        unit_value_map: &[StageValue {
+            name: "unit.beta".to_owned(),
+            stage: 2,
+            lengths: vec![2],
+        }],
+        unit_values: &values(&[201, 202, 203, 204, 205]),
+        evaluation_values: &[],
+        evaluation_challenge_draws: 0,
+        binding_segments: &[],
+    })
+    .expect_err("short unit values should reject");
+
+    assert_eq!(
+        error,
+        PcsTranscriptError::UnitValueLengthMismatch {
+            expected: 6,
+            found: 5,
+        }
+    );
+}
+
+#[test]
+fn multidimensional_stage_one_unit_values_do_not_change_challenges() {
+    let constant_root = root(1);
+    let witness_roots = vec![root(10)];
+    let unit_value_map = vec![StageValue {
+        name: "unit.alpha".to_owned(),
+        stage: 1,
+        lengths: vec![2, 2],
+    }];
+    let unit_values = values(&[101, 102, 103, 104]);
+
+    let actual = derive_pcs_transcript_prefix_challenges(PcsTranscriptPrefixInputs {
+        arity: 4,
+        hash_values: false,
+        constant_root,
+        public_values: &[],
+        witness_roots: &witness_roots,
+        root_challenge_draws: &[1],
+        unit_value_map: &unit_value_map,
+        unit_values: &unit_values,
+        evaluation_values: &[],
+        evaluation_challenge_draws: 0,
+        binding_segments: &[],
+    })
+    .expect("multidimensional stage-one unit values should validate");
+
+    let expected = derive_pcs_transcript_prefix_challenges(PcsTranscriptPrefixInputs {
+        arity: 4,
+        hash_values: false,
+        constant_root,
+        public_values: &[],
+        witness_roots: &witness_roots,
+        root_challenge_draws: &[1],
+        unit_value_map: &[],
+        unit_values: &[],
+        evaluation_values: &[],
+        evaluation_challenge_draws: 0,
+        binding_segments: &[],
+    })
+    .expect("baseline challenges should derive");
+
+    assert_eq!(actual, expected);
+}
+
+#[test]
 fn derives_final_query_challenge_from_hashed_transcript_events() {
     let constant_root = root(2);
     let public_values = values(&[3, 4, 5]);
