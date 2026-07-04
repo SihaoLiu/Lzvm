@@ -1006,10 +1006,31 @@ pub(crate) struct GuestInstructionCacheStats {
     pub(crate) hit_count: usize,
     pub(crate) miss_count: usize,
     pub(crate) clear_count: usize,
+    pub(crate) fcall_clear_count: usize,
+    pub(crate) dma_clear_count: usize,
     pub(crate) write_invalidation_range_count: usize,
     pub(crate) write_invalidation_skipped_range_count: usize,
     pub(crate) write_invalidation_probe_count: usize,
     pub(crate) invalidated_entry_count: usize,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum GuestInstructionCacheClearReason {
+    FcallInvoke,
+    DmaPrepare,
+}
+
+impl GuestInstructionCacheStats {
+    pub(crate) fn record_clear_reason(&mut self, reason: GuestInstructionCacheClearReason) {
+        match reason {
+            GuestInstructionCacheClearReason::FcallInvoke => {
+                self.fcall_clear_count += 1;
+            }
+            GuestInstructionCacheClearReason::DmaPrepare => {
+                self.dma_clear_count += 1;
+            }
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -1582,16 +1603,26 @@ pub(crate) fn instruction_clears_instruction_cache(
     state: &GuestMachineState,
     instruction: RiscvInstruction,
 ) -> bool {
+    instruction_cache_clear_reason(state, instruction).is_some()
+}
+
+pub(crate) fn instruction_cache_clear_reason(
+    state: &GuestMachineState,
+    instruction: RiscvInstruction,
+) -> Option<GuestInstructionCacheClearReason> {
     if matches!(instruction, RiscvInstruction::ZiskFcallInvoke { .. }) {
-        return true;
+        return Some(GuestInstructionCacheClearReason::FcallInvoke);
     }
-    matches!(
+    if matches!(
         state.pending_dma,
         Some(GuestDmaPrepare {
             kind: RiscvDmaKind::Memcpy | RiscvDmaKind::Memset | RiscvDmaKind::Inputcpy,
             ..
         })
-    )
+    ) {
+        return Some(GuestInstructionCacheClearReason::DmaPrepare);
+    }
+    None
 }
 
 pub fn advance_guest_machine(

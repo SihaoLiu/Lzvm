@@ -151,6 +151,14 @@ pub(super) fn record_guest_pc_trace_timing(
         timing.guest_trace_runner_instruction_cache_clear_count(),
     );
     timings.record_count(
+        "guest_trace_runner_instruction_cache_fcall_clears",
+        timing.guest_trace_runner_instruction_cache_fcall_clear_count(),
+    );
+    timings.record_count(
+        "guest_trace_runner_instruction_cache_dma_clears",
+        timing.guest_trace_runner_instruction_cache_dma_clear_count(),
+    );
+    timings.record_count(
         "guest_trace_runner_instruction_cache_write_invalidation_ranges",
         timing.guest_trace_runner_instruction_cache_write_invalidation_range_count(),
     );

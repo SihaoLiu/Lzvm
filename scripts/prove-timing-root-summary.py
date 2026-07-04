@@ -40,6 +40,10 @@ RUNNER_ADVANCE_GENERIC_FALLBACKS_KEY = (
 RUNNER_CACHE_HITS_KEY = "timing_guest_trace_runner_instruction_cache_hits"
 RUNNER_CACHE_MISSES_KEY = "timing_guest_trace_runner_instruction_cache_misses"
 RUNNER_CACHE_CLEARS_KEY = "timing_guest_trace_runner_instruction_cache_clears"
+RUNNER_CACHE_FCALL_CLEARS_KEY = (
+    "timing_guest_trace_runner_instruction_cache_fcall_clears"
+)
+RUNNER_CACHE_DMA_CLEARS_KEY = "timing_guest_trace_runner_instruction_cache_dma_clears"
 RUNNER_CACHE_INVALIDATION_RANGES_KEY = (
     "timing_guest_trace_runner_instruction_cache_write_invalidation_ranges"
 )
@@ -897,6 +901,7 @@ HEADER = (
     "runner_advance_fast_path_pct,"
     "runner_instruction_cache_hits,runner_instruction_cache_misses,"
     "runner_instruction_cache_hit_pct,runner_instruction_cache_clears,"
+    "runner_instruction_cache_fcall_clears,runner_instruction_cache_dma_clears,"
     "runner_instruction_cache_write_invalidation_ranges,"
     "runner_instruction_cache_write_invalidation_skipped_ranges,"
     "runner_instruction_cache_write_invalidation_skip_pct,"
@@ -1231,6 +1236,8 @@ AGGREGATE_MEAN_PROFILE_COLUMNS = (
     "runner_instruction_cache_misses",
     "runner_instruction_cache_hit_pct",
     "runner_instruction_cache_clears",
+    "runner_instruction_cache_fcall_clears",
+    "runner_instruction_cache_dma_clears",
     "runner_instruction_cache_write_invalidation_ranges",
     "runner_instruction_cache_write_invalidation_skipped_ranges",
     "runner_instruction_cache_write_invalidation_skip_pct",
@@ -1334,6 +1341,8 @@ TIMING_KEYS = {
     RUNNER_CACHE_HITS_KEY,
     RUNNER_CACHE_MISSES_KEY,
     RUNNER_CACHE_CLEARS_KEY,
+    RUNNER_CACHE_FCALL_CLEARS_KEY,
+    RUNNER_CACHE_DMA_CLEARS_KEY,
     RUNNER_CACHE_INVALIDATION_RANGES_KEY,
     RUNNER_CACHE_INVALIDATION_SKIPPED_RANGES_KEY,
     RUNNER_CACHE_INVALIDATION_PROBES_KEY,
@@ -4586,6 +4595,8 @@ def summarize_profile_values(
         else 0.0
     )
     runner_cache_clears = values.get(RUNNER_CACHE_CLEARS_KEY, 0)
+    runner_cache_fcall_clears = values.get(RUNNER_CACHE_FCALL_CLEARS_KEY, 0)
+    runner_cache_dma_clears = values.get(RUNNER_CACHE_DMA_CLEARS_KEY, 0)
     runner_cache_invalidation_ranges = values.get(
         RUNNER_CACHE_INVALIDATION_RANGES_KEY, 0
     )
@@ -6201,6 +6212,7 @@ def summarize_profile_values(
         f"{runner_advance_fast_path_pct:.3f},"
         f"{runner_cache_hits},{runner_cache_misses},"
         f"{runner_cache_hit_pct:.3f},{runner_cache_clears},"
+        f"{runner_cache_fcall_clears},{runner_cache_dma_clears},"
         f"{runner_cache_invalidation_ranges},"
         f"{runner_cache_invalidation_skipped_ranges},"
         f"{runner_cache_invalidation_skip_pct:.3f},"

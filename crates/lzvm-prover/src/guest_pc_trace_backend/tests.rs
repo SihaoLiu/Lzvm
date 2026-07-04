@@ -296,6 +296,8 @@ fn guest_pc_trace_runner_path_counts_stay_zero_when_disabled() {
     assert_eq!(timing.runner_instruction_cache_hit_count(), 0);
     assert_eq!(timing.runner_instruction_cache_miss_count(), 0);
     assert_eq!(timing.runner_instruction_cache_clear_count(), 0);
+    assert_eq!(timing.runner_instruction_cache_fcall_clear_count(), 0);
+    assert_eq!(timing.runner_instruction_cache_dma_clear_count(), 0);
     assert_eq!(
         timing.runner_instruction_cache_write_invalidation_range_count(),
         0
@@ -350,6 +352,8 @@ fn guest_pc_trace_runner_cache_stats_count_hits_when_enabled() {
     assert_eq!(timing.runner_instruction_cache_miss_count(), 1);
     assert_eq!(timing.runner_instruction_cache_hit_count(), 6);
     assert_eq!(timing.runner_instruction_cache_clear_count(), 0);
+    assert_eq!(timing.runner_instruction_cache_fcall_clear_count(), 0);
+    assert_eq!(timing.runner_instruction_cache_dma_clear_count(), 0);
     assert_eq!(
         timing.runner_instruction_cache_write_invalidation_range_count(),
         0

@@ -483,6 +483,8 @@ pub struct ProveWitnessGuestPcTraceTiming {
     guest_trace_runner_instruction_cache_hit_count: usize,
     guest_trace_runner_instruction_cache_miss_count: usize,
     guest_trace_runner_instruction_cache_clear_count: usize,
+    guest_trace_runner_instruction_cache_fcall_clear_count: usize,
+    guest_trace_runner_instruction_cache_dma_clear_count: usize,
     guest_trace_runner_instruction_cache_write_invalidation_range_count: usize,
     guest_trace_runner_instruction_cache_write_invalidation_skipped_range_count: usize,
     guest_trace_runner_instruction_cache_write_invalidation_probe_count: usize,
@@ -874,6 +876,10 @@ impl ProveWitnessGuestPcTraceTiming {
                 .runner_instruction_cache_miss_count(),
             guest_trace_runner_instruction_cache_clear_count: stream_timing
                 .runner_instruction_cache_clear_count(),
+            guest_trace_runner_instruction_cache_fcall_clear_count: stream_timing
+                .runner_instruction_cache_fcall_clear_count(),
+            guest_trace_runner_instruction_cache_dma_clear_count: stream_timing
+                .runner_instruction_cache_dma_clear_count(),
             guest_trace_runner_instruction_cache_write_invalidation_range_count: stream_timing
                 .runner_instruction_cache_write_invalidation_range_count(),
             guest_trace_runner_instruction_cache_write_invalidation_skipped_range_count:
@@ -1465,6 +1471,14 @@ impl ProveWitnessGuestPcTraceTiming {
 
     pub fn guest_trace_runner_instruction_cache_clear_count(&self) -> usize {
         self.guest_trace_runner_instruction_cache_clear_count
+    }
+
+    pub fn guest_trace_runner_instruction_cache_fcall_clear_count(&self) -> usize {
+        self.guest_trace_runner_instruction_cache_fcall_clear_count
+    }
+
+    pub fn guest_trace_runner_instruction_cache_dma_clear_count(&self) -> usize {
+        self.guest_trace_runner_instruction_cache_dma_clear_count
     }
 
     pub fn guest_trace_runner_instruction_cache_write_invalidation_range_count(&self) -> usize {

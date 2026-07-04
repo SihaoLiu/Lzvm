@@ -794,6 +794,8 @@ fn prove_timing_root_summary_reports_root_grouping_shape() {
         "timing_guest_trace_runner_instruction_cache_misses",
         "runner_instruction_cache_hit_pct",
         "timing_guest_trace_runner_instruction_cache_clears",
+        "timing_guest_trace_runner_instruction_cache_fcall_clears",
+        "timing_guest_trace_runner_instruction_cache_dma_clears",
         "timing_guest_trace_runner_instruction_cache_write_invalidation_ranges",
         "timing_guest_trace_runner_instruction_cache_write_invalidation_skipped_ranges",
         "runner_instruction_cache_write_invalidation_skip_pct",
@@ -9243,6 +9245,8 @@ fn prove_timing_root_summary_reports_runner_detail_hotspot() {
         "timing_guest_trace_runner_instruction_cache_hits=900",
         "timing_guest_trace_runner_instruction_cache_misses=100",
         "timing_guest_trace_runner_instruction_cache_clears=2",
+        "timing_guest_trace_runner_instruction_cache_fcall_clears=7",
+        "timing_guest_trace_runner_instruction_cache_dma_clears=2",
         "timing_guest_trace_runner_instruction_cache_write_invalidation_ranges=50",
         "timing_guest_trace_runner_instruction_cache_write_invalidation_skipped_ranges=45",
         "timing_guest_trace_runner_instruction_cache_write_invalidation_probes=12",
@@ -9309,6 +9313,8 @@ fn prove_timing_root_summary_reports_runner_detail_hotspot() {
     assert_eq!(value("runner_instruction_cache_misses"), "100");
     assert_eq!(value("runner_instruction_cache_hit_pct"), "90.000");
     assert_eq!(value("runner_instruction_cache_clears"), "2");
+    assert_eq!(value("runner_instruction_cache_fcall_clears"), "7");
+    assert_eq!(value("runner_instruction_cache_dma_clears"), "2");
     assert_eq!(
         value("runner_instruction_cache_write_invalidation_ranges"),
         "50"

@@ -23,7 +23,7 @@ use crate::guest_machine::{
     advance_guest_machine_with_prepared_fcalls_report_shape_path_at_pc_into_timed,
     advance_guest_machine_with_prepared_fcalls_report_shape_path_timed,
     advance_guest_machine_with_prepared_fcalls_report_shape_timed, fixed_csr_value,
-    instruction_clears_instruction_cache, run_guest_machine_trace_with_fcalls,
+    instruction_cache_clear_reason, run_guest_machine_trace_with_fcalls,
     run_guest_machine_with_fcalls, GuestDmaProofValueFlags, GuestFcallHandler,
     GuestInstructionCache, GuestInstructionCacheStats, GuestMachineAdvancePath,
     GuestMachineAdvanceTiming, GuestMachineHalt, GuestMachineMemory,
@@ -229,6 +229,8 @@ pub(crate) struct GuestPcTraceStreamTiming {
     runner_instruction_cache_hit_count: usize,
     runner_instruction_cache_miss_count: usize,
     runner_instruction_cache_clear_count: usize,
+    runner_instruction_cache_fcall_clear_count: usize,
+    runner_instruction_cache_dma_clear_count: usize,
     runner_instruction_cache_write_invalidation_range_count: usize,
     runner_instruction_cache_write_invalidation_skipped_range_count: usize,
     runner_instruction_cache_write_invalidation_probe_count: usize,
@@ -405,6 +407,10 @@ impl GuestPcTraceStreamTiming {
         self.runner_instruction_cache_hit_count += other.runner_instruction_cache_hit_count;
         self.runner_instruction_cache_miss_count += other.runner_instruction_cache_miss_count;
         self.runner_instruction_cache_clear_count += other.runner_instruction_cache_clear_count;
+        self.runner_instruction_cache_fcall_clear_count +=
+            other.runner_instruction_cache_fcall_clear_count;
+        self.runner_instruction_cache_dma_clear_count +=
+            other.runner_instruction_cache_dma_clear_count;
         self.runner_instruction_cache_write_invalidation_range_count +=
             other.runner_instruction_cache_write_invalidation_range_count;
         self.runner_instruction_cache_write_invalidation_skipped_range_count +=
@@ -896,6 +902,8 @@ impl GuestPcTraceStreamTiming {
         self.runner_instruction_cache_hit_count += stats.hit_count;
         self.runner_instruction_cache_miss_count += stats.miss_count;
         self.runner_instruction_cache_clear_count += stats.clear_count;
+        self.runner_instruction_cache_fcall_clear_count += stats.fcall_clear_count;
+        self.runner_instruction_cache_dma_clear_count += stats.dma_clear_count;
         self.runner_instruction_cache_write_invalidation_range_count +=
             stats.write_invalidation_range_count;
         self.runner_instruction_cache_write_invalidation_skipped_range_count +=
@@ -1141,6 +1149,14 @@ impl GuestPcTraceStreamTiming {
 
     pub fn runner_instruction_cache_clear_count(&self) -> usize {
         self.runner_instruction_cache_clear_count
+    }
+
+    pub fn runner_instruction_cache_fcall_clear_count(&self) -> usize {
+        self.runner_instruction_cache_fcall_clear_count
+    }
+
+    pub fn runner_instruction_cache_dma_clear_count(&self) -> usize {
+        self.runner_instruction_cache_dma_clear_count
     }
 
     pub fn runner_instruction_cache_write_invalidation_range_count(&self) -> usize {
@@ -4092,7 +4108,7 @@ fn run_guest_pc_trace_segment_slice_with_live_report_chunks(
                 ));
             }
         }
-        let clear_instruction_cache = instruction_clears_instruction_cache(state, current);
+        let instruction_cache_clear_reason = instruction_cache_clear_reason(state, current);
         let (advanced, advance_path) = if path_timing {
             advance_guest_machine_with_prepared_fcalls_report_shape_path(
                 memory, state, handler, prepared,
@@ -4108,8 +4124,9 @@ fn run_guest_pc_trace_segment_slice_with_live_report_chunks(
         if path_timing {
             timing.record_runner_advance_path(advance_path);
         }
-        if clear_instruction_cache {
+        if let Some(clear_reason) = instruction_cache_clear_reason {
             if runner_instruction_cache_stats {
+                instruction_cache_stats.record_clear_reason(clear_reason);
                 instruction_cache.clear_with_stats(&mut instruction_cache_stats);
             } else {
                 instruction_cache.clear();
@@ -4327,7 +4344,8 @@ fn run_guest_pc_trace_segment_slice_with_streaming_device_material(
                 .map(Some);
             }
         }
-        let clear_instruction_cache = instruction_clears_instruction_cache(state, current);
+        let clear_instruction_cache =
+            crate::guest_machine::instruction_clears_instruction_cache(state, current);
         let advanced = advance_guest_machine_with_prepared_fcalls_report_shape(
             memory, state, handler, prepared,
         )
@@ -4673,7 +4691,7 @@ fn run_guest_pc_trace_segment_slice_inner<
             &mut timing.runner_row_plan_duration
         });
         let cache_policy_started = detail_duration_started(&timing, report_detail_timing);
-        let clear_instruction_cache = instruction_clears_instruction_cache(state, current);
+        let instruction_cache_clear_reason = instruction_cache_clear_reason(state, current);
         record_detail_duration(cache_policy_started, &mut timing, |timing| {
             &mut timing.runner_cache_policy_duration
         });
@@ -4801,8 +4819,9 @@ fn run_guest_pc_trace_segment_slice_inner<
             timing.runner_advance_report_duration += advance_timing.report_duration;
         }
         let cache_update_started = detail_duration_started(&timing, report_detail_timing);
-        if clear_instruction_cache {
+        if let Some(clear_reason) = instruction_cache_clear_reason {
             if runner_instruction_cache_stats {
+                instruction_cache_stats.record_clear_reason(clear_reason);
                 instruction_cache.clear_with_stats(&mut instruction_cache_stats);
             } else {
                 instruction_cache.clear();
