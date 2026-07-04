@@ -8046,7 +8046,8 @@ fn guest_pc_trace_lower_reports_internal_work_timing() {
             &device_material_body,
             "let timing_config = ZiskMainTraceLowerTimingConfig::from_env_if_enabled(timing.is_some());"
         )
-            && push_report_body.contains("if timing_config.row_timing_enabled")
+            && push_report_body.contains("if !timing_config.row_timing_enabled")
+            && push_report_body.contains("|| report_detail_timing || report_shape_timing")
             && push_report_body.contains("timing.as_deref_mut()")
             && push_report_body.contains("} else {\n                None\n            },"),
         "guest PC device material lowerer should gate per-row timing before validation"
@@ -8200,6 +8201,8 @@ fn guest_pc_trace_lower_reports_internal_work_timing() {
         "guest_trace_main_report_store_copy_fast_path_count",
         "guest_trace_main_report_simple_copy_fast_path_count",
         "guest_trace_main_report_jump_fast_path_count",
+        "guest_trace_runner_advance_fast_path_count",
+        "guest_trace_runner_advance_generic_fallback_count",
         "guest_trace_descriptor_row_count",
         "guest_trace_descriptor_compact_row_count",
         "guest_trace_descriptor_wide_row_count",
@@ -8270,6 +8273,8 @@ fn guest_pc_trace_lower_reports_internal_work_timing() {
         "\"guest_trace_main_report_store_copy_fast_paths\"",
         "\"guest_trace_main_report_simple_copy_fast_paths\"",
         "\"guest_trace_main_report_jump_fast_paths\"",
+        "\"guest_trace_runner_advance_fast_paths\"",
+        "\"guest_trace_runner_advance_generic_fallbacks\"",
         "\"guest_trace_descriptor_rows\"",
         "\"guest_trace_descriptor_compact_rows\"",
         "\"guest_trace_descriptor_wide_rows\"",

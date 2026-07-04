@@ -974,6 +974,18 @@ pub(crate) struct GuestMachineAdvanceTiming {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum GuestMachineAdvancePath {
+    Fast,
+    Generic,
+}
+
+impl Default for GuestMachineAdvancePath {
+    fn default() -> Self {
+        Self::Generic
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct GuestMachinePreparedInstruction {
     address: u64,
     byte_len: usize,
@@ -1502,6 +1514,7 @@ pub(crate) fn advance_guest_machine_with_prepared_fcalls_report_shape(
         Some(handler),
         prepared,
         None,
+        None,
     )
 }
 
@@ -1518,7 +1531,45 @@ pub(crate) fn advance_guest_machine_with_prepared_fcalls_report_shape_timed(
         Some(handler),
         prepared,
         Some(timing),
+        None,
     )
+}
+
+pub(crate) fn advance_guest_machine_with_prepared_fcalls_report_shape_path(
+    memory: &mut GuestMachineMemory,
+    state: &mut GuestMachineState,
+    handler: &mut dyn GuestFcallHandler,
+    prepared: GuestMachinePreparedInstruction,
+) -> Result<(GuestMachineAdvanceReport, GuestMachineAdvancePath), GuestMachineError> {
+    let mut path = GuestMachineAdvancePath::default();
+    let advanced = advance_guest_machine_prepared_inner_with_report_shape(
+        memory,
+        state,
+        Some(handler),
+        prepared,
+        None,
+        Some(&mut path),
+    )?;
+    Ok((advanced, path))
+}
+
+pub(crate) fn advance_guest_machine_with_prepared_fcalls_report_shape_path_timed(
+    memory: &mut GuestMachineMemory,
+    state: &mut GuestMachineState,
+    handler: &mut dyn GuestFcallHandler,
+    prepared: GuestMachinePreparedInstruction,
+    timing: &mut GuestMachineAdvanceTiming,
+) -> Result<(GuestMachineAdvanceReport, GuestMachineAdvancePath), GuestMachineError> {
+    let mut path = GuestMachineAdvancePath::default();
+    let advanced = advance_guest_machine_prepared_inner_with_report_shape(
+        memory,
+        state,
+        Some(handler),
+        prepared,
+        Some(timing),
+        Some(&mut path),
+    )?;
+    Ok((advanced, path))
 }
 
 pub(crate) fn advance_guest_machine_with_prepared_fcalls_report_shape_at_pc_into(
@@ -1536,6 +1587,7 @@ pub(crate) fn advance_guest_machine_with_prepared_fcalls_report_shape_at_pc_into
         pc,
         prepared,
         report,
+        None,
         None,
     )
 }
@@ -1557,7 +1609,53 @@ pub(crate) fn advance_guest_machine_with_prepared_fcalls_report_shape_at_pc_into
         prepared,
         report,
         Some(timing),
+        None,
     )
+}
+
+pub(crate) fn advance_guest_machine_with_prepared_fcalls_report_shape_path_at_pc_into(
+    memory: &mut GuestMachineMemory,
+    state: &mut GuestMachineState,
+    handler: &mut dyn GuestFcallHandler,
+    pc: u64,
+    prepared: GuestMachinePreparedInstruction,
+    report: &mut MaybeUninit<GuestMachineReport>,
+) -> Result<(GuestMachineReportShape, GuestMachineAdvancePath), GuestMachineError> {
+    let mut path = GuestMachineAdvancePath::default();
+    let shape = advance_guest_machine_prepared_inner_report_shape_at_pc_into(
+        memory,
+        state,
+        Some(handler),
+        pc,
+        prepared,
+        report,
+        None,
+        Some(&mut path),
+    )?;
+    Ok((shape, path))
+}
+
+pub(crate) fn advance_guest_machine_with_prepared_fcalls_report_shape_path_at_pc_into_timed(
+    memory: &mut GuestMachineMemory,
+    state: &mut GuestMachineState,
+    handler: &mut dyn GuestFcallHandler,
+    pc: u64,
+    prepared: GuestMachinePreparedInstruction,
+    report: &mut MaybeUninit<GuestMachineReport>,
+    timing: &mut GuestMachineAdvanceTiming,
+) -> Result<(GuestMachineReportShape, GuestMachineAdvancePath), GuestMachineError> {
+    let mut path = GuestMachineAdvancePath::default();
+    let shape = advance_guest_machine_prepared_inner_report_shape_at_pc_into(
+        memory,
+        state,
+        Some(handler),
+        pc,
+        prepared,
+        report,
+        Some(timing),
+        Some(&mut path),
+    )?;
+    Ok((shape, path))
 }
 
 fn advance_guest_machine_inner(
@@ -1577,7 +1675,7 @@ fn advance_guest_machine_prepared_inner(
     prepared: GuestMachinePreparedInstruction,
 ) -> Result<GuestMachineReport, GuestMachineError> {
     Ok(advance_guest_machine_prepared_inner_with_report_shape(
-        memory, state, handler, prepared, None,
+        memory, state, handler, prepared, None, None,
     )?
     .report)
 }
@@ -1588,6 +1686,7 @@ fn advance_guest_machine_prepared_inner_with_report_shape(
     handler: Option<&mut dyn GuestFcallHandler>,
     prepared: GuestMachinePreparedInstruction,
     timing: Option<&mut GuestMachineAdvanceTiming>,
+    path: Option<&mut GuestMachineAdvancePath>,
 ) -> Result<GuestMachineAdvanceReport, GuestMachineError> {
     let mut report = MaybeUninit::uninit();
     let shape = advance_guest_machine_prepared_inner_report_shape_into(
@@ -1597,6 +1696,7 @@ fn advance_guest_machine_prepared_inner_with_report_shape(
         prepared,
         &mut report,
         timing,
+        path,
     )?;
     Ok(GuestMachineAdvanceReport {
         // SAFETY: advance_guest_machine_prepared_inner_report_shape_into only returns Ok after
@@ -1613,10 +1713,11 @@ fn advance_guest_machine_prepared_inner_report_shape_into(
     prepared: GuestMachinePreparedInstruction,
     report: &mut MaybeUninit<GuestMachineReport>,
     timing: Option<&mut GuestMachineAdvanceTiming>,
+    path: Option<&mut GuestMachineAdvancePath>,
 ) -> Result<GuestMachineReportShape, GuestMachineError> {
     let pc = state.pc();
     advance_guest_machine_prepared_inner_report_shape_at_pc_into(
-        memory, state, handler, pc, prepared, report, timing,
+        memory, state, handler, pc, prepared, report, timing, path,
     )
 }
 
@@ -1628,6 +1729,7 @@ fn advance_guest_machine_prepared_inner_report_shape_at_pc_into(
     prepared: GuestMachinePreparedInstruction,
     report: &mut MaybeUninit<GuestMachineReport>,
     mut timing: Option<&mut GuestMachineAdvanceTiming>,
+    mut path: Option<&mut GuestMachineAdvancePath>,
 ) -> Result<GuestMachineReportShape, GuestMachineError> {
     if prepared.address != pc {
         return Err(GuestMachineError::PreparedInstructionPcMismatch {
@@ -1652,12 +1754,18 @@ fn advance_guest_machine_prepared_inner_report_shape_at_pc_into(
         report,
     ) {
         Ok(Some(shape)) => {
+            if let Some(path) = path.as_deref_mut() {
+                *path = GuestMachineAdvancePath::Fast;
+            }
             record_advance_timing(fast_path_started, timing.as_deref_mut(), |timing| {
                 &mut timing.execute_duration
             });
             return Ok(shape);
         }
         Ok(None) => {
+            if let Some(path) = path.as_deref_mut() {
+                *path = GuestMachineAdvancePath::Generic;
+            }
             record_advance_timing(fast_path_started, timing.as_deref_mut(), |timing| {
                 &mut timing.setup_duration
             });
@@ -3165,6 +3273,7 @@ mod tests {
             None,
             prepared,
             None,
+            None,
         )
         .expect("fast prepared advance should succeed");
         let mut timing = GuestMachineAdvanceTiming::default();
@@ -3210,6 +3319,7 @@ mod tests {
             None,
             prepared,
             Some(&mut timing),
+            None,
         )
         .expect("timed fast-path advance should succeed");
 
@@ -3253,6 +3363,7 @@ mod tests {
             &mut fast_state,
             None,
             prepared,
+            None,
             None,
         )
         .expect("fast prepared advance should succeed");
@@ -3542,6 +3653,7 @@ mod tests {
             None,
             prepared,
             None,
+            None,
         )
         .expect("prepared advance should succeed");
 
@@ -3591,6 +3703,7 @@ mod tests {
             None,
             prepared,
             None,
+            None,
         )
         .expect("successful store conditional should advance");
         assert_eq!(
@@ -3614,6 +3727,7 @@ mod tests {
             &mut failure_state,
             None,
             prepared,
+            None,
             None,
         )
         .expect("failed store conditional should advance");

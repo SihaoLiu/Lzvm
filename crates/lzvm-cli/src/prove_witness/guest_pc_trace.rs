@@ -130,6 +130,14 @@ pub(super) fn record_guest_pc_trace_timing(
         "guest_trace_runner_detail_samples",
         runner_detail_sample_count,
     );
+    timings.record_count(
+        "guest_trace_runner_advance_fast_paths",
+        timing.guest_trace_runner_advance_fast_path_count(),
+    );
+    timings.record_count(
+        "guest_trace_runner_advance_generic_fallbacks",
+        timing.guest_trace_runner_advance_generic_fallback_count(),
+    );
     for (name, duration) in [
         (
             "guest_trace_runner_detail",

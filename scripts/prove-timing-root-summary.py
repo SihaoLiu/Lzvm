@@ -33,6 +33,10 @@ CONSTANT_MATERIAL_VALIDATION_JOIN_WAIT_MS_KEY = (
 )
 RUNNER_MS_KEY = "timing_guest_trace_runner_ms"
 RUNNER_DETAIL_SAMPLES_KEY = "timing_guest_trace_runner_detail_samples"
+RUNNER_ADVANCE_FAST_PATHS_KEY = "timing_guest_trace_runner_advance_fast_paths"
+RUNNER_ADVANCE_GENERIC_FALLBACKS_KEY = (
+    "timing_guest_trace_runner_advance_generic_fallbacks"
+)
 RUNNER_DETAIL_SAMPLED_NS_KEY = "timing_guest_trace_runner_detail_sampled_ns"
 RUNNER_PREPARE_INSTRUCTION_SAMPLED_NS_KEY = (
     "timing_guest_trace_runner_prepare_instruction_sampled_ns"
@@ -874,7 +878,9 @@ HEADER = (
     "top_level_unattributed_ms,gpu_memory_preflight_pct,gpu_setup_pct,top_level_bottleneck,"
     "constant_material_validation_elapsed_ms,"
     "constant_material_validation_join_wait_ms,constant_material_validation_overlap_hint,"
-    "runner_ms,trace_runner_detail_samples,trace_runner_detail_sample_pct,"
+    "runner_ms,runner_advance_fast_paths,runner_advance_generic_fallbacks,"
+    "runner_advance_fast_path_pct,"
+    "trace_runner_detail_samples,trace_runner_detail_sample_pct,"
     "trace_runner_detail_avg_ns,trace_runner_prepare_instruction_sampled_ns,"
     "trace_runner_pre_boundary_sampled_ns,trace_runner_row_plan_sampled_ns,"
     "trace_runner_cache_policy_sampled_ns,trace_runner_advance_sampled_ns,"
@@ -1196,6 +1202,9 @@ AGGREGATE_MEAN_PROFILE_COLUMNS = (
     "witness_ms",
     "top_level_unattributed_ms",
     "runner_ms",
+    "runner_advance_fast_paths",
+    "runner_advance_generic_fallbacks",
+    "runner_advance_fast_path_pct",
     "trace_runner_detail_samples",
     "trace_runner_detail_sample_pct",
     "trace_runner_detail_avg_ns",
@@ -4516,6 +4525,18 @@ def summarize_profile_values(
         constant_material_join_wait_ms,
     )
     runner_ms = values.get(RUNNER_MS_KEY, 0)
+    runner_advance_fast_paths = values.get(RUNNER_ADVANCE_FAST_PATHS_KEY, 0)
+    runner_advance_generic_fallbacks = values.get(
+        RUNNER_ADVANCE_GENERIC_FALLBACKS_KEY, 0
+    )
+    runner_advance_total = (
+        runner_advance_fast_paths + runner_advance_generic_fallbacks
+    )
+    runner_advance_fast_path_pct = (
+        runner_advance_fast_paths * 100.0 / runner_advance_total
+        if runner_advance_total
+        else 0.0
+    )
     trace_runner_detail_samples = values.get(RUNNER_DETAIL_SAMPLES_KEY, 0)
     trace_reports_for_runner_detail = values.get(TRACE_REPORTS_KEY, 0)
     trace_runner_detail_sample_pct = (
@@ -6108,6 +6129,8 @@ def summarize_profile_values(
         f"{top_level_unattributed_ms},{gpu_memory_preflight_pct:.3f},{gpu_setup_pct:.3f},{top_level_hint},"
         f"{constant_material_elapsed_ms},{constant_material_join_wait_ms},"
         f"{constant_material_hint},{runner_ms},"
+        f"{runner_advance_fast_paths},{runner_advance_generic_fallbacks},"
+        f"{runner_advance_fast_path_pct:.3f},"
         f"{trace_runner_detail_samples},{trace_runner_detail_sample_pct:.3f},"
         f"{trace_runner_detail_avg_ns},"
         f"{trace_runner_prepare_instruction_sampled_ns},"
