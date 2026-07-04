@@ -938,6 +938,9 @@ impl GuestPcTraceStreamTiming {
             MainReportFastPathParts::NoMemory(..) => {
                 self.trace_main_report_no_memory_fast_path_count += 1;
             }
+            MainReportFastPathParts::InternalMemoryCopy(..) => {
+                self.trace_main_report_no_memory_fast_path_count += 1;
+            }
             MainReportFastPathParts::StoreCopy(..)
             | MainReportFastPathParts::StoreImmediateCopy(..) => {
                 self.trace_main_report_store_copy_fast_path_count += 1;
@@ -10876,6 +10879,7 @@ enum MainReportFastPathParts {
     LoadCopy(ZiskMainInstruction, u8, i64, u8),
     LoadSignExtend(ZiskMainInstruction, u8, i64, u8),
     NoMemory(ZiskMainInstruction, ZiskMainNoMemoryFastPathParts),
+    InternalMemoryCopy(ZiskMainInstruction, u8, u64),
     StoreCopy(ZiskMainInstruction, u8, u8, i64),
     StoreImmediateCopy(ZiskMainInstruction, u8, u64, i64),
     SimpleCopy(ZiskMainInstruction, Option<u8>, u8),
@@ -10886,7 +10890,7 @@ enum MainReportFastPathParts {
 fn validate_and_apply_zisk_main_report(
     row: usize,
     report: &GuestMachineReport,
-    mut next_instruction: impl FnMut() -> Option<RiscvInstruction>,
+    next_instruction: impl FnMut() -> Option<RiscvInstruction>,
     state: &mut ZiskMainTraceState,
     context: &mut ZiskMainReportValidationContext<'_>,
     mut timing: Option<&mut GuestPcTraceStreamTiming>,
@@ -10983,8 +10987,16 @@ fn validate_and_apply_zisk_main_report(
 
     validate_zisk_main_report_row_capacity(row, 1, context.row_count)?;
     let count_main_report_generic_fallback = !detail_timing && !shape_timing;
+    let mut raw_next_instruction = next_instruction;
+    let mut next_instruction_cache = None;
+    let mut next_instruction = || {
+        if next_instruction_cache.is_none() {
+            next_instruction_cache = Some(raw_next_instruction());
+        }
+        next_instruction_cache.flatten()
+    };
     if count_main_report_generic_fallback {
-        if let Some(fast_path) = report_level_fast_path_parts(row, report)? {
+        if let Some(fast_path) = report_level_fast_path_parts(row, report, &mut next_instruction)? {
             if let Some(timing) = timing.as_mut() {
                 timing.record_main_report_fast_path(&fast_path);
             }
@@ -11042,6 +11054,23 @@ fn validate_and_apply_zisk_main_report(
                         effects,
                         report.next_pc,
                         parts,
+                        state,
+                        context,
+                        &mut visit,
+                    )?;
+                }
+                MainReportFastPathParts::InternalMemoryCopy(
+                    instruction,
+                    b_index,
+                    store_address,
+                ) => {
+                    apply_internal_memory_copy_fast_path(
+                        row,
+                        instruction,
+                        effects,
+                        report.next_pc,
+                        b_index,
+                        store_address,
                         state,
                         context,
                         &mut visit,
@@ -11788,6 +11817,57 @@ fn no_memory_external_fast_path_parts(
 }
 
 #[inline(always)]
+fn dma_prepare_internal_memory_copy_fast_path_parts(
+    row: usize,
+    report: &GuestMachineReport,
+    next_instruction: Option<RiscvInstruction>,
+) -> Result<Option<MainReportFastPathParts>, GuestPcTraceBackendError> {
+    let RiscvInstruction::ZiskDmaPrepare { kind, .. } = report.instruction else {
+        return Ok(None);
+    };
+    if !matches!(kind, RiscvDmaKind::Memcpy | RiscvDmaKind::Memcmp) {
+        return Ok(None);
+    }
+    let Some(RiscvInstruction::Op {
+        kind: RiscvOpKind::Add,
+        rs2,
+        ..
+    }) = next_instruction
+    else {
+        return Ok(None);
+    };
+    if !valid_main_register_index(rs2)
+        || !report.memory_accesses.is_empty()
+        || !report.precompile_memory_accesses().is_empty()
+    {
+        return Ok(None);
+    }
+    let Some(instruction_size) = sequential_report_fast_path_instruction_size(row, report)? else {
+        return Ok(None);
+    };
+    let instruction = ZiskMainInstruction {
+        pc: report.address(),
+        a: ZiskMainSource::Immediate(0),
+        b: ZiskMainSource::Register(rs2),
+        op: ZiskMainOp::CopyB,
+        store: ZiskMainStore::Memory(ZISK_EXTRA_PARAMS_ADDRESS as i64),
+        store_pc: false,
+        set_pc: false,
+        jmp_offset1: 0,
+        jmp_offset2: instruction_size,
+        ind_width: 0,
+        m32: false,
+        is_external_op: false,
+        is_precompiled: false,
+    };
+    Ok(Some(MainReportFastPathParts::InternalMemoryCopy(
+        instruction,
+        rs2,
+        ZISK_EXTRA_PARAMS_ADDRESS,
+    )))
+}
+
+#[inline(always)]
 fn no_memory_fast_path_source_index(source: ZiskMainSource) -> Option<Option<u8>> {
     match source {
         ZiskMainSource::Immediate(_) | ZiskMainSource::LastC => Some(None),
@@ -11881,6 +11961,7 @@ fn sequential_report_fast_path_instruction_size(
 fn report_level_fast_path_parts(
     row: usize,
     report: &GuestMachineReport,
+    next_instruction: &mut impl FnMut() -> Option<RiscvInstruction>,
 ) -> Result<Option<MainReportFastPathParts>, GuestPcTraceBackendError> {
     match report.instruction {
         RiscvInstruction::Load {
@@ -11963,6 +12044,9 @@ fn report_level_fast_path_parts(
         | RiscvInstruction::Op { .. }
         | RiscvInstruction::Op32 { .. } => Ok(arithmetic_fast_path_parts(row, report)?
             .map(|(instruction, parts)| MainReportFastPathParts::NoMemory(instruction, parts))),
+        RiscvInstruction::ZiskDmaPrepare { .. } => {
+            dma_prepare_internal_memory_copy_fast_path_parts(row, report, next_instruction())
+        }
         _ => Ok(None),
     }
 }
@@ -12819,6 +12903,97 @@ fn apply_no_memory_fast_path(
             }
         }
     }
+    state.last_c = c;
+    state.next_pc = expected_next_pc;
+
+    visit(
+        output_row,
+        ZiskMainReportTraceValues {
+            instruction,
+            a,
+            b,
+            c,
+            flag,
+            register_accesses,
+        },
+        None,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+#[inline(always)]
+fn apply_internal_memory_copy_fast_path(
+    output_row: usize,
+    instruction: ZiskMainInstruction,
+    effects: ZiskMainReportEffects<'_>,
+    expected_next_pc: u64,
+    b_index: u8,
+    store_address: u64,
+    state: &mut ZiskMainTraceState,
+    context: &mut ZiskMainReportValidationContext<'_>,
+    visit: &mut impl FnMut(
+        usize,
+        ZiskMainReportTraceValues,
+        Option<&mut GuestPcTraceStreamTiming>,
+    ) -> Result<(), GuestPcTraceBackendError>,
+) -> Result<(), GuestPcTraceBackendError> {
+    if store_address != ZISK_EXTRA_PARAMS_ADDRESS {
+        return Err(GuestPcTraceBackendError::UnsupportedZiskMainStore { row: output_row });
+    }
+    if !valid_main_register_index(b_index) {
+        return Err(GuestPcTraceBackendError::UnsupportedZiskMainSource { row: output_row });
+    }
+    if !effects.memory_accesses.is_empty() {
+        return Err(GuestPcTraceBackendError::ZiskMainEffectMismatch {
+            row: output_row,
+            message: format!(
+                "expected 0 memory accesses, found {}",
+                effects.memory_accesses.len()
+            ),
+        });
+    }
+    if !effects.precompile_memory_accesses.is_empty() {
+        return Err(GuestPcTraceBackendError::ZiskMainEffectMismatch {
+            row: output_row,
+            message: format!(
+                "non-precompile row reported {} precompile memory accesses",
+                effects.precompile_memory_accesses.len()
+            ),
+        });
+    }
+    if !effects.register_writes.is_empty() {
+        return Err(GuestPcTraceBackendError::ZiskMainEffectMismatch {
+            row: output_row,
+            message: "store memory row reported register writes".to_owned(),
+        });
+    }
+    let a = 0;
+    let b = state.registers[usize::from(b_index)];
+    let c = b;
+    let flag = false;
+    let computed_next_pc = instruction.pc.wrapping_add_signed(instruction.jmp_offset2);
+    if expected_next_pc != computed_next_pc {
+        return Err(GuestPcTraceBackendError::ZiskMainEffectMismatch {
+            row: output_row,
+            message: format!("expected next pc {computed_next_pc}, found {expected_next_pc}"),
+        });
+    }
+
+    let row_mem_step_base = context.row_mem_step_base(output_row)?;
+    let register_accesses = apply_no_memory_fast_path_register_accesses(
+        output_row,
+        state,
+        row_mem_step_base,
+        ZiskMainNoMemoryFastPathParts {
+            a_index: None,
+            b_index: Some(b_index),
+            store_index: None,
+        },
+    )?;
+    state
+        .internal_memory
+        .insert(store_address, c)
+        .map_err(|_| GuestPcTraceBackendError::UnsupportedZiskMainStore { row: output_row })?;
     state.last_c = c;
     state.next_pc = expected_next_pc;
 
