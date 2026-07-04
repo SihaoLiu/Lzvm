@@ -1196,6 +1196,12 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             ][..],
         ),
         (
+            "witness_opening_row_value_stage_timings_acceptance_core_and_sound",
+            "witness_opening_row_value_timing_acceptance_core_and_sound",
+            true,
+            &["stages := stages"][..],
+        ),
+        (
             "constant_material_validation_aggregate_timing_acceptance_core_and_sound",
             "constant_material_validation_timing_acceptance_core_and_sound",
             true,
@@ -5331,6 +5337,9 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "witness_opening_row_value_aggregate_timing_acceptance_sound",
             "witness_opening_row_value_aggregate_timing_acceptance_verifier_core_contract",
             "witness_opening_row_value_aggregate_timing_acceptance_core_and_sound",
+            "witness_opening_row_value_stage_timings_acceptance_sound",
+            "witness_opening_row_value_stage_timings_acceptance_verifier_core_contract",
+            "witness_opening_row_value_stage_timings_acceptance_core_and_sound",
             "constant_material_validation_timing_observed_acceptance_projects_verifier_acceptance",
             "constant_material_validation_timing_acceptance_sound",
             "constant_material_validation_timing_acceptance_verifier_core_contract",
@@ -6981,6 +6990,19 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         "witness_opening_row_value_aggregate_timing_acceptance_verifier_core_contract",
         &[
             "witness_opening_row_value_aggregate_timing_acceptance_sound",
+            "sound_witness_implies_verifier_core_contract",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_proof_timing_source,
+        "witness_opening_row_value_stage_timings_acceptance_verifier_core_contract",
+        &["witness_opening_row_value_timing_acceptance_verifier_core_contract"],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &lean_proof_timing_source,
+        "witness_opening_row_value_stage_timings_acceptance_verifier_core_contract",
+        &[
+            "witness_opening_row_value_stage_timings_acceptance_sound",
             "sound_witness_implies_verifier_core_contract",
         ],
     );

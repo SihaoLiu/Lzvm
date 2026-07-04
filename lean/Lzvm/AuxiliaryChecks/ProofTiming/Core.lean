@@ -350,6 +350,70 @@ theorem witness_opening_row_value_aggregate_timing_acceptance_core_and_sound
       proof
       observed
 
+theorem witness_opening_row_value_stage_timings_acceptance_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : WitnessOpeningRowValueTimingSummary)
+    (stages : List WitnessOpeningStageRowValueTimingSummary) :
+    forall publicInput proof,
+      WitnessOpeningRowValueTimingObservedAcceptance
+        system
+        (some { summary with stages := stages })
+        publicInput
+        proof ->
+        SoundWitness system publicInput proof := by
+  intro publicInput proof observed
+  exact
+    witness_opening_row_value_timing_acceptance_sound
+      assumptions
+      (some { summary with stages := stages })
+      publicInput
+      proof
+      observed
+
+theorem witness_opening_row_value_stage_timings_acceptance_verifier_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : WitnessOpeningRowValueTimingSummary)
+    (stages : List WitnessOpeningStageRowValueTimingSummary) :
+    forall publicInput proof,
+      WitnessOpeningRowValueTimingObservedAcceptance
+        system
+        (some { summary with stages := stages })
+        publicInput
+        proof ->
+        RuntimeVerifierCoreContract system publicInput proof := by
+  intro publicInput proof observed
+  exact
+    witness_opening_row_value_timing_acceptance_verifier_core_contract
+      assumptions
+      (some { summary with stages := stages })
+      publicInput
+      proof
+      observed
+
+theorem witness_opening_row_value_stage_timings_acceptance_core_and_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : WitnessOpeningRowValueTimingSummary)
+    (stages : List WitnessOpeningStageRowValueTimingSummary) :
+    forall publicInput proof,
+      WitnessOpeningRowValueTimingObservedAcceptance
+        system
+        (some { summary with stages := stages })
+        publicInput
+        proof ->
+        RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof observed
+  exact
+    witness_opening_row_value_timing_acceptance_core_and_sound
+      assumptions
+      (some { summary with stages := stages })
+      publicInput
+      proof
+      observed
+
 def ConstantMaterialValidationTimingObservedAcceptance
     (system : VerifierModel)
     (summary : Option ConstantMaterialValidationTimingSummary)
