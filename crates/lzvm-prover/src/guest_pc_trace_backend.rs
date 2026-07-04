@@ -10814,6 +10814,7 @@ struct ZiskMainReportValidationContext<'a> {
     row_mem_step_cursor: GuestPcTraceRowMemStepCursor,
     b_memory_source_columns_available: bool,
     indirect_memory_columns_available: bool,
+    memory_store_columns_available: bool,
 }
 
 impl<'a> ZiskMainReportValidationContext<'a> {
@@ -10826,6 +10827,8 @@ impl<'a> ZiskMainReportValidationContext<'a> {
             columns.is_none_or(ZiskMainTraceColumns::has_required_indirect_memory_columns);
         let b_memory_source_columns_available =
             columns.is_none_or(ZiskMainTraceColumns::has_required_b_memory_source_columns);
+        let memory_store_columns_available =
+            columns.is_none_or(ZiskMainTraceColumns::has_required_memory_store_columns);
         Ok(Self {
             columns,
             row_count,
@@ -10835,6 +10838,7 @@ impl<'a> ZiskMainReportValidationContext<'a> {
             )?,
             b_memory_source_columns_available,
             indirect_memory_columns_available,
+            memory_store_columns_available,
         })
     }
 
@@ -10849,6 +10853,10 @@ impl<'a> ZiskMainReportValidationContext<'a> {
 
     fn b_memory_source_columns_available(&self) -> bool {
         self.b_memory_source_columns_available
+    }
+
+    fn memory_store_columns_available(&self) -> bool {
+        self.memory_store_columns_available
     }
 }
 
@@ -12946,6 +12954,13 @@ fn apply_internal_memory_copy_fast_path(
 ) -> Result<(), GuestPcTraceBackendError> {
     if store_address != ZISK_EXTRA_PARAMS_ADDRESS {
         return Err(GuestPcTraceBackendError::UnsupportedZiskMainStore { row: output_row });
+    }
+    if !context.memory_store_columns_available() {
+        return Err(GuestPcTraceBackendError::InvalidPcTraceLayout {
+            message: format!(
+                "Zisk Main memory store rows require store_mem and store_offset columns at row {output_row}"
+            ),
+        });
     }
     if !valid_main_register_index(b_index) {
         return Err(GuestPcTraceBackendError::UnsupportedZiskMainSource { row: output_row });

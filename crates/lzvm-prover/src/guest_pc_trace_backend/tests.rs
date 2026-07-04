@@ -7322,6 +7322,67 @@ fn simple_copy_register_store_fast_path_preserves_row_effects() {
 }
 
 #[test]
+fn internal_memory_copy_fast_path_requires_store_columns() {
+    let effects = ZiskMainReportEffects {
+        register_writes: Vec::new().into(),
+        memory_accesses: &[],
+        precompile_memory_accesses: &[],
+        precompile_result: None,
+    };
+    let instruction = ZiskMainInstruction {
+        pc: 0x8000_0000,
+        a: ZiskMainSource::Immediate(0),
+        b: ZiskMainSource::Register(3),
+        op: ZiskMainOp::CopyB,
+        store: ZiskMainStore::Memory(ZISK_EXTRA_PARAMS_ADDRESS as i64),
+        store_pc: false,
+        set_pc: false,
+        jmp_offset1: 0,
+        jmp_offset2: 4,
+        ind_width: 0,
+        m32: false,
+        is_external_op: false,
+        is_precompiled: false,
+    };
+    let mut state = ZiskMainTraceState::new();
+    state.registers[3] = 0xaa55;
+    let mut context = ZiskMainReportValidationContext {
+        columns: None,
+        row_count: 16,
+        row_mem_step_cursor: GuestPcTraceRowMemStepCursor::new(16, 0)
+            .expect("cursor should initialize"),
+        b_memory_source_columns_available: true,
+        indirect_memory_columns_available: true,
+        memory_store_columns_available: false,
+    };
+    let mut visited = false;
+    let error = apply_internal_memory_copy_fast_path(
+        3,
+        instruction,
+        effects,
+        0x8000_0004,
+        3,
+        ZISK_EXTRA_PARAMS_ADDRESS,
+        &mut state,
+        &mut context,
+        &mut |_, _, _| {
+            visited = true;
+            Ok(())
+        },
+    )
+    .expect_err("copy should reject missing store columns");
+
+    assert!(matches!(
+        error,
+        GuestPcTraceBackendError::InvalidPcTraceLayout { .. }
+    ));
+    assert!(!visited);
+    assert_eq!(state.internal_memory.get(ZISK_EXTRA_PARAMS_ADDRESS), None);
+    assert_eq!(state.last_c, 0);
+    assert_eq!(state.next_pc, 0);
+}
+
+#[test]
 fn sign_extend_indirect_register_store_fast_path_preserves_row_effects() {
     let accesses = [GuestMemoryAccess {
         kind: GuestMemoryAccessKind::Read,
