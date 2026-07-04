@@ -585,6 +585,100 @@ theorem runtime_pipeline_checked_acceptance_audited_concrete_opening_core_contra
                     (And.intro seededFriOpeningChecked
                       (And.intro verifierCore
                         (And.intro executionObligations soundWitness))))))))))
+theorem
+runtime_pipeline_checked_acceptance_concrete_opening_audited_soundness_core_contract
+    {Digest : Type uDigest}
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimePipelineBindingValidation system)
+    {compress : List Digest -> Digest}
+    (centralized :
+      CentralizedNAryMerkleCompressionCollisionResistance
+        assumptions.crypto.hashCollisionResistance
+        compress)
+    (constantBinding :
+      RuntimeConstantOpeningNAryConcreteBinding
+        system
+        validation.queryPlanBindingValidation.openingValidation.openingValidation
+        Digest
+        compress)
+    (witnessBinding :
+      RuntimeWitnessOpeningNAryConcreteBinding
+        system
+        validation.queryPlanBindingValidation.openingValidation.openingValidation
+        Digest
+        compress) :
+    forall artifact publicInput proof (_requiresExternalSource : Prop),
+      RuntimePipelineBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RequiredCryptographicAssumptionStatements assumptions.crypto
+          /\ RequiredSemanticAssumptionStatements assumptions.semantic
+          /\ ProofSystemSound system
+          /\ system.accepts publicInput proof
+          /\ system.transcriptBound publicInput proof
+          /\ system.publicInputBound publicInput proof
+          /\ system.pcsOpeningsValid publicInput proof
+          /\ system.friQueriesValid publicInput proof
+          /\ validation.queryPlanBindingValidation.queryPlanSeedBindsWitnessTreeDigests
+            artifact
+            publicInput
+            proof
+          /\ validation.queryPlanBindingValidation.queryPlanSeededFriOpeningRequirementsChecked
+            artifact
+            publicInput
+            proof
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ (exists witness trace constraints,
+            system.traceConsistent publicInput proof trace
+              /\ system.constraintsSatisfied constraints trace
+              /\ system.witnessMatchesTrace witness trace)
+          /\ SoundWitness system publicInput proof := by
+  intro artifact publicInput proof requiresExternalSource accepted
+  have concreteContract :=
+    runtime_pipeline_checked_acceptance_audited_concrete_opening_core_contract
+      assumptions
+      validation
+      centralized
+      constantBinding
+      witnessBinding
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      accepted
+  have auditedAssumptions :=
+    assumption_bundle_carries_required_evidence assumptions
+  rcases concreteContract with
+    ⟨_auditedCrypto,
+      proofSystemSound,
+      verifierAccepts,
+      transcriptBound,
+      publicInputBound,
+      pcsOpenings,
+      friQueries,
+      seedBinds,
+      seededFriOpeningChecked,
+      verifierCore,
+      executionObligations,
+      soundWitness⟩
+  exact
+    ⟨auditedAssumptions.left,
+      auditedAssumptions.right,
+      proofSystemSound,
+      verifierAccepts,
+      transcriptBound,
+      publicInputBound,
+      pcsOpenings,
+      friQueries,
+      seedBinds,
+      seededFriOpeningChecked,
+      verifierCore,
+      executionObligations,
+      soundWitness⟩
 set_option linter.style.longLine false in
 theorem runtime_pipeline_binding_checked_acceptance_hash_concrete_opening_core_contract
     {Digest : Type uDigest}
@@ -726,6 +820,103 @@ theorem runtime_pipeline_binding_checked_acceptance_hash_concrete_opening_core_c
       verifierCore,
       executionObligations,
       pipelineSound.right⟩
+
+set_option linter.style.longLine false in
+theorem runtime_pipeline_binding_checked_acceptance_hash_concrete_opening_audited_soundness_core_contract
+    {Digest : Type uDigest}
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (hashAssumptions : HashCollisionResistanceAssumption)
+    (validation : RuntimePipelineBindingValidation system)
+    {compress : List Digest -> Digest}
+    (centralized :
+      CentralizedNAryMerkleCompressionCollisionResistance
+        hashAssumptions
+        compress)
+    (constantBinding :
+      RuntimeConstantOpeningNAryConcreteBinding
+        system
+        validation.queryPlanBindingValidation.openingValidation.openingValidation
+        Digest
+        compress)
+    (witnessBinding :
+      RuntimeWitnessOpeningNAryConcreteBinding
+        system
+        validation.queryPlanBindingValidation.openingValidation.openingValidation
+        Digest
+        compress) :
+    forall artifact publicInput proof (_requiresExternalSource : Prop),
+      RuntimePipelineBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RequiredCryptographicAssumptionStatements assumptions.crypto
+          /\ RequiredSemanticAssumptionStatements assumptions.semantic
+          /\ ProofSystemSound system
+          /\ system.accepts publicInput proof
+          /\ system.transcriptBound publicInput proof
+          /\ system.publicInputBound publicInput proof
+          /\ system.pcsOpeningsValid publicInput proof
+          /\ system.friQueriesValid publicInput proof
+          /\ validation.queryPlanBindingValidation.queryPlanSeedBindsWitnessTreeDigests
+            artifact
+            publicInput
+            proof
+          /\ validation.queryPlanBindingValidation.queryPlanSeededFriOpeningRequirementsChecked
+            artifact
+            publicInput
+            proof
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ (exists witness trace constraints,
+            system.traceConsistent publicInput proof trace
+              /\ system.constraintsSatisfied constraints trace
+              /\ system.witnessMatchesTrace witness trace)
+          /\ SoundWitness system publicInput proof := by
+  intro artifact publicInput proof requiresExternalSource accepted
+  have concreteContract :=
+    runtime_pipeline_binding_checked_acceptance_hash_concrete_opening_core_contract
+      assumptions
+      hashAssumptions
+      validation
+      centralized
+      constantBinding
+      witnessBinding
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      accepted
+  have auditedAssumptions :=
+    assumption_bundle_carries_required_evidence assumptions
+  rcases concreteContract with
+    ⟨_auditedCrypto,
+      proofSystemSound,
+      verifierAccepts,
+      transcriptBound,
+      publicInputBound,
+      pcsOpenings,
+      friQueries,
+      seedBinds,
+      seededFriOpeningChecked,
+      verifierCore,
+      executionObligations,
+      soundWitness⟩
+  exact
+    ⟨auditedAssumptions.left,
+      auditedAssumptions.right,
+      proofSystemSound,
+      verifierAccepts,
+      transcriptBound,
+      publicInputBound,
+      pcsOpenings,
+      friQueries,
+      seedBinds,
+      seededFriOpeningChecked,
+      verifierCore,
+      executionObligations,
+      soundWitness⟩
 
 theorem runtime_pipeline_binding_checked_acceptance_audited_proof_system_core_contract
     {system : VerifierModel}
