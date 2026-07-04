@@ -1397,7 +1397,7 @@ fn rejects_add256_precompile_memory_access_address_mismatch() {
         .memory_accesses[4]
         .address += 8;
 
-    let error = validate_zisk_main_precompile_memory_accesses(
+    let error = validate_main_precompile_memory_accesses(
         3,
         &report,
         ZiskMainReportEffects::from_report(&report),
@@ -1413,7 +1413,7 @@ fn precompile_memory_validation_skips_empty_non_precompile_rows() {
     let report = addi_report();
     let instruction = lower_guest_report(&report).expect("report should lower");
 
-    validate_zisk_main_precompile_memory_accesses_if_required(
+    validate_main_precompile_memory_accesses_if_required(
         3,
         &report,
         &instruction,
@@ -1432,7 +1432,7 @@ fn precompile_memory_validation_rejects_non_precompile_rows_with_accesses() {
     ));
     let instruction = lower_guest_report(&report).expect("report should lower");
 
-    let error = validate_zisk_main_precompile_memory_accesses_if_required(
+    let error = validate_main_precompile_memory_accesses_if_required(
         3,
         &report,
         &instruction,
@@ -1453,7 +1453,7 @@ fn precompile_memory_validation_rejects_precompile_rows_with_missing_accesses() 
     ));
     let instruction = lower_guest_report(&report).expect("report should lower");
 
-    let error = validate_zisk_main_precompile_memory_accesses_if_required(
+    let error = validate_main_precompile_memory_accesses_if_required(
         3,
         &report,
         &instruction,
@@ -1471,7 +1471,7 @@ fn precompile_memory_validation_rejects_precompile_rows_with_missing_accesses() 
 fn precompile_memory_validation_required_matches_row_shape() {
     let report = addi_report();
     let instruction = lower_guest_report(&report).expect("report should lower");
-    assert!(!zisk_main_precompile_memory_validation_required(
+    assert!(!main_precompile_memory_validation_required(
         &instruction,
         ZiskMainReportEffects::from_report(&report),
     ));
@@ -1481,7 +1481,7 @@ fn precompile_memory_validation_required_matches_row_shape() {
         GuestPrecompileReportEffects::from_parts(vec![memory_read(64, 7)].into(), None),
     );
     let instruction = lower_guest_report(&non_precompile_with_access).expect("report should lower");
-    assert!(zisk_main_precompile_memory_validation_required(
+    assert!(main_precompile_memory_validation_required(
         &instruction,
         ZiskMainReportEffects::from_report(&non_precompile_with_access),
     ));
@@ -1492,7 +1492,7 @@ fn precompile_memory_validation_required_matches_row_shape() {
         Some(1),
     ));
     let instruction = lower_guest_report(&precompile_without_access).expect("report should lower");
-    assert!(zisk_main_precompile_memory_validation_required(
+    assert!(main_precompile_memory_validation_required(
         &instruction,
         ZiskMainReportEffects::from_report(&precompile_without_access),
     ));
@@ -6827,6 +6827,59 @@ fn copy_indirect_no_store_fast_path_preserves_row_effects() {
 }
 
 #[test]
+fn precompile_no_store_fast_path_preserves_row_effects() {
+    let report = fixed_precompile_report(0x8000_0000, RiscvPrecompileKind::Keccak);
+    let instruction = lower_guest_report(&report).expect("generic lowering should succeed");
+    let effects = ZiskMainReportEffects::from_report(&report);
+    let mut state = ZiskMainTraceState::new();
+    state.registers[2] = 0x1000;
+    state.register_mem_steps[2] = 44;
+    let mut context = ZiskMainReportValidationContext::new(
+        None,
+        16,
+        ZiskMainTraceSegmentInfo {
+            trace_instance_index: 0,
+            is_last_segment: false,
+            previous_c: 0,
+        },
+    )
+    .expect("context should initialize");
+    let mut visited = None;
+
+    apply_precompile_no_store_fast_path(
+        3,
+        &report,
+        instruction,
+        effects,
+        0x8000_0004,
+        Some(2),
+        &mut state,
+        &mut context,
+        &mut |row, values, timing| {
+            assert_eq!(row, 3);
+            assert!(timing.is_none());
+            visited = Some(values);
+            Ok(())
+        },
+    )
+    .expect("fixed precompile row with no store should take fast path");
+
+    assert_eq!(state.registers[2], 0x1000);
+    assert_eq!(state.last_c, 0);
+    assert_eq!(state.next_pc, 0x8000_0004);
+    assert_eq!(state.register_mem_steps[2], 14);
+    let values = visited.expect("fast path should emit row values");
+    assert_eq!(values.a, 0);
+    assert_eq!(values.b, 0x1000);
+    assert_eq!(values.c, 0);
+    assert!(!values.flag);
+    assert_eq!(values.register_accesses.a_prev_mem_step, None);
+    assert_eq!(values.register_accesses.b_prev_mem_step, Some(44));
+    assert_eq!(values.register_accesses.store_prev_mem_step, None);
+    assert_eq!(values.register_accesses.store_prev_value, None);
+}
+
+#[test]
 fn copy_immediate_indirect_store_fast_path_preserves_row_effects() {
     let accesses = [memory_write(0x108, 0x1122_3344_5566_7788)];
     let effects = ZiskMainReportEffects {
@@ -7189,6 +7242,10 @@ fn report_level_fast_path_parts_routes_representative_rows() {
             ReportLevelRoute::NoMemory,
         ),
         (
+            fixed_precompile_report(0x8000_0048, RiscvPrecompileKind::Keccak),
+            ReportLevelRoute::NoMemory,
+        ),
+        (
             GuestMachineReport {
                 address_and_instruction_len:
                     crate::guest_machine::pack_report_address_and_instruction_len(0x8000_001c, 4),
@@ -7252,6 +7309,9 @@ fn report_level_fast_path_parts_routes_representative_rows() {
                 (ReportLevelRoute::LoadSignExtend, instruction)
             }
             MainReportFastPathParts::NoMemory(instruction, _) => {
+                (ReportLevelRoute::NoMemory, instruction)
+            }
+            MainReportFastPathParts::PrecompileNoStore(instruction, ..) => {
                 (ReportLevelRoute::NoMemory, instruction)
             }
             MainReportFastPathParts::InternalMemoryCopy(instruction, ..) => {
@@ -7350,7 +7410,7 @@ fn report_level_fast_path_parts_routes_representative_rows() {
     assert_eq!(parts.store_index, None);
     timing.record_main_report_generic_fallback();
 
-    assert_eq!(timing.trace_main_report_fast_path_count(), 16);
+    assert_eq!(timing.trace_main_report_fast_path_count(), 17);
     assert_eq!(timing.trace_main_report_generic_fallback_count(), 1);
     assert_eq!(timing.trace_main_report_load_copy_fast_path_count(), 3);
     assert_eq!(
@@ -7359,7 +7419,7 @@ fn report_level_fast_path_parts_routes_representative_rows() {
     );
     assert_eq!(timing.trace_main_report_store_copy_fast_path_count(), 2);
     assert_eq!(timing.trace_main_report_jump_fast_path_count(), 2);
-    assert_eq!(timing.trace_main_report_no_memory_fast_path_count(), 5);
+    assert_eq!(timing.trace_main_report_no_memory_fast_path_count(), 6);
     assert_eq!(timing.trace_main_report_simple_copy_fast_path_count(), 1);
     assert_eq!(timing.trace_main_report_fcall_result_fast_path_count(), 1);
 }
@@ -9373,6 +9433,43 @@ fn add256_report() -> GuestMachineReport {
         vec![GuestRegisterWrite { index: 2, value: 1 }].into(),
         Vec::new().into(),
         GuestPrecompileReportEffects::from_parts(precompile_memory_accesses.into(), Some(1)),
+    )
+}
+
+fn fixed_precompile_report(address: u64, kind: RiscvPrecompileKind) -> GuestMachineReport {
+    let operand_address = 0x1000;
+    let mut accesses = Vec::new();
+    match kind {
+        RiscvPrecompileKind::Keccak => {
+            for index in 0..25 {
+                accesses.push(memory_read(operand_address + index * 8, index));
+            }
+            for index in 0..25 {
+                accesses.push(memory_write(operand_address + index * 8, index));
+            }
+        }
+        RiscvPrecompileKind::Secp256k1Dbl => {
+            for index in 0..8 {
+                accesses.push(memory_read(operand_address + index * 8, index));
+            }
+            for index in 0..8 {
+                accesses.push(memory_write(operand_address + index * 8, index));
+            }
+        }
+        _ => panic!("test helper only supports direct-address fixed precompiles"),
+    }
+    GuestMachineReport::new(
+        address,
+        4,
+        RiscvInstruction::ZiskPrecompile {
+            kind,
+            rs1: 2,
+            rd: 0,
+        },
+        address + 4,
+        Vec::new().into(),
+        Vec::new().into(),
+        GuestPrecompileReportEffects::from_parts(accesses.into(), None),
     )
 }
 

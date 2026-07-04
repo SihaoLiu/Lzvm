@@ -935,7 +935,8 @@ impl GuestPcTraceStreamTiming {
             MainReportFastPathParts::LoadSignExtend(..) => {
                 self.trace_main_report_load_sign_extend_fast_path_count += 1;
             }
-            MainReportFastPathParts::NoMemory(..) => {
+            MainReportFastPathParts::NoMemory(..)
+            | MainReportFastPathParts::PrecompileNoStore(..) => {
                 self.trace_main_report_no_memory_fast_path_count += 1;
             }
             MainReportFastPathParts::InternalMemoryCopy(..) => {
@@ -10888,6 +10889,7 @@ enum MainReportFastPathParts {
     LoadNoStore(ZiskMainInstruction, u8, i64, u8),
     LoadSignExtend(ZiskMainInstruction, u8, i64, u8),
     NoMemory(ZiskMainInstruction, ZiskMainNoMemoryFastPathParts),
+    PrecompileNoStore(ZiskMainInstruction, Option<u8>),
     InternalMemoryCopy(ZiskMainInstruction, u8, u64),
     StoreCopy(ZiskMainInstruction, u8, u8, i64),
     StoreImmediateCopy(ZiskMainInstruction, u8, u64, i64),
@@ -11077,6 +11079,19 @@ fn validate_and_apply_zisk_main_report(
                         effects,
                         report.next_pc,
                         parts,
+                        state,
+                        context,
+                        &mut visit,
+                    )?;
+                }
+                MainReportFastPathParts::PrecompileNoStore(instruction, b_index) => {
+                    apply_precompile_no_store_fast_path(
+                        row,
+                        report,
+                        instruction,
+                        effects,
+                        report.next_pc,
+                        b_index,
                         state,
                         context,
                         &mut visit,
@@ -11424,8 +11439,8 @@ fn apply_zisk_main_lowered_report_row(
     });
 
     let precompile_memory_started = detail_duration_started(&timing, detail_timing);
-    if zisk_main_precompile_memory_validation_required(&instruction, lowered_row.effects) {
-        validate_zisk_main_precompile_memory_accesses(output_row, report, lowered_row.effects, b)?;
+    if main_precompile_memory_validation_required(&instruction, lowered_row.effects) {
+        validate_main_precompile_memory_accesses(output_row, report, lowered_row.effects, b)?;
     }
     record_row_validation_detail_duration(precompile_memory_started, &mut timing, |timing| {
         &mut timing.trace_report_precompile_memory_duration
@@ -11821,6 +11836,50 @@ fn fcall_result_register_store_fast_path_parts(
 }
 
 #[inline(always)]
+fn fixed_precompile_no_store_fast_path_parts(
+    row: usize,
+    report: &GuestMachineReport,
+) -> Result<Option<MainReportFastPathParts>, GuestPcTraceBackendError> {
+    let RiscvInstruction::ZiskPrecompile { kind, rs1, rd } = report.instruction else {
+        return Ok(None);
+    };
+    if rd != 0 {
+        return Ok(None);
+    }
+    let op = match kind {
+        RiscvPrecompileKind::Keccak => ZiskMainOp::Keccak,
+        RiscvPrecompileKind::Arith256 => ZiskMainOp::Arith256,
+        RiscvPrecompileKind::Arith256Mod => ZiskMainOp::Arith256Mod,
+        RiscvPrecompileKind::Secp256k1Add => ZiskMainOp::Secp256k1Add,
+        RiscvPrecompileKind::Secp256k1Dbl => ZiskMainOp::Secp256k1Dbl,
+        RiscvPrecompileKind::Add256 => return Ok(None),
+    };
+    let Some(instruction_size) = sequential_report_fast_path_instruction_size(row, report)? else {
+        return Ok(None);
+    };
+    let b_index = (rs1 != 0).then_some(rs1);
+    let instruction = ZiskMainInstruction {
+        pc: report.address(),
+        a: ZiskMainSource::Immediate(0),
+        b: b_index.map_or(ZiskMainSource::Immediate(0), ZiskMainSource::Register),
+        op,
+        store: ZiskMainStore::None,
+        store_pc: false,
+        set_pc: false,
+        jmp_offset1: instruction_size,
+        jmp_offset2: instruction_size,
+        ind_width: 0,
+        m32: false,
+        is_external_op: true,
+        is_precompiled: true,
+    };
+    Ok(Some(MainReportFastPathParts::PrecompileNoStore(
+        instruction,
+        b_index,
+    )))
+}
+
+#[inline(always)]
 fn copy_indirect_register_store_fast_path_parts(
     instruction: &ZiskMainInstruction,
     effects: ZiskMainReportEffects<'_>,
@@ -12196,6 +12255,9 @@ fn report_level_fast_path_parts(
         }
         RiscvInstruction::Branch { .. } => Ok(branch_fast_path_parts(row, report)?
             .map(|(instruction, parts)| MainReportFastPathParts::NoMemory(instruction, parts))),
+        RiscvInstruction::ZiskPrecompile { .. } => {
+            fixed_precompile_no_store_fast_path_parts(row, report)
+        }
         RiscvInstruction::Fence { .. }
         | RiscvInstruction::CsrRead { .. }
         | RiscvInstruction::ZiskFcallParam { .. }
@@ -13212,6 +13274,79 @@ fn apply_no_memory_fast_path(
             }
         }
     }
+    state.last_c = c;
+    state.next_pc = expected_next_pc;
+
+    visit(
+        output_row,
+        ZiskMainReportTraceValues {
+            instruction,
+            a,
+            b,
+            c,
+            flag,
+            register_accesses,
+        },
+        None,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+#[inline(always)]
+fn apply_precompile_no_store_fast_path(
+    output_row: usize,
+    report: &GuestMachineReport,
+    instruction: ZiskMainInstruction,
+    effects: ZiskMainReportEffects<'_>,
+    expected_next_pc: u64,
+    b_index: Option<u8>,
+    state: &mut ZiskMainTraceState,
+    context: &mut ZiskMainReportValidationContext<'_>,
+    visit: &mut impl FnMut(
+        usize,
+        ZiskMainReportTraceValues,
+        Option<&mut GuestPcTraceStreamTiming>,
+    ) -> Result<(), GuestPcTraceBackendError>,
+) -> Result<(), GuestPcTraceBackendError> {
+    if !effects.memory_accesses.is_empty() {
+        return Err(GuestPcTraceBackendError::ZiskMainEffectMismatch {
+            row: output_row,
+            message: format!(
+                "expected 0 memory accesses, found {}",
+                effects.memory_accesses.len()
+            ),
+        });
+    }
+    if !effects.register_writes.is_empty() {
+        return Err(GuestPcTraceBackendError::ZiskMainEffectMismatch {
+            row: output_row,
+            message: "precompile row with no store reported register writes".to_owned(),
+        });
+    }
+    let a = no_memory_fast_path_source_value(output_row, instruction.a, None, state)?;
+    let b = no_memory_fast_path_source_value(output_row, instruction.b, b_index, state)?;
+    validate_main_precompile_memory_accesses(output_row, report, effects, b)?;
+    let c = 0;
+    let flag = false;
+    let computed_next_pc = instruction.pc.wrapping_add_signed(instruction.jmp_offset2);
+    if expected_next_pc != computed_next_pc {
+        return Err(GuestPcTraceBackendError::ZiskMainEffectMismatch {
+            row: output_row,
+            message: format!("expected next pc {computed_next_pc}, found {expected_next_pc}"),
+        });
+    }
+
+    let row_mem_step_base = context.row_mem_step_base(output_row)?;
+    let register_accesses = apply_no_memory_fast_path_register_accesses(
+        output_row,
+        state,
+        row_mem_step_base,
+        ZiskMainNoMemoryFastPathParts {
+            a_index: None,
+            b_index,
+            store_index: None,
+        },
+    )?;
     state.last_c = c;
     state.next_pc = expected_next_pc;
 
@@ -16571,7 +16706,7 @@ fn validate_memory_access_fields(
     Ok(())
 }
 
-fn validate_zisk_main_precompile_memory_accesses(
+fn validate_main_precompile_memory_accesses(
     row: usize,
     report: &GuestMachineReport,
     effects: ZiskMainReportEffects<'_>,
@@ -16637,20 +16772,20 @@ fn validate_zisk_main_precompile_memory_accesses(
 }
 
 #[cfg(test)]
-fn validate_zisk_main_precompile_memory_accesses_if_required(
+fn validate_main_precompile_memory_accesses_if_required(
     row: usize,
     report: &GuestMachineReport,
     instruction: &ZiskMainInstruction,
     effects: ZiskMainReportEffects<'_>,
     operand_address: u64,
 ) -> Result<(), GuestPcTraceBackendError> {
-    if !zisk_main_precompile_memory_validation_required(instruction, effects) {
+    if !main_precompile_memory_validation_required(instruction, effects) {
         return Ok(());
     }
-    validate_zisk_main_precompile_memory_accesses(row, report, effects, operand_address)
+    validate_main_precompile_memory_accesses(row, report, effects, operand_address)
 }
 
-fn zisk_main_precompile_memory_validation_required(
+fn main_precompile_memory_validation_required(
     instruction: &ZiskMainInstruction,
     effects: ZiskMainReportEffects<'_>,
 ) -> bool {
