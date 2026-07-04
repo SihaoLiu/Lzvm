@@ -4694,8 +4694,10 @@ fn run_guest_pc_trace_segment_slice_inner<
         record_detail_duration(advance_started, &mut timing, |timing| {
             &mut timing.runner_advance_duration
         });
-        if let Some(timing) = timing.as_deref_mut() {
-            timing.record_runner_advance_path(advanced.advance_path);
+        if runner_path_timing {
+            if let Some(timing) = timing.as_deref_mut() {
+                timing.record_runner_advance_path(advanced.advance_path);
+            }
         }
         if let (Some(advance_timing), Some(timing)) = (advance_inner_timing, timing.as_deref_mut())
         {
