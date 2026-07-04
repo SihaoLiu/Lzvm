@@ -10780,6 +10780,7 @@ impl GuestPcTraceRowMemStepCursor {
         })
     }
 
+    #[inline(always)]
     fn advance_to(&mut self, row: usize) -> Result<(), GuestPcTraceBackendError> {
         if row == self.current_row {
             return Ok(());
@@ -10806,6 +10807,7 @@ impl GuestPcTraceRowMemStepCursor {
         Ok(())
     }
 
+    #[inline(always)]
     fn base(&self) -> u64 {
         self.current_base
     }
@@ -10851,6 +10853,7 @@ impl<'a> ZiskMainReportValidationContext<'a> {
         })
     }
 
+    #[inline(always)]
     fn row_mem_step_base(&mut self, row: usize) -> Result<u64, GuestPcTraceBackendError> {
         self.row_mem_step_cursor.advance_to(row)?;
         Ok(self.row_mem_step_cursor.base())
