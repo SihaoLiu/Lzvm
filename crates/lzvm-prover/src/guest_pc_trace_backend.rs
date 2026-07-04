@@ -2562,6 +2562,7 @@ fn optional_trace_target_at(target: &Option<TraceColumnTarget<'_>>, trace_column
 }
 
 #[cfg(feature = "cuda")]
+#[inline(always)]
 fn append_main_device_trace_descriptor(
     descriptors: &mut ZiskMainDeviceTraceDescriptors,
     values: &ZiskMainReportTraceValues,
@@ -2771,6 +2772,7 @@ fn zisk_main_sparse_device_trace_descriptor_words(
 }
 
 #[cfg(feature = "cuda")]
+#[inline(always)]
 fn zisk_main_low32_pair(lhs: u64, rhs: u64) -> u64 {
     (lhs & 0xffff_ffff) | ((rhs & 0xffff_ffff) << 32)
 }
@@ -2816,6 +2818,7 @@ fn zisk_main_sparse_descriptor_value(
 
 #[cfg(feature = "cuda")]
 #[allow(clippy::too_many_arguments)]
+#[inline(always)]
 fn zisk_main_compact_device_trace_descriptor_words(
     values: &ZiskMainReportTraceValues,
     a_payload: u64,
@@ -2846,6 +2849,7 @@ fn zisk_main_compact_device_trace_descriptor_words(
 }
 
 #[cfg(feature = "cuda")]
+#[inline(always)]
 fn zisk_main_pack_i32_pair(lhs: i64, rhs: i64) -> Option<u64> {
     let lhs = i32::try_from(lhs).ok()? as u32;
     let rhs = i32::try_from(rhs).ok()? as u32;
@@ -2853,11 +2857,13 @@ fn zisk_main_pack_i32_pair(lhs: i64, rhs: i64) -> Option<u64> {
 }
 
 #[cfg(feature = "cuda")]
+#[inline(always)]
 fn zisk_main_pack_u32_pair(lhs: u64, rhs: u64) -> Option<u64> {
     Some(u64::from(zisk_main_pack_u32(lhs)?) | (u64::from(zisk_main_pack_u32(rhs)?) << 32))
 }
 
 #[cfg(feature = "cuda")]
+#[inline(always)]
 fn zisk_main_pack_u32(value: u64) -> Option<u32> {
     u32::try_from(value).ok()
 }
@@ -3006,6 +3012,7 @@ fn zisk_main_unpack_i32_high(value: u64) -> u64 {
 }
 
 #[cfg(feature = "cuda")]
+#[inline(always)]
 fn zisk_main_device_trace_source_descriptor(source: ZiskMainSource) -> (u64, u64) {
     match source {
         ZiskMainSource::LastC => (0, 0),
@@ -3019,6 +3026,7 @@ fn zisk_main_device_trace_source_descriptor(source: ZiskMainSource) -> (u64, u64
 }
 
 #[cfg(feature = "cuda")]
+#[inline(always)]
 fn zisk_main_device_trace_store_descriptor(store: &ZiskMainStore) -> (u64, u64) {
     match store {
         ZiskMainStore::None => (0, 0),
