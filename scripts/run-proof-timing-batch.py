@@ -309,12 +309,48 @@ def stable_timing_group(
     return [path for path in logs if path in selected]
 
 
+def parseable_timing_samples(logs: list[Path]) -> tuple[list[tuple[float, Path]], int]:
+    samples = []
+    failed = 0
+    for path in logs:
+        try:
+            samples.append((timing_total_seconds_from_log(path), path))
+        except (OSError, SystemExit):
+            failed += 1
+    return samples, failed
+
+
+def stable_parseable_timing_group(
+    logs: list[Path],
+    max_relative_spread: float,
+    min_stable_count: int = 3,
+) -> list[Path] | None:
+    samples, _failed = parseable_timing_samples(logs)
+    if len(samples) < min_stable_count:
+        return None
+    ordered = sorted(samples, key=lambda sample: sample[0])
+    window = stable_sample_window(
+        [seconds for seconds, _path in ordered],
+        max_relative_spread,
+        min_stable_count,
+    )
+    if window is None:
+        return None
+    start, end = window
+    selected = {path for _seconds, path in ordered[start:end]}
+    return [path for path in logs if path in selected]
+
+
 def has_stable_timing_group(
     logs: list[Path],
     max_relative_spread: float,
     min_stable_count: int = 3,
 ) -> bool:
-    return stable_timing_group(logs, max_relative_spread, min_stable_count) is not None
+    return (
+        stable_parseable_timing_group(logs, max_relative_spread, min_stable_count)
+        is not None
+    )
+
 
 
 def append_artifact_paths(batch_dir: Path) -> tuple[Path, Path, Path]:
@@ -340,6 +376,12 @@ def require_texts_in_log(text: str, path: Path, required_texts: list[str]) -> No
     for required in required_texts:
         if required not in text:
             raise SystemExit(f"{path}: missing required text {required!r}")
+
+
+def retryable_run_failure_reason(text: str) -> str | None:
+    if "GPU memory preflight failed" in text:
+        return "gpu_memory_preflight"
+    return None
 
 
 def write_timing_summary(
@@ -559,6 +601,11 @@ def run_once(
             f"{label} run {run_index} timed out after {timeout:.3f}s; log: {combined_path}"
         )
     if exit_code != 0:
+        retryable_failure = retryable_run_failure_reason(read_text(combined_path))
+        if retryable_failure is not None:
+            status_lines.append(f"retryable_failure={retryable_failure}")
+            write_status(status_path, status_lines)
+            return combined_path
         write_status(status_path, status_lines)
         raise SystemExit(
             f"{label} run {run_index} exited with status {exit_code}; log: {combined_path}"
@@ -659,13 +706,27 @@ def append_improve_log(
     if small_field is not None:
         command.extend(["--small", small_field])
     else:
-        for path in small_logs:
-            command.extend(["--small-log", str(path)])
+        small_parse_failed_field = stable_average_field_for_parse_failed_logs(
+            small_logs,
+            max_relative_spread,
+        )
+        if small_parse_failed_field is not None:
+            command.extend(["--small", small_parse_failed_field])
+        else:
+            for path in small_logs:
+                command.extend(["--small-log", str(path)])
     if large_field is not None:
         command.extend(["--large", large_field])
     else:
-        for path in large_logs:
-            command.extend(["--large-log", str(path)])
+        large_parse_failed_field = stable_average_field_for_parse_failed_logs(
+            large_logs,
+            max_relative_spread,
+        )
+        if large_parse_failed_field is not None:
+            command.extend(["--large", large_parse_failed_field])
+        else:
+            for path in large_logs:
+                command.extend(["--large-log", str(path)])
 
     append_stdout_path, append_stderr_path, append_status_path = prepare_append_artifact_paths(
         batch_dir
@@ -789,6 +850,29 @@ def max_average_rejection_field(
     )
 
 
+def stable_average_field_for_parse_failed_logs(
+    logs: list[Path],
+    max_relative_spread: float,
+) -> str | None:
+    if not logs:
+        return None
+    _samples, failed = parseable_timing_samples(logs)
+    if failed == 0:
+        return None
+    stable_logs = stable_parseable_timing_group(logs, max_relative_spread)
+    if not stable_logs:
+        return None
+    stable_timing_s = [timing_total_seconds_from_log(path) for path in stable_logs]
+    average = timing_average_seconds(stable_timing_s)
+    if average is None:
+        return None
+    samples = ";".join(f"{value:.3f}" for value in sorted(stable_timing_s))
+    return (
+        f"avg={average:.3f} samples={samples} "
+        f"used={len(stable_timing_s)}/{len(logs)}"
+    )
+
+
 def rejected_average_summary(
     summary: str,
     small_field: str | None,
@@ -891,21 +975,20 @@ def print_stable_timing(label: str, logs: list[Path]) -> None:
 
 def print_excluded_timing(label: str, all_logs: list[Path], stable_logs: list[Path]) -> None:
     excluded_logs = excluded_log_paths(all_logs, stable_logs)
-    excluded, _failed = timing_seconds_values(excluded_logs)
-    print(f"{label}_excluded_runs={len(excluded)}")
+    excluded, failed = timing_seconds_values(excluded_logs)
+    print(f"{label}_excluded_runs={len(excluded_logs)}")
     if excluded:
         joined = ";".join(f"{value:.3f}" for value in excluded)
         print(f"{label}_excluded_timing_s={joined}")
+    if failed:
+        print(f"{label}_excluded_timing_parse_failed_count={failed}")
 
 
 def safe_stable_timing_group(
     logs: list[Path],
     max_relative_spread: float,
 ) -> list[Path]:
-    try:
-        return stable_timing_group(logs, max_relative_spread) or []
-    except SystemExit:
-        return []
+    return stable_parseable_timing_group(logs, max_relative_spread) or []
 
 
 def discovered_run_paths(batch_dir: Path, label: str, suffix: str) -> list[Path]:
@@ -1421,6 +1504,65 @@ def self_test() -> None:
         for key in ["small_stable_timing_s", "large_stable_timing_s"]:
             if batch_payload.get(key) != [1.0, 1.0, 1.0]:
                 raise SystemExit(f"self-test batch json {key} should record samples")
+        retry_command = shlex.join(
+            [
+                sys.executable,
+                "-c",
+                (
+                    "import os, sys; "
+                    "fail = os.environ.get('LZVM_TIMING_BATCH_RUN') == '1'; "
+                    "sys.stderr.write('prove witness failed: large --guest-pc-trace "
+                    "GPU memory preflight failed\\n') if fail else None; "
+                    "sys.exit(1) if fail else None; "
+                    "print('timing_total_ms=1000'); "
+                    "print('timing_guest_stage_tree_commit_root_count=1'); "
+                    "print('timing_guest_stage_tree_commit_root_materialization_groups=1'); "
+                    "print('timing_guest_stage_tree_commit_root_materialization_max_group_size=1'); "
+                    "print('timing_finish_witness_opening_row_dedup_input_rows=0'); "
+                    "print('timing_finish_witness_opening_row_dedup_unique_rows=0'); "
+                    "print('timing_finish_witness_opening_row_dedup_elided_rows=0'); "
+                    "print('timing_finish_fri_opening_ms=10'); "
+                    "print('timing_finish_fri_opening_unit_build_ms=8'); "
+                    "print('timing_finish_fri_opening_layer_tree_ms=2'); "
+                    "print('timing_finish_fri_opening_query_ms=3'); "
+                    "print('timing_finish_fri_opening_fold_ms=1'); "
+                    "print('timing_finish_fri_opening_unit_count=1'); "
+                    "print('timing_finish_fri_opening_layer_count=2'); "
+                    "print('timing_finish_fri_opening_query_count=3'); "
+                    "print('timing_finish_fri_transcript_unit_build_ms=4'); "
+                    "print('timing_finish_fri_transcript_layer_tree_ms=2'); "
+                    "print('timing_finish_fri_transcript_fold_ms=1'); "
+                    "print('timing_finish_fri_transcript_unit_count=1'); "
+                    "print('timing_finish_fri_transcript_layer_count=2'); "
+                    "print('timing_finish_contribution_segment_ms=5'); "
+                    "print('timing_finish_contribution_verify_ms=6'); "
+                    "print('timing_finish_contribution_challenge_ms=7')"
+                ),
+            ]
+        )
+        retry_args = argparse.Namespace(**vars(args))
+        retry_args.small_command = None
+        retry_args.large_command = retry_command
+        retry_args.max_runs = 4
+        retry_args.path = str(work_dir / "retry-log.csv")
+        retry_args.summary = "retry self test"
+        retry_args.work_dir = str(work_dir / "retry-runs")
+        retry_batch_dir = run_batch(retry_args)
+        retry_payload = json.loads(
+            (retry_batch_dir / "batch.json").read_text(encoding="utf-8")
+        )
+        if retry_payload.get("large_run_count") != 4:
+            raise SystemExit("self-test retry batch should keep retryable failed log")
+        if retry_payload.get("large_excluded_log_count") != 1:
+            raise SystemExit("self-test retry batch should exclude failed log")
+        if retry_payload.get("large_stable_run_count") != 3:
+            raise SystemExit("self-test retry batch should find stable retries")
+        retry_status = (retry_batch_dir / "large-001.status").read_text(encoding="utf-8")
+        if "retryable_failure=gpu_memory_preflight" not in retry_status:
+            raise SystemExit("self-test retry batch should mark retryable failure")
+        retry_log = (work_dir / "retry-log.csv").read_text(encoding="utf-8")
+        if "used=3/4" not in retry_log:
+            raise SystemExit("self-test retry log should append stable retry count")
         guarded_log = work_dir / "guard-log.csv"
         reject_args = argparse.Namespace(**vars(args))
         reject_args.path = str(guarded_log)
