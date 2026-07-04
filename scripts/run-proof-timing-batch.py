@@ -822,10 +822,13 @@ def materialize_requested_summary(
     root: Path,
     stable_summaries: dict[str, Path | None],
     rejected_labels: list[str],
+    improve_log_path: Path,
 ) -> Path | None:
     output_path = requested_summary_output_path(summary, root)
     if output_path is None:
         return None
+    if output_path.resolve(strict=False) == improve_log_path.resolve(strict=False):
+        raise SystemExit("--summary CSV output must not match --path improvement log")
     sources = [
         (label, stable_summaries[label])
         for label in rejected_labels
@@ -1227,6 +1230,7 @@ def run_batch(args: argparse.Namespace) -> Path:
             root,
             stable_timing_summary_paths,
             rejected_labels,
+            improve_log_path,
         )
     if args.append_max_average_rejections and rejection_messages:
         try:
@@ -1417,6 +1421,23 @@ def self_test() -> None:
         for key in ["small_stable_timing_s", "large_stable_timing_s"]:
             if batch_payload.get(key) != [1.0, 1.0, 1.0]:
                 raise SystemExit(f"self-test batch json {key} should record samples")
+        guarded_log = work_dir / "guard-log.csv"
+        reject_args = argparse.Namespace(**vars(args))
+        reject_args.path = str(guarded_log)
+        reject_args.summary = str(guarded_log)
+        reject_args.work_dir = str(work_dir / "reject-runs")
+        reject_args.small_max_avg_s = 0.5
+        reject_args.large_max_avg_s = 0.5
+        try:
+            run_batch(reject_args)
+        except SystemExit as error:
+            expected_error = "--summary CSV output must not match --path improvement log"
+            if expected_error not in str(error):
+                raise SystemExit("self-test summary path guard reported the wrong error")
+        else:
+            raise SystemExit("self-test summary path guard should fail")
+        if guarded_log.exists():
+            raise SystemExit("self-test guarded improve log should not be written")
     finally:
         for name, value in previous_runtime_env.items():
             if value is None:
