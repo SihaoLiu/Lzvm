@@ -923,34 +923,69 @@ impl GuestPcTraceStreamTiming {
         self.runner_instruction_cache_invalidated_entry_count += stats.invalidated_entry_count;
     }
 
-    fn record_main_report_fast_path(&mut self, parts: &MainReportFastPathParts) {
+    fn record_main_report_fcall_result_fast_path(&mut self) {
         self.trace_main_report_fast_path_count += 1;
+        self.trace_main_report_fcall_result_fast_path_count += 1;
+    }
+
+    fn record_main_report_load_copy_fast_path(&mut self) {
+        self.trace_main_report_fast_path_count += 1;
+        self.trace_main_report_load_copy_fast_path_count += 1;
+    }
+
+    fn record_main_report_load_sign_extend_fast_path(&mut self) {
+        self.trace_main_report_fast_path_count += 1;
+        self.trace_main_report_load_sign_extend_fast_path_count += 1;
+    }
+
+    fn record_main_report_no_memory_fast_path(&mut self) {
+        self.trace_main_report_fast_path_count += 1;
+        self.trace_main_report_no_memory_fast_path_count += 1;
+    }
+
+    fn record_main_report_store_copy_fast_path(&mut self) {
+        self.trace_main_report_fast_path_count += 1;
+        self.trace_main_report_store_copy_fast_path_count += 1;
+    }
+
+    fn record_main_report_simple_copy_fast_path(&mut self) {
+        self.trace_main_report_fast_path_count += 1;
+        self.trace_main_report_simple_copy_fast_path_count += 1;
+    }
+
+    fn record_main_report_jump_fast_path(&mut self) {
+        self.trace_main_report_fast_path_count += 1;
+        self.trace_main_report_jump_fast_path_count += 1;
+    }
+
+    #[cfg(test)]
+    fn record_main_report_fast_path(&mut self, parts: &MainReportFastPathParts) {
         match parts {
             MainReportFastPathParts::FcallResult(..) => {
-                self.trace_main_report_fcall_result_fast_path_count += 1;
+                self.record_main_report_fcall_result_fast_path();
             }
             MainReportFastPathParts::LoadCopy(..) | MainReportFastPathParts::LoadNoStore(..) => {
-                self.trace_main_report_load_copy_fast_path_count += 1;
+                self.record_main_report_load_copy_fast_path();
             }
             MainReportFastPathParts::LoadSignExtend(..) => {
-                self.trace_main_report_load_sign_extend_fast_path_count += 1;
+                self.record_main_report_load_sign_extend_fast_path();
             }
             MainReportFastPathParts::NoMemory(..)
             | MainReportFastPathParts::PrecompileNoStore(..) => {
-                self.trace_main_report_no_memory_fast_path_count += 1;
+                self.record_main_report_no_memory_fast_path();
             }
             MainReportFastPathParts::InternalMemoryCopy(..) => {
-                self.trace_main_report_no_memory_fast_path_count += 1;
+                self.record_main_report_no_memory_fast_path();
             }
             MainReportFastPathParts::StoreCopy(..)
             | MainReportFastPathParts::StoreImmediateCopy(..) => {
-                self.trace_main_report_store_copy_fast_path_count += 1;
+                self.record_main_report_store_copy_fast_path();
             }
             MainReportFastPathParts::SimpleCopy(..) => {
-                self.trace_main_report_simple_copy_fast_path_count += 1;
+                self.record_main_report_simple_copy_fast_path();
             }
             MainReportFastPathParts::Jump(..) => {
-                self.trace_main_report_jump_fast_path_count += 1;
+                self.record_main_report_jump_fast_path();
             }
         }
     }
@@ -11008,12 +11043,12 @@ fn validate_and_apply_zisk_main_report(
     };
     if count_main_report_generic_fallback {
         if let Some(fast_path) = report_level_fast_path_parts(row, report, &mut next_instruction)? {
-            if let Some(timing) = timing.as_mut() {
-                timing.record_main_report_fast_path(&fast_path);
-            }
             let effects = ZiskMainReportEffects::from_report(report);
             match fast_path {
                 MainReportFastPathParts::FcallResult(instruction, store_index) => {
+                    if let Some(timing) = timing.as_mut() {
+                        timing.record_main_report_fcall_result_fast_path();
+                    }
                     apply_fcall_result_register_store_fast_path(
                         row,
                         instruction,
@@ -11026,6 +11061,9 @@ fn validate_and_apply_zisk_main_report(
                     )?;
                 }
                 MainReportFastPathParts::LoadCopy(instruction, a_index, b_offset, store_index) => {
+                    if let Some(timing) = timing.as_mut() {
+                        timing.record_main_report_load_copy_fast_path();
+                    }
                     apply_copy_indirect_register_store_fast_path(
                         row,
                         instruction,
@@ -11040,6 +11078,9 @@ fn validate_and_apply_zisk_main_report(
                     )?;
                 }
                 MainReportFastPathParts::LoadNoStore(instruction, a_index, b_offset, width) => {
+                    if let Some(timing) = timing.as_mut() {
+                        timing.record_main_report_load_copy_fast_path();
+                    }
                     apply_copy_indirect_no_store_fast_path(
                         row,
                         instruction,
@@ -11059,6 +11100,9 @@ fn validate_and_apply_zisk_main_report(
                     b_offset,
                     store_index,
                 ) => {
+                    if let Some(timing) = timing.as_mut() {
+                        timing.record_main_report_load_sign_extend_fast_path();
+                    }
                     apply_sign_extend_indirect_register_store_fast_path(
                         row,
                         instruction,
@@ -11073,6 +11117,9 @@ fn validate_and_apply_zisk_main_report(
                     )?;
                 }
                 MainReportFastPathParts::NoMemory(instruction, parts) => {
+                    if let Some(timing) = timing.as_mut() {
+                        timing.record_main_report_no_memory_fast_path();
+                    }
                     apply_no_memory_fast_path(
                         row,
                         instruction,
@@ -11085,6 +11132,9 @@ fn validate_and_apply_zisk_main_report(
                     )?;
                 }
                 MainReportFastPathParts::PrecompileNoStore(instruction, b_index) => {
+                    if let Some(timing) = timing.as_mut() {
+                        timing.record_main_report_no_memory_fast_path();
+                    }
                     apply_precompile_no_store_fast_path(
                         row,
                         report,
@@ -11102,6 +11152,9 @@ fn validate_and_apply_zisk_main_report(
                     b_index,
                     store_address,
                 ) => {
+                    if let Some(timing) = timing.as_mut() {
+                        timing.record_main_report_no_memory_fast_path();
+                    }
                     apply_internal_memory_copy_fast_path(
                         row,
                         instruction,
@@ -11115,6 +11168,9 @@ fn validate_and_apply_zisk_main_report(
                     )?;
                 }
                 MainReportFastPathParts::StoreCopy(instruction, a_index, b_index, store_offset) => {
+                    if let Some(timing) = timing.as_mut() {
+                        timing.record_main_report_store_copy_fast_path();
+                    }
                     apply_copy_register_indirect_store_fast_path(
                         row,
                         instruction,
@@ -11134,6 +11190,9 @@ fn validate_and_apply_zisk_main_report(
                     b,
                     store_offset,
                 ) => {
+                    if let Some(timing) = timing.as_mut() {
+                        timing.record_main_report_store_copy_fast_path();
+                    }
                     apply_copy_immediate_indirect_store_fast_path(
                         row,
                         instruction,
@@ -11148,6 +11207,9 @@ fn validate_and_apply_zisk_main_report(
                     )?;
                 }
                 MainReportFastPathParts::SimpleCopy(instruction, b_index, store_index) => {
+                    if let Some(timing) = timing.as_mut() {
+                        timing.record_main_report_simple_copy_fast_path();
+                    }
                     apply_simple_copy_register_store_fast_path(
                         row,
                         instruction,
@@ -11161,6 +11223,9 @@ fn validate_and_apply_zisk_main_report(
                     )?;
                 }
                 MainReportFastPathParts::Jump(instruction, parts) => {
+                    if let Some(timing) = timing.as_mut() {
+                        timing.record_main_report_jump_fast_path();
+                    }
                     apply_jump_fast_path(
                         row,
                         instruction,
