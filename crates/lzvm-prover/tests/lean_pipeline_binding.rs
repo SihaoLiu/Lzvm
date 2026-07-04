@@ -159,6 +159,8 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
             "runtime_pipeline_binding_checked_acceptance_eth_concrete_segment_ids_allowed_of_query_binding",
             "runtime_pipeline_binding_checked_acceptance_eth_full_contract",
             "runtime_pipeline_binding_checked_acceptance_eth_concrete_core_sound_contract",
+            "runtime_pipeline_binding_checked_acceptance_eth_audited_finalized_segment_ids_contract",
+            "runtime_pipeline_binding_checked_acceptance_eth_audited_finalized_concrete_segment_ids_contract",
             "runtime_pipeline_binding_checked_acceptance_framed_guest_input",
             "runtime_pipeline_binding_checked_acceptance_framed_guest_input_segment_payload_nonempty",
             "runtime_pipeline_binding_checked_acceptance_framed_guest_input_co_bindings",
@@ -1107,6 +1109,72 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
         &[
             "runtime_pipeline_binding_checked_acceptance_eth_concrete_segment_ids_allowed",
             "runtime_eth_block_public_input_binding_checked_acceptance_evidence_core_and_sound",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_pipeline_binding_checked_acceptance_eth_audited_finalized_segment_ids_contract",
+        &[
+            "AssumptionBundle system",
+            "RuntimePipelineBindingCheckedAcceptance",
+            "RequiredCryptographicAssumptionStatements assumptions.crypto",
+            "RequiredSemanticAssumptionStatements assumptions.semantic",
+            "RuntimeEthBlockPublicInputBindingEvidence",
+            "RuntimeProofArtifactFinalized",
+            "RuntimeEthBlockPublicInputBindingStructuralObligations",
+            "RuntimeVerifierCoreContract system publicInput proof",
+            "exists witness trace constraints",
+            "system.traceConsistent publicInput proof trace",
+            "system.constraintsSatisfied constraints trace",
+            "system.witnessMatchesTrace witness trace",
+            "SoundWitness system publicInput proof",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_pipeline_binding_checked_acceptance_eth_audited_finalized_segment_ids_contract",
+        &[
+            "runtime_pipeline_binding_checked_acceptance_eth",
+            "runtime_eth_block_public_input_binding_audited_finalized_segment_ids_contract",
+        ],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &lean_source,
+        "runtime_pipeline_binding_checked_acceptance_eth_audited_finalized_segment_ids_contract",
+        &[
+            "accepted_proof_audited_core_and_sound_witness",
+            "runtime_proof_artifact_finalized_from_checked_acceptance",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_pipeline_binding_checked_acceptance_eth_audited_finalized_concrete_segment_ids_contract",
+        &[
+            "RuntimeProofArtifactConcreteSegmentIdBinding",
+            "RuntimePipelineBindingCheckedAcceptance",
+            "RequiredCryptographicAssumptionStatements assumptions.crypto",
+            "RequiredSemanticAssumptionStatements assumptions.semantic",
+            "RuntimeProofArtifactFinalized",
+            "RuntimeVerifierCoreContract system publicInput proof",
+            "exists witness trace constraints",
+            "SoundWitness system publicInput proof",
+            "RuntimeProofArtifactConcreteSegmentIdsAllowed proof",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_pipeline_binding_checked_acceptance_eth_audited_finalized_concrete_segment_ids_contract",
+        &[
+            "runtime_pipeline_binding_checked_acceptance_eth",
+            "runtime_eth_block_public_input_binding_audited_finalized_concrete_segment_ids_contract",
+        ],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &lean_source,
+        "runtime_pipeline_binding_checked_acceptance_eth_audited_finalized_concrete_segment_ids_contract",
+        &[
+            "runtime_pipeline_binding_checked_acceptance_eth_audited_finalized_segment_ids_contract",
+            "runtime_pipeline_binding_checked_acceptance_eth_concrete_segment_ids_allowed",
         ],
     );
     lean_binding::assert_theorem_prefix_contains(
