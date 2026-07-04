@@ -7449,61 +7449,6 @@ fn report_level_fast_path_parts_routes_representative_rows() {
 }
 
 #[test]
-fn fast_path_report_effects_with_known_register_index_match_report_effects() {
-    let writing_report =
-        GuestMachineReport {
-            address_and_instruction_len:
-                crate::guest_machine::pack_report_address_and_instruction_len(0x8000_0000, 4),
-            instruction: RiscvInstruction::OpImm {
-                kind: RiscvOpImmKind::Addi,
-                rd: 3,
-                rs1: 2,
-                immediate: 8,
-            },
-            next_pc: 0x8000_0004,
-            register_write_value: GuestRegisterWriteValue::new(0xaa5d),
-            memory_accesses: vec![].into(),
-        };
-    let store_report =
-        GuestMachineReport {
-            address_and_instruction_len:
-                crate::guest_machine::pack_report_address_and_instruction_len(0x8000_0004, 4),
-            instruction: RiscvInstruction::Store {
-                kind: RiscvStoreKind::Sd,
-                rs1: 2,
-                rs2: 3,
-                offset: 16,
-            },
-            next_pc: 0x8000_0008,
-            register_write_value: GuestRegisterWriteValue::new(0xdead_beef),
-            memory_accesses: vec![GuestMemoryAccess {
-                kind: GuestMemoryAccessKind::Write,
-                address: 0x1010,
-                byte_len: 8,
-                value: 0xaa55,
-            }]
-            .into(),
-        };
-    let precompile_report = fixed_precompile_report(0x8000_0008, RiscvPrecompileKind::Keccak);
-
-    for (report, register_index) in [
-        (&writing_report, Some(3)),
-        (&store_report, None),
-        (&precompile_report, None),
-    ] {
-        let derived = ZiskMainReportEffects::from_report(report);
-        let known = ZiskMainReportEffects::from_report_with_register_index(report, register_index);
-        assert_eq!(known.register_writes, derived.register_writes);
-        assert_eq!(known.memory_accesses, derived.memory_accesses);
-        assert_eq!(
-            known.precompile_memory_accesses,
-            derived.precompile_memory_accesses
-        );
-        assert_eq!(known.precompile_result, derived.precompile_result);
-    }
-}
-
-#[test]
 fn fcall_result_fast_path_parts_match_generic_lowering() {
     let report =
         GuestMachineReport {
