@@ -43,6 +43,24 @@ def ProofTimingBatchLargeAverageRejected
     summary.largeTimingParseFailedCount
     baselineMilliseconds
 
+theorem proof_timing_batch_small_rejected_average_field_contract
+    (summary : ProofTimingBatchSummary)
+    (baselineMilliseconds : Nat) :
+    ProofTimingBatchSmallAverageRejected summary baselineMilliseconds
+      <-> 3 <= summary.smallStableRunCount
+        /\ summary.smallTimingParseFailedCount = 0
+        /\ baselineMilliseconds < summary.smallStableAverageMilliseconds := by
+  rfl
+
+theorem proof_timing_batch_large_rejected_average_field_contract
+    (summary : ProofTimingBatchSummary)
+    (baselineMilliseconds : Nat) :
+    ProofTimingBatchLargeAverageRejected summary baselineMilliseconds
+      <-> 3 <= summary.largeStableRunCount
+        /\ summary.largeTimingParseFailedCount = 0
+        /\ baselineMilliseconds < summary.largeStableAverageMilliseconds := by
+  rfl
+
 theorem proof_timing_batch_observed_acceptance_projects_verifier_acceptance
     {system : VerifierModel}
     (summary : Option ProofTimingBatchSummary) :

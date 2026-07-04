@@ -4525,6 +4525,8 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "proof_timing_batch_acceptance_sound",
             "proof_timing_batch_acceptance_verifier_core_contract",
             "proof_timing_batch_acceptance_core_and_sound",
+            "proof_timing_batch_small_rejected_average_field_contract",
+            "proof_timing_batch_large_rejected_average_field_contract",
             "proof_timing_batch_small_rejected_average_acceptance_core_and_sound",
             "proof_timing_batch_large_rejected_average_acceptance_core_and_sound",
         ],
@@ -4547,6 +4549,29 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "sound_witness_implies_verifier_core_contract",
         ],
     );
+    for (theorem, fields) in [
+        (
+            "proof_timing_batch_small_rejected_average_field_contract",
+            &[
+                "ProofTimingBatchSmallAverageRejected summary baselineMilliseconds",
+                "3 <= summary.smallStableRunCount",
+                "summary.smallTimingParseFailedCount = 0",
+                "baselineMilliseconds < summary.smallStableAverageMilliseconds",
+            ][..],
+        ),
+        (
+            "proof_timing_batch_large_rejected_average_field_contract",
+            &[
+                "ProofTimingBatchLargeAverageRejected summary baselineMilliseconds",
+                "3 <= summary.largeStableRunCount",
+                "summary.largeTimingParseFailedCount = 0",
+                "baselineMilliseconds < summary.largeStableAverageMilliseconds",
+            ][..],
+        ),
+    ] {
+        lean_binding::assert_theorem_prefix_contains(&lean_proof_timing_source, theorem, fields);
+        lean_binding::assert_theorem_body_contains(&lean_proof_timing_source, theorem, &["rfl"]);
+    }
     for (theorem, evidence) in [
         (
             "proof_timing_batch_small_rejected_average_acceptance_core_and_sound",
