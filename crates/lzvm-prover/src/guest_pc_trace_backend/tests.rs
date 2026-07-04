@@ -3156,7 +3156,10 @@ fn live_report_chunk_parallel_lower_streams_chunks_to_workers() {
     assert!(produced.timing.parallel_lower_stream_segment_count() > 0);
     assert_eq!(
         produced.timing.owned_streaming_lower_segment_count(),
-        produced.timing.parallel_lower_stream_segment_count()
+        produced
+            .timing
+            .parallel_lower_stream_segment_count()
+            .saturating_add(produced.timing.parallel_lower_stream_fallback_count())
     );
     for (emitted, expected) in emitted.iter().zip(expected.iter()) {
         assert_eq!(emitted.trace_instance_index, expected.trace_instance_index);
@@ -3729,6 +3732,7 @@ fn live_chunks_before_segment_start_lower_with_traceless_output() {
     let (mut live_memory, mut live_state, mut live_fcall_handler) =
         load_guest_pc_trace_machine(context, &[]).expect("live guest trace machine should load");
     let mut instruction_cache = GuestInstructionCache::default();
+    let mut live_timing = GuestPcTraceStreamTiming::default();
     let (sender, receiver) = mpsc::sync_channel(8);
     emit_guest_pc_trace_live_pending_segment_messages(
         &mut live_memory,
@@ -3741,6 +3745,8 @@ fn live_chunks_before_segment_start_lower_with_traceless_output() {
         None,
         None,
         &mut instruction_cache,
+        false,
+        &mut live_timing,
         false,
         1,
         |message| {

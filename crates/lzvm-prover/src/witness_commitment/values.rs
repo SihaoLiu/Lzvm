@@ -1336,6 +1336,16 @@ impl WitnessStageCommitment {
         }
     }
 
+    #[cfg(all(test, feature = "cuda"))]
+    pub(crate) fn drop_retained_source_device_for_test(&mut self) -> bool {
+        match &mut self.tree {
+            WitnessStageTreeStorage::Host(_) => false,
+            WitnessStageTreeStorage::Compact(storage) => {
+                storage.retained_source_device.take().is_some()
+            }
+        }
+    }
+
     #[cfg(feature = "cuda")]
     pub(crate) fn requires_external_source(&self) -> bool {
         match &self.tree {

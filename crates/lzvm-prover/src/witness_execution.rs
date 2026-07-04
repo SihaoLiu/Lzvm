@@ -78,12 +78,9 @@ use crate::witness_commitment::{
     WitnessStageLeafWorkspaceCache, WitnessStageRetainedSourceDevice, WitnessStageSourceDevice,
     WitnessStageSourceDeviceView,
 };
-#[cfg(not(feature = "cuda"))]
 use crate::witness_commitment::{
     commit_witness_stage_values_with_workers,
     commit_witness_stage_values_with_workers_and_indexed_timing,
-};
-use crate::witness_commitment::{
     commit_witness_trace_stages_with_host_workers, commit_witness_trace_stages_with_workers,
     WitnessIndexedStageCommitTiming, WitnessStageCommitTiming, WitnessTraceCommitmentError,
     WitnessTraceCommitments,
@@ -7042,7 +7039,26 @@ fn run_prove_witness_commitments_from_trace_inner(
         let (stage_commitments, stage_timing, stage_timings) = (|| {
             let mut stage_timing = WitnessStageCommitTiming::default();
             #[cfg(feature = "cuda")]
-            let (stage_commitments, stage_timings) = if use_host_trace_cpu_commitment {
+            let (stage_commitments, stage_timings) = if use_host_trace_cpu_commitment
+                && stage_trace_cache.is_extracted()
+            {
+                let stage_traces = record_optional_duration(
+                    Some(&mut timing.stage_trace_extract_duration),
+                    || {
+                        stage_trace_cache.get_or_extract_optional(
+                            &layout,
+                            trace_ref,
+                            "timed tiny host-trace cached stage commitment",
+                        )
+                    },
+                )?;
+                commit_witness_stage_values_with_workers_and_indexed_timing(
+                    stage_traces,
+                    unit,
+                    plan.run_plan.gpu.witness_thread_pools,
+                    &mut stage_timing,
+                )?
+            } else if use_host_trace_cpu_commitment {
                 let trace =
                     require_host_trace(trace_ref, "timed tiny host-trace CPU stage commitment")?;
                 let commitments = commit_witness_trace_stages_with_host_workers(
@@ -7162,6 +7178,17 @@ fn run_prove_witness_commitments_from_trace_inner(
             stage_timings,
         );
         stage_commitments
+    } else if use_host_trace_cpu_commitment && stage_trace_cache.is_extracted() {
+        let stage_traces = stage_trace_cache.get_or_extract_optional(
+            &layout,
+            trace_ref,
+            "tiny host-trace cached stage commitment",
+        )?;
+        commit_witness_stage_values_with_workers(
+            stage_traces,
+            unit,
+            plan.run_plan.gpu.witness_thread_pools,
+        )?
     } else if use_host_trace_cpu_commitment {
         let trace = require_host_trace(trace_ref, "tiny host-trace CPU stage commitment")?;
         commit_witness_trace_stages_with_host_workers(
@@ -8170,6 +8197,7 @@ mod tests {
             commit_witness_stage_device_compact_with_leaf_hash_level,
             compact_witness_stage_leaf_hash_level_from_source_device_timing,
             WitnessStageDeviceCompactCommitInput, WitnessStageLeafExtendTiming,
+            WitnessStageSourceDevice,
         },
         witness_opening::build_witness_opening_segment_batch_from_trace_outputs_with_timing,
     };
@@ -8365,7 +8393,7 @@ mod tests {
 
     #[cfg(feature = "cuda")]
     #[test]
-    fn trace_output_witness_openings_batch_device_row_downloads_across_outputs() {
+    fn trace_output_witness_openings_use_retained_source_rows_across_outputs() {
         let retained_env = TestEnvVarGuard::new("LZVM_CUDA_RETAINED_SOURCE_BYTES");
         retained_env.set("1048576");
         let source_bits = 2;
@@ -8421,14 +8449,32 @@ mod tests {
             segment.id,
             lzvm_artifacts::witness_opening_segment::WITNESS_OPENING_SEGMENT_ID
         );
-        assert_eq!(timing.witness_opening_row_values_device_row_count, 2);
+        assert_eq!(timing.witness_opening_retained_source_count, 2);
+        assert_eq!(timing.witness_opening_embedded_source_count, 0);
+        assert_eq!(timing.witness_opening_row_values_device_row_count, 0);
         assert_eq!(
             timing.witness_opening_row_values_device_download_batch_count,
-            1
+            0
         );
         assert_eq!(
             timing.witness_opening_row_values_device_single_download_count,
             0
+        );
+        assert_eq!(
+            timing.witness_opening_row_values_source_row_count,
+            2 * arity
+        );
+        assert_eq!(
+            timing.witness_opening_row_values_source_extend_call_count,
+            2
+        );
+        assert_eq!(
+            timing.witness_opening_row_values_source_extend_max_row_count,
+            arity
+        );
+        assert_eq!(
+            timing.witness_opening_row_values_word_count,
+            2 * arity * column_count
         );
         assert_eq!(timing.witness_opening_query_unit_count, 2);
         assert_eq!(timing.witness_opening_single_query_unit_count, 2);
@@ -8554,11 +8600,24 @@ mod tests {
                 column_count,
                 column_count,
                 0,
-                source_device,
+                source_device.clone(),
             )),
         )
         .expect("compact commitment should build");
         assert!(commitment.drop_retained_leaf_digest_level_for_test());
+        assert!(commitment.drop_retained_source_device_for_test());
+        let retained_source =
+            WitnessStageSourceDevice::from_row_major_column_window_with_known_zero(
+                1,
+                source_rows,
+                column_count,
+                column_count,
+                0,
+                false,
+                &source_device,
+            )
+            .retain()
+            .expect("source device should be retained for opening");
         let commitments = WitnessTraceCommitments::new(vec![commitment]);
         ProveWitnessTraceCommitments {
             commitments: ProveWitnessCommitments {
@@ -8576,7 +8635,7 @@ mod tests {
                 witness_values_committed: true,
                 constraint_checker_conformant: true,
             },
-            stage_source_devices: Vec::new(),
+            stage_source_devices: vec![retained_source],
             guest_pc_device_descriptor_buffer: None,
             guest_pc_device_segment_material: None,
             publics: Vec::new(),
