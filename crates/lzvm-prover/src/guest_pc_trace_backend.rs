@@ -10311,7 +10311,7 @@ impl ZiskMainStreamingDeviceSegmentBuilder {
             next_instruction,
             &mut self.state,
             &mut self.context,
-            if timing_config.row_timing_enabled && (report_detail_timing || report_shape_timing) {
+            if !timing_config.row_timing_enabled || report_detail_timing || report_shape_timing {
                 timing.as_deref_mut()
             } else {
                 None
