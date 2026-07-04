@@ -1125,7 +1125,7 @@ impl GuestInstructionCache {
         Ok(prepared)
     }
 
-    #[inline(always)]
+    #[inline]
     pub(crate) fn clear(&mut self) {
         match self.generation.checked_add(1) {
             Some(next) => {
@@ -1142,7 +1142,7 @@ impl GuestInstructionCache {
         }
     }
 
-    #[inline(always)]
+    #[inline]
     pub(crate) fn clear_with_stats(&mut self, stats: &mut GuestInstructionCacheStats) {
         stats.clear_count += 1;
         self.clear();
@@ -1181,12 +1181,12 @@ impl GuestInstructionCache {
         }
     }
 
-    #[inline(always)]
+    #[inline]
     pub(crate) fn invalidate_write_range(&mut self, address: u64, byte_len: usize) {
         self.invalidate_range(address, byte_len);
     }
 
-    #[inline(always)]
+    #[inline]
     pub(crate) fn invalidate_write_range_with_stats(
         &mut self,
         address: u64,
@@ -1216,7 +1216,7 @@ impl GuestInstructionCache {
         }
     }
 
-    #[inline(always)]
+    #[inline]
     fn invalidate_range(&mut self, address: u64, byte_len: usize) {
         if byte_len == 0 {
             return;
@@ -1240,7 +1240,7 @@ impl GuestInstructionCache {
         }
     }
 
-    #[inline(always)]
+    #[inline]
     fn invalidate_range_with_stats(
         &mut self,
         address: u64,
@@ -1285,19 +1285,19 @@ impl GuestInstructionCache {
         false
     }
 
-    #[inline(always)]
+    #[inline]
     fn record_cached_address(&mut self, address: u64) {
         self.min_cached_address = self.min_cached_address.min(address);
         self.max_cached_address = self.max_cached_address.max(address);
     }
 
-    #[inline(always)]
+    #[inline]
     fn clear_cached_address_range(&mut self) {
         self.min_cached_address = u64::MAX;
         self.max_cached_address = 0;
     }
 
-    #[inline(always)]
+    #[inline]
     fn cached_range_can_overlap(&self, start: u64, end: u64) -> bool {
         self.min_cached_address <= self.max_cached_address
             && start <= self.max_cached_address
@@ -1311,7 +1311,7 @@ impl GuestInstructionCache {
 }
 
 impl GuestInstructionCacheUpdate {
-    #[inline(always)]
+    #[inline]
     pub(crate) fn apply_or_invalidate_report(
         self,
         instruction_cache: &mut GuestInstructionCache,
@@ -1326,7 +1326,7 @@ impl GuestInstructionCacheUpdate {
         }
     }
 
-    #[inline(always)]
+    #[inline]
     pub(crate) fn apply_or_invalidate_report_shape(
         self,
         instruction_cache: &mut GuestInstructionCache,
@@ -1342,7 +1342,7 @@ impl GuestInstructionCacheUpdate {
         }
     }
 
-    #[inline(always)]
+    #[inline]
     pub(crate) fn apply_or_invalidate_report_shape_with_stats(
         self,
         instruction_cache: &mut GuestInstructionCache,
@@ -1683,7 +1683,7 @@ fn run_guest_machine_inner(
     }
 }
 
-#[inline(always)]
+#[inline]
 pub(crate) fn instruction_cache_update_for_instruction(
     state: &GuestMachineState,
     instruction: RiscvInstruction,
@@ -1712,7 +1712,7 @@ pub(crate) fn instruction_cache_update_for_instruction(
     GuestInstructionCacheUpdate::InvalidateWriteRange { address, byte_len }
 }
 
-#[inline(always)]
+#[inline]
 fn pending_dma_write_range(
     state: &GuestMachineState,
     pending: GuestDmaPrepare,

@@ -4142,7 +4142,7 @@ RUNNER_DETAIL_HOTSPOT_KEYS = [
     ("row_count", RUNNER_ROW_COUNT_SAMPLED_NS_KEY),
     ("post_boundary", RUNNER_POST_BOUNDARY_SAMPLED_NS_KEY),
     ("counter_update", RUNNER_COUNTER_UPDATE_SAMPLED_NS_KEY),
-    ("timer_bookkeeping", RUNNER_TIMER_BOOKKEEPING_SAMPLED_NS_KEY),
+    ("detail_recording", RUNNER_TIMER_BOOKKEEPING_SAMPLED_NS_KEY),
 ]
 
 
@@ -4185,8 +4185,8 @@ def trace_runner_detail_action_hint(
         return "profile_instruction_cache_invalidation"
     if hotspot_name in {"row_plan", "row_count", "counter_update"} and hotspot_pct > 0.0:
         return "profile_runner_row_accounting"
-    if hotspot_name == "timer_bookkeeping" and hotspot_pct > 0.0:
-        return "reduce_runner_detail_timer_overhead"
+    if hotspot_name == "detail_recording" and hotspot_pct > 0.0:
+        return "reduce_runner_detail_recording_overhead"
     return "runner_detail_balanced"
 
 
