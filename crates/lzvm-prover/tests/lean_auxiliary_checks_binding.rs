@@ -1419,6 +1419,8 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
                 "finishWitnessOpeningRowValuesDeviceRowCount := deviceRows",
                 "finishWitnessOpeningRowValuesDeviceDownloadBatchCount := deviceDownloadBatches",
                 "finishWitnessOpeningRowValuesDeviceSingleDownloadCount := deviceSingleDownloads",
+                "finishWitnessOpeningRowValuesSourceExtendCallCount := sourceExtendCalls",
+                "finishWitnessOpeningRowValuesSourceExtendMaxRowCount := sourceExtendMaxRows",
                 "finishWitnessOpeningRowValuesSourceRowCount := sourceRows",
                 "finishWitnessOpeningRowValuesWordCount := words",
                 "finishWitnessOpeningRowValuesByteCount := bytes",
@@ -1440,6 +1442,8 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
                 "finishWitnessOpeningRowValuesDeviceRowCount := 0",
                 "finishWitnessOpeningRowValuesDeviceDownloadBatchCount := 0",
                 "finishWitnessOpeningRowValuesDeviceSingleDownloadCount := 0",
+                "finishWitnessOpeningRowValuesSourceExtendCallCount := sourceExtendCalls",
+                "finishWitnessOpeningRowValuesSourceExtendMaxRowCount := sourceExtendMaxRows",
                 "finishWitnessOpeningRowValuesSourceRowCount := sourceRows",
                 "finishWitnessOpeningRowValuesWordCount := words",
                 "finishWitnessOpeningRowValuesByteCount := bytes",
@@ -1640,6 +1644,8 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         "finishWitnessOpeningRowValuesDeviceRowCount := 0",
         "finishWitnessOpeningRowValuesDeviceDownloadBatchCount := 0",
         "finishWitnessOpeningRowValuesDeviceSingleDownloadCount := 0",
+        "finishWitnessOpeningRowValuesSourceExtendCallCount := sourceExtendCalls",
+        "finishWitnessOpeningRowValuesSourceExtendMaxRowCount := sourceExtendMaxRows",
         "finishWitnessOpeningRowValuesSourceRowCount := sourceRows",
         "finishWitnessOpeningRowValuesWordCount := words",
         "finishWitnessOpeningRowValuesByteCount := bytes",
@@ -1714,6 +1720,8 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
                 "rowValuesMilliseconds",
                 "sourceExtendMilliseconds",
                 "sourceDownloadMilliseconds",
+                "sourceExtendCalls",
+                "sourceExtendMaxRows",
                 "sourceRows",
                 "words",
                 "bytes",
@@ -1730,8 +1738,8 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
                     "{helper} assumptions summary retainedSourceCount \
                      retainedParentCheckpointOpeningCount \
                      retainedParentCheckpointOpeningRowCount rowValuesMilliseconds \
-                     sourceExtendMilliseconds sourceDownloadMilliseconds sourceRows words bytes \
-                     publicInput proof observed"
+                     sourceExtendMilliseconds sourceDownloadMilliseconds sourceExtendCalls \
+                     sourceExtendMaxRows sourceRows words bytes publicInput proof observed"
                 )
             ),
             "Lean theorem {theorem} should forward retained-source row values dimensions in order"
@@ -4775,6 +4783,8 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         "finishWitnessOpeningRowValuesDeviceRowCount",
         "finishWitnessOpeningRowValuesDeviceDownloadBatchCount",
         "finishWitnessOpeningRowValuesDeviceSingleDownloadCount",
+        "finishWitnessOpeningRowValuesSourceExtendCallCount",
+        "finishWitnessOpeningRowValuesSourceExtendMaxRowCount",
         "finishWitnessOpeningRowValuesSourceRowCount",
         "finishWitnessOpeningRowValuesWordCount",
         "finishWitnessOpeningRowValuesByteCount",

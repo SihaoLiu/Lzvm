@@ -564,6 +564,8 @@ structure ProofArtifactFinishTimingSummary where
   finishWitnessOpeningRowValuesDeviceRowCount : Nat
   finishWitnessOpeningRowValuesDeviceDownloadBatchCount : Nat
   finishWitnessOpeningRowValuesDeviceSingleDownloadCount : Nat
+  finishWitnessOpeningRowValuesSourceExtendCallCount : Nat
+  finishWitnessOpeningRowValuesSourceExtendMaxRowCount : Nat
   finishWitnessOpeningRowValuesSourceRowCount : Nat
   finishWitnessOpeningRowValuesWordCount : Nat
   finishWitnessOpeningRowValuesByteCount : Nat

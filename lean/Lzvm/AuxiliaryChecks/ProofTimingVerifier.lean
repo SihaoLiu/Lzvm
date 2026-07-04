@@ -75,7 +75,8 @@ theorem proof_artifact_finish_verifier_retained_source_row_values_acceptance_ver
     (summary : ProofArtifactFinishTimingSummary)
     (retainedSourceCount retainedParentCheckpointOpeningCount
       retainedParentCheckpointOpeningRowCount rowValuesMilliseconds
-      sourceExtendMilliseconds sourceDownloadMilliseconds sourceRows words bytes : Nat) :
+      sourceExtendMilliseconds sourceDownloadMilliseconds sourceExtendCalls
+      sourceExtendMaxRows sourceRows words bytes : Nat) :
     forall publicInput proof,
       ProofArtifactFinishTimingObservedAcceptance
         system
@@ -98,6 +99,8 @@ theorem proof_artifact_finish_verifier_retained_source_row_values_acceptance_ver
             finishWitnessOpeningRowValuesDeviceRowCount := 0
             finishWitnessOpeningRowValuesDeviceDownloadBatchCount := 0
             finishWitnessOpeningRowValuesDeviceSingleDownloadCount := 0
+            finishWitnessOpeningRowValuesSourceExtendCallCount := sourceExtendCalls
+            finishWitnessOpeningRowValuesSourceExtendMaxRowCount := sourceExtendMaxRows
             finishWitnessOpeningRowValuesSourceRowCount := sourceRows
             finishWitnessOpeningRowValuesWordCount := words
             finishWitnessOpeningRowValuesByteCount := bytes })
@@ -115,6 +118,8 @@ theorem proof_artifact_finish_verifier_retained_source_row_values_acceptance_ver
       rowValuesMilliseconds
       sourceExtendMilliseconds
       sourceDownloadMilliseconds
+      sourceExtendCalls
+      sourceExtendMaxRows
       sourceRows
       words
       bytes
@@ -128,7 +133,8 @@ theorem proof_artifact_finish_verifier_retained_source_row_values_acceptance_cor
     (summary : ProofArtifactFinishTimingSummary)
     (retainedSourceCount retainedParentCheckpointOpeningCount
       retainedParentCheckpointOpeningRowCount rowValuesMilliseconds
-      sourceExtendMilliseconds sourceDownloadMilliseconds sourceRows words bytes : Nat) :
+      sourceExtendMilliseconds sourceDownloadMilliseconds sourceExtendCalls
+      sourceExtendMaxRows sourceRows words bytes : Nat) :
     forall publicInput proof,
       ProofArtifactFinishTimingObservedAcceptance
         system
@@ -151,6 +157,8 @@ theorem proof_artifact_finish_verifier_retained_source_row_values_acceptance_cor
             finishWitnessOpeningRowValuesDeviceRowCount := 0
             finishWitnessOpeningRowValuesDeviceDownloadBatchCount := 0
             finishWitnessOpeningRowValuesDeviceSingleDownloadCount := 0
+            finishWitnessOpeningRowValuesSourceExtendCallCount := sourceExtendCalls
+            finishWitnessOpeningRowValuesSourceExtendMaxRowCount := sourceExtendMaxRows
             finishWitnessOpeningRowValuesSourceRowCount := sourceRows
             finishWitnessOpeningRowValuesWordCount := words
             finishWitnessOpeningRowValuesByteCount := bytes })
@@ -169,6 +177,8 @@ theorem proof_artifact_finish_verifier_retained_source_row_values_acceptance_cor
       rowValuesMilliseconds
       sourceExtendMilliseconds
       sourceDownloadMilliseconds
+      sourceExtendCalls
+      sourceExtendMaxRows
       sourceRows
       words
       bytes
