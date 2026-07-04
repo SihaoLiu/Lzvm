@@ -6720,6 +6720,78 @@ fn copy_register_indirect_store_fast_path_preserves_row_effects() {
 }
 
 #[test]
+fn copy_indirect_no_store_fast_path_preserves_row_effects() {
+    let accesses = [memory_read(0x108, 0xaa55)];
+    let effects = ZiskMainReportEffects {
+        register_writes: Vec::new().into(),
+        memory_accesses: &accesses,
+        precompile_memory_accesses: &[],
+        precompile_result: None,
+    };
+    let instruction = ZiskMainInstruction {
+        pc: 0x8000_0000,
+        a: ZiskMainSource::Register(2),
+        b: ZiskMainSource::Indirect(8),
+        op: ZiskMainOp::CopyB,
+        store: ZiskMainStore::None,
+        store_pc: false,
+        set_pc: false,
+        jmp_offset1: 4,
+        jmp_offset2: 4,
+        ind_width: 8,
+        m32: false,
+        is_external_op: false,
+        is_precompiled: false,
+    };
+    let mut state = ZiskMainTraceState::new();
+    state.registers[2] = 0x100;
+    state.register_mem_steps[2] = 33;
+    let mut context = ZiskMainReportValidationContext::new(
+        None,
+        16,
+        ZiskMainTraceSegmentInfo {
+            trace_instance_index: 0,
+            is_last_segment: false,
+            previous_c: 0,
+        },
+    )
+    .expect("context should initialize");
+    let mut visited = None;
+    apply_copy_indirect_no_store_fast_path(
+        3,
+        instruction,
+        effects,
+        0x8000_0004,
+        2,
+        8,
+        8,
+        &mut state,
+        &mut context,
+        &mut |row, values, timing| {
+            assert_eq!(row, 3);
+            assert!(timing.is_none());
+            visited = Some(values);
+            Ok(())
+        },
+    )
+    .expect("load row with no store should take fast path");
+
+    assert_eq!(state.registers[2], 0x100);
+    assert_eq!(state.last_c, 0xaa55);
+    assert_eq!(state.next_pc, 0x8000_0004);
+    assert_eq!(state.register_mem_steps[2], 13);
+    let values = visited.expect("fast path should emit row values");
+    assert_eq!(values.a, 0x100);
+    assert_eq!(values.b, 0xaa55);
+    assert_eq!(values.c, 0xaa55);
+    assert!(!values.flag);
+    assert_eq!(values.register_accesses.a_prev_mem_step, Some(33));
+    assert_eq!(values.register_accesses.b_prev_mem_step, None);
+    assert_eq!(values.register_accesses.store_prev_mem_step, None);
+    assert_eq!(values.register_accesses.store_prev_value, None);
+}
+
+#[test]
 fn copy_immediate_indirect_store_fast_path_preserves_row_effects() {
     let accesses = [memory_write(0x108, 0x1122_3344_5566_7788)];
     let effects = ZiskMainReportEffects {
@@ -6927,6 +6999,22 @@ fn report_level_fast_path_parts_routes_representative_rows() {
         (
             GuestMachineReport {
                 address_and_instruction_len:
+                    crate::guest_machine::pack_report_address_and_instruction_len(0x8000_0034, 4),
+                instruction: RiscvInstruction::Load {
+                    kind: RiscvLoadKind::Ld,
+                    rd: 0,
+                    rs1: 2,
+                    offset: 8,
+                },
+                next_pc: 0x8000_0038,
+                register_write_value: GuestRegisterWriteValue::default(),
+                memory_accesses: vec![memory_read(0x108, 0xaa55)].into(),
+            },
+            ReportLevelRoute::LoadCopy,
+        ),
+        (
+            GuestMachineReport {
+                address_and_instruction_len:
                     crate::guest_machine::pack_report_address_and_instruction_len(0x8000_0004, 4),
                 instruction: RiscvInstruction::Load {
                     kind: RiscvLoadKind::Lw,
@@ -7086,6 +7174,9 @@ fn report_level_fast_path_parts_routes_representative_rows() {
             MainReportFastPathParts::LoadCopy(instruction, ..) => {
                 (ReportLevelRoute::LoadCopy, instruction)
             }
+            MainReportFastPathParts::LoadNoStore(instruction, ..) => {
+                (ReportLevelRoute::LoadCopy, instruction)
+            }
             MainReportFastPathParts::LoadSignExtend(instruction, ..) => {
                 (ReportLevelRoute::LoadSignExtend, instruction)
             }
@@ -7188,9 +7279,9 @@ fn report_level_fast_path_parts_routes_representative_rows() {
     assert_eq!(parts.store_index, None);
     timing.record_main_report_generic_fallback();
 
-    assert_eq!(timing.trace_main_report_fast_path_count(), 13);
+    assert_eq!(timing.trace_main_report_fast_path_count(), 14);
     assert_eq!(timing.trace_main_report_generic_fallback_count(), 1);
-    assert_eq!(timing.trace_main_report_load_copy_fast_path_count(), 1);
+    assert_eq!(timing.trace_main_report_load_copy_fast_path_count(), 2);
     assert_eq!(
         timing.trace_main_report_load_sign_extend_fast_path_count(),
         1
