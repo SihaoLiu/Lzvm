@@ -342,6 +342,18 @@ def enforce_max_average(field: str, label: str, option: str, max_average: float 
         )
 
 
+def validate_candidate_timing_fields(
+    small_proof_time_s: str,
+    large_proof_time_s: str,
+) -> None:
+    if not small_proof_time_s and not large_proof_time_s:
+        raise SystemExit("at least one proof time field is required")
+    if small_proof_time_s:
+        timing_field_average_seconds(small_proof_time_s, "small proof time")
+    if large_proof_time_s:
+        timing_field_average_seconds(large_proof_time_s, "large proof time")
+
+
 def append_row(
     path: Path,
     commit: str,
@@ -431,6 +443,7 @@ def main() -> None:
             "--large-max-avg-s",
             args.large_max_avg_s,
         )
+        validate_candidate_timing_fields(small_proof_time_s, large_proof_time_s)
         append_row(
             path,
             args.commit or current_commit(),
