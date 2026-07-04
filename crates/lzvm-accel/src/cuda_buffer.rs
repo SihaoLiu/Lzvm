@@ -8,6 +8,7 @@ const ZISK_MAIN_TRACE_COMPACT_DESCRIPTOR_WORDS: usize = 11;
 const ZISK_MAIN_TRACE_SPARSE_DESCRIPTOR_WORDS: usize = 9;
 const ZISK_MAIN_TRACE_WIDE_DESCRIPTOR_WORDS: usize = 14;
 const ZISK_MAIN_TRACE_WIDTH_WORDS: usize = 39;
+const INLINE_ROW_MAJOR_ROW_SOURCE_LIMIT: usize = 16;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MainTraceDeviceLayout {
@@ -83,6 +84,13 @@ unsafe extern "C" {
     fn lzvm_cuda_copy_d2d_row_major_rows(
         dst: *mut c_void,
         sources: *const usize,
+        rows: *const u64,
+        selected_row_count: usize,
+        row_width_words: usize,
+    ) -> i32;
+    fn lzvm_cuda_copy_d2d_row_major_rows_inline(
+        dst: *mut c_void,
+        sources: *const u64,
         rows: *const u64,
         selected_row_count: usize,
         row_width_words: usize,
@@ -2516,16 +2524,26 @@ impl CudaDeviceBuffer {
                 bits: row_width_words,
                 len: sources.len(),
             })?;
-        let source_ptr_buffer = CudaDeviceBuffer::from_u64_words(&source_ptrs)?;
-        let row_buffer = CudaDeviceBuffer::from_u64_words(&row_indices)?;
         let code = unsafe {
-            lzvm_cuda_copy_d2d_row_major_rows(
-                self.ptr,
-                source_ptr_buffer.ptr as *const usize,
-                row_buffer.ptr as *const u64,
-                sources.len(),
-                row_width_words,
-            )
+            if sources.len() <= INLINE_ROW_MAJOR_ROW_SOURCE_LIMIT {
+                lzvm_cuda_copy_d2d_row_major_rows_inline(
+                    self.ptr,
+                    source_ptrs.as_ptr(),
+                    row_indices.as_ptr(),
+                    sources.len(),
+                    row_width_words,
+                )
+            } else {
+                let source_ptr_buffer = CudaDeviceBuffer::from_u64_words(&source_ptrs)?;
+                let row_buffer = CudaDeviceBuffer::from_u64_words(&row_indices)?;
+                lzvm_cuda_copy_d2d_row_major_rows(
+                    self.ptr,
+                    source_ptr_buffer.ptr as *const usize,
+                    row_buffer.ptr as *const u64,
+                    sources.len(),
+                    row_width_words,
+                )
+            }
         };
         cuda_status(code)
     }

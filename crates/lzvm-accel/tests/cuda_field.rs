@@ -1164,6 +1164,37 @@ fn cuda_device_buffer_gathers_row_major_rows_from_multiple_devices() {
 
 #[test]
 #[cfg(feature = "cuda")]
+fn cuda_device_buffer_gathers_many_row_major_rows_from_devices() {
+    let buffers = (0_u64..17)
+        .map(|index| {
+            let base = index * 10;
+            CudaDeviceBuffer::from_u64_words(&[base, base + 1, base + 2, base + 3])
+                .expect("source device buffer should upload")
+        })
+        .collect::<Vec<_>>();
+    let sources = buffers
+        .iter()
+        .enumerate()
+        .map(|(index, buffer)| (buffer, 2, index % 2))
+        .collect::<Vec<_>>();
+
+    let buffer = CudaDeviceBuffer::from_device_row_major_u64_rows(&sources, 2)
+        .expect("device rows should gather");
+    let actual = buffer
+        .to_u64_words()
+        .expect("gathered device rows should download");
+    let expected = (0_u64..17)
+        .flat_map(|index| {
+            let base = index * 10 + (index % 2) * 2;
+            [base, base + 1]
+        })
+        .collect::<Vec<_>>();
+
+    assert_eq!(actual, expected);
+}
+
+#[test]
+#[cfg(feature = "cuda")]
 fn cuda_device_buffer_copies_u64_words_directly() {
     let input = vec![
         0,

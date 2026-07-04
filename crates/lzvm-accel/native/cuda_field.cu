@@ -31,6 +31,7 @@ constexpr size_t kKeccakStateLanes = 25;
 constexpr size_t kKeccakRateLanes = 17;
 constexpr size_t kKeccakOutputBytes = 32;
 constexpr size_t kMaxRootBits = 32;
+constexpr size_t kInlineRowMajorRowSourceLimit = 16;
 constexpr uint64_t kGoldilocksEpsilon = 0xffffffffULL;
 
 __device__ __constant__ uint64_t kNttStageRoots[kMaxRootBits + 1];
@@ -39,6 +40,10 @@ __device__ __constant__ unsigned int kNttStageRootLimit;
 
 #include "cuda_field_constants.cuh"
 
+struct InlineRowMajorRowsRequest {
+    uintptr_t sources[kInlineRowMajorRowSourceLimit];
+    uint64_t rows[kInlineRowMajorRowSourceLimit];
+};
 
 __device__ uint64_t add_mod(uint64_t lhs, uint64_t rhs) {
     const uint64_t threshold = kModulus - rhs;
@@ -406,6 +411,24 @@ __global__ void copy_d2d_row_major_rows_kernel(
     dst[word_index] = src[static_cast<size_t>(source_row) * row_width_words + column];
 }
 
+__global__ void copy_d2d_row_major_rows_inline_kernel(
+    uint64_t* dst,
+    InlineRowMajorRowsRequest request,
+    size_t selected_row_count,
+    size_t row_width_words) {
+    const size_t word_index = blockIdx.x * blockDim.x + threadIdx.x;
+    const size_t total_words = selected_row_count * row_width_words;
+    if (word_index >= total_words) {
+        return;
+    }
+    const size_t selected_row_index = word_index / row_width_words;
+    const size_t column = word_index - selected_row_index * row_width_words;
+    const uint64_t source_row = request.rows[selected_row_index];
+    const uint64_t* src =
+        reinterpret_cast<const uint64_t*>(request.sources[selected_row_index]);
+    dst[word_index] = src[static_cast<size_t>(source_row) * row_width_words + column];
+}
+
 __global__ void copy_d2d_row_major_concat_words_kernel(
     uint64_t* dst,
     const uint64_t* left,
@@ -622,6 +645,39 @@ extern "C" int lzvm_cuda_copy_d2d_row_major_rows(
         static_cast<uint64_t*>(dst),
         sources,
         rows,
+        selected_row_count,
+        row_width_words);
+    return lzvm_cuda_check_launch();
+}
+
+extern "C" int lzvm_cuda_copy_d2d_row_major_rows_inline(
+    void* dst,
+    const uint64_t* sources,
+    const uint64_t* rows,
+    size_t selected_row_count,
+    size_t row_width_words) {
+    if (selected_row_count == 0) {
+        return 0;
+    }
+    if (dst == nullptr || sources == nullptr || rows == nullptr) {
+        return -1;
+    }
+    if (row_width_words == 0 || selected_row_count > kInlineRowMajorRowSourceLimit) {
+        return -2;
+    }
+    if (selected_row_count > std::numeric_limits<size_t>::max() / row_width_words) {
+        return -2;
+    }
+    InlineRowMajorRowsRequest request{};
+    for (size_t i = 0; i < selected_row_count; ++i) {
+        request.sources[i] = static_cast<uintptr_t>(sources[i]);
+        request.rows[i] = rows[i];
+    }
+    const size_t total_words = selected_row_count * row_width_words;
+    const size_t blocks = (total_words + kThreads - 1) / kThreads;
+    copy_d2d_row_major_rows_inline_kernel<<<blocks, kThreads>>>(
+        static_cast<uint64_t*>(dst),
+        request,
         selected_row_count,
         row_width_words);
     return lzvm_cuda_check_launch();
