@@ -923,6 +923,7 @@ impl GuestPcTraceStreamTiming {
         self.runner_instruction_cache_invalidated_entry_count += stats.invalidated_entry_count;
     }
 
+    #[inline(always)]
     fn record_main_report_fast_path(&mut self, parts: &MainReportFastPathParts) {
         self.trace_main_report_fast_path_count += 1;
         match parts {
