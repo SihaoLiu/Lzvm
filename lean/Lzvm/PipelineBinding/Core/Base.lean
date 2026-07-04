@@ -1367,6 +1367,65 @@ theorem runtime_pipeline_binding_checked_acceptance_eth_full_contract
       proof
       ethAccepted
 
+theorem runtime_pipeline_binding_checked_acceptance_eth_concrete_core_sound_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimePipelineBindingValidation system)
+    (binding :
+      RuntimeProofArtifactConcreteSegmentIdBinding
+        validation.ethBindingValidation.proofArtifactBindingValidation) :
+    forall artifact publicInput proof,
+      RuntimePipelineBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        (RuntimeEthBlockPublicInputBindingEvidence
+            system
+            validation.ethBindingValidation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeProofArtifactBindingEvidence
+            system
+            validation.ethBindingValidation.proofArtifactBindingValidation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeEthBlockPublicInputBindingStructuralObligations
+            system
+            validation.ethBindingValidation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeArtifactEvidence
+            system
+            validation.ethBindingValidation.proofArtifactBindingValidation.runtimeValidation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof)
+          /\ RuntimeProofArtifactConcreteSegmentIdsAllowed proof := by
+  intro artifact publicInput proof accepted
+  have ethAccepted :=
+    runtime_pipeline_binding_checked_acceptance_eth
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  exact
+    runtime_eth_block_public_input_binding_checked_acceptance_concrete_core_sound_contract
+      assumptions
+      validation.ethBindingValidation
+      binding
+      artifact
+      publicInput
+      proof
+      ethAccepted
+
 theorem runtime_pipeline_binding_checked_acceptance_eth_public_input_contract
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
