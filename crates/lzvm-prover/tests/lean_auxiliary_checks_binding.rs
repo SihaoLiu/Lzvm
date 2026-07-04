@@ -312,6 +312,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         "proof_artifact_finish_leaf_work_shape_acceptance_core_and_sound",
         "proof_artifact_finish_path_parent_hash_shape_acceptance_core_and_sound",
         "proof_artifact_finish_row_values_shape_acceptance_core_and_sound",
+        "proof_artifact_finish_retained_source_row_values_acceptance_core_and_sound",
     ] {
         assert!(
             lean_binding::contains_theorem_declaration(
@@ -1424,6 +1425,27 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             ][..],
         ),
         (
+            "proof_artifact_finish_retained_source_row_values_acceptance_core_and_sound",
+            &[
+                "finishWitnessOpeningRetainedSourceCount := retainedSourceCount",
+                "finishWitnessOpeningExternalSourceCount := 0",
+                "finishWitnessOpeningEmbeddedSourceCount := 0",
+                "finishWitnessOpeningMissingSourceCount := 0",
+                "finishWitnessOpeningRetainedParentCheckpointOpeningCount := retainedParentCheckpointOpeningCount",
+                "finishWitnessOpeningRetainedParentCheckpointOpeningRowCount := retainedParentCheckpointOpeningRowCount",
+                "finishWitnessOpeningRowValuesMilliseconds := rowValuesMilliseconds",
+                "finishWitnessOpeningRowValueSourceExtendMilliseconds := sourceExtendMilliseconds",
+                "finishWitnessOpeningRowValueSourceDownloadMilliseconds := sourceDownloadMilliseconds",
+                "finishWitnessOpeningRowValueDeviceDownloadMilliseconds := 0",
+                "finishWitnessOpeningRowValuesDeviceRowCount := 0",
+                "finishWitnessOpeningRowValuesDeviceDownloadBatchCount := 0",
+                "finishWitnessOpeningRowValuesDeviceSingleDownloadCount := 0",
+                "finishWitnessOpeningRowValuesSourceRowCount := sourceRows",
+                "finishWitnessOpeningRowValuesWordCount := words",
+                "finishWitnessOpeningRowValuesByteCount := bytes",
+            ][..],
+        ),
+        (
             "proof_artifact_finish_external_source_timing_acceptance_core_and_sound",
             &[
                 "finishWitnessExternalSourceMilliseconds := externalSourceMilliseconds",
@@ -1514,6 +1536,8 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         &[
             "proof_artifact_finish_verifier_descriptor_upload_shape_acceptance_verifier_core_contract",
             "proof_artifact_finish_verifier_descriptor_upload_shape_acceptance_core_and_sound",
+            "proof_artifact_finish_verifier_retained_source_row_values_acceptance_verifier_core_contract",
+            "proof_artifact_finish_verifier_retained_source_row_values_acceptance_core_and_sound",
         ],
     );
     let verifier_descriptor_upload_field_terms = [
@@ -1600,6 +1624,117 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
                 &format!("{helper} assumptions summary byteCount wordCount rowCount publicInput proof observed")
             ),
             "Lean theorem {theorem} should forward descriptor upload dimensions in order"
+        );
+    }
+    let verifier_retained_source_row_values_field_terms = [
+        "finishWitnessOpeningRetainedSourceCount := retainedSourceCount",
+        "finishWitnessOpeningExternalSourceCount := 0",
+        "finishWitnessOpeningEmbeddedSourceCount := 0",
+        "finishWitnessOpeningMissingSourceCount := 0",
+        "finishWitnessOpeningRetainedParentCheckpointOpeningCount := retainedParentCheckpointOpeningCount",
+        "finishWitnessOpeningRetainedParentCheckpointOpeningRowCount := retainedParentCheckpointOpeningRowCount",
+        "finishWitnessOpeningRowValuesMilliseconds := rowValuesMilliseconds",
+        "finishWitnessOpeningRowValueSourceExtendMilliseconds := sourceExtendMilliseconds",
+        "finishWitnessOpeningRowValueSourceDownloadMilliseconds := sourceDownloadMilliseconds",
+        "finishWitnessOpeningRowValueDeviceDownloadMilliseconds := 0",
+        "finishWitnessOpeningRowValuesDeviceRowCount := 0",
+        "finishWitnessOpeningRowValuesDeviceDownloadBatchCount := 0",
+        "finishWitnessOpeningRowValuesDeviceSingleDownloadCount := 0",
+        "finishWitnessOpeningRowValuesSourceRowCount := sourceRows",
+        "finishWitnessOpeningRowValuesWordCount := words",
+        "finishWitnessOpeningRowValuesByteCount := bytes",
+    ];
+    let verifier_retained_source_row_values_verifier_theorem =
+        "proof_artifact_finish_verifier_retained_source_row_values_acceptance_verifier_core_contract";
+    let verifier_retained_source_row_values_combined_theorem =
+        "proof_artifact_finish_verifier_retained_source_row_values_acceptance_core_and_sound";
+    lean_binding::assert_theorem_prefix_contains(
+        &proof_timing_verifier_source,
+        verifier_retained_source_row_values_verifier_theorem,
+        &["RuntimeVerifierCoreContract system publicInput proof"],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &proof_timing_verifier_source,
+        verifier_retained_source_row_values_verifier_theorem,
+        &["proof_artifact_finish_retained_source_row_values_acceptance_verifier_core_contract"],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &proof_timing_verifier_source,
+        verifier_retained_source_row_values_verifier_theorem,
+        &[
+            "proof_artifact_finish_retained_source_row_values_acceptance_sound",
+            "sound_witness_implies_verifier_core_contract",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &proof_timing_verifier_source,
+        verifier_retained_source_row_values_combined_theorem,
+        &[
+            "RuntimeVerifierCoreContract system publicInput proof",
+            "SoundWitness system publicInput proof",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &proof_timing_verifier_source,
+        verifier_retained_source_row_values_combined_theorem,
+        &["proof_artifact_finish_retained_source_row_values_acceptance_core_and_sound"],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &proof_timing_verifier_source,
+        verifier_retained_source_row_values_combined_theorem,
+        &[
+            "proof_artifact_finish_retained_source_row_values_acceptance_sound",
+            "sound_witness_implies_verifier_core_contract",
+        ],
+    );
+    for (theorem, helper) in [
+        (
+            verifier_retained_source_row_values_verifier_theorem,
+            "proof_artifact_finish_retained_source_row_values_acceptance_verifier_core_contract",
+        ),
+        (
+            verifier_retained_source_row_values_combined_theorem,
+            "proof_artifact_finish_retained_source_row_values_acceptance_core_and_sound",
+        ),
+    ] {
+        let prefix = lean_binding::theorem_prefix(&proof_timing_verifier_source, theorem);
+        for field_term in verifier_retained_source_row_values_field_terms {
+            assert!(
+                compact_source_contains(&prefix, field_term),
+                "Lean theorem {theorem} prefix should wire field {field_term}"
+            );
+        }
+        lean_binding::assert_theorem_body_contains(
+            &proof_timing_verifier_source,
+            theorem,
+            &[
+                "retainedSourceCount",
+                "retainedParentCheckpointOpeningCount",
+                "retainedParentCheckpointOpeningRowCount",
+                "rowValuesMilliseconds",
+                "sourceExtendMilliseconds",
+                "sourceDownloadMilliseconds",
+                "sourceRows",
+                "words",
+                "bytes",
+                "publicInput",
+                "proof",
+                "observed",
+            ],
+        );
+        let body = lean_binding::theorem_body(&proof_timing_verifier_source, theorem);
+        assert!(
+            compact_source_contains(
+                &body,
+                &format!(
+                    "{helper} assumptions summary retainedSourceCount \
+                     retainedParentCheckpointOpeningCount \
+                     retainedParentCheckpointOpeningRowCount rowValuesMilliseconds \
+                     sourceExtendMilliseconds sourceDownloadMilliseconds sourceRows words bytes \
+                     publicInput proof observed"
+                )
+            ),
+            "Lean theorem {theorem} should forward retained-source row values dimensions in order"
         );
     }
     assert!(
@@ -5236,6 +5371,9 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "proof_artifact_finish_row_values_shape_acceptance_sound",
             "proof_artifact_finish_row_values_shape_acceptance_verifier_core_contract",
             "proof_artifact_finish_row_values_shape_acceptance_core_and_sound",
+            "proof_artifact_finish_retained_source_row_values_acceptance_sound",
+            "proof_artifact_finish_retained_source_row_values_acceptance_verifier_core_contract",
+            "proof_artifact_finish_retained_source_row_values_acceptance_core_and_sound",
             "proof_artifact_finish_external_source_timing_acceptance_sound",
             "proof_artifact_finish_external_source_timing_acceptance_verifier_core_contract",
             "proof_artifact_finish_external_source_timing_acceptance_core_and_sound",
@@ -6962,6 +7100,10 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         (
             "proof_artifact_finish_row_values_shape_acceptance_verifier_core_contract",
             "proof_artifact_finish_row_values_shape_acceptance_sound",
+        ),
+        (
+            "proof_artifact_finish_retained_source_row_values_acceptance_verifier_core_contract",
+            "proof_artifact_finish_retained_source_row_values_acceptance_sound",
         ),
         (
             "proof_artifact_finish_external_source_timing_acceptance_verifier_core_contract",

@@ -884,6 +884,199 @@ theorem proof_artifact_finish_row_values_shape_acceptance_core_and_sound
       proof
       observed
 
+theorem proof_artifact_finish_retained_source_row_values_acceptance_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : ProofArtifactFinishTimingSummary)
+    (retainedSourceCount retainedParentCheckpointOpeningCount
+      retainedParentCheckpointOpeningRowCount rowValuesMilliseconds
+      sourceExtendMilliseconds sourceDownloadMilliseconds sourceRows words bytes : Nat) :
+    forall publicInput proof,
+      ProofArtifactFinishTimingObservedAcceptance
+        system
+        (some
+          { summary with
+            finishWitnessOpeningRetainedSourceCount := retainedSourceCount
+            finishWitnessOpeningExternalSourceCount := 0
+            finishWitnessOpeningEmbeddedSourceCount := 0
+            finishWitnessOpeningMissingSourceCount := 0
+            finishWitnessOpeningRetainedParentCheckpointOpeningCount :=
+              retainedParentCheckpointOpeningCount
+            finishWitnessOpeningRetainedParentCheckpointOpeningRowCount :=
+              retainedParentCheckpointOpeningRowCount
+            finishWitnessOpeningRowValuesMilliseconds := rowValuesMilliseconds
+            finishWitnessOpeningRowValueSourceExtendMilliseconds :=
+              sourceExtendMilliseconds
+            finishWitnessOpeningRowValueSourceDownloadMilliseconds :=
+              sourceDownloadMilliseconds
+            finishWitnessOpeningRowValueDeviceDownloadMilliseconds := 0
+            finishWitnessOpeningRowValuesDeviceRowCount := 0
+            finishWitnessOpeningRowValuesDeviceDownloadBatchCount := 0
+            finishWitnessOpeningRowValuesDeviceSingleDownloadCount := 0
+            finishWitnessOpeningRowValuesSourceRowCount := sourceRows
+            finishWitnessOpeningRowValuesWordCount := words
+            finishWitnessOpeningRowValuesByteCount := bytes })
+        publicInput
+        proof ->
+        SoundWitness system publicInput proof := by
+  intro publicInput proof observed
+  exact
+    proof_artifact_finish_timing_some_summary_acceptance_sound
+      assumptions
+      { summary with
+        finishWitnessOpeningRetainedSourceCount := retainedSourceCount
+        finishWitnessOpeningExternalSourceCount := 0
+        finishWitnessOpeningEmbeddedSourceCount := 0
+        finishWitnessOpeningMissingSourceCount := 0
+        finishWitnessOpeningRetainedParentCheckpointOpeningCount :=
+          retainedParentCheckpointOpeningCount
+        finishWitnessOpeningRetainedParentCheckpointOpeningRowCount :=
+          retainedParentCheckpointOpeningRowCount
+        finishWitnessOpeningRowValuesMilliseconds := rowValuesMilliseconds
+        finishWitnessOpeningRowValueSourceExtendMilliseconds :=
+          sourceExtendMilliseconds
+        finishWitnessOpeningRowValueSourceDownloadMilliseconds :=
+          sourceDownloadMilliseconds
+        finishWitnessOpeningRowValueDeviceDownloadMilliseconds := 0
+        finishWitnessOpeningRowValuesDeviceRowCount := 0
+        finishWitnessOpeningRowValuesDeviceDownloadBatchCount := 0
+        finishWitnessOpeningRowValuesDeviceSingleDownloadCount := 0
+        finishWitnessOpeningRowValuesSourceRowCount := sourceRows
+        finishWitnessOpeningRowValuesWordCount := words
+        finishWitnessOpeningRowValuesByteCount := bytes }
+      publicInput
+      proof
+      observed
+
+theorem proof_artifact_finish_retained_source_row_values_acceptance_verifier_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : ProofArtifactFinishTimingSummary)
+    (retainedSourceCount retainedParentCheckpointOpeningCount
+      retainedParentCheckpointOpeningRowCount rowValuesMilliseconds
+      sourceExtendMilliseconds sourceDownloadMilliseconds sourceRows words bytes : Nat) :
+    forall publicInput proof,
+      ProofArtifactFinishTimingObservedAcceptance
+        system
+        (some
+          { summary with
+            finishWitnessOpeningRetainedSourceCount := retainedSourceCount
+            finishWitnessOpeningExternalSourceCount := 0
+            finishWitnessOpeningEmbeddedSourceCount := 0
+            finishWitnessOpeningMissingSourceCount := 0
+            finishWitnessOpeningRetainedParentCheckpointOpeningCount :=
+              retainedParentCheckpointOpeningCount
+            finishWitnessOpeningRetainedParentCheckpointOpeningRowCount :=
+              retainedParentCheckpointOpeningRowCount
+            finishWitnessOpeningRowValuesMilliseconds := rowValuesMilliseconds
+            finishWitnessOpeningRowValueSourceExtendMilliseconds :=
+              sourceExtendMilliseconds
+            finishWitnessOpeningRowValueSourceDownloadMilliseconds :=
+              sourceDownloadMilliseconds
+            finishWitnessOpeningRowValueDeviceDownloadMilliseconds := 0
+            finishWitnessOpeningRowValuesDeviceRowCount := 0
+            finishWitnessOpeningRowValuesDeviceDownloadBatchCount := 0
+            finishWitnessOpeningRowValuesDeviceSingleDownloadCount := 0
+            finishWitnessOpeningRowValuesSourceRowCount := sourceRows
+            finishWitnessOpeningRowValuesWordCount := words
+            finishWitnessOpeningRowValuesByteCount := bytes })
+        publicInput
+        proof ->
+        RuntimeVerifierCoreContract system publicInput proof := by
+  intro publicInput proof observed
+  exact
+    proof_artifact_finish_timing_some_summary_acceptance_verifier_core_contract
+      assumptions
+      { summary with
+        finishWitnessOpeningRetainedSourceCount := retainedSourceCount
+        finishWitnessOpeningExternalSourceCount := 0
+        finishWitnessOpeningEmbeddedSourceCount := 0
+        finishWitnessOpeningMissingSourceCount := 0
+        finishWitnessOpeningRetainedParentCheckpointOpeningCount :=
+          retainedParentCheckpointOpeningCount
+        finishWitnessOpeningRetainedParentCheckpointOpeningRowCount :=
+          retainedParentCheckpointOpeningRowCount
+        finishWitnessOpeningRowValuesMilliseconds := rowValuesMilliseconds
+        finishWitnessOpeningRowValueSourceExtendMilliseconds :=
+          sourceExtendMilliseconds
+        finishWitnessOpeningRowValueSourceDownloadMilliseconds :=
+          sourceDownloadMilliseconds
+        finishWitnessOpeningRowValueDeviceDownloadMilliseconds := 0
+        finishWitnessOpeningRowValuesDeviceRowCount := 0
+        finishWitnessOpeningRowValuesDeviceDownloadBatchCount := 0
+        finishWitnessOpeningRowValuesDeviceSingleDownloadCount := 0
+        finishWitnessOpeningRowValuesSourceRowCount := sourceRows
+        finishWitnessOpeningRowValuesWordCount := words
+        finishWitnessOpeningRowValuesByteCount := bytes }
+      publicInput
+      proof
+      observed
+
+theorem proof_artifact_finish_retained_source_row_values_acceptance_core_and_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : ProofArtifactFinishTimingSummary)
+    (retainedSourceCount retainedParentCheckpointOpeningCount
+      retainedParentCheckpointOpeningRowCount rowValuesMilliseconds
+      sourceExtendMilliseconds sourceDownloadMilliseconds sourceRows words bytes : Nat) :
+    forall publicInput proof,
+      ProofArtifactFinishTimingObservedAcceptance
+        system
+        (some
+          { summary with
+            finishWitnessOpeningRetainedSourceCount := retainedSourceCount
+            finishWitnessOpeningExternalSourceCount := 0
+            finishWitnessOpeningEmbeddedSourceCount := 0
+            finishWitnessOpeningMissingSourceCount := 0
+            finishWitnessOpeningRetainedParentCheckpointOpeningCount :=
+              retainedParentCheckpointOpeningCount
+            finishWitnessOpeningRetainedParentCheckpointOpeningRowCount :=
+              retainedParentCheckpointOpeningRowCount
+            finishWitnessOpeningRowValuesMilliseconds := rowValuesMilliseconds
+            finishWitnessOpeningRowValueSourceExtendMilliseconds :=
+              sourceExtendMilliseconds
+            finishWitnessOpeningRowValueSourceDownloadMilliseconds :=
+              sourceDownloadMilliseconds
+            finishWitnessOpeningRowValueDeviceDownloadMilliseconds := 0
+            finishWitnessOpeningRowValuesDeviceRowCount := 0
+            finishWitnessOpeningRowValuesDeviceDownloadBatchCount := 0
+            finishWitnessOpeningRowValuesDeviceSingleDownloadCount := 0
+            finishWitnessOpeningRowValuesSourceRowCount := sourceRows
+            finishWitnessOpeningRowValuesWordCount := words
+            finishWitnessOpeningRowValuesByteCount := bytes })
+        publicInput
+        proof ->
+        RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof observed
+  exact
+    proof_artifact_finish_timing_some_summary_acceptance_core_and_sound
+      assumptions
+      { summary with
+        finishWitnessOpeningRetainedSourceCount := retainedSourceCount
+        finishWitnessOpeningExternalSourceCount := 0
+        finishWitnessOpeningEmbeddedSourceCount := 0
+        finishWitnessOpeningMissingSourceCount := 0
+        finishWitnessOpeningRetainedParentCheckpointOpeningCount :=
+          retainedParentCheckpointOpeningCount
+        finishWitnessOpeningRetainedParentCheckpointOpeningRowCount :=
+          retainedParentCheckpointOpeningRowCount
+        finishWitnessOpeningRowValuesMilliseconds := rowValuesMilliseconds
+        finishWitnessOpeningRowValueSourceExtendMilliseconds :=
+          sourceExtendMilliseconds
+        finishWitnessOpeningRowValueSourceDownloadMilliseconds :=
+          sourceDownloadMilliseconds
+        finishWitnessOpeningRowValueDeviceDownloadMilliseconds := 0
+        finishWitnessOpeningRowValuesDeviceRowCount := 0
+        finishWitnessOpeningRowValuesDeviceDownloadBatchCount := 0
+        finishWitnessOpeningRowValuesDeviceSingleDownloadCount := 0
+        finishWitnessOpeningRowValuesSourceRowCount := sourceRows
+        finishWitnessOpeningRowValuesWordCount := words
+        finishWitnessOpeningRowValuesByteCount := bytes }
+      publicInput
+      proof
+      observed
+
 
 
 
