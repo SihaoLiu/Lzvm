@@ -10630,9 +10630,7 @@ impl ZiskMainStreamingDeviceSegmentBuilder {
             .as_ref()
             .filter(|_| report_detail_timing)
             .map(|_| Instant::now());
-        if self.report_count == 0 {
-            self.unit_value_summary.push_report(report);
-        }
+        self.unit_value_summary.push_report(report);
         if let (Some(timing), Some(started)) = (timing.as_deref_mut(), unit_summary_started) {
             timing.trace_unit_summary_duration += started.elapsed();
         }
