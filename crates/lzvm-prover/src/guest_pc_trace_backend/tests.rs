@@ -1276,17 +1276,17 @@ fn row_shape_top_patterns_track_exact_source_store_mix() {
     let top = timing.trace_row_shape_top_patterns();
     assert_eq!(
         top[0],
-        (zisk_main_row_shape_pattern_id(&late_hot), 4),
+        (main_row_shape_pattern_id(&late_hot), 4),
         "late-arriving high-frequency row pattern should be counted exactly"
     );
     assert_eq!(
         top[1],
-        (zisk_main_row_shape_pattern_id(&hot_copy), 3),
+        (main_row_shape_pattern_id(&hot_copy), 3),
         "second most common exact row pattern should be retained"
     );
     assert_eq!(
         top[2],
-        (zisk_main_row_shape_pattern_id(&second_copy), 2),
+        (main_row_shape_pattern_id(&second_copy), 2),
         "third most common exact row pattern should be retained"
     );
 }
@@ -6478,10 +6478,13 @@ fn store_copy_fast_path_parts_match_generic_lowering() {
             memory_accesses: vec![memory_write(0x108, 0xaa55)].into(),
         };
 
-    let (instruction, a_index, b_index, store_offset) =
-        store_copy_indirect_store_fast_path_parts(3, &report)
-            .expect("fast path detection should succeed")
-            .expect("register store through register base should match");
+    let parts = store_copy_indirect_store_fast_path_parts(3, &report)
+        .expect("fast path detection should succeed")
+        .expect("register store through register base should match");
+    let MainReportFastPathParts::StoreCopy(instruction, a_index, b_index, store_offset) = parts
+    else {
+        panic!("register store should route to register-source store copy");
+    };
 
     assert_eq!(a_index, 2);
     assert_eq!(b_index, 3);
@@ -6489,6 +6492,36 @@ fn store_copy_fast_path_parts_match_generic_lowering() {
     assert_eq!(
         instruction,
         lower_guest_report(&report).expect("generic lowering should match")
+    );
+
+    let zero_report =
+        GuestMachineReport {
+            address_and_instruction_len:
+                crate::guest_machine::pack_report_address_and_instruction_len(0x8000_0000, 4),
+            instruction: RiscvInstruction::Store {
+                kind: RiscvStoreKind::Sd,
+                rs1: 2,
+                rs2: 0,
+                offset: 8,
+            },
+            next_pc: 0x8000_0004,
+            register_write_value: GuestRegisterWriteValue::default(),
+            memory_accesses: vec![memory_write(0x108, 0)].into(),
+        };
+    let parts = store_copy_indirect_store_fast_path_parts(3, &zero_report)
+        .expect("fast path detection should succeed")
+        .expect("zero store through register base should match");
+    let MainReportFastPathParts::StoreImmediateCopy(instruction, a_index, b, store_offset) = parts
+    else {
+        panic!("zero store should route to immediate-source store copy");
+    };
+
+    assert_eq!(a_index, 2);
+    assert_eq!(b, 0);
+    assert_eq!(store_offset, 8);
+    assert_eq!(
+        instruction,
+        lower_guest_report(&zero_report).expect("generic lowering should match")
     );
 }
 
@@ -6515,12 +6548,17 @@ fn store_copy_fast_path_parts_fall_back_for_non_dominant_stores() {
     report.instruction = RiscvInstruction::Store {
         kind: RiscvStoreKind::Sd,
         rs1: 2,
-        rs2: 0,
+        rs2: 3,
         offset: 8,
     };
+    report.replace_precompile_effects(GuestPrecompileReportEffects::from_parts(
+        vec![memory_read(64, 7)].into(),
+        None,
+    ));
     assert!(store_copy_indirect_store_fast_path_parts(3, &report)
-        .expect("zero source register should fall back")
+        .expect("rows with precompile accesses should fall back")
         .is_none());
+    report.replace_precompile_effects(None);
 
     report.instruction = RiscvInstruction::Store {
         kind: RiscvStoreKind::Sd,
@@ -6850,6 +6888,22 @@ fn report_level_fast_path_parts_routes_representative_rows() {
         (
             GuestMachineReport {
                 address_and_instruction_len:
+                    crate::guest_machine::pack_report_address_and_instruction_len(0x8000_0028, 4),
+                instruction: RiscvInstruction::Store {
+                    kind: RiscvStoreKind::Sd,
+                    rs1: 2,
+                    rs2: 0,
+                    offset: 8,
+                },
+                next_pc: 0x8000_002c,
+                register_write_value: GuestRegisterWriteValue::default(),
+                memory_accesses: vec![memory_write(0x108, 0)].into(),
+            },
+            ReportLevelRoute::StoreCopy,
+        ),
+        (
+            GuestMachineReport {
+                address_and_instruction_len:
                     crate::guest_machine::pack_report_address_and_instruction_len(0x8000_000c, 4),
                 instruction: RiscvInstruction::Auipc {
                     rd: 5,
@@ -6969,6 +7023,9 @@ fn report_level_fast_path_parts_routes_representative_rows() {
             MainReportFastPathParts::StoreCopy(instruction, ..) => {
                 (ReportLevelRoute::StoreCopy, instruction)
             }
+            MainReportFastPathParts::StoreImmediateCopy(instruction, ..) => {
+                (ReportLevelRoute::StoreCopy, instruction)
+            }
             MainReportFastPathParts::SimpleCopy(instruction, ..) => {
                 (ReportLevelRoute::SimpleCopy, instruction)
             }
@@ -6982,14 +7039,14 @@ fn report_level_fast_path_parts_routes_representative_rows() {
     }
     timing.record_main_report_generic_fallback();
 
-    assert_eq!(timing.trace_main_report_fast_path_count(), 10);
+    assert_eq!(timing.trace_main_report_fast_path_count(), 11);
     assert_eq!(timing.trace_main_report_generic_fallback_count(), 1);
     assert_eq!(timing.trace_main_report_load_copy_fast_path_count(), 1);
     assert_eq!(
         timing.trace_main_report_load_sign_extend_fast_path_count(),
         1
     );
-    assert_eq!(timing.trace_main_report_store_copy_fast_path_count(), 1);
+    assert_eq!(timing.trace_main_report_store_copy_fast_path_count(), 2);
     assert_eq!(timing.trace_main_report_jump_fast_path_count(), 2);
     assert_eq!(timing.trace_main_report_no_memory_fast_path_count(), 3);
     assert_eq!(timing.trace_main_report_simple_copy_fast_path_count(), 1);

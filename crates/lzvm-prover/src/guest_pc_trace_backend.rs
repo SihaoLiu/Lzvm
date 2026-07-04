@@ -938,7 +938,8 @@ impl GuestPcTraceStreamTiming {
             MainReportFastPathParts::NoMemory(..) => {
                 self.trace_main_report_no_memory_fast_path_count += 1;
             }
-            MainReportFastPathParts::StoreCopy(..) => {
+            MainReportFastPathParts::StoreCopy(..)
+            | MainReportFastPathParts::StoreImmediateCopy(..) => {
                 self.trace_main_report_store_copy_fast_path_count += 1;
             }
             MainReportFastPathParts::SimpleCopy(..) => {
@@ -10876,6 +10877,7 @@ enum MainReportFastPathParts {
     LoadSignExtend(ZiskMainInstruction, u8, i64, u8),
     NoMemory(ZiskMainInstruction, ZiskMainNoMemoryFastPathParts),
     StoreCopy(ZiskMainInstruction, u8, u8, i64),
+    StoreImmediateCopy(ZiskMainInstruction, u8, u64, i64),
     SimpleCopy(ZiskMainInstruction, Option<u8>, u8),
     Jump(ZiskMainInstruction, MainJumpFastPathParts),
 }
@@ -11053,6 +11055,25 @@ fn validate_and_apply_zisk_main_report(
                         report.next_pc,
                         a_index,
                         b_index,
+                        store_offset,
+                        state,
+                        context,
+                        &mut visit,
+                    )?;
+                }
+                MainReportFastPathParts::StoreImmediateCopy(
+                    instruction,
+                    a_index,
+                    b,
+                    store_offset,
+                ) => {
+                    apply_copy_immediate_indirect_store_fast_path(
+                        row,
+                        instruction,
+                        effects,
+                        report.next_pc,
+                        a_index,
+                        b,
                         store_offset,
                         state,
                         context,
@@ -11530,7 +11551,7 @@ fn load_sign_extend_indirect_register_store_fast_path_parts(
 fn store_copy_indirect_store_fast_path_parts(
     row: usize,
     report: &GuestMachineReport,
-) -> Result<Option<(ZiskMainInstruction, u8, u8, i64)>, GuestPcTraceBackendError> {
+) -> Result<Option<MainReportFastPathParts>, GuestPcTraceBackendError> {
     let RiscvInstruction::Store {
         kind,
         rs1,
@@ -11540,7 +11561,7 @@ fn store_copy_indirect_store_fast_path_parts(
     else {
         return Ok(None);
     };
-    if rs1 == 0 || rs2 == 0 || !report.precompile_memory_accesses().is_empty() {
+    if rs1 == 0 || !report.precompile_memory_accesses().is_empty() {
         return Ok(None);
     }
     let ind_width = match kind {
@@ -11556,7 +11577,11 @@ fn store_copy_indirect_store_fast_path_parts(
     let instruction = ZiskMainInstruction {
         pc: report.address(),
         a: ZiskMainSource::Register(rs1),
-        b: ZiskMainSource::Register(rs2),
+        b: if rs2 == 0 {
+            ZiskMainSource::Immediate(0)
+        } else {
+            ZiskMainSource::Register(rs2)
+        },
         op: ZiskMainOp::CopyB,
         store: ZiskMainStore::Indirect(offset),
         store_pc: false,
@@ -11568,7 +11593,12 @@ fn store_copy_indirect_store_fast_path_parts(
         is_external_op: false,
         is_precompiled: false,
     };
-    Ok(Some((instruction, rs1, rs2, offset)))
+    let parts = if rs2 == 0 {
+        MainReportFastPathParts::StoreImmediateCopy(instruction, rs1, 0, offset)
+    } else {
+        MainReportFastPathParts::StoreCopy(instruction, rs1, rs2, offset)
+    };
+    Ok(Some(parts))
 }
 
 #[inline(always)]
@@ -11878,12 +11908,7 @@ fn report_level_fast_path_parts(
                 },
             ),
         ),
-        RiscvInstruction::Store { .. } => Ok(store_copy_indirect_store_fast_path_parts(
-            row, report,
-        )?
-        .map(|(instruction, a_index, b_index, store_offset)| {
-            MainReportFastPathParts::StoreCopy(instruction, a_index, b_index, store_offset)
-        })),
+        RiscvInstruction::Store { .. } => store_copy_indirect_store_fast_path_parts(row, report),
         RiscvInstruction::Auipc { .. } => Ok(pc_relative_fast_path_parts(row, report)?
             .map(|(instruction, parts)| MainReportFastPathParts::Jump(instruction, parts))),
         RiscvInstruction::Jal { .. } | RiscvInstruction::Jalr { .. } => {
