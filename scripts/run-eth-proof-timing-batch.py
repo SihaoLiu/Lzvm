@@ -36,6 +36,7 @@ LEGACY_EXTERNAL_SOURCE_OPENING_BATCH_ENV = (
 )
 CROSS_SEGMENT_ROOT_WINDOW_ENV = "LZVM_CUDA_GUEST_PC_CROSS_SEGMENT_ROOT_WINDOW"
 CROSS_SEGMENT_ROOTS_ENV = "LZVM_CUDA_GUEST_PC_CROSS_SEGMENT_ROOTS"
+DESCRIPTOR_STREAM_INGRESS_ENV = "LZVM_CUDA_GUEST_PC_DESCRIPTOR_STREAM_INGRESS"
 SPARSE_HIGH32_DESCRIPTORS_ENV = "LZVM_CUDA_GUEST_PC_SPARSE_HIGH32_DESCRIPTORS"
 ENV_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 BINARY_FRESHNESS_FILES = ("Cargo.lock", "Cargo.toml")
@@ -156,6 +157,7 @@ PIPELINE_ENV_TO_CLEAR = [
     LEGACY_EXTERNAL_SOURCE_OPENING_BATCH_ENV,
     CROSS_SEGMENT_ROOT_WINDOW_ENV,
     CROSS_SEGMENT_ROOTS_ENV,
+    DESCRIPTOR_STREAM_INGRESS_ENV,
     SPARSE_HIGH32_DESCRIPTORS_ENV,
 ]
 
@@ -700,6 +702,8 @@ def mode_args(args: argparse.Namespace) -> list[str]:
         result.append("--seed-discovery-streaming-device-lower")
     if args.owned_streaming_lower:
         result.append("--owned-streaming-lower")
+    if args.descriptor_stream_ingress:
+        result.append("--descriptor-stream-ingress")
     if args.sparse_high32_descriptors:
         result.append("--sparse-high32-descriptors")
     if args.trace_shape_timing:
@@ -786,6 +790,8 @@ def mode_env_for_args(args: argparse.Namespace, mode: str) -> dict[str, str]:
         mode_env["LZVM_GUEST_PC_TRACE_SEED_DISCOVERY_STREAMING_DEVICE_LOWER"] = "1"
     if args.owned_streaming_lower:
         mode_env["LZVM_CUDA_GUEST_PC_OWNED_STREAMING_LOWER"] = "1"
+    if args.descriptor_stream_ingress:
+        mode_env[DESCRIPTOR_STREAM_INGRESS_ENV] = "1"
     if args.sparse_high32_descriptors:
         mode_env[SPARSE_HIGH32_DESCRIPTORS_ENV] = "1"
     mode_env.update(trace_timing_env_for_args(args))
@@ -1622,6 +1628,7 @@ def dry_run_summary_lines(args: argparse.Namespace, root: Path) -> list[str]:
         "seed_discovery_streaming_device_lower="
         f"{str(args.seed_discovery_streaming_device_lower).lower()}",
         f"owned_streaming_lower={str(args.owned_streaming_lower).lower()}",
+        f"descriptor_stream_ingress={str(args.descriptor_stream_ingress).lower()}",
         f"sparse_high32_descriptors={str(args.sparse_high32_descriptors).lower()}",
         f"gpu_preallocate={str(args.gpu_preallocate).lower()}",
         f"minimal_memory={str(args.minimal_memory).lower()}",
@@ -1932,6 +1939,7 @@ def self_test() -> None:
         seed_discovery=False,
         seed_discovery_streaming_device_lower=False,
         owned_streaming_lower=False,
+        descriptor_stream_ingress=False,
         sparse_high32_descriptors=False,
         trace_shape_timing=False,
         trace_shape_timing_sample_stride=None,
@@ -1980,6 +1988,22 @@ def self_test() -> None:
         )
         if f"-u {SPARSE_HIGH32_DESCRIPTORS_ENV}" not in default_command:
             raise SystemExit("self-test sparse descriptor env clearing missing")
+        if f"-u {DESCRIPTOR_STREAM_INGRESS_ENV}" not in default_command:
+            raise SystemExit("self-test descriptor stream env clearing missing")
+        args.descriptor_stream_ingress = True
+        stream_command = command_for_env(
+            small_config,
+            args.small_mode,
+            not args.skip_verify_proof,
+            mode_env_for_args(args, args.small_mode),
+            proof_tuning_args(args),
+            allow_stale_bin=args.allow_stale_bin,
+        )
+        if f"{DESCRIPTOR_STREAM_INGRESS_ENV}=1" not in stream_command:
+            raise SystemExit("self-test descriptor stream env assignment missing")
+        if "descriptor_stream_ingress=true" not in dry_run_summary_lines(args, root):
+            raise SystemExit("self-test descriptor stream dry-run summary missing")
+        args.descriptor_stream_ingress = False
         args.sparse_high32_descriptors = True
         sparse_command = command_for_env(
             small_config,
@@ -2084,6 +2108,7 @@ def main() -> None:
     parser.add_argument("--seed-discovery", action="store_true")
     parser.add_argument("--seed-discovery-streaming-device-lower", action="store_true")
     parser.add_argument("--owned-streaming-lower", action="store_true")
+    parser.add_argument("--descriptor-stream-ingress", action="store_true")
     parser.add_argument("--sparse-high32-descriptors", action="store_true")
     parser.add_argument("--trace-shape-timing", action="store_true")
     parser.add_argument(
