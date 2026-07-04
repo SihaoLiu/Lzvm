@@ -716,6 +716,8 @@ def mode_args(args: argparse.Namespace) -> list[str]:
                 str(args.trace_runner_detail_timing_sample_stride),
             ]
         )
+    if args.trace_runner_path_timing:
+        result.append("--trace-runner-path-timing")
     if args.trace_runner_cache_stats:
         result.append("--trace-runner-cache-stats")
     if args.runner_cache_entry_bits is not None:
@@ -757,6 +759,8 @@ def trace_timing_env_for_args(args: argparse.Namespace) -> dict[str, str]:
         env["LZVM_GUEST_TRACE_RUNNER_DETAIL_TIMING_SAMPLE_STRIDE"] = str(
             args.trace_runner_detail_timing_sample_stride
         )
+    if args.trace_runner_path_timing:
+        env["LZVM_GUEST_TRACE_RUNNER_PATH_TIMING"] = "1"
     if args.trace_runner_cache_stats:
         env["LZVM_GUEST_TRACE_RUNNER_CACHE_STATS"] = "1"
     if args.runner_cache_entry_bits is not None:
@@ -1624,6 +1628,7 @@ def dry_run_summary_lines(args: argparse.Namespace, root: Path) -> list[str]:
         f"{str(trace_runner_detail_timing_enabled(args)).lower()}",
         "trace_runner_detail_timing_sample_stride="
         f"{args.trace_runner_detail_timing_sample_stride or ''}",
+        f"trace_runner_path_timing={str(args.trace_runner_path_timing).lower()}",
         f"trace_runner_cache_stats={str(args.trace_runner_cache_stats).lower()}",
         f"runner_cache_entry_bits={args.runner_cache_entry_bits or ''}",
         f"trace_detail_timing={str(trace_detail_timing_enabled(args)).lower()}",
@@ -1924,6 +1929,7 @@ def self_test() -> None:
         trace_shape_timing_sample_stride=None,
         trace_runner_detail_timing=False,
         trace_runner_detail_timing_sample_stride=None,
+        trace_runner_path_timing=False,
         trace_runner_cache_stats=False,
         runner_cache_entry_bits=None,
         trace_detail_timing=False,
@@ -2055,6 +2061,7 @@ def main() -> None:
         type=positive_integer,
         default=None,
     )
+    parser.add_argument("--trace-runner-path-timing", action="store_true")
     parser.add_argument("--trace-runner-cache-stats", action="store_true")
     parser.add_argument("--runner-cache-entry-bits", type=runner_cache_entry_bits, default=None)
     parser.add_argument("--trace-detail-timing", action="store_true")

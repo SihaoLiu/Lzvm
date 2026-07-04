@@ -493,6 +493,7 @@ fn eth_proof_timing_batch_dry_run_builds_small_command_from_env() {
             && stdout.contains("trace_shape_timing=false\n")
             && stdout.contains("trace_runner_detail_timing=false\n")
             && stdout.contains("trace_runner_detail_timing_sample_stride=\n")
+            && stdout.contains("trace_runner_path_timing=false\n")
             && stdout.contains("trace_runner_cache_stats=false\n")
             && stdout.contains("runner_cache_entry_bits=\n")
             && stdout.contains("trace_detail_timing=false\n")
@@ -1106,6 +1107,7 @@ fn eth_proof_timing_batch_dry_run_can_request_trace_runner_detail_sample_timing(
         .arg("--dry-run")
         .arg("--trace-runner-detail-timing-sample-stride")
         .arg("4096")
+        .arg("--trace-runner-path-timing")
         .arg("--trace-runner-cache-stats")
         .arg("--runner-cache-entry-bits")
         .arg("18")
@@ -1128,6 +1130,7 @@ fn eth_proof_timing_batch_dry_run_can_request_trace_runner_detail_sample_timing(
     assert!(
         stdout.contains("LZVM_GUEST_TRACE_RUNNER_DETAIL_TIMING=1")
             && stdout.contains("LZVM_GUEST_TRACE_RUNNER_DETAIL_TIMING_SAMPLE_STRIDE=4096")
+            && stdout.contains("LZVM_GUEST_TRACE_RUNNER_PATH_TIMING=1")
             && stdout.contains("LZVM_GUEST_TRACE_RUNNER_CACHE_STATS=1")
             && stdout.contains("LZVM_GUEST_INSTRUCTION_CACHE_ENTRY_BITS=18"),
         "prove command should enable requested runner diagnostics: {stdout}"
@@ -1135,6 +1138,7 @@ fn eth_proof_timing_batch_dry_run_can_request_trace_runner_detail_sample_timing(
     assert!(
         stdout.contains("trace_runner_detail_timing=true\n")
             && stdout.contains("trace_runner_detail_timing_sample_stride=4096\n")
+            && stdout.contains("trace_runner_path_timing=true\n")
             && stdout.contains("trace_runner_cache_stats=true\n")
             && stdout.contains("runner_cache_entry_bits=18\n"),
         "dry-run metadata should report requested runner diagnostics: {stdout}"
@@ -1537,6 +1541,7 @@ fn eth_proof_timing_batch_check_env_preserves_trace_diagnostic_next_commands() {
         .arg("2048")
         .arg("--trace-runner-detail-timing-sample-stride")
         .arg("1024")
+        .arg("--trace-runner-path-timing")
         .arg("--trace-detail-timing-sample-stride")
         .arg("4096");
     fixture.apply_env(&mut command, SMALL_PREFIX);
@@ -1571,6 +1576,7 @@ fn eth_proof_timing_batch_check_env_preserves_trace_diagnostic_next_commands() {
                 && line.contains("--trace-shape-timing-sample-stride 2048")
                 && line.contains("--trace-runner-detail-timing")
                 && line.contains("--trace-runner-detail-timing-sample-stride 1024")
+                && line.contains("--trace-runner-path-timing")
                 && line.contains("--trace-detail-timing")
                 && line.contains("--trace-detail-timing-sample-stride 4096"),
             "next command should preserve trace diagnostic flags: {stdout}"
