@@ -36,6 +36,7 @@ LEGACY_EXTERNAL_SOURCE_OPENING_BATCH_ENV = (
 )
 CROSS_SEGMENT_ROOT_WINDOW_ENV = "LZVM_CUDA_GUEST_PC_CROSS_SEGMENT_ROOT_WINDOW"
 CROSS_SEGMENT_ROOTS_ENV = "LZVM_CUDA_GUEST_PC_CROSS_SEGMENT_ROOTS"
+SPARSE_HIGH32_DESCRIPTORS_ENV = "LZVM_CUDA_GUEST_PC_SPARSE_HIGH32_DESCRIPTORS"
 ENV_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 BINARY_FRESHNESS_FILES = ("Cargo.lock", "Cargo.toml")
 BINARY_FRESHNESS_ROOTS = ("crates",)
@@ -155,6 +156,7 @@ PIPELINE_ENV_TO_CLEAR = [
     LEGACY_EXTERNAL_SOURCE_OPENING_BATCH_ENV,
     CROSS_SEGMENT_ROOT_WINDOW_ENV,
     CROSS_SEGMENT_ROOTS_ENV,
+    SPARSE_HIGH32_DESCRIPTORS_ENV,
 ]
 
 MODE_ENV = {
@@ -698,6 +700,8 @@ def mode_args(args: argparse.Namespace) -> list[str]:
         result.append("--seed-discovery-streaming-device-lower")
     if args.owned_streaming_lower:
         result.append("--owned-streaming-lower")
+    if args.sparse_high32_descriptors:
+        result.append("--sparse-high32-descriptors")
     if args.trace_shape_timing:
         result.append("--trace-shape-timing")
     if args.trace_shape_timing_sample_stride is not None:
@@ -782,6 +786,8 @@ def mode_env_for_args(args: argparse.Namespace, mode: str) -> dict[str, str]:
         mode_env["LZVM_GUEST_PC_TRACE_SEED_DISCOVERY_STREAMING_DEVICE_LOWER"] = "1"
     if args.owned_streaming_lower:
         mode_env["LZVM_CUDA_GUEST_PC_OWNED_STREAMING_LOWER"] = "1"
+    if args.sparse_high32_descriptors:
+        mode_env[SPARSE_HIGH32_DESCRIPTORS_ENV] = "1"
     mode_env.update(trace_timing_env_for_args(args))
     if args.parallel_lower_workers is not None:
         mode_env["LZVM_GUEST_PC_TRACE_PARALLEL_LOWER_WORKERS"] = str(
@@ -1616,6 +1622,7 @@ def dry_run_summary_lines(args: argparse.Namespace, root: Path) -> list[str]:
         "seed_discovery_streaming_device_lower="
         f"{str(args.seed_discovery_streaming_device_lower).lower()}",
         f"owned_streaming_lower={str(args.owned_streaming_lower).lower()}",
+        f"sparse_high32_descriptors={str(args.sparse_high32_descriptors).lower()}",
         f"gpu_preallocate={str(args.gpu_preallocate).lower()}",
         f"minimal_memory={str(args.minimal_memory).lower()}",
         f"pack_trace={str(not args.no_pack_trace).lower()}",
@@ -1925,6 +1932,7 @@ def self_test() -> None:
         seed_discovery=False,
         seed_discovery_streaming_device_lower=False,
         owned_streaming_lower=False,
+        sparse_high32_descriptors=False,
         trace_shape_timing=False,
         trace_shape_timing_sample_stride=None,
         trace_runner_detail_timing=False,
@@ -1961,6 +1969,31 @@ def self_test() -> None:
         skip_verify_proof=False,
     )
     try:
+        small_config, _large_config = proof_envs(args, root)
+        default_command = command_for_env(
+            small_config,
+            args.small_mode,
+            not args.skip_verify_proof,
+            mode_env_for_args(args, args.small_mode),
+            proof_tuning_args(args),
+            allow_stale_bin=args.allow_stale_bin,
+        )
+        if f"-u {SPARSE_HIGH32_DESCRIPTORS_ENV}" not in default_command:
+            raise SystemExit("self-test sparse descriptor env clearing missing")
+        args.sparse_high32_descriptors = True
+        sparse_command = command_for_env(
+            small_config,
+            args.small_mode,
+            not args.skip_verify_proof,
+            mode_env_for_args(args, args.small_mode),
+            proof_tuning_args(args),
+            allow_stale_bin=args.allow_stale_bin,
+        )
+        if f"{SPARSE_HIGH32_DESCRIPTORS_ENV}=1" not in sparse_command:
+            raise SystemExit("self-test sparse descriptor env assignment missing")
+        if "sparse_high32_descriptors=true" not in dry_run_summary_lines(args, root):
+            raise SystemExit("self-test sparse descriptor dry-run summary missing")
+        args.sparse_high32_descriptors = False
         code = run(args)
         if code != 0:
             raise SystemExit(code)
@@ -2051,6 +2084,7 @@ def main() -> None:
     parser.add_argument("--seed-discovery", action="store_true")
     parser.add_argument("--seed-discovery-streaming-device-lower", action="store_true")
     parser.add_argument("--owned-streaming-lower", action="store_true")
+    parser.add_argument("--sparse-high32-descriptors", action="store_true")
     parser.add_argument("--trace-shape-timing", action="store_true")
     parser.add_argument(
         "--trace-shape-timing-sample-stride", type=positive_integer, default=None
