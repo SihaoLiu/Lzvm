@@ -10734,6 +10734,18 @@ impl<'a> ZiskMainReportEffects<'a> {
             precompile_result: report.precompile_result(),
         }
     }
+
+    fn from_report_with_register_index(
+        report: &'a GuestMachineReport,
+        register_index: Option<u8>,
+    ) -> Self {
+        Self {
+            register_writes: report.register_writes_for_index(register_index),
+            memory_accesses: &report.memory_accesses,
+            precompile_memory_accesses: report.precompile_memory_accesses(),
+            precompile_result: report.precompile_result(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -11011,9 +11023,12 @@ fn validate_and_apply_zisk_main_report(
             if let Some(timing) = timing.as_mut() {
                 timing.record_main_report_fast_path(&fast_path);
             }
-            let effects = ZiskMainReportEffects::from_report(report);
             match fast_path {
                 MainReportFastPathParts::FcallResult(instruction, store_index) => {
+                    let effects = ZiskMainReportEffects::from_report_with_register_index(
+                        report,
+                        Some(store_index),
+                    );
                     apply_fcall_result_register_store_fast_path(
                         row,
                         instruction,
@@ -11026,6 +11041,10 @@ fn validate_and_apply_zisk_main_report(
                     )?;
                 }
                 MainReportFastPathParts::LoadCopy(instruction, a_index, b_offset, store_index) => {
+                    let effects = ZiskMainReportEffects::from_report_with_register_index(
+                        report,
+                        Some(store_index),
+                    );
                     apply_copy_indirect_register_store_fast_path(
                         row,
                         instruction,
@@ -11040,6 +11059,8 @@ fn validate_and_apply_zisk_main_report(
                     )?;
                 }
                 MainReportFastPathParts::LoadNoStore(instruction, a_index, b_offset, width) => {
+                    let effects =
+                        ZiskMainReportEffects::from_report_with_register_index(report, None);
                     apply_copy_indirect_no_store_fast_path(
                         row,
                         instruction,
@@ -11059,6 +11080,10 @@ fn validate_and_apply_zisk_main_report(
                     b_offset,
                     store_index,
                 ) => {
+                    let effects = ZiskMainReportEffects::from_report_with_register_index(
+                        report,
+                        Some(store_index),
+                    );
                     apply_sign_extend_indirect_register_store_fast_path(
                         row,
                         instruction,
@@ -11073,6 +11098,10 @@ fn validate_and_apply_zisk_main_report(
                     )?;
                 }
                 MainReportFastPathParts::NoMemory(instruction, parts) => {
+                    let effects = ZiskMainReportEffects::from_report_with_register_index(
+                        report,
+                        parts.store_index,
+                    );
                     apply_no_memory_fast_path(
                         row,
                         instruction,
@@ -11085,6 +11114,8 @@ fn validate_and_apply_zisk_main_report(
                     )?;
                 }
                 MainReportFastPathParts::PrecompileNoStore(instruction, b_index) => {
+                    let effects =
+                        ZiskMainReportEffects::from_report_with_register_index(report, None);
                     apply_precompile_no_store_fast_path(
                         row,
                         report,
@@ -11102,6 +11133,8 @@ fn validate_and_apply_zisk_main_report(
                     b_index,
                     store_address,
                 ) => {
+                    let effects =
+                        ZiskMainReportEffects::from_report_with_register_index(report, None);
                     apply_internal_memory_copy_fast_path(
                         row,
                         instruction,
@@ -11115,6 +11148,8 @@ fn validate_and_apply_zisk_main_report(
                     )?;
                 }
                 MainReportFastPathParts::StoreCopy(instruction, a_index, b_index, store_offset) => {
+                    let effects =
+                        ZiskMainReportEffects::from_report_with_register_index(report, None);
                     apply_copy_register_indirect_store_fast_path(
                         row,
                         instruction,
@@ -11134,6 +11169,8 @@ fn validate_and_apply_zisk_main_report(
                     b,
                     store_offset,
                 ) => {
+                    let effects =
+                        ZiskMainReportEffects::from_report_with_register_index(report, None);
                     apply_copy_immediate_indirect_store_fast_path(
                         row,
                         instruction,
@@ -11148,6 +11185,10 @@ fn validate_and_apply_zisk_main_report(
                     )?;
                 }
                 MainReportFastPathParts::SimpleCopy(instruction, b_index, store_index) => {
+                    let effects = ZiskMainReportEffects::from_report_with_register_index(
+                        report,
+                        Some(store_index),
+                    );
                     apply_simple_copy_register_store_fast_path(
                         row,
                         instruction,
@@ -11161,6 +11202,10 @@ fn validate_and_apply_zisk_main_report(
                     )?;
                 }
                 MainReportFastPathParts::Jump(instruction, parts) => {
+                    let effects = ZiskMainReportEffects::from_report_with_register_index(
+                        report,
+                        parts.store_index,
+                    );
                     apply_jump_fast_path(
                         row,
                         instruction,

@@ -538,6 +538,16 @@ impl GuestRegisterWriteValue {
         Self::new(register_writes.entry.value)
     }
 
+    fn register_writes_for_index(self, index: Option<u8>) -> GuestRegisterWriteList {
+        match index {
+            Some(index) if index != 0 => GuestRegisterWriteList::one(GuestRegisterWrite {
+                index,
+                value: self.value,
+            }),
+            _ => GuestRegisterWriteList::default(),
+        }
+    }
+
     fn register_writes(self, instruction: RiscvInstruction) -> GuestRegisterWriteList {
         guest_instruction_register_write_index(instruction).map_or_else(
             GuestRegisterWriteList::default,
@@ -908,6 +918,10 @@ impl GuestMachineReport {
 
     pub fn register_writes(&self) -> GuestRegisterWriteList {
         self.register_write_value.register_writes(self.instruction)
+    }
+
+    pub(crate) fn register_writes_for_index(&self, index: Option<u8>) -> GuestRegisterWriteList {
+        self.register_write_value.register_writes_for_index(index)
     }
 
     #[cfg(test)]
