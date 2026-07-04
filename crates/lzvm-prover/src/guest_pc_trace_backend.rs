@@ -224,6 +224,7 @@ pub(crate) struct GuestPcTraceStreamTiming {
     runner_row_count_duration: Duration,
     runner_post_boundary_duration: Duration,
     runner_counter_update_duration: Duration,
+    runner_timer_bookkeeping_duration: Duration,
     runner_advance_fast_path_count: usize,
     runner_advance_generic_fallback_count: usize,
     runner_instruction_cache_hit_count: usize,
@@ -402,6 +403,7 @@ impl GuestPcTraceStreamTiming {
         self.runner_row_count_duration += other.runner_row_count_duration;
         self.runner_post_boundary_duration += other.runner_post_boundary_duration;
         self.runner_counter_update_duration += other.runner_counter_update_duration;
+        self.runner_timer_bookkeeping_duration += other.runner_timer_bookkeeping_duration;
         self.runner_advance_fast_path_count += other.runner_advance_fast_path_count;
         self.runner_advance_generic_fallback_count += other.runner_advance_generic_fallback_count;
         self.runner_instruction_cache_hit_count += other.runner_instruction_cache_hit_count;
@@ -697,6 +699,10 @@ impl GuestPcTraceStreamTiming {
 
     pub fn runner_counter_update_duration(&self) -> Duration {
         self.runner_counter_update_duration
+    }
+
+    pub fn runner_timer_bookkeeping_duration(&self) -> Duration {
+        self.runner_timer_bookkeeping_duration
     }
 
     pub fn lowerer_duration(&self) -> Duration {
@@ -1538,6 +1544,22 @@ fn record_detail_duration(
     if let Some(timing) = timing.as_deref_mut() {
         *target(timing) += started.elapsed();
     }
+}
+
+#[inline(always)]
+fn record_runner_detail_duration(
+    started: Option<Instant>,
+    timing: &mut Option<&mut GuestPcTraceStreamTiming>,
+    target: fn(&mut GuestPcTraceStreamTiming) -> &mut Duration,
+) {
+    if started.is_none() {
+        return;
+    }
+    let record_started = timing.as_ref().map(|_| Instant::now());
+    record_detail_duration(started, timing, target);
+    record_detail_duration(record_started, timing, |timing| {
+        &mut timing.runner_timer_bookkeeping_duration
+    });
 }
 
 #[inline(always)]
@@ -4684,12 +4706,12 @@ fn run_guest_pc_trace_segment_slice_inner<
         if let (Some(duration), Some(timing)) = (pre_boundary_duration, timing.as_deref_mut()) {
             timing.runner_pre_boundary_duration += duration;
         }
-        record_detail_duration(row_plan_started, &mut timing, |timing| {
+        record_runner_detail_duration(row_plan_started, &mut timing, |timing| {
             &mut timing.runner_row_plan_duration
         });
         let cache_policy_started = detail_duration_started(&timing, report_detail_timing);
         let instruction_cache_update = instruction_cache_update_for_instruction(state, current);
-        record_detail_duration(cache_policy_started, &mut timing, |timing| {
+        record_runner_detail_duration(cache_policy_started, &mut timing, |timing| {
             &mut timing.runner_cache_policy_duration
         });
         let advance_started = detail_duration_started(&timing, report_detail_timing);
@@ -4801,7 +4823,7 @@ fn run_guest_pc_trace_segment_slice_inner<
                 advance_path,
             }
         };
-        record_detail_duration(advance_started, &mut timing, |timing| {
+        record_runner_detail_duration(advance_started, &mut timing, |timing| {
             &mut timing.runner_advance_duration
         });
         if runner_path_timing {
@@ -4830,7 +4852,7 @@ fn run_guest_pc_trace_segment_slice_inner<
                 advanced.shape,
             );
         }
-        record_detail_duration(cache_update_started, &mut timing, |timing| {
+        record_runner_detail_duration(cache_update_started, &mut timing, |timing| {
             &mut timing.runner_cache_update_duration
         });
         let row_count_started = detail_duration_started(&timing, report_detail_timing);
@@ -4846,7 +4868,7 @@ fn run_guest_pc_trace_segment_slice_inner<
                 message: "Zisk Main report rows exceed layout rows".to_owned(),
             });
         }
-        record_detail_duration(row_count_started, &mut timing, |timing| {
+        record_runner_detail_duration(row_count_started, &mut timing, |timing| {
             &mut timing.runner_row_count_duration
         });
         trace_rows = next_trace_rows;
@@ -4860,7 +4882,7 @@ fn run_guest_pc_trace_segment_slice_inner<
                 record_zisk_main_runner_amo_scratch_snapshot(snapshot, &advanced.report)?;
             }
         }
-        record_detail_duration(post_boundary_started, &mut timing, |timing| {
+        record_runner_detail_duration(post_boundary_started, &mut timing, |timing| {
             &mut timing.runner_post_boundary_duration
         });
         let counter_update_started = detail_duration_started(&timing, report_detail_timing);
@@ -4870,7 +4892,7 @@ fn run_guest_pc_trace_segment_slice_inner<
             }
         })?;
         executed_instructions += 1;
-        record_detail_duration(counter_update_started, &mut timing, |timing| {
+        record_runner_detail_duration(counter_update_started, &mut timing, |timing| {
             &mut timing.runner_counter_update_duration
         });
         if report_detail_timing {

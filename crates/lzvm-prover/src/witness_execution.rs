@@ -478,6 +478,7 @@ pub struct ProveWitnessGuestPcTraceTiming {
     guest_trace_runner_row_count_duration: Duration,
     guest_trace_runner_post_boundary_duration: Duration,
     guest_trace_runner_counter_update_duration: Duration,
+    guest_trace_runner_timer_bookkeeping_duration: Duration,
     guest_trace_runner_advance_fast_path_count: usize,
     guest_trace_runner_advance_generic_fallback_count: usize,
     guest_trace_runner_instruction_cache_hit_count: usize,
@@ -866,6 +867,8 @@ impl ProveWitnessGuestPcTraceTiming {
                 .runner_post_boundary_duration(),
             guest_trace_runner_counter_update_duration: stream_timing
                 .runner_counter_update_duration(),
+            guest_trace_runner_timer_bookkeeping_duration: stream_timing
+                .runner_timer_bookkeeping_duration(),
             guest_trace_runner_advance_fast_path_count: stream_timing
                 .runner_advance_fast_path_count(),
             guest_trace_runner_advance_generic_fallback_count: stream_timing
@@ -1451,6 +1454,10 @@ impl ProveWitnessGuestPcTraceTiming {
 
     pub fn guest_trace_runner_counter_update_duration(&self) -> Duration {
         self.guest_trace_runner_counter_update_duration
+    }
+
+    pub fn guest_trace_runner_timer_bookkeeping_duration(&self) -> Duration {
+        self.guest_trace_runner_timer_bookkeeping_duration
     }
 
     pub fn guest_trace_runner_advance_fast_path_count(&self) -> usize {

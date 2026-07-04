@@ -87,6 +87,9 @@ RUNNER_POST_BOUNDARY_SAMPLED_NS_KEY = (
 RUNNER_COUNTER_UPDATE_SAMPLED_NS_KEY = (
     "timing_guest_trace_runner_counter_update_sampled_ns"
 )
+RUNNER_TIMER_BOOKKEEPING_SAMPLED_NS_KEY = (
+    "timing_guest_trace_runner_timer_bookkeeping_sampled_ns"
+)
 LOWERER_MS_KEY = "timing_guest_trace_lowerer_ms"
 TRACE_LOWER_MS_KEY = "timing_guest_trace_lower_ms"
 TRACE_REPORT_MS_KEY = "timing_guest_trace_report_ms"
@@ -915,6 +918,7 @@ HEADER = (
     "trace_runner_advance_report_sampled_ns,"
     "trace_runner_cache_update_sampled_ns,trace_runner_row_count_sampled_ns,"
     "trace_runner_post_boundary_sampled_ns,trace_runner_counter_update_sampled_ns,"
+    "trace_runner_timer_bookkeeping_sampled_ns,"
     "trace_runner_detail_hotspot,trace_runner_detail_hotspot_pct,"
     "trace_runner_detail_residual_pct,trace_runner_detail_action_hint,"
     "lowerer_ms,trace_lower_ms,trace_report_ms,"
@@ -1258,6 +1262,7 @@ AGGREGATE_MEAN_PROFILE_COLUMNS = (
     "trace_runner_row_count_sampled_ns",
     "trace_runner_post_boundary_sampled_ns",
     "trace_runner_counter_update_sampled_ns",
+    "trace_runner_timer_bookkeeping_sampled_ns",
     "trace_runner_detail_hotspot_pct",
     "trace_runner_detail_residual_pct",
     "lowerer_ms",
@@ -1360,6 +1365,7 @@ TIMING_KEYS = {
     RUNNER_ROW_COUNT_SAMPLED_NS_KEY,
     RUNNER_POST_BOUNDARY_SAMPLED_NS_KEY,
     RUNNER_COUNTER_UPDATE_SAMPLED_NS_KEY,
+    RUNNER_TIMER_BOOKKEEPING_SAMPLED_NS_KEY,
     LOWERER_MS_KEY,
     TRACE_LOWER_MS_KEY,
     TRACE_REPORT_MS_KEY,
@@ -4136,6 +4142,7 @@ RUNNER_DETAIL_HOTSPOT_KEYS = [
     ("row_count", RUNNER_ROW_COUNT_SAMPLED_NS_KEY),
     ("post_boundary", RUNNER_POST_BOUNDARY_SAMPLED_NS_KEY),
     ("counter_update", RUNNER_COUNTER_UPDATE_SAMPLED_NS_KEY),
+    ("timer_bookkeeping", RUNNER_TIMER_BOOKKEEPING_SAMPLED_NS_KEY),
 ]
 
 
@@ -4178,6 +4185,8 @@ def trace_runner_detail_action_hint(
         return "profile_instruction_cache_invalidation"
     if hotspot_name in {"row_plan", "row_count", "counter_update"} and hotspot_pct > 0.0:
         return "profile_runner_row_accounting"
+    if hotspot_name == "timer_bookkeeping" and hotspot_pct > 0.0:
+        return "reduce_runner_detail_timer_overhead"
     return "runner_detail_balanced"
 
 
@@ -4646,6 +4655,9 @@ def summarize_profile_values(
     trace_runner_post_boundary_sampled_ns = values.get(RUNNER_POST_BOUNDARY_SAMPLED_NS_KEY, 0)
     trace_runner_counter_update_sampled_ns = values.get(
         RUNNER_COUNTER_UPDATE_SAMPLED_NS_KEY, 0
+    )
+    trace_runner_timer_bookkeeping_sampled_ns = values.get(
+        RUNNER_TIMER_BOOKKEEPING_SAMPLED_NS_KEY, 0
     )
     (
         trace_runner_detail_avg_ns,
@@ -6232,6 +6244,7 @@ def summarize_profile_values(
         f"{trace_runner_row_count_sampled_ns},"
         f"{trace_runner_post_boundary_sampled_ns},"
         f"{trace_runner_counter_update_sampled_ns},"
+        f"{trace_runner_timer_bookkeeping_sampled_ns},"
         f"{csv_cell(trace_runner_detail_hotspot_name)},"
         f"{trace_runner_detail_hotspot_pct:.3f},"
         f"{trace_runner_detail_residual_pct:.3f},"

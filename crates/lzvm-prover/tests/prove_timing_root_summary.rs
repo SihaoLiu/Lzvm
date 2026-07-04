@@ -9265,6 +9265,7 @@ fn prove_timing_root_summary_reports_runner_detail_hotspot() {
         "timing_guest_trace_runner_row_count_sampled_ns=50000",
         "timing_guest_trace_runner_post_boundary_sampled_ns=60000",
         "timing_guest_trace_runner_counter_update_sampled_ns=20000",
+        "timing_guest_trace_runner_timer_bookkeeping_sampled_ns=50000",
     ]
     .join("\n");
 
@@ -9349,9 +9350,10 @@ fn prove_timing_root_summary_reports_runner_detail_hotspot() {
     assert_eq!(value("trace_runner_row_count_sampled_ns"), "50000");
     assert_eq!(value("trace_runner_post_boundary_sampled_ns"), "60000");
     assert_eq!(value("trace_runner_counter_update_sampled_ns"), "20000");
+    assert_eq!(value("trace_runner_timer_bookkeeping_sampled_ns"), "50000");
     assert_eq!(value("trace_runner_detail_hotspot"), "advance");
     assert_eq!(value("trace_runner_detail_hotspot_pct"), "50.000");
-    assert_eq!(value("trace_runner_detail_residual_pct"), "5.000");
+    assert_eq!(value("trace_runner_detail_residual_pct"), "0.000");
     assert_eq!(
         value("trace_runner_detail_action_hint"),
         "profile_guest_machine_advance"
@@ -9388,6 +9390,7 @@ fn prove_timing_root_summary_aggregates_runner_detail_hotspot() {
             "timing_guest_trace_runner_row_count_sampled_ns=50000".to_owned(),
             "timing_guest_trace_runner_post_boundary_sampled_ns=60000".to_owned(),
             "timing_guest_trace_runner_counter_update_sampled_ns=20000".to_owned(),
+            "timing_guest_trace_runner_timer_bookkeeping_sampled_ns=50000".to_owned(),
         ]
         .join("\n")
     };
@@ -9455,6 +9458,10 @@ fn prove_timing_root_summary_aggregates_runner_detail_hotspot() {
     assert_eq!(
         aggregate_value("trace_runner_advance_execute_sampled_ns_mean"),
         "350000.000"
+    );
+    assert_eq!(
+        aggregate_value("trace_runner_timer_bookkeeping_sampled_ns_mean"),
+        "50000.000"
     );
     assert_eq!(
         aggregate_value("trace_runner_detail_hotspot_pct_mean"),

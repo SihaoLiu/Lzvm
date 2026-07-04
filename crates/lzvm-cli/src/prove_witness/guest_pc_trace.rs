@@ -227,6 +227,10 @@ pub(super) fn record_guest_pc_trace_timing(
             "guest_trace_runner_counter_update",
             timing.guest_trace_runner_counter_update_duration(),
         ),
+        (
+            "guest_trace_runner_timer_bookkeeping",
+            timing.guest_trace_runner_timer_bookkeeping_duration(),
+        ),
     ] {
         record_guest_trace_sampled_duration_counts(
             timings,
