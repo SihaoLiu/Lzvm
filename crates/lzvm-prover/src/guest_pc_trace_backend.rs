@@ -2566,11 +2566,7 @@ fn append_main_device_trace_descriptor(
     descriptors: &mut ZiskMainDeviceTraceDescriptors,
     values: &ZiskMainReportTraceValues,
 ) -> Result<(), GuestPcTraceBackendError> {
-    if descriptors.descriptor_rows >= descriptors.row_count {
-        return Err(GuestPcTraceBackendError::InvalidPcTraceLayout {
-            message: "Zisk Main device trace descriptor rows exceed layout rows".to_owned(),
-        });
-    }
+    debug_assert!(descriptors.descriptor_rows < descriptors.row_count);
     let instruction = &values.instruction;
     let (a_kind, a_payload) = zisk_main_device_trace_source_descriptor(instruction.a);
     let (b_kind, b_payload) = zisk_main_device_trace_source_descriptor(instruction.b);
@@ -2616,11 +2612,7 @@ fn append_main_device_trace_descriptor(
             descriptors
                 .sparse_high_words
                 .extend_from_slice(&sparse.high_words[..sparse.high_word_count]);
-            descriptors.descriptor_rows = descriptors.descriptor_rows.checked_add(1).ok_or(
-                GuestPcTraceBackendError::InvalidPcTraceLayout {
-                    message: "Zisk Main device trace descriptor row count overflow".to_owned(),
-                },
-            )?;
+            descriptors.descriptor_rows += 1;
             return Ok(());
         }
         convert_zisk_main_sparse_descriptors_to_wide(descriptors);
@@ -2638,11 +2630,7 @@ fn append_main_device_trace_descriptor(
             store_prev_value,
         ) {
             descriptors.words.extend_from_slice(&compact_words);
-            descriptors.descriptor_rows = descriptors.descriptor_rows.checked_add(1).ok_or(
-                GuestPcTraceBackendError::InvalidPcTraceLayout {
-                    message: "Zisk Main device trace descriptor row count overflow".to_owned(),
-                },
-            )?;
+            descriptors.descriptor_rows += 1;
             return Ok(());
         }
         convert_zisk_main_compact_descriptors_to_wide(descriptors);
@@ -2663,11 +2651,7 @@ fn append_main_device_trace_descriptor(
         store_prev_mem_step,
         store_prev_value,
     ]);
-    descriptors.descriptor_rows = descriptors.descriptor_rows.checked_add(1).ok_or(
-        GuestPcTraceBackendError::InvalidPcTraceLayout {
-            message: "Zisk Main device trace descriptor row count overflow".to_owned(),
-        },
-    )?;
+    descriptors.descriptor_rows += 1;
     Ok(())
 }
 
