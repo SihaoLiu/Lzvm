@@ -2,7 +2,6 @@
 
 #include <cuda_runtime.h>
 
-#include <cerrno>
 #include <chrono>
 #include <cstdlib>
 #include <cstdint>
@@ -34,8 +33,7 @@ struct SizeWaitStats {
 
 constexpr std::size_t kMaxCachedBytes = std::size_t{16} << 30;
 constexpr std::size_t kMaxCachedBlocksPerSize = 2;
-constexpr std::size_t kPinnedCopyThreshold = std::size_t{128} << 20;
-constexpr const char* kPinnedCopyThresholdEnv = "LZVM_CUDA_H2D_REGISTER_MIN_BYTES";
+constexpr std::size_t kPinnedCopyThreshold = std::size_t{1} << 20;
 constexpr std::size_t kPendingCacheNoWaitBytes = std::size_t{1} << 20;
 constexpr const char* kPendingCacheNoWaitBytesEnv =
     "LZVM_CUDA_PENDING_CACHE_NO_WAIT_BYTES";
@@ -380,26 +378,9 @@ std::size_t host_page_size() {
     return page_size;
 }
 
-std::size_t pinned_copy_threshold() {
-    const char* value = std::getenv(kPinnedCopyThresholdEnv);
-    if (value == nullptr || value[0] == '\0') {
-        return kPinnedCopyThreshold;
-    }
-    char* end = nullptr;
-    errno = 0;
-    const unsigned long long parsed = std::strtoull(value, &end, 10);
-    if (errno != 0 || end == value || *end != '\0') {
-        return kPinnedCopyThreshold;
-    }
-    if (parsed > std::numeric_limits<std::size_t>::max()) {
-        return std::numeric_limits<std::size_t>::max();
-    }
-    return static_cast<std::size_t>(parsed);
-}
-
 RegisteredHostRange register_large_host_copy(const void* src, std::size_t bytes) {
     RegisteredHostRange range;
-    if (src == nullptr || bytes < pinned_copy_threshold()) {
+    if (src == nullptr || bytes < kPinnedCopyThreshold) {
         return range;
     }
 
