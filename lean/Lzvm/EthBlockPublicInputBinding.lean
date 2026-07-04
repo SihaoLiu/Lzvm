@@ -592,6 +592,80 @@ theorem runtime_eth_block_public_input_binding_checked_acceptance_verifier_core_
       proof
       artifactAccepted
 
+theorem runtime_eth_block_public_input_binding_checked_acceptance_public_input_bound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeEthBlockPublicInputBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeEthBlockPublicInputBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        system.publicInputBound publicInput proof := by
+  intro artifact publicInput proof accepted
+  have coreContract :=
+    runtime_eth_block_public_input_binding_checked_acceptance_verifier_core_contract
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  exact coreContract.right.left
+
+theorem runtime_eth_block_public_input_binding_checked_acceptance_public_input_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeEthBlockPublicInputBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeEthBlockPublicInputBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeEthBlockPublicInputBindingEvidence
+            system
+            validation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeProofArtifactBindingEvidence
+            system
+            validation.proofArtifactBindingValidation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeArtifactEvidence
+            system
+            validation.proofArtifactBindingValidation.runtimeValidation
+            artifact
+            publicInput
+            proof
+          /\ system.publicInputBound publicInput proof := by
+  intro artifact publicInput proof accepted
+  have evidenceContract :=
+    runtime_eth_block_public_input_binding_checked_acceptance_artifact_evidence_contract
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have publicInputBound :=
+    runtime_eth_block_public_input_binding_checked_acceptance_public_input_bound
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  exact
+    And.intro evidenceContract.left
+      (And.intro evidenceContract.right.left
+        (And.intro evidenceContract.right.right publicInputBound))
+
 theorem runtime_eth_block_public_input_binding_checked_acceptance_soundness_contract
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
