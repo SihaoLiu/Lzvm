@@ -5,6 +5,10 @@ fn large_host_to_device_copies_use_page_locked_registration() {
     let source = std::fs::read_to_string(&source_path).expect("cuda host source should read");
 
     assert!(
+        source.contains("LZVM_CUDA_H2D_REGISTER_MIN_BYTES"),
+        "large H2D registration threshold should be runtime configurable"
+    );
+    assert!(
         source.contains("cudaHostRegister"),
         "large H2D copies should register host pages before cudaMemcpy"
     );
