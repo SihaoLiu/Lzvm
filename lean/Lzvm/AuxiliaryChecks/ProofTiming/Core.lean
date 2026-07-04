@@ -213,7 +213,8 @@ theorem witness_opening_row_value_aggregate_timing_acceptance_sound
     (assumptions : AssumptionBundle system)
     (summary : WitnessOpeningRowValueTimingSummary)
     (sourceExtendMilliseconds sourceDownloadMilliseconds deviceDownloadMilliseconds
-      deviceRows deviceDownloadBatches deviceSingleDownloads sourceRows words bytes : Nat) :
+      deviceRows deviceDownloadBatches deviceSingleDownloads sourceExtendCalls
+      sourceExtendMaxRows sourceRows words bytes : Nat) :
     forall publicInput proof,
       WitnessOpeningRowValueTimingObservedAcceptance
         system
@@ -225,6 +226,8 @@ theorem witness_opening_row_value_aggregate_timing_acceptance_sound
             deviceRowCount := deviceRows
             deviceDownloadBatchCount := deviceDownloadBatches
             deviceSingleDownloadCount := deviceSingleDownloads
+            sourceExtendCallCount := sourceExtendCalls
+            sourceExtendMaxRowCount := sourceExtendMaxRows
             sourceRowCount := sourceRows
             wordCount := words
             byteCount := bytes })
@@ -243,6 +246,8 @@ theorem witness_opening_row_value_aggregate_timing_acceptance_sound
           deviceRowCount := deviceRows
           deviceDownloadBatchCount := deviceDownloadBatches
           deviceSingleDownloadCount := deviceSingleDownloads
+          sourceExtendCallCount := sourceExtendCalls
+          sourceExtendMaxRowCount := sourceExtendMaxRows
           sourceRowCount := sourceRows
           wordCount := words
           byteCount := bytes })
@@ -255,7 +260,8 @@ theorem witness_opening_row_value_aggregate_timing_acceptance_verifier_core_cont
     (assumptions : AssumptionBundle system)
     (summary : WitnessOpeningRowValueTimingSummary)
     (sourceExtendMilliseconds sourceDownloadMilliseconds deviceDownloadMilliseconds
-      deviceRows deviceDownloadBatches deviceSingleDownloads sourceRows words bytes : Nat) :
+      deviceRows deviceDownloadBatches deviceSingleDownloads sourceExtendCalls
+      sourceExtendMaxRows sourceRows words bytes : Nat) :
     forall publicInput proof,
       WitnessOpeningRowValueTimingObservedAcceptance
         system
@@ -267,6 +273,8 @@ theorem witness_opening_row_value_aggregate_timing_acceptance_verifier_core_cont
             deviceRowCount := deviceRows
             deviceDownloadBatchCount := deviceDownloadBatches
             deviceSingleDownloadCount := deviceSingleDownloads
+            sourceExtendCallCount := sourceExtendCalls
+            sourceExtendMaxRowCount := sourceExtendMaxRows
             sourceRowCount := sourceRows
             wordCount := words
             byteCount := bytes })
@@ -285,6 +293,8 @@ theorem witness_opening_row_value_aggregate_timing_acceptance_verifier_core_cont
           deviceRowCount := deviceRows
           deviceDownloadBatchCount := deviceDownloadBatches
           deviceSingleDownloadCount := deviceSingleDownloads
+          sourceExtendCallCount := sourceExtendCalls
+          sourceExtendMaxRowCount := sourceExtendMaxRows
           sourceRowCount := sourceRows
           wordCount := words
           byteCount := bytes })
@@ -297,7 +307,8 @@ theorem witness_opening_row_value_aggregate_timing_acceptance_core_and_sound
     (assumptions : AssumptionBundle system)
     (summary : WitnessOpeningRowValueTimingSummary)
     (sourceExtendMilliseconds sourceDownloadMilliseconds deviceDownloadMilliseconds
-      deviceRows deviceDownloadBatches deviceSingleDownloads sourceRows words bytes : Nat) :
+      deviceRows deviceDownloadBatches deviceSingleDownloads sourceExtendCalls
+      sourceExtendMaxRows sourceRows words bytes : Nat) :
     forall publicInput proof,
       WitnessOpeningRowValueTimingObservedAcceptance
         system
@@ -309,6 +320,8 @@ theorem witness_opening_row_value_aggregate_timing_acceptance_core_and_sound
             deviceRowCount := deviceRows
             deviceDownloadBatchCount := deviceDownloadBatches
             deviceSingleDownloadCount := deviceSingleDownloads
+            sourceExtendCallCount := sourceExtendCalls
+            sourceExtendMaxRowCount := sourceExtendMaxRows
             sourceRowCount := sourceRows
             wordCount := words
             byteCount := bytes })
@@ -328,6 +341,8 @@ theorem witness_opening_row_value_aggregate_timing_acceptance_core_and_sound
           deviceRowCount := deviceRows
           deviceDownloadBatchCount := deviceDownloadBatches
           deviceSingleDownloadCount := deviceSingleDownloads
+          sourceExtendCallCount := sourceExtendCalls
+          sourceExtendMaxRowCount := sourceExtendMaxRows
           sourceRowCount := sourceRows
           wordCount := words
           byteCount := bytes })

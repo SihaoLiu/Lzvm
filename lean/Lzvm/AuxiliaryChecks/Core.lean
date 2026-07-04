@@ -400,6 +400,8 @@ structure WitnessOpeningStageRowValueTimingSummary where
   deviceRowCount : Nat
   deviceDownloadBatchCount : Nat
   deviceSingleDownloadCount : Nat
+  sourceExtendCallCount : Nat
+  sourceExtendMaxRowCount : Nat
   sourceRowCount : Nat
   wordCount : Nat
   byteCount : Nat
@@ -412,6 +414,8 @@ structure WitnessOpeningRowValueTimingSummary where
   deviceRowCount : Nat
   deviceDownloadBatchCount : Nat
   deviceSingleDownloadCount : Nat
+  sourceExtendCallCount : Nat
+  sourceExtendMaxRowCount : Nat
   sourceRowCount : Nat
   wordCount : Nat
   byteCount : Nat
