@@ -810,6 +810,14 @@ fn prove_timing_root_summary_reports_root_grouping_shape() {
         "timing_guest_trace_main_report_store_copy_fast_paths",
         "timing_guest_trace_main_report_simple_copy_fast_paths",
         "timing_guest_trace_main_report_jump_fast_paths",
+        "timing_guest_trace_main_report_generic_fallback_shape_top_1_pattern",
+        "timing_guest_trace_main_report_generic_fallback_shape_top_1_count",
+        "timing_guest_trace_main_report_generic_fallback_shape_top_2_pattern",
+        "timing_guest_trace_main_report_generic_fallback_shape_top_2_count",
+        "timing_guest_trace_main_report_generic_fallback_shape_top_3_pattern",
+        "timing_guest_trace_main_report_generic_fallback_shape_top_3_count",
+        "timing_guest_trace_main_report_generic_fallback_shape_top_4_pattern",
+        "timing_guest_trace_main_report_generic_fallback_shape_top_4_count",
         "main_report_fast_path_pct",
         "timing_guest_trace_report_chunk_sent",
         "timing_guest_trace_report_chunk_received",
@@ -5742,6 +5750,8 @@ fn prove_timing_root_summary_reports_trace_report_buffer_shape() {
         "timing_guest_trace_report_buffer_max_capacity=4194304",
         "timing_guest_trace_report_buffer_excess_capacity=528303",
         "timing_guest_trace_report_record_size_bytes=128",
+        "timing_guest_trace_main_report_generic_fallback_shape_top_1_pattern=268468803",
+        "timing_guest_trace_main_report_generic_fallback_shape_top_1_count=77",
         "timing_guest_trace_report_storage_bytes=12011972736",
         "timing_guest_trace_report_buffer_capacity_bytes=12079595520",
         "timing_guest_trace_report_buffer_excess_bytes=67622784",
@@ -5774,13 +5784,13 @@ fn prove_timing_root_summary_reports_trace_report_buffer_shape() {
     let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
     assert!(
         stdout.contains(
-            "trace_reports,trace_report_rows,main_report_fast_paths,main_report_generic_fallbacks,main_report_fast_path_pct,main_report_fcall_result_fast_paths,main_report_load_copy_fast_paths,main_report_load_sign_extend_fast_paths,main_report_no_memory_fast_paths,main_report_store_copy_fast_paths,main_report_simple_copy_fast_paths,main_report_jump_fast_paths,trace_rows_per_report,trace_report_record_size_bytes,trace_report_instruction_size_bytes,trace_report_register_write_list_size_bytes,trace_report_memory_access_list_size_bytes,trace_report_precompile_access_list_size_bytes,trace_report_instruction_storage_gib,trace_report_register_write_list_storage_gib,trace_report_memory_access_list_storage_gib,trace_report_precompile_access_list_storage_gib,trace_report_storage_bytes,trace_report_storage_gib,trace_report_buffer_capacity,trace_report_buffer_max_capacity,trace_report_buffer_excess_capacity,trace_report_buffer_capacity_bytes,trace_report_buffer_capacity_gib,trace_report_buffer_excess_bytes,trace_report_buffer_excess_pct,trace_report_buffer_shape_hint,"
+            "trace_reports,trace_report_rows,main_report_fast_paths,main_report_generic_fallbacks,main_report_fast_path_pct,main_report_fcall_result_fast_paths,main_report_load_copy_fast_paths,main_report_load_sign_extend_fast_paths,main_report_no_memory_fast_paths,main_report_store_copy_fast_paths,main_report_simple_copy_fast_paths,main_report_jump_fast_paths,main_report_generic_fallback_shape_top_1_pattern,main_report_generic_fallback_shape_top_1_count,main_report_generic_fallback_shape_top_1_shape,main_report_generic_fallback_shape_top_2_pattern,main_report_generic_fallback_shape_top_2_count,main_report_generic_fallback_shape_top_2_shape,main_report_generic_fallback_shape_top_3_pattern,main_report_generic_fallback_shape_top_3_count,main_report_generic_fallback_shape_top_3_shape,main_report_generic_fallback_shape_top_4_pattern,main_report_generic_fallback_shape_top_4_count,main_report_generic_fallback_shape_top_4_shape,trace_rows_per_report,trace_report_record_size_bytes,trace_report_instruction_size_bytes,trace_report_register_write_list_size_bytes,trace_report_memory_access_list_size_bytes,trace_report_precompile_access_list_size_bytes,trace_report_instruction_storage_gib,trace_report_register_write_list_storage_gib,trace_report_memory_access_list_storage_gib,trace_report_precompile_access_list_storage_gib,trace_report_storage_bytes,trace_report_storage_gib,trace_report_buffer_capacity,trace_report_buffer_max_capacity,trace_report_buffer_excess_capacity,trace_report_buffer_capacity_bytes,trace_report_buffer_capacity_gib,trace_report_buffer_excess_bytes,trace_report_buffer_excess_pct,trace_report_buffer_shape_hint,"
         ),
         "prove timing root summary should expose trace report buffer columns: stdout={stdout}"
     );
     assert!(
         stdout.contains(
-            "93843537,93917088,0,0,0.000,0,0,0,0,0,0,0,1.001,128,0,0,0,0,0.000,0.000,0.000,0.000,12011972736,11.187,94371840,4194304,528303,12079595520,11.250,67622784,0.560,report_buffer_capacity_tight,"
+            "93843537,93917088,0,0,0.000,0,0,0,0,0,0,0,268468803,77,op=Sll;a=reg;b=imm;store=reg;ind_width=0;store_pc=0;set_pc=0;m32=0;external=1;precompiled=0,0,0,none,0,0,none,0,0,none,1.001,128,0,0,0,0,0.000,0.000,0.000,0.000,12011972736,11.187,94371840,4194304,528303,12079595520,11.250,67622784,0.560,report_buffer_capacity_tight,"
         ),
         "prove timing root summary should classify tight report buffer capacity: stdout={stdout}"
     );

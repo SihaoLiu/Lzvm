@@ -384,6 +384,7 @@ pub(crate) struct GuestPcTraceStreamTiming {
     trace_memory_store_row_count: usize,
     trace_no_store_row_count: usize,
     trace_row_shape_pattern_counts: BTreeMap<u64, usize>,
+    trace_main_report_generic_fallback_shape_pattern_counts: BTreeMap<u64, usize>,
 }
 
 impl GuestPcTraceStreamTiming {
@@ -638,6 +639,9 @@ impl GuestPcTraceStreamTiming {
         self.trace_no_store_row_count += other.trace_no_store_row_count;
         for (id, count) in other.trace_row_shape_pattern_counts {
             self.record_trace_row_shape_pattern_count(id, count);
+        }
+        for (id, count) in other.trace_main_report_generic_fallback_shape_pattern_counts {
+            self.record_main_report_generic_fallback_shape_pattern_count(id, count);
         }
     }
 
@@ -948,6 +952,24 @@ impl GuestPcTraceStreamTiming {
 
     fn record_main_report_generic_fallback(&mut self) {
         self.trace_main_report_generic_fallback_count += 1;
+    }
+
+    fn record_main_report_generic_fallback_shape(&mut self, instruction: &ZiskMainInstruction) {
+        self.record_main_report_generic_fallback_shape_pattern_count(
+            main_row_shape_pattern_id(instruction),
+            1,
+        );
+    }
+
+    fn record_main_report_generic_fallback_shape_pattern_count(&mut self, id: u64, count: usize) {
+        if id == 0 || count == 0 {
+            return;
+        }
+        let entry = self
+            .trace_main_report_generic_fallback_shape_pattern_counts
+            .entry(id)
+            .or_default();
+        *entry = entry.saturating_add(count);
     }
 
     pub fn segment_replay_count(&self) -> usize {
@@ -1471,19 +1493,30 @@ impl GuestPcTraceStreamTiming {
     pub fn trace_row_shape_top_patterns(
         &self,
     ) -> [(u64, usize); ZISK_MAIN_ROW_SHAPE_TOP_PATTERN_COUNT] {
-        let mut pairs = self
-            .trace_row_shape_pattern_counts
-            .iter()
-            .map(|(&id, &count)| (id, count))
-            .collect::<Vec<_>>();
-        pairs.sort_by(|left, right| right.1.cmp(&left.1).then_with(|| left.0.cmp(&right.0)));
-
-        let mut out = [(0_u64, 0_usize); ZISK_MAIN_ROW_SHAPE_TOP_PATTERN_COUNT];
-        for (slot, pair) in out.iter_mut().zip(pairs.into_iter()) {
-            *slot = pair;
-        }
-        out
+        trace_row_shape_top_patterns(&self.trace_row_shape_pattern_counts)
     }
+
+    pub fn trace_main_report_generic_fallback_shape_top_patterns(
+        &self,
+    ) -> [(u64, usize); ZISK_MAIN_ROW_SHAPE_TOP_PATTERN_COUNT] {
+        trace_row_shape_top_patterns(&self.trace_main_report_generic_fallback_shape_pattern_counts)
+    }
+}
+
+fn trace_row_shape_top_patterns(
+    pattern_counts: &BTreeMap<u64, usize>,
+) -> [(u64, usize); ZISK_MAIN_ROW_SHAPE_TOP_PATTERN_COUNT] {
+    let mut pairs = pattern_counts
+        .iter()
+        .map(|(&id, &count)| (id, count))
+        .collect::<Vec<_>>();
+    pairs.sort_by(|left, right| right.1.cmp(&left.1).then_with(|| left.0.cmp(&right.0)));
+
+    let mut out = [(0_u64, 0_usize); ZISK_MAIN_ROW_SHAPE_TOP_PATTERN_COUNT];
+    for (slot, pair) in out.iter_mut().zip(pairs.into_iter()) {
+        *slot = pair;
+    }
+    out
 }
 
 #[cfg(feature = "cuda")]
@@ -10947,7 +10980,8 @@ fn validate_and_apply_zisk_main_report(
     }
 
     validate_zisk_main_report_row_capacity(row, 1, context.row_count)?;
-    if !detail_timing && !shape_timing {
+    let count_main_report_generic_fallback = !detail_timing && !shape_timing;
+    if count_main_report_generic_fallback {
         if let Some(fast_path) = report_level_fast_path_parts(row, report)? {
             if let Some(timing) = timing.as_mut() {
                 timing.record_main_report_fast_path(&fast_path);
@@ -11059,6 +11093,11 @@ fn validate_and_apply_zisk_main_report(
     }
     let lowering_started = detail_duration_started(&timing, detail_timing);
     let lowered_row = lower_single_zisk_main_report_row(row, report, &mut next_instruction)?;
+    if count_main_report_generic_fallback {
+        if let Some(timing) = timing.as_mut() {
+            timing.record_main_report_generic_fallback_shape(&lowered_row.instruction);
+        }
+    }
     record_detail_duration(lowering_started, &mut timing, |timing| {
         &mut timing.trace_report_lowering_duration
     });
@@ -13512,7 +13551,7 @@ fn record_trace_lowered_row_shape(
     timing: &mut GuestPcTraceStreamTiming,
     instruction: &ZiskMainInstruction,
 ) {
-    timing.record_trace_row_shape_pattern(zisk_main_row_shape_pattern_id(instruction));
+    timing.record_trace_row_shape_pattern(main_row_shape_pattern_id(instruction));
     let (register_a_sources, memory_a_sources) = source_shape_count(instruction.a);
     let (register_b_sources, memory_b_sources) = source_shape_count(instruction.b);
     let memory_source_count = memory_a_sources + memory_b_sources;
@@ -13665,7 +13704,7 @@ fn trace_store_kind_code(store: &ZiskMainStore) -> u64 {
     }
 }
 
-fn zisk_main_row_shape_pattern_id(instruction: &ZiskMainInstruction) -> u64 {
+fn main_row_shape_pattern_id(instruction: &ZiskMainInstruction) -> u64 {
     1 | (u64::from(instruction.op.code()) << 1)
         | (trace_source_kind_code(instruction.a) << 9)
         | (trace_source_kind_code(instruction.b) << 12)

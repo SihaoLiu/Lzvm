@@ -235,6 +235,30 @@ MAIN_REPORT_SIMPLE_COPY_FAST_PATHS_KEY = (
 MAIN_REPORT_JUMP_FAST_PATHS_KEY = (
     "timing_guest_trace_main_report_jump_fast_paths"
 )
+MAIN_REPORT_GENERIC_FALLBACK_SHAPE_TOP_1_PATTERN_KEY = (
+    "timing_guest_trace_main_report_generic_fallback_shape_top_1_pattern"
+)
+MAIN_REPORT_GENERIC_FALLBACK_SHAPE_TOP_1_COUNT_KEY = (
+    "timing_guest_trace_main_report_generic_fallback_shape_top_1_count"
+)
+MAIN_REPORT_GENERIC_FALLBACK_SHAPE_TOP_2_PATTERN_KEY = (
+    "timing_guest_trace_main_report_generic_fallback_shape_top_2_pattern"
+)
+MAIN_REPORT_GENERIC_FALLBACK_SHAPE_TOP_2_COUNT_KEY = (
+    "timing_guest_trace_main_report_generic_fallback_shape_top_2_count"
+)
+MAIN_REPORT_GENERIC_FALLBACK_SHAPE_TOP_3_PATTERN_KEY = (
+    "timing_guest_trace_main_report_generic_fallback_shape_top_3_pattern"
+)
+MAIN_REPORT_GENERIC_FALLBACK_SHAPE_TOP_3_COUNT_KEY = (
+    "timing_guest_trace_main_report_generic_fallback_shape_top_3_count"
+)
+MAIN_REPORT_GENERIC_FALLBACK_SHAPE_TOP_4_PATTERN_KEY = (
+    "timing_guest_trace_main_report_generic_fallback_shape_top_4_pattern"
+)
+MAIN_REPORT_GENERIC_FALLBACK_SHAPE_TOP_4_COUNT_KEY = (
+    "timing_guest_trace_main_report_generic_fallback_shape_top_4_count"
+)
 TRACE_REPORT_CHUNK_SENT_KEY = "timing_guest_trace_report_chunk_sent"
 TRACE_REPORT_CHUNK_RECEIVED_KEY = "timing_guest_trace_report_chunk_received"
 TRACE_REPORT_CHUNK_REPORTS_KEY = "timing_guest_trace_report_chunk_reports"
@@ -964,6 +988,18 @@ HEADER = (
     "main_report_load_sign_extend_fast_paths,"
     "main_report_no_memory_fast_paths,main_report_store_copy_fast_paths,"
     "main_report_simple_copy_fast_paths,main_report_jump_fast_paths,"
+    "main_report_generic_fallback_shape_top_1_pattern,"
+    "main_report_generic_fallback_shape_top_1_count,"
+    "main_report_generic_fallback_shape_top_1_shape,"
+    "main_report_generic_fallback_shape_top_2_pattern,"
+    "main_report_generic_fallback_shape_top_2_count,"
+    "main_report_generic_fallback_shape_top_2_shape,"
+    "main_report_generic_fallback_shape_top_3_pattern,"
+    "main_report_generic_fallback_shape_top_3_count,"
+    "main_report_generic_fallback_shape_top_3_shape,"
+    "main_report_generic_fallback_shape_top_4_pattern,"
+    "main_report_generic_fallback_shape_top_4_count,"
+    "main_report_generic_fallback_shape_top_4_shape,"
     "trace_rows_per_report,trace_report_record_size_bytes,"
     "trace_report_instruction_size_bytes,"
     "trace_report_register_write_list_size_bytes,"
@@ -1433,6 +1469,14 @@ TIMING_KEYS = {
     MAIN_REPORT_STORE_COPY_FAST_PATHS_KEY,
     MAIN_REPORT_SIMPLE_COPY_FAST_PATHS_KEY,
     MAIN_REPORT_JUMP_FAST_PATHS_KEY,
+    MAIN_REPORT_GENERIC_FALLBACK_SHAPE_TOP_1_PATTERN_KEY,
+    MAIN_REPORT_GENERIC_FALLBACK_SHAPE_TOP_1_COUNT_KEY,
+    MAIN_REPORT_GENERIC_FALLBACK_SHAPE_TOP_2_PATTERN_KEY,
+    MAIN_REPORT_GENERIC_FALLBACK_SHAPE_TOP_2_COUNT_KEY,
+    MAIN_REPORT_GENERIC_FALLBACK_SHAPE_TOP_3_PATTERN_KEY,
+    MAIN_REPORT_GENERIC_FALLBACK_SHAPE_TOP_3_COUNT_KEY,
+    MAIN_REPORT_GENERIC_FALLBACK_SHAPE_TOP_4_PATTERN_KEY,
+    MAIN_REPORT_GENERIC_FALLBACK_SHAPE_TOP_4_COUNT_KEY,
     TRACE_REPORT_CHUNK_SENT_KEY,
     TRACE_REPORT_CHUNK_RECEIVED_KEY,
     TRACE_REPORT_CHUNK_REPORTS_KEY,
@@ -4845,6 +4889,42 @@ def summarize_profile_values(
         MAIN_REPORT_SIMPLE_COPY_FAST_PATHS_KEY, 0
     )
     main_report_jump_fast_paths = values.get(MAIN_REPORT_JUMP_FAST_PATHS_KEY, 0)
+    main_report_fallback_shape_top_1_pattern = values.get(
+        MAIN_REPORT_GENERIC_FALLBACK_SHAPE_TOP_1_PATTERN_KEY, 0
+    )
+    main_report_fallback_shape_top_1_count = values.get(
+        MAIN_REPORT_GENERIC_FALLBACK_SHAPE_TOP_1_COUNT_KEY, 0
+    )
+    main_report_fallback_shape_top_2_pattern = values.get(
+        MAIN_REPORT_GENERIC_FALLBACK_SHAPE_TOP_2_PATTERN_KEY, 0
+    )
+    main_report_fallback_shape_top_2_count = values.get(
+        MAIN_REPORT_GENERIC_FALLBACK_SHAPE_TOP_2_COUNT_KEY, 0
+    )
+    main_report_fallback_shape_top_3_pattern = values.get(
+        MAIN_REPORT_GENERIC_FALLBACK_SHAPE_TOP_3_PATTERN_KEY, 0
+    )
+    main_report_fallback_shape_top_3_count = values.get(
+        MAIN_REPORT_GENERIC_FALLBACK_SHAPE_TOP_3_COUNT_KEY, 0
+    )
+    main_report_fallback_shape_top_4_pattern = values.get(
+        MAIN_REPORT_GENERIC_FALLBACK_SHAPE_TOP_4_PATTERN_KEY, 0
+    )
+    main_report_fallback_shape_top_4_count = values.get(
+        MAIN_REPORT_GENERIC_FALLBACK_SHAPE_TOP_4_COUNT_KEY, 0
+    )
+    main_report_fallback_shape_top_1_shape = trace_row_shape_pattern_description(
+        main_report_fallback_shape_top_1_pattern
+    )
+    main_report_fallback_shape_top_2_shape = trace_row_shape_pattern_description(
+        main_report_fallback_shape_top_2_pattern
+    )
+    main_report_fallback_shape_top_3_shape = trace_row_shape_pattern_description(
+        main_report_fallback_shape_top_3_pattern
+    )
+    main_report_fallback_shape_top_4_shape = trace_row_shape_pattern_description(
+        main_report_fallback_shape_top_4_pattern
+    )
     main_report_total_fast_path_attempts = (
         main_report_fast_paths + main_report_generic_fallbacks
     )
@@ -6296,7 +6376,20 @@ def summarize_profile_values(
         f"{main_report_no_memory_fast_paths},"
         f"{main_report_store_copy_fast_paths},"
         f"{main_report_simple_copy_fast_paths},"
-        f"{main_report_jump_fast_paths},{trace_rows_per_report:.3f},"
+        f"{main_report_jump_fast_paths},"
+        f"{csv_cell(main_report_fallback_shape_top_1_pattern)},"
+        f"{main_report_fallback_shape_top_1_count},"
+        f"{main_report_fallback_shape_top_1_shape},"
+        f"{csv_cell(main_report_fallback_shape_top_2_pattern)},"
+        f"{main_report_fallback_shape_top_2_count},"
+        f"{main_report_fallback_shape_top_2_shape},"
+        f"{csv_cell(main_report_fallback_shape_top_3_pattern)},"
+        f"{main_report_fallback_shape_top_3_count},"
+        f"{main_report_fallback_shape_top_3_shape},"
+        f"{csv_cell(main_report_fallback_shape_top_4_pattern)},"
+        f"{main_report_fallback_shape_top_4_count},"
+        f"{main_report_fallback_shape_top_4_shape},"
+        f"{trace_rows_per_report:.3f},"
         f"{trace_report_record_size_bytes},"
         f"{trace_report_instruction_size_bytes},"
         f"{trace_report_register_write_list_size_bytes},"

@@ -34,6 +34,25 @@ const GUEST_TRACE_ROW_SHAPE_TOP_TIMING_NAMES: [(&str, &str); 4] = [
     ),
 ];
 
+const GUEST_TRACE_MAIN_REPORT_GENERIC_FALLBACK_SHAPE_TOP_TIMING_NAMES: [(&str, &str); 4] = [
+    (
+        "guest_trace_main_report_generic_fallback_shape_top_1_pattern",
+        "guest_trace_main_report_generic_fallback_shape_top_1_count",
+    ),
+    (
+        "guest_trace_main_report_generic_fallback_shape_top_2_pattern",
+        "guest_trace_main_report_generic_fallback_shape_top_2_count",
+    ),
+    (
+        "guest_trace_main_report_generic_fallback_shape_top_3_pattern",
+        "guest_trace_main_report_generic_fallback_shape_top_3_count",
+    ),
+    (
+        "guest_trace_main_report_generic_fallback_shape_top_4_pattern",
+        "guest_trace_main_report_generic_fallback_shape_top_4_count",
+    ),
+];
+
 pub(super) struct GuestPcTraceWitnessRun {
     pub(super) outputs: Vec<ProveWitnessTraceCommitments>,
     pub(super) timing: Option<ProveWitnessGuestPcTraceTiming>,
@@ -516,6 +535,18 @@ pub(super) fn record_guest_pc_trace_timing(
         "guest_trace_main_report_jump_fast_paths",
         timing.guest_trace_main_report_jump_fast_path_count(),
     );
+    for (&(pattern_name, count_name), (pattern, count)) in
+        GUEST_TRACE_MAIN_REPORT_GENERIC_FALLBACK_SHAPE_TOP_TIMING_NAMES
+            .iter()
+            .zip(
+                timing
+                    .guest_trace_main_report_generic_fallback_shape_top_patterns()
+                    .into_iter(),
+            )
+    {
+        timings.record_count(pattern_name, pattern as usize);
+        timings.record_count(count_name, count);
+    }
     timings.record_count(
         "guest_trace_stream_start_sent",
         timing.guest_trace_stream_start_sent_count(),

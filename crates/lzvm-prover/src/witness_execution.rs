@@ -589,6 +589,8 @@ pub struct ProveWitnessGuestPcTraceTiming {
     guest_trace_main_report_store_copy_fast_path_count: usize,
     guest_trace_main_report_simple_copy_fast_path_count: usize,
     guest_trace_main_report_jump_fast_path_count: usize,
+    guest_trace_main_report_generic_fallback_shape_top_patterns:
+        [(u64, usize); ZISK_MAIN_ROW_SHAPE_TOP_PATTERN_COUNT],
     guest_trace_stream_start_sent_count: usize,
     guest_trace_report_chunk_sent_count: usize,
     guest_trace_report_chunk_received_count: usize,
@@ -1062,6 +1064,8 @@ impl ProveWitnessGuestPcTraceTiming {
                 .trace_main_report_simple_copy_fast_path_count(),
             guest_trace_main_report_jump_fast_path_count: stream_timing
                 .trace_main_report_jump_fast_path_count(),
+            guest_trace_main_report_generic_fallback_shape_top_patterns: stream_timing
+                .trace_main_report_generic_fallback_shape_top_patterns(),
             guest_trace_stream_start_sent_count: stream_timing.trace_stream_start_sent_count(),
             guest_trace_report_chunk_sent_count: stream_timing.trace_report_chunk_sent_count(),
             guest_trace_report_chunk_received_count: stream_timing
@@ -1906,6 +1910,12 @@ impl ProveWitnessGuestPcTraceTiming {
 
     pub fn guest_trace_main_report_jump_fast_path_count(&self) -> usize {
         self.guest_trace_main_report_jump_fast_path_count
+    }
+
+    pub fn guest_trace_main_report_generic_fallback_shape_top_patterns(
+        &self,
+    ) -> [(u64, usize); ZISK_MAIN_ROW_SHAPE_TOP_PATTERN_COUNT] {
+        self.guest_trace_main_report_generic_fallback_shape_top_patterns
     }
 
     pub fn guest_trace_stream_start_sent_count(&self) -> usize {
