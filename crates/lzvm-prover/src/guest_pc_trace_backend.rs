@@ -23,7 +23,7 @@ use crate::guest_machine::{
     advance_guest_machine_with_prepared_fcalls_report_shape_path_at_pc_into_timed,
     advance_guest_machine_with_prepared_fcalls_report_shape_path_timed,
     advance_guest_machine_with_prepared_fcalls_report_shape_timed, fixed_csr_value,
-    instruction_cache_clear_reason, run_guest_machine_trace_with_fcalls,
+    instruction_cache_update_for_instruction, run_guest_machine_trace_with_fcalls,
     run_guest_machine_with_fcalls, GuestDmaProofValueFlags, GuestFcallHandler,
     GuestInstructionCache, GuestInstructionCacheStats, GuestMachineAdvancePath,
     GuestMachineAdvanceTiming, GuestMachineHalt, GuestMachineMemory,
@@ -4108,7 +4108,7 @@ fn run_guest_pc_trace_segment_slice_with_live_report_chunks(
                 ));
             }
         }
-        let instruction_cache_clear_reason = instruction_cache_clear_reason(state, current);
+        let instruction_cache_update = instruction_cache_update_for_instruction(state, current);
         let (advanced, advance_path) = if path_timing {
             advance_guest_machine_with_prepared_fcalls_report_shape_path(
                 memory, state, handler, prepared,
@@ -4124,21 +4124,19 @@ fn run_guest_pc_trace_segment_slice_with_live_report_chunks(
         if path_timing {
             timing.record_runner_advance_path(advance_path);
         }
-        if let Some(clear_reason) = instruction_cache_clear_reason {
-            if runner_instruction_cache_stats {
-                instruction_cache_stats.record_clear_reason(clear_reason);
-                instruction_cache.clear_with_stats(&mut instruction_cache_stats);
-            } else {
-                instruction_cache.clear();
-            }
-        } else if runner_instruction_cache_stats {
-            instruction_cache.invalidate_report_shape_with_stats(
+        if runner_instruction_cache_stats {
+            instruction_cache_update.apply_or_invalidate_report_shape_with_stats(
+                instruction_cache,
                 &advanced.report,
                 advanced.shape,
                 &mut instruction_cache_stats,
             );
         } else {
-            instruction_cache.invalidate_report_shape(&advanced.report, advanced.shape);
+            instruction_cache_update.apply_or_invalidate_report_shape(
+                instruction_cache,
+                &advanced.report,
+                advanced.shape,
+            );
         }
         let report_rows =
             zisk_main_report_row_count_from_report_shape(report_count, advanced.shape)?;
@@ -4344,18 +4342,17 @@ fn run_guest_pc_trace_segment_slice_with_streaming_device_material(
                 .map(Some);
             }
         }
-        let clear_instruction_cache =
-            crate::guest_machine::instruction_clears_instruction_cache(state, current);
+        let instruction_cache_update = instruction_cache_update_for_instruction(state, current);
         let advanced = advance_guest_machine_with_prepared_fcalls_report_shape(
             memory, state, handler, prepared,
         )
         .map_err(GuestMachineRunError::from)
         .map_err(GuestPcTraceBackendError::GuestRun)?;
-        if clear_instruction_cache {
-            instruction_cache.clear();
-        } else {
-            instruction_cache.invalidate_report_shape(&advanced.report, advanced.shape);
-        }
+        instruction_cache_update.apply_or_invalidate_report_shape(
+            instruction_cache,
+            &advanced.report,
+            advanced.shape,
+        );
         let report_rows =
             zisk_main_report_row_count_from_report_shape(reports.len(), advanced.shape)?;
         let next_trace_rows = trace_rows.checked_add(report_rows).ok_or_else(|| {
@@ -4691,7 +4688,7 @@ fn run_guest_pc_trace_segment_slice_inner<
             &mut timing.runner_row_plan_duration
         });
         let cache_policy_started = detail_duration_started(&timing, report_detail_timing);
-        let instruction_cache_clear_reason = instruction_cache_clear_reason(state, current);
+        let instruction_cache_update = instruction_cache_update_for_instruction(state, current);
         record_detail_duration(cache_policy_started, &mut timing, |timing| {
             &mut timing.runner_cache_policy_duration
         });
@@ -4819,21 +4816,19 @@ fn run_guest_pc_trace_segment_slice_inner<
             timing.runner_advance_report_duration += advance_timing.report_duration;
         }
         let cache_update_started = detail_duration_started(&timing, report_detail_timing);
-        if let Some(clear_reason) = instruction_cache_clear_reason {
-            if runner_instruction_cache_stats {
-                instruction_cache_stats.record_clear_reason(clear_reason);
-                instruction_cache.clear_with_stats(&mut instruction_cache_stats);
-            } else {
-                instruction_cache.clear();
-            }
-        } else if runner_instruction_cache_stats {
-            instruction_cache.invalidate_report_shape_with_stats(
+        if runner_instruction_cache_stats {
+            instruction_cache_update.apply_or_invalidate_report_shape_with_stats(
+                instruction_cache,
                 &advanced.report,
                 advanced.shape,
                 &mut instruction_cache_stats,
             );
         } else {
-            instruction_cache.invalidate_report_shape(&advanced.report, advanced.shape);
+            instruction_cache_update.apply_or_invalidate_report_shape(
+                instruction_cache,
+                &advanced.report,
+                advanced.shape,
+            );
         }
         record_detail_duration(cache_update_started, &mut timing, |timing| {
             &mut timing.runner_cache_update_duration

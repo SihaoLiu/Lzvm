@@ -1020,6 +1020,13 @@ pub(crate) enum GuestInstructionCacheClearReason {
     DmaPrepare,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum GuestInstructionCacheUpdate {
+    None,
+    Clear(GuestInstructionCacheClearReason),
+    InvalidateWriteRange { address: u64, byte_len: usize },
+}
+
 impl GuestInstructionCacheStats {
     pub(crate) fn record_clear_reason(&mut self, reason: GuestInstructionCacheClearReason) {
         match reason {
@@ -1172,6 +1179,19 @@ impl GuestInstructionCache {
         }
     }
 
+    pub(crate) fn invalidate_write_range(&mut self, address: u64, byte_len: usize) {
+        self.invalidate_range(address, byte_len);
+    }
+
+    pub(crate) fn invalidate_write_range_with_stats(
+        &mut self,
+        address: u64,
+        byte_len: usize,
+        stats: &mut GuestInstructionCacheStats,
+    ) {
+        self.invalidate_range_with_stats(address, byte_len, stats);
+    }
+
     fn invalidate_report_with_stats(
         &mut self,
         report: &GuestMachineReport,
@@ -1200,10 +1220,12 @@ impl GuestInstructionCache {
             self.clear();
             return;
         };
-        let mut pc = address.saturating_sub(2) & !1;
-        if !self.cached_range_can_overlap(pc, end) {
+        let start = address.saturating_sub(2) & !1;
+        if !self.cached_range_can_overlap(start, end) {
             return;
         }
+        let mut pc = start.max(self.min_cached_address & !1);
+        let end = end.min(self.max_cached_address.saturating_add(2));
         while pc < end {
             self.invalidate_address(pc);
             let Some(next) = pc.checked_add(2) else {
@@ -1227,11 +1249,13 @@ impl GuestInstructionCache {
             self.clear_with_stats(stats);
             return;
         };
-        let mut pc = address.saturating_sub(2) & !1;
-        if !self.cached_range_can_overlap(pc, end) {
+        let start = address.saturating_sub(2) & !1;
+        if !self.cached_range_can_overlap(start, end) {
             stats.write_invalidation_skipped_range_count += 1;
             return;
         }
+        let mut pc = start.max(self.min_cached_address & !1);
+        let end = end.min(self.max_cached_address.saturating_add(2));
         while pc < end {
             stats.write_invalidation_probe_count += 1;
             if self.invalidate_address(pc) {
@@ -1274,6 +1298,58 @@ impl GuestInstructionCache {
     #[inline(always)]
     fn index(&self, address: u64) -> usize {
         ((address >> 1) as usize) & self.entry_mask
+    }
+}
+
+impl GuestInstructionCacheUpdate {
+    pub(crate) fn apply_or_invalidate_report(
+        self,
+        instruction_cache: &mut GuestInstructionCache,
+        report: &GuestMachineReport,
+    ) {
+        match self {
+            Self::None => instruction_cache.invalidate_report(report),
+            Self::Clear(_) => instruction_cache.clear(),
+            Self::InvalidateWriteRange { address, byte_len } => {
+                instruction_cache.invalidate_write_range(address, byte_len);
+            }
+        }
+    }
+
+    pub(crate) fn apply_or_invalidate_report_shape(
+        self,
+        instruction_cache: &mut GuestInstructionCache,
+        report: &GuestMachineReport,
+        shape: GuestMachineReportShape,
+    ) {
+        match self {
+            Self::None => instruction_cache.invalidate_report_shape(report, shape),
+            Self::Clear(_) => instruction_cache.clear(),
+            Self::InvalidateWriteRange { address, byte_len } => {
+                instruction_cache.invalidate_write_range(address, byte_len);
+            }
+        }
+    }
+
+    pub(crate) fn apply_or_invalidate_report_shape_with_stats(
+        self,
+        instruction_cache: &mut GuestInstructionCache,
+        report: &GuestMachineReport,
+        shape: GuestMachineReportShape,
+        stats: &mut GuestInstructionCacheStats,
+    ) {
+        match self {
+            Self::None => {
+                instruction_cache.invalidate_report_shape_with_stats(report, shape, stats)
+            }
+            Self::Clear(reason) => {
+                stats.record_clear_reason(reason);
+                instruction_cache.clear_with_stats(stats);
+            }
+            Self::InvalidateWriteRange { address, byte_len } => {
+                instruction_cache.invalidate_write_range_with_stats(address, byte_len, stats);
+            }
+        }
     }
 }
 
@@ -1579,19 +1655,15 @@ fn run_guest_machine_inner(
                 pc: state.pc(),
             });
         }
-        let clear_instruction_cache =
-            instruction_clears_instruction_cache(state, prepared.instruction);
+        let instruction_cache_update =
+            instruction_cache_update_for_instruction(state, prepared.instruction);
         let report = match handler.as_deref_mut() {
             Some(handler) => {
                 advance_guest_machine_prepared_inner(memory, state, Some(handler), prepared)?
             }
             None => advance_guest_machine_prepared_inner(memory, state, None, prepared)?,
         };
-        if clear_instruction_cache {
-            instruction_cache.clear();
-        } else {
-            instruction_cache.invalidate_report(&report);
-        }
+        instruction_cache_update.apply_or_invalidate_report(&mut instruction_cache, &report);
         if let Some(reports) = reports.as_deref_mut() {
             reports.push(report);
         }
@@ -1599,30 +1671,63 @@ fn run_guest_machine_inner(
     }
 }
 
-pub(crate) fn instruction_clears_instruction_cache(
+pub(crate) fn instruction_cache_update_for_instruction(
     state: &GuestMachineState,
     instruction: RiscvInstruction,
-) -> bool {
-    instruction_cache_clear_reason(state, instruction).is_some()
+) -> GuestInstructionCacheUpdate {
+    if matches!(instruction, RiscvInstruction::ZiskFcallInvoke { .. }) {
+        return GuestInstructionCacheUpdate::Clear(GuestInstructionCacheClearReason::FcallInvoke);
+    }
+    let Some(pending) = state.pending_dma else {
+        return GuestInstructionCacheUpdate::None;
+    };
+    if !matches!(
+        pending.kind,
+        RiscvDmaKind::Memcpy | RiscvDmaKind::Memset | RiscvDmaKind::Inputcpy
+    ) {
+        return GuestInstructionCacheUpdate::None;
+    }
+    let Some((address, byte_len)) = pending_dma_write_range(state, pending, instruction) else {
+        return GuestInstructionCacheUpdate::Clear(GuestInstructionCacheClearReason::DmaPrepare);
+    };
+    let Ok(byte_len) = usize::try_from(byte_len) else {
+        return GuestInstructionCacheUpdate::Clear(GuestInstructionCacheClearReason::DmaPrepare);
+    };
+    if byte_len == 0 || (pending.kind == RiscvDmaKind::Memcpy && address == pending.first_arg) {
+        return GuestInstructionCacheUpdate::None;
+    }
+    GuestInstructionCacheUpdate::InvalidateWriteRange { address, byte_len }
 }
 
-pub(crate) fn instruction_cache_clear_reason(
+fn pending_dma_write_range(
     state: &GuestMachineState,
+    pending: GuestDmaPrepare,
     instruction: RiscvInstruction,
-) -> Option<GuestInstructionCacheClearReason> {
-    if matches!(instruction, RiscvInstruction::ZiskFcallInvoke { .. }) {
-        return Some(GuestInstructionCacheClearReason::FcallInvoke);
-    }
-    if matches!(
-        state.pending_dma,
-        Some(GuestDmaPrepare {
-            kind: RiscvDmaKind::Memcpy | RiscvDmaKind::Memset | RiscvDmaKind::Inputcpy,
+) -> Option<(u64, u64)> {
+    match instruction {
+        RiscvInstruction::Op {
+            kind: RiscvOpKind::Add,
+            rs1,
+            rs2,
             ..
-        })
-    ) {
-        return Some(GuestInstructionCacheClearReason::DmaPrepare);
+        } => Some((
+            state.read_decoded_register(rs1),
+            state.read_decoded_register(rs2),
+        )),
+        RiscvInstruction::OpImm {
+            kind: RiscvOpImmKind::Addi,
+            rs1,
+            immediate,
+            ..
+        } => {
+            if pending.kind == RiscvDmaKind::Memset {
+                Some((pending.first_arg, state.read_decoded_register(rs1)))
+            } else {
+                Some((state.read_decoded_register(rs1), immediate as u64))
+            }
+        }
+        _ => None,
     }
-    None
 }
 
 pub fn advance_guest_machine(
@@ -4057,6 +4162,91 @@ mod tests {
                 has_memory_write: true,
             },
         );
+        assert_eq!(
+            cache
+                .prepare(&memory, TEST_ENTRY)
+                .expect("disjoint write should preserve cached instruction")
+                .instruction,
+            initial.instruction
+        );
+    }
+
+    #[test]
+    fn instruction_cache_dma_update_invalidates_overlapping_write_range() {
+        let mut memory = guest_machine_memory_with_words(&[addi(1, 0, 7), 0x0000_0073]);
+        let mut cache = GuestInstructionCache::default();
+        cache
+            .prepare(&memory, TEST_ENTRY)
+            .expect("instruction should prepare");
+        write_guest_store(&mut memory, RiscvStoreKind::Sw, TEST_ENTRY, 0x0000_0073)
+            .expect("test store should update instruction memory");
+        let mut state = GuestMachineState::new(TEST_ENTRY);
+        state.pending_dma = Some(GuestDmaPrepare {
+            kind: RiscvDmaKind::Memset,
+            first_arg: TEST_ENTRY,
+        });
+        state.set_register(2, 4).expect("test register should set");
+
+        let update = instruction_cache_update_for_instruction(
+            &state,
+            RiscvInstruction::OpImm {
+                kind: RiscvOpImmKind::Addi,
+                rd: 8,
+                rs1: 2,
+                immediate: 0,
+            },
+        );
+        let GuestInstructionCacheUpdate::InvalidateWriteRange { address, byte_len } = update else {
+            panic!("DMA write should use targeted invalidation: {update:?}");
+        };
+        let mut stats = GuestInstructionCacheStats::default();
+        cache.invalidate_write_range_with_stats(address, byte_len, &mut stats);
+
+        assert_eq!(stats.clear_count, 0);
+        assert_eq!(stats.write_invalidation_range_count, 1);
+        assert_eq!(stats.invalidated_entry_count, 1);
+        assert_eq!(
+            cache
+                .prepare(&memory, TEST_ENTRY)
+                .expect("invalidated instruction should prepare")
+                .instruction,
+            RiscvInstruction::Ecall
+        );
+    }
+
+    #[test]
+    fn instruction_cache_dma_update_skips_disjoint_write_range() {
+        let memory = guest_machine_memory_with_words(&[addi(1, 0, 7), 0x0000_0073]);
+        let mut cache = GuestInstructionCache::default();
+        let initial = cache
+            .prepare(&memory, TEST_ENTRY)
+            .expect("instruction should prepare");
+        let mut state = GuestMachineState::new(TEST_ENTRY);
+        state.pending_dma = Some(GuestDmaPrepare {
+            kind: RiscvDmaKind::Memset,
+            first_arg: TEST_ENTRY + 0x1000,
+        });
+        state.set_register(2, 4).expect("test register should set");
+
+        let update = instruction_cache_update_for_instruction(
+            &state,
+            RiscvInstruction::OpImm {
+                kind: RiscvOpImmKind::Addi,
+                rd: 8,
+                rs1: 2,
+                immediate: 0,
+            },
+        );
+        let GuestInstructionCacheUpdate::InvalidateWriteRange { address, byte_len } = update else {
+            panic!("DMA write should use targeted invalidation: {update:?}");
+        };
+        let mut stats = GuestInstructionCacheStats::default();
+        cache.invalidate_write_range_with_stats(address, byte_len, &mut stats);
+
+        assert_eq!(stats.clear_count, 0);
+        assert_eq!(stats.write_invalidation_range_count, 1);
+        assert_eq!(stats.write_invalidation_skipped_range_count, 1);
+        assert_eq!(stats.write_invalidation_probe_count, 0);
         assert_eq!(
             cache
                 .prepare(&memory, TEST_ENTRY)
