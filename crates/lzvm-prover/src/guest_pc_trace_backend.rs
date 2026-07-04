@@ -25,12 +25,12 @@ use crate::guest_machine::{
     advance_guest_machine_with_prepared_fcalls_report_shape_timed, fixed_csr_value,
     instruction_clears_instruction_cache, run_guest_machine_trace_with_fcalls,
     run_guest_machine_with_fcalls, GuestDmaProofValueFlags, GuestFcallHandler,
-    GuestInstructionCache, GuestMachineAdvancePath, GuestMachineAdvanceTiming, GuestMachineHalt,
-    GuestMachineMemory, GuestMachineMemoryOverlaySnapshot, GuestMachineReport,
-    GuestMachineReportShape, GuestMachineRunError, GuestMachineState, GuestMachineTraceSliceStatus,
-    GuestMemoryAccess, GuestMemoryAccessKind, GuestMemoryAccessList,
-    GuestPrecompileMemoryAccessList, GuestRegisterWrite, GuestRegisterWriteList,
-    GuestRegisterWriteValue,
+    GuestInstructionCache, GuestInstructionCacheStats, GuestMachineAdvancePath,
+    GuestMachineAdvanceTiming, GuestMachineHalt, GuestMachineMemory,
+    GuestMachineMemoryOverlaySnapshot, GuestMachineReport, GuestMachineReportShape,
+    GuestMachineRunError, GuestMachineState, GuestMachineTraceSliceStatus, GuestMemoryAccess,
+    GuestMemoryAccessKind, GuestMemoryAccessList, GuestPrecompileMemoryAccessList,
+    GuestRegisterWrite, GuestRegisterWriteList, GuestRegisterWriteValue,
 };
 use crate::guest_memory::{load_guest_memory_image, GuestMemoryError};
 use crate::witness_layout::{ResolvedTraceColumn, WitnessTraceBuildError, WitnessTraceLayout};
@@ -226,6 +226,13 @@ pub(crate) struct GuestPcTraceStreamTiming {
     runner_counter_update_duration: Duration,
     runner_advance_fast_path_count: usize,
     runner_advance_generic_fallback_count: usize,
+    runner_instruction_cache_hit_count: usize,
+    runner_instruction_cache_miss_count: usize,
+    runner_instruction_cache_clear_count: usize,
+    runner_instruction_cache_write_invalidation_range_count: usize,
+    runner_instruction_cache_write_invalidation_skipped_range_count: usize,
+    runner_instruction_cache_write_invalidation_probe_count: usize,
+    runner_instruction_cache_invalidated_entry_count: usize,
     lowerer_duration: Duration,
     trace_lower_duration: Duration,
     trace_report_duration: Duration,
@@ -395,6 +402,17 @@ impl GuestPcTraceStreamTiming {
         self.runner_counter_update_duration += other.runner_counter_update_duration;
         self.runner_advance_fast_path_count += other.runner_advance_fast_path_count;
         self.runner_advance_generic_fallback_count += other.runner_advance_generic_fallback_count;
+        self.runner_instruction_cache_hit_count += other.runner_instruction_cache_hit_count;
+        self.runner_instruction_cache_miss_count += other.runner_instruction_cache_miss_count;
+        self.runner_instruction_cache_clear_count += other.runner_instruction_cache_clear_count;
+        self.runner_instruction_cache_write_invalidation_range_count +=
+            other.runner_instruction_cache_write_invalidation_range_count;
+        self.runner_instruction_cache_write_invalidation_skipped_range_count +=
+            other.runner_instruction_cache_write_invalidation_skipped_range_count;
+        self.runner_instruction_cache_write_invalidation_probe_count +=
+            other.runner_instruction_cache_write_invalidation_probe_count;
+        self.runner_instruction_cache_invalidated_entry_count +=
+            other.runner_instruction_cache_invalidated_entry_count;
         self.lowerer_duration += other.lowerer_duration;
         self.trace_lower_duration += other.trace_lower_duration;
         self.trace_report_duration += other.trace_report_duration;
@@ -874,6 +892,19 @@ impl GuestPcTraceStreamTiming {
         }
     }
 
+    fn record_runner_instruction_cache_stats(&mut self, stats: GuestInstructionCacheStats) {
+        self.runner_instruction_cache_hit_count += stats.hit_count;
+        self.runner_instruction_cache_miss_count += stats.miss_count;
+        self.runner_instruction_cache_clear_count += stats.clear_count;
+        self.runner_instruction_cache_write_invalidation_range_count +=
+            stats.write_invalidation_range_count;
+        self.runner_instruction_cache_write_invalidation_skipped_range_count +=
+            stats.write_invalidation_skipped_range_count;
+        self.runner_instruction_cache_write_invalidation_probe_count +=
+            stats.write_invalidation_probe_count;
+        self.runner_instruction_cache_invalidated_entry_count += stats.invalidated_entry_count;
+    }
+
     fn record_main_report_fast_path(&mut self, parts: &MainReportFastPathParts) {
         self.trace_main_report_fast_path_count += 1;
         match parts {
@@ -1098,6 +1129,34 @@ impl GuestPcTraceStreamTiming {
 
     pub fn runner_advance_generic_fallback_count(&self) -> usize {
         self.runner_advance_generic_fallback_count
+    }
+
+    pub fn runner_instruction_cache_hit_count(&self) -> usize {
+        self.runner_instruction_cache_hit_count
+    }
+
+    pub fn runner_instruction_cache_miss_count(&self) -> usize {
+        self.runner_instruction_cache_miss_count
+    }
+
+    pub fn runner_instruction_cache_clear_count(&self) -> usize {
+        self.runner_instruction_cache_clear_count
+    }
+
+    pub fn runner_instruction_cache_write_invalidation_range_count(&self) -> usize {
+        self.runner_instruction_cache_write_invalidation_range_count
+    }
+
+    pub fn runner_instruction_cache_write_invalidation_skipped_range_count(&self) -> usize {
+        self.runner_instruction_cache_write_invalidation_skipped_range_count
+    }
+
+    pub fn runner_instruction_cache_write_invalidation_probe_count(&self) -> usize {
+        self.runner_instruction_cache_write_invalidation_probe_count
+    }
+
+    pub fn runner_instruction_cache_invalidated_entry_count(&self) -> usize {
+        self.runner_instruction_cache_invalidated_entry_count
     }
 
     pub fn trace_report_count(&self) -> usize {
@@ -4463,6 +4522,8 @@ fn run_guest_pc_trace_segment_slice_inner<
     let mut trace_rows = 0_usize;
     let runner_timing_config =
         GuestPcTraceRunnerTimingConfig::from_env_if_enabled(timing.is_some());
+    let runner_instruction_cache_stats = runner_timing_config.count_instruction_cache();
+    let mut instruction_cache_stats = GuestInstructionCacheStats::default();
     enum GuestMachineAdvancedReportStorage<'a> {
         Borrowed(&'a GuestMachineReport),
         Owned(GuestMachineReport),
@@ -4482,16 +4543,29 @@ fn run_guest_pc_trace_segment_slice_inner<
         shape: GuestMachineReportShape,
         advance_path: GuestMachineAdvancePath,
     }
+    macro_rules! finish_trace_slice {
+        ($finish:expr) => {{
+            if runner_instruction_cache_stats {
+                if let Some(timing) = timing.as_deref_mut() {
+                    timing.record_runner_instruction_cache_stats(instruction_cache_stats);
+                }
+            }
+            return Ok(finish_guest_pc_trace_segment_slice($finish));
+        }};
+    }
     loop {
         let report_detail_timing = runner_timing_config.sample(report_count);
         let runner_path_timing = runner_timing_config.count_paths();
         let report_detail_started = detail_duration_started(&timing, report_detail_timing);
         let prepare_started = detail_duration_started(&timing, report_detail_timing);
         let pc = state.pc();
-        let prepared = instruction_cache
-            .prepare(memory, pc)
-            .map_err(GuestMachineRunError::from)
-            .map_err(GuestPcTraceBackendError::GuestRun)?;
+        let prepared = if runner_instruction_cache_stats {
+            instruction_cache.prepare_with_stats(memory, pc, &mut instruction_cache_stats)
+        } else {
+            instruction_cache.prepare(memory, pc)
+        }
+        .map_err(GuestMachineRunError::from)
+        .map_err(GuestPcTraceBackendError::GuestRun)?;
         let prepare_duration = prepare_started.map(|started| started.elapsed());
         let current = prepared.instruction();
         let pre_boundary_started = detail_duration_started(&timing, report_detail_timing);
@@ -4508,35 +4582,31 @@ fn run_guest_pc_trace_segment_slice_inner<
         }
         let pre_boundary_duration = pre_boundary_started.map(|started| started.elapsed());
         if current == RiscvInstruction::Ecall {
-            return Ok(finish_guest_pc_trace_segment_slice(
-                GuestPcTraceSegmentSliceFinish {
-                    reports,
-                    last_report_shape,
-                    report_count,
-                    retain_reports: RETAIN_REPORTS,
-                    executed_instructions,
-                    trace_rows,
-                    status: GuestMachineTraceSliceStatus::Halted(GuestMachineHalt::Ecall {
-                        address: pc,
-                    }),
-                },
-            ));
+            finish_trace_slice!(GuestPcTraceSegmentSliceFinish {
+                reports,
+                last_report_shape,
+                report_count,
+                retain_reports: RETAIN_REPORTS,
+                executed_instructions,
+                trace_rows,
+                status: GuestMachineTraceSliceStatus::Halted(GuestMachineHalt::Ecall {
+                    address: pc,
+                }),
+            });
         }
         if executed_instructions == instruction_limit {
-            return Ok(finish_guest_pc_trace_segment_slice(
-                GuestPcTraceSegmentSliceFinish {
-                    reports,
-                    last_report_shape,
-                    report_count,
-                    retain_reports: RETAIN_REPORTS,
-                    executed_instructions,
-                    trace_rows,
-                    status: GuestMachineTraceSliceStatus::Paused {
-                        pc,
-                        instruction: current,
-                    },
+            finish_trace_slice!(GuestPcTraceSegmentSliceFinish {
+                reports,
+                last_report_shape,
+                report_count,
+                retain_reports: RETAIN_REPORTS,
+                executed_instructions,
+                trace_rows,
+                status: GuestMachineTraceSliceStatus::Paused {
+                    pc,
+                    instruction: current,
                 },
-            ));
+            });
         }
         let row_plan_started = detail_duration_started(&timing, report_detail_timing);
         if main_instruction_capacity_needs_exact_check(trace_rows, row_limit) {
@@ -4552,20 +4622,18 @@ fn run_guest_pc_trace_segment_slice_inner<
                 }
             })?;
             if trace_rows != 0 && required_rows > row_limit {
-                return Ok(finish_guest_pc_trace_segment_slice(
-                    GuestPcTraceSegmentSliceFinish {
-                        reports,
-                        last_report_shape,
-                        report_count,
-                        retain_reports: RETAIN_REPORTS,
-                        executed_instructions,
-                        trace_rows,
-                        status: GuestMachineTraceSliceStatus::Paused {
-                            pc,
-                            instruction: current,
-                        },
+                finish_trace_slice!(GuestPcTraceSegmentSliceFinish {
+                    reports,
+                    last_report_shape,
+                    report_count,
+                    retain_reports: RETAIN_REPORTS,
+                    executed_instructions,
+                    trace_rows,
+                    status: GuestMachineTraceSliceStatus::Paused {
+                        pc,
+                        instruction: current,
                     },
-                ));
+                });
             }
         }
         if let (Some(duration), Some(timing)) = (prepare_duration, timing.as_deref_mut()) {
@@ -4707,7 +4775,17 @@ fn run_guest_pc_trace_segment_slice_inner<
         }
         let cache_update_started = detail_duration_started(&timing, report_detail_timing);
         if clear_instruction_cache {
-            instruction_cache.clear();
+            if runner_instruction_cache_stats {
+                instruction_cache.clear_with_stats(&mut instruction_cache_stats);
+            } else {
+                instruction_cache.clear();
+            }
+        } else if runner_instruction_cache_stats {
+            instruction_cache.invalidate_report_shape_with_stats(
+                &advanced.report,
+                advanced.shape,
+                &mut instruction_cache_stats,
+            );
         } else {
             instruction_cache.invalidate_report_shape(&advanced.report, advanced.shape);
         }
@@ -4765,11 +4843,14 @@ fn run_guest_pc_trace_segment_slice_inner<
         }
         if trace_rows == row_limit {
             let pc = state.pc();
-            let current = instruction_cache
-                .prepare(memory, pc)
-                .map(|prepared| prepared.instruction())
-                .map_err(GuestMachineRunError::from)
-                .map_err(GuestPcTraceBackendError::GuestRun)?;
+            let current = if runner_instruction_cache_stats {
+                instruction_cache.prepare_with_stats(memory, pc, &mut instruction_cache_stats)
+            } else {
+                instruction_cache.prepare(memory, pc)
+            }
+            .map(|prepared| prepared.instruction())
+            .map_err(GuestMachineRunError::from)
+            .map_err(GuestPcTraceBackendError::GuestRun)?;
             let lookahead_instruction = (current != RiscvInstruction::Ecall).then_some(current);
             if TRACK_BOUNDARY {
                 if let Some(snapshot) = boundary_snapshot.as_deref_mut() {
@@ -4790,17 +4871,15 @@ fn run_guest_pc_trace_segment_slice_inner<
                     instruction: current,
                 }
             };
-            return Ok(finish_guest_pc_trace_segment_slice(
-                GuestPcTraceSegmentSliceFinish {
-                    reports,
-                    last_report_shape,
-                    report_count,
-                    retain_reports: RETAIN_REPORTS,
-                    executed_instructions,
-                    trace_rows,
-                    status,
-                },
-            ));
+            finish_trace_slice!(GuestPcTraceSegmentSliceFinish {
+                reports,
+                last_report_shape,
+                report_count,
+                retain_reports: RETAIN_REPORTS,
+                executed_instructions,
+                trace_rows,
+                status,
+            });
         }
     }
 }
@@ -14828,6 +14907,7 @@ fn guest_pc_trace_lower_detail_timing_enabled() -> bool {
 struct GuestPcTraceRunnerTimingConfig {
     detail_timing: bool,
     path_timing: bool,
+    instruction_cache_stats: bool,
     detail_sample_stride: usize,
 }
 
@@ -14836,6 +14916,7 @@ impl GuestPcTraceRunnerTimingConfig {
         Self {
             detail_timing: false,
             path_timing: false,
+            instruction_cache_stats: false,
             detail_sample_stride: 1,
         }
     }
@@ -14848,6 +14929,7 @@ impl GuestPcTraceRunnerTimingConfig {
         Self {
             detail_timing,
             path_timing: guest_pc_trace_runner_path_timing_enabled(),
+            instruction_cache_stats: guest_pc_trace_runner_cache_stats_enabled(),
             detail_sample_stride: if detail_timing {
                 guest_pc_trace_runner_detail_timing_sample_stride()
             } else {
@@ -14863,6 +14945,10 @@ impl GuestPcTraceRunnerTimingConfig {
     fn count_paths(self) -> bool {
         self.path_timing
     }
+
+    fn count_instruction_cache(self) -> bool {
+        self.instruction_cache_stats
+    }
 }
 
 fn guest_pc_trace_runner_detail_timing_enabled() -> bool {
@@ -14871,6 +14957,10 @@ fn guest_pc_trace_runner_detail_timing_enabled() -> bool {
 
 fn guest_pc_trace_runner_path_timing_enabled() -> bool {
     env_flag_enabled("LZVM_GUEST_TRACE_RUNNER_PATH_TIMING", false)
+}
+
+fn guest_pc_trace_runner_cache_stats_enabled() -> bool {
+    env_flag_enabled("LZVM_GUEST_TRACE_RUNNER_CACHE_STATS", false)
 }
 
 fn guest_pc_trace_runner_detail_timing_sample_stride() -> usize {

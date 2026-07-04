@@ -480,6 +480,13 @@ pub struct ProveWitnessGuestPcTraceTiming {
     guest_trace_runner_counter_update_duration: Duration,
     guest_trace_runner_advance_fast_path_count: usize,
     guest_trace_runner_advance_generic_fallback_count: usize,
+    guest_trace_runner_instruction_cache_hit_count: usize,
+    guest_trace_runner_instruction_cache_miss_count: usize,
+    guest_trace_runner_instruction_cache_clear_count: usize,
+    guest_trace_runner_instruction_cache_write_invalidation_range_count: usize,
+    guest_trace_runner_instruction_cache_write_invalidation_skipped_range_count: usize,
+    guest_trace_runner_instruction_cache_write_invalidation_probe_count: usize,
+    guest_trace_runner_instruction_cache_invalidated_entry_count: usize,
     guest_trace_lowerer_duration: Duration,
     guest_trace_lower_duration: Duration,
     guest_trace_report_duration: Duration,
@@ -861,6 +868,20 @@ impl ProveWitnessGuestPcTraceTiming {
                 .runner_advance_fast_path_count(),
             guest_trace_runner_advance_generic_fallback_count: stream_timing
                 .runner_advance_generic_fallback_count(),
+            guest_trace_runner_instruction_cache_hit_count: stream_timing
+                .runner_instruction_cache_hit_count(),
+            guest_trace_runner_instruction_cache_miss_count: stream_timing
+                .runner_instruction_cache_miss_count(),
+            guest_trace_runner_instruction_cache_clear_count: stream_timing
+                .runner_instruction_cache_clear_count(),
+            guest_trace_runner_instruction_cache_write_invalidation_range_count: stream_timing
+                .runner_instruction_cache_write_invalidation_range_count(),
+            guest_trace_runner_instruction_cache_write_invalidation_skipped_range_count:
+                stream_timing.runner_instruction_cache_write_invalidation_skipped_range_count(),
+            guest_trace_runner_instruction_cache_write_invalidation_probe_count: stream_timing
+                .runner_instruction_cache_write_invalidation_probe_count(),
+            guest_trace_runner_instruction_cache_invalidated_entry_count: stream_timing
+                .runner_instruction_cache_invalidated_entry_count(),
             guest_trace_lowerer_duration: stream_timing.lowerer_duration(),
             guest_trace_lower_duration: stream_timing.trace_lower_duration(),
             guest_trace_report_duration: stream_timing.trace_report_duration(),
@@ -1432,6 +1453,36 @@ impl ProveWitnessGuestPcTraceTiming {
 
     pub fn guest_trace_runner_advance_generic_fallback_count(&self) -> usize {
         self.guest_trace_runner_advance_generic_fallback_count
+    }
+
+    pub fn guest_trace_runner_instruction_cache_hit_count(&self) -> usize {
+        self.guest_trace_runner_instruction_cache_hit_count
+    }
+
+    pub fn guest_trace_runner_instruction_cache_miss_count(&self) -> usize {
+        self.guest_trace_runner_instruction_cache_miss_count
+    }
+
+    pub fn guest_trace_runner_instruction_cache_clear_count(&self) -> usize {
+        self.guest_trace_runner_instruction_cache_clear_count
+    }
+
+    pub fn guest_trace_runner_instruction_cache_write_invalidation_range_count(&self) -> usize {
+        self.guest_trace_runner_instruction_cache_write_invalidation_range_count
+    }
+
+    pub fn guest_trace_runner_instruction_cache_write_invalidation_skipped_range_count(
+        &self,
+    ) -> usize {
+        self.guest_trace_runner_instruction_cache_write_invalidation_skipped_range_count
+    }
+
+    pub fn guest_trace_runner_instruction_cache_write_invalidation_probe_count(&self) -> usize {
+        self.guest_trace_runner_instruction_cache_write_invalidation_probe_count
+    }
+
+    pub fn guest_trace_runner_instruction_cache_invalidated_entry_count(&self) -> usize {
+        self.guest_trace_runner_instruction_cache_invalidated_entry_count
     }
 
     pub fn guest_trace_lowerer_duration(&self) -> Duration {

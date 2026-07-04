@@ -259,6 +259,7 @@ fn guest_pc_trace_runner_path_counts_stay_zero_when_disabled() {
         .lock()
         .expect("guest PC trace env lock should not be poisoned");
     let _path_env = TestEnvVarGuard::unset("LZVM_GUEST_TRACE_RUNNER_PATH_TIMING");
+    let _cache_env = TestEnvVarGuard::unset("LZVM_GUEST_TRACE_RUNNER_CACHE_STATS");
     let dir = repo_temp_dir("guest-pc-runner-path-counts-disabled");
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).expect("fixture directory should be created");
@@ -292,6 +293,67 @@ fn guest_pc_trace_runner_path_counts_stay_zero_when_disabled() {
     assert_eq!(slice.report_count, 2);
     assert_eq!(timing.runner_advance_fast_path_count(), 0);
     assert_eq!(timing.runner_advance_generic_fallback_count(), 0);
+    assert_eq!(timing.runner_instruction_cache_hit_count(), 0);
+    assert_eq!(timing.runner_instruction_cache_miss_count(), 0);
+    assert_eq!(timing.runner_instruction_cache_clear_count(), 0);
+    assert_eq!(
+        timing.runner_instruction_cache_write_invalidation_range_count(),
+        0
+    );
+    assert_eq!(
+        timing.runner_instruction_cache_write_invalidation_skipped_range_count(),
+        0
+    );
+    assert_eq!(
+        timing.runner_instruction_cache_write_invalidation_probe_count(),
+        0
+    );
+    assert_eq!(timing.runner_instruction_cache_invalidated_entry_count(), 0);
+}
+
+#[test]
+fn guest_pc_trace_runner_cache_stats_count_hits_when_enabled() {
+    let _env_lock = GUEST_PC_TRACE_ENV_LOCK
+        .lock()
+        .expect("guest PC trace env lock should not be poisoned");
+    let _cache_env = TestEnvVarGuard::set("LZVM_GUEST_TRACE_RUNNER_CACHE_STATS", "1");
+    let dir = repo_temp_dir("guest-pc-runner-cache-stats");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let guest_image = dir.join("guest.elf");
+    let guest_image_bytes = sample_guest_image_with_words(&[0x0000_006f]);
+    std::fs::write(&guest_image, &guest_image_bytes).expect("guest image should be written");
+    let guest_image_info = parse_guest_image(&guest_image_bytes).expect("guest image should parse");
+    let context = WitnessComputeContext {
+        guest_image: Some(&guest_image),
+        guest_image_info: Some(&guest_image_info),
+        trace_layout: None,
+    };
+    let (mut memory, mut state, mut fcall_handler) =
+        load_guest_pc_trace_machine(context, &[]).expect("guest machine should load");
+    let mut instruction_cache = GuestInstructionCache::default();
+    let mut timing = GuestPcTraceStreamTiming::default();
+
+    let slice = run_guest_pc_trace_segment_slice_with_cache(
+        &mut memory,
+        &mut state,
+        &mut fcall_handler,
+        6,
+        32,
+        &mut instruction_cache,
+        Some(&mut timing),
+    )
+    .expect("guest trace slice should run");
+    std::fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(slice.report_count, 6);
+    assert_eq!(timing.runner_instruction_cache_miss_count(), 1);
+    assert_eq!(timing.runner_instruction_cache_hit_count(), 6);
+    assert_eq!(timing.runner_instruction_cache_clear_count(), 0);
+    assert_eq!(
+        timing.runner_instruction_cache_write_invalidation_range_count(),
+        0
+    );
 }
 
 #[test]

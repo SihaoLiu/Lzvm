@@ -998,6 +998,17 @@ impl GuestMachinePreparedInstruction {
     }
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) struct GuestInstructionCacheStats {
+    pub(crate) hit_count: usize,
+    pub(crate) miss_count: usize,
+    pub(crate) clear_count: usize,
+    pub(crate) write_invalidation_range_count: usize,
+    pub(crate) write_invalidation_skipped_range_count: usize,
+    pub(crate) write_invalidation_probe_count: usize,
+    pub(crate) invalidated_entry_count: usize,
+}
+
 #[derive(Debug)]
 pub(crate) struct GuestInstructionCache {
     entries: Box<[GuestInstructionCacheEntry]>,
@@ -1061,6 +1072,29 @@ impl GuestInstructionCache {
         Ok(prepared)
     }
 
+    #[inline(always)]
+    pub(crate) fn prepare_with_stats(
+        &mut self,
+        memory: &GuestMachineMemory,
+        address: u64,
+        stats: &mut GuestInstructionCacheStats,
+    ) -> Result<GuestMachinePreparedInstruction, GuestMachineError> {
+        let index = self.index(address);
+        let entry = &self.entries[index];
+        if entry.generation == self.generation && entry.prepared.address == address {
+            stats.hit_count += 1;
+            return Ok(entry.prepared);
+        }
+        stats.miss_count += 1;
+        let prepared = prepare_current_guest_instruction(memory, address)?;
+        self.entries[index] = GuestInstructionCacheEntry {
+            generation: self.generation,
+            prepared,
+        };
+        self.record_cached_address(address);
+        Ok(prepared)
+    }
+
     pub(crate) fn clear(&mut self) {
         match self.generation.checked_add(1) {
             Some(next) => {
@@ -1075,6 +1109,11 @@ impl GuestInstructionCache {
                 self.clear_cached_address_range();
             }
         }
+    }
+
+    pub(crate) fn clear_with_stats(&mut self, stats: &mut GuestInstructionCacheStats) {
+        stats.clear_count += 1;
+        self.clear();
     }
 
     pub(crate) fn invalidate_report(&mut self, report: &GuestMachineReport) {
@@ -1099,6 +1138,37 @@ impl GuestInstructionCache {
         }
     }
 
+    pub(crate) fn invalidate_report_shape_with_stats(
+        &mut self,
+        report: &GuestMachineReport,
+        shape: GuestMachineReportShape,
+        stats: &mut GuestInstructionCacheStats,
+    ) {
+        if shape.has_memory_write {
+            self.invalidate_report_with_stats(report, stats);
+        }
+    }
+
+    fn invalidate_report_with_stats(
+        &mut self,
+        report: &GuestMachineReport,
+        stats: &mut GuestInstructionCacheStats,
+    ) {
+        for access in report
+            .memory_accesses
+            .iter()
+            .chain(report.precompile_memory_accesses())
+        {
+            if access.kind == GuestMemoryAccessKind::Write {
+                self.invalidate_range_with_stats(
+                    access.address,
+                    usize::from(access.byte_len),
+                    stats,
+                );
+            }
+        }
+    }
+
     fn invalidate_range(&mut self, address: u64, byte_len: usize) {
         if byte_len == 0 {
             return;
@@ -1120,13 +1190,46 @@ impl GuestInstructionCache {
         }
     }
 
-    fn invalidate_address(&mut self, address: u64) {
+    fn invalidate_range_with_stats(
+        &mut self,
+        address: u64,
+        byte_len: usize,
+        stats: &mut GuestInstructionCacheStats,
+    ) {
+        if byte_len == 0 {
+            return;
+        }
+        stats.write_invalidation_range_count += 1;
+        let Some(end) = address.checked_add(byte_len as u64) else {
+            self.clear_with_stats(stats);
+            return;
+        };
+        let mut pc = address.saturating_sub(2) & !1;
+        if !self.cached_range_can_overlap(pc, end) {
+            stats.write_invalidation_skipped_range_count += 1;
+            return;
+        }
+        while pc < end {
+            stats.write_invalidation_probe_count += 1;
+            if self.invalidate_address(pc) {
+                stats.invalidated_entry_count += 1;
+            }
+            let Some(next) = pc.checked_add(2) else {
+                break;
+            };
+            pc = next;
+        }
+    }
+
+    fn invalidate_address(&mut self, address: u64) -> bool {
         let index = self.index(address);
         if self.entries[index].generation == self.generation
             && self.entries[index].prepared.address == address
         {
             self.entries[index].generation = 0;
+            return true;
         }
+        false
     }
 
     fn record_cached_address(&mut self, address: u64) {

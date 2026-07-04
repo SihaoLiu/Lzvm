@@ -37,6 +37,21 @@ RUNNER_ADVANCE_FAST_PATHS_KEY = "timing_guest_trace_runner_advance_fast_paths"
 RUNNER_ADVANCE_GENERIC_FALLBACKS_KEY = (
     "timing_guest_trace_runner_advance_generic_fallbacks"
 )
+RUNNER_CACHE_HITS_KEY = "timing_guest_trace_runner_instruction_cache_hits"
+RUNNER_CACHE_MISSES_KEY = "timing_guest_trace_runner_instruction_cache_misses"
+RUNNER_CACHE_CLEARS_KEY = "timing_guest_trace_runner_instruction_cache_clears"
+RUNNER_CACHE_INVALIDATION_RANGES_KEY = (
+    "timing_guest_trace_runner_instruction_cache_write_invalidation_ranges"
+)
+RUNNER_CACHE_INVALIDATION_SKIPPED_RANGES_KEY = (
+    "timing_guest_trace_runner_instruction_cache_write_invalidation_skipped_ranges"
+)
+RUNNER_CACHE_INVALIDATION_PROBES_KEY = (
+    "timing_guest_trace_runner_instruction_cache_write_invalidation_probes"
+)
+RUNNER_CACHE_INVALIDATED_ENTRIES_KEY = (
+    "timing_guest_trace_runner_instruction_cache_invalidated_entries"
+)
 RUNNER_DETAIL_SAMPLED_NS_KEY = "timing_guest_trace_runner_detail_sampled_ns"
 RUNNER_PREPARE_INSTRUCTION_SAMPLED_NS_KEY = (
     "timing_guest_trace_runner_prepare_instruction_sampled_ns"
@@ -880,6 +895,13 @@ HEADER = (
     "constant_material_validation_join_wait_ms,constant_material_validation_overlap_hint,"
     "runner_ms,runner_advance_fast_paths,runner_advance_generic_fallbacks,"
     "runner_advance_fast_path_pct,"
+    "runner_instruction_cache_hits,runner_instruction_cache_misses,"
+    "runner_instruction_cache_hit_pct,runner_instruction_cache_clears,"
+    "runner_instruction_cache_write_invalidation_ranges,"
+    "runner_instruction_cache_write_invalidation_skipped_ranges,"
+    "runner_instruction_cache_write_invalidation_skip_pct,"
+    "runner_instruction_cache_write_invalidation_probes,"
+    "runner_instruction_cache_invalidated_entries,"
     "trace_runner_detail_samples,trace_runner_detail_sample_pct,"
     "trace_runner_detail_avg_ns,trace_runner_prepare_instruction_sampled_ns,"
     "trace_runner_pre_boundary_sampled_ns,trace_runner_row_plan_sampled_ns,"
@@ -1205,6 +1227,15 @@ AGGREGATE_MEAN_PROFILE_COLUMNS = (
     "runner_advance_fast_paths",
     "runner_advance_generic_fallbacks",
     "runner_advance_fast_path_pct",
+    "runner_instruction_cache_hits",
+    "runner_instruction_cache_misses",
+    "runner_instruction_cache_hit_pct",
+    "runner_instruction_cache_clears",
+    "runner_instruction_cache_write_invalidation_ranges",
+    "runner_instruction_cache_write_invalidation_skipped_ranges",
+    "runner_instruction_cache_write_invalidation_skip_pct",
+    "runner_instruction_cache_write_invalidation_probes",
+    "runner_instruction_cache_invalidated_entries",
     "trace_runner_detail_samples",
     "trace_runner_detail_sample_pct",
     "trace_runner_detail_avg_ns",
@@ -1300,6 +1331,13 @@ TIMING_KEYS = {
     RUNNER_DETAIL_SAMPLES_KEY,
     RUNNER_ADVANCE_FAST_PATHS_KEY,
     RUNNER_ADVANCE_GENERIC_FALLBACKS_KEY,
+    RUNNER_CACHE_HITS_KEY,
+    RUNNER_CACHE_MISSES_KEY,
+    RUNNER_CACHE_CLEARS_KEY,
+    RUNNER_CACHE_INVALIDATION_RANGES_KEY,
+    RUNNER_CACHE_INVALIDATION_SKIPPED_RANGES_KEY,
+    RUNNER_CACHE_INVALIDATION_PROBES_KEY,
+    RUNNER_CACHE_INVALIDATED_ENTRIES_KEY,
     RUNNER_DETAIL_SAMPLED_NS_KEY,
     RUNNER_PREPARE_INSTRUCTION_SAMPLED_NS_KEY,
     RUNNER_PRE_BOUNDARY_SAMPLED_NS_KEY,
@@ -4539,6 +4577,34 @@ def summarize_profile_values(
         if runner_advance_total
         else 0.0
     )
+    runner_cache_hits = values.get(RUNNER_CACHE_HITS_KEY, 0)
+    runner_cache_misses = values.get(RUNNER_CACHE_MISSES_KEY, 0)
+    runner_cache_total = runner_cache_hits + runner_cache_misses
+    runner_cache_hit_pct = (
+        runner_cache_hits * 100.0 / runner_cache_total
+        if runner_cache_total
+        else 0.0
+    )
+    runner_cache_clears = values.get(RUNNER_CACHE_CLEARS_KEY, 0)
+    runner_cache_invalidation_ranges = values.get(
+        RUNNER_CACHE_INVALIDATION_RANGES_KEY, 0
+    )
+    runner_cache_invalidation_skipped_ranges = values.get(
+        RUNNER_CACHE_INVALIDATION_SKIPPED_RANGES_KEY, 0
+    )
+    runner_cache_invalidation_skip_pct = (
+        runner_cache_invalidation_skipped_ranges
+        * 100.0
+        / runner_cache_invalidation_ranges
+        if runner_cache_invalidation_ranges
+        else 0.0
+    )
+    runner_cache_invalidation_probes = values.get(
+        RUNNER_CACHE_INVALIDATION_PROBES_KEY, 0
+    )
+    runner_cache_invalidated_entries = values.get(
+        RUNNER_CACHE_INVALIDATED_ENTRIES_KEY, 0
+    )
     trace_runner_detail_samples = values.get(RUNNER_DETAIL_SAMPLES_KEY, 0)
     trace_reports_for_runner_detail = values.get(TRACE_REPORTS_KEY, 0)
     trace_runner_detail_sample_pct = (
@@ -6133,6 +6199,13 @@ def summarize_profile_values(
         f"{constant_material_hint},{runner_ms},"
         f"{runner_advance_fast_paths},{runner_advance_generic_fallbacks},"
         f"{runner_advance_fast_path_pct:.3f},"
+        f"{runner_cache_hits},{runner_cache_misses},"
+        f"{runner_cache_hit_pct:.3f},{runner_cache_clears},"
+        f"{runner_cache_invalidation_ranges},"
+        f"{runner_cache_invalidation_skipped_ranges},"
+        f"{runner_cache_invalidation_skip_pct:.3f},"
+        f"{runner_cache_invalidation_probes},"
+        f"{runner_cache_invalidated_entries},"
         f"{trace_runner_detail_samples},{trace_runner_detail_sample_pct:.3f},"
         f"{trace_runner_detail_avg_ns},"
         f"{trace_runner_prepare_instruction_sampled_ns},"

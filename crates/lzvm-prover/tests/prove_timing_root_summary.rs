@@ -790,6 +790,15 @@ fn prove_timing_root_summary_reports_root_grouping_shape() {
         "timing_guest_trace_runner_advance_fast_paths",
         "timing_guest_trace_runner_advance_generic_fallbacks",
         "runner_advance_fast_path_pct",
+        "timing_guest_trace_runner_instruction_cache_hits",
+        "timing_guest_trace_runner_instruction_cache_misses",
+        "runner_instruction_cache_hit_pct",
+        "timing_guest_trace_runner_instruction_cache_clears",
+        "timing_guest_trace_runner_instruction_cache_write_invalidation_ranges",
+        "timing_guest_trace_runner_instruction_cache_write_invalidation_skipped_ranges",
+        "runner_instruction_cache_write_invalidation_skip_pct",
+        "timing_guest_trace_runner_instruction_cache_write_invalidation_probes",
+        "timing_guest_trace_runner_instruction_cache_invalidated_entries",
         "timing_guest_trace_main_report_fast_paths",
         "timing_guest_trace_main_report_generic_fallbacks",
         "timing_guest_trace_main_report_fcall_result_fast_paths",
@@ -9231,6 +9240,13 @@ fn prove_timing_root_summary_reports_runner_detail_hotspot() {
         "timing_guest_trace_reports=1000",
         "timing_guest_trace_runner_advance_fast_paths=990",
         "timing_guest_trace_runner_advance_generic_fallbacks=10",
+        "timing_guest_trace_runner_instruction_cache_hits=900",
+        "timing_guest_trace_runner_instruction_cache_misses=100",
+        "timing_guest_trace_runner_instruction_cache_clears=2",
+        "timing_guest_trace_runner_instruction_cache_write_invalidation_ranges=50",
+        "timing_guest_trace_runner_instruction_cache_write_invalidation_skipped_ranges=45",
+        "timing_guest_trace_runner_instruction_cache_write_invalidation_probes=12",
+        "timing_guest_trace_runner_instruction_cache_invalidated_entries=3",
         "timing_guest_trace_runner_detail_samples=10",
         "timing_guest_trace_runner_detail_sampled_ns=1000000",
         "timing_guest_trace_runner_prepare_instruction_sampled_ns=100000",
@@ -9289,6 +9305,27 @@ fn prove_timing_root_summary_reports_runner_detail_hotspot() {
     assert_eq!(value("runner_advance_fast_paths"), "990");
     assert_eq!(value("runner_advance_generic_fallbacks"), "10");
     assert_eq!(value("runner_advance_fast_path_pct"), "99.000");
+    assert_eq!(value("runner_instruction_cache_hits"), "900");
+    assert_eq!(value("runner_instruction_cache_misses"), "100");
+    assert_eq!(value("runner_instruction_cache_hit_pct"), "90.000");
+    assert_eq!(value("runner_instruction_cache_clears"), "2");
+    assert_eq!(
+        value("runner_instruction_cache_write_invalidation_ranges"),
+        "50"
+    );
+    assert_eq!(
+        value("runner_instruction_cache_write_invalidation_skipped_ranges"),
+        "45"
+    );
+    assert_eq!(
+        value("runner_instruction_cache_write_invalidation_skip_pct"),
+        "90.000"
+    );
+    assert_eq!(
+        value("runner_instruction_cache_write_invalidation_probes"),
+        "12"
+    );
+    assert_eq!(value("runner_instruction_cache_invalidated_entries"), "3");
     assert_eq!(value("trace_runner_detail_sample_pct"), "1.000");
     assert_eq!(value("trace_runner_detail_avg_ns"), "100000");
     assert_eq!(

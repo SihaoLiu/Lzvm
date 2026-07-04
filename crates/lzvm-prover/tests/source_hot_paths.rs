@@ -8203,6 +8203,13 @@ fn guest_pc_trace_lower_reports_internal_work_timing() {
         "guest_trace_main_report_jump_fast_path_count",
         "guest_trace_runner_advance_fast_path_count",
         "guest_trace_runner_advance_generic_fallback_count",
+        "guest_trace_runner_instruction_cache_hit_count",
+        "guest_trace_runner_instruction_cache_miss_count",
+        "guest_trace_runner_instruction_cache_clear_count",
+        "guest_trace_runner_instruction_cache_write_invalidation_range_count",
+        "guest_trace_runner_instruction_cache_write_invalidation_skipped_range_count",
+        "guest_trace_runner_instruction_cache_write_invalidation_probe_count",
+        "guest_trace_runner_instruction_cache_invalidated_entry_count",
         "guest_trace_descriptor_row_count",
         "guest_trace_descriptor_compact_row_count",
         "guest_trace_descriptor_wide_row_count",
@@ -8234,6 +8241,13 @@ fn guest_pc_trace_lower_reports_internal_work_timing() {
         "pub fn guest_trace_copy_memory_store_row_count(&self) -> usize",
         "pub fn guest_trace_copy_no_store_row_count(&self) -> usize",
         "pub fn guest_trace_copy_no_memory_row_count(&self) -> usize",
+        "pub fn guest_trace_runner_instruction_cache_hit_count",
+        "pub fn guest_trace_runner_instruction_cache_miss_count",
+        "pub fn guest_trace_runner_instruction_cache_clear_count",
+        "pub fn guest_trace_runner_instruction_cache_write_invalidation_range_count",
+        "pub fn guest_trace_runner_instruction_cache_write_invalidation_skipped_range_count",
+        "pub fn guest_trace_runner_instruction_cache_write_invalidation_probe_count",
+        "pub fn guest_trace_runner_instruction_cache_invalidated_entry_count",
     ] {
         assert!(
             execution_source.contains(accessor),
@@ -8275,6 +8289,13 @@ fn guest_pc_trace_lower_reports_internal_work_timing() {
         "\"guest_trace_main_report_jump_fast_paths\"",
         "\"guest_trace_runner_advance_fast_paths\"",
         "\"guest_trace_runner_advance_generic_fallbacks\"",
+        "\"guest_trace_runner_instruction_cache_hits\"",
+        "\"guest_trace_runner_instruction_cache_misses\"",
+        "\"guest_trace_runner_instruction_cache_clears\"",
+        "\"guest_trace_runner_instruction_cache_write_invalidation_ranges\"",
+        "\"guest_trace_runner_instruction_cache_write_invalidation_skipped_ranges\"",
+        "\"guest_trace_runner_instruction_cache_write_invalidation_probes\"",
+        "\"guest_trace_runner_instruction_cache_invalidated_entries\"",
         "\"guest_trace_descriptor_rows\"",
         "\"guest_trace_descriptor_compact_rows\"",
         "\"guest_trace_descriptor_wide_rows\"",
@@ -11912,7 +11933,9 @@ fn guest_pc_trace_slice_reuses_prepared_instruction_for_advance() {
     );
 
     assert!(
-        body.contains("let prepared = instruction_cache") && body.contains(".prepare(memory, pc)"),
+        body.contains("let prepared = if runner_instruction_cache_stats")
+            && body.contains(".prepare_with_stats(memory, pc, &mut instruction_cache_stats)")
+            && body.contains(".prepare(memory, pc)"),
         "guest PC trace slices should keep the fetched instruction for row planning"
     );
     assert!(

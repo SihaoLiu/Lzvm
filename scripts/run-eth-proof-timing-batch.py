@@ -144,6 +144,7 @@ PIPELINE_ENV_TO_CLEAR = [
     "LZVM_CUDA_GUEST_PC_OWNED_STREAMING_LOWER",
     "LZVM_GUEST_TRACE_RUNNER_DETAIL_TIMING",
     "LZVM_GUEST_TRACE_RUNNER_DETAIL_TIMING_SAMPLE_STRIDE",
+    "LZVM_GUEST_TRACE_RUNNER_CACHE_STATS",
     "LZVM_GUEST_TRACE_DETAIL_TIMING",
     "LZVM_GUEST_TRACE_DETAIL_TIMING_SAMPLE_STRIDE",
     "LZVM_GUEST_TRACE_SHAPE_TIMING",
@@ -706,6 +707,8 @@ def mode_args(args: argparse.Namespace) -> list[str]:
                 str(args.trace_runner_detail_timing_sample_stride),
             ]
         )
+    if args.trace_runner_cache_stats:
+        result.append("--trace-runner-cache-stats")
     if trace_detail_timing_enabled(args):
         result.append("--trace-detail-timing")
     if args.trace_detail_timing_sample_stride is not None:
@@ -743,6 +746,8 @@ def trace_timing_env_for_args(args: argparse.Namespace) -> dict[str, str]:
         env["LZVM_GUEST_TRACE_RUNNER_DETAIL_TIMING_SAMPLE_STRIDE"] = str(
             args.trace_runner_detail_timing_sample_stride
         )
+    if args.trace_runner_cache_stats:
+        env["LZVM_GUEST_TRACE_RUNNER_CACHE_STATS"] = "1"
     if trace_detail_timing_enabled(args):
         env["LZVM_GUEST_TRACE_DETAIL_TIMING"] = "1"
     if args.trace_detail_timing_sample_stride is not None:
@@ -1606,6 +1611,7 @@ def dry_run_summary_lines(args: argparse.Namespace, root: Path) -> list[str]:
         f"{str(trace_runner_detail_timing_enabled(args)).lower()}",
         "trace_runner_detail_timing_sample_stride="
         f"{args.trace_runner_detail_timing_sample_stride or ''}",
+        f"trace_runner_cache_stats={str(args.trace_runner_cache_stats).lower()}",
         f"trace_detail_timing={str(trace_detail_timing_enabled(args)).lower()}",
         f"trace_detail_timing_sample_stride={args.trace_detail_timing_sample_stride or ''}",
         f"append_max_average_rejections={str(args.append_max_average_rejections).lower()}",
@@ -1904,6 +1910,7 @@ def self_test() -> None:
         trace_shape_timing_sample_stride=None,
         trace_runner_detail_timing=False,
         trace_runner_detail_timing_sample_stride=None,
+        trace_runner_cache_stats=False,
         trace_detail_timing=False,
         trace_detail_timing_sample_stride=None,
         gpu_preallocate=False,
@@ -2033,6 +2040,7 @@ def main() -> None:
         type=positive_integer,
         default=None,
     )
+    parser.add_argument("--trace-runner-cache-stats", action="store_true")
     parser.add_argument("--trace-detail-timing", action="store_true")
     parser.add_argument("--trace-detail-timing-sample-stride", type=positive_integer, default=None)
     parser.add_argument("--gpu-preallocate", action="store_true")
