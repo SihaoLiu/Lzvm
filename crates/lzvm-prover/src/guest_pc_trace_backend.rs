@@ -266,6 +266,15 @@ pub(crate) struct GuestPcTraceStreamTiming {
     trace_report_source_last_c_read_count: usize,
     trace_copy_source_memory_read_count: usize,
     trace_copy_source_indirect_read_count: usize,
+    trace_main_report_fast_path_count: usize,
+    trace_main_report_generic_fallback_count: usize,
+    trace_main_report_fcall_result_fast_path_count: usize,
+    trace_main_report_load_copy_fast_path_count: usize,
+    trace_main_report_load_sign_extend_fast_path_count: usize,
+    trace_main_report_no_memory_fast_path_count: usize,
+    trace_main_report_store_copy_fast_path_count: usize,
+    trace_main_report_simple_copy_fast_path_count: usize,
+    trace_main_report_jump_fast_path_count: usize,
     segment_replay_count: usize,
     segment_replay_snapshot_capture_count: usize,
     segment_replay_snapshot_capture_duration: Duration,
@@ -438,6 +447,22 @@ impl GuestPcTraceStreamTiming {
         self.trace_report_source_last_c_read_count += other.trace_report_source_last_c_read_count;
         self.trace_copy_source_memory_read_count += other.trace_copy_source_memory_read_count;
         self.trace_copy_source_indirect_read_count += other.trace_copy_source_indirect_read_count;
+        self.trace_main_report_fast_path_count += other.trace_main_report_fast_path_count;
+        self.trace_main_report_generic_fallback_count +=
+            other.trace_main_report_generic_fallback_count;
+        self.trace_main_report_fcall_result_fast_path_count +=
+            other.trace_main_report_fcall_result_fast_path_count;
+        self.trace_main_report_load_copy_fast_path_count +=
+            other.trace_main_report_load_copy_fast_path_count;
+        self.trace_main_report_load_sign_extend_fast_path_count +=
+            other.trace_main_report_load_sign_extend_fast_path_count;
+        self.trace_main_report_no_memory_fast_path_count +=
+            other.trace_main_report_no_memory_fast_path_count;
+        self.trace_main_report_store_copy_fast_path_count +=
+            other.trace_main_report_store_copy_fast_path_count;
+        self.trace_main_report_simple_copy_fast_path_count +=
+            other.trace_main_report_simple_copy_fast_path_count;
+        self.trace_main_report_jump_fast_path_count += other.trace_main_report_jump_fast_path_count;
         self.segment_replay_count += other.segment_replay_count;
         self.segment_replay_snapshot_capture_count += other.segment_replay_snapshot_capture_count;
         self.segment_replay_snapshot_capture_duration +=
@@ -829,6 +854,37 @@ impl GuestPcTraceStreamTiming {
         self.trace_copy_source_indirect_read_count
     }
 
+    fn record_main_report_fast_path(&mut self, parts: &MainReportFastPathParts) {
+        self.trace_main_report_fast_path_count += 1;
+        match parts {
+            MainReportFastPathParts::FcallResult(..) => {
+                self.trace_main_report_fcall_result_fast_path_count += 1;
+            }
+            MainReportFastPathParts::LoadCopy(..) => {
+                self.trace_main_report_load_copy_fast_path_count += 1;
+            }
+            MainReportFastPathParts::LoadSignExtend(..) => {
+                self.trace_main_report_load_sign_extend_fast_path_count += 1;
+            }
+            MainReportFastPathParts::NoMemory(..) => {
+                self.trace_main_report_no_memory_fast_path_count += 1;
+            }
+            MainReportFastPathParts::StoreCopy(..) => {
+                self.trace_main_report_store_copy_fast_path_count += 1;
+            }
+            MainReportFastPathParts::SimpleCopy(..) => {
+                self.trace_main_report_simple_copy_fast_path_count += 1;
+            }
+            MainReportFastPathParts::Jump(..) => {
+                self.trace_main_report_jump_fast_path_count += 1;
+            }
+        }
+    }
+
+    fn record_main_report_generic_fallback(&mut self) {
+        self.trace_main_report_generic_fallback_count += 1;
+    }
+
     pub fn segment_replay_count(&self) -> usize {
         self.segment_replay_count
     }
@@ -1022,6 +1078,42 @@ impl GuestPcTraceStreamTiming {
 
     pub fn trace_report_row_count(&self) -> usize {
         self.trace_report_row_count
+    }
+
+    pub fn trace_main_report_fast_path_count(&self) -> usize {
+        self.trace_main_report_fast_path_count
+    }
+
+    pub fn trace_main_report_generic_fallback_count(&self) -> usize {
+        self.trace_main_report_generic_fallback_count
+    }
+
+    pub fn trace_main_report_fcall_result_fast_path_count(&self) -> usize {
+        self.trace_main_report_fcall_result_fast_path_count
+    }
+
+    pub fn trace_main_report_load_copy_fast_path_count(&self) -> usize {
+        self.trace_main_report_load_copy_fast_path_count
+    }
+
+    pub fn trace_main_report_load_sign_extend_fast_path_count(&self) -> usize {
+        self.trace_main_report_load_sign_extend_fast_path_count
+    }
+
+    pub fn trace_main_report_no_memory_fast_path_count(&self) -> usize {
+        self.trace_main_report_no_memory_fast_path_count
+    }
+
+    pub fn trace_main_report_store_copy_fast_path_count(&self) -> usize {
+        self.trace_main_report_store_copy_fast_path_count
+    }
+
+    pub fn trace_main_report_simple_copy_fast_path_count(&self) -> usize {
+        self.trace_main_report_simple_copy_fast_path_count
+    }
+
+    pub fn trace_main_report_jump_fast_path_count(&self) -> usize {
+        self.trace_main_report_jump_fast_path_count
     }
 
     pub fn trace_stream_start_sent_count(&self) -> usize {
@@ -10616,6 +10708,9 @@ fn validate_and_apply_zisk_main_report(
     validate_zisk_main_report_row_capacity(row, 1, context.row_count)?;
     if !detail_timing && !shape_timing {
         if let Some(fast_path) = report_level_fast_path_parts(row, report)? {
+            if let Some(timing) = timing.as_mut() {
+                timing.record_main_report_fast_path(&fast_path);
+            }
             let effects = ZiskMainReportEffects::from_report(report);
             match fast_path {
                 MainReportFastPathParts::FcallResult(instruction, store_index) => {
@@ -10716,6 +10811,9 @@ fn validate_and_apply_zisk_main_report(
                 }
             }
             return Ok(1);
+        }
+        if let Some(timing) = timing.as_mut() {
+            timing.record_main_report_generic_fallback();
         }
     }
     let lowering_started = detail_duration_started(&timing, detail_timing);

@@ -568,6 +568,15 @@ pub struct ProveWitnessGuestPcTraceTiming {
     guest_trace_seed_full_advance_count: usize,
     guest_trace_report_count: usize,
     guest_trace_report_row_count: usize,
+    guest_trace_main_report_fast_path_count: usize,
+    guest_trace_main_report_generic_fallback_count: usize,
+    guest_trace_main_report_fcall_result_fast_path_count: usize,
+    guest_trace_main_report_load_copy_fast_path_count: usize,
+    guest_trace_main_report_load_sign_extend_fast_path_count: usize,
+    guest_trace_main_report_no_memory_fast_path_count: usize,
+    guest_trace_main_report_store_copy_fast_path_count: usize,
+    guest_trace_main_report_simple_copy_fast_path_count: usize,
+    guest_trace_main_report_jump_fast_path_count: usize,
     guest_trace_stream_start_sent_count: usize,
     guest_trace_report_chunk_sent_count: usize,
     guest_trace_report_chunk_received_count: usize,
@@ -999,6 +1008,24 @@ impl ProveWitnessGuestPcTraceTiming {
             guest_trace_seed_full_advance_count: stream_timing.seed_full_advance_count(),
             guest_trace_report_count: stream_timing.trace_report_count(),
             guest_trace_report_row_count: stream_timing.trace_report_row_count(),
+            guest_trace_main_report_fast_path_count: stream_timing
+                .trace_main_report_fast_path_count(),
+            guest_trace_main_report_generic_fallback_count: stream_timing
+                .trace_main_report_generic_fallback_count(),
+            guest_trace_main_report_fcall_result_fast_path_count: stream_timing
+                .trace_main_report_fcall_result_fast_path_count(),
+            guest_trace_main_report_load_copy_fast_path_count: stream_timing
+                .trace_main_report_load_copy_fast_path_count(),
+            guest_trace_main_report_load_sign_extend_fast_path_count: stream_timing
+                .trace_main_report_load_sign_extend_fast_path_count(),
+            guest_trace_main_report_no_memory_fast_path_count: stream_timing
+                .trace_main_report_no_memory_fast_path_count(),
+            guest_trace_main_report_store_copy_fast_path_count: stream_timing
+                .trace_main_report_store_copy_fast_path_count(),
+            guest_trace_main_report_simple_copy_fast_path_count: stream_timing
+                .trace_main_report_simple_copy_fast_path_count(),
+            guest_trace_main_report_jump_fast_path_count: stream_timing
+                .trace_main_report_jump_fast_path_count(),
             guest_trace_stream_start_sent_count: stream_timing.trace_stream_start_sent_count(),
             guest_trace_report_chunk_sent_count: stream_timing.trace_report_chunk_sent_count(),
             guest_trace_report_chunk_received_count: stream_timing
@@ -1757,6 +1784,42 @@ impl ProveWitnessGuestPcTraceTiming {
 
     pub fn guest_trace_report_row_count(&self) -> usize {
         self.guest_trace_report_row_count
+    }
+
+    pub fn guest_trace_main_report_fast_path_count(&self) -> usize {
+        self.guest_trace_main_report_fast_path_count
+    }
+
+    pub fn guest_trace_main_report_generic_fallback_count(&self) -> usize {
+        self.guest_trace_main_report_generic_fallback_count
+    }
+
+    pub fn guest_trace_main_report_fcall_result_fast_path_count(&self) -> usize {
+        self.guest_trace_main_report_fcall_result_fast_path_count
+    }
+
+    pub fn guest_trace_main_report_load_copy_fast_path_count(&self) -> usize {
+        self.guest_trace_main_report_load_copy_fast_path_count
+    }
+
+    pub fn guest_trace_main_report_load_sign_extend_fast_path_count(&self) -> usize {
+        self.guest_trace_main_report_load_sign_extend_fast_path_count
+    }
+
+    pub fn guest_trace_main_report_no_memory_fast_path_count(&self) -> usize {
+        self.guest_trace_main_report_no_memory_fast_path_count
+    }
+
+    pub fn guest_trace_main_report_store_copy_fast_path_count(&self) -> usize {
+        self.guest_trace_main_report_store_copy_fast_path_count
+    }
+
+    pub fn guest_trace_main_report_simple_copy_fast_path_count(&self) -> usize {
+        self.guest_trace_main_report_simple_copy_fast_path_count
+    }
+
+    pub fn guest_trace_main_report_jump_fast_path_count(&self) -> usize {
+        self.guest_trace_main_report_jump_fast_path_count
     }
 
     pub fn guest_trace_stream_start_sent_count(&self) -> usize {

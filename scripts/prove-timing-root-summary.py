@@ -184,6 +184,31 @@ PARALLEL_LOWER_DISPATCH_BLOCKED_KEY = (
 SEGMENT_REPLAY_COUNT_KEY = "timing_guest_trace_segment_replay_count"
 TRACE_REPORTS_KEY = "timing_guest_trace_reports"
 TRACE_REPORT_ROWS_KEY = "timing_guest_trace_report_rows"
+MAIN_REPORT_FAST_PATHS_KEY = "timing_guest_trace_main_report_fast_paths"
+MAIN_REPORT_GENERIC_FALLBACKS_KEY = (
+    "timing_guest_trace_main_report_generic_fallbacks"
+)
+MAIN_REPORT_FCALL_RESULT_FAST_PATHS_KEY = (
+    "timing_guest_trace_main_report_fcall_result_fast_paths"
+)
+MAIN_REPORT_LOAD_COPY_FAST_PATHS_KEY = (
+    "timing_guest_trace_main_report_load_copy_fast_paths"
+)
+MAIN_REPORT_LOAD_SIGN_EXTEND_FAST_PATHS_KEY = (
+    "timing_guest_trace_main_report_load_sign_extend_fast_paths"
+)
+MAIN_REPORT_NO_MEMORY_FAST_PATHS_KEY = (
+    "timing_guest_trace_main_report_no_memory_fast_paths"
+)
+MAIN_REPORT_STORE_COPY_FAST_PATHS_KEY = (
+    "timing_guest_trace_main_report_store_copy_fast_paths"
+)
+MAIN_REPORT_SIMPLE_COPY_FAST_PATHS_KEY = (
+    "timing_guest_trace_main_report_simple_copy_fast_paths"
+)
+MAIN_REPORT_JUMP_FAST_PATHS_KEY = (
+    "timing_guest_trace_main_report_jump_fast_paths"
+)
 TRACE_REPORT_CHUNK_SENT_KEY = "timing_guest_trace_report_chunk_sent"
 TRACE_REPORT_CHUNK_RECEIVED_KEY = "timing_guest_trace_report_chunk_received"
 TRACE_REPORT_CHUNK_REPORTS_KEY = "timing_guest_trace_report_chunk_reports"
@@ -896,6 +921,12 @@ HEADER = (
     "parallel_lower_stream_finish_dispatch_wait_ms,"
     "parallel_lower_result_receive_wait_ms,"
     "parallel_lower_dispatch_blocked_count,segment_replay_count,trace_reports,trace_report_rows,"
+    "main_report_fast_paths,main_report_generic_fallbacks,"
+    "main_report_fast_path_pct,"
+    "main_report_fcall_result_fast_paths,main_report_load_copy_fast_paths,"
+    "main_report_load_sign_extend_fast_paths,"
+    "main_report_no_memory_fast_paths,main_report_store_copy_fast_paths,"
+    "main_report_simple_copy_fast_paths,main_report_jump_fast_paths,"
     "trace_rows_per_report,trace_report_record_size_bytes,"
     "trace_report_instruction_size_bytes,"
     "trace_report_register_write_list_size_bytes,"
@@ -1187,6 +1218,7 @@ AGGREGATE_MEAN_PROFILE_COLUMNS = (
     "stream_elapsed_ms",
     "stream_worker_ms",
     "segment_commit_ms",
+    "main_report_fast_path_pct",
     "finish_opening_ms",
     "opening_external_source_ms",
     "opening_external_source_descriptor_upload_ms",
@@ -1328,6 +1360,15 @@ TIMING_KEYS = {
     SEGMENT_REPLAY_COUNT_KEY,
     TRACE_REPORTS_KEY,
     TRACE_REPORT_ROWS_KEY,
+    MAIN_REPORT_FAST_PATHS_KEY,
+    MAIN_REPORT_GENERIC_FALLBACKS_KEY,
+    MAIN_REPORT_FCALL_RESULT_FAST_PATHS_KEY,
+    MAIN_REPORT_LOAD_COPY_FAST_PATHS_KEY,
+    MAIN_REPORT_LOAD_SIGN_EXTEND_FAST_PATHS_KEY,
+    MAIN_REPORT_NO_MEMORY_FAST_PATHS_KEY,
+    MAIN_REPORT_STORE_COPY_FAST_PATHS_KEY,
+    MAIN_REPORT_SIMPLE_COPY_FAST_PATHS_KEY,
+    MAIN_REPORT_JUMP_FAST_PATHS_KEY,
     TRACE_REPORT_CHUNK_SENT_KEY,
     TRACE_REPORT_CHUNK_RECEIVED_KEY,
     TRACE_REPORT_CHUNK_REPORTS_KEY,
@@ -4671,6 +4712,35 @@ def summarize_profile_values(
     segment_replay_count = values.get(SEGMENT_REPLAY_COUNT_KEY, 0)
     trace_reports = values.get(TRACE_REPORTS_KEY, 0)
     trace_report_rows = values.get(TRACE_REPORT_ROWS_KEY, 0)
+    main_report_fast_paths = values.get(MAIN_REPORT_FAST_PATHS_KEY, 0)
+    main_report_generic_fallbacks = values.get(MAIN_REPORT_GENERIC_FALLBACKS_KEY, 0)
+    main_report_fcall_result_fast_paths = values.get(
+        MAIN_REPORT_FCALL_RESULT_FAST_PATHS_KEY, 0
+    )
+    main_report_load_copy_fast_paths = values.get(
+        MAIN_REPORT_LOAD_COPY_FAST_PATHS_KEY, 0
+    )
+    main_report_load_sign_extend_fast_paths = values.get(
+        MAIN_REPORT_LOAD_SIGN_EXTEND_FAST_PATHS_KEY, 0
+    )
+    main_report_no_memory_fast_paths = values.get(
+        MAIN_REPORT_NO_MEMORY_FAST_PATHS_KEY, 0
+    )
+    main_report_store_copy_fast_paths = values.get(
+        MAIN_REPORT_STORE_COPY_FAST_PATHS_KEY, 0
+    )
+    main_report_simple_copy_fast_paths = values.get(
+        MAIN_REPORT_SIMPLE_COPY_FAST_PATHS_KEY, 0
+    )
+    main_report_jump_fast_paths = values.get(MAIN_REPORT_JUMP_FAST_PATHS_KEY, 0)
+    main_report_total_fast_path_attempts = (
+        main_report_fast_paths + main_report_generic_fallbacks
+    )
+    main_report_fast_path_pct = (
+        main_report_fast_paths * 100.0 / main_report_total_fast_path_attempts
+        if main_report_total_fast_path_attempts
+        else 0.0
+    )
     single_row_reports = values.get(TRACE_SINGLE_ROW_REPORTS_KEY, 0)
     multi_row_reports = values.get(TRACE_MULTI_ROW_REPORTS_KEY, 0)
     pending_dma_reports = values.get(TRACE_PENDING_DMA_REPORTS_KEY, 0)
@@ -6095,7 +6165,15 @@ def summarize_profile_values(
         f"{parallel_lower_stream_finish_dispatch_wait_ms},"
         f"{parallel_lower_result_receive_wait_ms},"
         f"{parallel_lower_dispatch_blocked},{segment_replay_count},{trace_reports},"
-        f"{trace_report_rows},{trace_rows_per_report:.3f},"
+        f"{trace_report_rows},{main_report_fast_paths},"
+        f"{main_report_generic_fallbacks},{main_report_fast_path_pct:.3f},"
+        f"{main_report_fcall_result_fast_paths},"
+        f"{main_report_load_copy_fast_paths},"
+        f"{main_report_load_sign_extend_fast_paths},"
+        f"{main_report_no_memory_fast_paths},"
+        f"{main_report_store_copy_fast_paths},"
+        f"{main_report_simple_copy_fast_paths},"
+        f"{main_report_jump_fast_paths},{trace_rows_per_report:.3f},"
         f"{trace_report_record_size_bytes},"
         f"{trace_report_instruction_size_bytes},"
         f"{trace_report_register_write_list_size_bytes},"
@@ -6618,6 +6696,15 @@ def self_test() -> None:
                         f"{PARALLEL_LOWER_MAX_REORDER_KEY}=1",
                         f"{TRACE_REPORTS_KEY}=93843537",
                         f"{TRACE_REPORT_ROWS_KEY}=93917088",
+                        f"{MAIN_REPORT_FAST_PATHS_KEY}=90000000",
+                        f"{MAIN_REPORT_GENERIC_FALLBACKS_KEY}=3843537",
+                        f"{MAIN_REPORT_FCALL_RESULT_FAST_PATHS_KEY}=1000",
+                        f"{MAIN_REPORT_LOAD_COPY_FAST_PATHS_KEY}=30000000",
+                        f"{MAIN_REPORT_LOAD_SIGN_EXTEND_FAST_PATHS_KEY}=2000000",
+                        f"{MAIN_REPORT_NO_MEMORY_FAST_PATHS_KEY}=40000000",
+                        f"{MAIN_REPORT_STORE_COPY_FAST_PATHS_KEY}=10000000",
+                        f"{MAIN_REPORT_SIMPLE_COPY_FAST_PATHS_KEY}=5000000",
+                        f"{MAIN_REPORT_JUMP_FAST_PATHS_KEY}=2999000",
                         f"{TRACE_REPORT_BUFFER_CAPACITY_KEY}=94371840",
                         f"{TRACE_REPORT_BUFFER_MAX_CAPACITY_KEY}=4194304",
                         f"{TRACE_REPORT_BUFFER_EXCESS_CAPACITY_KEY}=528303",

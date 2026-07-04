@@ -433,6 +433,42 @@ pub(super) fn record_guest_pc_trace_timing(
         timing.guest_trace_report_row_count(),
     );
     timings.record_count(
+        "guest_trace_main_report_fast_paths",
+        timing.guest_trace_main_report_fast_path_count(),
+    );
+    timings.record_count(
+        "guest_trace_main_report_generic_fallbacks",
+        timing.guest_trace_main_report_generic_fallback_count(),
+    );
+    timings.record_count(
+        "guest_trace_main_report_fcall_result_fast_paths",
+        timing.guest_trace_main_report_fcall_result_fast_path_count(),
+    );
+    timings.record_count(
+        "guest_trace_main_report_load_copy_fast_paths",
+        timing.guest_trace_main_report_load_copy_fast_path_count(),
+    );
+    timings.record_count(
+        "guest_trace_main_report_load_sign_extend_fast_paths",
+        timing.guest_trace_main_report_load_sign_extend_fast_path_count(),
+    );
+    timings.record_count(
+        "guest_trace_main_report_no_memory_fast_paths",
+        timing.guest_trace_main_report_no_memory_fast_path_count(),
+    );
+    timings.record_count(
+        "guest_trace_main_report_store_copy_fast_paths",
+        timing.guest_trace_main_report_store_copy_fast_path_count(),
+    );
+    timings.record_count(
+        "guest_trace_main_report_simple_copy_fast_paths",
+        timing.guest_trace_main_report_simple_copy_fast_path_count(),
+    );
+    timings.record_count(
+        "guest_trace_main_report_jump_fast_paths",
+        timing.guest_trace_main_report_jump_fast_path_count(),
+    );
+    timings.record_count(
         "guest_trace_stream_start_sent",
         timing.guest_trace_stream_start_sent_count(),
     );

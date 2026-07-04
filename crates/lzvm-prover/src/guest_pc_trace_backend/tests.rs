@@ -6818,11 +6818,13 @@ fn report_level_fast_path_parts_routes_representative_rows() {
         ),
     ];
 
+    let mut timing = GuestPcTraceStreamTiming::default();
     for (report, expected_route) in cases {
         let expected_instruction = lower_guest_report(&report).expect("lowering should succeed");
         let parts = report_level_fast_path_parts(3, &report)
             .expect("routing should not fail")
             .expect("row should route to a fast path");
+        timing.record_main_report_fast_path(&parts);
         let (actual_route, actual_instruction) = match parts {
             MainReportFastPathParts::LoadCopy(instruction, ..) => {
                 (ReportLevelRoute::LoadCopy, instruction)
@@ -6847,6 +6849,20 @@ fn report_level_fast_path_parts_routes_representative_rows() {
         assert_eq!(actual_route, expected_route);
         assert_eq!(actual_instruction, expected_instruction);
     }
+    timing.record_main_report_generic_fallback();
+
+    assert_eq!(timing.trace_main_report_fast_path_count(), 10);
+    assert_eq!(timing.trace_main_report_generic_fallback_count(), 1);
+    assert_eq!(timing.trace_main_report_load_copy_fast_path_count(), 1);
+    assert_eq!(
+        timing.trace_main_report_load_sign_extend_fast_path_count(),
+        1
+    );
+    assert_eq!(timing.trace_main_report_store_copy_fast_path_count(), 1);
+    assert_eq!(timing.trace_main_report_jump_fast_path_count(), 2);
+    assert_eq!(timing.trace_main_report_no_memory_fast_path_count(), 3);
+    assert_eq!(timing.trace_main_report_simple_copy_fast_path_count(), 1);
+    assert_eq!(timing.trace_main_report_fcall_result_fast_path_count(), 1);
 }
 
 #[test]
