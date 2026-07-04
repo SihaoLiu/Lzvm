@@ -11611,6 +11611,46 @@ fn load_copy_indirect_no_store_fast_path_parts(
 }
 
 #[inline(always)]
+fn load_reserved_indirect_register_store_fast_path_parts(
+    row: usize,
+    report: &GuestMachineReport,
+) -> Result<Option<MainReportFastPathParts>, GuestPcTraceBackendError> {
+    let RiscvInstruction::LoadReserved { width, rd, rs1, .. } = report.instruction else {
+        return Ok(None);
+    };
+    if rd == 0 || rs1 == 0 || !report.precompile_memory_accesses().is_empty() {
+        return Ok(None);
+    }
+    let Some(instruction_size) = sequential_report_fast_path_instruction_size(row, report)? else {
+        return Ok(None);
+    };
+    let (op, ind_width, external) = match width {
+        RiscvAmoWidth::Word => (ZiskMainOp::SignExtendW, 4, true),
+        RiscvAmoWidth::Doubleword => (ZiskMainOp::CopyB, 8, false),
+    };
+    let instruction = ZiskMainInstruction {
+        pc: report.address(),
+        a: ZiskMainSource::Register(rs1),
+        b: ZiskMainSource::Indirect(0),
+        op,
+        store: ZiskMainStore::Register(rd),
+        store_pc: false,
+        set_pc: false,
+        jmp_offset1: instruction_size,
+        jmp_offset2: instruction_size,
+        ind_width,
+        m32: false,
+        is_external_op: external,
+        is_precompiled: false,
+    };
+    let parts = match width {
+        RiscvAmoWidth::Word => MainReportFastPathParts::LoadSignExtend(instruction, rs1, 0, rd),
+        RiscvAmoWidth::Doubleword => MainReportFastPathParts::LoadCopy(instruction, rs1, 0, rd),
+    };
+    Ok(Some(parts))
+}
+
+#[inline(always)]
 fn load_sign_extend_indirect_register_store_fast_path_parts(
     row: usize,
     report: &GuestMachineReport,
@@ -12144,6 +12184,9 @@ fn report_level_fast_path_parts(
                 },
             ),
         ),
+        RiscvInstruction::LoadReserved { .. } => {
+            load_reserved_indirect_register_store_fast_path_parts(row, report)
+        }
         RiscvInstruction::Store { .. } => store_copy_indirect_store_fast_path_parts(row, report),
         RiscvInstruction::Auipc { .. } => Ok(pc_relative_fast_path_parts(row, report)?
             .map(|(instruction, parts)| MainReportFastPathParts::Jump(instruction, parts))),

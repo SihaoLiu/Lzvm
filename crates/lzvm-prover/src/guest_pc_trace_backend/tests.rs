@@ -6443,6 +6443,41 @@ fn load_copy_fast_path_parts_fall_back_for_non_dominant_loads() {
 }
 
 #[test]
+fn load_reserved_fast_path_parts_match_generic_lowering() {
+    for (width, expect_copy) in [
+        (RiscvAmoWidth::Word, false),
+        (RiscvAmoWidth::Doubleword, true),
+    ] {
+        let report = GuestMachineReport {
+            address_and_instruction_len:
+                crate::guest_machine::pack_report_address_and_instruction_len(0x8000_0000, 4),
+            instruction: RiscvInstruction::LoadReserved {
+                width,
+                rd: 3,
+                rs1: 2,
+                acquire: true,
+                release: false,
+            },
+            next_pc: 0x8000_0004,
+            register_write_value: GuestRegisterWriteValue::new(0xaa55),
+            memory_accesses: vec![memory_read(0x100, 0xaa55)].into(),
+        };
+        let parts = load_reserved_indirect_register_store_fast_path_parts(3, &report)
+            .expect("fast path detection should succeed")
+            .expect("load-reserved from register base into register should match");
+        let instruction = match (expect_copy, parts) {
+            (true, MainReportFastPathParts::LoadCopy(instruction, ..))
+            | (false, MainReportFastPathParts::LoadSignExtend(instruction, ..)) => instruction,
+            _ => panic!("load-reserved should route through the expected load fast path"),
+        };
+        assert_eq!(
+            instruction,
+            lower_guest_report(&report).expect("generic lowering should match")
+        );
+    }
+}
+
+#[test]
 fn load_sign_extend_fast_path_parts_match_generic_lowering() {
     let mut access = memory_read(0x108, 0xffff_ff80);
     access.byte_len = 4;
@@ -6979,6 +7014,8 @@ fn report_level_fast_path_parts_routes_representative_rows() {
 
     let mut signed_load = memory_read(0x108, 0xffff_ff80);
     signed_load.byte_len = 4;
+    let mut reserved_word_load = memory_read(0x100, 0xffff_ff80);
+    reserved_word_load.byte_len = 4;
     let cases = vec![
         (
             GuestMachineReport {
@@ -7025,6 +7062,40 @@ fn report_level_fast_path_parts_routes_representative_rows() {
                 next_pc: 0x8000_0008,
                 register_write_value: GuestRegisterWriteValue::new(0xffff_ffff_ffff_ff80),
                 memory_accesses: vec![signed_load].into(),
+            },
+            ReportLevelRoute::LoadSignExtend,
+        ),
+        (
+            GuestMachineReport {
+                address_and_instruction_len:
+                    crate::guest_machine::pack_report_address_and_instruction_len(0x8000_0038, 4),
+                instruction: RiscvInstruction::LoadReserved {
+                    width: RiscvAmoWidth::Doubleword,
+                    rd: 4,
+                    rs1: 2,
+                    acquire: false,
+                    release: false,
+                },
+                next_pc: 0x8000_003c,
+                register_write_value: GuestRegisterWriteValue::new(0xaa55),
+                memory_accesses: vec![memory_read(0x100, 0xaa55)].into(),
+            },
+            ReportLevelRoute::LoadCopy,
+        ),
+        (
+            GuestMachineReport {
+                address_and_instruction_len:
+                    crate::guest_machine::pack_report_address_and_instruction_len(0x8000_003c, 4),
+                instruction: RiscvInstruction::LoadReserved {
+                    width: RiscvAmoWidth::Word,
+                    rd: 4,
+                    rs1: 2,
+                    acquire: false,
+                    release: false,
+                },
+                next_pc: 0x8000_0040,
+                register_write_value: GuestRegisterWriteValue::new(0xffff_ffff_ffff_ff80),
+                memory_accesses: vec![reserved_word_load].into(),
             },
             ReportLevelRoute::LoadSignExtend,
         ),
@@ -7279,12 +7350,12 @@ fn report_level_fast_path_parts_routes_representative_rows() {
     assert_eq!(parts.store_index, None);
     timing.record_main_report_generic_fallback();
 
-    assert_eq!(timing.trace_main_report_fast_path_count(), 14);
+    assert_eq!(timing.trace_main_report_fast_path_count(), 16);
     assert_eq!(timing.trace_main_report_generic_fallback_count(), 1);
-    assert_eq!(timing.trace_main_report_load_copy_fast_path_count(), 2);
+    assert_eq!(timing.trace_main_report_load_copy_fast_path_count(), 3);
     assert_eq!(
         timing.trace_main_report_load_sign_extend_fast_path_count(),
-        1
+        2
     );
     assert_eq!(timing.trace_main_report_store_copy_fast_path_count(), 2);
     assert_eq!(timing.trace_main_report_jump_fast_path_count(), 2);
