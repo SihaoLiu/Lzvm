@@ -4349,7 +4349,7 @@ fn run_guest_pc_trace_segment_slice_with_streaming_device_material(
         .map_err(GuestMachineRunError::from)
         .map_err(GuestPcTraceBackendError::GuestRun)?;
         instruction_cache_update.apply_or_invalidate_report_shape(
-            instruction_cache,
+            &mut instruction_cache,
             &advanced.report,
             advanced.shape,
         );
