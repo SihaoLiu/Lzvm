@@ -1621,6 +1621,63 @@ theorem
       proof
       ethAccepted
 
+theorem
+    runtime_pipeline_binding_checked_acceptance_eth_audited_concrete_contract_of_query_binding
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimePipelineBindingValidation system)
+    (binding :
+      let queryPlanValidation := validation.queryPlanBindingValidation
+      let challengeValidation := queryPlanValidation.challengeValidation
+      RuntimeProofArtifactConcreteSegmentIdBinding
+        challengeValidation.transcriptValidation.artifactBindingValidation) :
+    forall artifact publicInput proof,
+      RuntimePipelineBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        (RequiredCryptographicAssumptionStatements assumptions.crypto
+          /\ RequiredSemanticAssumptionStatements assumptions.semantic
+          /\ RuntimeEthBlockPublicInputBindingEvidence
+            system
+            validation.ethBindingValidation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeProofArtifactFinalized
+            system
+            validation.ethBindingValidation.proofArtifactBindingValidation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeEthBlockPublicInputBindingStructuralObligations
+            system
+            validation.ethBindingValidation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ (exists witness trace constraints,
+            system.traceConsistent publicInput proof trace
+              /\ system.constraintsSatisfied constraints trace
+              /\ system.witnessMatchesTrace witness trace)
+          /\ SoundWitness system publicInput proof)
+          /\ RuntimeProofArtifactConcreteSegmentIdsAllowed proof := by
+  intro artifact publicInput proof accepted
+  exact
+    runtime_pipeline_binding_checked_acceptance_eth_audited_finalized_concrete_segment_ids_contract
+      assumptions
+      validation
+      (runtime_pipeline_binding_eth_concrete_segment_id_binding_of_query_binding
+        validation
+        binding)
+      artifact
+      publicInput
+      proof
+      accepted
+
 theorem runtime_pipeline_binding_checked_acceptance_framed_guest_input_soundness_contract
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)

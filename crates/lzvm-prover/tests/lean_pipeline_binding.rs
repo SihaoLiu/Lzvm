@@ -161,6 +161,7 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
             "runtime_pipeline_binding_checked_acceptance_eth_concrete_core_sound_contract",
             "runtime_pipeline_binding_checked_acceptance_eth_audited_finalized_segment_ids_contract",
             "runtime_pipeline_binding_checked_acceptance_eth_audited_finalized_concrete_segment_ids_contract",
+            "runtime_pipeline_binding_checked_acceptance_eth_audited_concrete_contract_of_query_binding",
             "runtime_pipeline_binding_checked_acceptance_framed_guest_input",
             "runtime_pipeline_binding_checked_acceptance_framed_guest_input_segment_payload_nonempty",
             "runtime_pipeline_binding_checked_acceptance_framed_guest_input_co_bindings",
@@ -1175,6 +1176,33 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
         &[
             "runtime_pipeline_binding_checked_acceptance_eth_audited_finalized_segment_ids_contract",
             "runtime_pipeline_binding_checked_acceptance_eth_concrete_segment_ids_allowed",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_pipeline_binding_checked_acceptance_eth_audited_concrete_contract_of_query_binding",
+        &[
+            "let queryPlanValidation := validation.queryPlanBindingValidation",
+            "let challengeValidation := queryPlanValidation.challengeValidation",
+            "challengeValidation.transcriptValidation.artifactBindingValidation",
+            "RuntimePipelineBindingCheckedAcceptance",
+            "RuntimeProofArtifactConcreteSegmentIdsAllowed proof",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_pipeline_binding_checked_acceptance_eth_audited_concrete_contract_of_query_binding",
+        &[
+            "runtime_pipeline_binding_checked_acceptance_eth_audited_finalized_concrete_segment_ids_contract",
+            "runtime_pipeline_binding_eth_concrete_segment_id_binding_of_query_binding",
+        ],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &lean_source,
+        "runtime_pipeline_binding_checked_acceptance_eth_audited_concrete_contract_of_query_binding",
+        &[
+            "have ethAccepted",
+            "runtime_eth_block_public_input_binding_audited_finalized_concrete_segment_ids_contract",
         ],
     );
     lean_binding::assert_theorem_prefix_contains(
