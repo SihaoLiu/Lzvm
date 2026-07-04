@@ -3885,6 +3885,7 @@ fn run_guest_pc_trace_segment_slice_with_boundary_snapshot_and_cache(
     )
 }
 
+#[allow(dead_code)]
 fn run_guest_pc_trace_segment_slice_with_elided_reports_and_boundary_snapshot(
     memory: &mut GuestMachineMemory,
     state: &mut GuestMachineState,
@@ -3937,6 +3938,8 @@ fn run_guest_pc_trace_segment_slice_with_live_report_chunks(
     row_limit: usize,
     instruction_cache: &mut GuestInstructionCache,
     mut boundary_snapshot: Option<&mut ZiskMainRunnerBoundarySnapshot>,
+    path_timing: bool,
+    timing: &mut GuestPcTraceStreamTiming,
     mut emit_report: impl FnMut(GuestMachineReport) -> Result<(), GuestPcTraceBackendError>,
 ) -> Result<GuestPcTraceSegmentSlice, GuestPcTraceBackendError> {
     let mut pending_report = None;
@@ -4017,11 +4020,21 @@ fn run_guest_pc_trace_segment_slice_with_live_report_chunks(
             }
         }
         let clear_instruction_cache = instruction_clears_instruction_cache(state, current);
-        let advanced = advance_guest_machine_with_prepared_fcalls_report_shape(
-            memory, state, handler, prepared,
-        )
+        let (advanced, advance_path) = if path_timing {
+            advance_guest_machine_with_prepared_fcalls_report_shape_path(
+                memory, state, handler, prepared,
+            )
+        } else {
+            advance_guest_machine_with_prepared_fcalls_report_shape(
+                memory, state, handler, prepared,
+            )
+            .map(|advanced| (advanced, GuestMachineAdvancePath::default()))
+        }
         .map_err(GuestMachineRunError::from)
         .map_err(GuestPcTraceBackendError::GuestRun)?;
+        if path_timing {
+            timing.record_runner_advance_path(advance_path);
+        }
         if clear_instruction_cache {
             instruction_cache.clear();
         } else {
@@ -4471,7 +4484,7 @@ fn run_guest_pc_trace_segment_slice_inner<
     }
     loop {
         let report_detail_timing = runner_timing_config.sample(report_count);
-        let runner_path_timing = timing.is_some();
+        let runner_path_timing = runner_timing_config.count_paths();
         let report_detail_started = detail_duration_started(&timing, report_detail_timing);
         let prepare_started = detail_duration_started(&timing, report_detail_timing);
         let pc = state.pc();
@@ -5606,6 +5619,8 @@ fn emit_guest_pc_trace_live_pending_segment_messages(
     replay_snapshot: Option<&GuestPcTraceSegmentReplaySnapshot>,
     boundary_snapshot: Option<&mut ZiskMainRunnerBoundarySnapshot>,
     instruction_cache: &mut GuestInstructionCache,
+    path_timing: bool,
+    timing: &mut GuestPcTraceStreamTiming,
     emit_stream_start_before_chunks: bool,
     report_chunk_capacity: usize,
     mut emit_message: impl FnMut(
@@ -5635,6 +5650,8 @@ fn emit_guest_pc_trace_live_pending_segment_messages(
         row_count,
         instruction_cache,
         boundary_snapshot,
+        path_timing,
+        timing,
         |report| {
             chunk_reports.push(report);
             if chunk_reports.len() == report_chunk_capacity {
@@ -5782,6 +5799,7 @@ fn produce_guest_pc_trace_live_pending_messages(
     let validate_runner_seed_snapshot = seed_mode.validate;
     let mut seed_mirror = runner_seed_snapshot.then(ZiskMainSegmentSeed::new);
     let mut instruction_cache = GuestInstructionCache::default();
+    let runner_path_timing = guest_pc_trace_runner_path_timing_enabled();
     loop {
         let remaining_limit = instruction_limit.saturating_sub(executed_instructions);
         let trace_instance_index = u32::try_from(trace_instance_count).map_err(|_| {
@@ -5814,6 +5832,8 @@ fn produce_guest_pc_trace_live_pending_messages(
             replay_snapshot.as_ref(),
             runner_boundary_snapshot.as_mut(),
             &mut instruction_cache,
+            runner_path_timing,
+            &mut timing,
             emit_stream_start_before_chunks,
             report_chunk_capacity,
             &mut emit_message,
@@ -6441,14 +6461,18 @@ fn discover_guest_pc_trace_segment_seeds(
         let memory_state = GuestMachineMemoryOverlaySnapshot::capture(&memory);
         let fcall_state = GuestPcTraceFcallBoundaryState::capture(&fcall_handler);
         let mut boundary_snapshot = ZiskMainRunnerBoundarySnapshot::new(&current_seed);
-        let slice = run_guest_pc_trace_segment_slice_with_elided_reports_and_boundary_snapshot(
-            &mut memory,
-            &mut state,
-            &mut fcall_handler,
-            remaining_limit,
-            row_count,
-            &mut boundary_snapshot,
-        )?;
+        let mut instruction_cache = GuestInstructionCache::default();
+        let slice =
+            run_guest_pc_trace_segment_slice_with_elided_reports_and_boundary_snapshot_and_cache(
+                &mut memory,
+                &mut state,
+                &mut fcall_handler,
+                remaining_limit,
+                row_count,
+                &mut boundary_snapshot,
+                &mut instruction_cache,
+                Some(&mut timing),
+            )?;
         timing.trace_runner_report_buffer_capacity += slice.report_capacity;
         timing.trace_runner_report_buffer_max_capacity = timing
             .trace_runner_report_buffer_max_capacity
@@ -14801,6 +14825,7 @@ fn guest_pc_trace_lower_detail_timing_enabled() -> bool {
 #[derive(Clone, Copy)]
 struct GuestPcTraceRunnerTimingConfig {
     detail_timing: bool,
+    path_timing: bool,
     detail_sample_stride: usize,
 }
 
@@ -14808,6 +14833,7 @@ impl GuestPcTraceRunnerTimingConfig {
     fn disabled() -> Self {
         Self {
             detail_timing: false,
+            path_timing: false,
             detail_sample_stride: 1,
         }
     }
@@ -14819,6 +14845,7 @@ impl GuestPcTraceRunnerTimingConfig {
         let detail_timing = guest_pc_trace_runner_detail_timing_enabled();
         Self {
             detail_timing,
+            path_timing: guest_pc_trace_runner_path_timing_enabled(),
             detail_sample_stride: if detail_timing {
                 guest_pc_trace_runner_detail_timing_sample_stride()
             } else {
@@ -14830,10 +14857,18 @@ impl GuestPcTraceRunnerTimingConfig {
     fn sample(self, index: usize) -> bool {
         self.detail_timing && index % self.detail_sample_stride == 0
     }
+
+    fn count_paths(self) -> bool {
+        self.path_timing
+    }
 }
 
 fn guest_pc_trace_runner_detail_timing_enabled() -> bool {
     env_flag_enabled("LZVM_GUEST_TRACE_RUNNER_DETAIL_TIMING", false)
+}
+
+fn guest_pc_trace_runner_path_timing_enabled() -> bool {
+    env_flag_enabled("LZVM_GUEST_TRACE_RUNNER_PATH_TIMING", false)
 }
 
 fn guest_pc_trace_runner_detail_timing_sample_stride() -> usize {

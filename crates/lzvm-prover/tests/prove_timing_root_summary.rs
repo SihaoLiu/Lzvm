@@ -9229,6 +9229,8 @@ fn prove_timing_root_summary_reports_runner_detail_hotspot() {
         "timing_guest_stage_tree_commit_root_materialization_max_group_size=1",
         "timing_guest_trace_runner_ms=8000",
         "timing_guest_trace_reports=1000",
+        "timing_guest_trace_runner_advance_fast_paths=990",
+        "timing_guest_trace_runner_advance_generic_fallbacks=10",
         "timing_guest_trace_runner_detail_samples=10",
         "timing_guest_trace_runner_detail_sampled_ns=1000000",
         "timing_guest_trace_runner_prepare_instruction_sampled_ns=100000",
@@ -9284,6 +9286,9 @@ fn prove_timing_root_summary_reports_runner_detail_hotspot() {
     };
 
     assert_eq!(value("trace_runner_detail_samples"), "10");
+    assert_eq!(value("runner_advance_fast_paths"), "990");
+    assert_eq!(value("runner_advance_generic_fallbacks"), "10");
+    assert_eq!(value("runner_advance_fast_path_pct"), "99.000");
     assert_eq!(value("trace_runner_detail_sample_pct"), "1.000");
     assert_eq!(value("trace_runner_detail_avg_ns"), "100000");
     assert_eq!(
