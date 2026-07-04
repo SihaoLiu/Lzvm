@@ -11883,6 +11883,75 @@ fn dma_prepare_internal_memory_copy_fast_path_parts(
 }
 
 #[inline(always)]
+fn dma_prepare_fast_path_parts(
+    row: usize,
+    report: &GuestMachineReport,
+    next_instruction: Option<RiscvInstruction>,
+) -> Result<Option<MainReportFastPathParts>, GuestPcTraceBackendError> {
+    let RiscvInstruction::ZiskDmaPrepare { kind, rs1 } = report.instruction else {
+        return Ok(None);
+    };
+    let next_copies_to_internal = matches!(kind, RiscvDmaKind::Memcpy | RiscvDmaKind::Memcmp)
+        && matches!(
+            next_instruction,
+            Some(RiscvInstruction::Op {
+                kind: RiscvOpKind::Add,
+                ..
+            })
+        );
+    if next_copies_to_internal {
+        return dma_prepare_internal_memory_copy_fast_path_parts(row, report, next_instruction);
+    }
+    if next_instruction.is_none()
+        || !report.memory_accesses.is_empty()
+        || !report.precompile_memory_accesses().is_empty()
+    {
+        return Ok(None);
+    }
+    let Some(instruction_size) = sequential_report_fast_path_instruction_size(row, report)? else {
+        return Ok(None);
+    };
+    let b_index = (rs1 != 0).then_some(rs1);
+    let instruction = ZiskMainInstruction {
+        pc: report.address(),
+        a: ZiskMainSource::Immediate(dma_prepare_fast_path_id(kind)),
+        b: if rs1 == 0 {
+            ZiskMainSource::Immediate(0)
+        } else {
+            ZiskMainSource::Register(rs1)
+        },
+        op: ZiskMainOp::CopyB,
+        store: ZiskMainStore::None,
+        store_pc: false,
+        set_pc: false,
+        jmp_offset1: instruction_size,
+        jmp_offset2: instruction_size,
+        ind_width: 0,
+        m32: false,
+        is_external_op: false,
+        is_precompiled: false,
+    };
+    Ok(Some(MainReportFastPathParts::NoMemory(
+        instruction,
+        ZiskMainNoMemoryFastPathParts {
+            a_index: None,
+            b_index,
+            store_index: None,
+        },
+    )))
+}
+
+#[inline(always)]
+fn dma_prepare_fast_path_id(kind: RiscvDmaKind) -> u64 {
+    match kind {
+        RiscvDmaKind::Memcpy => 0x0813,
+        RiscvDmaKind::Memcmp => 0x0814,
+        RiscvDmaKind::Inputcpy => 0x0815,
+        RiscvDmaKind::Memset => 0x0816,
+    }
+}
+
+#[inline(always)]
 fn no_memory_fast_path_source_index(source: ZiskMainSource) -> Option<Option<u8>> {
     match source {
         ZiskMainSource::Immediate(_) | ZiskMainSource::LastC => Some(None),
@@ -12060,7 +12129,7 @@ fn report_level_fast_path_parts(
         | RiscvInstruction::Op32 { .. } => Ok(arithmetic_fast_path_parts(row, report)?
             .map(|(instruction, parts)| MainReportFastPathParts::NoMemory(instruction, parts))),
         RiscvInstruction::ZiskDmaPrepare { .. } => {
-            dma_prepare_internal_memory_copy_fast_path_parts(row, report, next_instruction())
+            dma_prepare_fast_path_parts(row, report, next_instruction())
         }
         _ => Ok(None),
     }

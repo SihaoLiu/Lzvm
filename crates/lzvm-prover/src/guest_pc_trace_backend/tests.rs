@@ -7149,9 +7149,46 @@ fn report_level_fast_path_parts_routes_representative_rows() {
     assert_eq!(instruction, expected_instruction);
     assert_eq!(b_index, 3);
     assert_eq!(store_address, ZISK_EXTRA_PARAMS_ADDRESS);
+    let base_prepare_report =
+        GuestMachineReport {
+            address_and_instruction_len:
+                crate::guest_machine::pack_report_address_and_instruction_len(0x8000_0040, 4),
+            instruction: RiscvInstruction::ZiskDmaPrepare {
+                kind: RiscvDmaKind::Inputcpy,
+                rs1: 5,
+            },
+            next_pc: 0x8000_0044,
+            register_write_value: GuestRegisterWriteValue::default(),
+            memory_accesses: vec![].into(),
+        };
+    let base_lookahead = RiscvInstruction::OpImm {
+        kind: RiscvOpImmKind::Addi,
+        rd: 6,
+        rs1: 5,
+        immediate: 8,
+    };
+    let expected_instruction = lower_dma_prepare_report(
+        3,
+        lower_guest_report(&base_prepare_report).expect("lowering should succeed"),
+        RiscvDmaKind::Inputcpy,
+        Some(base_lookahead),
+    )
+    .expect("DMA prepare lowering should succeed");
+    let mut next_instruction = || Some(base_lookahead);
+    let parts = report_level_fast_path_parts(3, &base_prepare_report, &mut next_instruction)
+        .expect("routing should not fail")
+        .expect("DMA prepare row should route to a fast path");
+    timing.record_main_report_fast_path(&parts);
+    let MainReportFastPathParts::NoMemory(instruction, parts) = parts else {
+        panic!("DMA prepare row should route to no-memory copy");
+    };
+    assert_eq!(instruction, expected_instruction);
+    assert_eq!(parts.a_index, None);
+    assert_eq!(parts.b_index, Some(5));
+    assert_eq!(parts.store_index, None);
     timing.record_main_report_generic_fallback();
 
-    assert_eq!(timing.trace_main_report_fast_path_count(), 12);
+    assert_eq!(timing.trace_main_report_fast_path_count(), 13);
     assert_eq!(timing.trace_main_report_generic_fallback_count(), 1);
     assert_eq!(timing.trace_main_report_load_copy_fast_path_count(), 1);
     assert_eq!(
@@ -7160,7 +7197,7 @@ fn report_level_fast_path_parts_routes_representative_rows() {
     );
     assert_eq!(timing.trace_main_report_store_copy_fast_path_count(), 2);
     assert_eq!(timing.trace_main_report_jump_fast_path_count(), 2);
-    assert_eq!(timing.trace_main_report_no_memory_fast_path_count(), 4);
+    assert_eq!(timing.trace_main_report_no_memory_fast_path_count(), 5);
     assert_eq!(timing.trace_main_report_simple_copy_fast_path_count(), 1);
     assert_eq!(timing.trace_main_report_fcall_result_fast_path_count(), 1);
 }
