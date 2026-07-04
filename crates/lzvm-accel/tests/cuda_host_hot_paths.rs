@@ -97,7 +97,7 @@ fn cuda_host_exposes_graph_capture_replay_runtime() {
 }
 
 #[test]
-fn allocator_does_not_wait_to_reuse_pending_small_blocks() {
+fn allocator_does_not_wait_to_reuse_pending_configured_blocks() {
     let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
     let source_path = crate_root.join("native/cuda_host.cpp");
     let source = std::fs::read_to_string(&source_path).expect("cuda host source should read");
@@ -105,12 +105,12 @@ fn allocator_does_not_wait_to_reuse_pending_small_blocks() {
 
     assert!(
         source.contains("kPendingCacheNoWaitBytes"),
-        "allocator should define a small pending-cache no-wait threshold"
+        "allocator should define a pending-cache no-wait threshold"
     );
     assert!(
         body.contains("bytes <= pending_cache_no_wait_bytes(kPendingCacheNoWaitBytes)")
             && body.contains("pending_index = std::numeric_limits<std::size_t>::max()"),
-        "small pending cached blocks should fall through to a fresh allocation instead of synchronizing"
+        "configured pending cached blocks should fall through to a fresh allocation instead of synchronizing"
     );
 }
 

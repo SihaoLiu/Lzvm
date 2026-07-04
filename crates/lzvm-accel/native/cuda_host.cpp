@@ -34,7 +34,7 @@ struct SizeWaitStats {
 constexpr std::size_t kMaxCachedBytes = std::size_t{16} << 30;
 constexpr std::size_t kMaxCachedBlocksPerSize = 2;
 constexpr std::size_t kPinnedCopyThreshold = std::size_t{1} << 20;
-constexpr std::size_t kPendingCacheNoWaitBytes = std::size_t{1} << 20;
+constexpr std::size_t kPendingCacheNoWaitBytes = std::size_t{128} << 20;
 constexpr const char* kPendingCacheNoWaitBytesEnv =
     "LZVM_CUDA_PENDING_CACHE_NO_WAIT_BYTES";
 constexpr std::size_t kCopyH2dSizeStatsSlots = 64;
