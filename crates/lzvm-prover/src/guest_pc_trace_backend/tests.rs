@@ -6880,6 +6880,30 @@ fn precompile_no_store_fast_path_preserves_row_effects() {
 }
 
 #[test]
+fn fixed_precompile_no_store_fast_path_rejects_add256_and_register_store() {
+    let add256 = add256_report();
+    assert!(
+        fixed_precompile_no_store_fast_path_parts(3, &add256)
+            .expect("Add256 detector should return cleanly")
+            .is_none(),
+        "Add256 has a material result and must use generic lowering"
+    );
+
+    let mut stored = fixed_precompile_report(0x8000_0000, RiscvPrecompileKind::Keccak);
+    stored.instruction = RiscvInstruction::ZiskPrecompile {
+        kind: RiscvPrecompileKind::Keccak,
+        rs1: 2,
+        rd: 3,
+    };
+    assert!(
+        fixed_precompile_no_store_fast_path_parts(3, &stored)
+            .expect("stored fixed precompile detector should return cleanly")
+            .is_none(),
+        "fixed precompile rows with a register destination must use generic lowering"
+    );
+}
+
+#[test]
 fn copy_immediate_indirect_store_fast_path_preserves_row_effects() {
     let accesses = [memory_write(0x108, 0x1122_3344_5566_7788)];
     let effects = ZiskMainReportEffects {
@@ -9469,7 +9493,7 @@ fn fixed_precompile_report(address: u64, kind: RiscvPrecompileKind) -> GuestMach
         address + 4,
         Vec::new().into(),
         Vec::new().into(),
-        GuestPrecompileReportEffects::from_parts(accesses.into(), None),
+        GuestPrecompileReportEffects::from_parts(accesses.into(), Some(0)),
     )
 }
 
