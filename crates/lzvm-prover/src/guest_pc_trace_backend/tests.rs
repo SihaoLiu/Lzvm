@@ -1506,7 +1506,7 @@ fn builds_zisk_main_segment_trace_without_serialized_roundtrip() {
     let _detail_env = TestEnvVarGuard::unset("LZVM_GUEST_TRACE_DETAIL_TIMING");
     let _shape_env = TestEnvVarGuard::unset("LZVM_GUEST_TRACE_SHAPE_TIMING");
     let _shape_sample_env = TestEnvVarGuard::unset("LZVM_GUEST_TRACE_SHAPE_TIMING_SAMPLE_STRIDE");
-    let unit = sample_main_trace_unit_rows(3);
+    let unit = sample_main_trace_unit_rows(4);
     let layout = derive_witness_trace_layout(&unit).expect("layout should derive");
     let reports = [
         addi_report_at(0x8000_0000, 3, 0, 7, 7),
@@ -1534,21 +1534,30 @@ fn builds_zisk_main_segment_trace_without_serialized_roundtrip() {
             register_write_value: GuestRegisterWriteValue::default(),
             memory_accesses: Vec::new().into(),
         },
+        GuestMachineReport {
+            address_and_instruction_len:
+                crate::guest_machine::pack_report_address_and_instruction_len(0x8000_000c, 4),
+            instruction: RiscvInstruction::Op {
+                kind: RiscvOpKind::Add,
+                rd: 10,
+                rs1: 5,
+                rs2: 3,
+            },
+            next_pc: 0x8000_0010,
+            register_write_value: GuestRegisterWriteValue::new(11),
+            memory_accesses: Vec::new().into(),
+        },
     ];
-    let lookahead = RiscvInstruction::Op {
-        kind: RiscvOpKind::Add,
-        rd: 6,
-        rs1: 5,
-        rs2: 3,
-    };
     let mut timing = GuestPcTraceStreamTiming::default();
+    let mut initial_state = ZiskMainTraceState::new();
+    initial_state.registers[5] = 11;
 
     let written = build_layout_zisk_main_trace_segment(
         &layout,
         &reports,
-        reports[2].next_pc,
-        &ZiskMainTraceState::new(),
-        Some(lookahead),
+        reports[3].next_pc,
+        &initial_state,
+        None,
         ZiskMainTraceSegmentInfo {
             trace_instance_index: 0,
             is_last_segment: true,

@@ -11135,6 +11135,13 @@ fn validate_and_apply_zisk_main_report(
                     )?;
                 }
             }
+            state.pending_dma = match report.instruction {
+                RiscvInstruction::ZiskDmaPrepare { kind, rs1 } => Some(ZiskMainPendingDma {
+                    kind,
+                    first_arg_reg: rs1,
+                }),
+                _ => None,
+            };
             return Ok(1);
         }
         if let Some(timing) = timing.as_mut() {
