@@ -384,6 +384,8 @@ fn eth_proof_timing_batch_dry_run_builds_small_command_from_env() {
         .env("LZVM_GUEST_TRACE_DETAIL_TIMING_SAMPLE_STRIDE", "7")
         .env("LZVM_GUEST_TRACE_SHAPE_TIMING", "1")
         .env("LZVM_GUEST_TRACE_SHAPE_TIMING_SAMPLE_STRIDE", "11")
+        .env("LZVM_GUEST_TRACE_RUNNER_PATH_TIMING", "1")
+        .env("LZVM_GUEST_INSTRUCTION_CACHE_ENTRY_BITS", "18")
         .env("CUDA_VISIBLE_DEVICES", "");
     fixture.apply_env(&mut command, SMALL_PREFIX);
 
@@ -473,6 +475,8 @@ fn eth_proof_timing_batch_dry_run_builds_small_command_from_env() {
             && stdout.contains("-u LZVM_GUEST_TRACE_DETAIL_TIMING_SAMPLE_STRIDE")
             && stdout.contains("-u LZVM_GUEST_TRACE_RUNNER_DETAIL_TIMING")
             && stdout.contains("-u LZVM_GUEST_TRACE_RUNNER_DETAIL_TIMING_SAMPLE_STRIDE")
+            && stdout.contains("-u LZVM_GUEST_TRACE_RUNNER_PATH_TIMING")
+            && stdout.contains("-u LZVM_GUEST_INSTRUCTION_CACHE_ENTRY_BITS")
             && stdout.contains("-u LZVM_GUEST_TRACE_SHAPE_TIMING")
             && stdout.contains("-u LZVM_GUEST_TRACE_SHAPE_TIMING_SAMPLE_STRIDE"),
         "prove and verify commands should clear ambient trace diagnostic controls: {stdout}"
@@ -484,9 +488,13 @@ fn eth_proof_timing_batch_dry_run_builds_small_command_from_env() {
             && !stdout.contains("LZVM_GUEST_TRACE_DETAIL_TIMING_SAMPLE_STRIDE=7")
             && !stdout.contains("LZVM_GUEST_TRACE_SHAPE_TIMING=1")
             && !stdout.contains("LZVM_GUEST_TRACE_SHAPE_TIMING_SAMPLE_STRIDE=11")
+            && !stdout.contains("LZVM_GUEST_TRACE_RUNNER_PATH_TIMING=1")
+            && !stdout.contains("LZVM_GUEST_INSTRUCTION_CACHE_ENTRY_BITS=18")
             && stdout.contains("trace_shape_timing=false\n")
             && stdout.contains("trace_runner_detail_timing=false\n")
             && stdout.contains("trace_runner_detail_timing_sample_stride=\n")
+            && stdout.contains("trace_runner_cache_stats=false\n")
+            && stdout.contains("runner_cache_entry_bits=\n")
             && stdout.contains("trace_detail_timing=false\n")
             && stdout.contains("trace_detail_timing_sample_stride=\n"),
         "diagnostic trace timing should stay off unless requested: {stdout}"
@@ -1098,6 +1106,9 @@ fn eth_proof_timing_batch_dry_run_can_request_trace_runner_detail_sample_timing(
         .arg("--dry-run")
         .arg("--trace-runner-detail-timing-sample-stride")
         .arg("4096")
+        .arg("--trace-runner-cache-stats")
+        .arg("--runner-cache-entry-bits")
+        .arg("18")
         .arg("--summary")
         .arg("trace runner detail");
     fixture.apply_env(&mut command, SMALL_PREFIX);
@@ -1116,13 +1127,17 @@ fn eth_proof_timing_batch_dry_run_can_request_trace_runner_detail_sample_timing(
     );
     assert!(
         stdout.contains("LZVM_GUEST_TRACE_RUNNER_DETAIL_TIMING=1")
-            && stdout.contains("LZVM_GUEST_TRACE_RUNNER_DETAIL_TIMING_SAMPLE_STRIDE=4096"),
-        "prove command should enable sampled runner detail timing: {stdout}"
+            && stdout.contains("LZVM_GUEST_TRACE_RUNNER_DETAIL_TIMING_SAMPLE_STRIDE=4096")
+            && stdout.contains("LZVM_GUEST_TRACE_RUNNER_CACHE_STATS=1")
+            && stdout.contains("LZVM_GUEST_INSTRUCTION_CACHE_ENTRY_BITS=18"),
+        "prove command should enable requested runner diagnostics: {stdout}"
     );
     assert!(
         stdout.contains("trace_runner_detail_timing=true\n")
-            && stdout.contains("trace_runner_detail_timing_sample_stride=4096\n"),
-        "dry-run metadata should report sampled runner detail timing: {stdout}"
+            && stdout.contains("trace_runner_detail_timing_sample_stride=4096\n")
+            && stdout.contains("trace_runner_cache_stats=true\n")
+            && stdout.contains("runner_cache_entry_bits=18\n"),
+        "dry-run metadata should report requested runner diagnostics: {stdout}"
     );
 }
 

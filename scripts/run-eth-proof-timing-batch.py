@@ -142,9 +142,11 @@ PIPELINE_ENV_TO_CLEAR = [
     "LZVM_GUEST_PC_TRACE_SEED_DISCOVERY",
     "LZVM_GUEST_PC_TRACE_SEED_DISCOVERY_STREAMING_DEVICE_LOWER",
     "LZVM_CUDA_GUEST_PC_OWNED_STREAMING_LOWER",
+    "LZVM_GUEST_TRACE_RUNNER_PATH_TIMING",
     "LZVM_GUEST_TRACE_RUNNER_DETAIL_TIMING",
     "LZVM_GUEST_TRACE_RUNNER_DETAIL_TIMING_SAMPLE_STRIDE",
     "LZVM_GUEST_TRACE_RUNNER_CACHE_STATS",
+    "LZVM_GUEST_INSTRUCTION_CACHE_ENTRY_BITS",
     "LZVM_GUEST_TRACE_DETAIL_TIMING",
     "LZVM_GUEST_TRACE_DETAIL_TIMING_SAMPLE_STRIDE",
     "LZVM_GUEST_TRACE_SHAPE_TIMING",
@@ -333,6 +335,13 @@ def positive_integer(raw: str) -> int:
         raise argparse.ArgumentTypeError(f"invalid integer: {raw!r}") from error
     if value <= 0:
         raise argparse.ArgumentTypeError("value must be positive")
+    return value
+
+
+def runner_cache_entry_bits(raw: str) -> int:
+    value = positive_integer(raw)
+    if not 10 <= value <= 22:
+        raise argparse.ArgumentTypeError("runner cache entry bits must be between 10 and 22")
     return value
 
 
@@ -709,6 +718,8 @@ def mode_args(args: argparse.Namespace) -> list[str]:
         )
     if args.trace_runner_cache_stats:
         result.append("--trace-runner-cache-stats")
+    if args.runner_cache_entry_bits is not None:
+        result.extend(["--runner-cache-entry-bits", str(args.runner_cache_entry_bits)])
     if trace_detail_timing_enabled(args):
         result.append("--trace-detail-timing")
     if args.trace_detail_timing_sample_stride is not None:
@@ -748,6 +759,8 @@ def trace_timing_env_for_args(args: argparse.Namespace) -> dict[str, str]:
         )
     if args.trace_runner_cache_stats:
         env["LZVM_GUEST_TRACE_RUNNER_CACHE_STATS"] = "1"
+    if args.runner_cache_entry_bits is not None:
+        env["LZVM_GUEST_INSTRUCTION_CACHE_ENTRY_BITS"] = str(args.runner_cache_entry_bits)
     if trace_detail_timing_enabled(args):
         env["LZVM_GUEST_TRACE_DETAIL_TIMING"] = "1"
     if args.trace_detail_timing_sample_stride is not None:
@@ -1612,6 +1625,7 @@ def dry_run_summary_lines(args: argparse.Namespace, root: Path) -> list[str]:
         "trace_runner_detail_timing_sample_stride="
         f"{args.trace_runner_detail_timing_sample_stride or ''}",
         f"trace_runner_cache_stats={str(args.trace_runner_cache_stats).lower()}",
+        f"runner_cache_entry_bits={args.runner_cache_entry_bits or ''}",
         f"trace_detail_timing={str(trace_detail_timing_enabled(args)).lower()}",
         f"trace_detail_timing_sample_stride={args.trace_detail_timing_sample_stride or ''}",
         f"append_max_average_rejections={str(args.append_max_average_rejections).lower()}",
@@ -1911,6 +1925,7 @@ def self_test() -> None:
         trace_runner_detail_timing=False,
         trace_runner_detail_timing_sample_stride=None,
         trace_runner_cache_stats=False,
+        runner_cache_entry_bits=None,
         trace_detail_timing=False,
         trace_detail_timing_sample_stride=None,
         gpu_preallocate=False,
@@ -2041,6 +2056,7 @@ def main() -> None:
         default=None,
     )
     parser.add_argument("--trace-runner-cache-stats", action="store_true")
+    parser.add_argument("--runner-cache-entry-bits", type=runner_cache_entry_bits, default=None)
     parser.add_argument("--trace-detail-timing", action="store_true")
     parser.add_argument("--trace-detail-timing-sample-stride", type=positive_integer, default=None)
     parser.add_argument("--gpu-preallocate", action="store_true")

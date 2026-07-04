@@ -20,6 +20,9 @@ use precompile::execute_precompile;
 
 const GUEST_REGISTER_COUNT: usize = 32;
 const GUEST_INSTRUCTION_CACHE_ENTRY_COUNT: usize = 1 << 16;
+const GUEST_INSTRUCTION_CACHE_ENTRY_BITS_ENV: &str = "LZVM_GUEST_INSTRUCTION_CACHE_ENTRY_BITS";
+const GUEST_INSTRUCTION_CACHE_MIN_ENTRY_BITS: u32 = 10;
+const GUEST_INSTRUCTION_CACHE_MAX_ENTRY_BITS: u32 = 22;
 const RV64IMAC_MISA: u64 = (2_u64 << 62) | 1_u64 | (1_u64 << 2) | (1_u64 << 8) | (1_u64 << 12);
 pub const ZISK_ARCHITECTURE_ID: u64 = 0x0fff_eeee;
 
@@ -1012,6 +1015,7 @@ pub(crate) struct GuestInstructionCacheStats {
 #[derive(Debug)]
 pub(crate) struct GuestInstructionCache {
     entries: Box<[GuestInstructionCacheEntry]>,
+    entry_mask: usize,
     generation: u32,
     min_cached_address: u64,
     max_cached_address: u64,
@@ -1038,12 +1042,10 @@ impl Default for GuestInstructionCacheEntry {
 
 impl Default for GuestInstructionCache {
     fn default() -> Self {
+        let entry_count = guest_instruction_cache_entry_count();
         Self {
-            entries: vec![
-                GuestInstructionCacheEntry::default();
-                GUEST_INSTRUCTION_CACHE_ENTRY_COUNT
-            ]
-            .into_boxed_slice(),
+            entries: vec![GuestInstructionCacheEntry::default(); entry_count].into_boxed_slice(),
+            entry_mask: entry_count - 1,
             generation: 1,
             min_cached_address: u64::MAX,
             max_cached_address: 0,
@@ -1250,8 +1252,22 @@ impl GuestInstructionCache {
 
     #[inline(always)]
     fn index(&self, address: u64) -> usize {
-        ((address >> 1) as usize) & (GUEST_INSTRUCTION_CACHE_ENTRY_COUNT - 1)
+        ((address >> 1) as usize) & self.entry_mask
     }
+}
+
+fn guest_instruction_cache_entry_count() -> usize {
+    let Some(bits) = std::env::var(GUEST_INSTRUCTION_CACHE_ENTRY_BITS_ENV)
+        .ok()
+        .and_then(|value| value.parse::<u32>().ok())
+        .filter(|bits| {
+            (GUEST_INSTRUCTION_CACHE_MIN_ENTRY_BITS..=GUEST_INSTRUCTION_CACHE_MAX_ENTRY_BITS)
+                .contains(bits)
+        })
+    else {
+        return GUEST_INSTRUCTION_CACHE_ENTRY_COUNT;
+    };
+    1_usize << bits
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -3159,6 +3175,28 @@ mod tests {
 
     const TEST_ENTRY: u64 = 0x8000_0000;
 
+    struct TestEnvVarGuard {
+        name: &'static str,
+        previous: Option<std::ffi::OsString>,
+    }
+
+    impl TestEnvVarGuard {
+        fn set(name: &'static str, value: &str) -> Self {
+            let previous = std::env::var_os(name);
+            std::env::set_var(name, value);
+            Self { name, previous }
+        }
+    }
+
+    impl Drop for TestEnvVarGuard {
+        fn drop(&mut self) {
+            match &self.previous {
+                Some(value) => std::env::set_var(self.name, value),
+                None => std::env::remove_var(self.name),
+            }
+        }
+    }
+
     fn sample_guest_image() -> Vec<u8> {
         let mut bytes = vec![0_u8; 64];
         bytes[0..4].copy_from_slice(b"\x7fELF");
@@ -3856,6 +3894,30 @@ mod tests {
         });
 
         assert!(shape.has_memory_write);
+    }
+
+    #[test]
+    fn instruction_cache_entry_count_uses_bounded_env_bits() {
+        let _env_lock = crate::CUDA_TEST_ENV_LOCK
+            .lock()
+            .expect("test env lock should not be poisoned");
+        {
+            let _bits_env = TestEnvVarGuard::set(GUEST_INSTRUCTION_CACHE_ENTRY_BITS_ENV, "18");
+            let cache = GuestInstructionCache::default();
+            assert_eq!(guest_instruction_cache_entry_count(), 1 << 18);
+            assert_eq!(cache.entries.len(), 1 << 18);
+            assert_eq!(cache.entry_mask, (1 << 18) - 1);
+        }
+        {
+            let _bits_env = TestEnvVarGuard::set(GUEST_INSTRUCTION_CACHE_ENTRY_BITS_ENV, "99");
+            let cache = GuestInstructionCache::default();
+            assert_eq!(
+                guest_instruction_cache_entry_count(),
+                GUEST_INSTRUCTION_CACHE_ENTRY_COUNT
+            );
+            assert_eq!(cache.entries.len(), GUEST_INSTRUCTION_CACHE_ENTRY_COUNT);
+            assert_eq!(cache.entry_mask, GUEST_INSTRUCTION_CACHE_ENTRY_COUNT - 1);
+        }
     }
 
     #[test]

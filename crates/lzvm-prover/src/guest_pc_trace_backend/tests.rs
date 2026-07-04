@@ -2250,6 +2250,7 @@ fn live_report_chunk_runner_matches_serial_slice_without_returning_reports() {
     let _env_lock = GUEST_PC_TRACE_ENV_LOCK
         .lock()
         .expect("guest PC trace env lock should not be poisoned");
+    let _cache_env = TestEnvVarGuard::set("LZVM_GUEST_TRACE_RUNNER_CACHE_STATS", "1");
     let dir = repo_temp_dir("guest-pc-live-report-chunk-runner");
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).expect("fixture directory should be created");
@@ -2311,6 +2312,12 @@ fn live_report_chunk_runner_matches_serial_slice_without_returning_reports() {
         live_timing.runner_advance_fast_path_count()
             + live_timing.runner_advance_generic_fallback_count(),
         live.report_count
+    );
+    assert!(live_timing.runner_instruction_cache_miss_count() > 0);
+    assert!(
+        live_timing.runner_instruction_cache_hit_count()
+            + live_timing.runner_instruction_cache_miss_count()
+            >= live.report_count
     );
     assert_eq!(live.report_count, serial.report_count);
     assert_eq!(live.reports, Vec::new());

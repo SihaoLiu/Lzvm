@@ -4006,12 +4006,26 @@ fn run_guest_pc_trace_segment_slice_with_live_report_chunks(
     let mut report_count = 0_usize;
     let mut executed_instructions = 0_u64;
     let mut trace_rows = 0_usize;
+    let runner_instruction_cache_stats = guest_pc_trace_runner_cache_stats_enabled();
+    let mut instruction_cache_stats = GuestInstructionCacheStats::default();
+    macro_rules! finish_live_trace_slice {
+        ($finish:expr) => {{
+            let slice = $finish?;
+            if runner_instruction_cache_stats {
+                timing.record_runner_instruction_cache_stats(instruction_cache_stats);
+            }
+            return Ok(slice);
+        }};
+    }
     loop {
         let pc = state.pc();
-        let prepared = instruction_cache
-            .prepare(memory, pc)
-            .map_err(GuestMachineRunError::from)
-            .map_err(GuestPcTraceBackendError::GuestRun)?;
+        let prepared = if runner_instruction_cache_stats {
+            instruction_cache.prepare_with_stats(memory, pc, &mut instruction_cache_stats)
+        } else {
+            instruction_cache.prepare(memory, pc)
+        }
+        .map_err(GuestMachineRunError::from)
+        .map_err(GuestPcTraceBackendError::GuestRun)?;
         let current = prepared.instruction();
         if let Some(snapshot) = boundary_snapshot.as_deref_mut() {
             let boundary_report = zisk_main_runner_boundary_report_for_shape(
@@ -4027,7 +4041,7 @@ fn run_guest_pc_trace_segment_slice_with_live_report_chunks(
             )?;
         }
         if current == RiscvInstruction::Ecall {
-            return finish_guest_pc_trace_live_report_chunk_segment_slice(
+            finish_live_trace_slice!(finish_guest_pc_trace_live_report_chunk_segment_slice(
                 pending_report,
                 report_count,
                 &mut emit_report,
@@ -4035,10 +4049,10 @@ fn run_guest_pc_trace_segment_slice_with_live_report_chunks(
                 trace_rows,
                 GuestMachineTraceSliceStatus::Halted(GuestMachineHalt::Ecall { address: pc }),
                 last_report_shape,
-            );
+            ));
         }
         if executed_instructions == instruction_limit {
-            return finish_guest_pc_trace_live_report_chunk_segment_slice(
+            finish_live_trace_slice!(finish_guest_pc_trace_live_report_chunk_segment_slice(
                 pending_report,
                 report_count,
                 &mut emit_report,
@@ -4049,7 +4063,7 @@ fn run_guest_pc_trace_segment_slice_with_live_report_chunks(
                     instruction: current,
                 },
                 last_report_shape,
-            );
+            ));
         }
         if main_instruction_capacity_needs_exact_check(trace_rows, row_limit) {
             let max_rows = zisk_main_instruction_max_rows(current);
@@ -4064,7 +4078,7 @@ fn run_guest_pc_trace_segment_slice_with_live_report_chunks(
                 }
             })?;
             if trace_rows != 0 && required_rows > row_limit {
-                return finish_guest_pc_trace_live_report_chunk_segment_slice(
+                finish_live_trace_slice!(finish_guest_pc_trace_live_report_chunk_segment_slice(
                     pending_report,
                     report_count,
                     &mut emit_report,
@@ -4075,7 +4089,7 @@ fn run_guest_pc_trace_segment_slice_with_live_report_chunks(
                         instruction: current,
                     },
                     last_report_shape,
-                );
+                ));
             }
         }
         let clear_instruction_cache = instruction_clears_instruction_cache(state, current);
@@ -4095,7 +4109,17 @@ fn run_guest_pc_trace_segment_slice_with_live_report_chunks(
             timing.record_runner_advance_path(advance_path);
         }
         if clear_instruction_cache {
-            instruction_cache.clear();
+            if runner_instruction_cache_stats {
+                instruction_cache.clear_with_stats(&mut instruction_cache_stats);
+            } else {
+                instruction_cache.clear();
+            }
+        } else if runner_instruction_cache_stats {
+            instruction_cache.invalidate_report_shape_with_stats(
+                &advanced.report,
+                advanced.shape,
+                &mut instruction_cache_stats,
+            );
         } else {
             instruction_cache.invalidate_report_shape(&advanced.report, advanced.shape);
         }
@@ -4128,11 +4152,14 @@ fn run_guest_pc_trace_segment_slice_with_live_report_chunks(
         executed_instructions += 1;
         if trace_rows == row_limit {
             let pc = state.pc();
-            let current = instruction_cache
-                .prepare(memory, pc)
-                .map(|prepared| prepared.instruction())
-                .map_err(GuestMachineRunError::from)
-                .map_err(GuestPcTraceBackendError::GuestRun)?;
+            let current = if runner_instruction_cache_stats {
+                instruction_cache.prepare_with_stats(memory, pc, &mut instruction_cache_stats)
+            } else {
+                instruction_cache.prepare(memory, pc)
+            }
+            .map(|prepared| prepared.instruction())
+            .map_err(GuestMachineRunError::from)
+            .map_err(GuestPcTraceBackendError::GuestRun)?;
             let lookahead_instruction = (current != RiscvInstruction::Ecall).then_some(current);
             if let Some(snapshot) = boundary_snapshot.as_deref_mut() {
                 let boundary_report = zisk_main_runner_boundary_report_for_shape(
@@ -4155,7 +4182,7 @@ fn run_guest_pc_trace_segment_slice_with_live_report_chunks(
                     instruction: current,
                 }
             };
-            return finish_guest_pc_trace_live_report_chunk_segment_slice(
+            finish_live_trace_slice!(finish_guest_pc_trace_live_report_chunk_segment_slice(
                 pending_report,
                 report_count,
                 &mut emit_report,
@@ -4163,7 +4190,7 @@ fn run_guest_pc_trace_segment_slice_with_live_report_chunks(
                 trace_rows,
                 status,
                 last_report_shape,
-            );
+            ));
         }
     }
 }
@@ -4522,6 +4549,7 @@ fn run_guest_pc_trace_segment_slice_inner<
     let mut trace_rows = 0_usize;
     let runner_timing_config =
         GuestPcTraceRunnerTimingConfig::from_env_if_enabled(timing.is_some());
+    let runner_path_timing = runner_timing_config.count_paths();
     let runner_instruction_cache_stats = runner_timing_config.count_instruction_cache();
     let mut instruction_cache_stats = GuestInstructionCacheStats::default();
     enum GuestMachineAdvancedReportStorage<'a> {
@@ -4555,7 +4583,6 @@ fn run_guest_pc_trace_segment_slice_inner<
     }
     loop {
         let report_detail_timing = runner_timing_config.sample(report_count);
-        let runner_path_timing = runner_timing_config.count_paths();
         let report_detail_started = detail_duration_started(&timing, report_detail_timing);
         let prepare_started = detail_duration_started(&timing, report_detail_timing);
         let pc = state.pc();
