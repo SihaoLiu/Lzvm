@@ -15160,6 +15160,7 @@ fn build_layout_zisk_main_trace_segment(
     } else {
         None
     };
+    let row_timing_enabled = detail_timing || shape_timing || shape_sample_stride.is_some();
     let aggregate_report_started = timing.as_ref().map(|_| Instant::now());
     for (report_index, report) in reports.iter().enumerate() {
         let report_detail_timing = detail_timing && report_index % detail_sample_stride == 0;
@@ -15172,7 +15173,7 @@ fn build_layout_zisk_main_trace_segment(
         let pending_report = state.pending_dma.is_some();
         let mut next_instruction =
             || guest_report_next_instruction(reports, report_index, lookahead_instruction);
-        let row_timing = if report_detail_timing || report_shape_timing {
+        let row_timing = if !row_timing_enabled || report_detail_timing || report_shape_timing {
             timing.as_deref_mut()
         } else {
             None

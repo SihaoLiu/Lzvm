@@ -1500,22 +1500,48 @@ fn precompile_memory_validation_required_matches_row_shape() {
 
 #[test]
 fn builds_zisk_main_segment_trace_without_serialized_roundtrip() {
-    let unit = sample_unit_with_zisk_main_columns_rows(2);
+    let _env_lock = GUEST_PC_TRACE_ENV_LOCK
+        .lock()
+        .expect("guest PC trace env lock should not be poisoned");
+    let _detail_env = TestEnvVarGuard::unset("LZVM_GUEST_TRACE_DETAIL_TIMING");
+    let _shape_env = TestEnvVarGuard::unset("LZVM_GUEST_TRACE_SHAPE_TIMING");
+    let _shape_sample_env = TestEnvVarGuard::unset("LZVM_GUEST_TRACE_SHAPE_TIMING_SAMPLE_STRIDE");
+    let unit = sample_main_trace_unit_rows(2);
     let layout = derive_witness_trace_layout(&unit).expect("layout should derive");
-    let report = addi_report();
+    let reports = [
+        addi_report_at(0x8000_0000, 3, 0, 7, 7),
+        GuestMachineReport {
+            address_and_instruction_len:
+                crate::guest_machine::pack_report_address_and_instruction_len(0x8000_0004, 4),
+            instruction: RiscvInstruction::ZiskDmaPrepare {
+                kind: RiscvDmaKind::Memcpy,
+                rs1: 5,
+            },
+            next_pc: 0x8000_0008,
+            register_write_value: GuestRegisterWriteValue::default(),
+            memory_accesses: Vec::new().into(),
+        },
+    ];
+    let lookahead = RiscvInstruction::Op {
+        kind: RiscvOpKind::Add,
+        rd: 6,
+        rs1: 5,
+        rs2: 3,
+    };
+    let mut timing = GuestPcTraceStreamTiming::default();
 
     let written = build_layout_zisk_main_trace_segment(
         &layout,
-        std::slice::from_ref(&report),
-        report.next_pc,
+        &reports,
+        reports[1].next_pc,
         &ZiskMainTraceState::new(),
-        None,
+        Some(lookahead),
         ZiskMainTraceSegmentInfo {
             trace_instance_index: 0,
             is_last_segment: true,
             previous_c: 0,
         },
-        None,
+        Some(&mut timing),
     )
     .expect("segment trace should build")
     .expect("Zisk Main layout should be supported");
@@ -1530,7 +1556,7 @@ fn builds_zisk_main_segment_trace_without_serialized_roundtrip() {
     let pc_column = layout.column(1, "pc").expect("pc column").trace_column();
     assert_eq!(
         trace.value(0, pc_column),
-        Some(Felt::from_canonical(report.address()).expect("canonical pc"))
+        Some(Felt::from_canonical(reports[0].address()).expect("canonical pc"))
     );
 
     let mut bytes = vec![0; written.output.produced_len];
@@ -1539,6 +1565,28 @@ fn builds_zisk_main_segment_trace_without_serialized_roundtrip() {
     let parsed = parse_witness_trace(&bytes, layout.row_count(), layout.column_count())
         .expect("serialized trace should parse");
     assert_eq!(&parsed, trace);
+    let fallback_instruction = ZiskMainInstruction {
+        pc: reports[1].address(),
+        a: ZiskMainSource::Immediate(0),
+        b: ZiskMainSource::Register(3),
+        op: ZiskMainOp::CopyB,
+        store: ZiskMainStore::Memory(ZISK_EXTRA_PARAMS_ADDRESS as i64),
+        store_pc: false,
+        set_pc: false,
+        jmp_offset1: 0,
+        jmp_offset2: 4,
+        ind_width: 0,
+        m32: false,
+        is_external_op: false,
+        is_precompiled: false,
+    };
+    assert_eq!(timing.trace_main_report_fast_path_count(), 1);
+    assert_eq!(timing.trace_main_report_simple_copy_fast_path_count(), 1);
+    assert_eq!(timing.trace_main_report_generic_fallback_count(), 1);
+    assert_eq!(
+        timing.trace_main_report_generic_fallback_shape_top_patterns()[0],
+        (main_row_shape_pattern_id(&fallback_instruction), 1)
+    );
 }
 
 #[test]
