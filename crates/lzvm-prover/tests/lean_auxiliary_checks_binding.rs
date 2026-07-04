@@ -793,6 +793,55 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "sound_witness_implies_verifier_core_contract",
         ],
     );
+    lean_binding::assert_theorem_declarations(
+        &runtime_performance_source,
+        &[
+            "runtime_performance_timing_observations_metadata_acceptance_sound",
+            "runtime_performance_timing_observations_metadata_acceptance_verifier_core_contract",
+            "runtime_performance_timing_observations_metadata_acceptance_core_and_sound",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &runtime_performance_source,
+        "runtime_performance_timing_observations_metadata_acceptance_sound",
+        &[
+            "runtime_performance_observation_acceptance_sound",
+            "timingObservations := observations",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &runtime_performance_source,
+        "runtime_performance_timing_observations_metadata_acceptance_verifier_core_contract",
+        &[
+            "runtime_performance_observation_acceptance_verifier_core_contract",
+            "timingObservations := observations",
+        ],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &runtime_performance_source,
+        "runtime_performance_timing_observations_metadata_acceptance_verifier_core_contract",
+        &[
+            "runtime_performance_timing_observations_metadata_acceptance_sound",
+            "sound_witness_implies_verifier_core_contract",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &runtime_performance_source,
+        "runtime_performance_timing_observations_metadata_acceptance_core_and_sound",
+        &[
+            "runtime_performance_observation_acceptance_core_and_sound",
+            "timingObservations := observations",
+        ],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &runtime_performance_source,
+        "runtime_performance_timing_observations_metadata_acceptance_core_and_sound",
+        &[
+            "runtime_performance_timing_observations_metadata_acceptance_sound",
+            "runtime_performance_timing_observations_metadata_acceptance_verifier_core_contract",
+            "sound_witness_implies_verifier_core_contract",
+        ],
+    );
     assert_eq!(
         lean_binding::visible_identifier_occurrence_count(
             &gpu_runtime_source,

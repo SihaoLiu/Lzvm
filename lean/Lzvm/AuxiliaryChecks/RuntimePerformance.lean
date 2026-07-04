@@ -161,6 +161,70 @@ theorem runtime_performance_observation_acceptance_core_and_sound
       proof
       observed
 
+theorem runtime_performance_timing_observations_metadata_acceptance_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : RuntimePerformanceObservationSummary)
+    (observations : List TimingObservation) :
+    forall publicInput proof,
+      RuntimePerformanceObservedAcceptance
+        system
+        { summary with timingObservations := observations }
+        publicInput
+        proof ->
+        SoundWitness system publicInput proof := by
+  intro publicInput proof observed
+  exact
+    runtime_performance_observation_acceptance_sound
+      assumptions
+      { summary with timingObservations := observations }
+      publicInput
+      proof
+      observed
+
+theorem runtime_performance_timing_observations_metadata_acceptance_verifier_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : RuntimePerformanceObservationSummary)
+    (observations : List TimingObservation) :
+    forall publicInput proof,
+      RuntimePerformanceObservedAcceptance
+        system
+        { summary with timingObservations := observations }
+        publicInput
+        proof ->
+        RuntimeVerifierCoreContract system publicInput proof := by
+  intro publicInput proof observed
+  exact
+    runtime_performance_observation_acceptance_verifier_core_contract
+      assumptions
+      { summary with timingObservations := observations }
+      publicInput
+      proof
+      observed
+
+theorem runtime_performance_timing_observations_metadata_acceptance_core_and_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : RuntimePerformanceObservationSummary)
+    (observations : List TimingObservation) :
+    forall publicInput proof,
+      RuntimePerformanceObservedAcceptance
+        system
+        { summary with timingObservations := observations }
+        publicInput
+        proof ->
+        RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof observed
+  exact
+    runtime_performance_observation_acceptance_core_and_sound
+      assumptions
+      { summary with timingObservations := observations }
+      publicInput
+      proof
+      observed
+
 theorem runtime_performance_observation_projects_timing_observations
     {system : VerifierModel}
     (summary : RuntimePerformanceObservationSummary) :
