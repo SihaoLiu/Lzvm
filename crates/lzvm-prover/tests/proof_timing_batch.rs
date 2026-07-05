@@ -2156,6 +2156,78 @@ fn proof_timing_batch_records_logs_when_append_fails() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+#[test]
+fn proof_timing_batch_reports_retryable_parse_failures_before_append() {
+    let script_path = batch_script_path();
+    let dir = test_dir("proof-timing-batch-retryable-parse-fails");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("fixture dir should be created");
+    let log_path = dir.join("improve-log.csv");
+
+    let output = Command::new(&script_path)
+        .arg("--work-dir")
+        .arg(&dir)
+        .arg("--path")
+        .arg(&log_path)
+        .arg("--commit")
+        .arg("test")
+        .arg("--runs")
+        .arg("3")
+        .arg("--small-command")
+        .arg("printf 'timing_total_ms=100{run}\\n'")
+        .arg("--large-command")
+        .arg(
+            "printf 'prove witness failed: large --guest-pc-trace GPU memory preflight failed\\n' >&2; exit 1",
+        )
+        .arg("--summary")
+        .arg("retryable parse failure")
+        .output()
+        .expect("proof timing batch should run");
+
+    let success = output.status.success();
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    let batch_dir = single_batch_dir(&dir);
+    let batch_json =
+        std::fs::read_to_string(batch_dir.join("batch.json")).expect("batch json should read");
+    let large_status =
+        std::fs::read_to_string(batch_dir.join("large-001.status")).expect("status should read");
+    let append_status_exists = batch_dir.join("append.status").exists();
+    let improve_log_exists = log_path.exists();
+    let _ = std::fs::remove_dir_all(&dir);
+
+    assert!(
+        !success,
+        "proof timing batch should fail before append when retryable logs are not parseable"
+    );
+    assert!(
+        stderr.contains("large stable timing group unavailable after 3 runs")
+            && stderr.contains("parseable_timing_logs=0")
+            && stderr.contains("parse_failed_logs=3")
+            && stderr.contains("retryable_failures=gpu_memory_preflight=3"),
+        "retryable parse failure should explain the missing stable group: stderr={stderr}"
+    );
+    assert!(
+        !stderr.contains("append-improve-log failed"),
+        "retryable parse failure should not be reported as an append failure: {stderr}"
+    );
+    assert!(
+        batch_json.contains("\"appended\": false")
+            && batch_json.contains("\"large_run_count\": 3")
+            && batch_json.contains("\"large_stable_run_count\": 0")
+            && batch_json.contains("\"large_timing_parse_failed_count\": 3")
+            && batch_json.contains("\"append_status\": null"),
+        "batch json should record retryable parse failure state: {batch_json}"
+    );
+    assert!(
+        large_status.contains("retryable_failure=gpu_memory_preflight"),
+        "status should mark retryable GPU preflight failures: {large_status}"
+    );
+    assert!(
+        !append_status_exists && !improve_log_exists,
+        "append artifacts and improve log should not be written before stable timings exist"
+    );
+}
+
 #[cfg(unix)]
 #[test]
 fn proof_timing_batch_rejects_append_status_symlink_before_appending() {

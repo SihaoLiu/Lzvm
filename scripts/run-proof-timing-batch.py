@@ -873,6 +873,59 @@ def stable_average_field_for_parse_failed_logs(
     )
 
 
+def retryable_failure_counts(logs: list[Path]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for path in logs:
+        try:
+            reason = retryable_run_failure_reason(read_text(path))
+        except OSError:
+            continue
+        if reason is not None:
+            counts[reason] = counts.get(reason, 0) + 1
+    return counts
+
+
+def unstable_parse_failure_message(
+    label: str,
+    logs: list[Path],
+    max_relative_spread: float,
+) -> str | None:
+    if not logs:
+        return None
+    samples, failed = parseable_timing_samples(logs)
+    if failed == 0:
+        return None
+    if stable_parseable_timing_group(logs, max_relative_spread) is not None:
+        return None
+    retryable_counts = retryable_failure_counts(logs)
+    retryable_text = (
+        ",".join(
+            f"{reason}={count}"
+            for reason, count in sorted(retryable_counts.items())
+        )
+        if retryable_counts
+        else "none"
+    )
+    return (
+        f"{label} stable timing group unavailable after {len(logs)} runs; "
+        f"parseable_timing_logs={len(samples)}; parse_failed_logs={failed}; "
+        f"retryable_failures={retryable_text}"
+    )
+
+
+def unstable_parse_failure_messages(
+    small_logs: list[Path],
+    large_logs: list[Path],
+    max_relative_spread: float,
+) -> list[str]:
+    messages = []
+    for label, logs in [("small", small_logs), ("large", large_logs)]:
+        message = unstable_parse_failure_message(label, logs, max_relative_spread)
+        if message is not None:
+            messages.append(message)
+    return messages
+
+
 def rejected_average_summary(
     summary: str,
     small_field: str | None,
@@ -1288,6 +1341,13 @@ def run_batch(args: argparse.Namespace) -> Path:
         record_batch_json(small_logs, large_logs, appended=False)
         raise
     record_batch_json(small_logs, large_logs, appended=False)
+    parse_failure_messages = unstable_parse_failure_messages(
+        small_logs,
+        large_logs,
+        args.max_relative_spread,
+    )
+    if parse_failure_messages:
+        raise SystemExit("; ".join(parse_failure_messages))
     rejection_messages = max_average_rejection_messages(
         small_stable_logs,
         large_stable_logs,
