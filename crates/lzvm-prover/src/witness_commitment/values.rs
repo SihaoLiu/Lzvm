@@ -398,7 +398,7 @@ const DEFAULT_RETAINED_SOURCE_DEVICE_BYTES: usize = 0;
 #[cfg(feature = "cuda")]
 const RETAINED_SOURCE_DEVICE_RESERVE_BYTES: usize = 11 * 1024 * 1024 * 1024;
 #[cfg(feature = "cuda")]
-const RETAINED_COMBINED_DEVICE_CACHE_RESERVE_BYTES: usize = 10 * 1024 * 1024 * 1024;
+const RETAINED_COMBINED_DEVICE_CACHE_RESERVE_BYTES: usize = 4_000_000_000;
 #[cfg(feature = "cuda")]
 const RETAINED_COMBINED_DEVICE_CACHE_RESERVE_BYTES_ENV: &str =
     "LZVM_CUDA_RETAINED_COMBINED_CACHE_RESERVE_BYTES";
@@ -409,7 +409,7 @@ static RETAINED_SOURCE_DEVICE_BYTES: AtomicUsize = AtomicUsize::new(0);
 #[cfg(feature = "cuda")]
 static RETAINED_SOURCE_DEVICE_LIMIT: OnceLock<usize> = OnceLock::new();
 #[cfg(feature = "cuda")]
-const DEFAULT_RETAINED_DESCRIPTOR_BUFFER_BYTES: usize = 14_000_000_000;
+const DEFAULT_RETAINED_DESCRIPTOR_BUFFER_BYTES: usize = 18_000_000_000;
 #[cfg(feature = "cuda")]
 const RETAINED_DESCRIPTOR_BUFFER_RESERVE_BYTES: usize = 10 * 1024 * 1024 * 1024;
 #[cfg(feature = "cuda")]
