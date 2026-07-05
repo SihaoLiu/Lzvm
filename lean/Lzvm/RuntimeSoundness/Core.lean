@@ -1087,6 +1087,62 @@ theorem runtime_soundness_checked_acceptance_source_core_execution_contract
       (And.intro sourceRequirement
         (And.intro coreContract executionObligations))
 
+theorem runtime_soundness_checked_acceptance_audited_source_core_execution_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeSoundnessValidation system) :
+    forall artifact publicInput proof requiresExternalSource,
+      RuntimeSoundnessCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof
+          requiresExternalSource ->
+        RequiredCryptographicAssumptionStatements assumptions.crypto
+          /\ RequiredSemanticAssumptionStatements assumptions.semantic
+          /\ system.accepts publicInput proof
+          /\ ExternalSourceOpeningRequirement
+            system
+            validation.sourceValidation
+            publicInput
+            proof
+            requiresExternalSource
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ (exists witness trace constraints,
+            system.traceConsistent publicInput proof trace
+              /\ system.constraintsSatisfied constraints trace
+              /\ system.witnessMatchesTrace witness trace)
+          /\ SoundWitness system publicInput proof := by
+  intro artifact publicInput proof requiresExternalSource checked
+  have auditedAssumptions :=
+    assumption_bundle_carries_required_evidence assumptions
+  have sourceCoreExecution :=
+    runtime_soundness_checked_acceptance_source_core_execution_contract
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      checked
+  have soundWitness :=
+    runtime_soundness_checked_acceptance_verifier_sound_witness
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      checked
+  exact
+    And.intro auditedAssumptions.left
+      (And.intro auditedAssumptions.right
+        (And.intro sourceCoreExecution.left
+          (And.intro sourceCoreExecution.right.left
+            (And.intro sourceCoreExecution.right.right.left
+              (And.intro sourceCoreExecution.right.right.right soundWitness)))))
+
 theorem runtime_soundness_checked_acceptance_proof_system_sound
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
