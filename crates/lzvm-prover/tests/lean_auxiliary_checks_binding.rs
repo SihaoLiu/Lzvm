@@ -4656,6 +4656,54 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
     }
     for (lean_field, timing_key) in [
         (
+            "finishWitnessOpeningRowValuesMilliseconds",
+            "\"timing_finish_witness_opening_row_values_ms\"",
+        ),
+        (
+            "finishWitnessOpeningRowValueSourceExtendMilliseconds",
+            "\"timing_finish_witness_opening_row_value_source_extend_ms\"",
+        ),
+        (
+            "finishWitnessOpeningRowValueSourceDownloadMilliseconds",
+            "\"timing_finish_witness_opening_row_value_source_download_ms\"",
+        ),
+        (
+            "finishWitnessOpeningRowValueDeviceDownloadMilliseconds",
+            "\"timing_finish_witness_opening_row_value_device_download_ms\"",
+        ),
+        (
+            "finishWitnessOpeningRowValuesDeviceRowCount",
+            "\"timing_finish_witness_opening_row_values_device_rows\"",
+        ),
+        (
+            "finishWitnessOpeningRowValuesDeviceDownloadBatchCount",
+            "\"timing_finish_witness_opening_row_values_device_download_batches\"",
+        ),
+        (
+            "finishWitnessOpeningRowValuesDeviceSingleDownloadCount",
+            "\"timing_finish_witness_opening_row_values_device_single_downloads\"",
+        ),
+        (
+            "finishWitnessOpeningRowValuesSourceExtendCallCount",
+            "\"timing_finish_witness_opening_row_value_source_extend_calls\"",
+        ),
+        (
+            "finishWitnessOpeningRowValuesSourceExtendMaxRowCount",
+            "\"timing_finish_witness_opening_row_value_source_extend_max_rows\"",
+        ),
+        (
+            "finishWitnessOpeningRowValuesSourceRowCount",
+            "\"timing_finish_witness_opening_row_values_source_rows\"",
+        ),
+        (
+            "finishWitnessOpeningRowValuesWordCount",
+            "\"timing_finish_witness_opening_row_values_words\"",
+        ),
+        (
+            "finishWitnessOpeningRowValuesByteCount",
+            "\"timing_finish_witness_opening_row_values_bytes\"",
+        ),
+        (
             "finishWitnessOpeningRowDedupInputRowCount",
             "\"timing_finish_witness_opening_row_dedup_input_rows\"",
         ),
