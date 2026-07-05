@@ -18169,10 +18169,7 @@ fn write_wide_column(
     column: &TraceColumnTarget<'_>,
     value: u64,
 ) -> Result<(), GuestPcTraceBackendError> {
-    let values = [
-        canonical_trace_value(row, column.name(), value & 0xffff_ffff)?,
-        canonical_trace_value(row, column.name(), value >> 32)?,
-    ];
+    let values = felt_limbs_u64(value);
     builder
         .write_trusted_resolved_pair_values(row, column.resolved(), values)
         .map_err(GuestPcTraceBackendError::TraceBuild)
@@ -18184,10 +18181,7 @@ fn write_wide_column_for_valid_row(
     column: &TraceColumnTarget<'_>,
     value: u64,
 ) -> Result<(), GuestPcTraceBackendError> {
-    let values = [
-        canonical_trace_value(row, column.name(), value & 0xffff_ffff)?,
-        canonical_trace_value(row, column.name(), value >> 32)?,
-    ];
+    let values = felt_limbs_u64(value);
     builder
         .write_trusted_resolved_pair_values_for_valid_row(row, column.resolved(), values)
         .map_err(GuestPcTraceBackendError::TraceBuild)
