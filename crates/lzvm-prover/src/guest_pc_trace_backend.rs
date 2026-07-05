@@ -10148,18 +10148,13 @@ impl ZiskMainRunnerBoundarySnapshot {
     }
 
     fn record_report_shape_state(&mut self, shape: GuestMachineReportShape) {
-        let next_pending_dma = match shape.instruction {
-            RiscvInstruction::ZiskDmaPrepare { kind, rs1 } => Some(ZiskMainPendingDma {
-                kind,
-                first_arg_reg: rs1,
-            }),
-            _ if self.last_report_pending_dma.is_none()
-                && self.next_report_pending_dma.is_none() =>
-            {
-                return;
-            }
-            _ => None,
-        };
+        let next_pending_dma = zisk_main_pending_dma_from_report_shape(shape);
+        if next_pending_dma.is_none()
+            && self.last_report_pending_dma.is_none()
+            && self.next_report_pending_dma.is_none()
+        {
+            return;
+        }
         self.last_report_pending_dma = self.next_report_pending_dma;
         self.next_report_pending_dma = next_pending_dma;
     }
@@ -15519,9 +15514,11 @@ fn lift_zisk_main_next_segment_seed_from_runner_boundary_snapshot(
             registers: *input.runner_state.registers(),
             internal_memory: input.boundary_snapshot.internal_memory,
             register_mem_steps,
-            pending_dma: input
-                .last_report_shape()
-                .and_then(zisk_main_pending_dma_from_report_shape),
+            pending_dma: input.boundary_snapshot.next_report_pending_dma.or_else(|| {
+                input
+                    .last_report_shape()
+                    .and_then(zisk_main_pending_dma_from_report_shape)
+            }),
             last_c: next_previous_c,
             next_pc: input.runner_state.pc(),
         },

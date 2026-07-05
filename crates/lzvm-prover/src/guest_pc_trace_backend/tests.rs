@@ -5390,12 +5390,18 @@ fn runner_boundary_seed_snapshot_uses_pending_dma_add_register_boundary_without_
 }
 
 #[test]
-fn runner_boundary_snapshot_clears_pending_dma_after_following_plain_shape() {
-    let current_seed = ZiskMainSegmentSeed::new();
-    let mut boundary_snapshot = ZiskMainRunnerBoundarySnapshot::new(&current_seed);
-    let expected_pending = Some(ZiskMainPendingDma {
+fn runner_boundary_snapshot_pending_state_matches_model_cases() {
+    let first = Some(ZiskMainPendingDma {
         kind: RiscvDmaKind::Memcpy,
         first_arg_reg: 5,
+    });
+    let second = Some(ZiskMainPendingDma {
+        kind: RiscvDmaKind::Inputcpy,
+        first_arg_reg: 6,
+    });
+    let new_pending = Some(ZiskMainPendingDma {
+        kind: RiscvDmaKind::Memset,
+        first_arg_reg: 7,
     });
     let plain_shape = GuestMachineReportShape {
         instruction: RiscvInstruction::OpImm {
@@ -5406,36 +5412,61 @@ fn runner_boundary_snapshot_clears_pending_dma_after_following_plain_shape() {
         },
         has_memory_write: false,
     };
-
-    boundary_snapshot.record_report_shape_state(GuestMachineReportShape {
+    let prepare_shape = GuestMachineReportShape {
         instruction: RiscvInstruction::ZiskDmaPrepare {
-            kind: RiscvDmaKind::Memcpy,
-            rs1: 5,
+            kind: RiscvDmaKind::Memset,
+            rs1: 7,
         },
         has_memory_write: false,
-    });
-    assert_eq!(boundary_snapshot.last_report_pending_dma, None);
-    assert_eq!(boundary_snapshot.next_report_pending_dma, expected_pending);
+    };
 
-    boundary_snapshot.record_report_shape_state(GuestMachineReportShape {
-        instruction: RiscvInstruction::Op {
-            kind: RiscvOpKind::Add,
-            rd: 9,
-            rs1: 10,
-            rs2: 11,
-        },
-        has_memory_write: true,
-    });
-    assert_eq!(boundary_snapshot.last_report_pending_dma, expected_pending);
-    assert_eq!(boundary_snapshot.next_report_pending_dma, None);
+    for (label, initial_last, initial_next, shape, expected_last, expected_next) in [
+        ("plain idle", None, None, plain_shape, None, None),
+        ("plain last only", first, None, plain_shape, None, None),
+        ("plain next only", None, first, plain_shape, first, None),
+        ("plain both", first, second, plain_shape, second, None),
+        ("new idle", None, None, prepare_shape, None, new_pending),
+        (
+            "new last only",
+            first,
+            None,
+            prepare_shape,
+            None,
+            new_pending,
+        ),
+        (
+            "new next only",
+            None,
+            first,
+            prepare_shape,
+            first,
+            new_pending,
+        ),
+        (
+            "new both",
+            first,
+            second,
+            prepare_shape,
+            second,
+            new_pending,
+        ),
+    ] {
+        let current_seed = ZiskMainSegmentSeed::new();
+        let mut boundary_snapshot = ZiskMainRunnerBoundarySnapshot::new(&current_seed);
+        boundary_snapshot.last_report_pending_dma = initial_last;
+        boundary_snapshot.next_report_pending_dma = initial_next;
 
-    boundary_snapshot.record_report_shape_state(plain_shape);
-    assert_eq!(boundary_snapshot.last_report_pending_dma, None);
-    assert_eq!(boundary_snapshot.next_report_pending_dma, None);
+        boundary_snapshot.record_report_shape_state(shape);
 
-    boundary_snapshot.record_report_shape_state(plain_shape);
-    assert_eq!(boundary_snapshot.last_report_pending_dma, None);
-    assert_eq!(boundary_snapshot.next_report_pending_dma, None);
+        assert_eq!(
+            boundary_snapshot.last_report_pending_dma, expected_last,
+            "{label}: last slot"
+        );
+        assert_eq!(
+            boundary_snapshot.next_report_pending_dma, expected_next,
+            "{label}: next slot"
+        );
+    }
 }
 
 #[test]

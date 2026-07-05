@@ -106,12 +106,13 @@ fn lean_boundary_seed_snapshot_matches_runtime_pending_state_skip() {
     );
     assert_compact_contains(
         &runtime_source,
-        "RiscvInstruction::ZiskDmaPrepare { kind, rs1 } => Some(ZiskMainPendingDma",
+        "let next_pending_dma = zisk_main_pending_dma_from_report_shape(shape);",
     );
     assert_compact_contains(
         &runtime_source,
-        "_ if self.last_report_pending_dma.is_none()
-            && self.next_report_pending_dma.is_none() =>
+        "if next_pending_dma.is_none()
+            && self.last_report_pending_dma.is_none()
+            && self.next_report_pending_dma.is_none()
         {
             return;
         }",
@@ -120,5 +121,16 @@ fn lean_boundary_seed_snapshot_matches_runtime_pending_state_skip() {
         &runtime_source,
         "self.last_report_pending_dma = self.next_report_pending_dma;
         self.next_report_pending_dma = next_pending_dma;",
+    );
+    assert_compact_contains(
+        &runtime_source,
+        "pending_dma: input
+                .boundary_snapshot
+                .next_report_pending_dma
+                .or_else(|| {
+                    input
+                        .last_report_shape()
+                        .and_then(zisk_main_pending_dma_from_report_shape)
+                }),",
     );
 }
