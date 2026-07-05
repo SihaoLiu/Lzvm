@@ -1508,6 +1508,38 @@ theorem gpu_retained_device_cache_budget_checked_acceptance_projects_within_limi
       proof
       checked.right
 
+theorem gpu_retained_device_cache_budget_within_limits_projects_source_limit
+    (budget : GpuRetainedDeviceCacheBudget) :
+    GpuRetainedDeviceCacheBudgetWithinLimits budget ->
+      budget.sourceBytes <= budget.sourceLimit := by
+  intro withinLimits
+  exact withinLimits.left
+
+theorem gpu_retained_device_cache_budget_within_limits_projects_descriptor_limit
+    (budget : GpuRetainedDeviceCacheBudget) :
+    GpuRetainedDeviceCacheBudgetWithinLimits budget ->
+      budget.descriptorBytes <= budget.descriptorLimit := by
+  intro withinLimits
+  exact withinLimits.right.left
+
+theorem gpu_retained_device_cache_budget_within_limits_projects_leaf_digest_limit
+    (budget : GpuRetainedDeviceCacheBudget) :
+    GpuRetainedDeviceCacheBudgetWithinLimits budget ->
+      budget.leafDigestBytes <= budget.leafDigestLimit := by
+  intro withinLimits
+  exact withinLimits.right.right.left
+
+theorem gpu_retained_device_cache_budget_within_limits_projects_combined_limit
+    (budget : GpuRetainedDeviceCacheBudget)
+    (limit : Nat) :
+    budget.combinedLimit = some limit ->
+      GpuRetainedDeviceCacheBudgetWithinLimits budget ->
+        budget.sourceBytes + budget.descriptorBytes + budget.leafDigestBytes <= limit := by
+  intro combinedLimit withinLimits
+  have combinedWithin := withinLimits.right.right.right
+  rw [combinedLimit] at combinedWithin
+  exact combinedWithin
+
 theorem gpu_retained_device_cache_budget_checked_acceptance_sound
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)

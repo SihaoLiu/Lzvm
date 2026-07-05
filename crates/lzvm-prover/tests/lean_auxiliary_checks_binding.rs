@@ -5862,6 +5862,10 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "gpu_retained_leaf_digest_limit_checked_acceptance_verifier_core_contract",
             "gpu_retained_leaf_digest_limit_checked_acceptance_core_and_sound",
             "gpu_retained_device_cache_budget_checked_acceptance_projects_within_limits",
+            "gpu_retained_device_cache_budget_within_limits_projects_source_limit",
+            "gpu_retained_device_cache_budget_within_limits_projects_descriptor_limit",
+            "gpu_retained_device_cache_budget_within_limits_projects_leaf_digest_limit",
+            "gpu_retained_device_cache_budget_within_limits_projects_combined_limit",
             "gpu_retained_device_cache_budget_checked_acceptance_sound",
             "gpu_retained_device_cache_budget_checked_acceptance_verifier_core_contract",
             "gpu_retained_device_cache_budget_checked_acceptance_core_and_sound",
@@ -7060,6 +7064,38 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "sound_witness_implies_verifier_core_contract",
         ],
     );
+    lean_binding::assert_theorem_body_contains(
+        &gpu_runtime_source,
+        "gpu_retained_device_cache_budget_within_limits_projects_combined_limit",
+        &["rw [combinedLimit] at combinedWithin"],
+    );
+    for (theorem, projected_term) in [
+        (
+            "gpu_retained_device_cache_budget_within_limits_projects_source_limit",
+            "budget.sourceBytes <= budget.sourceLimit",
+        ),
+        (
+            "gpu_retained_device_cache_budget_within_limits_projects_descriptor_limit",
+            "budget.descriptorBytes <= budget.descriptorLimit",
+        ),
+        (
+            "gpu_retained_device_cache_budget_within_limits_projects_leaf_digest_limit",
+            "budget.leafDigestBytes <= budget.leafDigestLimit",
+        ),
+        (
+            "gpu_retained_device_cache_budget_within_limits_projects_combined_limit",
+            concat!(
+                "budget.sourceBytes + budget.descriptorBytes + ",
+                "budget.leafDigestBytes <= limit"
+            ),
+        ),
+    ] {
+        lean_binding::assert_theorem_prefix_contains(
+            &gpu_runtime_source,
+            theorem,
+            &[projected_term],
+        );
+    }
     for (theorem, prefix_term, projector, omitted_terms) in [
         (
             "gpu_retained_leaf_digest_limit_checked_acceptance_core_and_sound",
