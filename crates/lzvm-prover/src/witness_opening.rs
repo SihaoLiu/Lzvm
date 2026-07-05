@@ -42,7 +42,7 @@ use crate::ProveSchedule;
 use crate::ProveUnitSchedule;
 
 #[cfg(any(feature = "cuda", test))]
-const DEFAULT_TRACE_OUTPUT_EXTERNAL_SOURCE_OPENING_BATCH_SIZE: usize = 4;
+const DEFAULT_TRACE_OUTPUT_EXTERNAL_SOURCE_OPENING_BATCH_SIZE: usize = 3;
 #[cfg(feature = "cuda")]
 const TRACE_OUTPUT_EXTERNAL_SOURCE_OPENING_BATCH_SIZE_ENV: &str =
     "LZVM_WITNESS_OPENING_EXTERNAL_SOURCE_BATCH_SIZE";
@@ -1601,6 +1601,7 @@ mod tests {
 
     #[test]
     fn external_source_opening_batch_size_parser_uses_positive_values_only() {
+        assert_eq!(DEFAULT_TRACE_OUTPUT_EXTERNAL_SOURCE_OPENING_BATCH_SIZE, 3);
         assert_eq!(
             parse_trace_output_external_source_opening_batch_size(None),
             DEFAULT_TRACE_OUTPUT_EXTERNAL_SOURCE_OPENING_BATCH_SIZE
