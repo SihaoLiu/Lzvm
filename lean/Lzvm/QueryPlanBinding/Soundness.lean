@@ -1086,16 +1086,14 @@ theorem runtime_query_plan_binding_audited_finalized_core_sound_witness_contract
       publicInput
       proof
       runtimeAccepted
-  have auditedCoreSound :=
-    accepted_proof_audited_core_and_sound_witness
+  have auditedCoreExecutionSound :=
+    accepted_proof_audited_core_execution_and_sound_witness
       assumptions
       publicInput
       proof
       verifierAccepts
-  rcases auditedCoreSound with
-    ⟨cryptoEvidence, semanticEvidence, coreContract, soundWitness⟩
-  have executionObligations :=
-    sound_witness_implies_execution_obligations soundWitness
+  rcases auditedCoreExecutionSound with
+    ⟨cryptoEvidence, semanticEvidence, coreContract, executionObligations, soundWitness⟩
   exact
     And.intro cryptoEvidence
       (And.intro semanticEvidence
