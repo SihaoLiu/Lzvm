@@ -7121,6 +7121,11 @@ fn guest_pc_trace_parallel_lowerer_bounds_result_queue() {
             && backend_source.contains("LZVM_GUEST_PC_TRACE_PARALLEL_LOWER_JOB_QUEUE"),
         "parallel guest PC trace lowering should keep the worker job queue bounded without hard-coding a single-slot stream backpressure point"
     );
+    assert!(
+        backend_source
+            .contains("const DEFAULT_GUEST_PC_TRACE_PARALLEL_LOWER_JOB_QUEUE_CAPACITY: usize = 16"),
+        "parallel guest PC trace lowering should default to the measured nonblocking worker job queue capacity"
+    );
 }
 
 #[test]

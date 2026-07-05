@@ -9708,7 +9708,7 @@ fn guest_pc_trace_parallel_lower_result_queue_capacity(worker_count: usize) -> u
     worker_count.max(1)
 }
 
-const DEFAULT_GUEST_PC_TRACE_PARALLEL_LOWER_JOB_QUEUE_CAPACITY: usize = 4;
+const DEFAULT_GUEST_PC_TRACE_PARALLEL_LOWER_JOB_QUEUE_CAPACITY: usize = 16;
 const MAX_DEFAULT_GUEST_PC_TRACE_PARALLEL_LOWER_JOB_QUEUE_CAPACITY: usize = 16;
 
 fn default_guest_pc_trace_parallel_lower_job_queue_capacity(worker_count: usize) -> usize {
