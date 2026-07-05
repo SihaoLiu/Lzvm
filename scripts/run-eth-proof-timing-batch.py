@@ -63,6 +63,9 @@ BINARY_FRESHNESS_SKIP_DIRS = {
     "temp",
     "tests",
 }
+BINARY_FRESHNESS_SKIP_FILES = {
+    "tests.rs",
+}
 BINARY_FRESHNESS_SUFFIXES = {
     ".c",
     ".cc",
@@ -487,7 +490,10 @@ def iter_binary_freshness_inputs(root: Path):
             current_path = Path(current)
             for entry in files:
                 candidate = current_path / entry
-                if candidate.suffix in BINARY_FRESHNESS_SUFFIXES:
+                if (
+                    candidate.name not in BINARY_FRESHNESS_SKIP_FILES
+                    and candidate.suffix in BINARY_FRESHNESS_SUFFIXES
+                ):
                     yield candidate
 
 
@@ -1839,6 +1845,22 @@ def self_test() -> None:
     work_dir = root / "temp" / f"eth-proof-timing-batch-self-test-{os.getpid()}"
     shutil.rmtree(work_dir, ignore_errors=True)
     work_dir.mkdir(parents=True)
+    fake_crate_src = work_dir / "crates" / "lzvm-prover" / "src"
+    fake_crate_src.mkdir(parents=True)
+    (fake_crate_src / "lib.rs").write_text("", encoding="utf-8")
+    fake_backend_src = fake_crate_src / "guest_pc_trace_backend"
+    fake_backend_src.mkdir()
+    (fake_backend_src / "tests.rs").write_text("", encoding="utf-8")
+    freshness_inputs = {
+        path.relative_to(work_dir) for path in iter_binary_freshness_inputs(work_dir)
+    }
+    if Path("crates/lzvm-prover/src/lib.rs") not in freshness_inputs:
+        raise SystemExit("self-test binary freshness should include source file")
+    if (
+        Path("crates/lzvm-prover/src/guest_pc_trace_backend/tests.rs")
+        in freshness_inputs
+    ):
+        raise SystemExit("self-test binary freshness should skip test module file")
     empty_env = work_dir / "empty.env"
     empty_env.write_text("", encoding="utf-8")
     inherited_env = {
