@@ -85,6 +85,8 @@ fn lean_runtime_soundness_binding_exports_core_contract_projection() {
             "runtime_soundness_checked_acceptance_audited_core_contract",
             "runtime_soundness_checked_acceptance_verifier_accepts",
             "runtime_soundness_checked_acceptance_accepts_core_sound_witness",
+            "runtime_soundness_checked_acceptance_core_and_execution_obligations",
+            "runtime_soundness_checked_acceptance_source_core_execution_contract",
             "runtime_soundness_checked_acceptance_proof_system_sound",
             "runtime_soundness_checked_acceptance_full_soundness_contract",
             "runtime_soundness_checked_acceptance_finalized_full_soundness_contract",
@@ -726,6 +728,47 @@ fn lean_runtime_soundness_binding_exports_core_contract_projection() {
         &lean_source,
         "runtime_soundness_checked_acceptance_execution_obligations",
         &["sound_witness_implies_execution_obligations"],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_soundness_checked_acceptance_core_and_execution_obligations",
+        &[
+            "system.accepts publicInput proof",
+            "RuntimeVerifierCoreContract system publicInput proof",
+            "exists witness trace constraints",
+            "system.traceConsistent publicInput proof trace",
+            "system.constraintsSatisfied constraints trace",
+            "system.witnessMatchesTrace witness trace",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_soundness_checked_acceptance_core_and_execution_obligations",
+        &[
+            "runtime_soundness_checked_acceptance_accepts_core_sound_witness",
+            "sound_witness_implies_execution_obligations",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_soundness_checked_acceptance_source_core_execution_contract",
+        &[
+            "system.accepts publicInput proof",
+            "ExternalSourceOpeningRequirement",
+            "RuntimeVerifierCoreContract system publicInput proof",
+            "exists witness trace constraints",
+            "system.traceConsistent publicInput proof trace",
+            "system.constraintsSatisfied constraints trace",
+            "system.witnessMatchesTrace witness trace",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_soundness_checked_acceptance_source_core_execution_contract",
+        &[
+            "runtime_soundness_checked_acceptance_core_and_execution_obligations",
+            "runtime_soundness_checked_acceptance_external_source_requirement",
+        ],
     );
     assert!(
         theorem_prefix(
