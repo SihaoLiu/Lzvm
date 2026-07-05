@@ -2231,17 +2231,18 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
         "runtime_pipeline_binding_checked_acceptance_audited_finalized_core_sound_witness_contract",
         &[
             "runtime_pipeline_binding_checked_acceptance_verifier_accepts",
-            "accepted_proof_audited_core_and_sound_witness",
+            "accepted_proof_audited_core_execution_and_sound_witness",
             "runtime_pipeline_binding_checked_acceptance_artifact_finalized",
             "runtime_pipeline_binding_checked_acceptance_seed_binds_witness_tree_digests",
             "runtime_pipeline_binding_checked_acceptance_seeded_fri_opening_requirements_checked",
-            "sound_witness_implies_execution_obligations",
         ],
     );
     lean_binding::assert_theorem_body_omits(
         &lean_source,
         "runtime_pipeline_binding_checked_acceptance_audited_finalized_core_sound_witness_contract",
         &[
+            "accepted_proof_audited_core_and_sound_witness",
+            "sound_witness_implies_execution_obligations",
             "RuntimePipelineBindingEvidence",
             "runtime_pipeline_binding_required_external_source_verifier_core_contract",
             "runtime_pipeline_binding_required_external_source_sound",
@@ -3693,18 +3694,19 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
         "runtime_pipeline_required_external_source_audited_finalized_core_sound_witness_contract",
         &[
             "runtime_pipeline_binding_checked_acceptance_verifier_accepts",
-            "accepted_proof_audited_core_and_sound_witness",
+            "accepted_proof_audited_core_execution_and_sound_witness",
             "runtime_pipeline_binding_required_external_source_verifier_core_contract",
             "runtime_pipeline_binding_checked_acceptance_artifact_finalized",
             "runtime_pipeline_binding_checked_acceptance_seed_binds_witness_tree_digests",
             "runtime_pipeline_binding_checked_acceptance_seeded_fri_opening_requirements_checked",
-            "sound_witness_implies_execution_obligations",
         ],
     );
     lean_binding::assert_theorem_body_omits(
         &lean_source,
         "runtime_pipeline_required_external_source_audited_finalized_core_sound_witness_contract",
         &[
+            "accepted_proof_audited_core_and_sound_witness",
+            "sound_witness_implies_execution_obligations",
             "RuntimePipelineBindingEvidence",
             "runtime_pipeline_binding_required_external_source_audited_pcs_fri_core_witness_contract",
             "runtime_pipeline_binding_checked_acceptance_execution_obligations",

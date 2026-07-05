@@ -772,8 +772,8 @@ theorem runtime_pipeline_binding_checked_acceptance_audited_finalized_core_sound
       publicInput
       proof
       accepted
-  have auditedCoreSound :=
-    accepted_proof_audited_core_and_sound_witness
+  have auditedCoreExecutionSound :=
+    accepted_proof_audited_core_execution_and_sound_witness
       assumptions
       publicInput
       proof
@@ -799,10 +799,8 @@ theorem runtime_pipeline_binding_checked_acceptance_audited_finalized_core_sound
       publicInput
       proof
       accepted
-  rcases auditedCoreSound with
-    ⟨cryptoEvidence, semanticEvidence, verifierCore, soundWitness⟩
-  have executionObligations :=
-    sound_witness_implies_execution_obligations soundWitness
+  rcases auditedCoreExecutionSound with
+    ⟨cryptoEvidence, semanticEvidence, verifierCore, executionObligations, soundWitness⟩
   exact
     ⟨cryptoEvidence,
       semanticEvidence,
@@ -956,8 +954,8 @@ theorem runtime_pipeline_required_external_source_audited_finalized_core_sound_w
       publicInput
       proof
       accepted
-  have auditedCoreSound :=
-    accepted_proof_audited_core_and_sound_witness
+  have auditedCoreExecutionSound :=
+    accepted_proof_audited_core_execution_and_sound_witness
       assumptions
       publicInput
       proof
@@ -993,12 +991,10 @@ theorem runtime_pipeline_required_external_source_audited_finalized_core_sound_w
       publicInput
       proof
       accepted
-  rcases auditedCoreSound with
-    ⟨cryptoEvidence, semanticEvidence, verifierCore, soundWitness⟩
+  rcases auditedCoreExecutionSound with
+    ⟨cryptoEvidence, semanticEvidence, verifierCore, executionObligations, soundWitness⟩
   rcases requiredCore with
     ⟨traceExternalEvidence, openingExternalEvidence, _requiredVerifierCore⟩
-  have executionObligations :=
-    sound_witness_implies_execution_obligations soundWitness
   exact
     ⟨cryptoEvidence,
       semanticEvidence,
