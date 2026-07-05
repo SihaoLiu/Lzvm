@@ -849,6 +849,123 @@ theorem runtime_pipeline_binding_required_external_source_audited_soundness_segm
     And.intro auditedAssumptions.left
       (And.intro auditedAssumptions.right auditedContract.right)
 
+theorem
+runtime_pipeline_required_external_source_audited_segment_ids_core_components_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimePipelineBindingValidation system) :
+    forall artifact publicInput proof (requiresExternalSource : Prop),
+      RuntimePipelineBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        requiresExternalSource ->
+          let queryPlanValidation := validation.queryPlanBindingValidation
+          let artifactValidation :=
+            queryPlanValidation.challengeValidation.transcriptValidation.artifactBindingValidation
+          let ethArtifactValidation :=
+            validation.ethBindingValidation.proofArtifactBindingValidation
+          RequiredCryptographicAssumptionStatements assumptions.crypto
+            /\ RequiredSemanticAssumptionStatements assumptions.semantic
+            /\ ProofSystemSound system
+            /\ system.accepts publicInput proof
+            /\ ExternalSourceOpeningEvidence
+              system
+              (runtime_pipeline_trace_source_validation validation)
+              publicInput
+              proof
+            /\ ExternalSourceOpeningEvidence
+              system
+              (runtime_pipeline_opening_source_validation validation)
+              publicInput
+              proof
+            /\ system.transcriptBound publicInput proof
+            /\ system.publicInputBound publicInput proof
+            /\ system.pcsOpeningsValid publicInput proof
+            /\ system.friQueriesValid publicInput proof
+            /\ validation.queryPlanBindingValidation.queryPlanSeedBindsWitnessTreeDigests
+              artifact
+              publicInput
+              proof
+            /\ validation.queryPlanBindingValidation.queryPlanSeededFriOpeningRequirementsChecked
+              artifact
+              publicInput
+              proof
+            /\ RuntimeVerifierCoreContract system publicInput proof
+            /\ SoundWitness system publicInput proof
+            /\ RuntimeProofArtifactBindingValidationAgreement
+              ethArtifactValidation
+              artifactValidation
+            /\ artifactValidation.proofContainerCanonical artifact publicInput proof
+            /\ artifactValidation.proofSegmentsPresent artifact publicInput proof
+            /\ artifactValidation.proofMetadataCanonical artifact publicInput proof
+            /\ artifactValidation.proofSegmentPayloadsNonempty artifact publicInput proof
+            /\ artifactValidation.proofSegmentIdsAllowed artifact publicInput proof
+            /\ artifactValidation.proofSegmentIdsUnique artifact publicInput proof
+            /\ artifactValidation.proofUnitValuesTraceIdentityCoverage
+              artifact
+              publicInput
+              proof := by
+  intro artifact publicInput proof requiresExternalSource accepted required
+  have segmentContract :=
+    runtime_pipeline_binding_required_external_source_audited_soundness_segment_ids_contract
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      accepted
+      required
+  rcases segmentContract with
+    ⟨auditedCrypto,
+      auditedSemantic,
+      proofSystemSound,
+      verifierAccepts,
+      traceSourceEvidence,
+      openingSourceEvidence,
+      pcsOpeningsValid,
+      friQueriesValid,
+      seedBinds,
+      seededFriOpeningChecked,
+      coreContract,
+      soundWitness,
+      artifactAgreement,
+      containerCanonical,
+      segmentsPresent,
+      metadataCanonical,
+      segmentPayloadsNonempty,
+      segmentIdsAllowed,
+      segmentIdsUnique,
+      unitValuesTraceIdentityCoverage⟩
+  have transcriptBound := coreContract.left
+  have publicInputBound := coreContract.right.left
+  exact
+    ⟨auditedCrypto,
+      auditedSemantic,
+      proofSystemSound,
+      verifierAccepts,
+      traceSourceEvidence,
+      openingSourceEvidence,
+      transcriptBound,
+      publicInputBound,
+      pcsOpeningsValid,
+      friQueriesValid,
+      seedBinds,
+      seededFriOpeningChecked,
+      coreContract,
+      soundWitness,
+      artifactAgreement,
+      containerCanonical,
+      segmentsPresent,
+      metadataCanonical,
+      segmentPayloadsNonempty,
+      segmentIdsAllowed,
+      segmentIdsUnique,
+      unitValuesTraceIdentityCoverage⟩
+
 theorem runtime_pipeline_binding_required_external_source_audited_concrete_segment_ids_contract
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
