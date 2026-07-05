@@ -1038,6 +1038,55 @@ theorem runtime_soundness_checked_acceptance_core_and_execution_obligations
   exact And.intro verifierAccepts
     (And.intro coreContract executionObligations)
 
+theorem runtime_soundness_checked_acceptance_source_core_execution_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeSoundnessValidation system) :
+    forall artifact publicInput proof requiresExternalSource,
+      RuntimeSoundnessCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof
+          requiresExternalSource ->
+        system.accepts publicInput proof
+          /\ ExternalSourceOpeningRequirement
+            system
+            validation.sourceValidation
+            publicInput
+            proof
+            requiresExternalSource
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ exists witness trace constraints,
+            system.traceConsistent publicInput proof trace
+              /\ system.constraintsSatisfied constraints trace
+              /\ system.witnessMatchesTrace witness trace := by
+  intro artifact publicInput proof requiresExternalSource checked
+  have acceptsCoreExecution :=
+    runtime_soundness_checked_acceptance_core_and_execution_obligations
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      checked
+  have sourceRequirement :=
+    runtime_soundness_checked_acceptance_external_source_requirement
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      checked
+  rcases acceptsCoreExecution with
+    ⟨verifierAccepts, coreContract, executionObligations⟩
+  exact
+    And.intro verifierAccepts
+      (And.intro sourceRequirement
+        (And.intro coreContract executionObligations))
+
 theorem runtime_soundness_checked_acceptance_proof_system_sound
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
