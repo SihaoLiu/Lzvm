@@ -4478,18 +4478,15 @@ fn push_guest_pc_trace_streaming_device_report(
 ) -> Result<(), GuestPcTraceBackendError> {
     if let Some(pending) = pending_report.take() {
         let next_instruction = report.instruction;
+        let report_index = *next_report_index;
         builder.push_report_at(
-            *next_report_index,
+            report_index,
             &pending,
             || Some(next_instruction),
             timing_config,
             None,
         )?;
-        *next_report_index = next_report_index.checked_add(1).ok_or_else(|| {
-            GuestPcTraceBackendError::InvalidPcTraceLayout {
-                message: "main trace report index overflow".to_owned(),
-            }
-        })?;
+        timing_config.advance_report_index(next_report_index)?;
         reports.push(pending);
     }
     *pending_report = Some(report);
@@ -4513,18 +4510,15 @@ fn finish_guest_pc_trace_streaming_device_segment(
     last_report_shape: Option<GuestMachineReportShape>,
 ) -> Result<GuestPcTraceRunnerStreamingSegment, GuestPcTraceBackendError> {
     if let Some(pending) = pending_report.take() {
+        let report_index = *next_report_index;
         builder.push_report_at(
-            *next_report_index,
+            report_index,
             &pending,
             || lookahead_instruction,
             timing_config,
             None,
         )?;
-        *next_report_index = next_report_index.checked_add(1).ok_or_else(|| {
-            GuestPcTraceBackendError::InvalidPcTraceLayout {
-                message: "main trace report index overflow".to_owned(),
-            }
-        })?;
+        timing_config.advance_report_index(next_report_index)?;
         reports.push(pending);
     }
     let report_capacity = reports.capacity();
@@ -10415,6 +10409,20 @@ impl ZiskMainTraceLowerTimingConfig {
                 .shape_sample_stride
                 .is_some_and(|stride| report_index.is_multiple_of(stride))
     }
+
+    fn advance_report_index(
+        self,
+        next_report_index: &mut usize,
+    ) -> Result<(), GuestPcTraceBackendError> {
+        if self.row_timing_enabled {
+            *next_report_index = next_report_index.checked_add(1).ok_or_else(|| {
+                GuestPcTraceBackendError::InvalidPcTraceLayout {
+                    message: "guest PC trace report index overflow".to_owned(),
+                }
+            })?;
+        }
+        Ok(())
+    }
 }
 
 #[cfg(feature = "cuda")]
@@ -10442,18 +10450,16 @@ impl<'a> ZiskMainStreamingDeviceReportFeeder<'a> {
     ) -> Result<(), GuestPcTraceBackendError> {
         if let Some(pending) = self.pending_report.take() {
             let next_instruction = report.instruction;
+            let report_index = self.next_report_index;
             builder.push_report_at(
-                self.next_report_index,
+                report_index,
                 pending,
                 || Some(next_instruction),
                 self.timing_config,
                 timing,
             )?;
-            self.next_report_index = self.next_report_index.checked_add(1).ok_or_else(|| {
-                GuestPcTraceBackendError::InvalidPcTraceLayout {
-                    message: "guest PC trace report index overflow".to_owned(),
-                }
-            })?;
+            self.timing_config
+                .advance_report_index(&mut self.next_report_index)?;
         }
         self.pending_report = Some(report);
         Ok(())
@@ -10503,18 +10509,16 @@ impl ZiskMainOwnedStreamingDeviceReportFeeder {
     ) -> Result<(), GuestPcTraceBackendError> {
         if let Some(pending) = self.pending_report.take() {
             let next_instruction = report.instruction;
+            let report_index = self.next_report_index;
             builder.push_report_at(
-                self.next_report_index,
+                report_index,
                 &pending,
                 || Some(next_instruction),
                 self.timing_config,
                 timing,
             )?;
-            self.next_report_index = self.next_report_index.checked_add(1).ok_or_else(|| {
-                GuestPcTraceBackendError::InvalidPcTraceLayout {
-                    message: "guest PC trace report index overflow".to_owned(),
-                }
-            })?;
+            self.timing_config
+                .advance_report_index(&mut self.next_report_index)?;
         }
         self.pending_report = Some(report);
         Ok(())

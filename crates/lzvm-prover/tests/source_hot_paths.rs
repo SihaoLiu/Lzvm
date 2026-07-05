@@ -8060,6 +8060,16 @@ fn guest_pc_trace_lower_reports_internal_work_timing() {
             && push_report_body.contains("} else {\n                None\n            },"),
         "guest PC device material lowerer should gate per-row timing before validation"
     );
+    assert!(
+        timing_config_body.contains("fn advance_report_index")
+            && timing_config_body.contains("if self.row_timing_enabled")
+            && feeder_impl_body.contains("let report_index = self.next_report_index;")
+            && feeder_impl_body
+                .matches(".advance_report_index(&mut self.next_report_index)")
+                .count()
+                >= 2,
+        "guest PC device material lowerer should advance report sampling indexes only when row timing is enabled"
+    );
     let descriptor_timer_index = push_report_body
         .find("let _descriptor_timer = DurationTimer::new")
         .expect("guest PC device material lowerer should retain descriptor detail timing");
@@ -8368,7 +8378,7 @@ fn guest_pc_trace_lower_reports_internal_work_timing() {
         "timing.guest_trace_row_shape_top_patterns()",
     ] {
         assert!(
-            cli_source.contains(cli_call),
+            cli_source.contains(cli_call) || compact_source_contains(&cli_source, cli_call),
             "guest PC trace CLI timing should read {cli_call}"
         );
     }
