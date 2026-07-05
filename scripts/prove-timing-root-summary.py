@@ -798,6 +798,7 @@ CUDA_MALLOC_CALLS_KEY = "timing_cuda_allocator_malloc_calls"
 CUDA_MALLOC_WAIT_NS_KEY = "timing_cuda_allocator_malloc_wait_ns"
 CUDA_MALLOC_MAX_WAIT_NS_KEY = "timing_cuda_allocator_malloc_max_wait_ns"
 CUDA_HOST_REGISTER_WAIT_NS_KEY = "timing_cuda_allocator_host_register_wait_ns"
+CUDA_HOST_UNREGISTER_WAIT_NS_KEY = "timing_cuda_allocator_host_unregister_wait_ns"
 CUDA_COPY_H2D_BYTES_KEY = "timing_cuda_allocator_copy_h2d_bytes"
 CUDA_COPY_H2D_WAIT_NS_KEY = "timing_cuda_allocator_copy_h2d_wait_ns"
 CUDA_COPY_H2D_HOT_BYTES_KEY = "timing_cuda_allocator_copy_h2d_hot_bytes"
@@ -1254,7 +1255,8 @@ HEADER = (
     "cuda_allocator_cached_reuse_count,cuda_allocator_pending_reuse_count,"
     "cuda_allocator_no_wait_bypass_count,cuda_allocator_no_wait_bypass_bytes,"
     "cuda_allocator_reuse_action_hint,"
-    "cuda_host_register_wait_ms,cuda_h2d_bytes,cuda_transfer_action_hint,"
+    "cuda_host_register_wait_ms,cuda_host_unregister_wait_ms,"
+    "cuda_host_registration_total_wait_ms,cuda_h2d_bytes,cuda_transfer_action_hint,"
     "data_residency_action_hint,"
     "copy_summary_gpu_residency_hint,copy_summary_h2d_bulk_app_frame_hint,"
     "copy_summary_small_d2h_batching_hint,"
@@ -1356,6 +1358,8 @@ AGGREGATE_MEAN_PROFILE_COLUMNS = (
     "direct_d2h_wait_ms",
     "descriptor_upload_ms",
     "cuda_host_register_wait_ms",
+    "cuda_host_unregister_wait_ms",
+    "cuda_host_registration_total_wait_ms",
     "copy_summary_host_registration_api_ms",
     "cuda_h2d_bytes",
     "cuda_allocator_d2h_wait_ms",
@@ -1770,6 +1774,7 @@ TIMING_KEYS = {
     CUDA_MALLOC_WAIT_NS_KEY,
     CUDA_MALLOC_MAX_WAIT_NS_KEY,
     CUDA_HOST_REGISTER_WAIT_NS_KEY,
+    CUDA_HOST_UNREGISTER_WAIT_NS_KEY,
     CUDA_COPY_H2D_BYTES_KEY,
     CUDA_COPY_H2D_WAIT_NS_KEY,
     CUDA_COPY_H2D_HOT_BYTES_KEY,
@@ -6108,6 +6113,12 @@ def summarize_profile_values(
     cuda_host_register_wait_ms = (
         values.get(CUDA_HOST_REGISTER_WAIT_NS_KEY, 0) / 1_000_000.0
     )
+    cuda_host_unregister_wait_ms = (
+        values.get(CUDA_HOST_UNREGISTER_WAIT_NS_KEY, 0) / 1_000_000.0
+    )
+    cuda_host_registration_total_wait_ms = (
+        cuda_host_register_wait_ms + cuda_host_unregister_wait_ms
+    )
     cuda_h2d_bytes = values.get(CUDA_COPY_H2D_BYTES_KEY, 0)
     descriptor_retention_attempts = values.get(DESCRIPTOR_RETENTION_ATTEMPTS_KEY, 0)
     descriptor_retention_retained = values.get(DESCRIPTOR_RETENTION_RETAINED_KEY, 0)
@@ -6757,7 +6768,8 @@ def summarize_profile_values(
         f"{cuda_allocator_pending_reuse_count},"
         f"{cuda_allocator_no_wait_bypass_count},"
         f"{cuda_allocator_no_wait_bypass_bytes},{cuda_allocator_reuse_hint},"
-        f"{cuda_host_register_wait_ms:.3f},{cuda_h2d_bytes},{cuda_transfer_hint},"
+        f"{cuda_host_register_wait_ms:.3f},{cuda_host_unregister_wait_ms:.3f},"
+        f"{cuda_host_registration_total_wait_ms:.3f},{cuda_h2d_bytes},{cuda_transfer_hint},"
         f"{data_residency_hint},"
         f"{copy_summary_gpu_residency_hint},{copy_summary_h2d_bulk_app_frame_hint},"
         f"{copy_summary_small_d2h_batching_hint},"

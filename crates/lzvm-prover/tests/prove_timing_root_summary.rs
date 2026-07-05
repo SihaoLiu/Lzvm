@@ -980,6 +980,8 @@ fn prove_timing_root_summary_reports_root_grouping_shape() {
         "dominant_trace_pipeline_action_hint",
         "trace_pipeline_action_consensus",
         "cuda_host_register_wait_ms",
+        "cuda_host_unregister_wait_ms",
+        "cuda_host_registration_total_wait_ms",
         "cuda_setup_init_calls",
         "cuda_setup_native_init_wait_ms",
         "cuda_memory_info_wait_ms",
@@ -3345,6 +3347,7 @@ fn prove_timing_root_summary_aggregates_key_profile_means() {
                   runner_ms: u64,
                   row_value_source_extend_ms: u64,
                   host_register_wait_ns: u64,
+                  host_unregister_wait_ns: u64,
                   h2d_bytes: u64| {
         [
             "input_bytes=12447640".to_owned(),
@@ -3353,6 +3356,7 @@ fn prove_timing_root_summary_aggregates_key_profile_means() {
             format!("timing_guest_trace_runner_ms={runner_ms}"),
             format!("timing_finish_witness_opening_row_value_source_extend_ms={row_value_source_extend_ms}"),
             format!("timing_cuda_allocator_host_register_wait_ns={host_register_wait_ns}"),
+            format!("timing_cuda_allocator_host_unregister_wait_ns={host_unregister_wait_ns}"),
             format!("timing_cuda_allocator_copy_h2d_bytes={h2d_bytes}"),
             "timing_guest_stage_tree_commit_root_count=120".to_owned(),
             "timing_guest_stage_tree_commit_root_materialization_groups=120".to_owned(),
@@ -3367,10 +3371,11 @@ fn prove_timing_root_summary_aggregates_key_profile_means() {
             4_000_u64,
             100_u64,
             1_000_000_000_u64,
+            400_000_000_u64,
             1_000_u64,
         ),
-        (18_000, 6_000, 6_000, 200, 2_000_000_000, 2_000),
-        (21_000, 7_000, 8_000, 300, 3_000_000_000, 3_000),
+        (18_000, 6_000, 6_000, 200, 2_000_000_000, 500_000_000, 2_000),
+        (21_000, 7_000, 8_000, 300, 3_000_000_000, 600_000_000, 3_000),
     ];
     let paths = fixtures
         .into_iter()
@@ -3380,7 +3385,7 @@ fn prove_timing_root_summary_aggregates_key_profile_means() {
             std::fs::write(
                 &path,
                 sample(
-                    fixture.0, fixture.1, fixture.2, fixture.3, fixture.4, fixture.5,
+                    fixture.0, fixture.1, fixture.2, fixture.3, fixture.4, fixture.5, fixture.6,
                 ),
             )
             .expect("sample timing log should be written");
@@ -3432,6 +3437,14 @@ fn prove_timing_root_summary_aggregates_key_profile_means() {
     assert_eq!(
         aggregate_value("cuda_host_register_wait_ms_mean"),
         "2000.000"
+    );
+    assert_eq!(
+        aggregate_value("cuda_host_unregister_wait_ms_mean"),
+        "500.000"
+    );
+    assert_eq!(
+        aggregate_value("cuda_host_registration_total_wait_ms_mean"),
+        "2500.000"
     );
     assert_eq!(aggregate_value("cuda_h2d_bytes_mean"), "2000.000");
     assert_eq!(aggregate_value("proof_12s_gap_ms_mean"), "6000.000");
