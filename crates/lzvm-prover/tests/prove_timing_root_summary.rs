@@ -731,6 +731,20 @@ fn prove_timing_root_summary_reports_root_grouping_shape() {
         "timing_cuda_allocator_copy_h2d_hot_bytes",
         "timing_cuda_allocator_copy_h2d_hot_count",
         "timing_cuda_allocator_copy_h2d_hot_wait_ns",
+        "timing_cuda_allocator_event_synchronize_calls",
+        "timing_cuda_allocator_event_synchronize_bytes",
+        "timing_cuda_allocator_event_synchronize_max_bytes",
+        "timing_cuda_allocator_event_synchronize_wait_ns",
+        "timing_cuda_allocator_event_synchronize_max_wait_ns",
+        "timing_cuda_allocator_event_synchronize_hot_bytes",
+        "timing_cuda_allocator_event_synchronize_hot_count",
+        "timing_cuda_allocator_event_synchronize_hot_wait_ns",
+        "timing_cuda_allocator_cached_reuse_count",
+        "timing_cuda_allocator_pending_reuse_count",
+        "timing_cuda_allocator_no_wait_bypass_count",
+        "timing_cuda_allocator_no_wait_bypass_bytes",
+        "cuda_allocator_event_sync_wait_ms",
+        "cuda_allocator_reuse_action_hint",
         "timing_guest_trace_runner_ms",
         "timing_guest_trace_lowerer_ms",
         "timing_guest_trace_lower_ms",
@@ -3701,6 +3715,18 @@ fn prove_timing_root_summary_reports_allocator_d2h_wait_shape() {
         "timing_cuda_allocator_malloc_calls=24",
         "timing_cuda_allocator_malloc_wait_ns=61289905",
         "timing_cuda_allocator_malloc_max_wait_ns=61156723",
+        "timing_cuda_allocator_event_synchronize_calls=9",
+        "timing_cuda_allocator_event_synchronize_bytes=4096",
+        "timing_cuda_allocator_event_synchronize_max_bytes=2048",
+        "timing_cuda_allocator_event_synchronize_wait_ns=321000000",
+        "timing_cuda_allocator_event_synchronize_max_wait_ns=123000000",
+        "timing_cuda_allocator_event_synchronize_hot_bytes=1024",
+        "timing_cuda_allocator_event_synchronize_hot_count=3",
+        "timing_cuda_allocator_event_synchronize_hot_wait_ns=300000000",
+        "timing_cuda_allocator_cached_reuse_count=17",
+        "timing_cuda_allocator_pending_reuse_count=5",
+        "timing_cuda_allocator_no_wait_bypass_count=11",
+        "timing_cuda_allocator_no_wait_bypass_bytes=134217728",
     ]
     .join("\n");
 
@@ -3769,6 +3795,23 @@ fn prove_timing_root_summary_reports_allocator_d2h_wait_shape() {
     assert_eq!(
         value("cuda_allocator_d2h_action_hint"),
         "opening_row_value_d2h_wait_secondary"
+    );
+    assert_eq!(value("cuda_allocator_event_sync_calls"), "9");
+    assert_eq!(value("cuda_allocator_event_sync_bytes"), "4096");
+    assert_eq!(value("cuda_allocator_event_sync_max_bytes"), "2048");
+    assert_eq!(value("cuda_allocator_event_sync_wait_ms"), "321.000");
+    assert_eq!(value("cuda_allocator_event_sync_max_wait_ms"), "123.000");
+    assert_eq!(value("cuda_allocator_event_sync_hot_bytes"), "1024");
+    assert_eq!(value("cuda_allocator_event_sync_hot_count"), "3");
+    assert_eq!(value("cuda_allocator_event_sync_hot_wait_ms"), "300.000");
+    assert_eq!(value("cuda_allocator_event_sync_hot_wait_pct"), "93.458");
+    assert_eq!(value("cuda_allocator_cached_reuse_count"), "17");
+    assert_eq!(value("cuda_allocator_pending_reuse_count"), "5");
+    assert_eq!(value("cuda_allocator_no_wait_bypass_count"), "11");
+    assert_eq!(value("cuda_allocator_no_wait_bypass_bytes"), "134217728");
+    assert_eq!(
+        value("cuda_allocator_reuse_action_hint"),
+        "pending_cache_no_wait_active"
     );
     assert_eq!(
         value("opening_batching_hint"),

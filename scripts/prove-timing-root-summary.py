@@ -802,6 +802,26 @@ CUDA_COPY_D2H_WAIT_NS_KEY = "timing_cuda_allocator_copy_d2h_wait_ns"
 CUDA_COPY_D2H_HOT_BYTES_KEY = "timing_cuda_allocator_copy_d2h_hot_bytes"
 CUDA_COPY_D2H_HOT_COUNT_KEY = "timing_cuda_allocator_copy_d2h_hot_count"
 CUDA_COPY_D2H_HOT_WAIT_NS_KEY = "timing_cuda_allocator_copy_d2h_hot_wait_ns"
+CUDA_EVENT_SYNC_CALLS_KEY = "timing_cuda_allocator_event_synchronize_calls"
+CUDA_EVENT_SYNC_BYTES_KEY = "timing_cuda_allocator_event_synchronize_bytes"
+CUDA_EVENT_SYNC_MAX_BYTES_KEY = "timing_cuda_allocator_event_synchronize_max_bytes"
+CUDA_EVENT_SYNC_WAIT_NS_KEY = "timing_cuda_allocator_event_synchronize_wait_ns"
+CUDA_EVENT_SYNC_MAX_WAIT_NS_KEY = (
+    "timing_cuda_allocator_event_synchronize_max_wait_ns"
+)
+CUDA_EVENT_SYNC_HOT_BYTES_KEY = (
+    "timing_cuda_allocator_event_synchronize_hot_bytes"
+)
+CUDA_EVENT_SYNC_HOT_COUNT_KEY = (
+    "timing_cuda_allocator_event_synchronize_hot_count"
+)
+CUDA_EVENT_SYNC_HOT_WAIT_NS_KEY = (
+    "timing_cuda_allocator_event_synchronize_hot_wait_ns"
+)
+CUDA_CACHED_REUSE_COUNT_KEY = "timing_cuda_allocator_cached_reuse_count"
+CUDA_PENDING_REUSE_COUNT_KEY = "timing_cuda_allocator_pending_reuse_count"
+CUDA_NO_WAIT_BYPASS_COUNT_KEY = "timing_cuda_allocator_no_wait_bypass_count"
+CUDA_NO_WAIT_BYPASS_BYTES_KEY = "timing_cuda_allocator_no_wait_bypass_bytes"
 SOURCE_RETENTION_ATTEMPTS_KEY = "timing_guest_stage_source_retention_attempts"
 SOURCE_RETENTION_RETAINED_KEY = "timing_guest_stage_source_retention_retained"
 SOURCE_RETENTION_REJECTED_KEY = "timing_guest_stage_source_retention_rejected"
@@ -1217,6 +1237,15 @@ HEADER = (
     "cuda_allocator_d2h_hot_bytes,cuda_allocator_d2h_hot_count,"
     "cuda_allocator_d2h_hot_wait_ms,cuda_allocator_d2h_hot_wait_pct,"
     "cuda_allocator_d2h_action_hint,"
+    "cuda_allocator_event_sync_calls,cuda_allocator_event_sync_bytes,"
+    "cuda_allocator_event_sync_max_bytes,cuda_allocator_event_sync_wait_ms,"
+    "cuda_allocator_event_sync_max_wait_ms,"
+    "cuda_allocator_event_sync_hot_bytes,cuda_allocator_event_sync_hot_count,"
+    "cuda_allocator_event_sync_hot_wait_ms,"
+    "cuda_allocator_event_sync_hot_wait_pct,"
+    "cuda_allocator_cached_reuse_count,cuda_allocator_pending_reuse_count,"
+    "cuda_allocator_no_wait_bypass_count,cuda_allocator_no_wait_bypass_bytes,"
+    "cuda_allocator_reuse_action_hint,"
     "cuda_host_register_wait_ms,cuda_h2d_bytes,cuda_transfer_action_hint,"
     "data_residency_action_hint,"
     "copy_summary_gpu_residency_hint,copy_summary_h2d_bulk_app_frame_hint,"
@@ -1741,6 +1770,18 @@ TIMING_KEYS = {
     CUDA_COPY_D2H_HOT_BYTES_KEY,
     CUDA_COPY_D2H_HOT_COUNT_KEY,
     CUDA_COPY_D2H_HOT_WAIT_NS_KEY,
+    CUDA_EVENT_SYNC_CALLS_KEY,
+    CUDA_EVENT_SYNC_BYTES_KEY,
+    CUDA_EVENT_SYNC_MAX_BYTES_KEY,
+    CUDA_EVENT_SYNC_WAIT_NS_KEY,
+    CUDA_EVENT_SYNC_MAX_WAIT_NS_KEY,
+    CUDA_EVENT_SYNC_HOT_BYTES_KEY,
+    CUDA_EVENT_SYNC_HOT_COUNT_KEY,
+    CUDA_EVENT_SYNC_HOT_WAIT_NS_KEY,
+    CUDA_CACHED_REUSE_COUNT_KEY,
+    CUDA_PENDING_REUSE_COUNT_KEY,
+    CUDA_NO_WAIT_BYPASS_COUNT_KEY,
+    CUDA_NO_WAIT_BYPASS_BYTES_KEY,
     DESCRIPTOR_RETENTION_ATTEMPTS_KEY,
     DESCRIPTOR_RETENTION_RETAINED_KEY,
     DESCRIPTOR_RETENTION_REJECTED_KEY,
@@ -2796,6 +2837,26 @@ def allocator_d2h_action_hint(
             return "opening_row_value_d2h_wait_secondary"
         return "batch_or_keep_hot_allocator_d2h_on_device"
     return "inspect_allocator_d2h_waits"
+
+
+def allocator_reuse_action_hint(
+    event_sync_wait_ms: float,
+    event_sync_hot_wait_pct: float,
+    pending_reuse_count: int,
+    no_wait_bypass_count: int,
+) -> str:
+    if no_wait_bypass_count > 0:
+        return "pending_cache_no_wait_active"
+    if event_sync_wait_ms < CUDA_TRANSFER_WAIT_MS_THRESHOLD:
+        return "none"
+    if (
+        pending_reuse_count > 0
+        and event_sync_hot_wait_pct >= DIRECT_D2H_HOT_WAIT_PCT_THRESHOLD
+    ):
+        return "raise_pending_cache_no_wait_limit"
+    if pending_reuse_count > 0:
+        return "inspect_pending_cache_waits"
+    return "inspect_allocator_event_waits"
 
 
 def direct_d2h_action_hint(
@@ -5971,6 +6032,37 @@ def summarize_profile_values(
         if cuda_allocator_d2h_wait_ms
         else 0.0
     )
+    cuda_allocator_event_sync_calls = values.get(CUDA_EVENT_SYNC_CALLS_KEY, 0)
+    cuda_allocator_event_sync_bytes = values.get(CUDA_EVENT_SYNC_BYTES_KEY, 0)
+    cuda_allocator_event_sync_max_bytes = values.get(CUDA_EVENT_SYNC_MAX_BYTES_KEY, 0)
+    cuda_allocator_event_sync_wait_ms = (
+        values.get(CUDA_EVENT_SYNC_WAIT_NS_KEY, 0) / 1_000_000.0
+    )
+    cuda_allocator_event_sync_max_wait_ms = (
+        values.get(CUDA_EVENT_SYNC_MAX_WAIT_NS_KEY, 0) / 1_000_000.0
+    )
+    cuda_allocator_event_sync_hot_bytes = values.get(CUDA_EVENT_SYNC_HOT_BYTES_KEY, 0)
+    cuda_allocator_event_sync_hot_count = values.get(CUDA_EVENT_SYNC_HOT_COUNT_KEY, 0)
+    cuda_allocator_event_sync_hot_wait_ms = (
+        values.get(CUDA_EVENT_SYNC_HOT_WAIT_NS_KEY, 0) / 1_000_000.0
+    )
+    cuda_allocator_event_sync_hot_wait_pct = (
+        cuda_allocator_event_sync_hot_wait_ms
+        * 100.0
+        / cuda_allocator_event_sync_wait_ms
+        if cuda_allocator_event_sync_wait_ms
+        else 0.0
+    )
+    cuda_allocator_cached_reuse_count = values.get(CUDA_CACHED_REUSE_COUNT_KEY, 0)
+    cuda_allocator_pending_reuse_count = values.get(CUDA_PENDING_REUSE_COUNT_KEY, 0)
+    cuda_allocator_no_wait_bypass_count = values.get(CUDA_NO_WAIT_BYPASS_COUNT_KEY, 0)
+    cuda_allocator_no_wait_bypass_bytes = values.get(CUDA_NO_WAIT_BYPASS_BYTES_KEY, 0)
+    cuda_allocator_reuse_hint = allocator_reuse_action_hint(
+        cuda_allocator_event_sync_wait_ms,
+        cuda_allocator_event_sync_hot_wait_pct,
+        cuda_allocator_pending_reuse_count,
+        cuda_allocator_no_wait_bypass_count,
+    )
     cuda_allocator_d2h_hint = allocator_d2h_action_hint(
         cuda_allocator_d2h_wait_ms,
         cuda_allocator_d2h_hot_count,
@@ -6635,6 +6727,18 @@ def summarize_profile_values(
         f"{cuda_allocator_d2h_hot_bytes},{cuda_allocator_d2h_hot_count},"
         f"{cuda_allocator_d2h_hot_wait_ms:.3f},"
         f"{cuda_allocator_d2h_hot_wait_pct:.3f},{cuda_allocator_d2h_hint},"
+        f"{cuda_allocator_event_sync_calls},{cuda_allocator_event_sync_bytes},"
+        f"{cuda_allocator_event_sync_max_bytes},"
+        f"{cuda_allocator_event_sync_wait_ms:.3f},"
+        f"{cuda_allocator_event_sync_max_wait_ms:.3f},"
+        f"{cuda_allocator_event_sync_hot_bytes},"
+        f"{cuda_allocator_event_sync_hot_count},"
+        f"{cuda_allocator_event_sync_hot_wait_ms:.3f},"
+        f"{cuda_allocator_event_sync_hot_wait_pct:.3f},"
+        f"{cuda_allocator_cached_reuse_count},"
+        f"{cuda_allocator_pending_reuse_count},"
+        f"{cuda_allocator_no_wait_bypass_count},"
+        f"{cuda_allocator_no_wait_bypass_bytes},{cuda_allocator_reuse_hint},"
         f"{cuda_host_register_wait_ms:.3f},{cuda_h2d_bytes},{cuda_transfer_hint},"
         f"{data_residency_hint},"
         f"{copy_summary_gpu_residency_hint},{copy_summary_h2d_bulk_app_frame_hint},"
