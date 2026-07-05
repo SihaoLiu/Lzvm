@@ -42,11 +42,15 @@ RETAINED_SOURCE_BYTES_ENV = "LZVM_CUDA_RETAINED_SOURCE_BYTES"
 RETAINED_DESCRIPTOR_BYTES_ENV = "LZVM_CUDA_RETAINED_DESCRIPTOR_BYTES"
 RETAINED_LEAF_DIGEST_BYTES_ENV = "LZVM_CUDA_RETAINED_LEAF_DIGEST_BYTES"
 RETAINED_PARENT_CHECKPOINT_BYTES_ENV = "LZVM_CUDA_RETAINED_PARENT_CHECKPOINT_BYTES"
+RETAINED_COMBINED_CACHE_RESERVE_BYTES_ENV = (
+    "LZVM_CUDA_RETAINED_COMBINED_CACHE_RESERVE_BYTES"
+)
 RETAINED_CACHE_ENVS = (
     RETAINED_SOURCE_BYTES_ENV,
     RETAINED_DESCRIPTOR_BYTES_ENV,
     RETAINED_LEAF_DIGEST_BYTES_ENV,
     RETAINED_PARENT_CHECKPOINT_BYTES_ENV,
+    RETAINED_COMBINED_CACHE_RESERVE_BYTES_ENV,
 )
 ENV_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 BINARY_FRESHNESS_FILES = ("Cargo.lock", "Cargo.toml")
@@ -742,6 +746,13 @@ def mode_args(args: argparse.Namespace) -> list[str]:
                 str(args.retained_parent_checkpoint_bytes),
             ]
         )
+    if args.retained_combined_cache_reserve_bytes is not None:
+        result.extend(
+            [
+                "--retained-combined-cache-reserve-bytes",
+                str(args.retained_combined_cache_reserve_bytes),
+            ]
+        )
     if args.trace_shape_timing:
         result.append("--trace-shape-timing")
     if args.trace_shape_timing_sample_stride is not None:
@@ -839,6 +850,10 @@ def mode_env_for_args(args: argparse.Namespace, mode: str) -> dict[str, str]:
     if args.retained_parent_checkpoint_bytes is not None:
         mode_env[RETAINED_PARENT_CHECKPOINT_BYTES_ENV] = str(
             args.retained_parent_checkpoint_bytes
+        )
+    if args.retained_combined_cache_reserve_bytes is not None:
+        mode_env[RETAINED_COMBINED_CACHE_RESERVE_BYTES_ENV] = str(
+            args.retained_combined_cache_reserve_bytes
         )
     mode_env.update(trace_timing_env_for_args(args))
     if args.parallel_lower_workers is not None:
@@ -1685,6 +1700,8 @@ def dry_run_summary_lines(args: argparse.Namespace, root: Path) -> list[str]:
         f"retained_leaf_digest_bytes={optional_int_text(args.retained_leaf_digest_bytes)}",
         "retained_parent_checkpoint_bytes="
         f"{optional_int_text(args.retained_parent_checkpoint_bytes)}",
+        "retained_combined_cache_reserve_bytes="
+        f"{optional_int_text(args.retained_combined_cache_reserve_bytes)}",
         f"gpu_preallocate={str(args.gpu_preallocate).lower()}",
         f"minimal_memory={str(args.minimal_memory).lower()}",
         f"pack_trace={str(not args.no_pack_trace).lower()}",
@@ -2012,6 +2029,7 @@ def self_test() -> None:
         retained_descriptor_bytes=None,
         retained_leaf_digest_bytes=None,
         retained_parent_checkpoint_bytes=None,
+        retained_combined_cache_reserve_bytes=None,
         trace_shape_timing=False,
         trace_shape_timing_sample_stride=None,
         trace_runner_detail_timing=False,
@@ -2092,6 +2110,26 @@ def self_test() -> None:
         if "retained_descriptor_bytes=1234" not in dry_run_summary_lines(args, root):
             raise SystemExit("self-test retained descriptor dry-run summary missing")
         args.retained_descriptor_bytes = None
+        args.retained_combined_cache_reserve_bytes = 4321
+        retained_reserve_command = command_for_env(
+            small_config,
+            args.small_mode,
+            not args.skip_verify_proof,
+            mode_env_for_args(args, args.small_mode),
+            proof_tuning_args(args),
+            allow_stale_bin=args.allow_stale_bin,
+        )
+        if (
+            f"{RETAINED_COMBINED_CACHE_RESERVE_BYTES_ENV}=4321"
+            not in retained_reserve_command
+        ):
+            raise SystemExit("self-test retained reserve env assignment missing")
+        if (
+            "retained_combined_cache_reserve_bytes=4321"
+            not in dry_run_summary_lines(args, root)
+        ):
+            raise SystemExit("self-test retained reserve dry-run summary missing")
+        args.retained_combined_cache_reserve_bytes = None
         args.sparse_high32_descriptors = True
         sparse_command = command_for_env(
             small_config,
@@ -2203,6 +2241,11 @@ def main() -> None:
     parser.add_argument("--retained-leaf-digest-bytes", type=nonnegative_integer, default=None)
     parser.add_argument(
         "--retained-parent-checkpoint-bytes",
+        type=nonnegative_integer,
+        default=None,
+    )
+    parser.add_argument(
+        "--retained-combined-cache-reserve-bytes",
         type=nonnegative_integer,
         default=None,
     )

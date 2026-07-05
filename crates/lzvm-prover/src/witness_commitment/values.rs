@@ -400,6 +400,9 @@ const RETAINED_SOURCE_DEVICE_RESERVE_BYTES: usize = 11 * 1024 * 1024 * 1024;
 #[cfg(feature = "cuda")]
 const RETAINED_COMBINED_DEVICE_CACHE_RESERVE_BYTES: usize = 10 * 1024 * 1024 * 1024;
 #[cfg(feature = "cuda")]
+const RETAINED_COMBINED_DEVICE_CACHE_RESERVE_BYTES_ENV: &str =
+    "LZVM_CUDA_RETAINED_COMBINED_CACHE_RESERVE_BYTES";
+#[cfg(feature = "cuda")]
 const MAX_DEFAULT_RETAINED_SOURCE_DEVICE_BYTES: usize = DEFAULT_RETAINED_SOURCE_DEVICE_BYTES;
 #[cfg(feature = "cuda")]
 static RETAINED_SOURCE_DEVICE_BYTES: AtomicUsize = AtomicUsize::new(0);
@@ -1005,10 +1008,23 @@ fn retained_combined_device_cache_limit() -> Option<usize> {
             .ok()
             .map(|info| {
                 info.total_bytes
-                    .saturating_sub(RETAINED_COMBINED_DEVICE_CACHE_RESERVE_BYTES)
+                    .saturating_sub(retained_combined_device_cache_reserve_bytes())
             })
             .filter(|limit| *limit > 0)
     })
+}
+
+#[cfg(feature = "cuda")]
+fn retained_combined_device_cache_reserve_bytes() -> usize {
+    let value = std::env::var(RETAINED_COMBINED_DEVICE_CACHE_RESERVE_BYTES_ENV).ok();
+    parse_retained_combined_device_cache_reserve_bytes(value.as_deref())
+}
+
+#[cfg(feature = "cuda")]
+fn parse_retained_combined_device_cache_reserve_bytes(value: Option<&str>) -> usize {
+    value
+        .and_then(|value| value.parse::<usize>().ok())
+        .unwrap_or(RETAINED_COMBINED_DEVICE_CACHE_RESERVE_BYTES)
 }
 
 #[cfg(feature = "cuda")]
@@ -3815,6 +3831,22 @@ mod tests {
         assert!(
             default_retained_parent_checkpoint_limit() <= DEFAULT_RETAINED_PARENT_CHECKPOINT_BYTES,
             "default retained parent checkpoint cache should stay within the measured static cap"
+        );
+    }
+
+    #[test]
+    fn retained_combined_device_cache_reserve_parser_uses_default_for_missing_or_invalid_values() {
+        assert_eq!(
+            parse_retained_combined_device_cache_reserve_bytes(None),
+            RETAINED_COMBINED_DEVICE_CACHE_RESERVE_BYTES
+        );
+        assert_eq!(
+            parse_retained_combined_device_cache_reserve_bytes(Some("invalid")),
+            RETAINED_COMBINED_DEVICE_CACHE_RESERVE_BYTES
+        );
+        assert_eq!(
+            parse_retained_combined_device_cache_reserve_bytes(Some("12345")),
+            12345
         );
     }
 

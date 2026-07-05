@@ -611,6 +611,110 @@ fn eth_proof_timing_batch_dry_run_passes_proof_tuning_flags_to_prove() {
 }
 
 #[test]
+fn eth_proof_timing_batch_controls_retained_combined_cache_reserve() {
+    let fixture = ProofFixture::new("eth-proof-timing-batch-retained-combined-cache-reserve");
+    let env_name = "LZVM_CUDA_RETAINED_COMBINED_CACHE_RESERVE_BYTES";
+    let mut explicit_command = Command::new(script_path());
+    explicit_command
+        .arg("--suite")
+        .arg("small")
+        .arg("--dry-run")
+        .arg("--retained-combined-cache-reserve-bytes")
+        .arg("4000000000")
+        .arg("--work-dir")
+        .arg(fixture.dir.join("runs"))
+        .arg("--path")
+        .arg(fixture.dir.join("improve-log.csv"))
+        .arg("--summary")
+        .arg("dry run")
+        .env(env_name, "111");
+    fixture.apply_env(&mut explicit_command, SMALL_PREFIX);
+
+    let explicit_output = explicit_command
+        .output()
+        .expect("ETH proof timing batch dry-run should run");
+    let explicit_success = explicit_output.status.success();
+    let explicit_stderr = String::from_utf8_lossy(&explicit_output.stderr).into_owned();
+    let explicit_stdout =
+        String::from_utf8(explicit_output.stdout).expect("stdout should be utf-8");
+
+    assert!(
+        explicit_success,
+        "dry-run should build explicit reserve command: stderr={explicit_stderr}"
+    );
+    assert!(
+        explicit_stdout.contains(&format!("{env_name}=4000000000")),
+        "dry-run command should pin explicit retained reserve: {explicit_stdout}"
+    );
+    assert!(
+        explicit_stdout.contains("retained_combined_cache_reserve_bytes=4000000000\n"),
+        "dry-run metadata should report explicit retained reserve: {explicit_stdout}"
+    );
+
+    let mut clearing_command = Command::new(script_path());
+    clearing_command
+        .arg("--suite")
+        .arg("small")
+        .arg("--dry-run")
+        .arg("--work-dir")
+        .arg(fixture.dir.join("runs"))
+        .arg("--path")
+        .arg(fixture.dir.join("improve-log.csv"))
+        .arg("--summary")
+        .arg("dry run")
+        .env(env_name, "111");
+    fixture.apply_env(&mut clearing_command, SMALL_PREFIX);
+
+    let clearing_output = clearing_command
+        .output()
+        .expect("ETH proof timing batch dry-run should run");
+    let clearing_success = clearing_output.status.success();
+    let clearing_stderr = String::from_utf8_lossy(&clearing_output.stderr).into_owned();
+    let clearing_stdout =
+        String::from_utf8(clearing_output.stdout).expect("stdout should be utf-8");
+
+    assert!(
+        clearing_success,
+        "dry-run should build clearing reserve command: stderr={clearing_stderr}"
+    );
+    assert!(
+        clearing_stdout.contains(&format!("-u {env_name}"))
+            && !clearing_stdout.contains(&format!("{env_name}=111")),
+        "dry-run command should clear external retained reserve: {clearing_stdout}"
+    );
+    assert!(
+        clearing_stdout.contains("retained_combined_cache_reserve_bytes=\n"),
+        "dry-run metadata should show no explicit retained reserve: {clearing_stdout}"
+    );
+
+    let mut check_command = Command::new(script_path());
+    check_command
+        .arg("--suite")
+        .arg("small")
+        .arg("--check-env")
+        .arg("--retained-combined-cache-reserve-bytes")
+        .arg("4000000000");
+    fixture.apply_env(&mut check_command, SMALL_PREFIX);
+
+    let check_output = check_command
+        .output()
+        .expect("ETH proof timing batch check-env should run");
+    let check_success = check_output.status.success();
+    let check_stderr = String::from_utf8_lossy(&check_output.stderr).into_owned();
+    let check_stdout = String::from_utf8(check_output.stdout).expect("stdout should be utf-8");
+    fixture.cleanup();
+
+    assert!(
+        check_success,
+        "check-env should pass with retained reserve: stderr={check_stderr}"
+    );
+    assert!(
+        check_stdout.contains("--retained-combined-cache-reserve-bytes 4000000000"),
+        "check-env followup should preserve retained reserve: {check_stdout}"
+    );
+}
+
+#[test]
 fn eth_proof_timing_batch_dry_run_applies_worker_overrides() {
     let fixture = ProofFixture::new("eth-proof-timing-batch-worker-overrides");
     let mut command = Command::new(script_path());
