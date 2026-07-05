@@ -1216,14 +1216,36 @@ def print_transfer_triage(
         print("small_d2h_batching_hint,none,no repeated small D2H hotspot")
 
 
-def print_callchain_hint(conn: sqlite3.Connection) -> None:
+def cuda_backtrace_unavailable_hint(profile_stderr: str) -> str | None:
+    text = profile_stderr.lower()
+    if (
+        "cuda backtraces will not be collected" in text
+        and "cpu sampling is disabled" in text
+    ):
+        return "cuda_backtrace_unavailable_cpu_sampling_disabled"
+    if "cpu ip/backtrace sampling will be disabled" in text:
+        return "cpu_backtrace_sampling_disabled"
+    return None
+
+
+def read_profile_stderr(path: str | None) -> str:
+    if not path:
+        return ""
+    return Path(path).read_text(encoding="utf-8")
+
+
+def print_callchain_hint(conn: sqlite3.Connection, profile_stderr: str) -> None:
     missing = memcpy_missing_callchain_summary(conn)
     missing_calls = int(missing["calls"] or 0)
     missing_host_ns = int(missing["host_ns"] or 0)
+    unavailable_hint = cuda_backtrace_unavailable_hint(profile_stderr)
     print()
     print("cuda_api_backtrace_hint")
     print("missing_callchain_calls,missing_host_api_ms,recommended_nsys_options")
     if missing_calls:
+        if unavailable_hint is not None:
+            print(f"{missing_calls},{ms(missing_host_ns):.3f},{unavailable_hint}")
+            return
         print(
             f"{missing_calls},{ms(missing_host_ns):.3f},"
             "--trace=cuda,nvtx,osrt --sample=process-tree "
@@ -1233,7 +1255,12 @@ def print_callchain_hint(conn: sqlite3.Connection) -> None:
         print("0,0.000,none")
 
 
-def summarize(conn: sqlite3.Connection, label: str, limit: int) -> None:
+def summarize(
+    conn: sqlite3.Connection,
+    label: str,
+    limit: int,
+    profile_stderr: str = "",
+) -> None:
     require_tables(conn)
     conn.row_factory = sqlite3.Row
     prepare_runtime_memcpy_table(conn)
@@ -1287,7 +1314,7 @@ def summarize(conn: sqlite3.Connection, label: str, limit: int) -> None:
         top_h2d_bulk,
         h2d_bulk_app_frame_rows,
     )
-    print_callchain_hint(conn)
+    print_callchain_hint(conn, profile_stderr)
 
 
 def build_self_test_db() -> sqlite3.Connection:
@@ -1409,15 +1436,21 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("sqlite", nargs="?", help="path to an nsys SQLite export")
     parser.add_argument("--top", type=int, default=12, help="correlated rows to print")
+    parser.add_argument(
+        "--profile-stderr",
+        default=None,
+        help="optional nsys profile stderr path for profiler availability warnings",
+    )
     parser.add_argument("--self-test", action="store_true", help="run against an in-memory sample")
     return parser.parse_args()
 
 
 def main() -> int:
     args = parse_args()
+    profile_stderr = read_profile_stderr(args.profile_stderr)
     if args.self_test:
         with closing(build_self_test_db()) as conn:
-            summarize(conn, "self-test", max(args.top, 1))
+            summarize(conn, "self-test", max(args.top, 1), profile_stderr)
         return 0
 
     if not args.sqlite:
@@ -1427,7 +1460,7 @@ def main() -> int:
         raise SystemExit(f"SQLite export does not exist: {path}")
 
     with closing(sqlite3.connect(path)) as conn:
-        summarize(conn, str(path), max(args.top, 1))
+        summarize(conn, str(path), max(args.top, 1), profile_stderr)
     return 0
 
 

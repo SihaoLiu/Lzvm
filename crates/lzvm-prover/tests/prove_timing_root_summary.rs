@@ -1754,6 +1754,77 @@ fn prove_timing_root_summary_reads_sibling_nsys_copy_small_d2h_hints() {
 }
 
 #[test]
+fn prove_timing_root_summary_reports_disabled_cuda_backtrace_sampling() {
+    let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let workspace_root = crate_root
+        .parent()
+        .and_then(|path| path.parent())
+        .expect("crate should live under workspace root");
+    let script_path = workspace_root.join("scripts/prove-timing-root-summary.py");
+    let dir = workspace_root.join("temp").join(format!(
+        "prove-timing-root-summary-disabled-backtrace-{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("fixture dir should be created");
+    let log_path = dir.join("sample.log");
+    let copy_summary_path = dir.join("sample.copy-summary.txt");
+    std::fs::write(
+        &log_path,
+        [
+            "input_bytes=12447640",
+            "timing_total_ms=55693",
+            "timing_cuda_allocator_copy_h2d_bytes=88120305500",
+        ]
+        .join("\n"),
+    )
+    .expect("timing fixture should be written");
+    std::fs::write(
+        &copy_summary_path,
+        [
+            "cuda_api_backtrace_hint",
+            "missing_callchain_calls,missing_host_api_ms,recommended_nsys_options",
+            "1182,626.112,cuda_backtrace_unavailable_cpu_sampling_disabled",
+        ]
+        .join("\n"),
+    )
+    .expect("copy summary fixture should be written");
+
+    let output = Command::new("python3")
+        .arg(&script_path)
+        .arg(&log_path)
+        .output()
+        .expect("prove timing root summary should run");
+    let _ = std::fs::remove_dir_all(&dir);
+
+    assert!(
+        output.status.success(),
+        "prove timing root summary should pass: stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    let mut lines = stdout.lines();
+    let headers = lines
+        .next()
+        .expect("summary should include a header")
+        .split(',')
+        .collect::<Vec<_>>();
+    let row = lines
+        .next()
+        .expect("summary should include a data row")
+        .split(',')
+        .collect::<Vec<_>>();
+    let index = headers
+        .iter()
+        .position(|header| *header == "copy_summary_cuda_api_backtrace_hint")
+        .unwrap_or_else(|| panic!("summary should expose backtrace hint: stdout={stdout}"));
+    assert_eq!(
+        row.get(index).copied(),
+        Some("cuda_backtrace_unavailable_cpu_sampling_disabled")
+    );
+}
+
+#[test]
 fn prove_timing_root_summary_reads_hyphen_sibling_nsys_copy_summary() {
     let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
     let workspace_root = crate_root

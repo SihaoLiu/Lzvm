@@ -2176,3 +2176,47 @@ fn nsys_cuda_copy_summary_reports_host_and_gpu_memcpy_waits() {
         "nsys CUDA copy summary should print D2H host/GPU wait correlation"
     );
 }
+
+#[test]
+fn nsys_cuda_copy_summary_reports_disabled_backtrace_sampling() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let workspace_root = crate_root.join("../..");
+    let script_path = workspace_root.join("scripts/nsys-cuda-copy-summary.py");
+    let temp_dir = workspace_root.join("temp");
+    std::fs::create_dir_all(&temp_dir).expect("temp directory should be creatable");
+    let stderr_path = temp_dir.join(format!(
+        "nsys-copy-summary-disabled-sampling-{}.stderr",
+        std::process::id()
+    ));
+    std::fs::write(
+        &stderr_path,
+        [
+            "WARNING: CPU IP/backtrace sampling will be disabled.",
+            "WARNING: CUDA backtraces will not be collected because CPU sampling is disabled.",
+        ]
+        .join("\n"),
+    )
+    .expect("profile stderr fixture should be written");
+
+    let output = Command::new("python3")
+        .arg(&script_path)
+        .arg("--self-test")
+        .arg("--profile-stderr")
+        .arg(&stderr_path)
+        .output()
+        .expect("nsys CUDA copy summary self-test should run");
+    let _ = std::fs::remove_file(&stderr_path);
+
+    assert!(
+        output.status.success(),
+        "nsys CUDA copy summary self-test should pass: stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("cuda_api_backtrace_hint")
+            && stdout.contains("cuda_backtrace_unavailable_cpu_sampling_disabled")
+            && !stdout.contains("--sample=process-tree --cudabacktrace=memory:80000"),
+        "disabled profiler sampling should replace the retry recommendation: {stdout}"
+    );
+}

@@ -339,11 +339,22 @@ def print_nsys_outputs(args: argparse.Namespace, outputs: dict[str, Path], root:
     for script, summary in [
         ("scripts/nsys-cuda-kernel-summary.py", kernel_summary),
         ("scripts/nsys-cuda-sync-summary.py", sync_summary),
-        ("scripts/nsys-cuda-copy-summary.py", copy_summary),
     ]:
         name = Path(script).stem.replace("-", "_")
         print(f"{name}_command=" + shell_join([script, sqlite]))
         print(f"{name}_output={summary}")
+    print(
+        "nsys_cuda_copy_summary_command="
+        + shell_join(
+            [
+                "scripts/nsys-cuda-copy-summary.py",
+                sqlite,
+                "--profile-stderr",
+                display_path_for_shell(outputs["profile_stderr"], root),
+            ]
+        )
+    )
+    print(f"nsys_cuda_copy_summary_output={copy_summary}")
 
 
 def print_ncu_outputs(outputs: dict[str, Path], root: Path) -> None:
@@ -603,9 +614,19 @@ def summarize_nsys(root: Path, outputs: dict[str, Path]) -> None:
     for script, output in [
         ("scripts/nsys-cuda-kernel-summary.py", outputs["kernel_summary"]),
         ("scripts/nsys-cuda-sync-summary.py", outputs["sync_summary"]),
-        ("scripts/nsys-cuda-copy-summary.py", outputs["copy_summary"]),
     ]:
         run_summary([script, str(outputs["sqlite"])], root, output, env)
+    run_summary(
+        [
+            "scripts/nsys-cuda-copy-summary.py",
+            str(outputs["sqlite"]),
+            "--profile-stderr",
+            str(outputs["profile_stderr"]),
+        ],
+        root,
+        outputs["copy_summary"],
+        env,
+    )
 
 
 def summarize_ncu(root: Path, outputs: dict[str, Path]) -> None:
