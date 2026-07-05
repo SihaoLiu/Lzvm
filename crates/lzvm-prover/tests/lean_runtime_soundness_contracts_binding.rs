@@ -271,7 +271,6 @@ fn lean_runtime_soundness_contracts_exports_finalized_concrete_core_requirements
         theorem,
         &[
             "runtime_soundness_checked_acceptance_audited_finalized_concrete_segment_ids_core_components_contract",
-            "coreComponents",
             "concreteSegmentIdsAllowed",
         ],
     );
@@ -389,7 +388,6 @@ fn lean_runtime_soundness_contracts_exports_required_source_core_requirements_co
         theorem,
         &[
             "runtime_soundness_required_external_source_audited_finalized_concrete_segment_ids_core_components_contract",
-            "coreComponents",
             "concreteSegmentIdsAllowed",
         ],
     );

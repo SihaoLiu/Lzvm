@@ -1663,7 +1663,7 @@ runtime_soundness_checked_acceptance_audited_finalized_concrete_segment_ids_core
           /\ artifactValidation.proofSegmentIdsUnique artifact publicInput proof
           /\ RuntimeProofArtifactConcreteSegmentIdsAllowed proof := by
   intro artifact publicInput proof requiresExternalSource checked
-  have finalizedConcreteContract :=
+  obtain ⟨finalizedSegmentContract, concreteSegmentIdsAllowed⟩ :=
     runtime_soundness_checked_acceptance_artifact_audited_finalized_concrete_segment_ids_contract
       assumptions
       validation
@@ -1673,8 +1673,6 @@ runtime_soundness_checked_acceptance_audited_finalized_concrete_segment_ids_core
       proof
       requiresExternalSource
       checked
-  rcases finalizedConcreteContract with
-    ⟨finalizedSegmentContract, concreteSegmentIdsAllowed⟩
   rcases finalizedSegmentContract with
     ⟨_artifactEvidence,
       auditedCrypto,
@@ -1762,7 +1760,7 @@ runtime_soundness_required_external_source_audited_finalized_concrete_segment_id
             /\ artifactValidation.proofSegmentIdsUnique artifact publicInput proof
             /\ RuntimeProofArtifactConcreteSegmentIdsAllowed proof := by
   intro artifact publicInput proof requiresExternalSource checked required
-  have finalizedConcreteContract :=
+  obtain ⟨finalizedSegmentContract, concreteSegmentIdsAllowed⟩ :=
     runtime_soundness_required_external_source_artifact_audited_finalized_concrete_segment_ids_contract
       assumptions
       validation
@@ -1773,8 +1771,6 @@ runtime_soundness_required_external_source_audited_finalized_concrete_segment_id
       requiresExternalSource
       checked
       required
-  rcases finalizedConcreteContract with
-    ⟨finalizedSegmentContract, concreteSegmentIdsAllowed⟩
   rcases finalizedSegmentContract with
     ⟨_artifactEvidence,
       auditedCrypto,
@@ -1849,17 +1845,7 @@ runtime_soundness_checked_acceptance_finalized_concrete_core_requirements_contra
           /\ artifactValidation.proofSegmentIdsUnique artifact publicInput proof
           /\ RuntimeProofArtifactConcreteSegmentIdsAllowed proof := by
   intro artifact publicInput proof requiresExternalSource checked
-  have coreComponents :=
-    runtime_soundness_checked_acceptance_audited_finalized_concrete_segment_ids_core_components_contract
-      assumptions
-      validation
-      binding
-      artifact
-      publicInput
-      proof
-      requiresExternalSource
-      checked
-  rcases coreComponents with
+  obtain
     ⟨_auditedCrypto,
       _auditedSemantic,
       artifactFinalized,
@@ -1874,7 +1860,16 @@ runtime_soundness_checked_acceptance_finalized_concrete_core_requirements_contra
       _soundWitness,
       segmentIdsAllowed,
       segmentIdsUnique,
-      concreteSegmentIdsAllowed⟩
+      concreteSegmentIdsAllowed⟩ :=
+    runtime_soundness_checked_acceptance_audited_finalized_concrete_segment_ids_core_components_contract
+      assumptions
+      validation
+      binding
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      checked
   exact
     ⟨artifactFinalized,
       transcriptBound,
@@ -1926,18 +1921,7 @@ runtime_soundness_required_external_source_finalized_concrete_core_source_contra
             /\ artifactValidation.proofSegmentIdsUnique artifact publicInput proof
             /\ RuntimeProofArtifactConcreteSegmentIdsAllowed proof := by
   intro artifact publicInput proof requiresExternalSource checked required
-  have coreComponents :=
-    runtime_soundness_required_external_source_audited_finalized_concrete_segment_ids_core_components_contract
-      assumptions
-      validation
-      binding
-      artifact
-      publicInput
-      proof
-      requiresExternalSource
-      checked
-      required
-  rcases coreComponents with
+  obtain
     ⟨_auditedCrypto,
       _auditedSemantic,
       artifactFinalized,
@@ -1953,7 +1937,17 @@ runtime_soundness_required_external_source_finalized_concrete_core_source_contra
       _soundWitness,
       segmentIdsAllowed,
       segmentIdsUnique,
-      concreteSegmentIdsAllowed⟩
+      concreteSegmentIdsAllowed⟩ :=
+    runtime_soundness_required_external_source_audited_finalized_concrete_segment_ids_core_components_contract
+      assumptions
+      validation
+      binding
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      checked
+      required
   exact
     ⟨artifactFinalized,
       externalSourceEvidence,
