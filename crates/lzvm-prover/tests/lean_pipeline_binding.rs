@@ -268,6 +268,7 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
             "runtime_pipeline_binding_checked_acceptance_audited_concrete_segment_ids_contract",
             "runtime_pipeline_binding_checked_acceptance_audited_finalized_segment_ids_contract",
             "runtime_pipeline_binding_checked_acceptance_audited_finalized_concrete_segment_ids_contract",
+            "runtime_pipeline_binding_checked_acceptance_audited_finalized_concrete_segment_ids_core_components_contract",
             "runtime_pipeline_binding_checked_acceptance_finalized_concrete_segment_seeded_requirements_contract",
             "runtime_pipeline_binding_checked_acceptance_audited_concrete_opening_contract",
             "runtime_pipeline_checked_acceptance_audited_concrete_opening_core_contract",
@@ -2325,6 +2326,68 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
     );
     lean_binding::assert_theorem_prefix_contains(
         &lean_source,
+        "runtime_pipeline_binding_checked_acceptance_audited_finalized_concrete_segment_ids_core_components_contract",
+        &[
+            "RuntimeProofArtifactConcreteSegmentIdBinding",
+            "RequiredCryptographicAssumptionStatements assumptions.crypto",
+            "RequiredSemanticAssumptionStatements assumptions.semantic",
+            "RuntimeProofArtifactFinalized",
+            "ProofSystemSound system",
+            "system.accepts publicInput proof",
+            "system.transcriptBound publicInput proof",
+            "system.publicInputBound publicInput proof",
+            "system.pcsOpeningsValid publicInput proof",
+            "system.friQueriesValid publicInput proof",
+            "validation.queryPlanBindingValidation.queryPlanSeedBindsWitnessTreeDigests",
+            "validation.queryPlanBindingValidation.queryPlanSeededFriOpeningRequirementsChecked",
+            "RuntimeVerifierCoreContract system publicInput proof",
+            "exists witness trace constraints",
+            "SoundWitness system publicInput proof",
+            "artifactValidation.proofSegmentIdsAllowed artifact publicInput proof",
+            "artifactValidation.proofSegmentIdsUnique artifact publicInput proof",
+            "RuntimeProofArtifactConcreteSegmentIdsAllowed proof",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_pipeline_binding_checked_acceptance_audited_finalized_concrete_segment_ids_core_components_contract",
+        &[
+            "runtime_pipeline_binding_checked_acceptance_audited_finalized_concrete_segment_ids_contract",
+            r#"rcases finalizedConcreteContract with
+    ⟨finalizedSegmentContract, concreteSegmentIdsAllowed⟩"#,
+            r#"segmentIdsAllowed,
+      segmentIdsUnique,
+      _unitValuesTraceIdentityCoverage"#,
+            r#"exact
+    ⟨auditedCrypto,
+      auditedSemantic,
+      artifactFinalized,
+      proofSystemSound,
+      verifierAccepts,
+      transcriptBound,
+      publicInputBound,
+      pcsOpeningsValid,
+      friQueriesValid,
+      seedBinds,
+      seededFriOpeningChecked,
+      coreContract,
+      executionObligations,
+      soundWitness,
+      segmentIdsAllowed,
+      segmentIdsUnique,
+      concreteSegmentIdsAllowed⟩"#,
+        ],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &lean_source,
+        "runtime_pipeline_binding_checked_acceptance_audited_finalized_concrete_segment_ids_core_components_contract",
+        &[
+            "RuntimePipelineBindingEvidence",
+            "runtime_pipeline_binding_checked_acceptance_sound",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
         "runtime_pipeline_binding_checked_acceptance_finalized_concrete_segment_seeded_requirements_contract",
         &[
             "RuntimeProofArtifactConcreteSegmentIdBinding",
@@ -2342,9 +2405,17 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
         &lean_source,
         "runtime_pipeline_binding_checked_acceptance_finalized_concrete_segment_seeded_requirements_contract",
         &[
-            "runtime_pipeline_binding_checked_acceptance_audited_finalized_concrete_segment_ids_contract",
-            r#"rcases finalizedConcreteContract with
-    ⟨finalizedSegmentContract, concreteSegmentIdsAllowed⟩"#,
+            "runtime_pipeline_binding_checked_acceptance_audited_finalized_concrete_segment_ids_core_components_contract",
+            r#"rcases coreComponents with
+    ⟨_auditedCrypto,
+      _auditedSemantic,
+      artifactFinalized,
+      _proofSystemSound,
+      _verifierAccepts,
+      _transcriptBound,
+      _publicInputBound,
+      pcsOpeningsValid,
+      friQueriesValid"#,
             r#"pcsOpeningsValid,
       friQueriesValid,
       seedBinds,
@@ -2367,6 +2438,7 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
         &[
             "RuntimePipelineBindingEvidence",
             "runtime_pipeline_binding_checked_acceptance_sound",
+            "runtime_pipeline_binding_checked_acceptance_audited_finalized_concrete_segment_ids_contract",
             "runtime_pipeline_binding_required_external_source_sound",
         ],
     );
