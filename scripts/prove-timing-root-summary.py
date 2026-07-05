@@ -2037,20 +2037,29 @@ def parse_timing_log(text: str) -> dict[str, int | str]:
             elif len(row) >= 2 and row[0].strip() == "host_registration_hint":
                 values[NSYS_COPY_HOST_REGISTRATION_HINT_KEY] = row[1].strip()
             elif (
-                len(row) >= 3
+                len(row) >= 2
                 and row[0].strip() == "h2d_bulk_app_frame_hint"
-                and row[1].strip() == "reuse_device_source_for_hot_frame"
-                and (
-                    "guest_pc_trace_backend::record_device_source_build_duration"
-                    in row[2]
-                    or "build_guest_pc_trace_stage_source_devices_from_device_material_timing"
-                    in row[2]
-                )
             ):
-                values[NSYS_COPY_TRACE_DESCRIPTOR_RESIDENCY_PIPELINE_KEY] = 1
-                values[NSYS_COPY_H2D_BULK_APP_FRAME_HINT_KEY] = compact_csv_token(
-                    ",".join(row[2:]).strip()
-                )
+                hint = row[1].strip()
+                detail = ",".join(row[2:]).strip() if len(row) >= 3 else ""
+                if (
+                    hint == "reuse_device_source_for_hot_frame"
+                    and (
+                        "guest_pc_trace_backend::record_device_source_build_duration"
+                        in detail
+                        or "build_guest_pc_trace_stage_source_devices_from_device_material_timing"
+                        in detail
+                    )
+                ):
+                    values[NSYS_COPY_TRACE_DESCRIPTOR_RESIDENCY_PIPELINE_KEY] = 1
+                    values[NSYS_COPY_H2D_BULK_APP_FRAME_HINT_KEY] = compact_csv_token(
+                        detail
+                    )
+                elif values.get(NSYS_COPY_H2D_BULK_APP_FRAME_HINT_KEY, "none") in {
+                    "",
+                    "none",
+                }:
+                    values[NSYS_COPY_H2D_BULK_APP_FRAME_HINT_KEY] = hint or "none"
             continue
         if nsys_copy_backtrace_block is not None:
             if not stripped:

@@ -1684,6 +1684,7 @@ fn prove_timing_root_summary_reads_sibling_nsys_copy_small_d2h_hints() {
             "cuda_transfer_triage",
             "metric,value,detail",
             "gpu_residency_hint,batch_or_keep_small_d2h_on_device,prioritize data residency before relying on Graph or fusion speedups",
+            "h2d_bulk_app_frame_hint,inspect_callchains,bulk H2D exists but no application callchain frame was available",
             "small_d2h_batching_hint,batch_small_d2h_by_size,bytes=1152 calls=41 host_api_ms=3387.322 previous_kernel=poseidon2_merkle_digest_parent_kernel",
             "host_registration_api_ms,3143.741,host time spent registering or allocating page-locked host memory",
             "host_registration_hint,cache_or_reuse_pinned_host_memory,host registration overhead is a meaningful transfer-side cost",
@@ -1736,6 +1737,10 @@ fn prove_timing_root_summary_reads_sibling_nsys_copy_small_d2h_hints() {
     assert_eq!(
         value("copy_summary_small_d2h_batching_hint"),
         "batch_small_d2h_by_size"
+    );
+    assert_eq!(
+        value("copy_summary_h2d_bulk_app_frame_hint"),
+        "inspect_callchains"
     );
     assert_eq!(
         value("copy_summary_cuda_api_backtrace_hint"),
