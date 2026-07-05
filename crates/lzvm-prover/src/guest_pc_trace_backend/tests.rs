@@ -5390,6 +5390,55 @@ fn runner_boundary_seed_snapshot_uses_pending_dma_add_register_boundary_without_
 }
 
 #[test]
+fn runner_boundary_snapshot_clears_pending_dma_after_following_plain_shape() {
+    let current_seed = ZiskMainSegmentSeed::new();
+    let mut boundary_snapshot = ZiskMainRunnerBoundarySnapshot::new(&current_seed);
+    let expected_pending = Some(ZiskMainPendingDma {
+        kind: RiscvDmaKind::Memcpy,
+        first_arg_reg: 5,
+    });
+    let plain_shape = GuestMachineReportShape {
+        instruction: RiscvInstruction::OpImm {
+            kind: RiscvOpImmKind::Addi,
+            rd: 0,
+            rs1: 0,
+            immediate: 0,
+        },
+        has_memory_write: false,
+    };
+
+    boundary_snapshot.record_report_shape_state(GuestMachineReportShape {
+        instruction: RiscvInstruction::ZiskDmaPrepare {
+            kind: RiscvDmaKind::Memcpy,
+            rs1: 5,
+        },
+        has_memory_write: false,
+    });
+    assert_eq!(boundary_snapshot.last_report_pending_dma, None);
+    assert_eq!(boundary_snapshot.next_report_pending_dma, expected_pending);
+
+    boundary_snapshot.record_report_shape_state(GuestMachineReportShape {
+        instruction: RiscvInstruction::Op {
+            kind: RiscvOpKind::Add,
+            rd: 9,
+            rs1: 10,
+            rs2: 11,
+        },
+        has_memory_write: true,
+    });
+    assert_eq!(boundary_snapshot.last_report_pending_dma, expected_pending);
+    assert_eq!(boundary_snapshot.next_report_pending_dma, None);
+
+    boundary_snapshot.record_report_shape_state(plain_shape);
+    assert_eq!(boundary_snapshot.last_report_pending_dma, None);
+    assert_eq!(boundary_snapshot.next_report_pending_dma, None);
+
+    boundary_snapshot.record_report_shape_state(plain_shape);
+    assert_eq!(boundary_snapshot.last_report_pending_dma, None);
+    assert_eq!(boundary_snapshot.next_report_pending_dma, None);
+}
+
+#[test]
 fn runner_boundary_seed_snapshot_uses_pending_dma_addi_register_boundary_without_retained_report() {
     let current_seed = ZiskMainSegmentSeed::new();
     let mut runner_state = GuestMachineState::new(0x8000_0008);

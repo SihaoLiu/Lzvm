@@ -10148,8 +10148,20 @@ impl ZiskMainRunnerBoundarySnapshot {
     }
 
     fn record_report_shape_state(&mut self, shape: GuestMachineReportShape) {
+        let next_pending_dma = match shape.instruction {
+            RiscvInstruction::ZiskDmaPrepare { kind, rs1 } => Some(ZiskMainPendingDma {
+                kind,
+                first_arg_reg: rs1,
+            }),
+            _ if self.last_report_pending_dma.is_none()
+                && self.next_report_pending_dma.is_none() =>
+            {
+                return;
+            }
+            _ => None,
+        };
         self.last_report_pending_dma = self.next_report_pending_dma;
-        self.next_report_pending_dma = main_pending_dma_from_shape(shape);
+        self.next_report_pending_dma = next_pending_dma;
     }
 
     #[cfg(test)]
@@ -14902,16 +14914,6 @@ fn zisk_main_pending_dma_from_report_shape(
     shape: GuestMachineReportShape,
 ) -> Option<ZiskMainPendingDma> {
     zisk_main_pending_dma_from_instruction(shape.instruction)
-}
-
-fn main_pending_dma_from_shape(shape: GuestMachineReportShape) -> Option<ZiskMainPendingDma> {
-    match shape.instruction {
-        RiscvInstruction::ZiskDmaPrepare { kind, rs1 } => Some(ZiskMainPendingDma {
-            kind,
-            first_arg_reg: rs1,
-        }),
-        _ => None,
-    }
 }
 
 fn zisk_main_pending_dma_from_instruction(
