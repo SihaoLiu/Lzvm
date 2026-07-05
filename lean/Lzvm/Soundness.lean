@@ -136,6 +136,35 @@ theorem accepted_proof_audited_core_and_execution_obligations
       coreContract,
       sound_witness_implies_execution_obligations soundWitness⟩
 
+theorem accepted_proof_audited_core_execution_and_sound_witness
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system) :
+    forall publicInput proof,
+      system.accepts publicInput proof ->
+        RequiredCryptographicAssumptionStatements assumptions.crypto
+          /\ RequiredSemanticAssumptionStatements assumptions.semantic
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ (exists witness trace constraints,
+            system.traceConsistent publicInput proof trace
+              /\ system.constraintsSatisfied constraints trace
+              /\ system.witnessMatchesTrace witness trace)
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof accepted
+  have auditedCoreAndWitness :=
+    accepted_proof_audited_core_and_sound_witness
+      assumptions
+      publicInput
+      proof
+      accepted
+  rcases auditedCoreAndWitness with
+    ⟨cryptoEvidence, semanticEvidence, coreContract, soundWitness⟩
+  exact
+    ⟨cryptoEvidence,
+      semanticEvidence,
+      coreContract,
+      sound_witness_implies_execution_obligations soundWitness,
+      soundWitness⟩
+
 theorem accepted_proof_audited_full_evidence
     {system : VerifierModel}
     (assumptions : AssumptionBundle system) :
