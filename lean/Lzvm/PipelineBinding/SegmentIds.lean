@@ -1648,4 +1648,104 @@ runtime_pipeline_required_external_source_finalized_concrete_segment_seeded_requ
       segmentIdsUnique,
       concreteSegmentIdsAllowed⟩
 
+set_option linter.style.longLine false in
+theorem
+runtime_pipeline_required_external_source_finalized_concrete_opening_seeded_requirements_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimePipelineBindingValidation system)
+    (binding :
+      let queryPlanValidation := validation.queryPlanBindingValidation
+      let challengeValidation := queryPlanValidation.challengeValidation
+      RuntimeProofArtifactConcreteSegmentIdBinding
+        challengeValidation.transcriptValidation.artifactBindingValidation) :
+    forall artifact publicInput proof (requiresExternalSource : Prop),
+      RuntimePipelineBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        requiresExternalSource ->
+          let queryPlanValidation := validation.queryPlanBindingValidation
+          let artifactValidation :=
+            queryPlanValidation.challengeValidation.transcriptValidation.artifactBindingValidation
+          RuntimeProofArtifactFinalized
+            system
+            artifactValidation
+            artifact
+            publicInput
+            proof
+            /\ ExternalSourceOpeningEvidence
+              system
+              (runtime_pipeline_trace_source_validation validation)
+              publicInput
+              proof
+            /\ ExternalSourceOpeningEvidence
+              system
+              (runtime_pipeline_opening_source_validation validation)
+              publicInput
+              proof
+            /\ system.pcsOpeningsValid publicInput proof
+            /\ system.friQueriesValid publicInput proof
+            /\ validation.queryPlanBindingValidation.queryPlanSeedBindsWitnessTreeDigests
+              artifact
+              publicInput
+              proof
+            /\ validation.queryPlanBindingValidation.queryPlanSeededFriOpeningRequirementsChecked
+              artifact
+              publicInput
+              proof
+            /\ artifactValidation.proofSegmentIdsAllowed artifact publicInput proof
+            /\ artifactValidation.proofSegmentIdsUnique artifact publicInput proof
+            /\ RuntimeProofArtifactConcreteSegmentIdsAllowed proof := by
+  intro artifact publicInput proof requiresExternalSource accepted required
+  have openingEvidence :=
+    runtime_pipeline_required_external_source_finalized_concrete_opening_evidence_contract
+      assumptions
+      validation
+      binding
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      accepted
+      required
+  have seededRequirements :=
+    runtime_pipeline_required_external_source_finalized_concrete_segment_seeded_requirements_contract
+      assumptions
+      validation
+      binding
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      accepted
+      required
+  rcases openingEvidence with
+    ⟨artifactFinalized,
+      traceExternalEvidence,
+      openingExternalEvidence,
+      pcsOpeningsValid,
+      friQueriesValid,
+      concreteSegmentIdsAllowed⟩
+  rcases seededRequirements with
+    ⟨_artifactFinalizedAgain,
+      seedBinds,
+      seededFriOpeningChecked,
+      segmentIdsAllowed,
+      segmentIdsUnique,
+      _concreteSegmentIdsAllowedAgain⟩
+  exact
+    ⟨artifactFinalized,
+      traceExternalEvidence,
+      openingExternalEvidence,
+      pcsOpeningsValid,
+      friQueriesValid,
+      seedBinds,
+      seededFriOpeningChecked,
+      segmentIdsAllowed,
+      segmentIdsUnique,
+      concreteSegmentIdsAllowed⟩
+
 end Lzvm
