@@ -110,6 +110,35 @@ theorem guest_pc_trace_parallel_lower_work_units_keeps_replay_snapshot_separate
   simpa [replayOnlyDisabled, replaySnapshotDisabled] using
     replaySnapshotMatches
 
+theorem guest_pc_trace_parallel_lower_work_units_selects_parallel_lower_only
+    (config : GuestPcTraceParallelLowerConfig) :
+    config.configuredWorkUnits = true ->
+      config.configuredReplayOnly = false ->
+        config.configuredReplaySnapshot = false ->
+          GuestPcTraceParallelLowerDecisionMatches config ->
+            config.effectiveParallelLower = true
+              /\ config.effectiveReplayOnly = false
+              /\ config.effectiveReplaySnapshot = false := by
+  intro workUnitsEnabled replayOnlyDisabled replaySnapshotDisabled decision
+  exact
+    And.intro
+      (guest_pc_trace_parallel_lower_work_units_selects_parallel_lower
+        config
+        workUnitsEnabled
+        decision)
+      (And.intro
+        (guest_pc_trace_parallel_lower_work_units_keeps_replay_only_separate
+          config
+          workUnitsEnabled
+          replayOnlyDisabled
+          decision)
+        (guest_pc_trace_parallel_lower_work_units_keeps_replay_snapshot_separate
+          config
+          workUnitsEnabled
+          replayOnlyDisabled
+          replaySnapshotDisabled
+          decision))
+
 theorem guest_pc_trace_parallel_lower_checked_acceptance_explicit_selects_parallel_lower
     {system : VerifierModel}
     (validation : GuestPcTraceParallelLowerValidation)
@@ -281,6 +310,38 @@ theorem guest_pc_trace_parallel_lower_checked_acceptance_work_units_keeps_replay
     publicInput proof checked
   exact
     guest_pc_trace_parallel_lower_work_units_keeps_replay_snapshot_separate
+      config
+      workUnitsEnabled
+      replayOnlyDisabled
+      replaySnapshotDisabled
+      (guest_pc_trace_parallel_lower_checked_acceptance_projects_decision
+        validation
+        config
+        publicInput
+        proof
+        checked)
+
+theorem guest_pc_trace_parallel_lower_checked_acceptance_work_units_selects_parallel_lower_only
+    {system : VerifierModel}
+    (validation : GuestPcTraceParallelLowerValidation)
+    (config : GuestPcTraceParallelLowerConfig) :
+    config.configuredWorkUnits = true ->
+      config.configuredReplayOnly = false ->
+        config.configuredReplaySnapshot = false ->
+          forall publicInput proof,
+            GuestPcTraceParallelLowerCheckedAcceptance
+                system
+                validation
+                config
+                publicInput
+                proof ->
+              config.effectiveParallelLower = true
+                /\ config.effectiveReplayOnly = false
+                /\ config.effectiveReplaySnapshot = false := by
+  intro workUnitsEnabled replayOnlyDisabled replaySnapshotDisabled
+    publicInput proof checked
+  exact
+    guest_pc_trace_parallel_lower_work_units_selects_parallel_lower_only
       config
       workUnitsEnabled
       replayOnlyDisabled

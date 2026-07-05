@@ -2933,6 +2933,9 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             && gpu_runtime_source.contains(
                 "guest_pc_trace_parallel_lower_work_units_keeps_replay_snapshot_separate"
             )
+            && gpu_runtime_source.contains(
+                "guest_pc_trace_parallel_lower_work_units_selects_parallel_lower_only"
+            )
             && gpu_runtime_source.contains(concat!(
                 "guest_pc_trace_parallel_lower_checked_acceptance_",
                 "explicit_selects_parallel_lower"
@@ -2959,6 +2962,10 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             && gpu_runtime_source.contains(concat!(
                 "guest_pc_trace_parallel_lower_checked_acceptance_work_units_",
                 "keeps_replay_snapshot_separate"
+            ))
+            && gpu_runtime_source.contains(concat!(
+                "guest_pc_trace_parallel_lower_checked_acceptance_work_units_",
+                "selects_parallel_lower_only"
             ))
             && gpu_runtime_source.contains(
                 "guest_pc_trace_parallel_lower_checked_acceptance_core_and_sound"
@@ -5740,6 +5747,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "guest_pc_trace_parallel_lower_replay_snapshot_selects_replay_snapshot",
             "guest_pc_trace_parallel_lower_work_units_keeps_replay_only_separate",
             "guest_pc_trace_parallel_lower_work_units_keeps_replay_snapshot_separate",
+            "guest_pc_trace_parallel_lower_work_units_selects_parallel_lower_only",
             concat!(
                 "guest_pc_trace_parallel_lower_checked_acceptance_",
                 "explicit_selects_parallel_lower"
@@ -5767,6 +5775,10 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             concat!(
                 "guest_pc_trace_parallel_lower_checked_acceptance_work_units_",
                 "keeps_replay_snapshot_separate"
+            ),
+            concat!(
+                "guest_pc_trace_parallel_lower_checked_acceptance_work_units_",
+                "selects_parallel_lower_only"
             ),
             "guest_pc_trace_parallel_lower_checked_acceptance_projects_decision",
             "guest_pc_trace_parallel_lower_checked_acceptance_sound",
@@ -6769,6 +6781,28 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
     );
     lean_binding::assert_theorem_prefix_contains(
         &gpu_runtime_source,
+        "guest_pc_trace_parallel_lower_work_units_selects_parallel_lower_only",
+        &[
+            "config.configuredWorkUnits = true",
+            "config.configuredReplayOnly = false",
+            "config.configuredReplaySnapshot = false",
+            "GuestPcTraceParallelLowerDecisionMatches config",
+            "config.effectiveParallelLower = true",
+            "config.effectiveReplayOnly = false",
+            "config.effectiveReplaySnapshot = false",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &gpu_runtime_source,
+        "guest_pc_trace_parallel_lower_work_units_selects_parallel_lower_only",
+        &[
+            "guest_pc_trace_parallel_lower_work_units_selects_parallel_lower",
+            "guest_pc_trace_parallel_lower_work_units_keeps_replay_only_separate",
+            "guest_pc_trace_parallel_lower_work_units_keeps_replay_snapshot_separate",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &gpu_runtime_source,
         concat!(
             "guest_pc_trace_parallel_lower_checked_acceptance_",
             "explicit_selects_parallel_lower"
@@ -6928,6 +6962,33 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         ),
         &[
             "guest_pc_trace_parallel_lower_work_units_keeps_replay_snapshot_separate",
+            "guest_pc_trace_parallel_lower_checked_acceptance_projects_decision",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &gpu_runtime_source,
+        concat!(
+            "guest_pc_trace_parallel_lower_checked_acceptance_work_units_",
+            "selects_parallel_lower_only"
+        ),
+        &[
+            "config.configuredWorkUnits = true",
+            "config.configuredReplayOnly = false",
+            "config.configuredReplaySnapshot = false",
+            "GuestPcTraceParallelLowerCheckedAcceptance",
+            "config.effectiveParallelLower = true",
+            "config.effectiveReplayOnly = false",
+            "config.effectiveReplaySnapshot = false",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &gpu_runtime_source,
+        concat!(
+            "guest_pc_trace_parallel_lower_checked_acceptance_work_units_",
+            "selects_parallel_lower_only"
+        ),
+        &[
+            "guest_pc_trace_parallel_lower_work_units_selects_parallel_lower_only",
             "guest_pc_trace_parallel_lower_checked_acceptance_projects_decision",
         ],
     );
