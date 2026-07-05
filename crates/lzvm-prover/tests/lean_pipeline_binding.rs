@@ -3714,6 +3714,49 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
             "runtime_pipeline_binding_required_external_source_sound",
         ],
     );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_pipeline_required_external_source_audited_finalized_concrete_segment_ids_core_components_contract",
+        &[
+            "RuntimeProofArtifactConcreteSegmentIdBinding",
+            "RequiredCryptographicAssumptionStatements assumptions.crypto",
+            "RequiredSemanticAssumptionStatements assumptions.semantic",
+            "RuntimeProofArtifactFinalized",
+            "ExternalSourceOpeningEvidence",
+            "runtime_pipeline_trace_source_validation validation",
+            "runtime_pipeline_opening_source_validation validation",
+            "system.transcriptBound publicInput proof",
+            "system.publicInputBound publicInput proof",
+            "system.pcsOpeningsValid publicInput proof",
+            "system.friQueriesValid publicInput proof",
+            "RuntimeVerifierCoreContract system publicInput proof",
+            "exists witness trace constraints",
+            "system.traceConsistent publicInput proof trace",
+            "system.constraintsSatisfied constraints trace",
+            "system.witnessMatchesTrace witness trace",
+            "SoundWitness system publicInput proof",
+            "artifactValidation.proofSegmentIdsAllowed artifact publicInput proof",
+            "artifactValidation.proofSegmentIdsUnique artifact publicInput proof",
+            "RuntimeProofArtifactConcreteSegmentIdsAllowed proof",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_pipeline_required_external_source_audited_finalized_concrete_segment_ids_core_components_contract",
+        &[
+            "runtime_pipeline_binding_required_external_source_audited_finalized_concrete_segment_ids_contract",
+            "have transcriptBound := coreContract.left",
+            "have publicInputBound := coreContract.right.left",
+        ],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &lean_source,
+        "runtime_pipeline_required_external_source_audited_finalized_concrete_segment_ids_core_components_contract",
+        &[
+            "RuntimePipelineBindingEvidence",
+            "runtime_pipeline_binding_required_external_source_sound",
+        ],
+    );
     assert!(
         lean_source.contains("runtime_trace_constraint_required_external_source_pcs_sound")
             && lean_source.contains("runtime_opening_required_external_source_sound")
