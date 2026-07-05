@@ -94,6 +94,50 @@ def RuntimeBoundarySeedSnapshotMissContract
         ¬ validation.directBoundarySeedPresent artifact publicInput proof segment ->
           validation.boundarySeedMissRejected artifact publicInput proof segment
 
+structure RuntimeBoundaryPendingState where
+  lastPending : Option Nat
+  nextPending : Option Nat
+deriving DecidableEq, Repr
+
+def RuntimeBoundaryPendingState.recordPlainShape
+    (state : RuntimeBoundaryPendingState) : RuntimeBoundaryPendingState :=
+  match state.lastPending, state.nextPending with
+  | none, none => state
+  | _, nextPending => { lastPending := nextPending, nextPending := none }
+
+def RuntimeBoundaryPendingState.recordShape
+    (state : RuntimeBoundaryPendingState)
+    (newPending : Option Nat) : RuntimeBoundaryPendingState :=
+  match newPending with
+  | some pending => { lastPending := state.nextPending, nextPending := some pending }
+  | none => state.recordPlainShape
+
+theorem runtime_boundary_pending_state_idle_plain_shape_skip_preserves_state
+    (state : RuntimeBoundaryPendingState)
+    (lastEmpty : state.lastPending = none)
+    (nextEmpty : state.nextPending = none) :
+    state.recordShape none = state := by
+  cases state
+  cases lastEmpty
+  cases nextEmpty
+  rfl
+
+theorem runtime_boundary_pending_state_plain_shape_active_step_shifts_next
+    (state : RuntimeBoundaryPendingState)
+    (active : state.lastPending ≠ none \/ state.nextPending ≠ none) :
+    state.recordShape none = { lastPending := state.nextPending, nextPending := none } := by
+  cases state with
+  | mk lastPending nextPending =>
+      cases lastPending <;> cases nextPending <;> simp [RuntimeBoundaryPendingState.recordShape,
+        RuntimeBoundaryPendingState.recordPlainShape] at *
+
+theorem runtime_boundary_pending_state_new_shape_records_pending
+    (state : RuntimeBoundaryPendingState)
+    (pending : Nat) :
+    state.recordShape (some pending) =
+      { lastPending := state.nextPending, nextPending := some pending } := by
+  rfl
+
 theorem runtime_boundary_seed_snapshot_checked_acceptance_contract
     {system : VerifierModel}
     (validation : RuntimeBoundarySeedSnapshotValidation system) :
