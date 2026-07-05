@@ -3731,6 +3731,11 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
             "system.publicInputBound publicInput proof",
             "system.pcsOpeningsValid publicInput proof",
             "system.friQueriesValid publicInput proof",
+            r#"system.transcriptBound publicInput proof
+            /\ system.publicInputBound publicInput proof
+            /\ system.pcsOpeningsValid publicInput proof
+            /\ system.friQueriesValid publicInput proof
+            /\ validation.queryPlanBindingValidation.queryPlanSeedBindsWitnessTreeDigests"#,
             "RuntimeVerifierCoreContract system publicInput proof",
             "exists witness trace constraints",
             "system.traceConsistent publicInput proof trace",
@@ -3749,6 +3754,26 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
             "runtime_pipeline_binding_required_external_source_audited_finalized_concrete_segment_ids_contract",
             "have transcriptBound := coreContract.left",
             "have publicInputBound := coreContract.right.left",
+            r#"exact
+    ⟨auditedCrypto,
+      auditedSemantic,
+      artifactFinalized,
+      proofSystemSound,
+      verifierAccepts,
+      traceExternalEvidence,
+      openingExternalEvidence,
+      transcriptBound,
+      publicInputBound,
+      pcsOpeningsValid,
+      friQueriesValid,
+      seedBinds,
+      seededFriOpeningChecked,
+      coreContract,
+      executionObligations,
+      soundWitness,
+      segmentIdsAllowed,
+      segmentIdsUnique,
+      concreteSegmentIdsAllowed⟩"#,
         ],
     );
     lean_binding::assert_theorem_body_omits(
@@ -3779,9 +3804,22 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
         &[
             "runtime_pipeline_required_external_source_audited_finalized_concrete_segment_ids_core_components_contract",
             "rcases coreComponents",
+            r#"traceExternalEvidence,
+      openingExternalEvidence,
+      _transcriptBound,
+      _publicInputBound,
+      pcsOpeningsValid,
+      friQueriesValid"#,
             "traceExternalEvidence",
             "openingExternalEvidence",
             "concreteSegmentIdsAllowed",
+            r#"exact
+    ⟨artifactFinalized,
+      traceExternalEvidence,
+      openingExternalEvidence,
+      pcsOpeningsValid,
+      friQueriesValid,
+      concreteSegmentIdsAllowed⟩"#,
         ],
     );
     lean_binding::assert_theorem_body_omits(
@@ -3810,11 +3848,26 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
         "runtime_pipeline_required_external_source_finalized_concrete_segment_seeded_requirements_contract",
         &[
             "runtime_pipeline_required_external_source_audited_finalized_concrete_segment_ids_core_components_contract",
+            r#"seedBinds,
+      seededFriOpeningChecked,
+      _coreContract,
+      _executionObligations,
+      _soundWitness,
+      segmentIdsAllowed,
+      segmentIdsUnique,
+      concreteSegmentIdsAllowed"#,
             "seedBinds",
             "seededFriOpeningChecked",
             "segmentIdsAllowed",
             "segmentIdsUnique",
             "concreteSegmentIdsAllowed",
+            r#"exact
+    ⟨artifactFinalized,
+      seedBinds,
+      seededFriOpeningChecked,
+      segmentIdsAllowed,
+      segmentIdsUnique,
+      concreteSegmentIdsAllowed⟩"#,
         ],
     );
     lean_binding::assert_theorem_body_omits(
