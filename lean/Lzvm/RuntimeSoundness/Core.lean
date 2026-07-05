@@ -1686,16 +1686,14 @@ theorem runtime_soundness_checked_acceptance_audited_finalized_core_sound_witnes
       proof
       requiresExternalSource
       checked
-  have auditedCoreSound :=
-    accepted_proof_audited_core_and_sound_witness
+  have auditedCoreExecutionSound :=
+    accepted_proof_audited_core_execution_and_sound_witness
       assumptions
       publicInput
       proof
       verifierAccepts
-  rcases auditedCoreSound with
-    ⟨cryptoEvidence, semanticEvidence, coreContract, soundWitness⟩
-  have executionObligations :=
-    sound_witness_implies_execution_obligations soundWitness
+  rcases auditedCoreExecutionSound with
+    ⟨cryptoEvidence, semanticEvidence, coreContract, executionObligations, soundWitness⟩
   exact
     And.intro cryptoEvidence
       (And.intro semanticEvidence

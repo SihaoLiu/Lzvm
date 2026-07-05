@@ -1022,15 +1022,16 @@ fn lean_runtime_soundness_binding_exports_core_contract_projection() {
         "runtime_soundness_checked_acceptance_audited_finalized_core_sound_witness_contract",
         &[
             "runtime_soundness_checked_acceptance_verifier_accepts",
-            "accepted_proof_audited_core_and_sound_witness",
+            "accepted_proof_audited_core_execution_and_sound_witness",
             "runtime_transcript_binding_checked_acceptance_artifact_finalized",
-            "sound_witness_implies_execution_obligations",
         ],
     );
     lean_binding::assert_theorem_body_omits(
         &lean_source,
         "runtime_soundness_checked_acceptance_audited_finalized_core_sound_witness_contract",
         &[
+            "accepted_proof_audited_core_and_sound_witness",
+            "sound_witness_implies_execution_obligations",
             "runtime_soundness_checked_acceptance_audited_soundness_finalized_proof_system_contract",
             "RuntimeSoundnessEvidence",
         ],
