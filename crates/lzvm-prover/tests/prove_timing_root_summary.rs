@@ -906,6 +906,10 @@ fn prove_timing_root_summary_reports_root_grouping_shape() {
         "opening_external_source_descriptor_action_hint",
         "timing_finish_witness_opening_row_values_device_rows",
         "timing_finish_witness_opening_row_values_source_rows",
+        "timing_finish_witness_opening_row_values_words",
+        "timing_finish_witness_opening_row_values_bytes",
+        "opening_row_value_words",
+        "opening_row_value_bytes",
         "timing_finish_witness_opening_row_value_source_extend_calls",
         "timing_finish_witness_opening_row_value_source_extend_max_rows",
         "timing_finish_witness_opening_row_value_source_extend_ms",
@@ -3000,6 +3004,8 @@ fn prove_timing_root_summary_reports_source_row_value_extend_priority() {
         "timing_finish_witness_opening_external_source_count=120",
         "timing_finish_witness_opening_embedded_source_count=120",
         "timing_finish_witness_opening_row_values_source_rows=77",
+        "timing_finish_witness_opening_row_values_words=616",
+        "timing_finish_witness_opening_row_values_bytes=4928",
         "timing_finish_witness_opening_row_value_source_extend_calls=7",
         "timing_finish_witness_opening_row_value_source_extend_max_rows=11",
         "timing_finish_witness_opening_row_value_source_extend_ms=1134",
@@ -3051,6 +3057,8 @@ fn prove_timing_root_summary_reports_source_row_value_extend_priority() {
     };
 
     assert_eq!(value("opening_row_value_source_extend_ms"), "1134");
+    assert_eq!(value("opening_row_value_words"), "616");
+    assert_eq!(value("opening_row_value_bytes"), "4928");
     assert_eq!(value("opening_row_value_source_extend_calls"), "7");
     assert_eq!(value("opening_row_value_source_extend_max_rows"), "11");
     assert_eq!(
@@ -5252,7 +5260,7 @@ fn prove_timing_root_summary_reports_retained_parent_checkpoint_opening_shape() 
     );
     assert!(
         stdout.contains(
-            ",43,0,0,0,0.000,0.000,0,0.000,none,120,119,1,0.833,77,77,yes,0,79,79,yes,0,0,79,3,0,0,790,14,869,17,11,858,device_batched_path_secondary,0,0,0,0,0,0,43,0,0,0,single_query_unit_boundary_blocks_row_value_batch,external_source_unit_boundary_blocks_row_value_batch,"
+            ",43,0,0,0,0,0,0.000,0.000,0,0.000,none,120,119,1,0.833,77,77,yes,0,79,79,yes,0,0,79,3,0,0,790,14,869,17,11,858,device_batched_path_secondary,0,0,0,0,0,0,43,0,0,0,single_query_unit_boundary_blocks_row_value_batch,external_source_unit_boundary_blocks_row_value_batch,"
         ),
         "prove timing root summary should identify external-source unit boundaries behind single-row D2H: stdout={stdout}"
     );
