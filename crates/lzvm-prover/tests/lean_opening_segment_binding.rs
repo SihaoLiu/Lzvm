@@ -849,14 +849,15 @@ fn lean_opening_segment_binding_exports_core_contract_projection() {
             "runtime_opening_checked_acceptance_evidence",
             "openingAcceptedImpliesRuntimeSoundnessAccepted",
             "runtime_soundness_checked_acceptance_verifier_accepts",
-            "accepted_proof_audited_core_and_sound_witness",
-            "sound_witness_implies_execution_obligations",
+            "accepted_proof_audited_core_execution_and_sound_witness",
         ],
     );
     lean_binding::assert_theorem_body_omits(
         &lean_source,
         "runtime_opening_segment_binding_audited_core_sound_witness_contract",
         &[
+            "accepted_proof_audited_core_and_sound_witness",
+            "sound_witness_implies_execution_obligations",
             "runtime_opening_segment_binding_checked_acceptance_evidence_core_and_sound",
             "runtime_opening_segment_binding_checked_acceptance_full_soundness_contract",
             "runtime_opening_segment_binding_checked_acceptance_verifier_core_contract",
