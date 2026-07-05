@@ -37,6 +37,30 @@ RUNNER_ADVANCE_FAST_PATHS_KEY = "timing_guest_trace_runner_advance_fast_paths"
 RUNNER_ADVANCE_GENERIC_FALLBACKS_KEY = (
     "timing_guest_trace_runner_advance_generic_fallbacks"
 )
+RUNNER_ADVANCE_GENERIC_FALLBACK_SHAPE_TOP_1_PATTERN_KEY = (
+    "timing_guest_trace_runner_advance_generic_fallback_shape_top_1_pattern"
+)
+RUNNER_ADVANCE_GENERIC_FALLBACK_SHAPE_TOP_1_COUNT_KEY = (
+    "timing_guest_trace_runner_advance_generic_fallback_shape_top_1_count"
+)
+RUNNER_ADVANCE_GENERIC_FALLBACK_SHAPE_TOP_2_PATTERN_KEY = (
+    "timing_guest_trace_runner_advance_generic_fallback_shape_top_2_pattern"
+)
+RUNNER_ADVANCE_GENERIC_FALLBACK_SHAPE_TOP_2_COUNT_KEY = (
+    "timing_guest_trace_runner_advance_generic_fallback_shape_top_2_count"
+)
+RUNNER_ADVANCE_GENERIC_FALLBACK_SHAPE_TOP_3_PATTERN_KEY = (
+    "timing_guest_trace_runner_advance_generic_fallback_shape_top_3_pattern"
+)
+RUNNER_ADVANCE_GENERIC_FALLBACK_SHAPE_TOP_3_COUNT_KEY = (
+    "timing_guest_trace_runner_advance_generic_fallback_shape_top_3_count"
+)
+RUNNER_ADVANCE_GENERIC_FALLBACK_SHAPE_TOP_4_PATTERN_KEY = (
+    "timing_guest_trace_runner_advance_generic_fallback_shape_top_4_pattern"
+)
+RUNNER_ADVANCE_GENERIC_FALLBACK_SHAPE_TOP_4_COUNT_KEY = (
+    "timing_guest_trace_runner_advance_generic_fallback_shape_top_4_count"
+)
 RUNNER_CACHE_HITS_KEY = "timing_guest_trace_runner_instruction_cache_hits"
 RUNNER_CACHE_MISSES_KEY = "timing_guest_trace_runner_instruction_cache_misses"
 RUNNER_CACHE_CLEARS_KEY = "timing_guest_trace_runner_instruction_cache_clears"
@@ -424,6 +448,35 @@ TRACE_ROW_SHAPE_OP_NAMES = {
     0xF3: "Arith256Mod",
     0xF4: "Secp256k1Add",
     0xF5: "Secp256k1Dbl",
+}
+RUNNER_ADVANCE_SHAPE_KIND_NAMES = {
+    1: "CompressedUnknown",
+    2: "IllegalCompressed",
+    3: "UnsupportedLong",
+    4: "Lui",
+    5: "Auipc",
+    6: "Jal",
+    7: "Jalr",
+    8: "Branch",
+    9: "Load",
+    10: "Store",
+    11: "OpImm",
+    12: "OpImm32",
+    13: "Op",
+    14: "Op32",
+    15: "Amo",
+    16: "LoadReserved",
+    17: "StoreConditional",
+    18: "CsrRead",
+    19: "ZiskPrecompile",
+    20: "ZiskDmaPrepare",
+    21: "ZiskFcallParam",
+    22: "ZiskFcallInvoke",
+    23: "ZiskFcallResult",
+    24: "Fence",
+    25: "Ecall",
+    26: "Ebreak",
+    27: "Unknown",
 }
 TRACE_SHAPE_KEYS = (
     TRACE_SINGLE_ROW_REPORTS_KEY,
@@ -955,6 +1008,18 @@ HEADER = (
     "constant_material_validation_join_wait_ms,constant_material_validation_overlap_hint,"
     "runner_ms,runner_advance_fast_paths,runner_advance_generic_fallbacks,"
     "runner_advance_fast_path_pct,"
+    "runner_advance_generic_fallback_shape_top_1_pattern,"
+    "runner_advance_generic_fallback_shape_top_1_count,"
+    "runner_advance_generic_fallback_shape_top_1_shape,"
+    "runner_advance_generic_fallback_shape_top_2_pattern,"
+    "runner_advance_generic_fallback_shape_top_2_count,"
+    "runner_advance_generic_fallback_shape_top_2_shape,"
+    "runner_advance_generic_fallback_shape_top_3_pattern,"
+    "runner_advance_generic_fallback_shape_top_3_count,"
+    "runner_advance_generic_fallback_shape_top_3_shape,"
+    "runner_advance_generic_fallback_shape_top_4_pattern,"
+    "runner_advance_generic_fallback_shape_top_4_count,"
+    "runner_advance_generic_fallback_shape_top_4_shape,"
     "runner_instruction_cache_hits,runner_instruction_cache_misses,"
     "runner_instruction_cache_hit_pct,runner_instruction_cache_clears,"
     "runner_instruction_cache_fcall_clears,runner_instruction_cache_dma_clears,"
@@ -1423,6 +1488,14 @@ TIMING_KEYS = {
     RUNNER_DETAIL_SAMPLES_KEY,
     RUNNER_ADVANCE_FAST_PATHS_KEY,
     RUNNER_ADVANCE_GENERIC_FALLBACKS_KEY,
+    RUNNER_ADVANCE_GENERIC_FALLBACK_SHAPE_TOP_1_PATTERN_KEY,
+    RUNNER_ADVANCE_GENERIC_FALLBACK_SHAPE_TOP_1_COUNT_KEY,
+    RUNNER_ADVANCE_GENERIC_FALLBACK_SHAPE_TOP_2_PATTERN_KEY,
+    RUNNER_ADVANCE_GENERIC_FALLBACK_SHAPE_TOP_2_COUNT_KEY,
+    RUNNER_ADVANCE_GENERIC_FALLBACK_SHAPE_TOP_3_PATTERN_KEY,
+    RUNNER_ADVANCE_GENERIC_FALLBACK_SHAPE_TOP_3_COUNT_KEY,
+    RUNNER_ADVANCE_GENERIC_FALLBACK_SHAPE_TOP_4_PATTERN_KEY,
+    RUNNER_ADVANCE_GENERIC_FALLBACK_SHAPE_TOP_4_COUNT_KEY,
     RUNNER_CACHE_HITS_KEY,
     RUNNER_CACHE_MISSES_KEY,
     RUNNER_CACHE_CLEARS_KEY,
@@ -4640,6 +4713,15 @@ def trace_row_shape_pattern_description(pattern: int) -> str:
     )
 
 
+def runner_advance_shape_pattern_description(pattern: int) -> str:
+    if pattern == 0:
+        return "none"
+    kind_code = (pattern >> 1) & 0x7F
+    memory_write = (pattern >> 8) & 0x1
+    kind = RUNNER_ADVANCE_SHAPE_KIND_NAMES.get(kind_code, f"kind{kind_code}")
+    return f"instruction={kind};memory_write={memory_write}"
+
+
 def summarize_profile_values(
     label: str,
     values: dict[str, int],
@@ -4719,6 +4801,50 @@ def summarize_profile_values(
         runner_advance_fast_paths * 100.0 / runner_advance_total
         if runner_advance_total
         else 0.0
+    )
+    runner_advance_fallback_shape_top_1_pattern = values.get(
+        RUNNER_ADVANCE_GENERIC_FALLBACK_SHAPE_TOP_1_PATTERN_KEY, 0
+    )
+    runner_advance_fallback_shape_top_1_count = values.get(
+        RUNNER_ADVANCE_GENERIC_FALLBACK_SHAPE_TOP_1_COUNT_KEY, 0
+    )
+    runner_advance_fallback_shape_top_2_pattern = values.get(
+        RUNNER_ADVANCE_GENERIC_FALLBACK_SHAPE_TOP_2_PATTERN_KEY, 0
+    )
+    runner_advance_fallback_shape_top_2_count = values.get(
+        RUNNER_ADVANCE_GENERIC_FALLBACK_SHAPE_TOP_2_COUNT_KEY, 0
+    )
+    runner_advance_fallback_shape_top_3_pattern = values.get(
+        RUNNER_ADVANCE_GENERIC_FALLBACK_SHAPE_TOP_3_PATTERN_KEY, 0
+    )
+    runner_advance_fallback_shape_top_3_count = values.get(
+        RUNNER_ADVANCE_GENERIC_FALLBACK_SHAPE_TOP_3_COUNT_KEY, 0
+    )
+    runner_advance_fallback_shape_top_4_pattern = values.get(
+        RUNNER_ADVANCE_GENERIC_FALLBACK_SHAPE_TOP_4_PATTERN_KEY, 0
+    )
+    runner_advance_fallback_shape_top_4_count = values.get(
+        RUNNER_ADVANCE_GENERIC_FALLBACK_SHAPE_TOP_4_COUNT_KEY, 0
+    )
+    runner_advance_fallback_shape_top_1_shape = (
+        runner_advance_shape_pattern_description(
+            runner_advance_fallback_shape_top_1_pattern
+        )
+    )
+    runner_advance_fallback_shape_top_2_shape = (
+        runner_advance_shape_pattern_description(
+            runner_advance_fallback_shape_top_2_pattern
+        )
+    )
+    runner_advance_fallback_shape_top_3_shape = (
+        runner_advance_shape_pattern_description(
+            runner_advance_fallback_shape_top_3_pattern
+        )
+    )
+    runner_advance_fallback_shape_top_4_shape = (
+        runner_advance_shape_pattern_description(
+            runner_advance_fallback_shape_top_4_pattern
+        )
     )
     runner_cache_hits = values.get(RUNNER_CACHE_HITS_KEY, 0)
     runner_cache_misses = values.get(RUNNER_CACHE_MISSES_KEY, 0)
@@ -6428,6 +6554,18 @@ def summarize_profile_values(
         f"{constant_material_hint},{runner_ms},"
         f"{runner_advance_fast_paths},{runner_advance_generic_fallbacks},"
         f"{runner_advance_fast_path_pct:.3f},"
+        f"{csv_cell(runner_advance_fallback_shape_top_1_pattern)},"
+        f"{runner_advance_fallback_shape_top_1_count},"
+        f"{runner_advance_fallback_shape_top_1_shape},"
+        f"{csv_cell(runner_advance_fallback_shape_top_2_pattern)},"
+        f"{runner_advance_fallback_shape_top_2_count},"
+        f"{runner_advance_fallback_shape_top_2_shape},"
+        f"{csv_cell(runner_advance_fallback_shape_top_3_pattern)},"
+        f"{runner_advance_fallback_shape_top_3_count},"
+        f"{runner_advance_fallback_shape_top_3_shape},"
+        f"{csv_cell(runner_advance_fallback_shape_top_4_pattern)},"
+        f"{runner_advance_fallback_shape_top_4_count},"
+        f"{runner_advance_fallback_shape_top_4_shape},"
         f"{runner_cache_hits},{runner_cache_misses},"
         f"{runner_cache_hit_pct:.3f},{runner_cache_clears},"
         f"{runner_cache_fcall_clears},{runner_cache_dma_clears},"

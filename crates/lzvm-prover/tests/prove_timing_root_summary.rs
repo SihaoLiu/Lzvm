@@ -803,6 +803,14 @@ fn prove_timing_root_summary_reports_root_grouping_shape() {
         "timing_guest_trace_report_rows",
         "timing_guest_trace_runner_advance_fast_paths",
         "timing_guest_trace_runner_advance_generic_fallbacks",
+        "timing_guest_trace_runner_advance_generic_fallback_shape_top_1_pattern",
+        "timing_guest_trace_runner_advance_generic_fallback_shape_top_1_count",
+        "timing_guest_trace_runner_advance_generic_fallback_shape_top_2_pattern",
+        "timing_guest_trace_runner_advance_generic_fallback_shape_top_2_count",
+        "timing_guest_trace_runner_advance_generic_fallback_shape_top_3_pattern",
+        "timing_guest_trace_runner_advance_generic_fallback_shape_top_3_count",
+        "timing_guest_trace_runner_advance_generic_fallback_shape_top_4_pattern",
+        "timing_guest_trace_runner_advance_generic_fallback_shape_top_4_count",
         "runner_advance_fast_path_pct",
         "timing_guest_trace_runner_instruction_cache_hits",
         "timing_guest_trace_runner_instruction_cache_misses",
@@ -5822,6 +5830,8 @@ fn prove_timing_root_summary_reports_trace_report_buffer_shape() {
         "timing_guest_trace_report_buffer_max_capacity=4194304",
         "timing_guest_trace_report_buffer_excess_capacity=528303",
         "timing_guest_trace_report_record_size_bytes=128",
+        "timing_guest_trace_runner_advance_generic_fallback_shape_top_1_pattern=19",
+        "timing_guest_trace_runner_advance_generic_fallback_shape_top_1_count=42",
         "timing_guest_trace_main_report_generic_fallback_shape_top_1_pattern=268468803",
         "timing_guest_trace_main_report_generic_fallback_shape_top_1_count=77",
         "timing_guest_trace_report_storage_bytes=12011972736",
@@ -5854,6 +5864,10 @@ fn prove_timing_root_summary_reports_trace_report_buffer_shape() {
         String::from_utf8_lossy(&output.stderr)
     );
     let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    assert!(
+        stdout.contains("instruction=Load;memory_write=0"),
+        "prove timing root summary should decode runner fallback shape: stdout={stdout}"
+    );
     assert!(
         stdout.contains(
             "trace_reports,trace_report_rows,main_report_fast_paths,main_report_generic_fallbacks,main_report_fast_path_pct,main_report_fcall_result_fast_paths,main_report_load_copy_fast_paths,main_report_load_sign_extend_fast_paths,main_report_no_memory_fast_paths,main_report_store_copy_fast_paths,main_report_simple_copy_fast_paths,main_report_jump_fast_paths,main_report_generic_fallback_shape_top_1_pattern,main_report_generic_fallback_shape_top_1_count,main_report_generic_fallback_shape_top_1_shape,main_report_generic_fallback_shape_top_2_pattern,main_report_generic_fallback_shape_top_2_count,main_report_generic_fallback_shape_top_2_shape,main_report_generic_fallback_shape_top_3_pattern,main_report_generic_fallback_shape_top_3_count,main_report_generic_fallback_shape_top_3_shape,main_report_generic_fallback_shape_top_4_pattern,main_report_generic_fallback_shape_top_4_count,main_report_generic_fallback_shape_top_4_shape,trace_rows_per_report,trace_report_record_size_bytes,trace_report_instruction_size_bytes,trace_report_register_write_list_size_bytes,trace_report_memory_access_list_size_bytes,trace_report_precompile_access_list_size_bytes,trace_report_instruction_storage_gib,trace_report_register_write_list_storage_gib,trace_report_memory_access_list_storage_gib,trace_report_precompile_access_list_storage_gib,trace_report_storage_bytes,trace_report_storage_gib,trace_report_buffer_capacity,trace_report_buffer_max_capacity,trace_report_buffer_excess_capacity,trace_report_buffer_capacity_bytes,trace_report_buffer_capacity_gib,trace_report_buffer_excess_bytes,trace_report_buffer_excess_pct,trace_report_buffer_shape_hint,"

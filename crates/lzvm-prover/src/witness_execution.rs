@@ -478,6 +478,8 @@ pub struct ProveWitnessGuestPcTraceTiming {
     guest_trace_runner_timer_bookkeeping_duration: Duration,
     guest_trace_runner_advance_fast_path_count: usize,
     guest_trace_runner_advance_generic_fallback_count: usize,
+    guest_trace_runner_advance_generic_fallback_shape_top_patterns:
+        [(u64, usize); ZISK_MAIN_ROW_SHAPE_TOP_PATTERN_COUNT],
     guest_trace_runner_instruction_cache_hit_count: usize,
     guest_trace_runner_instruction_cache_miss_count: usize,
     guest_trace_runner_instruction_cache_clear_count: usize,
@@ -872,6 +874,8 @@ impl ProveWitnessGuestPcTraceTiming {
                 .runner_advance_fast_path_count(),
             guest_trace_runner_advance_generic_fallback_count: stream_timing
                 .runner_advance_generic_fallback_count(),
+            guest_trace_runner_advance_generic_fallback_shape_top_patterns: stream_timing
+                .runner_advance_generic_fallback_shape_top_patterns(),
             guest_trace_runner_instruction_cache_hit_count: stream_timing
                 .runner_instruction_cache_hit_count(),
             guest_trace_runner_instruction_cache_miss_count: stream_timing
@@ -1467,6 +1471,12 @@ impl ProveWitnessGuestPcTraceTiming {
 
     pub fn guest_trace_runner_advance_generic_fallback_count(&self) -> usize {
         self.guest_trace_runner_advance_generic_fallback_count
+    }
+
+    pub fn guest_trace_runner_advance_generic_fallback_shape_top_patterns(
+        &self,
+    ) -> [(u64, usize); ZISK_MAIN_ROW_SHAPE_TOP_PATTERN_COUNT] {
+        self.guest_trace_runner_advance_generic_fallback_shape_top_patterns
     }
 
     pub fn guest_trace_runner_instruction_cache_hit_count(&self) -> usize {

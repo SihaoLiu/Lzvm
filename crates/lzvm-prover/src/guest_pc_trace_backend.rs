@@ -384,6 +384,7 @@ pub(crate) struct GuestPcTraceStreamTiming {
     trace_memory_store_row_count: usize,
     trace_no_store_row_count: usize,
     trace_row_shape_pattern_counts: BTreeMap<u64, usize>,
+    runner_advance_generic_fallback_shape_pattern_counts: BTreeMap<u64, usize>,
     trace_main_report_generic_fallback_shape_pattern_counts: BTreeMap<u64, usize>,
 }
 
@@ -639,6 +640,9 @@ impl GuestPcTraceStreamTiming {
         self.trace_no_store_row_count += other.trace_no_store_row_count;
         for (id, count) in other.trace_row_shape_pattern_counts {
             self.record_trace_row_shape_pattern_count(id, count);
+        }
+        for (id, count) in other.runner_advance_generic_fallback_shape_pattern_counts {
+            self.record_runner_advance_generic_fallback_shape_pattern_count(id, count);
         }
         for (id, count) in other.trace_main_report_generic_fallback_shape_pattern_counts {
             self.record_main_report_generic_fallback_shape_pattern_count(id, count);
@@ -897,15 +901,42 @@ impl GuestPcTraceStreamTiming {
         self.trace_copy_source_indirect_read_count
     }
 
-    fn record_runner_advance_path(&mut self, path: GuestMachineAdvancePath) {
+    fn record_runner_advance_path(
+        &mut self,
+        path: GuestMachineAdvancePath,
+        shape: GuestMachineReportShape,
+    ) {
         match path {
             GuestMachineAdvancePath::Fast => {
                 self.runner_advance_fast_path_count += 1;
             }
             GuestMachineAdvancePath::Generic => {
                 self.runner_advance_generic_fallback_count += 1;
+                self.record_runner_advance_generic_fallback_shape(shape);
             }
         }
+    }
+
+    fn record_runner_advance_generic_fallback_shape(&mut self, shape: GuestMachineReportShape) {
+        self.record_runner_advance_generic_fallback_shape_pattern_count(
+            runner_advance_shape_pattern_id(shape),
+            1,
+        );
+    }
+
+    fn record_runner_advance_generic_fallback_shape_pattern_count(
+        &mut self,
+        id: u64,
+        count: usize,
+    ) {
+        if id == 0 || count == 0 {
+            return;
+        }
+        let entry = self
+            .runner_advance_generic_fallback_shape_pattern_counts
+            .entry(id)
+            .or_default();
+        *entry = entry.saturating_add(count);
     }
 
     fn record_runner_instruction_cache_stats(&mut self, stats: GuestInstructionCacheStats) {
@@ -1499,6 +1530,12 @@ impl GuestPcTraceStreamTiming {
         &self,
     ) -> [(u64, usize); ZISK_MAIN_ROW_SHAPE_TOP_PATTERN_COUNT] {
         trace_row_shape_top_patterns(&self.trace_row_shape_pattern_counts)
+    }
+
+    pub fn runner_advance_generic_fallback_shape_top_patterns(
+        &self,
+    ) -> [(u64, usize); ZISK_MAIN_ROW_SHAPE_TOP_PATTERN_COUNT] {
+        trace_row_shape_top_patterns(&self.runner_advance_generic_fallback_shape_pattern_counts)
     }
 
     pub fn trace_main_report_generic_fallback_shape_top_patterns(
@@ -4178,7 +4215,7 @@ fn run_guest_pc_trace_segment_slice_with_live_report_chunks(
         .map_err(GuestMachineRunError::from)
         .map_err(GuestPcTraceBackendError::GuestRun)?;
         if path_timing {
-            timing.record_runner_advance_path(advance_path);
+            timing.record_runner_advance_path(advance_path, advanced.shape);
         }
         if runner_instruction_cache_stats {
             instruction_cache_update.apply_or_invalidate_report_shape_with_stats(
@@ -4856,7 +4893,7 @@ fn run_guest_pc_trace_segment_slice_inner<
         });
         if runner_path_timing {
             if let Some(timing) = timing.as_deref_mut() {
-                timing.record_runner_advance_path(advanced.advance_path);
+                timing.record_runner_advance_path(advanced.advance_path, advanced.shape);
             }
         }
         if let (Some(advance_timing), Some(timing)) = (advance_inner_timing, timing.as_deref_mut())
@@ -14410,6 +14447,43 @@ fn main_row_shape_pattern_id(instruction: &ZiskMainInstruction) -> u64 {
         | (u64::from(instruction.m32) << 27)
         | (u64::from(instruction.is_external_op) << 28)
         | (u64::from(instruction.is_precompiled) << 29)
+}
+
+fn runner_advance_shape_pattern_id(shape: GuestMachineReportShape) -> u64 {
+    1 | (runner_advance_instruction_kind_code(shape.instruction) << 1)
+        | (u64::from(shape.has_memory_write) << 8)
+}
+
+fn runner_advance_instruction_kind_code(instruction: RiscvInstruction) -> u64 {
+    match instruction {
+        RiscvInstruction::CompressedUnknown { .. } => 1,
+        RiscvInstruction::IllegalCompressed { .. } => 2,
+        RiscvInstruction::UnsupportedLong { .. } => 3,
+        RiscvInstruction::Lui { .. } => 4,
+        RiscvInstruction::Auipc { .. } => 5,
+        RiscvInstruction::Jal { .. } => 6,
+        RiscvInstruction::Jalr { .. } => 7,
+        RiscvInstruction::Branch { .. } => 8,
+        RiscvInstruction::Load { .. } => 9,
+        RiscvInstruction::Store { .. } => 10,
+        RiscvInstruction::OpImm { .. } => 11,
+        RiscvInstruction::OpImm32 { .. } => 12,
+        RiscvInstruction::Op { .. } => 13,
+        RiscvInstruction::Op32 { .. } => 14,
+        RiscvInstruction::Amo { .. } => 15,
+        RiscvInstruction::LoadReserved { .. } => 16,
+        RiscvInstruction::StoreConditional { .. } => 17,
+        RiscvInstruction::CsrRead { .. } => 18,
+        RiscvInstruction::ZiskPrecompile { .. } => 19,
+        RiscvInstruction::ZiskDmaPrepare { .. } => 20,
+        RiscvInstruction::ZiskFcallParam { .. } => 21,
+        RiscvInstruction::ZiskFcallInvoke { .. } => 22,
+        RiscvInstruction::ZiskFcallResult { .. } => 23,
+        RiscvInstruction::Fence { .. } => 24,
+        RiscvInstruction::Ecall => 25,
+        RiscvInstruction::Ebreak => 26,
+        RiscvInstruction::Unknown { .. } => 27,
+    }
 }
 
 fn record_trace_report_source_read_timing(
