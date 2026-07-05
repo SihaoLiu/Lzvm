@@ -10741,6 +10741,18 @@ impl<'a> ZiskMainReportEffects<'a> {
             precompile_result: report.precompile_result(),
         }
     }
+
+    fn from_report_with_register_write_index(
+        report: &'a GuestMachineReport,
+        register_write_index: Option<u8>,
+    ) -> Self {
+        Self {
+            register_writes: report.register_writes_with_index(register_write_index),
+            memory_accesses: &report.memory_accesses,
+            precompile_memory_accesses: report.precompile_memory_accesses(),
+            precompile_result: report.precompile_result(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -10904,6 +10916,25 @@ enum MainReportFastPathParts {
     Jump(ZiskMainInstruction, MainJumpFastPathParts),
 }
 
+impl MainReportFastPathParts {
+    #[inline(always)]
+    fn register_write_index(&self) -> Option<u8> {
+        match self {
+            Self::FcallResult(_, store_index)
+            | Self::LoadCopy(_, _, _, store_index)
+            | Self::LoadSignExtend(_, _, _, store_index)
+            | Self::SimpleCopy(_, _, store_index) => Some(*store_index),
+            Self::NoMemory(_, parts) => parts.store_index,
+            Self::Jump(_, parts) => parts.store_index,
+            Self::LoadNoStore(_, _, _, _)
+            | Self::PrecompileNoStore(_, _)
+            | Self::InternalMemoryCopy(_, _, _)
+            | Self::StoreCopy(_, _, _, _)
+            | Self::StoreImmediateCopy(_, _, _, _) => None,
+        }
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn validate_and_apply_zisk_main_report(
     row: usize,
@@ -11018,7 +11049,10 @@ fn validate_and_apply_zisk_main_report(
             if let Some(timing) = timing.as_mut() {
                 timing.record_main_report_fast_path(&fast_path);
             }
-            let effects = ZiskMainReportEffects::from_report(report);
+            let effects = ZiskMainReportEffects::from_report_with_register_write_index(
+                report,
+                fast_path.register_write_index(),
+            );
             match fast_path {
                 MainReportFastPathParts::FcallResult(instruction, store_index) => {
                     apply_fcall_result_register_store_fast_path(

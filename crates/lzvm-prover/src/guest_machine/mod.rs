@@ -549,6 +549,17 @@ impl GuestRegisterWriteValue {
             },
         )
     }
+
+    fn register_writes_with_index(self, index: Option<u8>) -> GuestRegisterWriteList {
+        index
+            .filter(|index| *index != 0)
+            .map_or_else(GuestRegisterWriteList::default, |index| {
+                GuestRegisterWriteList::one(GuestRegisterWrite {
+                    index,
+                    value: self.value,
+                })
+            })
+    }
 }
 
 type GuestRegisterRollbackList = SmallVec<[(u8, u64); 1]>;
@@ -933,6 +944,10 @@ impl GuestMachineReport {
 
     pub fn register_writes(&self) -> GuestRegisterWriteList {
         self.register_write_value.register_writes(self.instruction)
+    }
+
+    pub(crate) fn register_writes_with_index(&self, index: Option<u8>) -> GuestRegisterWriteList {
+        self.register_write_value.register_writes_with_index(index)
     }
 
     #[cfg(test)]
