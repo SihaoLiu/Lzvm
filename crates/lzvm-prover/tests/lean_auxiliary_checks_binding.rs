@@ -391,6 +391,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             && lean_source.contains("CudaBackendObservedAcceptance")
             && lean_source.contains("CudaAllocatorTimingSummary")
             && lean_source.contains("CudaAllocatorTimingObservedAcceptance")
+            && lean_source.contains("CudaAllocatorNoWaitReuseObserved")
             && lean_source.contains("ProofArtifactFinishTimingSummary")
             && lean_source.contains("ProofArtifactFinishTimingObservedAcceptance")
             && lean_source.contains("ProofTimingBatchSummary")
@@ -1225,6 +1226,47 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             ],
         );
     }
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_proof_timing_source,
+        "cuda_allocator_no_wait_reuse_observed_field_contract",
+        &[
+            "CudaAllocatorNoWaitReuseObserved summary",
+            "0 < summary.cudaAllocatorCachedReuseCount",
+            "0 < summary.cudaAllocatorNoWaitBypassCount",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_proof_timing_source,
+        "cuda_allocator_no_wait_reuse_observed_field_contract",
+        &["rfl"],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_proof_timing_source,
+        "cuda_allocator_no_wait_reuse_observed_acceptance_core_and_sound",
+        &[
+            "CudaAllocatorTimingObservedAcceptance system (some summary) publicInput proof",
+            "CudaAllocatorNoWaitReuseObserved summary",
+            "RuntimeVerifierCoreContract system publicInput proof",
+            "SoundWitness system publicInput proof",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_proof_timing_source,
+        "cuda_allocator_no_wait_reuse_observed_acceptance_core_and_sound",
+        &[
+            "cuda_allocator_timing_acceptance_core_and_sound",
+            "And.intro reuseObserved coreAndSound",
+        ],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &lean_proof_timing_source,
+        "cuda_allocator_no_wait_reuse_observed_acceptance_core_and_sound",
+        &[
+            "cuda_allocator_timing_acceptance_verifier_core_contract",
+            "cuda_allocator_timing_acceptance_sound",
+            "sound_witness_implies_verifier_core_contract",
+        ],
+    );
     for (theorem, combined_helper, wraps_some, field_terms) in [
         (
             "witness_opening_row_value_aggregate_timing_acceptance_core_and_sound",

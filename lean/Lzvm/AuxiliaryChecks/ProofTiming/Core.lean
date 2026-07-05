@@ -851,6 +851,38 @@ theorem cuda_allocator_timing_acceptance_core_and_sound
       proof
       observed
 
+def CudaAllocatorNoWaitReuseObserved
+    (summary : CudaAllocatorTimingSummary) : Prop :=
+  0 < summary.cudaAllocatorCachedReuseCount
+    /\ 0 < summary.cudaAllocatorNoWaitBypassCount
+
+theorem cuda_allocator_no_wait_reuse_observed_field_contract
+    (summary : CudaAllocatorTimingSummary) :
+    CudaAllocatorNoWaitReuseObserved summary
+      <-> 0 < summary.cudaAllocatorCachedReuseCount
+        /\ 0 < summary.cudaAllocatorNoWaitBypassCount := by
+  rfl
+
+theorem cuda_allocator_no_wait_reuse_observed_acceptance_core_and_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : CudaAllocatorTimingSummary) :
+    forall publicInput proof,
+      CudaAllocatorTimingObservedAcceptance system (some summary) publicInput proof ->
+      CudaAllocatorNoWaitReuseObserved summary ->
+        CudaAllocatorNoWaitReuseObserved summary
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof observed reuseObserved
+  have coreAndSound :=
+    cuda_allocator_timing_acceptance_core_and_sound
+      assumptions
+      (some summary)
+      publicInput
+      proof
+      observed
+  exact And.intro reuseObserved coreAndSound
+
 theorem cuda_allocator_aggregate_timing_acceptance_sound
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
