@@ -412,30 +412,37 @@ impl WitnessTraceBuilder<'_> {
         Ok(())
     }
 
-    pub(crate) fn write_trusted_resolved_scalar_value_for_valid_row(
-        &mut self,
+    pub(crate) fn row_start_for_valid_row(
+        &self,
         row: usize,
+    ) -> Result<usize, WitnessTraceBuildError> {
+        debug_assert!(row < self.layout.rows);
+        row.checked_mul(self.layout.columns)
+            .ok_or(WitnessTraceBuildError::TraceValueCountOverflow)
+    }
+
+    pub(crate) fn write_trusted_resolved_scalar_value_at_row_start(
+        &mut self,
+        row_start: usize,
         column: &ResolvedTraceColumn<'_>,
         value: Felt,
     ) -> Result<(), WitnessTraceBuildError> {
-        debug_assert!(row < self.layout.rows);
         debug_assert!(std::ptr::eq(column.layout, self.layout));
         debug_assert_eq!(column.dimension, 1);
-        let (start, _) = self.resolved_column_bounds_for_valid_row(row, column)?;
+        let start = self.resolved_column_start_at_row_start(row_start, column)?;
         self.values[start] = value;
         Ok(())
     }
 
-    pub(crate) fn write_trusted_resolved_pair_values_for_valid_row(
+    pub(crate) fn write_trusted_resolved_pair_values_at_row_start(
         &mut self,
-        row: usize,
+        row_start: usize,
         column: &ResolvedTraceColumn<'_>,
         values: [Felt; 2],
     ) -> Result<(), WitnessTraceBuildError> {
-        debug_assert!(row < self.layout.rows);
         debug_assert!(std::ptr::eq(column.layout, self.layout));
         debug_assert_eq!(column.dimension, 2);
-        let (start, _) = self.resolved_column_bounds_for_valid_row(row, column)?;
+        let start = self.resolved_column_start_at_row_start(row_start, column)?;
         self.values[start] = values[0];
         self.values[start + 1] = values[1];
         Ok(())
@@ -512,6 +519,20 @@ impl WitnessTraceBuilder<'_> {
             .checked_add(column.dimension)
             .ok_or(WitnessTraceBuildError::TraceValueCountOverflow)?;
         Ok((start, end))
+    }
+
+    fn resolved_column_start_at_row_start(
+        &self,
+        row_start: usize,
+        column: &ResolvedTraceColumn<'_>,
+    ) -> Result<usize, WitnessTraceBuildError> {
+        debug_assert!(column
+            .trace_column
+            .checked_add(column.dimension)
+            .is_some_and(|end| end <= self.layout.columns));
+        row_start
+            .checked_add(column.trace_column)
+            .ok_or(WitnessTraceBuildError::TraceValueCountOverflow)
     }
 
     pub fn build(self) -> WitnessTraceBuffer {

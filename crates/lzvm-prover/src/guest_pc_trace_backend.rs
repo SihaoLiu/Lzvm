@@ -16219,174 +16219,227 @@ fn write_zisk_main_row_columns(
     columns: &ZiskMainTraceColumns<'_>,
 ) -> Result<(), GuestPcTraceBackendError> {
     let instruction = values.instruction;
+    let row_start = builder
+        .row_start_for_valid_row(row)
+        .map_err(GuestPcTraceBackendError::TraceBuild)?;
 
-    write_wide_column_for_valid_row(builder, row, &columns.a, values.a)?;
-    write_wide_column_for_valid_row(builder, row, &columns.b, values.b)?;
-    write_wide_column_for_valid_row(builder, row, &columns.c, values.c)?;
-    write_column_for_valid_row(builder, row, &columns.flag, u64::from(values.flag))?;
-    write_column_for_valid_row(builder, row, &columns.pc, instruction.pc)?;
-    write_optional_column_for_valid_row(
+    write_wide_column_at_row_start(builder, row_start, &columns.a, values.a)?;
+    write_wide_column_at_row_start(builder, row_start, &columns.b, values.b)?;
+    write_wide_column_at_row_start(builder, row_start, &columns.c, values.c)?;
+    write_column_at_row_start(
         builder,
         row,
+        row_start,
+        &columns.flag,
+        u64::from(values.flag),
+    )?;
+    write_column_at_row_start(builder, row, row_start, &columns.pc, instruction.pc)?;
+    write_optional_column_at_row_start(
+        builder,
+        row,
+        row_start,
         &columns.a_src_imm,
         u64::from(matches!(instruction.a, ZiskMainSource::Immediate(_))),
     )?;
-    write_optional_signed_column_for_valid_row(
+    write_optional_signed_column_at_row_start(
         builder,
         row,
+        row_start,
         &columns.a_offset_imm0,
         zisk_main_source_offset(row, instruction.a)?,
     )?;
-    write_optional_column_for_valid_row(
+    write_optional_column_at_row_start(
         builder,
         row,
+        row_start,
         &columns.a_imm1,
         zisk_main_source_high_limb(instruction.a),
     )?;
-    write_optional_column_for_valid_row(
+    write_optional_column_at_row_start(
         builder,
         row,
+        row_start,
         &columns.b_src_imm,
         u64::from(matches!(instruction.b, ZiskMainSource::Immediate(_))),
     )?;
-    write_optional_column_for_valid_row(
+    write_optional_column_at_row_start(
         builder,
         row,
+        row_start,
         &columns.b_imm1,
         zisk_main_source_high_limb(instruction.b),
     )?;
-    write_optional_column_for_valid_row(
+    write_optional_column_at_row_start(
         builder,
         row,
+        row_start,
         &columns.a_src_reg,
         u64::from(matches!(instruction.a, ZiskMainSource::Register(_))),
     )?;
-    write_optional_column_for_valid_row(
+    write_optional_column_at_row_start(
         builder,
         row,
+        row_start,
         &columns.b_src_reg,
         u64::from(matches!(instruction.b, ZiskMainSource::Register(_))),
     )?;
-    write_optional_column_for_valid_row(
+    write_optional_column_at_row_start(
         builder,
         row,
+        row_start,
         &columns.a_src_mem,
         u64::from(matches!(instruction.a, ZiskMainSource::Memory(_))),
     )?;
-    write_optional_column_for_valid_row(
+    write_optional_column_at_row_start(
         builder,
         row,
+        row_start,
         &columns.b_src_mem,
         u64::from(matches!(instruction.b, ZiskMainSource::Memory(_))),
     )?;
-    write_optional_column_for_valid_row(
+    write_optional_column_at_row_start(
         builder,
         row,
+        row_start,
         &columns.b_src_ind,
         u64::from(matches!(instruction.b, ZiskMainSource::Indirect(_))),
     )?;
-    write_optional_signed_column_for_valid_row(
+    write_optional_signed_column_at_row_start(
         builder,
         row,
+        row_start,
         &columns.b_offset_imm0,
         zisk_main_source_offset(row, instruction.b)?,
     )?;
-    write_optional_signed_column_for_valid_row(
+    write_optional_signed_column_at_row_start(
         builder,
         row,
+        row_start,
         &columns.addr1,
         zisk_main_b_address(row, instruction.b, values.a)?,
     )?;
-    write_optional_column_for_valid_row(
+    write_optional_column_at_row_start(
         builder,
         row,
+        row_start,
         &columns.store_reg,
         u64::from(matches!(instruction.store, ZiskMainStore::Register(_))),
     )?;
-    write_optional_column_for_valid_row(
+    write_optional_column_at_row_start(
         builder,
         row,
+        row_start,
         &columns.store_mem,
         u64::from(matches!(instruction.store, ZiskMainStore::Memory(_))),
     )?;
-    write_optional_column_for_valid_row(
+    write_optional_column_at_row_start(
         builder,
         row,
+        row_start,
         &columns.store_ind,
         u64::from(matches!(instruction.store, ZiskMainStore::Indirect(_))),
     )?;
-    write_optional_signed_column_for_valid_row(
+    write_optional_signed_column_at_row_start(
         builder,
         row,
+        row_start,
         &columns.store_offset,
         zisk_main_store_offset(row, &instruction.store)?,
     )?;
-    write_optional_signed_column_for_valid_row(
+    write_optional_signed_column_at_row_start(
         builder,
         row,
+        row_start,
         &columns.addr2,
         zisk_main_store_address(row, &instruction.store, values.a)?,
     )?;
-    write_optional_column_for_valid_row(
+    write_optional_column_at_row_start(
         builder,
         row,
+        row_start,
         &columns.store_pc,
         u64::from(instruction.store_pc),
     )?;
-    write_optional_column_for_valid_row(
+    write_optional_column_at_row_start(
         builder,
         row,
+        row_start,
         &columns.set_pc,
         u64::from(instruction.set_pc),
     )?;
-    write_column_for_valid_row(builder, row, &columns.op, u64::from(instruction.op.code()))?;
-    write_optional_signed_column_for_valid_row(
+    write_column_at_row_start(
         builder,
         row,
+        row_start,
+        &columns.op,
+        u64::from(instruction.op.code()),
+    )?;
+    write_optional_signed_column_at_row_start(
+        builder,
+        row,
+        row_start,
         &columns.jmp_offset1,
         instruction.jmp_offset1,
     )?;
-    write_optional_signed_column_for_valid_row(
+    write_optional_signed_column_at_row_start(
         builder,
         row,
+        row_start,
         &columns.jmp_offset2,
         instruction.jmp_offset2,
     )?;
-    write_optional_column_for_valid_row(builder, row, &columns.ind_width, instruction.ind_width)?;
-    write_optional_column_for_valid_row(builder, row, &columns.m32, u64::from(instruction.m32))?;
-    write_optional_column_for_valid_row(
+    write_optional_column_at_row_start(
         builder,
         row,
+        row_start,
+        &columns.ind_width,
+        instruction.ind_width,
+    )?;
+    write_optional_column_at_row_start(
+        builder,
+        row,
+        row_start,
+        &columns.m32,
+        u64::from(instruction.m32),
+    )?;
+    write_optional_column_at_row_start(
+        builder,
+        row,
+        row_start,
         &columns.is_external_op,
         u64::from(instruction.is_external_op),
     )?;
-    write_optional_column_for_valid_row(
+    write_optional_column_at_row_start(
         builder,
         row,
+        row_start,
         &columns.is_precompiled,
         u64::from(instruction.is_precompiled),
     )?;
-    write_optional_column_for_valid_row(
+    write_optional_column_at_row_start(
         builder,
         row,
+        row_start,
         &columns.a_reg_prev_mem_step,
         values.register_accesses.a_prev_mem_step.unwrap_or(0),
     )?;
-    write_optional_column_for_valid_row(
+    write_optional_column_at_row_start(
         builder,
         row,
+        row_start,
         &columns.b_reg_prev_mem_step,
         values.register_accesses.b_prev_mem_step.unwrap_or(0),
     )?;
-    write_optional_column_for_valid_row(
+    write_optional_column_at_row_start(
         builder,
         row,
+        row_start,
         &columns.store_reg_prev_mem_step,
         values.register_accesses.store_prev_mem_step.unwrap_or(0),
     )?;
-    write_optional_wide_column_for_valid_row(
+    write_optional_wide_column_at_row_start(
         builder,
-        row,
+        row_start,
         &columns.store_reg_prev_value,
         values.register_accesses.store_prev_value.unwrap_or(0),
     )
@@ -16415,18 +16468,22 @@ fn write_zisk_main_terminal_row(
     columns: &ZiskMainTraceColumns<'_>,
     halt_pc: u64,
 ) -> Result<(), GuestPcTraceBackendError> {
-    write_wide_column_for_valid_row(builder, row, &columns.a, 0)?;
-    write_wide_column_for_valid_row(builder, row, &columns.b, 0)?;
-    write_wide_column_for_valid_row(builder, row, &columns.c, 0)?;
-    write_column_for_valid_row(builder, row, &columns.flag, 0)?;
-    write_column_for_valid_row(builder, row, &columns.pc, halt_pc)?;
-    write_optional_column_for_valid_row(builder, row, &columns.a_src_imm, 1)?;
-    write_optional_column_for_valid_row(builder, row, &columns.b_src_imm, 1)?;
-    write_optional_column_for_valid_row(builder, row, &columns.a_src_mem, 0)?;
-    write_optional_column_for_valid_row(builder, row, &columns.b_src_mem, 0)?;
-    write_column_for_valid_row(
+    let row_start = builder
+        .row_start_for_valid_row(row)
+        .map_err(GuestPcTraceBackendError::TraceBuild)?;
+    write_wide_column_at_row_start(builder, row_start, &columns.a, 0)?;
+    write_wide_column_at_row_start(builder, row_start, &columns.b, 0)?;
+    write_wide_column_at_row_start(builder, row_start, &columns.c, 0)?;
+    write_column_at_row_start(builder, row, row_start, &columns.flag, 0)?;
+    write_column_at_row_start(builder, row, row_start, &columns.pc, halt_pc)?;
+    write_optional_column_at_row_start(builder, row, row_start, &columns.a_src_imm, 1)?;
+    write_optional_column_at_row_start(builder, row, row_start, &columns.b_src_imm, 1)?;
+    write_optional_column_at_row_start(builder, row, row_start, &columns.a_src_mem, 0)?;
+    write_optional_column_at_row_start(builder, row, row_start, &columns.b_src_mem, 0)?;
+    write_column_at_row_start(
         builder,
         row,
+        row_start,
         &columns.op,
         u64::from(ZiskMainOp::CopyB.code()),
     )
@@ -18127,15 +18184,16 @@ fn write_column(
         .map_err(GuestPcTraceBackendError::TraceBuild)
 }
 
-fn write_column_for_valid_row(
+fn write_column_at_row_start(
     builder: &mut crate::witness_layout::WitnessTraceBuilder<'_>,
     row: usize,
+    row_start: usize,
     column: &TraceColumnTarget<'_>,
     value: u64,
 ) -> Result<(), GuestPcTraceBackendError> {
     let value = canonical_trace_value(row, column.name(), value)?;
     builder
-        .write_trusted_resolved_scalar_value_for_valid_row(row, column.resolved(), value)
+        .write_trusted_resolved_scalar_value_at_row_start(row_start, column.resolved(), value)
         .map_err(GuestPcTraceBackendError::TraceBuild)
 }
 
@@ -18151,14 +18209,15 @@ fn write_optional_column(
     Ok(())
 }
 
-fn write_optional_column_for_valid_row(
+fn write_optional_column_at_row_start(
     builder: &mut crate::witness_layout::WitnessTraceBuilder<'_>,
     row: usize,
+    row_start: usize,
     column: &Option<TraceColumnTarget<'_>>,
     value: u64,
 ) -> Result<(), GuestPcTraceBackendError> {
     if let Some(column) = column {
-        write_column_for_valid_row(builder, row, column, value)?;
+        write_column_at_row_start(builder, row, row_start, column, value)?;
     }
     Ok(())
 }
@@ -18175,26 +18234,26 @@ fn write_wide_column(
         .map_err(GuestPcTraceBackendError::TraceBuild)
 }
 
-fn write_wide_column_for_valid_row(
+fn write_wide_column_at_row_start(
     builder: &mut crate::witness_layout::WitnessTraceBuilder<'_>,
-    row: usize,
+    row_start: usize,
     column: &TraceColumnTarget<'_>,
     value: u64,
 ) -> Result<(), GuestPcTraceBackendError> {
     let values = felt_limbs_u64(value);
     builder
-        .write_trusted_resolved_pair_values_for_valid_row(row, column.resolved(), values)
+        .write_trusted_resolved_pair_values_at_row_start(row_start, column.resolved(), values)
         .map_err(GuestPcTraceBackendError::TraceBuild)
 }
 
-fn write_optional_wide_column_for_valid_row(
+fn write_optional_wide_column_at_row_start(
     builder: &mut crate::witness_layout::WitnessTraceBuilder<'_>,
-    row: usize,
+    row_start: usize,
     column: &Option<TraceColumnTarget<'_>>,
     value: u64,
 ) -> Result<(), GuestPcTraceBackendError> {
     if let Some(column) = column {
-        write_wide_column_for_valid_row(builder, row, column, value)?;
+        write_wide_column_at_row_start(builder, row_start, column, value)?;
     }
     Ok(())
 }
@@ -18206,9 +18265,10 @@ fn felt_limbs_u64(value: u64) -> [Felt; 2] {
     ]
 }
 
-fn write_optional_signed_column_for_valid_row(
+fn write_optional_signed_column_at_row_start(
     builder: &mut crate::witness_layout::WitnessTraceBuilder<'_>,
     row: usize,
+    row_start: usize,
     column: &Option<TraceColumnTarget<'_>>,
     value: i64,
 ) -> Result<(), GuestPcTraceBackendError> {
@@ -18217,7 +18277,7 @@ fn write_optional_signed_column_for_valid_row(
     };
     let value = signed_trace_value(row, column.name(), value)?;
     builder
-        .write_trusted_resolved_scalar_value_for_valid_row(row, column.resolved(), value)
+        .write_trusted_resolved_scalar_value_at_row_start(row_start, column.resolved(), value)
         .map_err(GuestPcTraceBackendError::TraceBuild)
 }
 
