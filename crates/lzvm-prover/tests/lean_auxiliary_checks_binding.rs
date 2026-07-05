@@ -1187,6 +1187,35 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             ],
         );
     }
+    for (theorem, callee) in [
+        (
+            "guest_pc_trace_timing_some_summary_acceptance_verifier_core_contract",
+            "guest_pc_trace_timing_acceptance_verifier_core_contract",
+        ),
+        (
+            "guest_pc_trace_timing_none_summary_acceptance_verifier_core_contract",
+            "guest_pc_trace_timing_acceptance_verifier_core_contract",
+        ),
+        (
+            "guest_pc_trace_timing_some_summary_acceptance_core_and_sound",
+            "guest_pc_trace_timing_acceptance_core_and_sound",
+        ),
+        (
+            "guest_pc_trace_timing_none_summary_acceptance_core_and_sound",
+            "guest_pc_trace_timing_acceptance_core_and_sound",
+        ),
+    ] {
+        lean_binding::assert_theorem_body_contains(&timing_core_source, theorem, &[callee]);
+        lean_binding::assert_theorem_body_omits(
+            &timing_core_source,
+            theorem,
+            &[
+                "ignored_metadata_acceptance_verifier_core_contract",
+                "ignored_metadata_acceptance_core_and_sound",
+                "sound_witness_implies_verifier_core_contract",
+            ],
+        );
+    }
     for theorem in [
         "proof_timing_batch_acceptance_core_and_sound",
         "witness_opening_row_value_timing_acceptance_core_and_sound",
@@ -5423,7 +5452,11 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "guest_pc_trace_timing_observed_acceptance_projects_verifier_acceptance",
             "guest_pc_trace_timing_acceptance_sound",
             "guest_pc_trace_timing_acceptance_verifier_core_contract",
+            "guest_pc_trace_timing_some_summary_acceptance_verifier_core_contract",
+            "guest_pc_trace_timing_none_summary_acceptance_verifier_core_contract",
             "guest_pc_trace_timing_acceptance_core_and_sound",
+            "guest_pc_trace_timing_some_summary_acceptance_core_and_sound",
+            "guest_pc_trace_timing_none_summary_acceptance_core_and_sound",
             "guest_pc_trace_stream_elapsed_timing_acceptance_sound",
             "guest_pc_trace_stream_elapsed_timing_acceptance_verifier_core_contract",
             "guest_pc_trace_descriptor_width_counts_acceptance_sound",
