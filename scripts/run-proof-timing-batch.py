@@ -1528,11 +1528,25 @@ def self_test() -> None:
     os.environ["LZVM_CUDA_RETAINED_SOURCE_BYTES"] = "123456"
     os.environ["LZVM_GUEST_PC_TRACE_DESCRIPTOR_HIGH32_STATS"] = "1"
     try:
+        work_dir.mkdir(parents=True, exist_ok=True)
+        improve_log = work_dir / "improve-log.csv"
+        improve_log.write_text(
+            "\n".join(
+                [
+                    "timestamp,commit,small_proof_time_s,large_proof_time_s,summary",
+                    '"2026-01-01T00:00:00+0000","selftest","","timeout=10s run1 after retry","timeout note"',
+                ]
+            )
+            + "\n",
+            encoding="utf-8",
+        )
         batch_dir = run_batch(args)
-        contents = (work_dir / "improve-log.csv").read_text(encoding="utf-8")
+        contents = improve_log.read_text(encoding="utf-8")
         expected = '"avg=1.000 samples=1.000;1.000;1.000 used=3/3"'
         if expected not in contents:
             raise SystemExit("self-test improve log did not contain the expected average")
+        if "timeout=10s run1 after retry" not in contents:
+            raise SystemExit("self-test improve log should preserve timeout note")
         summary = batch_dir / "small-001.proof-timing-summary.csv"
         if not summary.exists():
             raise SystemExit("self-test timing summary missing")
