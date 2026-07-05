@@ -10939,7 +10939,7 @@ impl MainReportFastPathParts {
 fn validate_and_apply_zisk_main_report(
     row: usize,
     report: &GuestMachineReport,
-    next_instruction: impl FnMut() -> Option<RiscvInstruction>,
+    mut next_instruction: impl FnMut() -> Option<RiscvInstruction>,
     state: &mut ZiskMainTraceState,
     context: &mut ZiskMainReportValidationContext<'_>,
     mut timing: Option<&mut GuestPcTraceStreamTiming>,
@@ -11036,16 +11036,19 @@ fn validate_and_apply_zisk_main_report(
 
     validate_zisk_main_report_row_capacity(row, 1, context.row_count)?;
     let count_main_report_generic_fallback = !detail_timing && !shape_timing;
-    let mut raw_next_instruction = next_instruction;
     let mut next_instruction_cache = None;
-    let mut next_instruction = || {
+    let mut cached_next_instruction = || {
         if next_instruction_cache.is_none() {
-            next_instruction_cache = Some(raw_next_instruction());
+            next_instruction_cache = Some(next_instruction());
         }
         next_instruction_cache.flatten()
     };
     if count_main_report_generic_fallback {
-        if let Some(fast_path) = report_level_fast_path_parts(row, report, &mut next_instruction)? {
+        let dma_prepare_lookahead = match report.instruction {
+            RiscvInstruction::ZiskDmaPrepare { .. } => cached_next_instruction(),
+            _ => None,
+        };
+        if let Some(fast_path) = report_level_fast_path_parts(row, report, dma_prepare_lookahead)? {
             if let Some(timing) = timing.as_mut() {
                 timing.record_main_report_fast_path(&fast_path);
             }
@@ -11228,7 +11231,7 @@ fn validate_and_apply_zisk_main_report(
         }
     }
     let lowering_started = detail_duration_started(&timing, detail_timing);
-    let lowered_row = lower_single_zisk_main_report_row(row, report, &mut next_instruction)?;
+    let lowered_row = lower_single_zisk_main_report_row(row, report, &mut cached_next_instruction)?;
     if count_main_report_generic_fallback {
         if let Some(timing) = timing.as_mut() {
             timing.record_main_report_generic_fallback_shape(&lowered_row.instruction);
@@ -12251,7 +12254,7 @@ fn sequential_report_fast_path_instruction_size(
 fn report_level_fast_path_parts(
     row: usize,
     report: &GuestMachineReport,
-    next_instruction: &mut impl FnMut() -> Option<RiscvInstruction>,
+    dma_prepare_lookahead: Option<RiscvInstruction>,
 ) -> Result<Option<MainReportFastPathParts>, GuestPcTraceBackendError> {
     match report.instruction {
         RiscvInstruction::Load {
@@ -12346,7 +12349,7 @@ fn report_level_fast_path_parts(
         | RiscvInstruction::Op32 { .. } => Ok(arithmetic_fast_path_parts(row, report)?
             .map(|(instruction, parts)| MainReportFastPathParts::NoMemory(instruction, parts))),
         RiscvInstruction::ZiskDmaPrepare { .. } => {
-            dma_prepare_fast_path_parts(row, report, next_instruction())
+            dma_prepare_fast_path_parts(row, report, dma_prepare_lookahead)
         }
         _ => Ok(None),
     }

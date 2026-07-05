@@ -7403,8 +7403,7 @@ fn report_level_fast_path_parts_routes_representative_rows() {
     let mut timing = GuestPcTraceStreamTiming::default();
     for (report, expected_route) in cases {
         let expected_instruction = lower_guest_report(&report).expect("lowering should succeed");
-        let mut next_instruction = || None;
-        let parts = report_level_fast_path_parts(3, &report, &mut next_instruction)
+        let parts = report_level_fast_path_parts(3, &report, None)
             .expect("routing should not fail")
             .expect("row should route to a fast path");
         timing.record_main_report_fast_path(&parts);
@@ -7469,8 +7468,7 @@ fn report_level_fast_path_parts_routes_representative_rows() {
         Some(prepare_lookahead),
     )
     .expect("DMA prepare lowering should succeed");
-    let mut next_instruction = || Some(prepare_lookahead);
-    let parts = report_level_fast_path_parts(3, &prepare_report, &mut next_instruction)
+    let parts = report_level_fast_path_parts(3, &prepare_report, Some(prepare_lookahead))
         .expect("routing should not fail")
         .expect("DMA prepare row should route to a fast path");
     timing.record_main_report_fast_path(&parts);
@@ -7506,8 +7504,7 @@ fn report_level_fast_path_parts_routes_representative_rows() {
         Some(base_lookahead),
     )
     .expect("DMA prepare lowering should succeed");
-    let mut next_instruction = || Some(base_lookahead);
-    let parts = report_level_fast_path_parts(3, &base_prepare_report, &mut next_instruction)
+    let parts = report_level_fast_path_parts(3, &base_prepare_report, Some(base_lookahead))
         .expect("routing should not fail")
         .expect("DMA prepare row should route to a fast path");
     timing.record_main_report_fast_path(&parts);
@@ -7532,6 +7529,67 @@ fn report_level_fast_path_parts_routes_representative_rows() {
     assert_eq!(timing.trace_main_report_no_memory_fast_path_count(), 6);
     assert_eq!(timing.trace_main_report_simple_copy_fast_path_count(), 1);
     assert_eq!(timing.trace_main_report_fcall_result_fast_path_count(), 1);
+}
+
+#[test]
+fn report_fast_path_skips_lookahead_for_plain_load() {
+    let report =
+        GuestMachineReport {
+            address_and_instruction_len:
+                crate::guest_machine::pack_report_address_and_instruction_len(0x8000_0000, 4),
+            instruction: RiscvInstruction::Load {
+                kind: RiscvLoadKind::Ld,
+                rd: 3,
+                rs1: 2,
+                offset: 8,
+            },
+            next_pc: 0x8000_0004,
+            register_write_value: GuestRegisterWriteValue::new(0xaa55),
+            memory_accesses: vec![memory_read(0x108, 0xaa55)].into(),
+        };
+    let mut state = ZiskMainTraceState::new();
+    state.registers[2] = 0x100;
+    let mut context = ZiskMainReportValidationContext::new(
+        None,
+        16,
+        ZiskMainTraceSegmentInfo {
+            trace_instance_index: 0,
+            is_last_segment: false,
+            previous_c: 0,
+        },
+    )
+    .expect("context should initialize");
+    let mut lookahead_calls = 0;
+    let mut visited = None;
+    let produced_rows = validate_and_apply_zisk_main_report(
+        3,
+        &report,
+        || {
+            lookahead_calls += 1;
+            Some(RiscvInstruction::Ecall)
+        },
+        &mut state,
+        &mut context,
+        None,
+        false,
+        false,
+        |row, values, timing| {
+            assert_eq!(row, 3);
+            assert!(timing.is_none());
+            visited = Some(values);
+            Ok(())
+        },
+    )
+    .expect("plain load should take report fast path");
+
+    assert_eq!(produced_rows, 1);
+    assert_eq!(lookahead_calls, 0);
+    assert_eq!(state.registers[3], 0xaa55);
+    assert_eq!(state.last_c, 0xaa55);
+    let values = visited.expect("fast path should emit row values");
+    assert_eq!(values.a, 0x100);
+    assert_eq!(values.b, 0xaa55);
+    assert_eq!(values.c, 0xaa55);
 }
 
 #[test]
