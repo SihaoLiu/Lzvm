@@ -621,6 +621,92 @@ runtime_pipeline_binding_checked_acceptance_audited_finalized_concrete_segment_i
         proof
         accepted)
 
+set_option linter.style.longLine false in
+theorem
+runtime_pipeline_binding_checked_acceptance_finalized_concrete_segment_seeded_requirements_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimePipelineBindingValidation system)
+    (binding :
+      let queryPlanValidation := validation.queryPlanBindingValidation
+      let challengeValidation := queryPlanValidation.challengeValidation
+      RuntimeProofArtifactConcreteSegmentIdBinding
+        challengeValidation.transcriptValidation.artifactBindingValidation) :
+    forall artifact publicInput proof (_requiresExternalSource : Prop),
+      RuntimePipelineBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        let queryPlanValidation := validation.queryPlanBindingValidation
+        let artifactValidation :=
+          queryPlanValidation.challengeValidation.transcriptValidation.artifactBindingValidation
+        RuntimeProofArtifactFinalized
+          system
+          artifactValidation
+          artifact
+          publicInput
+          proof
+          /\ system.pcsOpeningsValid publicInput proof
+          /\ system.friQueriesValid publicInput proof
+          /\ validation.queryPlanBindingValidation.queryPlanSeedBindsWitnessTreeDigests
+            artifact
+            publicInput
+            proof
+          /\ validation.queryPlanBindingValidation.queryPlanSeededFriOpeningRequirementsChecked
+            artifact
+            publicInput
+            proof
+          /\ artifactValidation.proofSegmentIdsAllowed artifact publicInput proof
+          /\ artifactValidation.proofSegmentIdsUnique artifact publicInput proof
+          /\ RuntimeProofArtifactConcreteSegmentIdsAllowed proof := by
+  intro artifact publicInput proof _requiresExternalSource accepted
+  have finalizedConcreteContract :=
+    runtime_pipeline_binding_checked_acceptance_audited_finalized_concrete_segment_ids_contract
+      assumptions
+      validation
+      binding
+      artifact
+      publicInput
+      proof
+      _requiresExternalSource
+      accepted
+  rcases finalizedConcreteContract with
+    ⟨finalizedSegmentContract, concreteSegmentIdsAllowed⟩
+  rcases finalizedSegmentContract with
+    ⟨_auditedCrypto,
+      _auditedSemantic,
+      artifactFinalized,
+      _proofSystemSound,
+      _verifierAccepts,
+      _transcriptBound,
+      _publicInputBound,
+      pcsOpeningsValid,
+      friQueriesValid,
+      seedBinds,
+      seededFriOpeningChecked,
+      _coreContract,
+      _executionObligations,
+      _soundWitness,
+      _artifactAgreement,
+      _containerCanonical,
+      _segmentsPresent,
+      _metadataCanonical,
+      _segmentPayloadsNonempty,
+      segmentIdsAllowed,
+      segmentIdsUnique,
+      _unitValuesTraceIdentityCoverage⟩
+  exact
+    ⟨artifactFinalized,
+      pcsOpeningsValid,
+      friQueriesValid,
+      seedBinds,
+      seededFriOpeningChecked,
+      segmentIdsAllowed,
+      segmentIdsUnique,
+      concreteSegmentIdsAllowed⟩
+
 theorem runtime_pipeline_binding_required_external_source_audited_segment_ids_contract
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)

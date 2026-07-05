@@ -268,6 +268,7 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
             "runtime_pipeline_binding_checked_acceptance_audited_concrete_segment_ids_contract",
             "runtime_pipeline_binding_checked_acceptance_audited_finalized_segment_ids_contract",
             "runtime_pipeline_binding_checked_acceptance_audited_finalized_concrete_segment_ids_contract",
+            "runtime_pipeline_binding_checked_acceptance_finalized_concrete_segment_seeded_requirements_contract",
             "runtime_pipeline_binding_checked_acceptance_audited_concrete_opening_contract",
             "runtime_pipeline_checked_acceptance_audited_concrete_opening_core_contract",
             "runtime_pipeline_binding_checked_acceptance_hash_concrete_opening_core_contract",
@@ -2320,6 +2321,53 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
         &[
             "RuntimePipelineBindingEvidence",
             "runtime_pipeline_binding_checked_acceptance_sound",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_pipeline_binding_checked_acceptance_finalized_concrete_segment_seeded_requirements_contract",
+        &[
+            "RuntimeProofArtifactConcreteSegmentIdBinding",
+            "RuntimeProofArtifactFinalized",
+            "system.pcsOpeningsValid publicInput proof",
+            "system.friQueriesValid publicInput proof",
+            "validation.queryPlanBindingValidation.queryPlanSeedBindsWitnessTreeDigests",
+            "validation.queryPlanBindingValidation.queryPlanSeededFriOpeningRequirementsChecked",
+            "artifactValidation.proofSegmentIdsAllowed artifact publicInput proof",
+            "artifactValidation.proofSegmentIdsUnique artifact publicInput proof",
+            "RuntimeProofArtifactConcreteSegmentIdsAllowed proof",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_pipeline_binding_checked_acceptance_finalized_concrete_segment_seeded_requirements_contract",
+        &[
+            "runtime_pipeline_binding_checked_acceptance_audited_finalized_concrete_segment_ids_contract",
+            r#"rcases finalizedConcreteContract with
+    ⟨finalizedSegmentContract, concreteSegmentIdsAllowed⟩"#,
+            r#"pcsOpeningsValid,
+      friQueriesValid,
+      seedBinds,
+      seededFriOpeningChecked,
+      _coreContract"#,
+            r#"exact
+    ⟨artifactFinalized,
+      pcsOpeningsValid,
+      friQueriesValid,
+      seedBinds,
+      seededFriOpeningChecked,
+      segmentIdsAllowed,
+      segmentIdsUnique,
+      concreteSegmentIdsAllowed⟩"#,
+        ],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &lean_source,
+        "runtime_pipeline_binding_checked_acceptance_finalized_concrete_segment_seeded_requirements_contract",
+        &[
+            "RuntimePipelineBindingEvidence",
+            "runtime_pipeline_binding_checked_acceptance_sound",
+            "runtime_pipeline_binding_required_external_source_sound",
         ],
     );
     assert!(
