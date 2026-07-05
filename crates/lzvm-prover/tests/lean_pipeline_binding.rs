@@ -293,6 +293,7 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
             "runtime_pipeline_binding_required_external_source_audited_concrete_segment_ids_contract",
             "runtime_pipeline_binding_required_external_source_audited_finalized_segment_ids_contract",
             "runtime_pipeline_binding_required_external_source_audited_finalized_concrete_segment_ids_contract",
+            "runtime_pipeline_required_external_source_finalized_concrete_opening_evidence_contract",
             "runtime_pipeline_binding_required_external_source_audited_seeded_query_requirements_contract",
             "runtime_pipeline_binding_required_external_source_contracts_manifest_core_contract",
             "runtime_pipeline_binding_required_external_source_artifact_contracts_core_contract",
@@ -3754,6 +3755,39 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
         "runtime_pipeline_required_external_source_audited_finalized_concrete_segment_ids_core_components_contract",
         &[
             "RuntimePipelineBindingEvidence",
+            "runtime_pipeline_binding_required_external_source_sound",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_pipeline_required_external_source_finalized_concrete_opening_evidence_contract",
+        &[
+            "RuntimeProofArtifactConcreteSegmentIdBinding",
+            "RuntimeProofArtifactFinalized",
+            "ExternalSourceOpeningEvidence",
+            "runtime_pipeline_trace_source_validation validation",
+            "runtime_pipeline_opening_source_validation validation",
+            "system.pcsOpeningsValid publicInput proof",
+            "system.friQueriesValid publicInput proof",
+            "RuntimeProofArtifactConcreteSegmentIdsAllowed proof",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_pipeline_required_external_source_finalized_concrete_opening_evidence_contract",
+        &[
+            "runtime_pipeline_required_external_source_audited_finalized_concrete_segment_ids_core_components_contract",
+            "rcases coreComponents",
+            "traceExternalEvidence",
+            "openingExternalEvidence",
+            "concreteSegmentIdsAllowed",
+        ],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &lean_source,
+        "runtime_pipeline_required_external_source_finalized_concrete_opening_evidence_contract",
+        &[
+            "runtime_pipeline_binding_required_external_source_audited_finalized_concrete_segment_ids_contract",
             "runtime_pipeline_binding_required_external_source_sound",
         ],
     );

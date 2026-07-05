@@ -1488,4 +1488,85 @@ runtime_pipeline_required_external_source_audited_finalized_concrete_segment_ids
       segmentIdsUnique,
       concreteSegmentIdsAllowed⟩
 
+set_option linter.style.longLine false in
+theorem
+runtime_pipeline_required_external_source_finalized_concrete_opening_evidence_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimePipelineBindingValidation system)
+    (binding :
+      let queryPlanValidation := validation.queryPlanBindingValidation
+      let challengeValidation := queryPlanValidation.challengeValidation
+      RuntimeProofArtifactConcreteSegmentIdBinding
+        challengeValidation.transcriptValidation.artifactBindingValidation) :
+    forall artifact publicInput proof (requiresExternalSource : Prop),
+      RuntimePipelineBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        requiresExternalSource ->
+          let queryPlanValidation := validation.queryPlanBindingValidation
+          let artifactValidation :=
+            queryPlanValidation.challengeValidation.transcriptValidation.artifactBindingValidation
+          RuntimeProofArtifactFinalized
+            system
+            artifactValidation
+            artifact
+            publicInput
+            proof
+            /\ ExternalSourceOpeningEvidence
+              system
+              (runtime_pipeline_trace_source_validation validation)
+              publicInput
+              proof
+            /\ ExternalSourceOpeningEvidence
+              system
+              (runtime_pipeline_opening_source_validation validation)
+              publicInput
+              proof
+            /\ system.pcsOpeningsValid publicInput proof
+            /\ system.friQueriesValid publicInput proof
+            /\ RuntimeProofArtifactConcreteSegmentIdsAllowed proof := by
+  intro artifact publicInput proof requiresExternalSource accepted required
+  have coreComponents :=
+    runtime_pipeline_required_external_source_audited_finalized_concrete_segment_ids_core_components_contract
+      assumptions
+      validation
+      binding
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      accepted
+      required
+  rcases coreComponents with
+    ⟨_auditedCrypto,
+      _auditedSemantic,
+      artifactFinalized,
+      _proofSystemSound,
+      _verifierAccepts,
+      traceExternalEvidence,
+      openingExternalEvidence,
+      _transcriptBound,
+      _publicInputBound,
+      pcsOpeningsValid,
+      friQueriesValid,
+      _seedBinds,
+      _seededFriOpeningChecked,
+      _coreContract,
+      _executionObligations,
+      _soundWitness,
+      _segmentIdsAllowed,
+      _segmentIdsUnique,
+      concreteSegmentIdsAllowed⟩
+  exact
+    ⟨artifactFinalized,
+      traceExternalEvidence,
+      openingExternalEvidence,
+      pcsOpeningsValid,
+      friQueriesValid,
+      concreteSegmentIdsAllowed⟩
+
 end Lzvm
