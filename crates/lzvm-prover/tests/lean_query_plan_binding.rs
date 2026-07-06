@@ -157,6 +157,40 @@ fn lean_query_plan_binding_exports_opening_segment_projections() {
     );
     lean_binding::assert_theorem_prefix_contains(
         &lean_source,
+        "runtime_query_plan_binding_evidence_implies_bound_contract",
+        &[
+            "RuntimeQueryPlanBindingEvidence",
+            "RuntimeQueryPlanBindingBoundContract",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_query_plan_binding_evidence_implies_bound_contract",
+        &["exact evidence.left"],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_query_plan_binding_checked_acceptance_bound_contract",
+        &[
+            "RuntimeQueryPlanBindingCheckedAcceptance",
+            "RuntimeQueryPlanBindingBoundContract",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_omits(
+        &lean_source,
+        "runtime_query_plan_binding_checked_acceptance_bound_contract",
+        &["AssumptionBundle"],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_query_plan_binding_checked_acceptance_bound_contract",
+        &[
+            "runtime_query_plan_binding_checked_acceptance_evidence",
+            "runtime_query_plan_binding_evidence_implies_bound_contract",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
         "runtime_query_plan_binding_evidence_implies_transcript_query_plan_bound",
         &[
             "RuntimeQueryPlanBindingEvidence",
