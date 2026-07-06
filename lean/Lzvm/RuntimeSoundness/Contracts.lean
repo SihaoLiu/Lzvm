@@ -1883,6 +1883,89 @@ runtime_soundness_checked_acceptance_finalized_concrete_core_requirements_contra
 
 set_option linter.style.longLine false in
 theorem
+runtime_soundness_checked_acceptance_artifact_finalized_concrete_core_requirements_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeSoundnessValidation system)
+    (binding :
+      RuntimeProofArtifactConcreteSegmentIdBinding
+        validation.transcriptValidation.artifactBindingValidation) :
+    forall artifact publicInput proof requiresExternalSource,
+      RuntimeSoundnessCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof
+          requiresExternalSource ->
+        let artifactValidation :=
+          validation.transcriptValidation.artifactBindingValidation
+        RuntimeArtifactEvidence
+          system
+          artifactValidation.runtimeValidation
+          artifact
+          publicInput
+          proof
+          /\ RuntimeProofArtifactFinalized
+            system
+            artifactValidation
+            artifact
+            publicInput
+            proof
+          /\ system.transcriptBound publicInput proof
+          /\ system.publicInputBound publicInput proof
+          /\ system.pcsOpeningsValid publicInput proof
+          /\ system.friQueriesValid publicInput proof
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ artifactValidation.proofSegmentIdsAllowed artifact publicInput proof
+          /\ artifactValidation.proofSegmentIdsUnique artifact publicInput proof
+          /\ RuntimeProofArtifactConcreteSegmentIdsAllowed proof := by
+  intro artifact publicInput proof requiresExternalSource checked
+  obtain ⟨finalizedSegmentContract, concreteSegmentIdsAllowed⟩ :=
+    runtime_soundness_checked_acceptance_artifact_audited_finalized_concrete_segment_ids_contract
+      assumptions
+      validation
+      binding
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      checked
+  rcases finalizedSegmentContract with
+    ⟨artifactEvidence,
+      _auditedCrypto,
+      _auditedSemantic,
+      artifactFinalized,
+      _proofSystemSound,
+      _verifierAccepts,
+      transcriptBound,
+      publicInputBound,
+      pcsOpenings,
+      friQueries,
+      verifierCore,
+      _executionObligations,
+      _soundWitness,
+      _containerCanonical,
+      _segmentsPresent,
+      _metadataCanonical,
+      _segmentPayloadsNonempty,
+      segmentIdsAllowed,
+      segmentIdsUnique,
+      _unitValuesTraceIdentityCoverage⟩
+  exact
+    ⟨artifactEvidence,
+      artifactFinalized,
+      transcriptBound,
+      publicInputBound,
+      pcsOpenings,
+      friQueries,
+      verifierCore,
+      segmentIdsAllowed,
+      segmentIdsUnique,
+      concreteSegmentIdsAllowed⟩
+
+set_option linter.style.longLine false in
+theorem
 runtime_soundness_required_external_source_finalized_concrete_core_source_contract
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
@@ -1950,6 +2033,98 @@ runtime_soundness_required_external_source_finalized_concrete_core_source_contra
       required
   exact
     ⟨artifactFinalized,
+      externalSourceEvidence,
+      transcriptBound,
+      publicInputBound,
+      pcsOpenings,
+      friQueries,
+      verifierCore,
+      segmentIdsAllowed,
+      segmentIdsUnique,
+      concreteSegmentIdsAllowed⟩
+
+set_option linter.style.longLine false in
+theorem
+runtime_soundness_required_external_source_artifact_finalized_concrete_core_source_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeSoundnessValidation system)
+    (binding :
+      RuntimeProofArtifactConcreteSegmentIdBinding
+        validation.transcriptValidation.artifactBindingValidation) :
+    forall artifact publicInput proof (requiresExternalSource : Prop),
+      RuntimeSoundnessCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof
+          requiresExternalSource ->
+        requiresExternalSource ->
+          let artifactValidation :=
+            validation.transcriptValidation.artifactBindingValidation
+          RuntimeArtifactEvidence
+            system
+            artifactValidation.runtimeValidation
+            artifact
+            publicInput
+            proof
+            /\ RuntimeProofArtifactFinalized
+              system
+              artifactValidation
+              artifact
+              publicInput
+              proof
+            /\ ExternalSourceOpeningEvidence
+              system
+              validation.sourceValidation
+              publicInput
+              proof
+            /\ system.transcriptBound publicInput proof
+            /\ system.publicInputBound publicInput proof
+            /\ system.pcsOpeningsValid publicInput proof
+            /\ system.friQueriesValid publicInput proof
+            /\ RuntimeVerifierCoreContract system publicInput proof
+            /\ artifactValidation.proofSegmentIdsAllowed artifact publicInput proof
+            /\ artifactValidation.proofSegmentIdsUnique artifact publicInput proof
+            /\ RuntimeProofArtifactConcreteSegmentIdsAllowed proof := by
+  intro artifact publicInput proof requiresExternalSource checked required
+  obtain ⟨finalizedSegmentContract, concreteSegmentIdsAllowed⟩ :=
+    runtime_soundness_required_external_source_artifact_audited_finalized_concrete_segment_ids_contract
+      assumptions
+      validation
+      binding
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      checked
+      required
+  rcases finalizedSegmentContract with
+    ⟨artifactEvidence,
+      _auditedCrypto,
+      _auditedSemantic,
+      artifactFinalized,
+      _proofSystemSound,
+      _verifierAccepts,
+      externalSourceEvidence,
+      transcriptBound,
+      publicInputBound,
+      pcsOpenings,
+      friQueries,
+      verifierCore,
+      _executionObligations,
+      _soundWitness,
+      _containerCanonical,
+      _segmentsPresent,
+      _metadataCanonical,
+      _segmentPayloadsNonempty,
+      segmentIdsAllowed,
+      segmentIdsUnique,
+      _unitValuesTraceIdentityCoverage⟩
+  exact
+    ⟨artifactEvidence,
+      artifactFinalized,
       externalSourceEvidence,
       transcriptBound,
       publicInputBound,

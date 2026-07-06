@@ -278,6 +278,45 @@ fn lean_runtime_soundness_contracts_exports_finalized_concrete_core_requirements
 }
 
 #[test]
+fn lean_runtime_soundness_contracts_exports_artifact_finalized_concrete_core_requirements_contract()
+{
+    let lean_source = read_contracts_source();
+    let theorem =
+        "runtime_soundness_checked_acceptance_artifact_finalized_concrete_core_requirements_contract";
+
+    lean_binding::assert_theorem_declarations(&lean_source, &[theorem]);
+    assert_prefix_contains_groups(
+        &lean_source,
+        theorem,
+        &[
+            &["RuntimeProofArtifactConcreteSegmentIdBinding"],
+            &[
+                "RuntimeArtifactEvidence",
+                "RuntimeProofArtifactFinalized",
+                "system.transcriptBound publicInput proof",
+                "system.publicInputBound publicInput proof",
+                "system.pcsOpeningsValid publicInput proof",
+                "system.friQueriesValid publicInput proof",
+                "RuntimeVerifierCoreContract system publicInput proof",
+                "artifactValidation.proofSegmentIdsAllowed artifact publicInput proof",
+                "artifactValidation.proofSegmentIdsUnique artifact publicInput proof",
+                "RuntimeProofArtifactConcreteSegmentIdsAllowed proof",
+            ],
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        theorem,
+        &[
+            "runtime_soundness_checked_acceptance_artifact_audited_finalized_concrete_segment_ids_contract",
+            "artifactEvidence",
+            "concreteSegmentIdsAllowed",
+        ],
+    );
+    assert_body_omits_direct_assumption_access(&lean_source, theorem);
+}
+
+#[test]
 fn lean_runtime_soundness_contracts_exports_required_source_concrete_segment_contract() {
     let lean_source = read_contracts_source();
     let theorem =
@@ -388,6 +427,47 @@ fn lean_runtime_soundness_contracts_exports_required_source_core_requirements_co
         theorem,
         &[
             "runtime_soundness_required_external_source_audited_finalized_concrete_segment_ids_core_components_contract",
+            "concreteSegmentIdsAllowed",
+        ],
+    );
+    assert_body_omits_direct_assumption_access(&lean_source, theorem);
+}
+
+#[test]
+fn lean_runtime_soundness_contracts_exports_required_source_artifact_core_source_contract() {
+    let lean_source = read_contracts_source();
+    let theorem =
+        "runtime_soundness_required_external_source_artifact_finalized_concrete_core_source_contract";
+
+    lean_binding::assert_theorem_declarations(&lean_source, &[theorem]);
+    assert_required_source_guard(&lean_source, theorem);
+    assert_prefix_contains_groups(
+        &lean_source,
+        theorem,
+        &[
+            &["RuntimeProofArtifactConcreteSegmentIdBinding"],
+            REQUIRED_SOURCE_SNIPPETS,
+            &[
+                "RuntimeArtifactEvidence",
+                "RuntimeProofArtifactFinalized",
+                "ExternalSourceOpeningEvidence",
+                "system.transcriptBound publicInput proof",
+                "system.publicInputBound publicInput proof",
+                "system.pcsOpeningsValid publicInput proof",
+                "system.friQueriesValid publicInput proof",
+                "RuntimeVerifierCoreContract system publicInput proof",
+                "artifactValidation.proofSegmentIdsAllowed artifact publicInput proof",
+                "artifactValidation.proofSegmentIdsUnique artifact publicInput proof",
+                "RuntimeProofArtifactConcreteSegmentIdsAllowed proof",
+            ],
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        theorem,
+        &[
+            "runtime_soundness_required_external_source_artifact_audited_finalized_concrete_segment_ids_contract",
+            "externalSourceEvidence",
             "concreteSegmentIdsAllowed",
         ],
     );
