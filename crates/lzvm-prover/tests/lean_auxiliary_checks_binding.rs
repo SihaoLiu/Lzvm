@@ -186,6 +186,32 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         proof_timing_finish_source.as_str(),
     ]
     .join("\n");
+    assert!(
+        lean_proof_timing_source
+            .contains("def ProofArtifactFinishWitnessOpeningRowDedupAccounting")
+            && lean_proof_timing_source.contains(
+                "theorem proof_artifact_finish_witness_opening_row_dedup_accounting_update"
+            ),
+        "Lean proof timing finish checks should expose row dedup accounting"
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_proof_timing_source,
+        "proof_artifact_finish_witness_opening_row_dedup_accounting_update",
+        &[
+            "ProofArtifactFinishWitnessOpeningRowDedupAccounting",
+            "finishWitnessOpeningRowDedupInputRowCount := rowDedupInputRowCount",
+            "finishWitnessOpeningRowDedupUniqueRowCount := rowDedupUniqueRowCount",
+            "finishWitnessOpeningRowDedupElidedRowCount := rowDedupElidedRowCount",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_proof_timing_source,
+        "proof_artifact_finish_witness_opening_row_dedup_accounting_update",
+        &[
+            "ProofArtifactFinishWitnessOpeningRowDedupAccounting",
+            "simp [accounting]",
+        ],
+    );
     let proof_timing_projected_path =
         crate_root.join("../../lean/Lzvm/AuxiliaryChecks/ProofTimingProjected.lean");
     let proof_timing_projected_source = std::fs::read_to_string(&proof_timing_projected_path)

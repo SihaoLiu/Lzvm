@@ -11,6 +11,27 @@ Proof artifact finish timing observation contracts.
 -/
 
 namespace Lzvm
+
+def ProofArtifactFinishWitnessOpeningRowDedupAccounting
+    (summary : ProofArtifactFinishTimingSummary) : Prop :=
+  summary.finishWitnessOpeningRowDedupInputRowCount =
+    summary.finishWitnessOpeningRowDedupUniqueRowCount
+      + summary.finishWitnessOpeningRowDedupElidedRowCount
+
+theorem proof_artifact_finish_witness_opening_row_dedup_accounting_update
+    (summary : ProofArtifactFinishTimingSummary)
+    {rowDedupInputRowCount rowDedupUniqueRowCount rowDedupElidedRowCount : Nat}
+    (accounting :
+      rowDedupInputRowCount =
+        rowDedupUniqueRowCount + rowDedupElidedRowCount) :
+    ProofArtifactFinishWitnessOpeningRowDedupAccounting
+      { summary with
+        finishWitnessOpeningRowDedupInputRowCount := rowDedupInputRowCount
+        finishWitnessOpeningRowDedupUniqueRowCount := rowDedupUniqueRowCount
+        finishWitnessOpeningRowDedupElidedRowCount := rowDedupElidedRowCount } := by
+  unfold ProofArtifactFinishWitnessOpeningRowDedupAccounting
+  simp [accounting]
+
 theorem proof_artifact_finish_witness_opening_shape_acceptance_sound
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
