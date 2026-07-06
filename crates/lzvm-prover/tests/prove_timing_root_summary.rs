@@ -558,6 +558,86 @@ fn prove_timing_root_summary_reports_cuda_copy_site_timings() {
 }
 
 #[test]
+fn prove_timing_root_summary_reports_cuda_copy_site_action_hint_branches() {
+    let field = "cuda_copy_site_action_hint";
+
+    assert_eq!(
+        prove_timing_root_summary_value(
+            &[
+                "timing_guest_device_source_descriptor_upload_bytes=4096",
+                "timing_cuda_copy_site_h2d_top_1_transfer_rs_1_calls=1",
+                "timing_cuda_copy_site_h2d_top_1_transfer_rs_1_bytes=33554432",
+                "timing_cuda_copy_site_h2d_top_1_transfer_rs_1_wait_ns=800000000",
+            ],
+            field,
+        ),
+        "none"
+    );
+    assert_eq!(
+        prove_timing_root_summary_value(
+            &[
+                "timing_guest_device_source_descriptor_upload_bytes=4096",
+                "timing_cuda_copy_site_h2d_top_1_descriptor_rs_2_calls=1",
+                "timing_cuda_copy_site_h2d_top_1_descriptor_rs_2_bytes=4096",
+                "timing_cuda_copy_site_h2d_top_1_descriptor_rs_2_wait_ns=499999999",
+            ],
+            field,
+        ),
+        "none"
+    );
+    assert_eq!(
+        prove_timing_root_summary_value(
+            &[
+                "timing_guest_device_source_descriptor_upload_bytes=100000000",
+                "timing_finish_witness_external_source_descriptor_upload_bytes=200000000",
+                "timing_cuda_copy_site_h2d_top_1_guest_descriptor_rs_3_calls=1",
+                "timing_cuda_copy_site_h2d_top_1_guest_descriptor_rs_3_bytes=100000000",
+                "timing_cuda_copy_site_h2d_top_1_guest_descriptor_rs_3_wait_ns=800000000",
+            ],
+            field,
+        ),
+        "guest_descriptor_upload_h2d_top_site"
+    );
+    assert_eq!(
+        prove_timing_root_summary_value(
+            &[
+                "timing_guest_device_source_descriptor_upload_bytes=200000000",
+                "timing_finish_witness_external_source_descriptor_upload_bytes=100000000",
+                "timing_cuda_copy_site_h2d_top_1_external_descriptor_rs_4_calls=1",
+                "timing_cuda_copy_site_h2d_top_1_external_descriptor_rs_4_bytes=100000000",
+                "timing_cuda_copy_site_h2d_top_1_external_descriptor_rs_4_wait_ns=800000000",
+            ],
+            field,
+        ),
+        "external_descriptor_upload_h2d_top_site"
+    );
+    assert_eq!(
+        prove_timing_root_summary_value(
+            &[
+                "timing_guest_device_source_descriptor_upload_bytes=100000000",
+                "timing_finish_witness_external_source_descriptor_upload_bytes=200000000",
+                "timing_cuda_copy_site_h2d_top_1_total_descriptor_rs_5_calls=1",
+                "timing_cuda_copy_site_h2d_top_1_total_descriptor_rs_5_bytes=300000000",
+                "timing_cuda_copy_site_h2d_top_1_total_descriptor_rs_5_wait_ns=800000000",
+            ],
+            field,
+        ),
+        "descriptor_upload_h2d_top_site"
+    );
+    assert_eq!(
+        prove_timing_root_summary_value(
+            &[
+                "timing_cuda_copy_site_h2d_top_1_bulk_rs_6_calls=1",
+                "timing_cuda_copy_site_h2d_top_1_bulk_rs_6_bytes=8589934592",
+                "timing_cuda_copy_site_h2d_top_1_bulk_rs_6_wait_ns=800000000",
+            ],
+            field,
+        ),
+        "bulk_h2d_top_site"
+    );
+}
+
+#[test]
 fn prove_timing_root_summary_reports_opening_descriptor_action_hint_branches() {
     let base = [
         "timing_total_ms=1000",

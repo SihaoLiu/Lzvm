@@ -3002,7 +3002,7 @@ def cuda_transfer_action_hint_from_values(values: dict[str, int]) -> str:
 def copy_site_bytes_close_to(value: int, target: int) -> bool:
     if value <= 0 or target <= 0:
         return False
-    tolerance = max(64 * 1024 * 1024, target // 100)
+    tolerance = max(64 * 1024, target // 100)
     return abs(value - target) <= tolerance
 
 
