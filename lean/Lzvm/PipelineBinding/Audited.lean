@@ -627,6 +627,62 @@ theorem runtime_pipeline_binding_required_external_source_audited_pcs_fri_core_w
       verifierCore,
       soundWitness⟩
 
+set_option linter.style.longLine false in
+theorem runtime_pipeline_binding_required_external_source_audited_soundness_pcs_fri_core_witness_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimePipelineBindingValidation system) :
+    forall artifact publicInput proof (requiresExternalSource : Prop),
+      RuntimePipelineBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        requiresExternalSource ->
+          RequiredCryptographicAssumptionStatements assumptions.crypto
+            /\ RequiredSemanticAssumptionStatements assumptions.semantic
+            /\ ProofSystemSound system
+            /\ system.accepts publicInput proof
+            /\ ExternalSourceOpeningEvidence
+              system
+              (runtime_pipeline_trace_source_validation validation)
+              publicInput
+              proof
+            /\ ExternalSourceOpeningEvidence
+              system
+              (runtime_pipeline_opening_source_validation validation)
+              publicInput
+              proof
+            /\ system.pcsOpeningsValid publicInput proof
+            /\ system.friQueriesValid publicInput proof
+            /\ validation.queryPlanBindingValidation.queryPlanSeedBindsWitnessTreeDigests
+              artifact
+              publicInput
+              proof
+            /\ validation.queryPlanBindingValidation.queryPlanSeededFriOpeningRequirementsChecked
+              artifact
+              publicInput
+              proof
+            /\ RuntimeVerifierCoreContract system publicInput proof
+            /\ SoundWitness system publicInput proof := by
+  intro artifact publicInput proof requiresExternalSource accepted required
+  have compactContract :=
+    runtime_pipeline_binding_required_external_source_audited_pcs_fri_core_witness_contract
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      accepted
+      required
+  have auditedAssumptions :=
+    assumption_bundle_carries_required_evidence assumptions
+  exact
+    And.intro auditedAssumptions.left
+      (And.intro auditedAssumptions.right compactContract.right)
+
 theorem runtime_pipeline_binding_required_external_source_audited_query_opening_core_sound_contract
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
