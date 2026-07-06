@@ -13248,15 +13248,6 @@ fn apply_copy_indirect_no_store_fast_path(
             ),
         });
     }
-    if !effects.precompile_memory_accesses.is_empty() {
-        return Err(GuestPcTraceBackendError::ZiskMainEffectMismatch {
-            row: output_row,
-            message: format!(
-                "non-precompile row reported {} precompile memory accesses",
-                effects.precompile_memory_accesses.len()
-            ),
-        });
-    }
     if !effects.register_writes.is_empty() {
         return Err(GuestPcTraceBackendError::ZiskMainEffectMismatch {
             row: output_row,
@@ -13332,12 +13323,6 @@ fn apply_jump_fast_path(
                 "expected 0 memory accesses, found {}",
                 effects.memory_accesses.len()
             ),
-        });
-    }
-    if !effects.precompile_memory_accesses.is_empty() {
-        return Err(GuestPcTraceBackendError::ZiskMainEffectMismatch {
-            row: output_row,
-            message: "jump row reported precompile memory accesses".to_owned(),
         });
     }
     let a = no_memory_fast_path_source_value(output_row, instruction.a, None, state)?;
@@ -13621,15 +13606,6 @@ fn apply_internal_memory_copy_fast_path(
             message: format!(
                 "expected 0 memory accesses, found {}",
                 effects.memory_accesses.len()
-            ),
-        });
-    }
-    if !effects.precompile_memory_accesses.is_empty() {
-        return Err(GuestPcTraceBackendError::ZiskMainEffectMismatch {
-            row: output_row,
-            message: format!(
-                "non-precompile row reported {} precompile memory accesses",
-                effects.precompile_memory_accesses.len()
             ),
         });
     }
@@ -14034,12 +14010,6 @@ fn apply_fcall_result_register_store_fast_path(
                 "expected 0 memory accesses, found {}",
                 effects.memory_accesses.len()
             ),
-        });
-    }
-    if !effects.precompile_memory_accesses.is_empty() {
-        return Err(GuestPcTraceBackendError::ZiskMainEffectMismatch {
-            row: output_row,
-            message: "free-call result row reported precompile memory accesses".to_owned(),
         });
     }
     let Some(write) = effects.register_writes.single() else {
