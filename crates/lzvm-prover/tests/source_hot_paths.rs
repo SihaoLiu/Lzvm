@@ -6906,7 +6906,7 @@ fn guest_pc_trace_parallel_lowerer_stays_seeded_and_opt_in() {
                 "DEFAULT_GUEST_PC_TRACE_AUTO_PARALLEL_LOWER_MIN_INSTRUCTIONS: u64 = 600_000_000"
             )
             && backend_source
-                .contains("DEFAULT_GUEST_PC_TRACE_AUTO_PARALLEL_LOWER_WORKERS: usize = 3")
+                .contains("DEFAULT_GUEST_PC_TRACE_AUTO_PARALLEL_LOWER_WORKERS: usize = 2")
             && backend_source.contains("guest_pc_trace_auto_parallel_lower_selected"),
         "parallel guest PC trace lowering should have a bounded large-runtime default"
     );

@@ -9873,7 +9873,7 @@ fn guest_pc_trace_parallel_lower_enabled_for_limit(instruction_limit: u64) -> bo
 const DEFAULT_GUEST_PC_TRACE_AUTO_PARALLEL_LOWER_MIN_INSTRUCTIONS: u64 = 600_000_000;
 #[cfg(feature = "cuda")]
 const DEFAULT_GUEST_PC_TRACE_AUTO_PARALLEL_LOWER_WORK_UNITS_MIN_INSTRUCTIONS: u64 = 50_000_000;
-const DEFAULT_GUEST_PC_TRACE_AUTO_PARALLEL_LOWER_WORKERS: usize = 3;
+const DEFAULT_GUEST_PC_TRACE_AUTO_PARALLEL_LOWER_WORKERS: usize = 2;
 
 fn guest_pc_trace_parallel_lower_env_override() -> Option<bool> {
     env_flag_override("LZVM_GUEST_PC_TRACE_PARALLEL_LOWER")
