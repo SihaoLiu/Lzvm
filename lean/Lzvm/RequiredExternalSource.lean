@@ -538,4 +538,81 @@ theorem runtime_guarded_external_source_required_audited_hash_concrete_opening_s
               requiredContract.right.right.right.left
               requiredContract.right.right.right.right))))
 
+set_option linter.style.longLine false in
+theorem runtime_guarded_external_source_required_audited_hash_concrete_opening_sound_with_required_evidence
+    {Digest : Type uDigest}
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (runtimeValidation : RuntimeConformanceValidation system)
+    (sourceValidation : ExternalSourceOpeningValidation system)
+    (openingValidation : RuntimeOpeningValidation system)
+    {compress : List Digest -> Digest}
+    (centralized :
+      CentralizedNAryMerkleCompressionCollisionResistance
+        assumptions.crypto.hashCollisionResistance
+        compress)
+    (constantBinding :
+      RuntimeConstantOpeningNAryConcreteBinding
+        system
+        openingValidation
+        Digest
+        compress)
+    (witnessBinding :
+      RuntimeWitnessOpeningNAryConcreteBinding
+        system
+        openingValidation
+        Digest
+        compress) :
+    forall artifact publicInput proof requiresExternalSource,
+      RuntimeGuardedExternalSourceCheckedAcceptance
+          system
+          runtimeValidation
+          sourceValidation
+          artifact
+          publicInput
+          proof
+          requiresExternalSource ->
+        RuntimeOpeningCheckedAcceptance
+          system
+          openingValidation
+          artifact
+          publicInput
+          proof ->
+        requiresExternalSource ->
+          RequiredCryptographicAssumptionStatements assumptions.crypto
+            /\ RequiredSemanticAssumptionStatements assumptions.semantic
+            /\ RuntimeArtifactEvidence
+              system
+              runtimeValidation
+              artifact
+              publicInput
+              proof
+            /\ ExternalSourceOpeningEvidence system sourceValidation publicInput proof
+            /\ system.pcsOpeningsValid publicInput proof
+            /\ system.friQueriesValid publicInput proof
+            /\ RuntimeVerifierCoreContract system publicInput proof
+            /\ SoundWitness system publicInput proof := by
+  intro artifact publicInput proof requiresExternalSource checked openingAccepted required
+  have auditedEvidence :=
+    assumption_bundle_carries_required_evidence assumptions
+  have sound :=
+    runtime_guarded_external_source_required_audited_hash_concrete_opening_sound
+      assumptions
+      runtimeValidation
+      sourceValidation
+      openingValidation
+      centralized
+      constantBinding
+      witnessBinding
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      checked
+      openingAccepted
+      required
+  exact
+    And.intro auditedEvidence.left
+      (And.intro auditedEvidence.right sound)
+
 end Lzvm
