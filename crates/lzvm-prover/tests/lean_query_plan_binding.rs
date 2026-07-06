@@ -163,10 +163,15 @@ fn lean_query_plan_binding_exports_opening_segment_projections() {
             "RuntimeQueryPlanBindingBoundContract",
         ],
     );
-    lean_binding::assert_theorem_body_contains(
+    lean_binding::assert_theorem_body_contains_identifier(
         &lean_source,
         "runtime_query_plan_binding_evidence_implies_bound_contract",
-        &["exact evidence.left"],
+        "evidence",
+    );
+    lean_binding::assert_theorem_body_omits(
+        &lean_source,
+        "runtime_query_plan_binding_evidence_implies_bound_contract",
+        &["RuntimeQueryPlanBindingCheckedAcceptance"],
     );
     lean_binding::assert_theorem_prefix_contains(
         &lean_source,
@@ -181,13 +186,20 @@ fn lean_query_plan_binding_exports_opening_segment_projections() {
         "runtime_query_plan_binding_checked_acceptance_bound_contract",
         &["AssumptionBundle"],
     );
-    lean_binding::assert_theorem_body_contains(
+    for identifier in [
+        "runtime_query_plan_binding_checked_acceptance_evidence",
+        "runtime_query_plan_binding_evidence_implies_bound_contract",
+    ] {
+        lean_binding::assert_theorem_body_contains_identifier(
+            &lean_source,
+            "runtime_query_plan_binding_checked_acceptance_bound_contract",
+            identifier,
+        );
+    }
+    lean_binding::assert_theorem_body_omits_identifier(
         &lean_source,
         "runtime_query_plan_binding_checked_acceptance_bound_contract",
-        &[
-            "runtime_query_plan_binding_checked_acceptance_evidence",
-            "runtime_query_plan_binding_evidence_implies_bound_contract",
-        ],
+        "runtime_query_plan_binding_checked_acceptance_evidence_core_and_sound",
     );
     lean_binding::assert_theorem_prefix_contains(
         &lean_source,
