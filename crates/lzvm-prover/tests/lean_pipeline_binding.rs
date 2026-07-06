@@ -276,6 +276,8 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
             "runtime_pipeline_binding_checked_acceptance_audited_concrete_opening_contract",
             "runtime_pipeline_checked_acceptance_audited_concrete_opening_core_contract",
             "runtime_pipeline_binding_checked_acceptance_hash_concrete_opening_core_contract",
+            "runtime_pipeline_binding_checked_acceptance_concrete_opening_artifact_audited_soundness_core_contract",
+            "runtime_pipeline_binding_checked_acceptance_hash_concrete_opening_artifact_audited_soundness_core_contract",
             "runtime_pipeline_binding_required_external_source_verifier_core_contract",
             "runtime_pipeline_binding_required_external_source_evidence_core_and_sound",
             "runtime_pipeline_binding_required_external_source_full_soundness_contract",
@@ -3166,6 +3168,75 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
             "runtime_pipeline_binding_checked_acceptance_pcs_and_fri_from_concrete_nary_merkle",
             "runtime_pipeline_binding_checked_acceptance_pcs_and_fri\n",
         ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_pipeline_binding_checked_acceptance_concrete_opening_artifact_audited_soundness_core_contract",
+        &[
+            "AssumptionBundle system",
+            "CentralizedNAryMerkleCompressionCollisionResistance",
+            "RuntimeConstantOpeningNAryConcreteBinding",
+            "RuntimeWitnessOpeningNAryConcreteBinding",
+            "RuntimeArtifactEvidence",
+            "RequiredCryptographicAssumptionStatements assumptions.crypto",
+            "RequiredSemanticAssumptionStatements assumptions.semantic",
+            "ProofSystemSound system",
+            "system.pcsOpeningsValid publicInput proof",
+            "system.friQueriesValid publicInput proof",
+            "RuntimeVerifierCoreContract system publicInput proof",
+            "SoundWitness system publicInput proof",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_omits(
+        &lean_source,
+        "runtime_pipeline_binding_checked_acceptance_concrete_opening_artifact_audited_soundness_core_contract",
+        &["HashCollisionResistanceAssumption"],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_pipeline_binding_checked_acceptance_concrete_opening_artifact_audited_soundness_core_contract",
+        &[
+            "runtime_pipeline_binding_checked_acceptance_runtime_artifact_evidence",
+            "runtime_pipeline_checked_acceptance_concrete_opening_audited_soundness_core_contract",
+        ],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &lean_source,
+        "runtime_pipeline_binding_checked_acceptance_concrete_opening_artifact_audited_soundness_core_contract",
+        &["runtime_pipeline_binding_checked_acceptance_hash_concrete_opening_audited_soundness_core_contract"],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_pipeline_binding_checked_acceptance_hash_concrete_opening_artifact_audited_soundness_core_contract",
+        &[
+            "AssumptionBundle system",
+            "HashCollisionResistanceAssumption",
+            "hashAssumptions",
+            "CentralizedNAryMerkleCompressionCollisionResistance",
+            "RuntimeConstantOpeningNAryConcreteBinding",
+            "RuntimeWitnessOpeningNAryConcreteBinding",
+            "RuntimeArtifactEvidence",
+            "RequiredCryptographicAssumptionStatements assumptions.crypto",
+            "RequiredSemanticAssumptionStatements assumptions.semantic",
+            "ProofSystemSound system",
+            "system.pcsOpeningsValid publicInput proof",
+            "system.friQueriesValid publicInput proof",
+            "RuntimeVerifierCoreContract system publicInput proof",
+            "SoundWitness system publicInput proof",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_pipeline_binding_checked_acceptance_hash_concrete_opening_artifact_audited_soundness_core_contract",
+        &[
+            "runtime_pipeline_binding_checked_acceptance_runtime_artifact_evidence",
+            "runtime_pipeline_binding_checked_acceptance_hash_concrete_opening_audited_soundness_core_contract",
+        ],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &lean_source,
+        "runtime_pipeline_binding_checked_acceptance_hash_concrete_opening_artifact_audited_soundness_core_contract",
+        &["runtime_pipeline_checked_acceptance_concrete_opening_audited_soundness_core_contract"],
     );
     assert!(
         prefixes.prefix("runtime_pipeline_binding_required_external_source_verifier_core_contract")
