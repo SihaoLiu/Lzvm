@@ -632,22 +632,11 @@ impl GuestMemoryAccessList {
     }
 
     pub fn len(&self) -> usize {
-        match &self.entries {
-            GuestMemoryAccessEntries::Empty => 0,
-            GuestMemoryAccessEntries::One(_) => 1,
-            GuestMemoryAccessEntries::Many(entries) => entries.len(),
-            GuestMemoryAccessEntries::Precompile(effects) => effects.normal_memory_accesses.len(),
-        }
+        self.as_slice().len()
     }
 
     pub fn is_empty(&self) -> bool {
-        match &self.entries {
-            GuestMemoryAccessEntries::Empty => true,
-            GuestMemoryAccessEntries::One(_) | GuestMemoryAccessEntries::Many(_) => false,
-            GuestMemoryAccessEntries::Precompile(effects) => {
-                effects.normal_memory_accesses.is_empty()
-            }
-        }
+        self.as_slice().is_empty()
     }
 
     fn with_precompile_effects(
