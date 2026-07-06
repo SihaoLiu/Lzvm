@@ -10926,32 +10926,6 @@ impl GuestPcTraceRowMemStepCursor {
     }
 
     fn advance_to(&mut self, row: usize) -> Result<(), GuestPcTraceBackendError> {
-        if row > self.current_row {
-            let delta = row - self.current_row;
-            if delta == 1 {
-                self.current_base = self
-                    .current_base
-                    .checked_add(ZISK_MAIN_MEM_STEPS_PER_ROW)
-                    .ok_or_else(|| GuestPcTraceBackendError::InvalidPcTraceLayout {
-                        message: "guest PC trace step is too large".to_owned(),
-                    })?;
-                self.current_row = row;
-                return Ok(());
-            }
-            let row_offset = u64::try_from(delta)
-                .ok()
-                .and_then(|delta| ZISK_MAIN_MEM_STEPS_PER_ROW.checked_mul(delta))
-                .ok_or_else(|| GuestPcTraceBackendError::InvalidPcTraceLayout {
-                    message: "guest PC trace step is too large".to_owned(),
-                })?;
-            self.current_base = self.current_base.checked_add(row_offset).ok_or_else(|| {
-                GuestPcTraceBackendError::InvalidPcTraceLayout {
-                    message: "guest PC trace step is too large".to_owned(),
-                }
-            })?;
-            self.current_row = row;
-            return Ok(());
-        }
         if row == self.current_row {
             return Ok(());
         }
@@ -10961,6 +10935,29 @@ impl GuestPcTraceRowMemStepCursor {
             self.current_row = row;
             return Ok(());
         }
+        let delta = row - self.current_row;
+        if delta == 1 {
+            self.current_base = self
+                .current_base
+                .checked_add(ZISK_MAIN_MEM_STEPS_PER_ROW)
+                .ok_or_else(|| GuestPcTraceBackendError::InvalidPcTraceLayout {
+                    message: "guest PC trace step is too large".to_owned(),
+                })?;
+            self.current_row = row;
+            return Ok(());
+        }
+        let row_offset = u64::try_from(delta)
+            .ok()
+            .and_then(|delta| ZISK_MAIN_MEM_STEPS_PER_ROW.checked_mul(delta))
+            .ok_or_else(|| GuestPcTraceBackendError::InvalidPcTraceLayout {
+                message: "guest PC trace step is too large".to_owned(),
+            })?;
+        self.current_base = self.current_base.checked_add(row_offset).ok_or_else(|| {
+            GuestPcTraceBackendError::InvalidPcTraceLayout {
+                message: "guest PC trace step is too large".to_owned(),
+            }
+        })?;
+        self.current_row = row;
         Ok(())
     }
 
