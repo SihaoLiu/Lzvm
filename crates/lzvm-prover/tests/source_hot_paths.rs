@@ -10935,7 +10935,7 @@ fn zisk_main_memory_access_validation_avoids_temporary_vectors() {
     let validate_body = function_body(
         &source,
         "fn validate_zisk_main_memory_accesses",
-        "fn validate_zisk_main_precompile_memory_accesses",
+        "fn validate_main_precompile_memory_accesses",
     );
     for allocation in [
         "Vec::",
@@ -11933,7 +11933,7 @@ fn guest_instruction_cache_hit_path_borrows_entry() {
     let source = std::fs::read_to_string(&source_path).expect("guest machine source should read");
     let body = function_body(
         &source,
-        "impl GuestInstructionCache",
+        "impl GuestInstructionCache {",
         "#[derive(Debug, Clone",
     );
 
