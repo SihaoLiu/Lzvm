@@ -47,10 +47,7 @@ fn lean_program_image_cache_binding_exports_core_contract_projection() {
             "runtime_program_image_cache_binding_checked_acceptance_structural_obligations",
             "runtime_program_image_cache_binding_checked_acceptance_full_contract",
             "runtime_program_image_cache_binding_checked_acceptance_evidence_core_and_sound",
-            concat!(
-                "runtime_program_image_cache_binding_checked_acceptance_",
-                "concrete_core_sound_contract"
-            ),
+            "runtime_program_image_cache_binding_checked_acceptance_concrete_core_sound_contract",
             "runtime_program_image_cache_binding_audited_finalized_core_sound_witness_contract",
             "runtime_program_image_cache_binding_audited_core_sound_witness_contract",
             "runtime_program_image_cache_binding_audited_finalized_segment_ids_contract",
@@ -290,10 +287,7 @@ fn lean_program_image_cache_binding_exports_core_contract_projection() {
     );
     lean_binding::assert_theorem_prefix_contains(
         &lean_source,
-        concat!(
-            "runtime_program_image_cache_binding_checked_acceptance_",
-            "concrete_core_sound_contract"
-        ),
+        "runtime_program_image_cache_binding_checked_acceptance_concrete_core_sound_contract",
         &[
             "RuntimeProgramImageCacheBindingCheckedAcceptance",
             "RuntimeProofArtifactConcreteSegmentIdBinding",
@@ -309,10 +303,7 @@ fn lean_program_image_cache_binding_exports_core_contract_projection() {
     );
     lean_binding::assert_theorem_body_contains(
         &lean_source,
-        concat!(
-            "runtime_program_image_cache_binding_checked_acceptance_",
-            "concrete_core_sound_contract"
-        ),
+        "runtime_program_image_cache_binding_checked_acceptance_concrete_core_sound_contract",
         &[
             "runtime_program_image_cache_binding_checked_acceptance_evidence_core_and_sound",
             "runtime_program_image_cache_binding_checked_acceptance_concrete_segment_ids_allowed",
@@ -325,10 +316,7 @@ fn lean_program_image_cache_binding_exports_core_contract_projection() {
     ] {
         lean_binding::assert_theorem_body_omits_identifier(
             &lean_source,
-            concat!(
-                "runtime_program_image_cache_binding_checked_acceptance_",
-                "concrete_core_sound_contract"
-            ),
+            "runtime_program_image_cache_binding_checked_acceptance_concrete_core_sound_contract",
             identifier,
         );
     }

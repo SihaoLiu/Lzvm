@@ -1,6 +1,7 @@
 #[path = "support/lean_binding.rs"]
 mod lean_binding;
 
+use std::collections::BTreeSet;
 use std::path::Path;
 use std::process::Command;
 
@@ -242,6 +243,27 @@ fn retained_opening_bindings_use_theorem_declaration_export_checks() {
 }
 
 #[test]
+fn every_lean_theorem_has_a_rust_binding_name_pin() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let lean_root = crate_root.join("../../lean/Lzvm");
+    let test_root = crate_root.join("tests");
+    let mut theorem_names = BTreeSet::new();
+    collect_lean_theorem_names(&lean_root, &mut theorem_names);
+    let mut test_source = String::new();
+    collect_rust_test_source(&test_root, &mut test_source);
+
+    let unpinned = theorem_names
+        .into_iter()
+        .filter(|name| !test_source.contains(&format!("\"{name}\"")))
+        .collect::<Vec<_>>();
+
+    assert!(
+        unpinned.is_empty(),
+        "Every Lean theorem under Lzvm should have a full quoted theorem-name pin in Rust binding tests: {unpinned:?}"
+    );
+}
+
+#[test]
 fn auxiliary_checked_acceptance_chokepoints_use_identifier_body_pins() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let auxiliary_source = [
@@ -427,5 +449,39 @@ fn collect_oversized_lean_sources(path: &Path, oversized: &mut Vec<(String, usiz
         if line_count > 1800 {
             oversized.push((path.display().to_string(), line_count));
         }
+    }
+}
+
+fn collect_lean_theorem_names(path: &Path, theorem_names: &mut BTreeSet<String>) {
+    for entry in std::fs::read_dir(path).expect("Lean source directory should read") {
+        let entry = entry.expect("Lean source entry should read");
+        let path = entry.path();
+        if path.is_dir() {
+            collect_lean_theorem_names(&path, theorem_names);
+            continue;
+        }
+        if path.extension().and_then(|extension| extension.to_str()) != Some("lean") {
+            continue;
+        }
+        let source = std::fs::read_to_string(&path).expect("Lean source should read");
+        theorem_names.extend(lean_binding::theorem_names(&source));
+    }
+}
+
+fn collect_rust_test_source(path: &Path, source: &mut String) {
+    for entry in std::fs::read_dir(path).expect("Rust test source directory should read") {
+        let entry = entry.expect("Rust test source entry should read");
+        let path = entry.path();
+        if path.is_dir() {
+            collect_rust_test_source(&path, source);
+            continue;
+        }
+        if path.extension().and_then(|extension| extension.to_str()) != Some("rs") {
+            continue;
+        }
+        source.push_str(
+            &std::fs::read_to_string(&path).expect("Rust test source should read"),
+        );
+        source.push('\n');
     }
 }
