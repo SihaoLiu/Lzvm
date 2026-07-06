@@ -364,6 +364,53 @@ theorem runtime_pipeline_binding_checked_acceptance_audited_binding_pcs_fri_core
                     (And.intro seededFriOpeningChecked
                       (And.intro coreContract.right
                         compactContract.right.right.right)))))))))
+
+set_option linter.style.longLine false in
+theorem runtime_pipeline_binding_checked_acceptance_audited_soundness_pcs_fri_core_witness_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimePipelineBindingValidation system) :
+    forall artifact publicInput proof (_requiresExternalSource : Prop),
+      RuntimePipelineBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RequiredCryptographicAssumptionStatements assumptions.crypto
+          /\ RequiredSemanticAssumptionStatements assumptions.semantic
+          /\ ProofSystemSound system
+          /\ system.accepts publicInput proof
+          /\ system.transcriptBound publicInput proof
+          /\ system.publicInputBound publicInput proof
+          /\ system.pcsOpeningsValid publicInput proof
+          /\ system.friQueriesValid publicInput proof
+          /\ validation.queryPlanBindingValidation.queryPlanSeedBindsWitnessTreeDigests
+            artifact
+            publicInput
+            proof
+          /\ validation.queryPlanBindingValidation.queryPlanSeededFriOpeningRequirementsChecked
+            artifact
+            publicInput
+            proof
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro artifact publicInput proof _requiresExternalSource accepted
+  have compactContract :=
+    runtime_pipeline_binding_checked_acceptance_audited_binding_pcs_fri_core_witness_contract
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      _requiresExternalSource
+      accepted
+  have auditedAssumptions :=
+    assumption_bundle_carries_required_evidence assumptions
+  exact
+    And.intro auditedAssumptions.left
+      (And.intro auditedAssumptions.right compactContract.right)
+
 theorem runtime_pipeline_binding_checked_acceptance_audited_concrete_opening_contract
     {Digest : Type uDigest}
     {system : VerifierModel}
