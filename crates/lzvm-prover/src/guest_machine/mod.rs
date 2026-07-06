@@ -862,12 +862,16 @@ impl GuestInstructionEffects {
     }
 }
 
+#[inline(always)]
 fn guest_memory_access_byte_len(byte_len: usize) -> u8 {
-    u8::try_from(byte_len).expect("guest memory access byte length should fit in u8")
+    debug_assert!(matches!(byte_len, 1 | 2 | 4 | 8));
+    byte_len as u8
 }
 
+#[inline(always)]
 fn guest_instruction_byte_len(byte_len: usize) -> u8 {
-    u8::try_from(byte_len).expect("guest instruction byte length should fit in u8")
+    debug_assert!(matches!(byte_len, 2 | 4));
+    byte_len as u8
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
