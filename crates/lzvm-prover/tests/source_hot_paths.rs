@@ -2214,9 +2214,14 @@ fn trace_less_guest_pc_opening_reuses_retained_device_descriptors() {
     );
     assert!(
         backend_source.contains("retained_descriptor_buffer.map(Arc::new)")
-            && backend_source.contains("Some(device_trace_descriptor_buffer)")
-            && backend_source.contains("from_sparse_main_trace_descriptors_with_layout"),
+            && backend_source.contains("device_trace_descriptor_buffer")
+            && backend_source.contains("from_sparse_main_trace_descriptors_device_with_layout"),
         "sparse descriptor source rebuilds should reuse retained device buffers when available"
+    );
+    assert!(
+        accel_source.contains("from_sparse_main_trace_descriptors_device_with_layout")
+            && backend_source.contains("from_sparse_main_trace_descriptors_device_with_layout"),
+        "sparse descriptor source rebuilds should reuse retained descriptor buffers without hiding high-word uploads"
     );
     let cache_body = function_body(
         &execution_source,
@@ -5397,6 +5402,12 @@ fn guest_pc_trace_timing_splits_device_source_upload_and_expand_work() {
         descriptor_body.contains("trace_expand_duration")
             && descriptor_body.contains("from_main_trace_descriptors_device_with_layout"),
         "guest PC device descriptor source build should time trace expansion"
+    );
+    assert!(
+        descriptor_body.contains("sparse_high_word_count.saturating_mul")
+            && descriptor_body.contains("descriptor_upload_duration")
+            && descriptor_body.contains("from_sparse_main_trace_descriptors_device_with_layout"),
+        "retained sparse descriptor rebuilds should account high-word uploads separately from trace expansion"
     );
 
     let accumulator_fields = function_body(

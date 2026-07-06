@@ -461,6 +461,129 @@ fn cuda_expands_main_trace_descriptors_with_store_address_layout() {
 
 #[test]
 #[cfg(feature = "cuda")]
+fn cuda_expands_sparse_main_trace_descriptors_from_device_buffers() {
+    const WORDS_PER_DESCRIPTOR: usize = 11;
+    const SPARSE_WORDS_PER_DESCRIPTOR: usize = 9;
+    const KIND_REGISTER: u64 = 3;
+    const KIND_INDIRECT: u64 = 4;
+    const STORE_INDIRECT: u64 = 3;
+    const A_KIND_SHIFT: u64 = 32;
+    const B_KIND_SHIFT: u64 = 35;
+    const STORE_KIND_SHIFT: u64 = 38;
+
+    fn signed_word(value: i64) -> u64 {
+        value as u64
+    }
+
+    fn packed_u32_pair(lhs: u32, rhs: u32) -> u64 {
+        u64::from(lhs) | (u64::from(rhs) << 32)
+    }
+
+    fn packed_i32_pair(lhs: i32, rhs: i32) -> u64 {
+        u64::from(lhs as u32) | (u64::from(rhs as u32) << 32)
+    }
+
+    fn append_sparse_row(sparse: &mut Vec<u64>, highs: &mut Vec<u64>, descriptor: &[u64]) {
+        let values = [
+            descriptor[0],
+            descriptor[1],
+            descriptor[2],
+            descriptor[3],
+            descriptor[4],
+            descriptor[5],
+            descriptor[10],
+        ];
+        let mut mask = 0_u64;
+        let mut high_values = Vec::new();
+        for (index, value) in values.into_iter().enumerate() {
+            let high = value >> 32;
+            if high != 0 {
+                mask |= 1_u64 << index;
+                high_values.push(high);
+            }
+        }
+        let high_offset = highs.len() as u64;
+        for chunk in high_values.chunks(2) {
+            let low = chunk[0];
+            let high = chunk.get(1).copied().unwrap_or(0);
+            highs.push(low | (high << 32));
+        }
+        sparse.extend_from_slice(&[
+            (descriptor[0] & 0xffff_ffff) | ((descriptor[1] & 0xffff_ffff) << 32),
+            (descriptor[2] & 0xffff_ffff) | ((descriptor[3] & 0xffff_ffff) << 32),
+            (descriptor[4] & 0xffff_ffff) | ((descriptor[5] & 0xffff_ffff) << 32),
+            descriptor[6],
+            descriptor[7],
+            descriptor[8],
+            descriptor[9],
+            (descriptor[10] & 0xffff_ffff) | (mask << 32),
+            high_offset,
+        ]);
+    }
+
+    let control = 0x0b
+        | (8 << 16)
+        | (KIND_REGISTER << A_KIND_SHIFT)
+        | (KIND_INDIRECT << B_KIND_SHIFT)
+        | (STORE_INDIRECT << STORE_KIND_SHIFT);
+    let descriptors = [
+        1000,
+        (2_u64 << 32) | 7,
+        (4_u64 << 32) | 9,
+        5,
+        signed_word(-3),
+        signed_word(-20),
+        control,
+        packed_u32_pair(0x2000, 33),
+        packed_i32_pair(-4, 6),
+        packed_u32_pair(31, 32),
+        (14_u64 << 32) | 13,
+    ];
+    let mut sparse_descriptors = Vec::with_capacity(SPARSE_WORDS_PER_DESCRIPTOR);
+    let mut sparse_high_words = Vec::new();
+    append_sparse_row(
+        &mut sparse_descriptors,
+        &mut sparse_high_words,
+        &descriptors,
+    );
+    assert_eq!(sparse_descriptors.len(), SPARSE_WORDS_PER_DESCRIPTOR);
+
+    let expected = CudaDeviceBuffer::from_main_trace_descriptors_with_layout(
+        &descriptors,
+        WORDS_PER_DESCRIPTOR,
+        1,
+        2,
+        39,
+        0x3000,
+        MainTraceDeviceLayout::WithStoreAddress,
+    )
+    .expect("compact descriptor expansion should run")
+    .to_u64_words()
+    .expect("compact-expanded trace should download");
+    let sparse_descriptor_buffer =
+        CudaDeviceBuffer::from_u64_words(&sparse_descriptors).expect("sparse descriptors upload");
+    let sparse_high_buffer =
+        CudaDeviceBuffer::from_u64_words(&sparse_high_words).expect("sparse highs upload");
+    let actual = CudaDeviceBuffer::from_sparse_main_trace_descriptors_device_with_layout(
+        &sparse_descriptors,
+        &sparse_high_words,
+        1,
+        2,
+        39,
+        0x3000,
+        MainTraceDeviceLayout::WithStoreAddress,
+        &sparse_descriptor_buffer,
+        &sparse_high_buffer,
+    )
+    .expect("device sparse descriptor expansion should run")
+    .to_u64_words()
+    .expect("device sparse-expanded trace should download");
+
+    assert_same_words(&actual, &expected);
+}
+
+#[test]
+#[cfg(feature = "cuda")]
 fn cuda_expands_selected_main_trace_descriptor_rows_like_full_layout_slice() {
     const WORDS_PER_DESCRIPTOR: usize = 11;
     let descriptors = (0..(WORDS_PER_DESCRIPTOR * 2))

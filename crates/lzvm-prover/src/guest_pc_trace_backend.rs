@@ -3314,7 +3314,7 @@ pub(crate) fn build_guest_pc_trace_stage_source_devices_from_device_descriptors_
     layout: &WitnessTraceLayout,
     material: &GuestPcTraceDeviceSegmentMaterial,
     device_trace_descriptor_buffer: &CudaDeviceBuffer,
-    timing: Option<&mut GuestPcDeviceSourceBuildTiming>,
+    mut timing: Option<&mut GuestPcDeviceSourceBuildTiming>,
 ) -> Result<GuestPcTraceDeviceTraceBuilder, WitnessTraceRunError> {
     if !is_guest_pc_trace_segmented_layout_supported(layout) {
         return Err(guest_pc_device_trace_source_error(
@@ -3331,27 +3331,58 @@ pub(crate) fn build_guest_pc_trace_stage_source_devices_from_device_descriptors_
         ));
     }
 
-    let trace_device = record_device_source_build_duration(
-        timing.map(|timing| &mut timing.trace_expand_duration),
-        || {
-            if descriptors.is_sparse() {
-                CudaDeviceBuffer::from_sparse_main_trace_descriptors_with_layout(
+    let trace_device = if descriptors.is_sparse() {
+        let sparse_high_words = descriptors.sparse_high_words();
+        let sparse_high_word_count = sparse_high_words.len();
+        let sparse_high_buffer = record_device_source_build_duration(
+            timing
+                .as_mut()
+                .map(|timing| &mut timing.descriptor_upload_duration),
+            || {
+                CudaDeviceBuffer::from_u64_words(sparse_high_words).map_err(|error| {
+                    guest_pc_device_trace_source_error(format!(
+                        "CUDA sparse trace high-word upload failed: {error}"
+                    ))
+                })
+            },
+        )?;
+        if let Some(timing) = timing.as_mut() {
+            timing.descriptor_upload_byte_count +=
+                sparse_high_word_count.saturating_mul(std::mem::size_of::<u64>());
+            timing.descriptor_upload_word_count += sparse_high_word_count;
+            if sparse_high_word_count != 0 {
+                timing.descriptor_upload_row_count += descriptors.descriptor_rows();
+            }
+        }
+        record_device_source_build_duration(
+            timing
+                .as_mut()
+                .map(|timing| &mut timing.trace_expand_duration),
+            || {
+                CudaDeviceBuffer::from_sparse_main_trace_descriptors_device_with_layout(
                     descriptors.words(),
-                    descriptors.sparse_high_words(),
+                    sparse_high_words,
                     descriptors.descriptor_rows(),
                     descriptors.row_count(),
                     descriptors.column_count(),
                     descriptors.terminal_pc(),
                     descriptors.device_layout(),
-                    Some(device_trace_descriptor_buffer),
-                    None,
+                    device_trace_descriptor_buffer,
+                    &sparse_high_buffer,
                 )
                 .map_err(|error| {
                     guest_pc_device_trace_source_error(format!(
                         "CUDA sparse trace descriptor expansion failed: {error}"
                     ))
                 })
-            } else {
+            },
+        )?
+    } else {
+        record_device_source_build_duration(
+            timing
+                .as_mut()
+                .map(|timing| &mut timing.trace_expand_duration),
+            || {
                 CudaDeviceBuffer::from_main_trace_descriptors_device_with_layout(
                     device_trace_descriptor_buffer,
                     descriptors.descriptor_word_count(),
@@ -3366,9 +3397,9 @@ pub(crate) fn build_guest_pc_trace_stage_source_devices_from_device_descriptors_
                         "CUDA trace descriptor expansion failed: {error}"
                     ))
                 })
-            }
-        },
-    )?;
+            },
+        )?
+    };
     let builder = guest_pc_device_trace_builder_from_layout_with_descriptor_source(
         layout,
         trace_device,
