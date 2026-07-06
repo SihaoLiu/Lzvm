@@ -28,6 +28,7 @@ fn lean_required_external_source_binding_exports_core_contract_projection() {
     lean_binding::assert_theorem_declarations(
         &lean_source,
         &[
+            "runtime_guarded_external_source_required_provider_obligations",
             "runtime_guarded_external_source_required_verifier_core_contract",
             "runtime_guarded_external_source_required_evidence_core_and_sound",
             "runtime_guarded_external_source_required_pcs_and_fri_from_hash_concrete_opening",
@@ -35,6 +36,27 @@ fn lean_required_external_source_binding_exports_core_contract_projection() {
             "runtime_guarded_external_source_required_hash_concrete_opening_sound",
             "runtime_guarded_external_source_required_audited_hash_concrete_opening_sound",
             "runtime_guarded_external_source_required_audited_hash_concrete_opening_sound_with_required_evidence",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_guarded_external_source_required_provider_obligations",
+        &[
+            "RuntimeGuardedExternalSourceCheckedAcceptance",
+            "requiresExternalSource ->",
+            "sourceValidation.providerTranscriptBound publicInput proof",
+            "sourceValidation.providerMatchesCommittedTrace publicInput proof",
+            "sourceValidation.providerOpeningsRootBound publicInput proof",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_guarded_external_source_required_provider_obligations",
+        &[
+            "runtime_guarded_external_source_required_evidence",
+            "external_source_opening_evidence_provider_transcript_bound",
+            "external_source_opening_evidence_provider_matches_committed_trace",
+            "external_source_opening_evidence_provider_openings_root_bound",
         ],
     );
     lean_binding::assert_theorem_body_contains(
