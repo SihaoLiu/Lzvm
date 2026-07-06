@@ -1119,6 +1119,7 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
         &lean_source,
         "runtime_pipeline_binding_checked_acceptance_eth_public_input_contract",
         &[
+            "AssumptionBundle system",
             "RuntimePipelineBindingCheckedAcceptance",
             "RuntimeEthBlockPublicInputBindingEvidence",
             "RuntimeProofArtifactBindingEvidence",
@@ -1140,6 +1141,7 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
         &lean_source,
         "runtime_pipeline_binding_checked_acceptance_eth_soundness_contract",
         &[
+            "AssumptionBundle system",
             "RuntimePipelineBindingCheckedAcceptance",
             "RuntimeEthBlockPublicInputBindingSoundnessContract",
         ],
