@@ -480,6 +480,11 @@ fn validate_sparse_main_trace_descriptors_layout(
     u64_word_byte_len(output_words)
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct SparseMainTraceDescriptorLayoutValidation {
+    output_byte_len: usize,
+}
+
 #[cfg(not(target_endian = "little"))]
 fn bytes_to_u64_words(bytes: &[u8]) -> Result<Vec<u64>, AccelError> {
     if !bytes.len().is_multiple_of(8) {
@@ -1451,13 +1456,15 @@ impl CudaDeviceBuffer {
         descriptor_buffer: Option<&Self>,
         retained_descriptor_buffer: Option<&mut Option<Self>>,
     ) -> Result<Self, AccelError> {
-        validate_sparse_main_trace_descriptors_layout(
-            descriptors,
-            high_words,
-            descriptor_count,
-            row_count,
-            row_width_words,
-        )?;
+        let validated_layout = SparseMainTraceDescriptorLayoutValidation {
+            output_byte_len: validate_sparse_main_trace_descriptors_layout(
+                descriptors,
+                high_words,
+                descriptor_count,
+                row_count,
+                row_width_words,
+            )?,
+        };
         if let Some(buffer) = descriptor_buffer {
             let expected_descriptor_len = u64_word_byte_len(descriptors.len())?;
             if buffer.len() != expected_descriptor_len {
@@ -1488,6 +1495,7 @@ impl CudaDeviceBuffer {
             layout,
             descriptor_buffer,
             &high_buffer,
+            Some(validated_layout),
         )?;
         if let (Some(retained), Some(uploaded)) =
             (retained_descriptor_buffer, uploaded_descriptor_buffer)
@@ -1508,14 +1516,18 @@ impl CudaDeviceBuffer {
         layout: MainTraceDeviceLayout,
         descriptor_buffer: &Self,
         high_buffer: &Self,
+        validated_layout: Option<SparseMainTraceDescriptorLayoutValidation>,
     ) -> Result<Self, AccelError> {
-        let output_byte_len = validate_sparse_main_trace_descriptors_layout(
-            descriptors,
-            high_words,
-            descriptor_count,
-            row_count,
-            row_width_words,
-        )?;
+        let output_byte_len = match validated_layout {
+            Some(validated_layout) => validated_layout.output_byte_len,
+            None => validate_sparse_main_trace_descriptors_layout(
+                descriptors,
+                high_words,
+                descriptor_count,
+                row_count,
+                row_width_words,
+            )?,
+        };
         let expected_descriptor_len = u64_word_byte_len(descriptors.len())?;
         if descriptor_buffer.len() != expected_descriptor_len {
             return Err(AccelError::LengthMismatch {

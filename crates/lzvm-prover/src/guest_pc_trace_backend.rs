@@ -3350,9 +3350,7 @@ pub(crate) fn build_guest_pc_trace_stage_source_devices_from_device_descriptors_
             timing.descriptor_upload_byte_count +=
                 sparse_high_word_count.saturating_mul(std::mem::size_of::<u64>());
             timing.descriptor_upload_word_count += sparse_high_word_count;
-            if sparse_high_word_count != 0 {
-                timing.descriptor_upload_row_count += descriptors.descriptor_rows();
-            }
+            timing.descriptor_upload_row_count += descriptors.descriptor_rows();
         }
         record_device_source_build_duration(
             timing
@@ -3369,6 +3367,7 @@ pub(crate) fn build_guest_pc_trace_stage_source_devices_from_device_descriptors_
                     descriptors.device_layout(),
                     device_trace_descriptor_buffer,
                     &sparse_high_buffer,
+                    None,
                 )
                 .map_err(|error| {
                     guest_pc_device_trace_source_error(format!(

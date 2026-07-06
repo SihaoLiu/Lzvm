@@ -574,6 +574,7 @@ fn cuda_expands_sparse_main_trace_descriptors_from_device_buffers() {
         MainTraceDeviceLayout::WithStoreAddress,
         &sparse_descriptor_buffer,
         &sparse_high_buffer,
+        None,
     )
     .expect("device sparse descriptor expansion should run")
     .to_u64_words()

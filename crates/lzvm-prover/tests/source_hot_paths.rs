@@ -5409,6 +5409,12 @@ fn guest_pc_trace_timing_splits_device_source_upload_and_expand_work() {
             && descriptor_body.contains("from_sparse_main_trace_descriptors_device_with_layout"),
         "retained sparse descriptor rebuilds should account high-word uploads separately from trace expansion"
     );
+    assert!(
+        descriptor_body
+            .contains("timing.descriptor_upload_row_count += descriptors.descriptor_rows();",)
+            && !descriptor_body.contains("if sparse_high_word_count != 0"),
+        "retained sparse descriptor rebuilds should count descriptor rows on this path"
+    );
 
     let accumulator_fields = function_body(
         &execution_source,
