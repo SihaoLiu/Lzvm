@@ -27,6 +27,7 @@ fn lean_runtime_external_source_binding_exports_core_contract_projection() {
     lean_binding::assert_theorem_declarations(
         &lean_source,
         &[
+            "runtime_external_source_checked_acceptance_obligations",
             "runtime_external_source_checked_acceptance_pcs_without_assumptions",
             "runtime_external_source_checked_acceptance_sound",
             "runtime_external_source_checked_acceptance_verifier_core_contract",
@@ -46,6 +47,25 @@ fn lean_runtime_external_source_binding_exports_core_contract_projection() {
         &lean_source,
         "runtime_external_source_checked_acceptance_pcs_without_assumptions",
         &["system.pcsOpeningsValid publicInput proof"],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_external_source_checked_acceptance_obligations",
+        &[
+            "(assumptions : AssumptionBundle system)",
+            "RuntimeExternalSourceCheckedAcceptance",
+            "RuntimeArtifactSoundnessObligations",
+            "ExternalSourceOpeningSoundnessObligations",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_external_source_checked_acceptance_obligations",
+        &[
+            "runtime_artifact_checked_acceptance_obligations",
+            "runtime_artifact_checked_acceptance_implies_verifier_accepts",
+            "external_source_opening_checked_acceptance_obligations",
+        ],
     );
     lean_binding::assert_theorem_prefix_omits(
         &lean_source,
