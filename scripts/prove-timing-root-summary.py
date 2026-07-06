@@ -3592,9 +3592,15 @@ def retained_parent_checkpoint_cross_stage_gather_launch_shape(
 
 
 def retained_parent_checkpoint_batching_hint(
+    total_ms: int,
     openings: int,
     rows: int,
     all_single_row: int,
+    external_source_count: int,
+    query_units: int,
+    single_query_units: int,
+    source_rows: int,
+    source_extend_ms: int,
     prefix_launches: int,
     suffix_launches: int,
     path_ms: int,
@@ -3610,6 +3616,15 @@ def retained_parent_checkpoint_batching_hint(
     if cross_stage_gather_launch_savings <= 0:
         return "device_batched_per_stage"
     if path_ms > 0 and path_ms < RETAINED_PARENT_CHECKPOINT_PATH_SECONDARY_MS_THRESHOLD:
+        source_extend_pct = source_extend_ms * 100.0 / total_ms if total_ms else 0.0
+        if (
+            external_source_count > 0
+            and query_units > 1
+            and single_query_units >= query_units
+            and source_rows >= query_units
+            and source_extend_pct >= SOURCE_ROW_VALUE_SECONDARY_PCT_THRESHOLD
+        ):
+            return EXTERNAL_SOURCE_ROW_VALUE_BOUNDARY_HINT
         return "device_batched_path_secondary"
     return "device_batched_cross_stage_candidate"
 
@@ -6196,9 +6211,15 @@ def summarize_profile_values(
     )
     retained_parent_checkpoint_batching_hint_value = (
         retained_parent_checkpoint_batching_hint(
+            total_ms,
             retained_parent_checkpoint_openings,
             retained_parent_checkpoint_rows,
             retained_parent_checkpoint_all_single_row_value,
+            opening_external_source_count,
+            opening_query_units,
+            opening_single_query_units,
+            opening_row_value_source_rows,
+            opening_row_value_source_extend_ms,
             retained_parent_checkpoint_prefix_launches,
             retained_parent_checkpoint_suffix_launches,
             retained_parent_checkpoint_path_ms,

@@ -3358,6 +3358,11 @@ fn prove_timing_root_summary_reports_external_source_row_value_boundary_without_
         "timing_finish_witness_opening_external_source_count=477",
         "timing_finish_witness_opening_row_values_source_rows=1866",
         "timing_finish_witness_opening_row_value_source_extend_ms=2832",
+        "timing_finish_witness_opening_retained_parent_checkpoint_openings=477",
+        "timing_finish_witness_opening_retained_parent_checkpoint_rows=477",
+        "timing_finish_witness_opening_retained_parent_checkpoint_all_single_row_openings=1",
+        "timing_finish_witness_opening_path_parent_hash_retained_parent_checkpoint_suffix_launches=4770",
+        "timing_finish_witness_opening_path_parent_hash_retained_parent_checkpoint_suffix_ms=252",
     ]
     .join("\n");
 
@@ -3412,6 +3417,10 @@ fn prove_timing_root_summary_reports_external_source_row_value_boundary_without_
     assert_eq!(
         value("opening_source_row_value_action_hint"),
         "profile_external_source_row_value_rebuilds"
+    );
+    assert_eq!(
+        value("retained_parent_checkpoint_batching_hint"),
+        "external_source_unit_boundary_blocks_row_value_batch"
     );
 }
 
