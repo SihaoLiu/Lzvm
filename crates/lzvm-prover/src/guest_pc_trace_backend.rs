@@ -13353,11 +13353,10 @@ fn apply_jump_fast_path(
         });
     }
 
-    let row_mem_step_base = context.row_mem_step_base(output_row)?;
     let register_accesses = apply_no_memory_fast_path_register_accesses(
         output_row,
         state,
-        row_mem_step_base,
+        context,
         ZiskMainNoMemoryFastPathParts {
             a_index: None,
             b_index: parts.b_index,
@@ -13457,9 +13456,8 @@ fn apply_no_memory_fast_path(
         });
     }
 
-    let row_mem_step_base = context.row_mem_step_base(output_row)?;
     let register_accesses =
-        apply_no_memory_fast_path_register_accesses(output_row, state, row_mem_step_base, parts)?;
+        apply_no_memory_fast_path_register_accesses(output_row, state, context, parts)?;
     match parts.store_index {
         Some(store_index) => {
             let Some(write) = effects.register_writes.single() else {
@@ -13553,11 +13551,10 @@ fn apply_precompile_no_store_fast_path(
         });
     }
 
-    let row_mem_step_base = context.row_mem_step_base(output_row)?;
     let register_accesses = apply_no_memory_fast_path_register_accesses(
         output_row,
         state,
-        row_mem_step_base,
+        context,
         ZiskMainNoMemoryFastPathParts {
             a_index: None,
             b_index,
@@ -13638,11 +13635,10 @@ fn apply_internal_memory_copy_fast_path(
         });
     }
 
-    let row_mem_step_base = context.row_mem_step_base(output_row)?;
     let register_accesses = apply_no_memory_fast_path_register_accesses(
         output_row,
         state,
-        row_mem_step_base,
+        context,
         ZiskMainNoMemoryFastPathParts {
             a_index: None,
             b_index: Some(b_index),
@@ -13694,7 +13690,7 @@ fn no_memory_fast_path_source_value(
 fn apply_no_memory_fast_path_register_accesses(
     row: usize,
     state: &mut ZiskMainTraceState,
-    row_mem_step_base: u64,
+    context: &mut ZiskMainReportValidationContext<'_>,
     parts: ZiskMainNoMemoryFastPathParts,
 ) -> Result<ZiskMainRegisterAccessValues, GuestPcTraceBackendError> {
     let mut register_accesses = ZiskMainRegisterAccessValues {
@@ -13715,6 +13711,7 @@ fn apply_no_memory_fast_path_register_accesses(
     let Some(max_register_offset) = max_register_offset else {
         return Ok(register_accesses);
     };
+    let row_mem_step_base = context.row_mem_step_base(row)?;
     if row_mem_step_base.checked_add(max_register_offset).is_none() {
         return Err(GuestPcTraceBackendError::InvalidPcTraceLayout {
             message: "Zisk Main memory step is too large".to_owned(),
