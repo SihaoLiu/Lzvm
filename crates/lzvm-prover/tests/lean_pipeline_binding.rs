@@ -1800,6 +1800,38 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
             .contains("RuntimeFriFoldQueryPlanOrderContract"),
                     "pipeline checked acceptance should package audited crypto assumptions with proof-system soundness"
                 );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_pipeline_binding_checked_acceptance_audited_assumption_full_contract",
+        &[
+            "RequiredCryptographicAssumptionStatements assumptions.crypto",
+            "RequiredSemanticAssumptionStatements assumptions.semantic",
+            "ProofSystemSound system",
+            "system.accepts publicInput proof",
+            "RuntimePipelineBindingEvidence",
+            "RuntimeArtifactSoundnessObligations",
+            "RuntimeVerifierCoreContract system publicInput proof",
+            "RuntimeFriFoldTraceIdentityContract",
+            "RuntimeFriFoldQueryPlanOrderContract",
+            "SoundWitness system publicInput proof",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_pipeline_binding_checked_acceptance_audited_assumption_full_contract",
+        &[
+            "runtime_pipeline_binding_checked_acceptance_audited_proof_system_contract",
+            "assumption_bundle_carries_required_evidence",
+        ],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &lean_source,
+        "runtime_pipeline_binding_checked_acceptance_audited_assumption_full_contract",
+        &[
+            "runtime_pipeline_binding_checked_acceptance_proof_system_full_soundness_contract",
+            "runtime_pipeline_binding_checked_acceptance_accepts_full_soundness_contract",
+        ],
+    );
     assert!(
         prefixes.prefix("runtime_pipeline_binding_checked_acceptance_audited_proof_system_core_contract")
         .contains("RequiredCryptographicAssumptionStatements assumptions.crypto")
