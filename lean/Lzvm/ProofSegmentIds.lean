@@ -76,6 +76,33 @@ instance isAllowedProofSegmentIdDecidable (id : Nat) :
   unfold IsAllowedProofSegmentId
   infer_instance
 
+theorem fixed_proof_segment_ids_nodup :
+    fixedProofSegmentIds.Nodup := by
+  decide
+
+theorem fixed_proof_segment_ids_length :
+    fixedProofSegmentIds.length = 16 := by
+  decide
+
+theorem fixed_proof_segment_ids_are_at_or_above_manifest :
+    forall id, IsFixedProofSegmentId id -> pcsMaterialManifestSegmentId <= id := by
+  intro id fixed
+  change 10000 <= id
+  unfold IsFixedProofSegmentId isFixedProofSegmentIdBool fixedProofSegmentIds at fixed
+  simp [pcsMaterialManifestSegmentId, pcsQueryPlanSegmentId, witnessOpeningSegmentId,
+    constantOpeningSegmentId, pcsFriOpeningSegmentId, pcsQueryNonceSegmentId,
+    pcsEvaluationSegmentId, pcsProofValuesSegmentId, groupValuesSegmentId,
+    unitValuesSegmentId, programImageCacheSegmentId, contributionSegmentId,
+    challengeValuesSegmentId, ethBlockInputSegmentId, traceConstraintSegmentId,
+    framedGuestInputSegmentId] at fixed
+  omega
+
+theorem witness_commitment_segment_range_disjoint_fixed_segment_ids :
+    forall id, IsWitnessCommitmentSegmentId id -> Not (IsFixedProofSegmentId id) := by
+  intro id witness fixed
+  have fixedLower := fixed_proof_segment_ids_are_at_or_above_manifest id fixed
+  exact Nat.not_lt_of_ge fixedLower witness.right
+
 theorem witness_commitment_base_id_allowed :
     IsAllowedProofSegmentId witnessCommitmentSegmentBaseId := by
   left

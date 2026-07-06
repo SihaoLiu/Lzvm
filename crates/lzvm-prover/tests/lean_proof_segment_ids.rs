@@ -43,7 +43,10 @@ fn lean_proof_segment_ids_track_runtime_allowlist() {
             && lean_source.contains("def isFixedProofSegmentIdBool")
             && lean_source.contains("theorem witness_commitment_base_id_allowed")
             && lean_source.contains("theorem first_unknown_fixed_proof_segment_id_not_allowed")
-            && lean_source.contains("theorem unknown_fixed_proof_segment_id_not_allowed"),
+            && lean_source.contains("theorem unknown_fixed_proof_segment_id_not_allowed")
+            && lean_source.contains("theorem fixed_proof_segment_ids_nodup")
+            && lean_source
+                .contains("theorem witness_commitment_segment_range_disjoint_fixed_segment_ids"),
         "Lean should expose concrete allowed and rejected proof segment ID facts"
     );
     assert!(
