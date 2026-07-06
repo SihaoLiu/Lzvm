@@ -7420,6 +7420,9 @@ fn report_level_fast_path_parts_routes_representative_rows() {
             MainReportFastPathParts::NoMemory(instruction, _) => {
                 (ReportLevelRoute::NoMemory, instruction)
             }
+            MainReportFastPathParts::DmaPrepareNoMemory(instruction, ..) => {
+                (ReportLevelRoute::NoMemory, instruction)
+            }
             MainReportFastPathParts::PrecompileNoStore(instruction, ..) => {
                 (ReportLevelRoute::NoMemory, instruction)
             }
@@ -7472,13 +7475,25 @@ fn report_level_fast_path_parts_routes_representative_rows() {
         .expect("routing should not fail")
         .expect("DMA prepare row should route to a fast path");
     timing.record_main_report_fast_path(&parts);
-    let MainReportFastPathParts::InternalMemoryCopy(instruction, b_index, store_address) = parts
+    let MainReportFastPathParts::InternalMemoryCopy(
+        instruction,
+        b_index,
+        store_address,
+        pending_dma,
+    ) = parts
     else {
         panic!("DMA prepare row should route to internal memory copy");
     };
     assert_eq!(instruction, expected_instruction);
     assert_eq!(b_index, 3);
     assert_eq!(store_address, ZISK_EXTRA_PARAMS_ADDRESS);
+    assert_eq!(
+        pending_dma,
+        ZiskMainPendingDma {
+            kind: RiscvDmaKind::Memcpy,
+            first_arg_reg: 5,
+        }
+    );
     let base_prepare_report =
         GuestMachineReport {
             address_and_instruction_len:
@@ -7508,13 +7523,20 @@ fn report_level_fast_path_parts_routes_representative_rows() {
         .expect("routing should not fail")
         .expect("DMA prepare row should route to a fast path");
     timing.record_main_report_fast_path(&parts);
-    let MainReportFastPathParts::NoMemory(instruction, parts) = parts else {
+    let MainReportFastPathParts::DmaPrepareNoMemory(instruction, parts, pending_dma) = parts else {
         panic!("DMA prepare row should route to no-memory copy");
     };
     assert_eq!(instruction, expected_instruction);
     assert_eq!(parts.a_index, None);
     assert_eq!(parts.b_index, Some(5));
     assert_eq!(parts.store_index, None);
+    assert_eq!(
+        pending_dma,
+        ZiskMainPendingDma {
+            kind: RiscvDmaKind::Inputcpy,
+            first_arg_reg: 5,
+        }
+    );
     timing.record_main_report_generic_fallback();
 
     assert_eq!(timing.trace_main_report_fast_path_count(), 17);

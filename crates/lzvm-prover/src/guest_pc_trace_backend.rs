@@ -993,6 +993,7 @@ impl GuestPcTraceStreamTiming {
                 self.record_main_report_load_sign_extend_fast_path();
             }
             MainReportFastPathParts::NoMemory(..)
+            | MainReportFastPathParts::DmaPrepareNoMemory(..)
             | MainReportFastPathParts::PrecompileNoStore(..)
             | MainReportFastPathParts::InternalMemoryCopy(..) => {
                 self.record_main_report_no_memory_fast_path();
@@ -11042,8 +11043,13 @@ enum MainReportFastPathParts {
     LoadNoStore(ZiskMainInstruction, u8, i64, u8),
     LoadSignExtend(ZiskMainInstruction, u8, i64, u8),
     NoMemory(ZiskMainInstruction, ZiskMainNoMemoryFastPathParts),
+    DmaPrepareNoMemory(
+        ZiskMainInstruction,
+        ZiskMainNoMemoryFastPathParts,
+        ZiskMainPendingDma,
+    ),
     PrecompileNoStore(ZiskMainInstruction, Option<u8>),
-    InternalMemoryCopy(ZiskMainInstruction, u8, u64),
+    InternalMemoryCopy(ZiskMainInstruction, u8, u64, ZiskMainPendingDma),
     StoreCopy(ZiskMainInstruction, u8, u8, i64),
     StoreImmediateCopy(ZiskMainInstruction, u8, u64, i64),
     SimpleCopy(ZiskMainInstruction, Option<u8>, u8),
@@ -11269,6 +11275,26 @@ fn validate_and_apply_zisk_main_report(
                         &mut visit,
                     )?;
                 }
+                MainReportFastPathParts::DmaPrepareNoMemory(instruction, parts, pending_dma) => {
+                    if let Some(timing) = timing.as_mut() {
+                        timing.record_main_report_no_memory_fast_path();
+                    }
+                    let effects = ZiskMainReportEffects::from_non_precompile_fast_path_report(
+                        report,
+                        parts.store_index,
+                    );
+                    apply_no_memory_fast_path(
+                        row,
+                        instruction,
+                        effects,
+                        report.next_pc,
+                        parts,
+                        state,
+                        context,
+                        &mut visit,
+                    )?;
+                    state.pending_dma = Some(pending_dma);
+                }
                 MainReportFastPathParts::PrecompileNoStore(instruction, b_index) => {
                     if let Some(timing) = timing.as_mut() {
                         timing.record_main_report_no_memory_fast_path();
@@ -11290,6 +11316,7 @@ fn validate_and_apply_zisk_main_report(
                     instruction,
                     b_index,
                     store_address,
+                    pending_dma,
                 ) => {
                     if let Some(timing) = timing.as_mut() {
                         timing.record_main_report_no_memory_fast_path();
@@ -11307,6 +11334,7 @@ fn validate_and_apply_zisk_main_report(
                         context,
                         &mut visit,
                     )?;
+                    state.pending_dma = Some(pending_dma);
                 }
                 MainReportFastPathParts::StoreCopy(instruction, a_index, b_index, store_offset) => {
                     if let Some(timing) = timing.as_mut() {
@@ -11391,13 +11419,6 @@ fn validate_and_apply_zisk_main_report(
                     )?;
                 }
             }
-            state.pending_dma = match report.instruction {
-                RiscvInstruction::ZiskDmaPrepare { kind, rs1 } => Some(ZiskMainPendingDma {
-                    kind,
-                    first_arg_reg: rs1,
-                }),
-                _ => None,
-            };
             return Ok(1);
         }
         if let Some(timing) = timing.as_mut() {
@@ -12220,7 +12241,7 @@ fn dma_prepare_internal_memory_copy_fast_path_parts(
     report: &GuestMachineReport,
     next_instruction: Option<RiscvInstruction>,
 ) -> Result<Option<MainReportFastPathParts>, GuestPcTraceBackendError> {
-    let RiscvInstruction::ZiskDmaPrepare { kind, .. } = report.instruction else {
+    let RiscvInstruction::ZiskDmaPrepare { kind, rs1 } = report.instruction else {
         return Ok(None);
     };
     if !matches!(kind, RiscvDmaKind::Memcpy | RiscvDmaKind::Memcmp) {
@@ -12262,6 +12283,10 @@ fn dma_prepare_internal_memory_copy_fast_path_parts(
         instruction,
         rs2,
         ZISK_EXTRA_PARAMS_ADDRESS,
+        ZiskMainPendingDma {
+            kind,
+            first_arg_reg: rs1,
+        },
     )))
 }
 
@@ -12314,12 +12339,16 @@ fn dma_prepare_fast_path_parts(
         is_external_op: false,
         is_precompiled: false,
     };
-    Ok(Some(MainReportFastPathParts::NoMemory(
+    Ok(Some(MainReportFastPathParts::DmaPrepareNoMemory(
         instruction,
         ZiskMainNoMemoryFastPathParts {
             a_index: None,
             b_index,
             store_index: None,
+        },
+        ZiskMainPendingDma {
+            kind,
+            first_arg_reg: rs1,
         },
     )))
 }
