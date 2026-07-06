@@ -239,6 +239,84 @@ __global__ void extend_row_major_columns_shifted_rows_partial_kernel(
     }
 }
 
+__global__ void extend_row_major_columns_shifted_rows_fused_partial_kernel(
+    const uint64_t* values,
+    const uint64_t* weights,
+    const uint64_t* weight_shifts,
+    uint64_t* partials,
+    size_t source_len,
+    size_t column_count,
+    size_t chunk_count,
+    size_t target_row_count) {
+    const size_t block_index = blockIdx.x;
+    const size_t column = block_index / chunk_count;
+    const size_t chunk = block_index - column * chunk_count;
+    const size_t row = chunk * blockDim.x + threadIdx.x;
+    __shared__ uint64_t sums0[kThreads];
+    __shared__ uint64_t sums1[kThreads];
+    __shared__ uint64_t sums2[kThreads];
+    __shared__ uint64_t sums3[kThreads];
+    uint64_t value0 = 0;
+    uint64_t value1 = 0;
+    uint64_t value2 = 0;
+    uint64_t value3 = 0;
+    if (column < column_count && row < source_len) {
+        const uint64_t source_value = values[row * column_count + column];
+        const size_t weight_row0 = row + static_cast<size_t>(weight_shifts[0]);
+        const size_t weight_index0 = weight_row0 >= source_len ? weight_row0 - source_len : weight_row0;
+        value0 = mul_mod(source_value, weights[weight_index0]);
+        if (target_row_count > 1) {
+            const size_t weight_row1 = row + static_cast<size_t>(weight_shifts[1]);
+            const size_t weight_index1 = weight_row1 >= source_len ? weight_row1 - source_len : weight_row1;
+            value1 = mul_mod(source_value, weights[weight_index1]);
+        }
+        if (target_row_count > 2) {
+            const size_t weight_row2 = row + static_cast<size_t>(weight_shifts[2]);
+            const size_t weight_index2 = weight_row2 >= source_len ? weight_row2 - source_len : weight_row2;
+            value2 = mul_mod(source_value, weights[weight_index2]);
+        }
+        if (target_row_count > 3) {
+            const size_t weight_row3 = row + static_cast<size_t>(weight_shifts[3]);
+            const size_t weight_index3 = weight_row3 >= source_len ? weight_row3 - source_len : weight_row3;
+            value3 = mul_mod(source_value, weights[weight_index3]);
+        }
+    }
+    sums0[threadIdx.x] = value0;
+    sums1[threadIdx.x] = value1;
+    sums2[threadIdx.x] = value2;
+    sums3[threadIdx.x] = value3;
+    __syncthreads();
+
+    for (size_t stride = blockDim.x / 2; stride > 0; stride >>= 1) {
+        if (threadIdx.x < stride) {
+            sums0[threadIdx.x] = add_mod(sums0[threadIdx.x], sums0[threadIdx.x + stride]);
+            if (target_row_count > 1) {
+                sums1[threadIdx.x] = add_mod(sums1[threadIdx.x], sums1[threadIdx.x + stride]);
+            }
+            if (target_row_count > 2) {
+                sums2[threadIdx.x] = add_mod(sums2[threadIdx.x], sums2[threadIdx.x + stride]);
+            }
+            if (target_row_count > 3) {
+                sums3[threadIdx.x] = add_mod(sums3[threadIdx.x], sums3[threadIdx.x + stride]);
+            }
+        }
+        __syncthreads();
+    }
+    if (threadIdx.x == 0 && column < column_count) {
+        const size_t partial_base = column * chunk_count + chunk;
+        partials[partial_base] = sums0[0];
+        if (target_row_count > 1) {
+            partials[column_count * chunk_count + partial_base] = sums1[0];
+        }
+        if (target_row_count > 2) {
+            partials[2 * column_count * chunk_count + partial_base] = sums2[0];
+        }
+        if (target_row_count > 3) {
+            partials[3 * column_count * chunk_count + partial_base] = sums3[0];
+        }
+    }
+}
+
 __global__ void extend_row_major_columns_strided_shifted_rows_partial_kernel(
     const uint64_t* values,
     const uint64_t* weights,
@@ -459,8 +537,14 @@ extern "C" int lzvm_cuda_goldilocks_coset_extend_row_major_columns_shifted_rows_
     }
     DeviceBuffer<uint64_t> partials;
     LZVM_CUDA_RETURN_ON_ERROR(partials.reset(partial_count));
-    extend_row_major_columns_shifted_rows_partial_kernel<<<partial_count, kThreads>>>(
-        values, weights, weight_shifts, partials.data(), source_len, column_count, chunk_count);
+    if (target_row_count >= 2 && target_row_count <= 4) {
+        extend_row_major_columns_shifted_rows_fused_partial_kernel<<<chunk_count * column_count, kThreads>>>(
+            values, weights, weight_shifts, partials.data(), source_len, column_count,
+            chunk_count, target_row_count);
+    } else {
+        extend_row_major_columns_shifted_rows_partial_kernel<<<partial_count, kThreads>>>(
+            values, weights, weight_shifts, partials.data(), source_len, column_count, chunk_count);
+    }
     LZVM_CUDA_RETURN_ON_ERROR(lzvm_cuda_check_launch());
     extend_row_major_columns_rows_scatter_final_kernel<<<row_column_count, kThreads>>>(
         partials.data(), output_rows, out, chunk_count, column_count);
