@@ -467,7 +467,6 @@ impl Default for GuestRegisterWriteList {
 }
 
 impl GuestRegisterWriteList {
-    #[inline(always)]
     fn one(value: GuestRegisterWrite) -> Self {
         debug_assert_ne!(value.index, 0);
         Self { entry: value }
@@ -489,17 +488,14 @@ impl GuestRegisterWriteList {
         }
     }
 
-    #[inline(always)]
     pub fn single(&self) -> Option<GuestRegisterWrite> {
         (self.entry.index != 0).then_some(self.entry)
     }
 
-    #[inline(always)]
     pub fn len(&self) -> usize {
         usize::from(self.entry.index != 0)
     }
 
-    #[inline(always)]
     pub fn is_empty(&self) -> bool {
         self.entry.index == 0
     }
