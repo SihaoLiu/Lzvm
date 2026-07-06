@@ -271,7 +271,9 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
             "runtime_pipeline_binding_checked_acceptance_audited_seeded_core_sound_witness_contract",
             "runtime_pipeline_binding_checked_acceptance_audited_manifest_core_sound_witness_contract",
             "runtime_pipeline_binding_checked_acceptance_audited_segment_ids_contract",
+            "runtime_pipeline_binding_checked_acceptance_audited_soundness_segment_ids_contract",
             "runtime_pipeline_binding_checked_acceptance_audited_concrete_segment_ids_contract",
+            "runtime_pipeline_binding_checked_acceptance_audited_soundness_concrete_segment_ids_contract",
             "runtime_pipeline_binding_checked_acceptance_audited_finalized_segment_ids_contract",
             "runtime_pipeline_binding_checked_acceptance_audited_finalized_concrete_segment_ids_contract",
             "runtime_pipeline_binding_checked_acceptance_audited_finalized_concrete_segment_ids_core_components_contract",
@@ -303,8 +305,10 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
             "runtime_pipeline_required_external_source_audited_finalized_core_sound_witness_contract",
             "runtime_pipeline_required_external_source_audited_manifest_core_sound_witness_contract",
             "runtime_pipeline_binding_required_external_source_audited_segment_ids_contract",
+            "runtime_pipeline_binding_required_external_source_audited_soundness_segment_ids_contract",
             "runtime_pipeline_required_external_source_audited_segment_ids_core_components_contract",
             "runtime_pipeline_binding_required_external_source_audited_concrete_segment_ids_contract",
+            "runtime_pipeline_binding_required_external_source_audited_soundness_concrete_segment_ids_contract",
             "runtime_pipeline_binding_required_external_source_audited_finalized_segment_ids_contract",
             "runtime_pipeline_binding_required_external_source_audited_finalized_concrete_segment_ids_contract",
             "runtime_pipeline_required_external_source_finalized_concrete_opening_evidence_contract",
@@ -2360,6 +2364,42 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
     );
     lean_binding::assert_theorem_prefix_contains(
         &lean_source,
+        "runtime_pipeline_binding_checked_acceptance_audited_soundness_segment_ids_contract",
+        &[
+            "RequiredCryptographicAssumptionStatements assumptions.crypto",
+            "RequiredSemanticAssumptionStatements assumptions.semantic",
+            "ProofSystemSound system",
+            "system.accepts publicInput proof",
+            "RuntimeVerifierCoreContract system publicInput proof",
+            "SoundWitness system publicInput proof",
+            "RuntimeProofArtifactBindingValidationAgreement",
+            "artifactValidation.proofContainerCanonical artifact publicInput proof",
+            "artifactValidation.proofSegmentsPresent artifact publicInput proof",
+            "artifactValidation.proofMetadataCanonical artifact publicInput proof",
+            "artifactValidation.proofSegmentPayloadsNonempty artifact publicInput proof",
+            "artifactValidation.proofSegmentIdsAllowed artifact publicInput proof",
+            "artifactValidation.proofSegmentIdsUnique artifact publicInput proof",
+            "artifactValidation.proofUnitValuesTraceIdentityCoverage",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_pipeline_binding_checked_acceptance_audited_soundness_segment_ids_contract",
+        &[
+            "runtime_pipeline_binding_checked_acceptance_audited_segment_ids_contract",
+            "assumption_bundle_carries_required_evidence",
+        ],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &lean_source,
+        "runtime_pipeline_binding_checked_acceptance_audited_soundness_segment_ids_contract",
+        &[
+            "RuntimePipelineBindingEvidence",
+            "runtime_pipeline_binding_checked_acceptance_sound",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
         "runtime_pipeline_binding_checked_acceptance_audited_concrete_segment_ids_contract",
         &[
             "RuntimeProofArtifactConcreteSegmentIdBinding",
@@ -2377,6 +2417,31 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
     lean_binding::assert_theorem_body_omits(
         &lean_source,
         "runtime_pipeline_binding_checked_acceptance_audited_concrete_segment_ids_contract",
+        &[
+            "RuntimePipelineBindingEvidence",
+            "runtime_pipeline_binding_checked_acceptance_sound",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_pipeline_binding_checked_acceptance_audited_soundness_concrete_segment_ids_contract",
+        &[
+            "RuntimeProofArtifactConcreteSegmentIdBinding",
+            "RequiredSemanticAssumptionStatements assumptions.semantic",
+            "RuntimeProofArtifactConcreteSegmentIdsAllowed proof",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_pipeline_binding_checked_acceptance_audited_soundness_concrete_segment_ids_contract",
+        &[
+            "runtime_pipeline_binding_checked_acceptance_audited_soundness_segment_ids_contract",
+            "runtime_pipeline_binding_checked_acceptance_concrete_segment_ids_allowed",
+        ],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &lean_source,
+        "runtime_pipeline_binding_checked_acceptance_audited_soundness_concrete_segment_ids_contract",
         &[
             "RuntimePipelineBindingEvidence",
             "runtime_pipeline_binding_checked_acceptance_sound",
@@ -4184,6 +4249,47 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
     );
     lean_binding::assert_theorem_prefix_contains(
         &lean_source,
+        "runtime_pipeline_binding_required_external_source_audited_soundness_segment_ids_contract",
+        &[
+            "RequiredCryptographicAssumptionStatements assumptions.crypto",
+            "RequiredSemanticAssumptionStatements assumptions.semantic",
+            "ProofSystemSound system",
+            "system.accepts publicInput proof",
+            "ExternalSourceOpeningEvidence",
+            "runtime_pipeline_trace_source_validation validation",
+            "runtime_pipeline_opening_source_validation validation",
+            "system.pcsOpeningsValid publicInput proof",
+            "system.friQueriesValid publicInput proof",
+            "RuntimeVerifierCoreContract system publicInput proof",
+            "SoundWitness system publicInput proof",
+            "RuntimeProofArtifactBindingValidationAgreement",
+            "artifactValidation.proofContainerCanonical artifact publicInput proof",
+            "artifactValidation.proofSegmentsPresent artifact publicInput proof",
+            "artifactValidation.proofMetadataCanonical artifact publicInput proof",
+            "artifactValidation.proofSegmentPayloadsNonempty artifact publicInput proof",
+            "artifactValidation.proofSegmentIdsAllowed artifact publicInput proof",
+            "artifactValidation.proofSegmentIdsUnique artifact publicInput proof",
+            "artifactValidation.proofUnitValuesTraceIdentityCoverage",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_pipeline_binding_required_external_source_audited_soundness_segment_ids_contract",
+        &[
+            "runtime_pipeline_binding_required_external_source_audited_segment_ids_contract",
+            "assumption_bundle_carries_required_evidence",
+        ],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &lean_source,
+        "runtime_pipeline_binding_required_external_source_audited_soundness_segment_ids_contract",
+        &[
+            "RuntimePipelineBindingEvidence",
+            "runtime_pipeline_binding_required_external_source_sound",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
         "runtime_pipeline_required_external_source_audited_segment_ids_core_components_contract",
         &[
             "RequiredCryptographicAssumptionStatements assumptions.crypto",
@@ -4237,6 +4343,34 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
     lean_binding::assert_theorem_body_omits(
         &lean_source,
         "runtime_pipeline_binding_required_external_source_audited_concrete_segment_ids_contract",
+        &[
+            "RuntimePipelineBindingEvidence",
+            "runtime_pipeline_binding_required_external_source_sound",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_pipeline_binding_required_external_source_audited_soundness_concrete_segment_ids_contract",
+        &[
+            "RuntimeProofArtifactConcreteSegmentIdBinding",
+            "RequiredSemanticAssumptionStatements assumptions.semantic",
+            "ExternalSourceOpeningEvidence",
+            "runtime_pipeline_trace_source_validation validation",
+            "runtime_pipeline_opening_source_validation validation",
+            "RuntimeProofArtifactConcreteSegmentIdsAllowed proof",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_pipeline_binding_required_external_source_audited_soundness_concrete_segment_ids_contract",
+        &[
+            "runtime_pipeline_binding_required_external_source_audited_soundness_segment_ids_contract",
+            "runtime_pipeline_binding_checked_acceptance_concrete_segment_ids_allowed",
+        ],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &lean_source,
+        "runtime_pipeline_binding_required_external_source_audited_soundness_concrete_segment_ids_contract",
         &[
             "RuntimePipelineBindingEvidence",
             "runtime_pipeline_binding_required_external_source_sound",
