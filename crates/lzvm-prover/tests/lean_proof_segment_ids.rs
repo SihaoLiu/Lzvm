@@ -49,6 +49,92 @@ fn lean_proof_segment_ids_track_runtime_allowlist() {
                 .contains("theorem witness_commitment_segment_range_disjoint_fixed_segment_ids"),
         "Lean should expose concrete allowed and rejected proof segment ID facts"
     );
+    lean_binding::assert_theorem_declarations(
+        &lean_source,
+        &[
+            "fixed_proof_segment_ids_nodup",
+            "fixed_proof_segment_ids_length",
+            "fixed_proof_segment_ids_are_at_or_above_manifest",
+            "witness_commitment_segment_range_disjoint_fixed_segment_ids",
+            "witness_commitment_base_id_allowed",
+            "last_witness_commitment_id_allowed",
+            "pcs_material_manifest_segment_id_allowed",
+            "pcs_query_plan_segment_id_allowed",
+            "witness_opening_segment_id_allowed",
+            "constant_opening_segment_id_allowed",
+            "pcs_fri_opening_segment_id_allowed",
+            "pcs_query_nonce_segment_id_allowed",
+            "pcs_evaluation_segment_id_allowed",
+            "pcs_proof_values_segment_id_allowed",
+            "group_values_segment_id_allowed",
+            "unit_values_segment_id_allowed",
+            "program_image_cache_segment_id_allowed",
+            "contribution_segment_id_allowed",
+            "challenge_values_segment_id_allowed",
+            "eth_block_input_segment_id_allowed",
+            "trace_constraint_segment_id_allowed",
+            "framed_guest_input_segment_id_allowed",
+            "reserved_proof_segment_id_not_allowed",
+            "unknown_fixed_proof_segment_id_not_allowed",
+            "first_unknown_fixed_proof_segment_id_not_allowed",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "fixed_proof_segment_ids_length",
+        &["fixedProofSegmentIds.length = 16"],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "fixed_proof_segment_ids_are_at_or_above_manifest",
+        &["IsFixedProofSegmentId id -> pcsMaterialManifestSegmentId <= id"],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "witness_commitment_segment_range_disjoint_fixed_segment_ids",
+        &[
+            "fixed_proof_segment_ids_are_at_or_above_manifest",
+            "Nat.not_lt_of_ge fixedLower witness.right",
+        ],
+    );
+    for theorem in [
+        "witness_commitment_base_id_allowed",
+        "last_witness_commitment_id_allowed",
+    ] {
+        lean_binding::assert_theorem_body_contains(&lean_source, theorem, &["left"]);
+    }
+    for theorem in [
+        "pcs_material_manifest_segment_id_allowed",
+        "pcs_query_plan_segment_id_allowed",
+        "witness_opening_segment_id_allowed",
+        "constant_opening_segment_id_allowed",
+        "pcs_fri_opening_segment_id_allowed",
+        "pcs_query_nonce_segment_id_allowed",
+        "pcs_evaluation_segment_id_allowed",
+        "pcs_proof_values_segment_id_allowed",
+        "group_values_segment_id_allowed",
+        "unit_values_segment_id_allowed",
+        "program_image_cache_segment_id_allowed",
+        "contribution_segment_id_allowed",
+        "challenge_values_segment_id_allowed",
+        "eth_block_input_segment_id_allowed",
+        "trace_constraint_segment_id_allowed",
+        "framed_guest_input_segment_id_allowed",
+    ] {
+        lean_binding::assert_theorem_body_contains(&lean_source, theorem, &["right", "decide"]);
+    }
+    for theorem in [
+        "reserved_proof_segment_id_not_allowed",
+        "unknown_fixed_proof_segment_id_not_allowed",
+        "first_unknown_fixed_proof_segment_id_not_allowed",
+    ] {
+        lean_binding::assert_theorem_prefix_contains(
+            &lean_source,
+            theorem,
+            &["Not (IsAllowedProofSegmentId"],
+        );
+        lean_binding::assert_theorem_body_contains(&lean_source, theorem, &["decide"]);
+    }
     assert!(
         rust_source.contains(
             "(WITNESS_COMMITMENT_SEGMENT_BASE_ID..PCS_MATERIAL_MANIFEST_SEGMENT_ID).contains(&id)"
