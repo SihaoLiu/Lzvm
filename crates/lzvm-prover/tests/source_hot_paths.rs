@@ -3157,9 +3157,10 @@ fn guest_pc_trace_device_material_skips_redundant_row_column_validation() {
         "host trace lowering should build the validation context once per segment"
     );
     assert!(
-        host_segment_body.contains("unit_value_summary.push_report(report)")
+        host_segment_body.contains("report_index == 0")
+            && host_segment_body.contains("unit_value_summary.record_initial_pc(report.address())")
             && !host_segment_body.contains("from_reports(reports)"),
-        "host trace lowering should update unit-value summary during the report pass"
+        "host trace lowering should record unit-value initial PC once during the report pass"
     );
     assert!(
         host_segment_body.contains("trace_report_count += reports.len()")

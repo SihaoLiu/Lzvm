@@ -10751,7 +10751,9 @@ impl ZiskMainStreamingDeviceSegmentBuilder {
             .as_ref()
             .filter(|_| report_detail_timing)
             .map(|_| Instant::now());
-        self.unit_value_summary.push_report(report);
+        if self.report_count == 0 {
+            self.unit_value_summary.record_initial_pc(report.address());
+        }
         if let (Some(timing), Some(started)) = (timing.as_deref_mut(), unit_summary_started) {
             timing.trace_unit_summary_duration += started.elapsed();
         }
@@ -16074,7 +16076,9 @@ fn build_layout_zisk_main_trace_segment(
                 }
             }
         }
-        unit_value_summary.push_report(report);
+        if report_index == 0 {
+            unit_value_summary.record_initial_pc(report.address());
+        }
         output_row = output_row.checked_add(written_rows).ok_or_else(|| {
             GuestPcTraceBackendError::InvalidPcTraceLayout {
                 message: "Zisk Main row index overflow".to_owned(),
@@ -16189,8 +16193,8 @@ impl ZiskMainSegmentUnitValueSummary {
         Self::default()
     }
 
-    fn push_report(&mut self, report: &GuestMachineReport) {
-        self.segment_initial_pc.get_or_insert(report.address());
+    fn record_initial_pc(&mut self, pc: u64) {
+        self.segment_initial_pc.get_or_insert(pc);
     }
 
     fn unit_values(

@@ -1748,9 +1748,7 @@ fn zisk_main_streaming_unit_value_summary_matches_batch_reports() {
     .expect("segment should build")
     .expect("layout should be supported");
     let mut summary = ZiskMainSegmentUnitValueSummary::new();
-    for report in &reports {
-        summary.push_report(report);
-    }
+    summary.record_initial_pc(reports[0].address());
 
     assert_eq!(
         summary.unit_values(
