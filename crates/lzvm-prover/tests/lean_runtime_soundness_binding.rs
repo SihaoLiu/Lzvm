@@ -115,6 +115,7 @@ fn lean_runtime_soundness_binding_exports_core_contract_projection() {
             "runtime_soundness_required_external_source_audited_soundness_pcs_fri_core_witness_contract",
             "runtime_soundness_required_external_source_audited_finalized_core_sound_witness_contract",
             "runtime_soundness_checked_acceptance_audited_binding_pcs_fri_core_witness_contract",
+            "runtime_soundness_checked_acceptance_audited_soundness_pcs_fri_core_witness_contract",
             "runtime_soundness_checked_acceptance_artifact_segment_ids_contract",
             "runtime_soundness_checked_acceptance_concrete_artifact_segment_ids_contract",
             "runtime_soundness_checked_acceptance_contracts_core_contract",
@@ -2028,6 +2029,43 @@ fn lean_runtime_soundness_binding_exports_core_contract_projection() {
         )
         .contains("RuntimeSoundnessEvidence"),
         "compact checked runtime binding PCS/FRI core contract should not force callers to unpack full runtime evidence"
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_soundness_checked_acceptance_audited_soundness_pcs_fri_core_witness_contract",
+        &[
+            "RequiredCryptographicAssumptionStatements assumptions.crypto",
+            "RequiredSemanticAssumptionStatements assumptions.semantic",
+            "ProofSystemSound system",
+            "system.accepts publicInput proof",
+            "system.transcriptBound publicInput proof",
+            "system.publicInputBound publicInput proof",
+            "system.pcsOpeningsValid publicInput proof",
+            "system.friQueriesValid publicInput proof",
+            "RuntimeVerifierCoreContract system publicInput proof",
+            "SoundWitness system publicInput proof",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_soundness_checked_acceptance_audited_soundness_pcs_fri_core_witness_contract",
+        &[
+            "runtime_soundness_checked_acceptance_audited_binding_pcs_fri_core_witness_contract",
+            "assumption_bundle_carries_required_evidence",
+        ],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &lean_source,
+        "runtime_soundness_checked_acceptance_audited_soundness_pcs_fri_core_witness_contract",
+        &[
+            "runtime_soundness_checked_acceptance_audited_soundness_contracts_core_contract",
+            "runtime_soundness_checked_acceptance_audited_finalized_core_sound_witness_contract",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_omits(
+        &lean_source,
+        "runtime_soundness_checked_acceptance_audited_soundness_pcs_fri_core_witness_contract",
+        &["RuntimeSoundnessEvidence"],
     );
     lean_binding::assert_theorem_body_contains(
         &lean_source,

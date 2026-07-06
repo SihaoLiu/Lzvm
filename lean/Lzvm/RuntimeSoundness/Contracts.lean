@@ -257,6 +257,45 @@ theorem runtime_soundness_checked_acceptance_audited_binding_pcs_fri_core_witnes
                 (And.intro pcsAndFri.right
                   (And.intro coreContract soundWitness)))))))
 
+set_option linter.style.longLine false in
+theorem runtime_soundness_checked_acceptance_audited_soundness_pcs_fri_core_witness_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeSoundnessValidation system) :
+    forall artifact publicInput proof requiresExternalSource,
+      RuntimeSoundnessCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof
+          requiresExternalSource ->
+        RequiredCryptographicAssumptionStatements assumptions.crypto
+          /\ RequiredSemanticAssumptionStatements assumptions.semantic
+          /\ ProofSystemSound system
+          /\ system.accepts publicInput proof
+          /\ system.transcriptBound publicInput proof
+          /\ system.publicInputBound publicInput proof
+          /\ system.pcsOpeningsValid publicInput proof
+          /\ system.friQueriesValid publicInput proof
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro artifact publicInput proof requiresExternalSource checked
+  have compactContract :=
+    runtime_soundness_checked_acceptance_audited_binding_pcs_fri_core_witness_contract
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      checked
+  have auditedAssumptions :=
+    assumption_bundle_carries_required_evidence assumptions
+  exact
+    And.intro auditedAssumptions.left
+      (And.intro auditedAssumptions.right compactContract.right)
+
 theorem runtime_soundness_checked_acceptance_contracts_core_contract
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
