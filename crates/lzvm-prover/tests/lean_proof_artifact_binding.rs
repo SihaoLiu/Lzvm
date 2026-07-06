@@ -52,6 +52,7 @@ fn lean_proof_artifact_binding_exports_core_contract_projection() {
         &lean_source,
         &[
             "runtime_proof_artifact_binding_checked_acceptance_runtime_accepted",
+            "runtime_proof_artifact_binding_checked_acceptance_runtime_evidence",
             "runtime_proof_artifact_binding_checked_acceptance_container_canonical",
             "runtime_proof_artifact_binding_checked_acceptance_metadata_canonical",
             "runtime_proof_artifact_binding_checked_acceptance_segments_present",
@@ -69,6 +70,7 @@ fn lean_proof_artifact_binding_exports_core_contract_projection() {
             "runtime_proof_artifact_finalized_from_checked_acceptance",
             "runtime_proof_artifact_finalized_structural_obligations",
             "runtime_proof_artifact_finalized_checked_acceptance",
+            "runtime_proof_artifact_binding_checked_acceptance_soundness_obligations",
             "runtime_proof_artifact_binding_checked_acceptance_sound",
             "runtime_proof_artifact_binding_checked_acceptance_full_contract",
             "runtime_proof_artifact_binding_checked_acceptance_verifier_core_contract",
@@ -232,6 +234,35 @@ fn lean_proof_artifact_binding_exports_core_contract_projection() {
         &lean_source,
         "runtime_proof_artifact_finalized_checked_acceptance",
         &["finalized.left"],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_proof_artifact_binding_checked_acceptance_runtime_evidence",
+        &[
+            "RuntimeProofArtifactBindingCheckedAcceptance",
+            "RuntimeArtifactEvidence",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_proof_artifact_binding_checked_acceptance_runtime_evidence",
+        &[
+            "runtime_proof_artifact_binding_checked_acceptance_evidence",
+            "runtime_proof_artifact_binding_evidence_implies_runtime_evidence",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_proof_artifact_binding_checked_acceptance_soundness_obligations",
+        &[
+            "RuntimeProofArtifactBindingCheckedAcceptance",
+            "RuntimeArtifactSoundnessObligations",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_proof_artifact_binding_checked_acceptance_soundness_obligations",
+        &["runtime_proof_artifact_binding_checked_acceptance_obligations"],
     );
     lean_binding::assert_theorem_body_contains(
         &lean_source,
