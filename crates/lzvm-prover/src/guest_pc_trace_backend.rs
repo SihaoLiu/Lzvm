@@ -11763,7 +11763,7 @@ fn load_copy_indirect_register_store_fast_path_parts(
     else {
         return Ok(None);
     };
-    if rd == 0 || rs1 == 0 || !report.precompile_memory_accesses_is_empty() {
+    if rd == 0 || rs1 == 0 || !report.precompile_memory_accesses().is_empty() {
         return Ok(None);
     }
     let ind_width = match kind {
@@ -11809,7 +11809,7 @@ fn load_copy_indirect_no_store_fast_path_parts(
     else {
         return Ok(None);
     };
-    if rd != 0 || rs1 == 0 || !report.precompile_memory_accesses_is_empty() {
+    if rd != 0 || rs1 == 0 || !report.precompile_memory_accesses().is_empty() {
         return Ok(None);
     }
     let ind_width = match kind {
@@ -11854,7 +11854,7 @@ fn load_reserved_indirect_register_store_fast_path_parts(
     let RiscvInstruction::LoadReserved { width, rd, rs1, .. } = report.instruction else {
         return Ok(None);
     };
-    if rd == 0 || rs1 == 0 || !report.precompile_memory_accesses_is_empty() {
+    if rd == 0 || rs1 == 0 || !report.precompile_memory_accesses().is_empty() {
         return Ok(None);
     }
     let Some(instruction_size) = sequential_report_fast_path_instruction_size(row, report)? else {
@@ -11900,7 +11900,7 @@ fn load_sign_extend_indirect_register_store_fast_path_parts(
     else {
         return Ok(None);
     };
-    if rd == 0 || rs1 == 0 || !report.precompile_memory_accesses_is_empty() {
+    if rd == 0 || rs1 == 0 || !report.precompile_memory_accesses().is_empty() {
         return Ok(None);
     }
     let (op, ind_width) = match kind {
@@ -11947,7 +11947,7 @@ fn store_copy_indirect_store_fast_path_parts(
     else {
         return Ok(None);
     };
-    if rs1 == 0 || !report.precompile_memory_accesses_is_empty() {
+    if rs1 == 0 || !report.precompile_memory_accesses().is_empty() {
         return Ok(None);
     }
     let ind_width = match kind {
@@ -11992,7 +11992,7 @@ fn simple_copy_register_store_fast_path_parts(
     row: usize,
     report: &GuestMachineReport,
 ) -> Result<Option<(ZiskMainInstruction, Option<u8>, u8)>, GuestPcTraceBackendError> {
-    if !report.precompile_memory_accesses_is_empty() {
+    if !report.precompile_memory_accesses().is_empty() {
         return Ok(None);
     }
     let Some(instruction_size) = sequential_report_fast_path_instruction_size(row, report)? else {
@@ -12044,7 +12044,7 @@ fn fcall_result_register_store_fast_path_parts(
     };
     if rd == 0
         || !report.memory_accesses.is_empty()
-        || !report.precompile_memory_accesses_is_empty()
+        || !report.precompile_memory_accesses().is_empty()
     {
         return Ok(None);
     }
@@ -12239,7 +12239,7 @@ fn dma_prepare_internal_memory_copy_fast_path_parts(
     };
     if !valid_main_register_index(rs2)
         || !report.memory_accesses.is_empty()
-        || !report.precompile_memory_accesses_is_empty()
+        || !report.precompile_memory_accesses().is_empty()
     {
         return Ok(None);
     }
@@ -12290,7 +12290,7 @@ fn dma_prepare_fast_path_parts(
     }
     if next_instruction.is_none()
         || !report.memory_accesses.is_empty()
-        || !report.precompile_memory_accesses_is_empty()
+        || !report.precompile_memory_accesses().is_empty()
     {
         return Ok(None);
     }
@@ -12541,7 +12541,7 @@ fn pc_relative_fast_path_parts(
         RiscvInstruction::Auipc { rd, immediate } => (rd, immediate),
         _ => return Ok(None),
     };
-    if !report.memory_accesses.is_empty() || !report.precompile_memory_accesses_is_empty() {
+    if !report.memory_accesses.is_empty() || !report.precompile_memory_accesses().is_empty() {
         return Ok(None);
     }
     let Some(instruction_size) = sequential_report_fast_path_instruction_size(row, report)? else {
@@ -12594,7 +12594,7 @@ fn special_no_memory_fast_path_parts(
         } => {}
         _ => return Ok(None),
     }
-    if !report.memory_accesses.is_empty() || !report.precompile_memory_accesses_is_empty() {
+    if !report.memory_accesses.is_empty() || !report.precompile_memory_accesses().is_empty() {
         return Ok(None);
     }
     let Some(instruction_size) = sequential_report_fast_path_instruction_size(row, report)? else {
@@ -12813,7 +12813,7 @@ fn arithmetic_fast_path_parts(
         }
         _ => return Ok(None),
     };
-    if !report.memory_accesses.is_empty() || !report.precompile_memory_accesses_is_empty() {
+    if !report.memory_accesses.is_empty() || !report.precompile_memory_accesses().is_empty() {
         return Ok(None);
     }
     let Some(instruction_size) = sequential_report_fast_path_instruction_size(row, report)? else {
@@ -12942,7 +12942,7 @@ fn branch_fast_path_parts(
         } => (kind, rs1, rs2, offset),
         _ => return Ok(None),
     };
-    if !report.memory_accesses.is_empty() || !report.precompile_memory_accesses_is_empty() {
+    if !report.memory_accesses.is_empty() || !report.precompile_memory_accesses().is_empty() {
         return Ok(None);
     }
     let instruction_size = report_fast_path_instruction_size(row, report)?;
@@ -13012,7 +13012,7 @@ fn jump_fast_path_parts(
         }
         _ => return Ok(None),
     };
-    if !report.memory_accesses.is_empty() || !report.precompile_memory_accesses_is_empty() {
+    if !report.memory_accesses.is_empty() || !report.precompile_memory_accesses().is_empty() {
         return Ok(None);
     }
     let instruction_size = report_fast_path_instruction_size(row, report)?;
