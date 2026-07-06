@@ -86,6 +86,7 @@ fn lean_opening_validation_binding_exports_core_contract_projection() {
             "runtime_fri_opening_checked_acceptance_parser_boundary_contract",
             "runtime_opening_checked_acceptance_all_parser_boundary_contracts",
             "runtime_opening_evidence_implies_external_source_requirement",
+            "runtime_opening_evidence_implies_pcs_and_fri",
             "runtime_opening_checked_acceptance_pcs_and_fri_without_assumptions",
             "runtime_opening_checked_acceptance_bound_pcs_fri_contract",
             "runtime_opening_checked_acceptance_pcs_and_fri",
@@ -739,6 +740,20 @@ fn lean_opening_validation_binding_exports_core_contract_projection() {
         &lean_source,
         "runtime_opening_checked_acceptance_pcs_and_fri_without_assumptions",
         &["AssumptionBundle"],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_opening_evidence_implies_pcs_and_fri",
+        &[
+            "RuntimeOpeningEvidence",
+            "system.pcsOpeningsValid publicInput proof",
+            "system.friQueriesValid publicInput proof",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_opening_evidence_implies_pcs_and_fri",
+        &["exact evidence.right.right.right.right"],
     );
     lean_binding::assert_theorem_prefix_contains(
         &lean_source,
