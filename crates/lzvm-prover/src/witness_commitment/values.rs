@@ -1796,6 +1796,13 @@ impl WitnessStageCompactTreeStorage {
         }
         let retained_leaf_digest_level = &self.retained_leaf_digest_level;
         let retained_parent_checkpoint_level = &self.retained_parent_checkpoint_level;
+        if retained_leaf_digest_level.is_none() {
+            if let Some(retained_parent_checkpoint_level) = retained_parent_checkpoint_level {
+                if retained_parent_checkpoint_level.folded_level_count() == 1 {
+                    return Ok(None);
+                }
+            }
+        }
         prepare_gpu_setup(self.target_bits)
             .map_err(|_| WitnessStageOpeningError::LengthOverflow)?;
         let source_buffer = self.source_device_buffer(source_device)?;
