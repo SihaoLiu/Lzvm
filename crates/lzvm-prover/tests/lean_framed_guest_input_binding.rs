@@ -41,6 +41,7 @@ fn lean_framed_guest_input_binding_exports_soundness_structural_contract() {
             "runtime_framed_guest_input_binding_checked_acceptance_program_image_cache_co_binding",
             "runtime_framed_guest_input_binding_checked_acceptance_concrete_segment_ids_allowed",
             "runtime_framed_guest_input_binding_checked_acceptance_runtime_shape_contract",
+            "runtime_framed_guest_input_binding_checked_acceptance_soundness_contract",
             "runtime_framed_guest_input_binding_checked_acceptance_soundness_and_structural_contract",
             "runtime_framed_guest_input_binding_checked_acceptance_concrete_core_sound_contract",
             "runtime_framed_guest_input_binding_audited_finalized_core_sound_witness_contract",
@@ -49,6 +50,44 @@ fn lean_framed_guest_input_binding_exports_soundness_structural_contract() {
             "runtime_framed_guest_input_binding_audited_finalized_concrete_segment_ids_contract",
         ],
     );
+    for (name, projection, accepted_implies) in [
+        (
+            "runtime_framed_guest_input_binding_checked_acceptance_segment_present",
+            "validation.framedGuestInputProofSegmentPresent",
+            "validation.framedGuestInputAcceptedImpliesProofSegmentPresent",
+        ),
+        (
+            "runtime_framed_guest_input_binding_checked_acceptance_segment_payload_exact",
+            "validation.framedGuestInputProofSegmentPayloadExact",
+            "validation.framedGuestInputAcceptedImpliesProofSegmentPayloadExact",
+        ),
+        (
+            "runtime_framed_guest_input_binding_checked_acceptance_segment_payload_nonempty",
+            "validation.framedGuestInputProofSegmentPayloadNonempty",
+            "validation.framedGuestInputAcceptedImpliesProofSegmentPayloadNonempty",
+        ),
+        (
+            "runtime_framed_guest_input_binding_checked_acceptance_eth_block_co_binding",
+            "validation.framedGuestInputCoBoundWithEthBlock",
+            "validation.framedGuestInputAcceptedImpliesEthBlockCoBinding",
+        ),
+        (
+            "runtime_framed_guest_input_binding_checked_acceptance_program_image_cache_co_binding",
+            "validation.framedGuestInputCoBoundWithProgramImage",
+            "validation.framedGuestInputAcceptedImpliesProgramImageCoBinding",
+        ),
+    ] {
+        lean_binding::assert_theorem_prefix_contains(
+            &lean_source,
+            name,
+            &["RuntimeFramedGuestInputBindingCheckedAcceptance", projection],
+        );
+        lean_binding::assert_theorem_body_contains_identifier(
+            &lean_source,
+            name,
+            accepted_implies,
+        );
+    }
     lean_binding::assert_theorem_prefix_contains(
         &lean_source,
         "runtime_framed_guest_input_binding_checked_acceptance_concrete_segment_ids_allowed",
@@ -92,6 +131,31 @@ fn lean_framed_guest_input_binding_exports_soundness_structural_contract() {
         &lean_source,
         "runtime_framed_guest_input_binding_checked_acceptance_runtime_shape_contract",
         &["AssumptionBundle"],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_framed_guest_input_binding_checked_acceptance_soundness_contract",
+        &[
+            "RuntimeFramedGuestInputBindingCheckedAcceptance",
+            "RuntimeFramedGuestInputBindingSoundnessContract",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_framed_guest_input_binding_checked_acceptance_soundness_contract",
+        &[
+            "runtime_framed_guest_input_binding_checked_acceptance_evidence",
+            "runtime_framed_guest_input_binding_checked_acceptance_eth_block_acceptance",
+            "runtime_framed_guest_input_binding_checked_acceptance_program_image_cache_acceptance",
+            "runtime_eth_block_public_input_binding_checked_acceptance_soundness_contract",
+            "runtime_program_image_cache_binding_checked_acceptance_soundness_contract",
+            "runtime_framed_guest_input_binding_checked_acceptance_sound",
+        ],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &lean_source,
+        "runtime_framed_guest_input_binding_checked_acceptance_soundness_contract",
+        &["runtime_framed_guest_input_binding_checked_acceptance_structural_obligations"],
     );
     lean_binding::assert_theorem_prefix_contains(
         &lean_source,
