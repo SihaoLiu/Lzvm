@@ -197,6 +197,11 @@ impl WitnessStageOpeningWorkTiming {
         self.row_dedup_input_row_count += input_row_count;
         self.row_dedup_unique_row_count += unique_row_count;
         self.row_dedup_elided_row_count += input_row_count - unique_row_count;
+        debug_assert_eq!(
+            self.row_dedup_input_row_count
+                .checked_sub(self.row_dedup_unique_row_count),
+            Some(self.row_dedup_elided_row_count)
+        );
     }
 
     #[cfg_attr(not(feature = "cuda"), allow(dead_code))]
@@ -3863,6 +3868,27 @@ mod tests {
         assert!(use_selected_row_extension(16, 2));
         assert!(!use_selected_row_extension(17, 2));
         assert!(use_selected_row_extension(1, 2));
+    }
+
+    #[test]
+    fn row_dedup_timing_accounting_accumulates_duplicate_groups() {
+        let mut timing = WitnessStageOpeningWorkTiming::default();
+
+        timing.record_row_dedup(4, 4);
+        assert_eq!(timing.row_dedup_input_row_count, 0);
+        assert_eq!(timing.row_dedup_unique_row_count, 0);
+        assert_eq!(timing.row_dedup_elided_row_count, 0);
+
+        timing.record_row_dedup(8, 5);
+        timing.record_row_dedup(6, 2);
+
+        assert_eq!(timing.row_dedup_input_row_count, 14);
+        assert_eq!(timing.row_dedup_unique_row_count, 7);
+        assert_eq!(timing.row_dedup_elided_row_count, 7);
+        assert_eq!(
+            timing.row_dedup_input_row_count,
+            timing.row_dedup_unique_row_count + timing.row_dedup_elided_row_count
+        );
     }
 
     #[test]
