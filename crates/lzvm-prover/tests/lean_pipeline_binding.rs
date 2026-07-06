@@ -264,6 +264,7 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
             "runtime_pipeline_binding_checked_acceptance_audited_binding_pcs_fri_core_witness_contract",
             "runtime_pipeline_binding_checked_acceptance_audited_soundness_pcs_fri_core_witness_contract",
             "runtime_pipeline_binding_checked_acceptance_audited_finalized_core_sound_witness_contract",
+            "runtime_pipeline_binding_checked_acceptance_audited_seeded_core_sound_witness_contract",
             "runtime_pipeline_binding_checked_acceptance_audited_manifest_core_sound_witness_contract",
             "runtime_pipeline_binding_checked_acceptance_audited_segment_ids_contract",
             "runtime_pipeline_binding_checked_acceptance_audited_concrete_segment_ids_contract",
@@ -2287,6 +2288,42 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
             "RuntimePipelineBindingEvidence",
             "runtime_pipeline_binding_required_external_source_verifier_core_contract",
             "runtime_pipeline_binding_required_external_source_sound",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_pipeline_binding_checked_acceptance_audited_seeded_core_sound_witness_contract",
+        &[
+            "RuntimePipelineBindingCheckedAcceptance",
+            "RequiredCryptographicAssumptionStatements assumptions.crypto",
+            "RequiredSemanticAssumptionStatements assumptions.semantic",
+            "validation.queryPlanBindingValidation.queryPlanSeedBindsWitnessTreeDigests",
+            "validation.queryPlanBindingValidation.queryPlanSeededFriOpeningRequirementsChecked",
+            "RuntimeVerifierCoreContract system publicInput proof",
+            "exists witness trace constraints",
+            "system.traceConsistent publicInput proof trace",
+            "system.constraintsSatisfied constraints trace",
+            "system.witnessMatchesTrace witness trace",
+            "SoundWitness system publicInput proof",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_omits(
+        &lean_source,
+        "runtime_pipeline_binding_checked_acceptance_audited_seeded_core_sound_witness_contract",
+        &["RuntimeProofArtifactFinalized", "RuntimePipelineBindingEvidence"],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_pipeline_binding_checked_acceptance_audited_seeded_core_sound_witness_contract",
+        &["runtime_pipeline_binding_checked_acceptance_audited_finalized_core_sound_witness_contract"],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &lean_source,
+        "runtime_pipeline_binding_checked_acceptance_audited_seeded_core_sound_witness_contract",
+        &[
+            "runtime_pipeline_binding_checked_acceptance_verifier_accepts",
+            "accepted_proof_audited_core_execution_and_sound_witness",
+            "runtime_pipeline_binding_checked_acceptance_artifact_finalized",
         ],
     );
     lean_binding::assert_theorem_prefix_contains(
