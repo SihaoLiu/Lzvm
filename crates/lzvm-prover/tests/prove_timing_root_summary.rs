@@ -489,6 +489,70 @@ fn prove_timing_root_summary_reports_opening_external_source_timings() {
 }
 
 #[test]
+fn prove_timing_root_summary_reports_cuda_copy_site_timings() {
+    let input = [
+        "timing_cuda_copy_site_h2d_top_1_copy_from_u64_words_guest_pc_trace_backend_rs_3243_calls=4",
+        "timing_cuda_copy_site_h2d_top_1_copy_from_u64_words_guest_pc_trace_backend_rs_3243_bytes=4096",
+        "timing_cuda_copy_site_h2d_top_1_copy_from_u64_words_guest_pc_trace_backend_rs_3243_max_bytes=2048",
+        "timing_cuda_copy_site_h2d_top_1_copy_from_u64_words_guest_pc_trace_backend_rs_3243_wait_ns=8000000",
+        "timing_cuda_copy_site_h2d_top_1_copy_from_u64_words_guest_pc_trace_backend_rs_3243_max_wait_ns=3000000",
+        "timing_cuda_copy_site_h2d_top_1_copy_from_u64_words_guest_pc_trace_backend_rs_3243_avg_wait_per_call_ns=2000000",
+        "timing_cuda_copy_site_d2h_top_2_to_u64_words_merkle_hash_rs_156_calls=2",
+        "timing_cuda_copy_site_d2h_top_2_to_u64_words_merkle_hash_rs_156_bytes=1024",
+        "timing_cuda_copy_site_d2h_top_2_to_u64_words_merkle_hash_rs_156_max_bytes=512",
+        "timing_cuda_copy_site_d2h_top_2_to_u64_words_merkle_hash_rs_156_wait_ns=6000000",
+        "timing_cuda_copy_site_d2h_top_2_to_u64_words_merkle_hash_rs_156_max_wait_ns=4000000",
+        "timing_cuda_copy_site_d2h_top_2_to_u64_words_merkle_hash_rs_156_avg_wait_per_call_ns=3000000",
+    ];
+    let values = prove_timing_root_summary_values(&input);
+
+    assert_eq!(
+        expect_summary_value(&values, "cuda_copy_site_h2d_top_1_site"),
+        "copy_from_u64_words_guest_pc_trace_backend_rs_3243"
+    );
+    assert_eq!(
+        expect_summary_value(&values, "cuda_copy_site_h2d_top_1_calls"),
+        "4"
+    );
+    assert_eq!(
+        expect_summary_value(&values, "cuda_copy_site_h2d_top_1_bytes"),
+        "4096"
+    );
+    assert_eq!(
+        expect_summary_value(&values, "cuda_copy_site_h2d_top_1_max_bytes"),
+        "2048"
+    );
+    assert_eq!(
+        expect_summary_value(&values, "cuda_copy_site_h2d_top_1_wait_ms"),
+        "8.000"
+    );
+    assert_eq!(
+        expect_summary_value(&values, "cuda_copy_site_h2d_top_1_max_wait_ms"),
+        "3.000"
+    );
+    assert_eq!(
+        expect_summary_value(&values, "cuda_copy_site_h2d_top_1_avg_wait_ms"),
+        "2.000"
+    );
+    assert_eq!(
+        expect_summary_value(&values, "cuda_copy_site_d2h_top_2_site"),
+        "to_u64_words_merkle_hash_rs_156"
+    );
+    assert_eq!(
+        expect_summary_value(&values, "cuda_copy_site_d2h_top_2_calls"),
+        "2"
+    );
+    assert_eq!(
+        expect_summary_value(&values, "cuda_copy_site_d2h_top_2_wait_ms"),
+        "6.000"
+    );
+    assert_eq!(
+        expect_summary_value(&values, "cuda_copy_site_d2h_top_2_avg_wait_ms"),
+        "3.000"
+    );
+}
+
+#[test]
 fn prove_timing_root_summary_reports_opening_descriptor_action_hint_branches() {
     let base = [
         "timing_total_ms=1000",
