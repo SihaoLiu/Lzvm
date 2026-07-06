@@ -5722,6 +5722,8 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "gpu_setup_checked_acceptance_sound",
             "gpu_setup_checked_acceptance_verifier_core_contract",
             "gpu_setup_checked_acceptance_constants_core_and_sound",
+            "gpu_setup_cache_reuse_sound",
+            "gpu_setup_cache_reuse_request_device_sound",
             "gpu_allocation_checked_acceptance_projects_written_contents",
             "gpu_allocation_checked_acceptance_sound",
             "gpu_allocation_checked_acceptance_verifier_core_contract",
@@ -6147,6 +6149,41 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             ],
         );
     }
+    lean_binding::assert_theorem_prefix_contains(
+        &auxiliary_source,
+        "gpu_setup_cache_reuse_sound",
+        &[
+            "GpuSetupCacheCovers state request",
+            "validation.constantsSoundFor state.device state.initializedBits",
+            "validation.constantsSoundFor request.device request.requiredBits",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &auxiliary_source,
+        "gpu_setup_cache_reuse_sound",
+        &[
+            "cases covers",
+            "rw [sameDevice]",
+            "validation.coveredConstantsSound",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &auxiliary_source,
+        "gpu_setup_cache_reuse_request_device_sound",
+        &[
+            "request.device = state.device",
+            "request.requiredBits <= state.initializedBits",
+            "validation.constantsSoundFor request.device request.requiredBits",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &auxiliary_source,
+        "gpu_setup_cache_reuse_request_device_sound",
+        &[
+            "gpu_setup_cache_reuse_sound",
+            "And.intro sameDevice bitCover",
+        ],
+    );
     lean_binding::assert_theorem_prefix_contains(
         &gpu_runtime_source,
         "gpu_temporary_buffer_reuse_checked_acceptance_reuse_core_and_sound",
