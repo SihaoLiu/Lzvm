@@ -26,9 +26,58 @@ fn lean_digest_prefix_binding_exports_core_contract_projection() {
     lean_binding::assert_theorem_declarations(
         &lean_source,
         &[
+            "digest_prefix_round_visible_words_eq_full_state_prefix",
+            "digest_prefix_round_merkle_observation_eq_full_state",
+            "row_major_digest_prefix_evidence_implies_wide_linear_digests",
             "row_major_digest_prefix_checked_acceptance_sound",
             "row_major_digest_prefix_checked_acceptance_verifier_core_contract",
             "row_major_digest_prefix_checked_acceptance_evidence_core_and_sound",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "digest_prefix_round_visible_words_eq_full_state_prefix",
+        &[
+            "evidence : DigestPrefixRoundEvidence α",
+            "DigestPrefixRoundVisibleWords evidence =",
+            "Poseidon2DigestPrefix evidence.fullStateWords",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "digest_prefix_round_visible_words_eq_full_state_prefix",
+        &["evidence.digestWordsMatchFullStatePrefix"],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "digest_prefix_round_merkle_observation_eq_full_state",
+        &[
+            "evidence : DigestPrefixRoundEvidence α",
+            "DigestPrefixMerkleObservation (DigestPrefixRoundVisibleWords evidence)",
+            "FullStateMerkleObservation evidence.fullStateWords",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "digest_prefix_round_merkle_observation_eq_full_state",
+        &["evidence.digestWordsMatchFullStatePrefix"],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "row_major_digest_prefix_evidence_implies_wide_linear_digests",
+        &[
+            "validation : RowMajorDigestPrefixValidation system",
+            "RowMajorDigestPrefixEvidence system validation publicInput proof",
+            "validation.leafValidation.wideLinearDigestsBindRows",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "row_major_digest_prefix_evidence_implies_wide_linear_digests",
+        &[
+            "validation.matchedPrefixImpliesWideLinearDigestsBindRows",
+            "evidence.left",
+            "evidence.right",
         ],
     );
     lean_binding::assert_theorem_body_contains(
