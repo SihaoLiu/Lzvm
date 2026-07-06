@@ -671,6 +671,14 @@ impl GuestMemoryAccessList {
         }
     }
 
+    #[inline(always)]
+    fn precompile_memory_accesses_is_empty(&self) -> bool {
+        match &self.entries {
+            GuestMemoryAccessEntries::Precompile(effects) => effects.memory_accesses.is_empty(),
+            _ => true,
+        }
+    }
+
     fn precompile_result(&self) -> Option<u64> {
         match &self.entries {
             GuestMemoryAccessEntries::Precompile(effects) => effects.result,
@@ -943,6 +951,11 @@ impl GuestMachineReport {
     #[inline(always)]
     pub fn precompile_memory_accesses(&self) -> &[GuestMemoryAccess] {
         self.memory_accesses.precompile_memory_accesses()
+    }
+
+    #[inline(always)]
+    pub(crate) fn precompile_memory_accesses_is_empty(&self) -> bool {
+        self.memory_accesses.precompile_memory_accesses_is_empty()
     }
 
     pub fn precompile_result(&self) -> Option<u64> {
