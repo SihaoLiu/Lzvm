@@ -97,16 +97,21 @@ fn lean_merkle_path_soundness_binds_central_hash_assumption() {
             "nary_merkle_compression_collision_free_of_no_collision",
             "centralized_merkle_compression_collision_free",
             "centralized_nary_merkle_compression_collision_free",
+            "merkle_parent_digest_injective",
             "merkle_path_same_index_implies_index_depth_eq",
             "nary_merkle_path_same_position_implies_index_depth_eq",
+            "nary_merkle_path_same_position_preserves_arity",
+            "nary_merkle_children_current_eq_of_eq",
             "concrete_merkle_path_same_index_binding",
             "concrete_merkle_path_same_index_binding_from_no_collision",
             "concrete_nary_merkle_path_same_position_binding_from_no_collision",
             "nary_merkle_path_root_commits_to_leaf_at_same_position_index_from_no_collision",
             "nary_merkle_path_root_commits_to_leaf_at_same_position_index_from_bundle",
             "verified_concrete_nary_merkle_path_implies_root_commits_to_leaf_at_index_from_no_collision",
+            "verified_concrete_nary_merkle_path_implies_root_commits_to_leaf_at_index_from_assumption",
             "verified_concrete_nary_merkle_path_implies_root_commits_to_leaf_at_index_from_bundle",
             "verified_concrete_nary_merkle_path_implies_root_commits_to_leaf_at_position_from_no_collision",
+            "verified_concrete_nary_merkle_path_implies_root_commits_to_leaf_at_position_from_assumption",
             "verified_concrete_nary_merkle_path_implies_root_commits_to_leaf_at_position_from_bundle",
             "nary_merkle_opening_root_commits_to_leaf_at_same_position_index_from_no_collision",
             "nary_merkle_opening_root_commits_to_leaf_at_same_position_index_from_bundle",
@@ -143,11 +148,14 @@ fn lean_merkle_path_soundness_binds_central_hash_assumption() {
             "merkle_path_same_position_implies_same_index",
             "verified_concrete_merkle_opening_implies_root_commits_to_leaf_at_index",
             "verified_concrete_merkle_path_implies_root_commits_to_leaf_at_position_from_no_collision",
+            "verified_concrete_merkle_path_implies_root_commits_to_leaf_at_position_from_assumption",
             "verified_concrete_merkle_path_implies_root_commits_to_leaf_at_position_from_bundle",
             "verified_concrete_merkle_opening_implies_root_commits_to_leaf_at_position",
             "verified_concrete_merkle_opening_implies_root_commits_to_leaf_at_index_from_no_collision",
+            "verified_concrete_merkle_opening_implies_root_commits_to_leaf_at_index_from_assumption",
             "verified_concrete_merkle_opening_implies_root_commits_to_leaf_at_index_from_bundle",
             "verified_concrete_merkle_opening_implies_root_commits_to_leaf_at_position_from_no_collision",
+            "verified_concrete_merkle_opening_implies_root_commits_to_leaf_at_position_from_assumption",
             "verified_concrete_merkle_opening_implies_root_commits_to_leaf_at_position_from_bundle",
             "merkle_path_layer_to_nary_has_arity_two",
             "merkle_path_to_nary_has_arity_two",
@@ -535,6 +543,23 @@ fn lean_merkle_path_soundness_binds_central_hash_assumption() {
     );
     lean_binding::assert_theorem_prefix_contains(
         &lean_source,
+        "verified_concrete_merkle_path_implies_root_commits_to_leaf_at_position_from_assumption",
+        &[
+            "HashCollisionResistanceAssumption",
+            "CentralizedMerkleCompressionCollisionResistance",
+            "MerklePathRootCommitsToLeafAtPosition",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "verified_concrete_merkle_path_implies_root_commits_to_leaf_at_position_from_assumption",
+        &[
+            "verified_concrete_merkle_path_implies_root_commits_to_leaf_at_position_from_no_collision",
+            "HashCollisionResistanceAssumption.merkle_hash_collision_resistance",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
         "verified_concrete_merkle_path_implies_root_commits_to_leaf_at_index_from_no_collision",
         &[
             "MerkleCompressionNoCollision compress",
@@ -561,11 +586,47 @@ fn lean_merkle_path_soundness_binds_central_hash_assumption() {
     );
     lean_binding::assert_theorem_prefix_contains(
         &lean_source,
+        "verified_concrete_merkle_opening_implies_root_commits_to_leaf_at_index_from_assumption",
+        &[
+            "HashCollisionResistanceAssumption",
+            "CentralizedMerkleCompressionCollisionResistance",
+            "MerklePathOpeningVerifies compress root opening",
+            "MerklePathRootCommitsToLeafAtIndex",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "verified_concrete_merkle_opening_implies_root_commits_to_leaf_at_index_from_assumption",
+        &[
+            "verified_concrete_merkle_opening_implies_root_commits_to_leaf_at_index_from_no_collision",
+            "HashCollisionResistanceAssumption.merkle_hash_collision_resistance",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
         "verified_concrete_merkle_opening_implies_root_commits_to_leaf_at_position",
         &[
             "MerkleCompressionCollisionFree compress",
             "MerklePathOpeningVerifies compress root opening",
             "MerklePathRootCommitsToLeafAtPosition",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "verified_concrete_merkle_opening_implies_root_commits_to_leaf_at_position_from_assumption",
+        &[
+            "HashCollisionResistanceAssumption",
+            "CentralizedMerkleCompressionCollisionResistance",
+            "MerklePathOpeningVerifies compress root opening",
+            "MerklePathRootCommitsToLeafAtPosition",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "verified_concrete_merkle_opening_implies_root_commits_to_leaf_at_position_from_assumption",
+        &[
+            "verified_concrete_merkle_opening_implies_root_commits_to_leaf_at_position_from_no_collision",
+            "HashCollisionResistanceAssumption.merkle_hash_collision_resistance",
         ],
     );
     lean_binding::assert_theorem_prefix_contains(
@@ -577,6 +638,21 @@ fn lean_merkle_path_soundness_binds_central_hash_assumption() {
             "MerklePathVerifies compress root leaf path",
             "MerklePathVerifies compress root otherLeaf otherPath",
         ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "merkle_parent_digest_injective",
+        &[
+            "MerkleCompressionCollisionFree compress",
+            "layer.direction = otherLayer.direction",
+            "MerklePathLayer.parentDigest compress leaf layer",
+            "leaf = otherLeaf",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "merkle_parent_digest_injective",
+        &["collisionFree", "sameParent", "cases sameDirection"],
     );
     lean_binding::assert_theorem_prefix_contains(
         &lean_source,
@@ -619,6 +695,42 @@ fn lean_merkle_path_soundness_binds_central_hash_assumption() {
             "AssumptionBundle system",
             "CentralizedNAryMerkleCompressionCollisionResistance",
             "NAryMerklePathRootCommitsToLeafAtPosition",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "verified_concrete_nary_merkle_path_implies_root_commits_to_leaf_at_index_from_assumption",
+        &[
+            "HashCollisionResistanceAssumption",
+            "CentralizedNAryMerkleCompressionCollisionResistance",
+            "NAryMerklePathVerifies compress root leaf path",
+            "NAryMerklePathRootCommitsToLeafAtIndex",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "verified_concrete_nary_merkle_path_implies_root_commits_to_leaf_at_index_from_assumption",
+        &[
+            "verified_concrete_nary_merkle_path_implies_root_commits_to_leaf_at_index_from_no_collision",
+            "HashCollisionResistanceAssumption.merkle_hash_collision_resistance",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "verified_concrete_nary_merkle_path_implies_root_commits_to_leaf_at_position_from_assumption",
+        &[
+            "HashCollisionResistanceAssumption",
+            "CentralizedNAryMerkleCompressionCollisionResistance",
+            "NAryMerklePathVerifies compress root leaf path",
+            "NAryMerklePathRootCommitsToLeafAtPosition",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "verified_concrete_nary_merkle_path_implies_root_commits_to_leaf_at_position_from_assumption",
+        &[
+            "verified_concrete_nary_merkle_path_implies_root_commits_to_leaf_at_position_from_no_collision",
+            "HashCollisionResistanceAssumption.merkle_hash_collision_resistance",
         ],
     );
     lean_binding::assert_theorem_prefix_contains(
@@ -753,6 +865,38 @@ fn lean_merkle_path_soundness_binds_central_hash_assumption() {
             "NAryMerklePathIndex path = NAryMerklePathIndex otherPath",
             "path.length = otherPath.length",
         ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "nary_merkle_path_same_position_preserves_arity",
+        &[
+            "NAryMerklePathHasArity arity path",
+            "NAryMerklePathSamePosition path otherPath",
+            "NAryMerklePathHasArity arity otherPath",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "nary_merkle_path_same_position_preserves_arity",
+        &[
+            "sameLeft.symm",
+            "sameRight.symm",
+            "NAryMerklePathLayerHasArity",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "nary_merkle_children_current_eq_of_eq",
+        &[
+            "leftSiblings.length = otherLeftSiblings.length",
+            "leftSiblings ++ current :: rightSiblings",
+            "current = otherCurrent",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "nary_merkle_children_current_eq_of_eq",
+        &["List.cons.inj sameChildren", "Nat.succ.inj sameLength"],
     );
     lean_binding::assert_theorem_prefix_contains(
         &lean_source,
