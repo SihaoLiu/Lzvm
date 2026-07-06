@@ -10936,6 +10936,16 @@ impl GuestPcTraceRowMemStepCursor {
             return Ok(());
         }
         let delta = row - self.current_row;
+        if delta == 1 {
+            self.current_base = self
+                .current_base
+                .checked_add(ZISK_MAIN_MEM_STEPS_PER_ROW)
+                .ok_or_else(|| GuestPcTraceBackendError::InvalidPcTraceLayout {
+                    message: "guest PC trace step is too large".to_owned(),
+                })?;
+            self.current_row = row;
+            return Ok(());
+        }
         let row_offset = u64::try_from(delta)
             .ok()
             .and_then(|delta| ZISK_MAIN_MEM_STEPS_PER_ROW.checked_mul(delta))
