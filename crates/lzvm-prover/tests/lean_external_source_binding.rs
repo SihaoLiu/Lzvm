@@ -27,11 +27,67 @@ fn lean_external_source_binding_exports_core_contract_projection() {
     lean_binding::assert_theorem_declarations(
         &lean_source,
         &[
+            "external_source_opening_evidence_provider_transcript_bound",
+            "external_source_opening_evidence_provider_matches_committed_trace",
+            "external_source_opening_evidence_provider_openings_root_bound",
+            "external_source_opening_evidence_implies_pcs_openings",
+            "external_source_opening_requirement_from_evidence",
+            "external_source_opening_requirement_not_required",
+            "external_source_opening_requirement_implies_evidence",
+            "external_source_opening_checked_acceptance_implies_pcs_openings",
             "external_source_opening_checked_acceptance_obligations",
             "external_source_opening_checked_acceptance_sound",
             "external_source_opening_checked_acceptance_verifier_core_contract",
             "external_source_opening_checked_acceptance_evidence_core_and_sound",
         ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "external_source_opening_evidence_provider_transcript_bound",
+        &["exact evidence.left"],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "external_source_opening_evidence_provider_matches_committed_trace",
+        &["exact evidence.right.left"],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "external_source_opening_evidence_provider_openings_root_bound",
+        &["exact evidence.right.right"],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "external_source_opening_evidence_implies_pcs_openings",
+        &[
+            "ExternalSourceOpeningEvidence system validation publicInput proof",
+            "system.pcsOpeningsValid publicInput proof",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "external_source_opening_evidence_implies_pcs_openings",
+        &["validation.providerEvidenceImpliesPcsOpenings"],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "external_source_opening_requirement_from_evidence",
+        &["exact evidence"],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "external_source_opening_requirement_not_required",
+        &["False.elim (notRequired required)"],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "external_source_opening_requirement_implies_evidence",
+        &["exact requirement required"],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "external_source_opening_checked_acceptance_implies_pcs_openings",
+        &["external_source_opening_evidence_implies_pcs_openings"],
     );
     lean_binding::assert_theorem_body_contains(
         &lean_source,
