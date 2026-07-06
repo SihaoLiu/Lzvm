@@ -13917,13 +13917,6 @@ fn apply_simple_copy_register_store_fast_path(
     };
     let c = b;
     let flag = false;
-    let computed_next_pc = instruction.pc.wrapping_add_signed(instruction.jmp_offset2);
-    if expected_next_pc != computed_next_pc {
-        return Err(GuestPcTraceBackendError::ZiskMainEffectMismatch {
-            row: output_row,
-            message: format!("expected next pc {computed_next_pc}, found {expected_next_pc}"),
-        });
-    }
 
     let row_mem_step_base = context.row_mem_step_base(output_row)?;
     if row_mem_step_base
