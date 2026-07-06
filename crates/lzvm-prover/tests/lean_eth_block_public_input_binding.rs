@@ -48,6 +48,9 @@ fn lean_eth_block_public_input_binding_exports_core_contract_projection() {
             "runtime_eth_block_public_input_binding_checked_acceptance_concrete_segment_ids_allowed",
             "runtime_eth_block_public_input_binding_checked_acceptance_sound",
             "runtime_eth_block_public_input_binding_checked_acceptance_verifier_core_contract",
+            "runtime_eth_block_public_input_binding_checked_acceptance_public_input_bound",
+            "runtime_eth_block_public_input_binding_checked_acceptance_public_input_contract",
+            "runtime_eth_block_public_input_binding_checked_acceptance_soundness_contract",
             "runtime_eth_block_public_input_binding_checked_acceptance_structural_obligations",
             "runtime_eth_block_public_input_binding_checked_acceptance_full_contract",
             "runtime_eth_block_public_input_binding_checked_acceptance_evidence_core_and_sound",
@@ -216,6 +219,68 @@ fn lean_eth_block_public_input_binding_exports_core_contract_projection() {
         &lean_source,
         "runtime_eth_block_public_input_binding_checked_acceptance_verifier_core_contract",
         &["runtime_proof_artifact_binding_checked_acceptance_verifier_core_contract"],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_eth_block_public_input_binding_checked_acceptance_public_input_bound",
+        &[
+            "RuntimeEthBlockPublicInputBindingCheckedAcceptance",
+            "system.publicInputBound publicInput proof",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_eth_block_public_input_binding_checked_acceptance_public_input_bound",
+        &[
+            "runtime_eth_block_public_input_binding_checked_acceptance_verifier_core_contract",
+            "coreContract.right.left",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_eth_block_public_input_binding_checked_acceptance_public_input_contract",
+        &[
+            "RuntimeEthBlockPublicInputBindingCheckedAcceptance",
+            "RuntimeEthBlockPublicInputBindingEvidence",
+            "RuntimeProofArtifactBindingEvidence",
+            "RuntimeArtifactEvidence",
+            "system.publicInputBound publicInput proof",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_eth_block_public_input_binding_checked_acceptance_public_input_contract",
+        &[
+            "runtime_eth_block_public_input_binding_checked_acceptance_artifact_evidence_contract",
+            "runtime_eth_block_public_input_binding_checked_acceptance_public_input_bound",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_eth_block_public_input_binding_checked_acceptance_soundness_contract",
+        &[
+            "RuntimeEthBlockPublicInputBindingCheckedAcceptance",
+            "RuntimeEthBlockPublicInputBindingSoundnessContract",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_eth_block_public_input_binding_checked_acceptance_soundness_contract",
+        &[
+            "runtime_eth_block_public_input_binding_checked_acceptance_sound",
+            "runtime_eth_block_public_input_binding_checked_acceptance_artifact_wellformed_contract",
+            "runtime_eth_block_public_input_binding_checked_acceptance_verifier_core_contract",
+            "runtime_proof_artifact_binding_checked_acceptance_runtime_accepted",
+            "runtime_artifact_checked_acceptance_implies_verifier_accepts",
+        ],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &lean_source,
+        "runtime_eth_block_public_input_binding_checked_acceptance_soundness_contract",
+        &[
+            "runtime_eth_block_public_input_binding_checked_acceptance_full_contract",
+            "runtime_eth_block_public_input_binding_checked_acceptance_evidence_core_and_sound",
+        ],
     );
     lean_binding::assert_theorem_body_contains(
         &lean_source,
