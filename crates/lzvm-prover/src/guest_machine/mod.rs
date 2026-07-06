@@ -488,6 +488,10 @@ impl GuestRegisterWriteList {
         }
     }
 
+    pub fn single(&self) -> Option<GuestRegisterWrite> {
+        (self.entry.index != 0).then_some(self.entry)
+    }
+
     pub fn len(&self) -> usize {
         usize::from(self.entry.index != 0)
     }
@@ -3550,11 +3554,13 @@ mod tests {
         let empty = GuestRegisterWriteList::default();
         assert!(empty.is_empty());
         assert_eq!(empty.as_slice(), &[]);
+        assert_eq!(empty.single(), None);
 
         let write = GuestRegisterWrite { index: 3, value: 7 };
         let one = GuestRegisterWriteList::one(write);
         assert_eq!(one.len(), 1);
         assert_eq!(one.as_slice(), &[write]);
+        assert_eq!(one.single(), Some(write));
         assert_eq!(
             std::mem::size_of::<GuestRegisterWriteList>(),
             std::mem::size_of::<GuestRegisterWrite>()

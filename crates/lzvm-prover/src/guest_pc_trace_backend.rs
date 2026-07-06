@@ -13072,7 +13072,7 @@ fn apply_copy_indirect_register_store_fast_path(
         store_index,
         row_mem_step_base + ZISK_MAIN_STORE_MEM_STEP_OFFSET,
     );
-    let [write] = effects.register_writes.as_slice() else {
+    let Some(write) = effects.register_writes.single() else {
         return Err(GuestPcTraceBackendError::ZiskMainEffectMismatch {
             row: output_row,
             message: format!(
@@ -13290,7 +13290,7 @@ fn apply_jump_fast_path(
             } else {
                 c
             };
-            let [write] = effects.register_writes.as_slice() else {
+            let Some(write) = effects.register_writes.single() else {
                 return Err(GuestPcTraceBackendError::ZiskMainEffectMismatch {
                     row: output_row,
                     message: format!(
@@ -13381,7 +13381,7 @@ fn apply_no_memory_fast_path(
         apply_no_memory_fast_path_register_accesses(output_row, state, row_mem_step_base, parts)?;
     match parts.store_index {
         Some(store_index) => {
-            let [write] = effects.register_writes.as_slice() else {
+            let Some(write) = effects.register_writes.single() else {
                 return Err(GuestPcTraceBackendError::ZiskMainEffectMismatch {
                     row: output_row,
                     message: format!(
@@ -13762,7 +13762,7 @@ fn apply_sign_extend_indirect_register_store_fast_path(
         store_index,
         row_mem_step_base + ZISK_MAIN_STORE_MEM_STEP_OFFSET,
     );
-    let [write] = effects.register_writes.as_slice() else {
+    let Some(write) = effects.register_writes.single() else {
         return Err(GuestPcTraceBackendError::ZiskMainEffectMismatch {
             row: output_row,
             message: format!(
@@ -13875,7 +13875,7 @@ fn apply_simple_copy_register_store_fast_path(
         store_index,
         row_mem_step_base + ZISK_MAIN_STORE_MEM_STEP_OFFSET,
     );
-    let [write] = effects.register_writes.as_slice() else {
+    let Some(write) = effects.register_writes.single() else {
         return Err(GuestPcTraceBackendError::ZiskMainEffectMismatch {
             row: output_row,
             message: format!(
@@ -13957,7 +13957,7 @@ fn apply_fcall_result_register_store_fast_path(
             message: "free-call result row reported precompile memory accesses".to_owned(),
         });
     }
-    let [write] = effects.register_writes.as_slice() else {
+    let Some(write) = effects.register_writes.single() else {
         return Err(GuestPcTraceBackendError::ZiskMainEffectMismatch {
             row: output_row,
             message: format!(
@@ -16699,7 +16699,7 @@ fn zisk_main_fcall_result_value(
     rd: u8,
     effects: ZiskMainReportEffects<'_>,
 ) -> Result<u64, GuestPcTraceBackendError> {
-    let [write] = effects.register_writes.as_slice() else {
+    let Some(write) = effects.register_writes.single() else {
         return Err(GuestPcTraceBackendError::ZiskMainEffectMismatch {
             row,
             message: format!(
@@ -17290,7 +17290,7 @@ fn zisk_main_dma_result(
 ) -> Result<(u64, bool), GuestPcTraceBackendError> {
     match instruction.store {
         ZiskMainStore::Register(index) => {
-            let [write] = effects.register_writes.as_slice() else {
+            let Some(write) = effects.register_writes.single() else {
                 return Err(GuestPcTraceBackendError::ZiskMainEffectMismatch {
                     row,
                     message: format!(
@@ -17350,7 +17350,7 @@ fn zisk_main_add256_result(
     match instruction.store {
         ZiskMainStore::None => Ok((result, false)),
         ZiskMainStore::Register(index) => {
-            let [write] = effects.register_writes.as_slice() else {
+            let Some(write) = effects.register_writes.single() else {
                 return Err(GuestPcTraceBackendError::ZiskMainEffectMismatch {
                     row,
                     message: format!(
@@ -17494,7 +17494,7 @@ fn apply_zisk_main_store(
         }
         ZiskMainStore::Register(index) => {
             let store_value = zisk_main_store_value(instruction, c);
-            let [write] = effects.register_writes.as_slice() else {
+            let Some(write) = effects.register_writes.single() else {
                 return Err(GuestPcTraceBackendError::ZiskMainEffectMismatch {
                     row,
                     message: format!(
@@ -17962,7 +17962,7 @@ fn direct_zisk_main_report_boundary_c(
     }
     if let ZiskMainStore::Register(index) = instruction.store {
         let register_writes = report.register_writes();
-        let [write] = register_writes.as_slice() else {
+        let Some(write) = register_writes.single() else {
             return None;
         };
         return (write.index == index).then_some(write.value);
