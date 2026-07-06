@@ -2637,11 +2637,7 @@ fn append_main_device_trace_descriptor(
     descriptors: &mut ZiskMainDeviceTraceDescriptors,
     values: &ZiskMainReportTraceValues,
 ) -> Result<(), GuestPcTraceBackendError> {
-    if descriptors.descriptor_rows >= descriptors.row_count {
-        return Err(GuestPcTraceBackendError::InvalidPcTraceLayout {
-            message: "Zisk Main device trace descriptor rows exceed layout rows".to_owned(),
-        });
-    }
+    debug_assert!(descriptors.descriptor_rows < descriptors.row_count);
     let instruction = &values.instruction;
     let (a_kind, a_payload) = zisk_main_device_trace_source_descriptor(instruction.a);
     let (b_kind, b_payload) = zisk_main_device_trace_source_descriptor(instruction.b);
