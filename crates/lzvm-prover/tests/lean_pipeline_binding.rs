@@ -264,6 +264,7 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
             "runtime_pipeline_binding_checked_acceptance_audited_manifest_query_opening_contract",
             "runtime_pipeline_binding_checked_acceptance_audited_accepts_sound_witness_contract",
             "runtime_pipeline_binding_checked_acceptance_audited_soundness_accepts_contract",
+            "runtime_pipeline_binding_checked_acceptance_audited_full_soundness_contract",
             "runtime_pipeline_binding_checked_acceptance_audited_binding_pcs_fri_core_witness_contract",
             "runtime_pipeline_binding_checked_acceptance_audited_soundness_pcs_fri_core_witness_contract",
             "runtime_pipeline_binding_checked_acceptance_audited_finalized_core_sound_witness_contract",
@@ -1823,6 +1824,35 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
         &[
             "runtime_pipeline_binding_checked_acceptance_audited_accepts_sound_witness_contract",
             "assumption_bundle_carries_required_evidence",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_pipeline_binding_checked_acceptance_audited_full_soundness_contract",
+        &[
+            "RuntimePipelineBindingCheckedAcceptance",
+            "RequiredCryptographicAssumptionStatements assumptions.crypto",
+            "RequiredSemanticAssumptionStatements assumptions.semantic",
+            "ProofSystemSound system",
+            "system.accepts publicInput proof",
+            "RuntimePipelineBindingEvidence",
+            "RuntimeArtifactSoundnessObligations",
+            "RuntimeVerifierCoreContract system publicInput proof",
+            "system.traceConsistent publicInput proof trace",
+            "system.constraintsSatisfied constraints trace",
+            "system.witnessMatchesTrace witness trace",
+            "SoundWitness system publicInput proof",
+            "RuntimeFriFoldTraceIdentityContract",
+            "RuntimeFriFoldQueryPlanOrderContract",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_pipeline_binding_checked_acceptance_audited_full_soundness_contract",
+        &[
+            "assumption_bundle_carries_required_evidence",
+            "abstract_verifier_sound",
+            "runtime_pipeline_binding_checked_acceptance_accepts_full_soundness_contract",
         ],
     );
     assert!(
