@@ -34,6 +34,7 @@ fn lean_required_external_source_binding_exports_core_contract_projection() {
             "runtime_guarded_external_source_required_pcs_and_fri_from_concrete_opening",
             "runtime_guarded_external_source_required_hash_concrete_opening_sound",
             "runtime_guarded_external_source_required_audited_hash_concrete_opening_sound",
+            "runtime_guarded_external_source_required_audited_hash_concrete_opening_sound_with_required_evidence",
         ],
     );
     lean_binding::assert_theorem_body_contains(
@@ -198,6 +199,51 @@ fn lean_required_external_source_binding_exports_core_contract_projection() {
     lean_binding::assert_theorem_body_omits(
         &lean_source,
         "runtime_guarded_external_source_required_audited_hash_concrete_opening_sound",
+        &[
+            "runtime_guarded_external_source_required_hash_concrete_opening_sound",
+            "external_source_opening_evidence_implies_pcs_openings",
+            "providerEvidenceImpliesPcsOpenings",
+            "runtime_artifact_checked_acceptance_evidence",
+            "runtime_artifact_checked_acceptance_implies_verifier_accepts",
+            "abstract_verifier_sound",
+            "runtime_guarded_external_source_required_verifier_core_contract",
+            "sound_witness_implies_verifier_core_contract",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_guarded_external_source_required_audited_hash_concrete_opening_sound_with_required_evidence",
+        &[
+            "AssumptionBundle system",
+            "RuntimeGuardedExternalSourceCheckedAcceptance",
+            "RuntimeOpeningCheckedAcceptance",
+            "RequiredCryptographicAssumptionStatements assumptions.crypto",
+            "RequiredSemanticAssumptionStatements assumptions.semantic",
+            "RuntimeArtifactEvidence",
+            "ExternalSourceOpeningEvidence",
+            "system.pcsOpeningsValid publicInput proof",
+            "system.friQueriesValid publicInput proof",
+            "RuntimeVerifierCoreContract system publicInput proof",
+            "SoundWitness system publicInput proof",
+            "assumptions.crypto.hashCollisionResistance",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_omits(
+        &lean_source,
+        "runtime_guarded_external_source_required_audited_hash_concrete_opening_sound_with_required_evidence",
+        &["HashCollisionResistanceAssumption"],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_guarded_external_source_required_audited_hash_concrete_opening_sound_with_required_evidence",
+        &[
+            "assumption_bundle_carries_required_evidence",
+            "runtime_guarded_external_source_required_audited_hash_concrete_opening_sound",
+        ],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &lean_source,
+        "runtime_guarded_external_source_required_audited_hash_concrete_opening_sound_with_required_evidence",
         &[
             "runtime_guarded_external_source_required_hash_concrete_opening_sound",
             "external_source_opening_evidence_implies_pcs_openings",
