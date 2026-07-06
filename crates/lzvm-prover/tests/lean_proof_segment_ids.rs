@@ -49,7 +49,8 @@ fn lean_proof_segment_ids_track_runtime_allowlist() {
     assert!(
         rust_source.contains(
             "(WITNESS_COMMITMENT_SEGMENT_BASE_ID..PCS_MATERIAL_MANIFEST_SEGMENT_ID).contains(&id)"
-        ) && rust_source.contains("matches!("),
+        ) && rust_source.contains("const FIXED_PROOF_SEGMENT_IDS: &[u32] = &[")
+            && rust_source.contains("FIXED_PROOF_SEGMENT_IDS.contains(&id)"),
         "Rust proof segment ID helper should retain the witness range and fixed-ID allowlist"
     );
 
@@ -82,6 +83,19 @@ fn lean_proof_segment_ids_track_runtime_allowlist() {
         actual_fixed_lean_names, expected_fixed_lean_names,
         "Lean fixed proof segment ID list should exactly match runtime fixed segment IDs"
     );
+
+    let mut actual_fixed_rust_names = rust_fixed_proof_segment_ids(&rust_source);
+    actual_fixed_rust_names.sort_unstable();
+    let mut expected_fixed_rust_names = EXPECTED_SEGMENT_IDS
+        .iter()
+        .skip(1)
+        .map(|expected| expected.rust_name)
+        .collect::<Vec<_>>();
+    expected_fixed_rust_names.sort_unstable();
+    assert_eq!(
+        actual_fixed_rust_names, expected_fixed_rust_names,
+        "Rust fixed proof segment ID list should exactly match runtime fixed segment IDs"
+    );
 }
 
 fn lean_fixed_proof_segment_ids(source: &str) -> Vec<&str> {
@@ -91,6 +105,19 @@ fn lean_fixed_proof_segment_ids(source: &str) -> Vec<&str> {
     let (body, _) = after_def
         .split_once("\ndef IsWitnessCommitmentSegmentId")
         .expect("fixedProofSegmentIds should precede witness segment ID predicate");
+
+    body.split(|ch: char| ch == '[' || ch == ']' || ch == ',' || ch.is_whitespace())
+        .filter(|part| !part.is_empty())
+        .collect()
+}
+
+fn rust_fixed_proof_segment_ids(source: &str) -> Vec<&str> {
+    let (_, after_def) = source
+        .split_once("const FIXED_PROOF_SEGMENT_IDS: &[u32] = &[")
+        .expect("Rust source should define FIXED_PROOF_SEGMENT_IDS");
+    let (body, _) = after_def
+        .split_once("\n];")
+        .expect("FIXED_PROOF_SEGMENT_IDS should close as a slice literal");
 
     body.split(|ch: char| ch == '[' || ch == ']' || ch == ',' || ch.is_whitespace())
         .filter(|part| !part.is_empty())

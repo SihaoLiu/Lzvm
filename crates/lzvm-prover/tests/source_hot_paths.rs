@@ -10624,6 +10624,8 @@ fn lean_query_plan_binding_tracks_runtime_transcript_opening_checks() {
     );
     assert!(
         proof_segment_ids_source.contains("fn is_allowed_proof_segment_id")
+            && proof_segment_ids_source.contains("const FIXED_PROOF_SEGMENT_IDS: &[u32] = &[")
+            && proof_segment_ids_source.contains("FIXED_PROOF_SEGMENT_IDS.contains(&id)")
             && proof_segment_ids_source.contains("WITNESS_COMMITMENT_SEGMENT_BASE_ID")
             && proof_segment_ids_source.contains("PCS_MATERIAL_MANIFEST_SEGMENT_ID")
             && proof_segment_ids_source.contains("PCS_QUERY_PLAN_SEGMENT_ID")

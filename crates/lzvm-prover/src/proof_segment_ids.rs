@@ -17,30 +17,31 @@ use lzvm_artifacts::unit_values_segment::UNIT_VALUES_SEGMENT_ID;
 use lzvm_artifacts::witness_opening_segment::WITNESS_OPENING_SEGMENT_ID;
 use lzvm_artifacts::witness_segment::WITNESS_COMMITMENT_SEGMENT_BASE_ID;
 
+const FIXED_PROOF_SEGMENT_IDS: &[u32] = &[
+    PCS_MATERIAL_MANIFEST_SEGMENT_ID,
+    PCS_QUERY_PLAN_SEGMENT_ID,
+    WITNESS_OPENING_SEGMENT_ID,
+    CONSTANT_OPENING_SEGMENT_ID,
+    PCS_FRI_OPENING_SEGMENT_ID,
+    PCS_QUERY_NONCE_SEGMENT_ID,
+    PCS_EVALUATION_SEGMENT_ID,
+    PCS_PROOF_VALUES_SEGMENT_ID,
+    GROUP_VALUES_SEGMENT_ID,
+    UNIT_VALUES_SEGMENT_ID,
+    PROGRAM_IMAGE_CACHE_SEGMENT_ID,
+    CONTRIBUTION_SEGMENT_ID,
+    CHALLENGE_VALUES_SEGMENT_ID,
+    ETH_BLOCK_INPUT_SEGMENT_ID,
+    TRACE_CONSTRAINT_SEGMENT_ID,
+    FRAMED_GUEST_INPUT_SEGMENT_ID,
+];
+
 pub(crate) fn is_allowed_proof_segment_id(id: u32) -> bool {
     if (WITNESS_COMMITMENT_SEGMENT_BASE_ID..PCS_MATERIAL_MANIFEST_SEGMENT_ID).contains(&id) {
         return true;
     }
 
-    matches!(
-        id,
-        PCS_MATERIAL_MANIFEST_SEGMENT_ID
-            | PCS_QUERY_PLAN_SEGMENT_ID
-            | WITNESS_OPENING_SEGMENT_ID
-            | CONSTANT_OPENING_SEGMENT_ID
-            | PCS_FRI_OPENING_SEGMENT_ID
-            | PCS_QUERY_NONCE_SEGMENT_ID
-            | PCS_EVALUATION_SEGMENT_ID
-            | PCS_PROOF_VALUES_SEGMENT_ID
-            | GROUP_VALUES_SEGMENT_ID
-            | CHALLENGE_VALUES_SEGMENT_ID
-            | UNIT_VALUES_SEGMENT_ID
-            | TRACE_CONSTRAINT_SEGMENT_ID
-            | PROGRAM_IMAGE_CACHE_SEGMENT_ID
-            | CONTRIBUTION_SEGMENT_ID
-            | ETH_BLOCK_INPUT_SEGMENT_ID
-            | FRAMED_GUEST_INPUT_SEGMENT_ID
-    )
+    FIXED_PROOF_SEGMENT_IDS.contains(&id)
 }
 
 pub(crate) fn unexpected_proof_segment_id(segments: &[ProofSegment]) -> Option<u32> {
@@ -69,26 +70,34 @@ mod tests {
 
     #[test]
     fn allows_all_fixed_segment_ids() {
-        for id in [
-            PCS_MATERIAL_MANIFEST_SEGMENT_ID,
-            PCS_QUERY_PLAN_SEGMENT_ID,
-            WITNESS_OPENING_SEGMENT_ID,
-            CONSTANT_OPENING_SEGMENT_ID,
-            PCS_FRI_OPENING_SEGMENT_ID,
-            PCS_QUERY_NONCE_SEGMENT_ID,
-            PCS_EVALUATION_SEGMENT_ID,
-            PCS_PROOF_VALUES_SEGMENT_ID,
-            GROUP_VALUES_SEGMENT_ID,
-            CHALLENGE_VALUES_SEGMENT_ID,
-            UNIT_VALUES_SEGMENT_ID,
-            TRACE_CONSTRAINT_SEGMENT_ID,
-            PROGRAM_IMAGE_CACHE_SEGMENT_ID,
-            CONTRIBUTION_SEGMENT_ID,
-            ETH_BLOCK_INPUT_SEGMENT_ID,
-            FRAMED_GUEST_INPUT_SEGMENT_ID,
-        ] {
-            assert!(is_allowed_proof_segment_id(id), "{id} should be allowed");
+        for id in FIXED_PROOF_SEGMENT_IDS {
+            assert!(is_allowed_proof_segment_id(*id), "{id} should be allowed");
         }
+    }
+
+    #[test]
+    fn fixed_segment_ids_match_artifact_constants() {
+        assert_eq!(
+            FIXED_PROOF_SEGMENT_IDS,
+            &[
+                PCS_MATERIAL_MANIFEST_SEGMENT_ID,
+                PCS_QUERY_PLAN_SEGMENT_ID,
+                WITNESS_OPENING_SEGMENT_ID,
+                CONSTANT_OPENING_SEGMENT_ID,
+                PCS_FRI_OPENING_SEGMENT_ID,
+                PCS_QUERY_NONCE_SEGMENT_ID,
+                PCS_EVALUATION_SEGMENT_ID,
+                PCS_PROOF_VALUES_SEGMENT_ID,
+                GROUP_VALUES_SEGMENT_ID,
+                UNIT_VALUES_SEGMENT_ID,
+                PROGRAM_IMAGE_CACHE_SEGMENT_ID,
+                CONTRIBUTION_SEGMENT_ID,
+                CHALLENGE_VALUES_SEGMENT_ID,
+                ETH_BLOCK_INPUT_SEGMENT_ID,
+                TRACE_CONSTRAINT_SEGMENT_ID,
+                FRAMED_GUEST_INPUT_SEGMENT_ID,
+            ]
+        );
     }
 
     #[test]
