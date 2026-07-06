@@ -10887,6 +10887,16 @@ impl GuestPcTraceRowMemStepCursor {
         if row == self.current_row {
             return Ok(());
         }
+        if self.current_row.checked_add(1) == Some(row) {
+            self.current_base = self
+                .current_base
+                .checked_add(ZISK_MAIN_MEM_STEPS_PER_ROW)
+                .ok_or_else(|| GuestPcTraceBackendError::InvalidPcTraceLayout {
+                    message: "guest PC trace step is too large".to_owned(),
+                })?;
+            self.current_row = row;
+            return Ok(());
+        }
         if row < self.current_row {
             self.current_base =
                 zisk_main_row_mem_step_base_from_segment_base(self.segment_base, row)?;
