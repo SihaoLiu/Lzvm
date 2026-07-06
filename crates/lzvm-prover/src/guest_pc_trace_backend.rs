@@ -2876,21 +2876,21 @@ fn zisk_main_compact_device_trace_descriptor_words(
 #[cfg(feature = "cuda")]
 #[inline(always)]
 fn zisk_main_pack_i32_pair(lhs: i64, rhs: i64) -> Option<u64> {
-    let lhs = i32::try_from(lhs).ok()? as u32;
-    let rhs = i32::try_from(rhs).ok()? as u32;
-    Some(u64::from(lhs) | (u64::from(rhs) << 32))
+    const MIN: i64 = i32::MIN as i64;
+    const MAX: i64 = i32::MAX as i64;
+    if !(MIN..=MAX).contains(&lhs) || !(MIN..=MAX).contains(&rhs) {
+        return None;
+    }
+    Some(u64::from(lhs as i32 as u32) | (u64::from(rhs as i32 as u32) << 32))
 }
 
 #[cfg(feature = "cuda")]
 #[inline(always)]
 fn zisk_main_pack_u32_pair(lhs: u64, rhs: u64) -> Option<u64> {
-    Some(u64::from(zisk_main_pack_u32(lhs)?) | (u64::from(zisk_main_pack_u32(rhs)?) << 32))
-}
-
-#[cfg(feature = "cuda")]
-#[inline(always)]
-fn zisk_main_pack_u32(value: u64) -> Option<u32> {
-    u32::try_from(value).ok()
+    if (lhs | rhs) >> 32 != 0 {
+        return None;
+    }
+    Some(lhs | (rhs << 32))
 }
 
 #[cfg(feature = "cuda")]
