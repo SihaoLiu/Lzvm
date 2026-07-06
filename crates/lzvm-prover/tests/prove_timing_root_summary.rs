@@ -491,12 +491,13 @@ fn prove_timing_root_summary_reports_opening_external_source_timings() {
 #[test]
 fn prove_timing_root_summary_reports_cuda_copy_site_timings() {
     let input = [
+        "timing_guest_device_source_descriptor_upload_bytes=4096",
         "timing_cuda_copy_site_h2d_top_1_copy_from_u64_words_guest_pc_trace_backend_rs_3243_calls=4",
         "timing_cuda_copy_site_h2d_top_1_copy_from_u64_words_guest_pc_trace_backend_rs_3243_bytes=4096",
         "timing_cuda_copy_site_h2d_top_1_copy_from_u64_words_guest_pc_trace_backend_rs_3243_max_bytes=2048",
-        "timing_cuda_copy_site_h2d_top_1_copy_from_u64_words_guest_pc_trace_backend_rs_3243_wait_ns=8000000",
-        "timing_cuda_copy_site_h2d_top_1_copy_from_u64_words_guest_pc_trace_backend_rs_3243_max_wait_ns=3000000",
-        "timing_cuda_copy_site_h2d_top_1_copy_from_u64_words_guest_pc_trace_backend_rs_3243_avg_wait_per_call_ns=2000000",
+        "timing_cuda_copy_site_h2d_top_1_copy_from_u64_words_guest_pc_trace_backend_rs_3243_wait_ns=800000000",
+        "timing_cuda_copy_site_h2d_top_1_copy_from_u64_words_guest_pc_trace_backend_rs_3243_max_wait_ns=300000000",
+        "timing_cuda_copy_site_h2d_top_1_copy_from_u64_words_guest_pc_trace_backend_rs_3243_avg_wait_per_call_ns=200000000",
         "timing_cuda_copy_site_d2h_top_2_to_u64_words_merkle_hash_rs_156_calls=2",
         "timing_cuda_copy_site_d2h_top_2_to_u64_words_merkle_hash_rs_156_bytes=1024",
         "timing_cuda_copy_site_d2h_top_2_to_u64_words_merkle_hash_rs_156_max_bytes=512",
@@ -524,15 +525,19 @@ fn prove_timing_root_summary_reports_cuda_copy_site_timings() {
     );
     assert_eq!(
         expect_summary_value(&values, "cuda_copy_site_h2d_top_1_wait_ms"),
-        "8.000"
+        "800.000"
     );
     assert_eq!(
         expect_summary_value(&values, "cuda_copy_site_h2d_top_1_max_wait_ms"),
-        "3.000"
+        "300.000"
     );
     assert_eq!(
         expect_summary_value(&values, "cuda_copy_site_h2d_top_1_avg_wait_ms"),
-        "2.000"
+        "200.000"
+    );
+    assert_eq!(
+        expect_summary_value(&values, "cuda_copy_site_action_hint"),
+        "descriptor_upload_h2d_top_site"
     );
     assert_eq!(
         expect_summary_value(&values, "cuda_copy_site_d2h_top_2_site"),

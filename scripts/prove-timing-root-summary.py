@@ -1344,6 +1344,7 @@ HEADER = (
     "cuda_host_register_wait_ms,cuda_host_unregister_wait_ms,"
     "cuda_host_registration_total_wait_ms,cuda_h2d_bytes,"
     f"{CUDA_COPY_SITE_HEADER},"
+    "cuda_copy_site_action_hint,"
     "cuda_transfer_action_hint,"
     "data_residency_action_hint,"
     "copy_summary_gpu_residency_hint,copy_summary_h2d_bulk_app_frame_hint,"
@@ -2995,6 +2996,45 @@ def cuda_transfer_action_hint_from_values(values: dict[str, int]) -> str:
         return "batch_or_keep_small_d2h_on_device"
     if h2d_bytes >= CUDA_TRANSFER_BULK_H2D_BYTES_THRESHOLD:
         return "inspect_bulk_h2d_source_uploads"
+    return "none"
+
+
+def copy_site_bytes_close_to(value: int, target: int) -> bool:
+    if value <= 0 or target <= 0:
+        return False
+    tolerance = max(64 * 1024 * 1024, target // 100)
+    return abs(value - target) <= tolerance
+
+
+def cuda_copy_site_action_hint(values: dict[str, int | str]) -> str:
+    h2d_site = str(values.get(cuda_copy_site_site_key("h2d", 1), "none"))
+    h2d_bytes = int(
+        values.get(cuda_copy_site_numeric_key("h2d", 1, "bytes"), 0) or 0
+    )
+    h2d_wait_ms = (
+        int(values.get(cuda_copy_site_numeric_key("h2d", 1, "wait_ns"), 0) or 0)
+        / 1_000_000.0
+    )
+    if h2d_site == "none" or h2d_bytes <= 0:
+        return "none"
+    if h2d_wait_ms < CUDA_TRANSFER_WAIT_MS_THRESHOLD:
+        return "none"
+
+    descriptor_upload_bytes = int(values.get(DESCRIPTOR_UPLOAD_BYTES_KEY, 0) or 0)
+    opening_descriptor_upload_bytes = int(
+        values.get(OPENING_EXTERNAL_SOURCE_DESCRIPTOR_UPLOAD_BYTES_KEY, 0) or 0
+    )
+    descriptor_upload_total_bytes = (
+        descriptor_upload_bytes + opening_descriptor_upload_bytes
+    )
+    if copy_site_bytes_close_to(h2d_bytes, descriptor_upload_total_bytes):
+        return "descriptor_upload_h2d_top_site"
+    if copy_site_bytes_close_to(h2d_bytes, descriptor_upload_bytes):
+        return "guest_descriptor_upload_h2d_top_site"
+    if copy_site_bytes_close_to(h2d_bytes, opening_descriptor_upload_bytes):
+        return "external_descriptor_upload_h2d_top_site"
+    if h2d_bytes >= CUDA_TRANSFER_BULK_H2D_BYTES_THRESHOLD:
+        return "bulk_h2d_top_site"
     return "none"
 
 
@@ -6479,6 +6519,7 @@ def summarize_profile_values(
         trace_pipeline_hint,
     )
     cuda_transfer_hint = cuda_transfer_action_hint_from_values(values)
+    cuda_copy_site_hint = cuda_copy_site_action_hint(values)
     copy_summary_gpu_residency_hint = str(
         values.get(NSYS_COPY_GPU_RESIDENCY_HINT_KEY, "none")
     )
@@ -7006,7 +7047,8 @@ def summarize_profile_values(
         f"{cuda_allocator_no_wait_bypass_bytes},{cuda_allocator_reuse_hint},"
         f"{cuda_host_register_wait_ms:.3f},{cuda_host_unregister_wait_ms:.3f},"
         f"{cuda_host_registration_total_wait_ms:.3f},{cuda_h2d_bytes},"
-        f"{cuda_copy_site_summary_fields(values)},{cuda_transfer_hint},"
+        f"{cuda_copy_site_summary_fields(values)},{cuda_copy_site_hint},"
+        f"{cuda_transfer_hint},"
         f"{data_residency_hint},"
         f"{copy_summary_gpu_residency_hint},{copy_summary_h2d_bulk_app_frame_hint},"
         f"{copy_summary_small_d2h_batching_hint},"
