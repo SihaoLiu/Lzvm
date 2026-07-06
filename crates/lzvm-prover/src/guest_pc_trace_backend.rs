@@ -57,12 +57,11 @@ const ZISK_RAM_ADDRESS: u64 = 0xa000_0000;
 const ZISK_RAM_SIZE: u64 = 0x2000_0000;
 const ZISK_MAIN_REGISTER_START: usize = 1;
 const ZISK_MAIN_REGISTER_COUNT: usize = 31;
-const ZISK_MAIN_REGISTER_START_U8: u8 = ZISK_MAIN_REGISTER_START as u8;
-const ZISK_MAIN_REGISTER_END_U8: u8 = (ZISK_MAIN_REGISTER_START + ZISK_MAIN_REGISTER_COUNT) as u8;
 
 #[inline(always)]
 fn valid_main_register_index(index: u8) -> bool {
-    index >= ZISK_MAIN_REGISTER_START_U8 && index < ZISK_MAIN_REGISTER_END_U8
+    let index = usize::from(index);
+    index >= ZISK_MAIN_REGISTER_START && index < ZISK_MAIN_REGISTER_START + ZISK_MAIN_REGISTER_COUNT
 }
 
 const ZISK_MAIN_RESERVED_MEM_STEPS: u64 = 1;
