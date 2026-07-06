@@ -5733,10 +5733,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "gpu_host_device_copy_round_trip_checked_acceptance_projects_written_contents",
             "gpu_host_device_copy_round_trip_checked_acceptance_sound",
             "gpu_host_device_copy_round_trip_checked_acceptance_verifier_core_contract",
-            concat!(
-                "gpu_host_device_copy_round_trip_checked_acceptance_",
-                "written_contents_core_and_sound"
-            ),
+            "gpu_host_device_copy_round_trip_checked_acceptance_written_contents_core_and_sound",
             "gpu_temporary_buffer_reuse_implies_same_request",
             "gpu_temporary_buffer_reuse_implies_pending_reads_complete",
             "gpu_temporary_buffer_reuse_checked_acceptance_projects_same_request",
@@ -5793,23 +5790,13 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "guest_pc_trace_large_gpu_gate_checked_acceptance_allows_large_iff_runtime_memory",
             "guest_pc_trace_large_gpu_gate_checked_acceptance_allows_large_iff_backend_and_observed_floor",
             "guest_pc_trace_large_gpu_gate_checked_acceptance_requires_runtime_memory_for_large_allowed",
+            "guest_pc_trace_traceless_commitment_input_decision_default_enabled",
+            "guest_pc_trace_traceless_segment_output_decision_default_enabled",
             "guest_pc_trace_cross_root_materialization_checked_acceptance_projects_decision",
-            concat!(
-                "guest_pc_trace_cross_root_materialization_decision_",
-                "default_enabled_when_supported"
-            ),
-            concat!(
-                "guest_pc_trace_cross_root_materialization_decision_",
-                "disabled_when_unsupported"
-            ),
-            concat!(
-                "guest_pc_trace_cross_root_materialization_checked_acceptance_",
-                "projects_default_enabled"
-            ),
-            concat!(
-                "guest_pc_trace_cross_root_materialization_checked_acceptance_",
-                "projects_disabled"
-            ),
+            "guest_pc_trace_cross_root_materialization_decision_default_enabled_when_supported",
+            "guest_pc_trace_cross_root_materialization_decision_disabled_when_unsupported",
+            "guest_pc_trace_cross_root_materialization_checked_acceptance_projects_default_enabled",
+            "guest_pc_trace_cross_root_materialization_checked_acceptance_projects_disabled",
             "guest_pc_trace_cross_root_materialization_checked_acceptance_sound",
             concat!(
                 "guest_pc_trace_cross_root_materialization_checked_acceptance_",
@@ -5830,50 +5817,20 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "guest_pc_trace_parallel_lower_work_units_keeps_replay_only_separate",
             "guest_pc_trace_parallel_lower_work_units_keeps_replay_snapshot_separate",
             "guest_pc_trace_parallel_lower_work_units_selects_parallel_lower_only",
-            concat!(
-                "guest_pc_trace_parallel_lower_checked_acceptance_",
-                "explicit_selects_parallel_lower"
-            ),
-            concat!(
-                "guest_pc_trace_parallel_lower_checked_acceptance_work_units_",
-                "selects_parallel_lower"
-            ),
-            concat!(
-                "guest_pc_trace_parallel_lower_checked_acceptance_",
-                "replay_only_selects_replay_only"
-            ),
-            concat!(
-                "guest_pc_trace_parallel_lower_checked_acceptance_",
-                "replay_only_selects_replay_snapshot"
-            ),
-            concat!(
-                "guest_pc_trace_parallel_lower_checked_acceptance_",
-                "replay_snapshot_selects_replay_snapshot"
-            ),
-            concat!(
-                "guest_pc_trace_parallel_lower_checked_acceptance_work_units_",
-                "keeps_replay_only_separate"
-            ),
-            concat!(
-                "guest_pc_trace_parallel_lower_checked_acceptance_work_units_",
-                "keeps_replay_snapshot_separate"
-            ),
-            concat!(
-                "guest_pc_trace_parallel_lower_checked_acceptance_work_units_",
-                "selects_parallel_lower_only"
-            ),
+            "guest_pc_trace_parallel_lower_checked_acceptance_explicit_selects_parallel_lower",
+            "guest_pc_trace_parallel_lower_checked_acceptance_work_units_selects_parallel_lower",
+            "guest_pc_trace_parallel_lower_checked_acceptance_replay_only_selects_replay_only",
+            "guest_pc_trace_parallel_lower_checked_acceptance_replay_only_selects_replay_snapshot",
+            "guest_pc_trace_parallel_lower_checked_acceptance_replay_snapshot_selects_replay_snapshot",
+            "guest_pc_trace_parallel_lower_checked_acceptance_work_units_keeps_replay_only_separate",
+            "guest_pc_trace_parallel_lower_checked_acceptance_work_units_keeps_replay_snapshot_separate",
+            "guest_pc_trace_parallel_lower_checked_acceptance_work_units_selects_parallel_lower_only",
             "guest_pc_trace_parallel_lower_checked_acceptance_projects_decision",
             "guest_pc_trace_parallel_lower_checked_acceptance_sound",
             "guest_pc_trace_parallel_lower_checked_acceptance_verifier_core_contract",
             "guest_pc_trace_parallel_lower_checked_acceptance_core_and_sound",
-            concat!(
-                "guest_pc_trace_descriptor_buffer_retention_",
-                "default_disabled_for_parallel_lower"
-            ),
-            concat!(
-                "guest_pc_trace_descriptor_buffer_retention_",
-                "explicit_override_matches"
-            ),
+            "guest_pc_trace_descriptor_buffer_retention_default_disabled_for_parallel_lower",
+            "guest_pc_trace_descriptor_buffer_retention_explicit_override_matches",
             "guest_pc_trace_commit_mode_descriptor_retention_matches",
             "guest_pc_trace_commit_mode_disabled_root_window_is_one",
             concat!(
