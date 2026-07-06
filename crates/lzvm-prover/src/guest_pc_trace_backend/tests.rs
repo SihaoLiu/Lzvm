@@ -6193,15 +6193,44 @@ fn runner_streaming_device_material_matches_segment_lowering() {
     )
     .expect("runner streaming material should build")
     .expect("layout should support runner streaming material");
-    std::fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 
     assert_eq!(streamed.slice.trace_rows, layout.row_count());
+    assert!(streamed.slice.reports.is_empty());
+
+    let mut reference_segments = Vec::new();
+    produce_guest_pc_trace_pending_slices(
+        32,
+        WitnessComputeContext {
+            guest_image: Some(&guest_image),
+            guest_image_info: Some(&guest_image_info),
+            trace_layout: Some(&layout),
+        },
+        &[],
+        layout.row_count(),
+        |segment| {
+            reference_segments.push(segment);
+            Ok(())
+        },
+    )
+    .expect("reference pending slices should produce");
+    std::fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+    let reference = reference_segments
+        .iter()
+        .find(|segment| segment.trace_instance_index == 0)
+        .expect("reference segment should exist");
+    assert_eq!(streamed.slice.report_count, reference.report_count);
+    assert_eq!(streamed.terminal_pc, reference.terminal_pc);
+    assert_eq!(
+        streamed.lookahead_instruction,
+        reference.lookahead_instruction
+    );
+
     let host = build_layout_zisk_main_trace_segment(
         &layout,
-        &streamed.slice.reports,
-        streamed.terminal_pc,
+        &reference.reports,
+        reference.terminal_pc,
         &seed.initial_state,
-        streamed.lookahead_instruction,
+        reference.lookahead_instruction,
         segment,
         None,
     )
@@ -6211,10 +6240,10 @@ fn runner_streaming_device_material_matches_segment_lowering() {
 
     let expected_seed = advance_zisk_main_segment_seed(
         &layout,
-        &streamed.slice.reports,
-        streamed.terminal_pc,
+        &reference.reports,
+        reference.terminal_pc,
         &seed,
-        streamed.lookahead_instruction,
+        reference.lookahead_instruction,
         segment,
     )
     .expect("reference seed should advance")

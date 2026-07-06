@@ -12211,6 +12211,50 @@ fn guest_pc_trace_segments_report_buffer_capacity_shape() {
 }
 
 #[test]
+fn guest_pc_trace_streaming_device_runner_elides_report_storage() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let source_path = crate_root.join("src/guest_pc_trace_backend.rs");
+    let source = std::fs::read_to_string(&source_path).expect("guest PC trace source should read");
+
+    let runner_body = function_body(
+        &source,
+        "fn run_guest_pc_trace_segment_slice_with_streaming_device_material",
+        "fn push_guest_pc_trace_streaming_device_report",
+    );
+    assert!(
+        runner_body
+            .contains("let mut reports = GuestPcTraceStreamingDeviceReportCount::default();")
+            && !runner_body.contains("let mut reports = Vec::new();")
+            && runner_body.contains("reports.len(), advanced.shape")
+            && runner_body.contains("&mut reports"),
+        "streaming device runner should count reports without retaining the full report buffer"
+    );
+
+    let push_body = function_body(
+        &source,
+        "fn push_guest_pc_trace_streaming_device_report",
+        "fn finish_guest_pc_trace_streaming_device_segment",
+    );
+    assert!(
+        push_body.contains("reports.increment()?") && !push_body.contains("reports.push(pending)"),
+        "streaming device report feeder should advance only the report counter"
+    );
+
+    let finish_body = function_body(
+        &source,
+        "fn finish_guest_pc_trace_streaming_device_segment",
+        "struct GuestPcTraceSegmentSliceFinish",
+    );
+    assert!(
+        finish_body.contains("let report_count = reports.len();")
+            && finish_body.contains("report_capacity: 0")
+            && finish_body.contains("reports: Vec::new()")
+            && !finish_body.contains("reports.capacity()"),
+        "streaming device finish should return an elided report slice"
+    );
+}
+
+#[test]
 fn guest_pc_trace_streaming_discovery_lower_reuses_replay_base_memory() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let source_path = crate_root.join("src/guest_pc_trace_backend.rs");

@@ -4438,7 +4438,7 @@ fn run_guest_pc_trace_segment_slice_with_streaming_device_material(
     };
 
     let timing_config = ZiskMainTraceLowerTimingConfig::disabled();
-    let mut reports = Vec::new();
+    let mut reports = GuestPcTraceStreamingDeviceReportCount::default();
     let mut pending_report = None;
     let mut last_report_shape = None;
     let mut next_report_index = 0_usize;
@@ -4592,7 +4592,7 @@ fn run_guest_pc_trace_segment_slice_with_streaming_device_material(
 #[allow(dead_code)]
 fn push_guest_pc_trace_streaming_device_report(
     builder: &mut ZiskMainStreamingDeviceSegmentBuilder,
-    reports: &mut Vec<GuestMachineReport>,
+    reports: &mut GuestPcTraceStreamingDeviceReportCount,
     pending_report: &mut Option<GuestMachineReport>,
     next_report_index: &mut usize,
     timing_config: ZiskMainTraceLowerTimingConfig,
@@ -4609,10 +4609,32 @@ fn push_guest_pc_trace_streaming_device_report(
             None,
         )?;
         timing_config.advance_report_index(next_report_index)?;
-        reports.push(pending);
+        reports.increment()?;
     }
     *pending_report = Some(report);
     Ok(())
+}
+
+#[cfg(feature = "cuda")]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+struct GuestPcTraceStreamingDeviceReportCount {
+    count: usize,
+}
+
+#[cfg(feature = "cuda")]
+impl GuestPcTraceStreamingDeviceReportCount {
+    fn len(self) -> usize {
+        self.count
+    }
+
+    fn increment(&mut self) -> Result<(), GuestPcTraceBackendError> {
+        self.count = self.count.checked_add(1).ok_or_else(|| {
+            GuestPcTraceBackendError::InvalidPcTraceLayout {
+                message: "guest PC trace report count overflow".to_owned(),
+            }
+        })?;
+        Ok(())
+    }
 }
 
 #[cfg(feature = "cuda")]
@@ -4620,7 +4642,7 @@ fn push_guest_pc_trace_streaming_device_report(
 #[allow(clippy::too_many_arguments)]
 fn finish_guest_pc_trace_streaming_device_segment(
     mut builder: ZiskMainStreamingDeviceSegmentBuilder,
-    mut reports: Vec<GuestMachineReport>,
+    mut reports: GuestPcTraceStreamingDeviceReportCount,
     pending_report: &mut Option<GuestMachineReport>,
     next_report_index: &mut usize,
     timing_config: ZiskMainTraceLowerTimingConfig,
@@ -4641,9 +4663,8 @@ fn finish_guest_pc_trace_streaming_device_segment(
             None,
         )?;
         timing_config.advance_report_index(next_report_index)?;
-        reports.push(pending);
+        reports.increment()?;
     }
-    let report_capacity = reports.capacity();
     let report_count = reports.len();
     let device_build = builder.finish(terminal_pc, None)?;
     let next_seed = ZiskMainSegmentSeed {
@@ -4656,9 +4677,9 @@ fn finish_guest_pc_trace_streaming_device_segment(
             trace_rows,
             status,
             report_count,
-            report_capacity,
+            report_capacity: 0,
             last_report_shape,
-            reports,
+            reports: Vec::new(),
         },
         terminal_pc,
         lookahead_instruction,
