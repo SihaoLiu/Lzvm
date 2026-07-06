@@ -42,10 +42,12 @@ fn lean_conformance_binding_exports_core_contract_projection() {
             "runtime_guest_report_storage_evidence_precompile_memory_accesses",
             "runtime_guest_report_storage_evidence_precompile_result",
             "runtime_guest_report_storage_evidence_logical_views",
+            "runtime_conformance_agreement_evidence_iff",
             "runtime_artifact_checked_acceptance_sound",
             "runtime_artifact_checked_acceptance_verifier_core_contract",
             "runtime_artifact_checked_acceptance_evidence_core_and_sound",
             "runtime_artifact_checked_acceptance_audited_sound",
+            "runtime_conformance_agreement_checked_acceptance_sound",
             "runtime_conformance_agreement_checked_acceptance_audited_sound",
         ],
     );
@@ -142,6 +144,43 @@ fn lean_conformance_binding_exports_core_contract_projection() {
         "runtime_artifact_checked_acceptance_audited_sound",
         &[
             "assumption_bundle_carries_required_evidence",
+            "runtime_artifact_checked_acceptance_sound",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_conformance_agreement_evidence_iff",
+        &[
+            "RuntimeConformanceValidationAgreement left right",
+            "RuntimeArtifactEvidence system left artifact publicInput proof <->",
+            "RuntimeArtifactEvidence system right artifact publicInput proof",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_conformance_agreement_evidence_iff",
+        &[
+            "(agreement.right.left artifact publicInput proof).mp evidence.left",
+            "(agreement.right.right artifact publicInput proof).mp evidence.right",
+            "(agreement.right.left artifact publicInput proof).mpr evidence.left",
+            "(agreement.right.right artifact publicInput proof).mpr evidence.right",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_conformance_agreement_checked_acceptance_sound",
+        &[
+            "RuntimeConformanceValidationAgreement left right",
+            "RuntimeArtifactCheckedAcceptance system left artifact publicInput proof",
+            "RuntimeArtifactSoundnessObligations",
+            "SoundWitness system publicInput proof",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_conformance_agreement_checked_acceptance_sound",
+        &[
+            "runtime_conformance_agreement_checked_acceptance_iff",
             "runtime_artifact_checked_acceptance_sound",
         ],
     );
