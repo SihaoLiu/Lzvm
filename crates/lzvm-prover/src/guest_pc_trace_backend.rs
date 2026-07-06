@@ -13677,23 +13677,11 @@ fn no_memory_fast_path_source_value(
     expected_index: Option<u8>,
     state: &ZiskMainTraceState,
 ) -> Result<u64, GuestPcTraceBackendError> {
-    match source {
-        ZiskMainSource::Immediate(value) => {
-            if expected_index.is_none() {
-                Ok(value)
-            } else {
-                Err(GuestPcTraceBackendError::UnsupportedZiskMainSource { row })
-            }
-        }
-        ZiskMainSource::LastC => {
-            if expected_index.is_none() {
-                Ok(state.last_c)
-            } else {
-                Err(GuestPcTraceBackendError::UnsupportedZiskMainSource { row })
-            }
-        }
-        ZiskMainSource::Register(index) => {
-            if expected_index != Some(index) || !valid_main_register_index(index) {
+    match (source, expected_index) {
+        (ZiskMainSource::Immediate(value), None) => Ok(value),
+        (ZiskMainSource::LastC, None) => Ok(state.last_c),
+        (ZiskMainSource::Register(index), Some(expected)) if index == expected => {
+            if !valid_main_register_index(index) {
                 return Err(GuestPcTraceBackendError::UnsupportedZiskMainSource { row });
             }
             Ok(state.registers[usize::from(index)])
