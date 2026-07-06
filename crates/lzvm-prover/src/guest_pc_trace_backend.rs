@@ -13025,23 +13025,13 @@ fn apply_copy_indirect_register_store_fast_path(
     let byte_len = usize::try_from(instruction.ind_width)
         .map_err(|_| GuestPcTraceBackendError::UnsupportedZiskMainSource { row: output_row })?;
     let a = state.registers[usize::from(a_index)];
-    let b = ordered_memory_access_value(
+    let b = single_memory_access_value(
         output_row,
         effects,
-        0,
         GuestMemoryAccessKind::Read,
         a.wrapping_add_signed(b_offset),
         byte_len,
     )?;
-    if effects.memory_accesses.len() != 1 {
-        return Err(GuestPcTraceBackendError::ZiskMainEffectMismatch {
-            row: output_row,
-            message: format!(
-                "expected 1 memory accesses, found {}",
-                effects.memory_accesses.len()
-            ),
-        });
-    }
     let c = b;
     let flag = false;
     let computed_next_pc = instruction.pc.wrapping_add_signed(instruction.jmp_offset2);
@@ -13146,23 +13136,13 @@ fn apply_copy_indirect_no_store_fast_path(
     }
     let byte_len = usize::from(width);
     let a = state.registers[usize::from(a_index)];
-    let b = ordered_memory_access_value(
+    let b = single_memory_access_value(
         output_row,
         effects,
-        0,
         GuestMemoryAccessKind::Read,
         a.wrapping_add_signed(b_offset),
         byte_len,
     )?;
-    if effects.memory_accesses.len() != 1 {
-        return Err(GuestPcTraceBackendError::ZiskMainEffectMismatch {
-            row: output_row,
-            message: format!(
-                "expected 1 memory accesses, found {}",
-                effects.memory_accesses.len()
-            ),
-        });
-    }
     if !effects.precompile_memory_accesses.is_empty() {
         return Err(GuestPcTraceBackendError::ZiskMainEffectMismatch {
             row: output_row,
@@ -13710,23 +13690,13 @@ fn apply_sign_extend_indirect_register_store_fast_path(
     let byte_len = usize::try_from(instruction.ind_width)
         .map_err(|_| GuestPcTraceBackendError::UnsupportedZiskMainSource { row: output_row })?;
     let a = state.registers[usize::from(a_index)];
-    let b = ordered_memory_access_value(
+    let b = single_memory_access_value(
         output_row,
         effects,
-        0,
         GuestMemoryAccessKind::Read,
         a.wrapping_add_signed(b_offset),
         byte_len,
     )?;
-    if effects.memory_accesses.len() != 1 {
-        return Err(GuestPcTraceBackendError::ZiskMainEffectMismatch {
-            row: output_row,
-            message: format!(
-                "expected 1 memory accesses, found {}",
-                effects.memory_accesses.len()
-            ),
-        });
-    }
     let c = match instruction.op {
         ZiskMainOp::SignExtendB => (b as i8) as u64,
         ZiskMainOp::SignExtendH => (b as i16) as u64,
@@ -16715,6 +16685,27 @@ fn zisk_main_fcall_result_value(
         });
     }
     Ok(write.value)
+}
+
+#[inline(always)]
+fn single_memory_access_value(
+    row: usize,
+    effects: ZiskMainReportEffects<'_>,
+    kind: GuestMemoryAccessKind,
+    address: u64,
+    byte_len: usize,
+) -> Result<u64, GuestPcTraceBackendError> {
+    let [access] = effects.memory_accesses else {
+        return Err(GuestPcTraceBackendError::ZiskMainEffectMismatch {
+            row,
+            message: format!(
+                "expected 1 memory accesses, found {}",
+                effects.memory_accesses.len()
+            ),
+        });
+    };
+    validate_memory_access_fields(row, access, kind, address, byte_len, access.value)?;
+    Ok(access.value)
 }
 
 #[inline(always)]
