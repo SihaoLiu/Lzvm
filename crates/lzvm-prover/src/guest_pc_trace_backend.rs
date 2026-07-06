@@ -11152,15 +11152,13 @@ fn validate_and_apply_zisk_main_report(
     validate_main_report_row_capacity(row, 1, context.row_count)?;
     let count_main_report_generic_fallback = !detail_timing && !shape_timing;
     let mut next_instruction_cache = None;
-    let mut cached_next_instruction = || {
-        if next_instruction_cache.is_none() {
-            next_instruction_cache = Some(next_instruction());
-        }
-        next_instruction_cache.flatten()
-    };
     if count_main_report_generic_fallback {
         let dma_prepare_lookahead = match report.instruction {
-            RiscvInstruction::ZiskDmaPrepare { .. } => cached_next_instruction(),
+            RiscvInstruction::ZiskDmaPrepare { .. } => {
+                let lookahead = next_instruction();
+                next_instruction_cache = Some(lookahead);
+                lookahead
+            }
             _ => None,
         };
         if let Some(fast_path) = report_level_fast_path_parts(row, report, dma_prepare_lookahead)? {
@@ -11405,6 +11403,12 @@ fn validate_and_apply_zisk_main_report(
         }
     }
     let lowering_started = detail_duration_started(&timing, detail_timing);
+    let mut cached_next_instruction = || {
+        if next_instruction_cache.is_none() {
+            next_instruction_cache = Some(next_instruction());
+        }
+        next_instruction_cache.flatten()
+    };
     let lowered_row = lower_single_zisk_main_report_row(row, report, &mut cached_next_instruction)?;
     if count_main_report_generic_fallback {
         if let Some(timing) = timing.as_mut() {
