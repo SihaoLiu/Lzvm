@@ -1229,6 +1229,13 @@ def run_batch(args: argparse.Namespace) -> Path:
         root,
         "--path",
     )
+    summary_output_path = requested_summary_output_path(args.summary, root)
+    if (
+        summary_output_path is not None
+        and summary_output_path.resolve(strict=False)
+        == improve_log_path.resolve(strict=False)
+    ):
+        raise SystemExit("--summary CSV output must not match --path improvement log")
     batch_dir = work_dir / batch_dir_name()
     batch_dir.mkdir(parents=True, exist_ok=False)
     batch_json_path = batch_dir / "batch.json"
