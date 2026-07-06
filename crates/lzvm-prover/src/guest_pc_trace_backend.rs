@@ -283,7 +283,6 @@ pub(crate) struct GuestPcTraceStreamTiming {
     trace_report_source_last_c_read_count: usize,
     trace_copy_source_memory_read_count: usize,
     trace_copy_source_indirect_read_count: usize,
-    trace_main_report_fast_path_count: usize,
     trace_main_report_generic_fallback_count: usize,
     trace_main_report_fcall_result_fast_path_count: usize,
     trace_main_report_load_copy_fast_path_count: usize,
@@ -484,7 +483,6 @@ impl GuestPcTraceStreamTiming {
         self.trace_report_source_last_c_read_count += other.trace_report_source_last_c_read_count;
         self.trace_copy_source_memory_read_count += other.trace_copy_source_memory_read_count;
         self.trace_copy_source_indirect_read_count += other.trace_copy_source_indirect_read_count;
-        self.trace_main_report_fast_path_count += other.trace_main_report_fast_path_count;
         self.trace_main_report_generic_fallback_count +=
             other.trace_main_report_generic_fallback_count;
         self.trace_main_report_fcall_result_fast_path_count +=
@@ -955,37 +953,30 @@ impl GuestPcTraceStreamTiming {
     }
 
     fn record_main_report_fcall_result_fast_path(&mut self) {
-        self.trace_main_report_fast_path_count += 1;
         self.trace_main_report_fcall_result_fast_path_count += 1;
     }
 
     fn record_main_report_load_copy_fast_path(&mut self) {
-        self.trace_main_report_fast_path_count += 1;
         self.trace_main_report_load_copy_fast_path_count += 1;
     }
 
     fn record_main_report_load_sign_extend_fast_path(&mut self) {
-        self.trace_main_report_fast_path_count += 1;
         self.trace_main_report_load_sign_extend_fast_path_count += 1;
     }
 
     fn record_main_report_no_memory_fast_path(&mut self) {
-        self.trace_main_report_fast_path_count += 1;
         self.trace_main_report_no_memory_fast_path_count += 1;
     }
 
     fn record_main_report_store_copy_fast_path(&mut self) {
-        self.trace_main_report_fast_path_count += 1;
         self.trace_main_report_store_copy_fast_path_count += 1;
     }
 
     fn record_main_report_simple_copy_fast_path(&mut self) {
-        self.trace_main_report_fast_path_count += 1;
         self.trace_main_report_simple_copy_fast_path_count += 1;
     }
 
     fn record_main_report_jump_fast_path(&mut self) {
-        self.trace_main_report_fast_path_count += 1;
         self.trace_main_report_jump_fast_path_count += 1;
     }
 
@@ -1281,7 +1272,13 @@ impl GuestPcTraceStreamTiming {
     }
 
     pub fn trace_main_report_fast_path_count(&self) -> usize {
-        self.trace_main_report_fast_path_count
+        self.trace_main_report_fcall_result_fast_path_count
+            + self.trace_main_report_load_copy_fast_path_count
+            + self.trace_main_report_load_sign_extend_fast_path_count
+            + self.trace_main_report_no_memory_fast_path_count
+            + self.trace_main_report_store_copy_fast_path_count
+            + self.trace_main_report_simple_copy_fast_path_count
+            + self.trace_main_report_jump_fast_path_count
     }
 
     pub fn trace_main_report_generic_fallback_count(&self) -> usize {
