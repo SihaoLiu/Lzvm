@@ -83,6 +83,7 @@ fn lean_runtime_soundness_binding_exports_core_contract_projection() {
             "runtime_soundness_checked_acceptance_execution_obligations",
             "runtime_soundness_checked_acceptance_audited_soundness_obligations",
             "runtime_soundness_checked_acceptance_audited_core_contract",
+            "runtime_soundness_checked_acceptance_audited_soundness_core_contract",
             "runtime_soundness_checked_acceptance_verifier_accepts",
             "runtime_soundness_checked_acceptance_accepts_core_sound_witness",
             "runtime_soundness_checked_acceptance_core_and_execution_obligations",
@@ -658,6 +659,30 @@ fn lean_runtime_soundness_binding_exports_core_contract_projection() {
     lean_binding::assert_theorem_body_omits(
         &lean_source,
         "runtime_soundness_checked_acceptance_audited_core_contract",
+        &["sound_witness_implies_verifier_core_contract"],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_soundness_checked_acceptance_audited_soundness_core_contract",
+        &[
+            "RequiredCryptographicAssumptionStatements assumptions.crypto",
+            "RequiredSemanticAssumptionStatements assumptions.semantic",
+            "RuntimeSoundnessEvidence",
+            "RuntimeVerifierCoreContract system publicInput proof",
+            "SoundWitness system publicInput proof",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_soundness_checked_acceptance_audited_soundness_core_contract",
+        &[
+            "runtime_soundness_checked_acceptance_audited_core_contract",
+            "assumption_bundle_carries_required_evidence",
+        ],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &lean_source,
+        "runtime_soundness_checked_acceptance_audited_soundness_core_contract",
         &["sound_witness_implies_verifier_core_contract"],
     );
     assert!(
