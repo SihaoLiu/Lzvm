@@ -17175,16 +17175,25 @@ fn main_op_result(op: ZiskMainOp, a: u64, b: u64) -> (u64, bool) {
         ZiskMainOp::Flag => (0, true),
         ZiskMainOp::CopyB => (b, false),
         ZiskMainOp::Ltu => {
-            let flag = a < b;
-            (u64::from(flag), flag)
+            if a < b {
+                (1, true)
+            } else {
+                (0, false)
+            }
         }
         ZiskMainOp::Lt => {
-            let flag = (a as i64) < (b as i64);
-            (u64::from(flag), flag)
+            if (a as i64) < (b as i64) {
+                (1, true)
+            } else {
+                (0, false)
+            }
         }
         ZiskMainOp::Eq => {
-            let flag = a == b;
-            (u64::from(flag), flag)
+            if a == b {
+                (1, true)
+            } else {
+                (0, false)
+            }
         }
         ZiskMainOp::Add => (a.wrapping_add(b), false),
         ZiskMainOp::Sub => (a.wrapping_sub(b), false),
