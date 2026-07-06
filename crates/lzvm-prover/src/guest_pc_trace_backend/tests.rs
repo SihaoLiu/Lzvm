@@ -7403,11 +7403,9 @@ fn report_level_fast_path_parts_routes_representative_rows() {
     let mut timing = GuestPcTraceStreamTiming::default();
     for (report, expected_route) in cases {
         let expected_instruction = lower_guest_report(&report).expect("lowering should succeed");
-        let mut pending_dma = None;
-        let parts = report_level_fast_path_parts(3, &report, None, &mut pending_dma)
+        let parts = report_level_fast_path_parts(3, &report, None)
             .expect("routing should not fail")
             .expect("row should route to a fast path");
-        assert_eq!(pending_dma, None);
         timing.record_main_report_fast_path(&parts);
         let (actual_route, actual_instruction) = match parts {
             MainReportFastPathParts::LoadCopy(instruction, ..) => {
@@ -7470,22 +7468,9 @@ fn report_level_fast_path_parts_routes_representative_rows() {
         Some(prepare_lookahead),
     )
     .expect("DMA prepare lowering should succeed");
-    let mut pending_dma = None;
-    let parts = report_level_fast_path_parts(
-        3,
-        &prepare_report,
-        Some(prepare_lookahead),
-        &mut pending_dma,
-    )
-    .expect("routing should not fail")
-    .expect("DMA prepare row should route to a fast path");
-    assert_eq!(
-        pending_dma,
-        Some(ZiskMainPendingDma {
-            kind: RiscvDmaKind::Memcpy,
-            first_arg_reg: 5,
-        })
-    );
+    let parts = report_level_fast_path_parts(3, &prepare_report, Some(prepare_lookahead))
+        .expect("routing should not fail")
+        .expect("DMA prepare row should route to a fast path");
     timing.record_main_report_fast_path(&parts);
     let MainReportFastPathParts::InternalMemoryCopy(instruction, b_index, store_address) = parts
     else {
@@ -7519,22 +7504,9 @@ fn report_level_fast_path_parts_routes_representative_rows() {
         Some(base_lookahead),
     )
     .expect("DMA prepare lowering should succeed");
-    let mut pending_dma = None;
-    let parts = report_level_fast_path_parts(
-        3,
-        &base_prepare_report,
-        Some(base_lookahead),
-        &mut pending_dma,
-    )
-    .expect("routing should not fail")
-    .expect("DMA prepare row should route to a fast path");
-    assert_eq!(
-        pending_dma,
-        Some(ZiskMainPendingDma {
-            kind: RiscvDmaKind::Inputcpy,
-            first_arg_reg: 5,
-        })
-    );
+    let parts = report_level_fast_path_parts(3, &base_prepare_report, Some(base_lookahead))
+        .expect("routing should not fail")
+        .expect("DMA prepare row should route to a fast path");
     timing.record_main_report_fast_path(&parts);
     let MainReportFastPathParts::NoMemory(instruction, parts) = parts else {
         panic!("DMA prepare row should route to no-memory copy");
