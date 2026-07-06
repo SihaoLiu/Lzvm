@@ -32,7 +32,19 @@ fn lean_trace_constraint_validation_binding_exports_core_contract_projection() {
         &[
             "runtime_trace_constraint_checked_acceptance_sound",
             "runtime_trace_constraint_checked_acceptance_obligations",
+            "runtime_trace_constraint_checked_acceptance_artifact_binding_evidence",
+            "runtime_trace_constraint_checked_acceptance_opening_evidence",
+            "runtime_trace_constraint_checked_acceptance_trace_witness_evidence",
+            "runtime_trace_constraint_checked_acceptance_evidence",
+            "runtime_trace_constraint_checked_acceptance_implies_verifier_accepts",
             "fromCheckedAcceptance",
+            "runtime_trace_constraint_evidence_implies_opening_evidence",
+            "runtime_trace_constraint_evidence_implies_artifact_binding_evidence",
+            "runtime_trace_constraint_checked_acceptance_witness_commitment_binding",
+            "runtime_trace_constraint_checked_acceptance_constraint_catalog_binding",
+            "runtime_trace_constraint_soundness_obligations_imply_witness_commitment_binding",
+            "runtime_trace_constraint_soundness_obligations_imply_constraint_catalog_binding",
+            "runtime_trace_constraint_evidence_implies_trace_witness_evidence",
             "runtime_trace_constraint_evidence_implies_semantic_evidence_complete",
             "runtime_trace_constraint_checked_acceptance_semantic_evidence_complete",
             "runtime_trace_constraint_evidence_implies_backend_contract",
@@ -59,6 +71,136 @@ fn lean_trace_constraint_validation_binding_exports_core_contract_projection() {
             "RuntimeTraceConstraintSemanticEvidenceComplete",
             "RuntimeTraceConstraintBackendContract",
         ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_trace_constraint_checked_acceptance_artifact_binding_evidence",
+        &[
+            "RuntimeTraceConstraintArtifactBindingEvidence",
+            "RuntimeTraceConstraintCheckedAcceptance",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_trace_constraint_checked_acceptance_artifact_binding_evidence",
+        &[
+            "traceConstraintAcceptedImpliesTraceEvidenceMatchesWitnessCommitments",
+            "traceConstraintAcceptedImpliesTraceEvidenceMatchesConstraintCatalog",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_trace_constraint_checked_acceptance_opening_evidence",
+        &[
+            "(assumptions : AssumptionBundle system)",
+            "RuntimeOpeningEvidence",
+            "requiresExternalSource",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_trace_constraint_checked_acceptance_opening_evidence",
+        &[
+            "traceConstraintAcceptedImpliesOpeningAccepted",
+            "runtime_opening_checked_acceptance_evidence",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_trace_constraint_checked_acceptance_evidence",
+        &[
+            "(assumptions : AssumptionBundle system)",
+            "RuntimeTraceConstraintEvidence",
+            "requiresExternalSource",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_trace_constraint_checked_acceptance_evidence",
+        &[
+            "runtime_trace_constraint_checked_acceptance_opening_evidence",
+            "runtime_trace_constraint_checked_acceptance_artifact_binding_evidence",
+            "runtime_trace_constraint_checked_acceptance_trace_witness_evidence",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_trace_constraint_checked_acceptance_implies_verifier_accepts",
+        &["system.accepts publicInput proof"],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_trace_constraint_checked_acceptance_implies_verifier_accepts",
+        &[
+            "traceConstraintAcceptedImpliesOpeningAccepted",
+            "openingAcceptedImpliesRuntimeSoundnessAccepted",
+            "runtime_artifact_checked_acceptance_implies_verifier_accepts",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_trace_constraint_evidence_implies_opening_evidence",
+        &["RuntimeOpeningEvidence"],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_trace_constraint_evidence_implies_opening_evidence",
+        &["exact evidence.left"],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_trace_constraint_evidence_implies_artifact_binding_evidence",
+        &["RuntimeTraceConstraintArtifactBindingEvidence"],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_trace_constraint_evidence_implies_artifact_binding_evidence",
+        &["exact evidence.right.left"],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_trace_constraint_checked_acceptance_witness_commitment_binding",
+        &[
+            "runtime_trace_constraint_checked_acceptance_artifact_binding_evidence",
+            "accepted).left",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_trace_constraint_checked_acceptance_constraint_catalog_binding",
+        &[
+            "runtime_trace_constraint_checked_acceptance_artifact_binding_evidence",
+            "accepted).right",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_trace_constraint_soundness_obligations_imply_witness_commitment_binding",
+        &["exact obligations.left.right.left.left"],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_trace_constraint_soundness_obligations_imply_constraint_catalog_binding",
+        &["exact obligations.left.right.left.right"],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_trace_constraint_evidence_implies_trace_witness_evidence",
+        &[
+            "exists witness trace constraints",
+            "validation.traceExtracted artifact publicInput proof trace",
+            "validation.constraintsEvaluated artifact publicInput proof constraints trace",
+            "validation.witnessExtractedFromTrace artifact publicInput proof witness trace",
+            "validation.constraintBackendConformant",
+            "system.traceConsistent publicInput proof trace",
+            "system.constraintsSatisfied constraints trace",
+            "system.witnessMatchesTrace witness trace",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_trace_constraint_evidence_implies_trace_witness_evidence",
+        &["exact evidence.right.right"],
     );
     lean_binding::assert_theorem_body_contains(
         &lean_source,
