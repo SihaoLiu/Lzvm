@@ -88,6 +88,61 @@ fn lean_boundary_seed_snapshot_exports_pending_state_skip_contract() {
 }
 
 #[test]
+fn lean_boundary_seed_snapshot_exports_checked_acceptance_contracts() {
+    let boundary_source = read_boundary_source();
+
+    assert!(
+        boundary_source.contains("RuntimeBoundarySeedSnapshotCheckedAcceptance")
+            && boundary_source.contains("RuntimeBoundarySeedSnapshotContract")
+            && boundary_source.contains("RuntimeBoundarySeedSnapshotMissContract"),
+        "Lean boundary seed snapshot source should expose checked acceptance contracts"
+    );
+    lean_binding::assert_theorem_declarations(
+        &boundary_source,
+        &[
+            "runtime_boundary_seed_snapshot_checked_acceptance_contract",
+            "runtime_boundary_seed_snapshot_checked_acceptance_miss_contract",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &boundary_source,
+        "runtime_boundary_seed_snapshot_checked_acceptance_contract",
+        &[
+            "validation : RuntimeBoundarySeedSnapshotValidation system",
+            "RuntimeBoundarySeedSnapshotCheckedAcceptance",
+            "RuntimeBoundarySeedSnapshotContract",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &boundary_source,
+        "runtime_boundary_seed_snapshot_checked_acceptance_contract",
+        &[
+            "validation.snapshotShortcutAcceptedImpliesAuthorized",
+            "validation.snapshotShortcutAcceptedImpliesNonFinalBoundaryHasDirectSeed",
+            "validation.snapshotShortcutAcceptedAndDirectSeedImpliesNormalTransitionMatch",
+            "validation.snapshotShortcutAcceptedAndDirectSeedImpliesOptimizedSeedUsed",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &boundary_source,
+        "runtime_boundary_seed_snapshot_checked_acceptance_miss_contract",
+        &[
+            "validation : RuntimeBoundarySeedSnapshotValidation system",
+            "RuntimeBoundarySeedSnapshotCheckedAcceptance",
+            "RuntimeBoundarySeedSnapshotMissContract",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &boundary_source,
+        "runtime_boundary_seed_snapshot_checked_acceptance_miss_contract",
+        &[
+            "validation.snapshotShortcutAcceptedAndMissingDirectSeedImpliesRejected",
+            "missingDirect",
+        ],
+    );
+}
+
+#[test]
 fn lean_boundary_seed_snapshot_matches_runtime_pending_state_skip() {
     let boundary_source = read_boundary_source();
     let runtime_source = read_runtime_source();
