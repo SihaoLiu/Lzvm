@@ -554,6 +554,7 @@ impl GuestRegisterWriteValue {
         )
     }
 
+    #[inline(always)]
     fn register_writes_with_index(self, index: Option<u8>) -> GuestRegisterWriteList {
         index
             .filter(|index| *index != 0)
@@ -662,6 +663,7 @@ impl GuestMemoryAccessList {
         }
     }
 
+    #[inline(always)]
     fn precompile_memory_accesses(&self) -> &[GuestMemoryAccess] {
         match &self.entries {
             GuestMemoryAccessEntries::Precompile(effects) => effects.memory_accesses.as_ref(),
@@ -938,6 +940,7 @@ impl GuestMachineReport {
         2 + ((self.address_and_instruction_len & 1) as u8 * 2)
     }
 
+    #[inline(always)]
     pub fn precompile_memory_accesses(&self) -> &[GuestMemoryAccess] {
         self.memory_accesses.precompile_memory_accesses()
     }
@@ -950,6 +953,7 @@ impl GuestMachineReport {
         self.register_write_value.register_writes(self.instruction)
     }
 
+    #[inline(always)]
     pub(crate) fn register_writes_with_index(&self, index: Option<u8>) -> GuestRegisterWriteList {
         self.register_write_value.register_writes_with_index(index)
     }
