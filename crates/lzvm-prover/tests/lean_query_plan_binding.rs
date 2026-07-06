@@ -168,10 +168,10 @@ fn lean_query_plan_binding_exports_opening_segment_projections() {
         "runtime_query_plan_binding_evidence_implies_bound_contract",
         "evidence",
     );
-    lean_binding::assert_theorem_body_omits(
+    lean_binding::assert_theorem_body_omits_identifier(
         &lean_source,
         "runtime_query_plan_binding_evidence_implies_bound_contract",
-        &["RuntimeQueryPlanBindingCheckedAcceptance"],
+        "RuntimeQueryPlanBindingCheckedAcceptance",
     );
     lean_binding::assert_theorem_prefix_contains(
         &lean_source,

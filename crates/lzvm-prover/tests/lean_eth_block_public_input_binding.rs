@@ -228,13 +228,15 @@ fn lean_eth_block_public_input_binding_exports_core_contract_projection() {
             "system.publicInputBound publicInput proof",
         ],
     );
+    lean_binding::assert_theorem_body_contains_identifier(
+        &lean_source,
+        "runtime_eth_block_public_input_binding_checked_acceptance_public_input_bound",
+        "runtime_eth_block_public_input_binding_checked_acceptance_verifier_core_contract",
+    );
     lean_binding::assert_theorem_body_contains(
         &lean_source,
         "runtime_eth_block_public_input_binding_checked_acceptance_public_input_bound",
-        &[
-            "runtime_eth_block_public_input_binding_checked_acceptance_verifier_core_contract",
-            "coreContract.right.left",
-        ],
+        &["coreContract.right.left"],
     );
     lean_binding::assert_theorem_prefix_contains(
         &lean_source,
@@ -247,14 +249,16 @@ fn lean_eth_block_public_input_binding_exports_core_contract_projection() {
             "system.publicInputBound publicInput proof",
         ],
     );
-    lean_binding::assert_theorem_body_contains(
-        &lean_source,
-        "runtime_eth_block_public_input_binding_checked_acceptance_public_input_contract",
-        &[
-            "runtime_eth_block_public_input_binding_checked_acceptance_artifact_evidence_contract",
-            "runtime_eth_block_public_input_binding_checked_acceptance_public_input_bound",
-        ],
-    );
+    for identifier in [
+        "runtime_eth_block_public_input_binding_checked_acceptance_artifact_evidence_contract",
+        "runtime_eth_block_public_input_binding_checked_acceptance_public_input_bound",
+    ] {
+        lean_binding::assert_theorem_body_contains_identifier(
+            &lean_source,
+            "runtime_eth_block_public_input_binding_checked_acceptance_public_input_contract",
+            identifier,
+        );
+    }
     lean_binding::assert_theorem_prefix_contains(
         &lean_source,
         "runtime_eth_block_public_input_binding_checked_acceptance_soundness_contract",
@@ -263,25 +267,29 @@ fn lean_eth_block_public_input_binding_exports_core_contract_projection() {
             "RuntimeEthBlockPublicInputBindingSoundnessContract",
         ],
     );
-    lean_binding::assert_theorem_body_contains(
-        &lean_source,
-        "runtime_eth_block_public_input_binding_checked_acceptance_soundness_contract",
-        &[
-            "runtime_eth_block_public_input_binding_checked_acceptance_sound",
-            "runtime_eth_block_public_input_binding_checked_acceptance_artifact_wellformed_contract",
-            "runtime_eth_block_public_input_binding_checked_acceptance_verifier_core_contract",
-            "runtime_proof_artifact_binding_checked_acceptance_runtime_accepted",
-            "runtime_artifact_checked_acceptance_implies_verifier_accepts",
-        ],
-    );
-    lean_binding::assert_theorem_body_omits(
-        &lean_source,
-        "runtime_eth_block_public_input_binding_checked_acceptance_soundness_contract",
-        &[
-            "runtime_eth_block_public_input_binding_checked_acceptance_full_contract",
-            "runtime_eth_block_public_input_binding_checked_acceptance_evidence_core_and_sound",
-        ],
-    );
+    for identifier in [
+        "runtime_eth_block_public_input_binding_checked_acceptance_sound",
+        "runtime_eth_block_public_input_binding_checked_acceptance_artifact_wellformed_contract",
+        "runtime_eth_block_public_input_binding_checked_acceptance_verifier_core_contract",
+        "runtime_proof_artifact_binding_checked_acceptance_runtime_accepted",
+        "runtime_artifact_checked_acceptance_implies_verifier_accepts",
+    ] {
+        lean_binding::assert_theorem_body_contains_identifier(
+            &lean_source,
+            "runtime_eth_block_public_input_binding_checked_acceptance_soundness_contract",
+            identifier,
+        );
+    }
+    for identifier in [
+        "runtime_eth_block_public_input_binding_checked_acceptance_full_contract",
+        "runtime_eth_block_public_input_binding_checked_acceptance_evidence_core_and_sound",
+    ] {
+        lean_binding::assert_theorem_body_omits_identifier(
+            &lean_source,
+            "runtime_eth_block_public_input_binding_checked_acceptance_soundness_contract",
+            identifier,
+        );
+    }
     lean_binding::assert_theorem_body_contains(
         &lean_source,
         "runtime_eth_block_public_input_binding_checked_acceptance_full_contract",

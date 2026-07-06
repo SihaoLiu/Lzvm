@@ -140,22 +140,24 @@ fn lean_framed_guest_input_binding_exports_soundness_structural_contract() {
             "RuntimeFramedGuestInputBindingSoundnessContract",
         ],
     );
-    lean_binding::assert_theorem_body_contains(
+    for identifier in [
+        "runtime_framed_guest_input_binding_checked_acceptance_evidence",
+        "runtime_framed_guest_input_binding_checked_acceptance_eth_block_acceptance",
+        "runtime_framed_guest_input_binding_checked_acceptance_program_image_cache_acceptance",
+        "runtime_eth_block_public_input_binding_checked_acceptance_soundness_contract",
+        "runtime_program_image_cache_binding_checked_acceptance_soundness_contract",
+        "runtime_framed_guest_input_binding_checked_acceptance_sound",
+    ] {
+        lean_binding::assert_theorem_body_contains_identifier(
+            &lean_source,
+            "runtime_framed_guest_input_binding_checked_acceptance_soundness_contract",
+            identifier,
+        );
+    }
+    lean_binding::assert_theorem_body_omits_identifier(
         &lean_source,
         "runtime_framed_guest_input_binding_checked_acceptance_soundness_contract",
-        &[
-            "runtime_framed_guest_input_binding_checked_acceptance_evidence",
-            "runtime_framed_guest_input_binding_checked_acceptance_eth_block_acceptance",
-            "runtime_framed_guest_input_binding_checked_acceptance_program_image_cache_acceptance",
-            "runtime_eth_block_public_input_binding_checked_acceptance_soundness_contract",
-            "runtime_program_image_cache_binding_checked_acceptance_soundness_contract",
-            "runtime_framed_guest_input_binding_checked_acceptance_sound",
-        ],
-    );
-    lean_binding::assert_theorem_body_omits(
-        &lean_source,
-        "runtime_framed_guest_input_binding_checked_acceptance_soundness_contract",
-        &["runtime_framed_guest_input_binding_checked_acceptance_structural_obligations"],
+        "runtime_framed_guest_input_binding_checked_acceptance_structural_obligations",
     );
     lean_binding::assert_theorem_prefix_contains(
         &lean_source,

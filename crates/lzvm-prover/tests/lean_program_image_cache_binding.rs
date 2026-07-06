@@ -175,16 +175,18 @@ fn lean_program_image_cache_binding_exports_core_contract_projection() {
             "RuntimeArtifactEvidence",
         ],
     );
-    lean_binding::assert_theorem_body_contains(
-        &lean_source,
-        "runtime_program_image_cache_binding_checked_acceptance_artifact_evidence_contract",
-        &[
-            "runtime_program_image_cache_binding_checked_acceptance_evidence",
-            "runtime_program_image_cache_binding_checked_acceptance_artifact_binding",
-            "runtime_proof_artifact_binding_checked_acceptance_evidence",
-            "runtime_proof_artifact_binding_evidence_implies_runtime_evidence",
-        ],
-    );
+    for identifier in [
+        "runtime_program_image_cache_binding_checked_acceptance_evidence",
+        "runtime_program_image_cache_binding_checked_acceptance_artifact_binding",
+        "runtime_proof_artifact_binding_checked_acceptance_evidence",
+        "runtime_proof_artifact_binding_evidence_implies_runtime_evidence",
+    ] {
+        lean_binding::assert_theorem_body_contains_identifier(
+            &lean_source,
+            "runtime_program_image_cache_binding_checked_acceptance_artifact_evidence_contract",
+            identifier,
+        );
+    }
     lean_binding::assert_theorem_body_contains(
         &lean_source,
         "runtime_program_image_cache_binding_checked_acceptance_verifier_core_contract",
@@ -220,25 +222,29 @@ fn lean_program_image_cache_binding_exports_core_contract_projection() {
             "RuntimeProgramImageCacheBindingSoundnessContract",
         ],
     );
-    lean_binding::assert_theorem_body_contains(
-        &lean_source,
-        "runtime_program_image_cache_binding_checked_acceptance_soundness_contract",
-        &[
-            "runtime_program_image_cache_binding_checked_acceptance_sound",
-            "runtime_program_image_cache_binding_checked_acceptance_artifact_wellformed_contract",
-            "runtime_program_image_cache_binding_checked_acceptance_verifier_core_contract",
-            "runtime_proof_artifact_binding_checked_acceptance_runtime_accepted",
-            "runtime_artifact_checked_acceptance_implies_verifier_accepts",
-        ],
-    );
-    lean_binding::assert_theorem_body_omits(
-        &lean_source,
-        "runtime_program_image_cache_binding_checked_acceptance_soundness_contract",
-        &[
-            "runtime_program_image_cache_binding_checked_acceptance_full_contract",
-            "runtime_program_image_cache_binding_checked_acceptance_evidence_core_and_sound",
-        ],
-    );
+    for identifier in [
+        "runtime_program_image_cache_binding_checked_acceptance_sound",
+        "runtime_program_image_cache_binding_checked_acceptance_artifact_wellformed_contract",
+        "runtime_program_image_cache_binding_checked_acceptance_verifier_core_contract",
+        "runtime_proof_artifact_binding_checked_acceptance_runtime_accepted",
+        "runtime_artifact_checked_acceptance_implies_verifier_accepts",
+    ] {
+        lean_binding::assert_theorem_body_contains_identifier(
+            &lean_source,
+            "runtime_program_image_cache_binding_checked_acceptance_soundness_contract",
+            identifier,
+        );
+    }
+    for identifier in [
+        "runtime_program_image_cache_binding_checked_acceptance_full_contract",
+        "runtime_program_image_cache_binding_checked_acceptance_evidence_core_and_sound",
+    ] {
+        lean_binding::assert_theorem_body_omits_identifier(
+            &lean_source,
+            "runtime_program_image_cache_binding_checked_acceptance_soundness_contract",
+            identifier,
+        );
+    }
     lean_binding::assert_theorem_body_contains(
         &lean_source,
         "runtime_program_image_cache_binding_checked_acceptance_sound",

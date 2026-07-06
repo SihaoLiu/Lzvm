@@ -672,18 +672,20 @@ fn lean_runtime_soundness_binding_exports_core_contract_projection() {
             "SoundWitness system publicInput proof",
         ],
     );
-    lean_binding::assert_theorem_body_contains(
+    for identifier in [
+        "runtime_soundness_checked_acceptance_audited_core_contract",
+        "assumption_bundle_carries_required_evidence",
+    ] {
+        lean_binding::assert_theorem_body_contains_identifier(
+            &lean_source,
+            "runtime_soundness_checked_acceptance_audited_soundness_core_contract",
+            identifier,
+        );
+    }
+    lean_binding::assert_theorem_body_omits_identifier(
         &lean_source,
         "runtime_soundness_checked_acceptance_audited_soundness_core_contract",
-        &[
-            "runtime_soundness_checked_acceptance_audited_core_contract",
-            "assumption_bundle_carries_required_evidence",
-        ],
-    );
-    lean_binding::assert_theorem_body_omits(
-        &lean_source,
-        "runtime_soundness_checked_acceptance_audited_soundness_core_contract",
-        &["sound_witness_implies_verifier_core_contract"],
+        "sound_witness_implies_verifier_core_contract",
     );
     assert!(
         theorem_prefix(
