@@ -2312,6 +2312,89 @@ fn try_advance_guest_machine_report_fast_path(
             });
             state.clear_reservation_if_overlaps(write_address, byte_len);
         }
+        RiscvInstruction::Amo {
+            kind,
+            width,
+            rd,
+            rs1,
+            rs2,
+            ..
+        } => {
+            let write_address = state.read_decoded_register(rs1);
+            let loaded = read_guest_amo(memory, width, write_address)?;
+            let stored = execute_amo(kind, width, loaded, state.read_decoded_register(rs2));
+            write_guest_amo(memory, width, write_address, stored)?;
+            let access_byte_len = amo_width_byte_len(width);
+            let read_access = GuestMemoryAccess {
+                kind: GuestMemoryAccessKind::Read,
+                address: write_address,
+                byte_len: guest_memory_access_byte_len(access_byte_len),
+                value: loaded,
+            };
+            let write_access = GuestMemoryAccess {
+                kind: GuestMemoryAccessKind::Write,
+                address: write_address,
+                byte_len: guest_memory_access_byte_len(access_byte_len),
+                value: low_bytes_value(stored, access_byte_len),
+            };
+            let register_write = write_fast_reported_register(state, rd, amo_result(width, loaded));
+            state.clear_reservation_if_overlaps(write_address, access_byte_len);
+            state.set_pc(next_pc);
+            state.retire_instruction();
+            report.write(GuestMachineReport::new(
+                address,
+                guest_instruction_byte_len(byte_len),
+                instruction,
+                next_pc,
+                register_write
+                    .map(GuestRegisterWriteList::one)
+                    .unwrap_or_default(),
+                GuestMemoryAccessList::from(vec![read_access, write_access]),
+                None,
+            ));
+            return Ok(Some(GuestMachineReportShape {
+                instruction,
+                has_memory_write: true,
+            }));
+        }
+        RiscvInstruction::LoadReserved { width, rd, rs1, .. } => {
+            let read_address = state.read_decoded_register(rs1);
+            let loaded = read_guest_amo(memory, width, read_address)?;
+            memory_access = Some(GuestMemoryAccess {
+                kind: GuestMemoryAccessKind::Read,
+                address: read_address,
+                byte_len: guest_memory_access_byte_len(amo_width_byte_len(width)),
+                value: loaded,
+            });
+            register_write = write_fast_reported_register(state, rd, amo_result(width, loaded));
+            state.set_reservation(read_address, width);
+        }
+        RiscvInstruction::StoreConditional {
+            width,
+            rd,
+            rs1,
+            rs2,
+            ..
+        } => {
+            let write_address = state.read_decoded_register(rs1);
+            validate_guest_amo_address(memory, width, write_address)?;
+            if state.reservation_matches(write_address, width) {
+                let value = state.read_decoded_register(rs2);
+                write_guest_amo(memory, width, write_address, value)?;
+                let byte_len = amo_width_byte_len(width);
+                has_memory_write = true;
+                memory_access = Some(GuestMemoryAccess {
+                    kind: GuestMemoryAccessKind::Write,
+                    address: write_address,
+                    byte_len: guest_memory_access_byte_len(byte_len),
+                    value: low_bytes_value(value, byte_len),
+                });
+                register_write = write_fast_reported_register(state, rd, 0);
+            } else {
+                register_write = write_fast_reported_register(state, rd, 1);
+            }
+            state.clear_reservation();
+        }
         RiscvInstruction::CsrRead { csr, rd } => {
             register_write = write_fast_reported_register(
                 state,
@@ -3558,10 +3641,19 @@ mod tests {
         instruction: RiscvInstruction,
         words: &[u32],
     ) {
+        assert_report_fast_path_matches_generic_with_words_and_state(instruction, words, |_| {});
+    }
+
+    fn assert_report_fast_path_matches_generic_with_words_and_state(
+        instruction: RiscvInstruction,
+        words: &[u32],
+        configure_state: impl Fn(&mut GuestMachineState),
+    ) {
         let mut fast_memory = guest_machine_memory_with_words(words);
         let mut generic_memory = fast_memory.clone();
         let mut direct_memory = fast_memory.clone();
         let mut fast_state = report_fast_path_test_state();
+        configure_state(&mut fast_state);
         let mut generic_state = fast_state.clone();
         let mut direct_state = fast_state.clone();
         let prepared = GuestMachinePreparedInstruction {
@@ -3763,6 +3855,22 @@ mod tests {
                 rs1: 6,
                 offset: 0,
             },
+            RiscvInstruction::Amo {
+                kind: RiscvAmoKind::Add,
+                width: RiscvAmoWidth::Word,
+                rd: 8,
+                rs1: 6,
+                rs2: 3,
+                acquire: false,
+                release: false,
+            },
+            RiscvInstruction::LoadReserved {
+                width: RiscvAmoWidth::Word,
+                rd: 8,
+                rs1: 6,
+                acquire: false,
+                release: false,
+            },
             RiscvInstruction::Store {
                 kind: RiscvStoreKind::Sw,
                 rs1: 6,
@@ -3831,6 +3939,55 @@ mod tests {
                 &[0, 0],
             );
         }
+    }
+
+    #[test]
+    fn prepared_atomic_width_fast_paths_match_timed_generic_advance() {
+        for (width, words) in [
+            (RiscvAmoWidth::Word, &[0x8000_0073, 0][..]),
+            (RiscvAmoWidth::Doubleword, &[0x89ab_cdef, 0x0123_4567][..]),
+        ] {
+            assert_report_fast_path_matches_generic_with_words(
+                RiscvInstruction::Amo {
+                    kind: RiscvAmoKind::Add,
+                    width,
+                    rd: 8,
+                    rs1: 6,
+                    rs2: 3,
+                    acquire: false,
+                    release: false,
+                },
+                words,
+            );
+            assert_report_fast_path_matches_generic_with_words(
+                RiscvInstruction::LoadReserved {
+                    width,
+                    rd: 8,
+                    rs1: 6,
+                    acquire: false,
+                    release: false,
+                },
+                words,
+            );
+        }
+    }
+
+    #[test]
+    fn prepared_store_conditional_fast_paths_match_timed_generic_advance() {
+        let instruction = RiscvInstruction::StoreConditional {
+            width: RiscvAmoWidth::Doubleword,
+            rd: 8,
+            rs1: 6,
+            rs2: 3,
+            acquire: false,
+            release: false,
+        };
+        assert_report_fast_path_matches_generic_with_words(instruction, &[0, 0]);
+        assert_report_fast_path_matches_generic_with_words_and_state(
+            instruction,
+            &[0, 0],
+            |state| state.set_reservation(TEST_ENTRY, RiscvAmoWidth::Doubleword),
+        );
     }
 
     #[test]
