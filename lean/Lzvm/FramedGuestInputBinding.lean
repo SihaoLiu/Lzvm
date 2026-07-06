@@ -869,6 +869,51 @@ theorem
       soundWitness⟩
 
 theorem
+  runtime_framed_guest_input_binding_audited_core_sound_witness_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeFramedGuestInputBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeFramedGuestInputBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RequiredCryptographicAssumptionStatements assumptions.crypto
+          /\ RequiredSemanticAssumptionStatements assumptions.semantic
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ (exists witness trace constraints,
+            system.traceConsistent publicInput proof trace
+              /\ system.constraintsSatisfied constraints trace
+              /\ system.witnessMatchesTrace witness trace)
+          /\ SoundWitness system publicInput proof := by
+  intro artifact publicInput proof accepted
+  have finalizedCore :=
+    runtime_framed_guest_input_binding_audited_finalized_core_sound_witness_contract
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  rcases finalizedCore with
+    ⟨cryptoEvidence,
+      semanticEvidence,
+      _evidence,
+      _ethArtifactFinalized,
+      _cacheArtifactFinalized,
+      coreContract,
+      executionObligations,
+      soundWitness⟩
+  exact
+    ⟨cryptoEvidence,
+      semanticEvidence,
+      coreContract,
+      executionObligations,
+      soundWitness⟩
+
+theorem
   runtime_framed_guest_input_binding_audited_finalized_segment_ids_contract
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)

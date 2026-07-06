@@ -905,6 +905,50 @@ theorem
               (And.intro executionObligations soundWitness)))))
 
 theorem
+  runtime_program_image_cache_binding_audited_core_sound_witness_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeProgramImageCacheBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeProgramImageCacheBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RequiredCryptographicAssumptionStatements assumptions.crypto
+          /\ RequiredSemanticAssumptionStatements assumptions.semantic
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ (exists witness trace constraints,
+            system.traceConsistent publicInput proof trace
+              /\ system.constraintsSatisfied constraints trace
+              /\ system.witnessMatchesTrace witness trace)
+          /\ SoundWitness system publicInput proof := by
+  intro artifact publicInput proof accepted
+  have finalizedCore :=
+    runtime_program_image_cache_binding_audited_finalized_core_sound_witness_contract
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  rcases finalizedCore with
+    ⟨cryptoEvidence,
+      semanticEvidence,
+      _cacheEvidence,
+      _artifactFinalized,
+      coreContract,
+      executionObligations,
+      soundWitness⟩
+  exact
+    ⟨cryptoEvidence,
+      semanticEvidence,
+      coreContract,
+      executionObligations,
+      soundWitness⟩
+
+theorem
   runtime_program_image_cache_binding_audited_finalized_segment_ids_contract
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)

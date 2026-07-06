@@ -44,6 +44,7 @@ fn lean_framed_guest_input_binding_exports_soundness_structural_contract() {
             "runtime_framed_guest_input_binding_checked_acceptance_soundness_and_structural_contract",
             "runtime_framed_guest_input_binding_checked_acceptance_concrete_core_sound_contract",
             "runtime_framed_guest_input_binding_audited_finalized_core_sound_witness_contract",
+            "runtime_framed_guest_input_binding_audited_core_sound_witness_contract",
             "runtime_framed_guest_input_binding_audited_finalized_segment_ids_contract",
             "runtime_framed_guest_input_binding_audited_finalized_concrete_segment_ids_contract",
         ],
@@ -178,6 +179,42 @@ fn lean_framed_guest_input_binding_exports_soundness_structural_contract() {
     lean_binding::assert_theorem_body_omits(
         &lean_source,
         "runtime_framed_guest_input_binding_audited_finalized_core_sound_witness_contract",
+        &[
+            "runtime_framed_guest_input_binding_checked_acceptance_full_contract",
+            "runtime_framed_guest_input_binding_checked_acceptance_sound",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_framed_guest_input_binding_audited_core_sound_witness_contract",
+        &[
+            "RuntimeFramedGuestInputBindingCheckedAcceptance",
+            "RequiredCryptographicAssumptionStatements assumptions.crypto",
+            "RequiredSemanticAssumptionStatements assumptions.semantic",
+            "RuntimeVerifierCoreContract system publicInput proof",
+            "system.traceConsistent publicInput proof trace",
+            "system.constraintsSatisfied constraints trace",
+            "system.witnessMatchesTrace witness trace",
+            "SoundWitness system publicInput proof",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_omits(
+        &lean_source,
+        "runtime_framed_guest_input_binding_audited_core_sound_witness_contract",
+        &[
+            "RuntimeFramedGuestInputBindingEvidence",
+            "RuntimeProofArtifactFinalized",
+            "RuntimeFramedGuestInputBindingStructuralObligations",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_framed_guest_input_binding_audited_core_sound_witness_contract",
+        &["runtime_framed_guest_input_binding_audited_finalized_core_sound_witness_contract"],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &lean_source,
+        "runtime_framed_guest_input_binding_audited_core_sound_witness_contract",
         &[
             "runtime_framed_guest_input_binding_checked_acceptance_full_contract",
             "runtime_framed_guest_input_binding_checked_acceptance_sound",
