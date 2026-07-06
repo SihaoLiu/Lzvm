@@ -35,6 +35,7 @@ fn lean_transcript_binding_exports_core_contract_projection() {
         &lean_source,
         &[
             "runtime_transcript_binding_checked_acceptance_artifact_finalized",
+            "runtime_transcript_binding_checked_acceptance_evidence",
             "runtime_transcript_binding_checked_acceptance_sound",
             "runtime_transcript_binding_checked_acceptance_verifier_core_contract",
             "runtime_transcript_binding_checked_acceptance_transcript_and_core_contract",
@@ -127,6 +128,25 @@ fn lean_transcript_binding_exports_core_contract_projection() {
         &[
             "transcriptAcceptedImpliesArtifactBindingAccepted",
             "runtime_proof_artifact_finalized_from_checked_acceptance",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_transcript_binding_checked_acceptance_evidence",
+        &[
+            "RuntimeTranscriptBindingCheckedAcceptance",
+            "RuntimeTranscriptBindingEvidence",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_transcript_binding_checked_acceptance_evidence",
+        &[
+            "runtime_proof_artifact_binding_checked_acceptance_evidence",
+            "transcriptAcceptedImpliesChallengeSegmentBound",
+            "transcriptAcceptedImpliesQueryPlanBound",
+            "transcriptAcceptedImpliesPayloadMatchesProof",
+            "transcriptAcceptedImpliesExtensionPayloadOrderCanonical",
         ],
     );
     lean_binding::assert_theorem_body_contains(
