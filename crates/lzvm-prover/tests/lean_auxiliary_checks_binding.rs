@@ -1689,6 +1689,26 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         "proof_artifact_finish_timing_some_summary_acceptance_core_and_sound",
         &aggregate_finish_field_terms,
     );
+    let aggregate_finish_accounting_theorem =
+        "proof_artifact_finish_aggregate_timing_accounting_acceptance_core_and_sound";
+    lean_binding::assert_theorem_prefix_contains(
+        &proof_timing_verifier_source,
+        aggregate_finish_accounting_theorem,
+        &[
+            "rowDedupAccounting",
+            "ProofArtifactFinishWitnessOpeningRowDedupAccounting",
+            "RuntimeVerifierCoreContract system publicInput proof",
+            "SoundWitness system publicInput proof",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &proof_timing_verifier_source,
+        aggregate_finish_accounting_theorem,
+        &[
+            "proof_artifact_finish_witness_opening_row_dedup_accounting_update",
+            "proof_artifact_finish_aggregate_timing_acceptance_core_and_sound",
+        ],
+    );
     lean_binding::assert_theorem_declarations(
         &proof_timing_verifier_source,
         &[
@@ -5642,6 +5662,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "proof_artifact_finish_aggregate_timing_acceptance_sound",
             "proof_artifact_finish_aggregate_timing_acceptance_verifier_core_contract",
             "proof_artifact_finish_aggregate_timing_acceptance_core_and_sound",
+            "proof_artifact_finish_aggregate_timing_accounting_acceptance_core_and_sound",
             "proof_timing_projected_core_contracts",
             "proof_timing_batch_observed_acceptance_projects_verifier_acceptance",
             "proof_timing_batch_acceptance_sound",

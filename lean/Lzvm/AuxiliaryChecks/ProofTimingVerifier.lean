@@ -453,4 +453,147 @@ theorem proof_artifact_finish_aggregate_timing_acceptance_core_and_sound
       proof
       observed
 
+theorem proof_artifact_finish_aggregate_timing_accounting_acceptance_core_and_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : ProofArtifactFinishTimingSummary)
+    (queryPlanMilliseconds constantOpeningMilliseconds witnessOpeningMilliseconds
+      witnessOpeningQueryCount witnessOpeningQueryUnitCount witnessOpeningSingleQueryUnitCount
+      witnessOpeningMaxQueriesPerUnit witnessOpeningStageCount
+      witnessOpeningRetainedSourceCount witnessOpeningExternalSourceCount
+      witnessOpeningEmbeddedSourceCount witnessOpeningMissingSourceCount
+      witnessOpeningRetainedLeafDigestOpeningCount
+      witnessOpeningRetainedLeafDigestOpeningRowCount
+      witnessOpeningRetainedParentCheckpointOpeningCount
+      witnessOpeningRetainedParentCheckpointOpeningRowCount
+      witnessOpeningRowDedupInputRowCount witnessOpeningRowDedupUniqueRowCount
+      witnessOpeningRowDedupElidedRowCount
+      descriptorUploadByteCount descriptorUploadWordCount descriptorUploadRowCount
+      friOpeningMilliseconds friOpeningUnitBuildMilliseconds
+      friOpeningLayerTreeMilliseconds friOpeningQueryMilliseconds
+      friOpeningFoldMilliseconds friOpeningUnitCount friOpeningLayerCount
+      friOpeningQueryCount friTranscriptUnitBuildMilliseconds
+      friTranscriptLayerTreeMilliseconds friTranscriptFoldMilliseconds
+      friTranscriptUnitCount friTranscriptLayerCount proofEncodeMilliseconds
+      contributionSegmentMilliseconds contributionVerifyMilliseconds
+      contributionChallengeMilliseconds : Nat)
+    (rowDedupAccounting :
+      witnessOpeningRowDedupInputRowCount =
+        witnessOpeningRowDedupUniqueRowCount + witnessOpeningRowDedupElidedRowCount) :
+    forall publicInput proof,
+      ProofArtifactFinishTimingObservedAcceptance
+        system
+        (some
+          { summary with
+            finishQueryPlanMilliseconds := queryPlanMilliseconds
+            finishConstantOpeningMilliseconds := constantOpeningMilliseconds
+            finishWitnessOpeningMilliseconds := witnessOpeningMilliseconds
+            finishWitnessOpeningQueryCount := witnessOpeningQueryCount
+            finishWitnessOpeningQueryUnitCount := witnessOpeningQueryUnitCount
+            finishWitnessOpeningSingleQueryUnitCount := witnessOpeningSingleQueryUnitCount
+            finishWitnessOpeningMaxQueriesPerUnit := witnessOpeningMaxQueriesPerUnit
+            finishWitnessOpeningStageCount := witnessOpeningStageCount
+            finishWitnessOpeningRetainedSourceCount := witnessOpeningRetainedSourceCount
+            finishWitnessOpeningExternalSourceCount := witnessOpeningExternalSourceCount
+            finishWitnessOpeningEmbeddedSourceCount := witnessOpeningEmbeddedSourceCount
+            finishWitnessOpeningMissingSourceCount := witnessOpeningMissingSourceCount
+            finishWitnessOpeningRetainedLeafDigestOpeningCount :=
+              witnessOpeningRetainedLeafDigestOpeningCount
+            finishWitnessOpeningRetainedLeafDigestOpeningRowCount :=
+              witnessOpeningRetainedLeafDigestOpeningRowCount
+            finishWitnessOpeningRetainedParentCheckpointOpeningCount :=
+              witnessOpeningRetainedParentCheckpointOpeningCount
+            finishWitnessOpeningRetainedParentCheckpointOpeningRowCount :=
+              witnessOpeningRetainedParentCheckpointOpeningRowCount
+            finishWitnessOpeningRowDedupInputRowCount :=
+              witnessOpeningRowDedupInputRowCount
+            finishWitnessOpeningRowDedupUniqueRowCount :=
+              witnessOpeningRowDedupUniqueRowCount
+            finishWitnessOpeningRowDedupElidedRowCount :=
+              witnessOpeningRowDedupElidedRowCount
+            finishWitnessExternalSourceDescriptorUploadByteCount := descriptorUploadByteCount
+            finishWitnessExternalSourceDescriptorUploadWordCount := descriptorUploadWordCount
+            finishWitnessExternalSourceDescriptorUploadRowCount := descriptorUploadRowCount
+            finishFriOpeningMilliseconds := friOpeningMilliseconds
+            finishFriOpeningUnitBuildMilliseconds := friOpeningUnitBuildMilliseconds
+            finishFriOpeningLayerTreeMilliseconds := friOpeningLayerTreeMilliseconds
+            finishFriOpeningQueryMilliseconds := friOpeningQueryMilliseconds
+            finishFriOpeningFoldMilliseconds := friOpeningFoldMilliseconds
+            finishFriOpeningUnitCount := friOpeningUnitCount
+            finishFriOpeningLayerCount := friOpeningLayerCount
+            finishFriOpeningQueryCount := friOpeningQueryCount
+            finishFriTranscriptUnitBuildMilliseconds := friTranscriptUnitBuildMilliseconds
+            finishFriTranscriptLayerTreeMilliseconds := friTranscriptLayerTreeMilliseconds
+            finishFriTranscriptFoldMilliseconds := friTranscriptFoldMilliseconds
+            finishFriTranscriptUnitCount := friTranscriptUnitCount
+            finishFriTranscriptLayerCount := friTranscriptLayerCount
+            finishProofEncodeMilliseconds := proofEncodeMilliseconds
+            finishContributionSegmentMilliseconds := contributionSegmentMilliseconds
+            finishContributionVerifyMilliseconds := contributionVerifyMilliseconds
+            finishContributionChallengeMilliseconds := contributionChallengeMilliseconds })
+        publicInput
+        proof ->
+        ProofArtifactFinishWitnessOpeningRowDedupAccounting
+            { summary with
+              finishWitnessOpeningRowDedupInputRowCount :=
+                witnessOpeningRowDedupInputRowCount
+              finishWitnessOpeningRowDedupUniqueRowCount :=
+                witnessOpeningRowDedupUniqueRowCount
+              finishWitnessOpeningRowDedupElidedRowCount :=
+                witnessOpeningRowDedupElidedRowCount }
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof observed
+  have rowAccounting :=
+    proof_artifact_finish_witness_opening_row_dedup_accounting_update
+      summary
+      rowDedupAccounting
+  have coreAndSound :=
+    proof_artifact_finish_aggregate_timing_acceptance_core_and_sound
+      assumptions
+      summary
+      queryPlanMilliseconds
+      constantOpeningMilliseconds
+      witnessOpeningMilliseconds
+      witnessOpeningQueryCount
+      witnessOpeningQueryUnitCount
+      witnessOpeningSingleQueryUnitCount
+      witnessOpeningMaxQueriesPerUnit
+      witnessOpeningStageCount
+      witnessOpeningRetainedSourceCount
+      witnessOpeningExternalSourceCount
+      witnessOpeningEmbeddedSourceCount
+      witnessOpeningMissingSourceCount
+      witnessOpeningRetainedLeafDigestOpeningCount
+      witnessOpeningRetainedLeafDigestOpeningRowCount
+      witnessOpeningRetainedParentCheckpointOpeningCount
+      witnessOpeningRetainedParentCheckpointOpeningRowCount
+      witnessOpeningRowDedupInputRowCount
+      witnessOpeningRowDedupUniqueRowCount
+      witnessOpeningRowDedupElidedRowCount
+      descriptorUploadByteCount
+      descriptorUploadWordCount
+      descriptorUploadRowCount
+      friOpeningMilliseconds
+      friOpeningUnitBuildMilliseconds
+      friOpeningLayerTreeMilliseconds
+      friOpeningQueryMilliseconds
+      friOpeningFoldMilliseconds
+      friOpeningUnitCount
+      friOpeningLayerCount
+      friOpeningQueryCount
+      friTranscriptUnitBuildMilliseconds
+      friTranscriptLayerTreeMilliseconds
+      friTranscriptFoldMilliseconds
+      friTranscriptUnitCount
+      friTranscriptLayerCount
+      proofEncodeMilliseconds
+      contributionSegmentMilliseconds
+      contributionVerifyMilliseconds
+      contributionChallengeMilliseconds
+      publicInput
+      proof
+      observed
+  exact And.intro rowAccounting coreAndSound
+
 end Lzvm
