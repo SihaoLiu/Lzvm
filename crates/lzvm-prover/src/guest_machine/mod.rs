@@ -1039,7 +1039,7 @@ impl Default for GuestMachineAdvancePath {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct GuestMachinePreparedInstruction {
     address: u64,
-    byte_len: u8,
+    byte_len: usize,
     instruction: RiscvInstruction,
 }
 
@@ -2057,12 +2057,9 @@ fn advance_guest_machine_prepared_inner_report_shape_at_pc_into(
     let address = pc;
     let byte_len = prepared.byte_len;
     let instruction = prepared.instruction;
-    let sequential_pc = address.checked_add(u64::from(byte_len)).ok_or(
-        GuestMachineError::ProgramCounterOverflow {
-            address,
-            byte_len: usize::from(byte_len),
-        },
-    )?;
+    let sequential_pc = address
+        .checked_add(byte_len as u64)
+        .ok_or(GuestMachineError::ProgramCounterOverflow { address, byte_len })?;
     let fast_path_started = advance_timing_started(&timing);
     match try_advance_guest_machine_report_fast_path(
         memory,
@@ -2117,7 +2114,7 @@ fn advance_guest_machine_prepared_inner_report_shape_at_pc_generic(
     state: &mut GuestMachineState,
     handler: Option<&mut dyn GuestFcallHandler>,
     address: u64,
-    byte_len: u8,
+    byte_len: usize,
     sequential_pc: u64,
     instruction: RiscvInstruction,
     mut timing: Option<&mut GuestMachineAdvanceTiming>,
@@ -2157,7 +2154,7 @@ fn advance_guest_machine_prepared_inner_report_shape_at_pc_generic(
 
     let report = GuestMachineReport::new(
         address,
-        byte_len,
+        guest_instruction_byte_len(byte_len),
         instruction,
         next_pc,
         effects.register_writes,
@@ -2177,7 +2174,7 @@ fn try_advance_guest_machine_report_fast_path(
     memory: &mut GuestMachineMemory,
     state: &mut GuestMachineState,
     address: u64,
-    byte_len: u8,
+    byte_len: usize,
     sequential_pc: u64,
     instruction: RiscvInstruction,
     report: &mut MaybeUninit<GuestMachineReport>,
@@ -2197,7 +2194,7 @@ fn try_advance_guest_machine_report_fast_path(
         state.retire_instruction();
         report.write(GuestMachineReport::new_single_effect(
             address,
-            byte_len,
+            guest_instruction_byte_len(byte_len),
             instruction,
             sequential_pc,
             register_write,
@@ -2354,7 +2351,7 @@ fn try_advance_guest_machine_report_fast_path(
             state.retire_instruction();
             report.write(GuestMachineReport::new(
                 address,
-                byte_len,
+                guest_instruction_byte_len(byte_len),
                 instruction,
                 next_pc,
                 register_write
@@ -2433,7 +2430,7 @@ fn try_advance_guest_machine_report_fast_path(
     state.retire_instruction();
     report.write(GuestMachineReport::new_single_effect(
         address,
-        byte_len,
+        guest_instruction_byte_len(byte_len),
         instruction,
         next_pc,
         register_write,
@@ -2586,10 +2583,10 @@ fn record_advance_timing(
 fn fetch_decode_guest_instruction(
     memory: &GuestMachineMemory,
     address: u64,
-) -> Result<(u8, RiscvInstruction), GuestMachineError> {
+) -> Result<(usize, RiscvInstruction), GuestMachineError> {
     let fetched = memory.fetch_instruction(address)?;
     let byte_len = match fetched.byte_len() {
-        Some(byte_len) => guest_instruction_byte_len(byte_len),
+        Some(byte_len) => byte_len,
         None => {
             let RiscvEncodedInstruction::UnsupportedLong(halfword) = fetched.encoded else {
                 unreachable!("instruction encoding without byte length must be explicit")
@@ -3635,7 +3632,7 @@ mod tests {
         let sequential_pc = pc.checked_add(prepared.byte_len as u64).ok_or(
             GuestMachineError::ProgramCounterOverflow {
                 address: pc,
-                byte_len: usize::from(prepared.byte_len),
+                byte_len: prepared.byte_len,
             },
         )?;
         advance_guest_machine_prepared_inner_report_shape_at_pc_generic(
