@@ -3141,6 +3141,7 @@ pub(crate) fn build_guest_pc_trace_stage_source_devices_from_device_material_tim
     let descriptor_upload_row_count = descriptors.descriptor_rows();
 
     if descriptors.is_sparse() {
+        let mut retained_descriptor_buffer = None;
         let trace_device = record_device_source_build_duration(
             timing
                 .as_mut()
@@ -3154,6 +3155,8 @@ pub(crate) fn build_guest_pc_trace_stage_source_devices_from_device_material_tim
                     descriptors.column_count(),
                     descriptors.terminal_pc(),
                     descriptors.device_layout(),
+                    None,
+                    Some(&mut retained_descriptor_buffer),
                 )
                 .map_err(|error| {
                     guest_pc_device_trace_source_error(format!(
@@ -3170,7 +3173,7 @@ pub(crate) fn build_guest_pc_trace_stage_source_devices_from_device_material_tim
         let builder = guest_pc_device_trace_builder_from_layout_with_descriptor_source(
             layout,
             trace_device,
-            None,
+            retained_descriptor_buffer.map(Arc::new),
             true,
         );
         validate_guest_pc_trace_device_source_matches_layout(layout, &builder)?;
@@ -3331,20 +3334,39 @@ pub(crate) fn build_guest_pc_trace_stage_source_devices_from_device_descriptors_
     let trace_device = record_device_source_build_duration(
         timing.map(|timing| &mut timing.trace_expand_duration),
         || {
-            CudaDeviceBuffer::from_main_trace_descriptors_device_with_layout(
-                device_trace_descriptor_buffer,
-                descriptors.descriptor_word_count(),
-                descriptors.descriptor_rows(),
-                descriptors.row_count(),
-                descriptors.column_count(),
-                descriptors.terminal_pc(),
-                descriptors.device_layout(),
-            )
-            .map_err(|error| {
-                guest_pc_device_trace_source_error(format!(
-                    "CUDA trace descriptor expansion failed: {error}"
-                ))
-            })
+            if descriptors.is_sparse() {
+                CudaDeviceBuffer::from_sparse_main_trace_descriptors_with_layout(
+                    descriptors.words(),
+                    descriptors.sparse_high_words(),
+                    descriptors.descriptor_rows(),
+                    descriptors.row_count(),
+                    descriptors.column_count(),
+                    descriptors.terminal_pc(),
+                    descriptors.device_layout(),
+                    Some(device_trace_descriptor_buffer),
+                    None,
+                )
+                .map_err(|error| {
+                    guest_pc_device_trace_source_error(format!(
+                        "CUDA sparse trace descriptor expansion failed: {error}"
+                    ))
+                })
+            } else {
+                CudaDeviceBuffer::from_main_trace_descriptors_device_with_layout(
+                    device_trace_descriptor_buffer,
+                    descriptors.descriptor_word_count(),
+                    descriptors.descriptor_rows(),
+                    descriptors.row_count(),
+                    descriptors.column_count(),
+                    descriptors.terminal_pc(),
+                    descriptors.device_layout(),
+                )
+                .map_err(|error| {
+                    guest_pc_device_trace_source_error(format!(
+                        "CUDA trace descriptor expansion failed: {error}"
+                    ))
+                })
+            }
         },
     )?;
     let builder = guest_pc_device_trace_builder_from_layout_with_descriptor_source(
@@ -3386,6 +3408,7 @@ pub(crate) fn build_guest_pc_trace_stage_source_devices(
                 "device trace descriptor shape does not match guest PC trace",
             ));
         }
+        let mut retained_descriptor_buffer = None;
         let trace_device = if descriptors.is_sparse() {
             CudaDeviceBuffer::from_sparse_main_trace_descriptors_with_layout(
                 descriptors.words(),
@@ -3395,6 +3418,8 @@ pub(crate) fn build_guest_pc_trace_stage_source_devices(
                 descriptors.column_count(),
                 descriptors.terminal_pc(),
                 descriptors.device_layout(),
+                None,
+                Some(&mut retained_descriptor_buffer),
             )
             .map_err(|error| {
                 guest_pc_device_trace_source_error(format!(
@@ -3420,7 +3445,7 @@ pub(crate) fn build_guest_pc_trace_stage_source_devices(
         let builder = guest_pc_device_trace_builder_from_layout_with_descriptor_source(
             layout,
             trace_device,
-            None,
+            retained_descriptor_buffer.map(Arc::new),
             true,
         );
         validate_guest_pc_trace_device_source_matches_trace(layout, trace, &builder)?;

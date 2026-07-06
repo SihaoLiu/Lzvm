@@ -1448,6 +1448,8 @@ impl CudaDeviceBuffer {
         row_width_words: usize,
         terminal_pc: u64,
         layout: MainTraceDeviceLayout,
+        descriptor_buffer: Option<&Self>,
+        retained_descriptor_buffer: Option<&mut Option<Self>>,
     ) -> Result<Self, AccelError> {
         let output_byte_len = validate_sparse_main_trace_descriptors_layout(
             descriptors,
@@ -1456,10 +1458,33 @@ impl CudaDeviceBuffer {
             row_count,
             row_width_words,
         )?;
-        let descriptor_buffer = Self::from_u64_words(descriptors)?;
+        if let Some(buffer) = descriptor_buffer {
+            let expected_descriptor_len = u64_word_byte_len(descriptors.len())?;
+            if buffer.len() != expected_descriptor_len {
+                return Err(AccelError::LengthMismatch {
+                    lhs: buffer.len(),
+                    rhs: expected_descriptor_len,
+                });
+            }
+        }
+        let mut uploaded_descriptor_buffer = None;
+        if descriptor_buffer.is_none() {
+            uploaded_descriptor_buffer = Some(Self::from_u64_words(descriptors)?);
+        }
+        let descriptor_buffer = descriptor_buffer
+            .or(uploaded_descriptor_buffer.as_ref())
+            .ok_or(AccelError::InvalidDomain {
+                bits: descriptors.len(),
+                len: descriptor_count,
+            })?;
         let high_buffer = Self::from_u64_words(high_words)?;
         let buffer = Self::new(output_byte_len)?;
         if row_count == 0 {
+            if let (Some(retained), Some(uploaded)) =
+                (retained_descriptor_buffer, uploaded_descriptor_buffer)
+            {
+                *retained = Some(uploaded);
+            }
             return Ok(buffer);
         }
         let code = unsafe {
@@ -1476,6 +1501,11 @@ impl CudaDeviceBuffer {
             )
         };
         cuda_status(code)?;
+        if let (Some(retained), Some(uploaded)) =
+            (retained_descriptor_buffer, uploaded_descriptor_buffer)
+        {
+            *retained = Some(uploaded);
+        }
         Ok(buffer)
     }
 

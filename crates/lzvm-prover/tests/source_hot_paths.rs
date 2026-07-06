@@ -2212,6 +2212,12 @@ fn trace_less_guest_pc_opening_reuses_retained_device_descriptors() {
             && backend_source.contains("from_main_trace_descriptors_device_with_layout"),
         "guest PC device trace builders should retain uploaded descriptor buffers for later source rebuilds"
     );
+    assert!(
+        backend_source.contains("retained_descriptor_buffer.map(Arc::new)")
+            && backend_source.contains("Some(device_trace_descriptor_buffer)")
+            && backend_source.contains("from_sparse_main_trace_descriptors_with_layout"),
+        "sparse descriptor source rebuilds should reuse retained device buffers when available"
+    );
     let cache_body = function_body(
         &execution_source,
         "struct WitnessStageSourceDeviceCache",
