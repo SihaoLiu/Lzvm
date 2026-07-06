@@ -11067,7 +11067,7 @@ fn validate_and_apply_zisk_main_report(
     ) -> Result<(), GuestPcTraceBackendError>,
 ) -> Result<usize, GuestPcTraceBackendError> {
     if let Some(pending) = state.pending_dma {
-        validate_zisk_main_report_row_capacity(row, 1, context.row_count)?;
+        validate_main_single_report_row_capacity(row, context.row_count)?;
         let lowering_started = detail_duration_started(&timing, detail_timing);
         let lowered_row = ZiskMainLoweredReportRow {
             instruction: lower_pending_dma_report(row, report, pending)?,
@@ -11149,7 +11149,7 @@ fn validate_and_apply_zisk_main_report(
         return Ok(produced_rows);
     }
 
-    validate_zisk_main_report_row_capacity(row, 1, context.row_count)?;
+    validate_main_single_report_row_capacity(row, context.row_count)?;
     let count_main_report_generic_fallback = !detail_timing && !shape_timing;
     let mut next_instruction_cache = None;
     let mut cached_next_instruction = || {
@@ -11477,17 +11477,11 @@ fn validate_and_apply_zisk_main_lowered_report_rows(
     Ok(produced_rows)
 }
 
-fn validate_zisk_main_report_row_capacity(
+fn validate_main_single_report_row_capacity(
     row: usize,
-    produced_rows: usize,
     row_count: usize,
 ) -> Result<(), GuestPcTraceBackendError> {
-    let exclusive_end = row.checked_add(produced_rows).ok_or_else(|| {
-        GuestPcTraceBackendError::InvalidPcTraceLayout {
-            message: "Zisk Main row index overflow".to_owned(),
-        }
-    })?;
-    if exclusive_end > row_count {
+    if row >= row_count {
         return Err(GuestPcTraceBackendError::InvalidPcTraceLayout {
             message: "Zisk Main report rows exceed layout rows".to_owned(),
         });
