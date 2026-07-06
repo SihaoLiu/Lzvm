@@ -82,6 +82,7 @@ fn lean_retained_parent_checkpoint_binding_tracks_runtime_opening_contract() {
             "runtime_retained_parent_checkpoint_opening_evidence_implies_retained_rows_contract",
             "runtime_retained_parent_checkpoint_opening_checked_acceptance_retained_rows_contract",
             "runtime_retained_parent_checkpoint_opening_checked_acceptance_digest_contract",
+            "runtime_retained_parent_checkpoint_concrete_path_bound_from_no_collision",
             "runtime_retained_parent_checkpoint_concrete_path_digest_contract_from_bundle",
             "runtime_retained_parent_checkpoint_concrete_path_position_bound_from_no_collision",
             "runtime_retained_parent_checkpoint_concrete_path_position_bound_from_bundle",
@@ -514,6 +515,24 @@ fn lean_retained_parent_checkpoint_binding_tracks_runtime_opening_contract() {
         "runtime_retained_parent_checkpoint_opening_checked_acceptance_sound_from_concrete_nary_merkle",
         &[
             "runtime_retained_parent_checkpoint_opening_checked_acceptance_sound_from_hash_concrete_opening",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_retained_parent_checkpoint_concrete_path_bound_from_no_collision",
+        &[
+            "RuntimeRetainedParentCheckpointConcretePathBinding",
+            "MerkleCompressionNoCollision compress",
+            "retainedParentCheckpointStitchedPathBound",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_retained_parent_checkpoint_concrete_path_bound_from_no_collision",
+        &[
+            "binding.concreteStitchedPathVerifies",
+            "verified_concrete_merkle_path_implies_root_commits_to_leaf_at_index_from_no_collision",
+            "binding.stitchedPathRootCommitsToLeafImpliesStitchedPathBound",
         ],
     );
     lean_binding::assert_theorem_prefix_contains(

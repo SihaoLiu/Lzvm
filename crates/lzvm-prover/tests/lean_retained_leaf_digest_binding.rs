@@ -83,6 +83,7 @@ fn lean_retained_leaf_digest_binding_tracks_runtime_opening_contract() {
             "runtime_retained_leaf_digest_opening_evidence_implies_retained_rows_contract",
             "runtime_retained_leaf_digest_opening_checked_acceptance_retained_rows_contract",
             "runtime_retained_leaf_digest_opening_checked_acceptance_digest_contract",
+            "runtime_retained_leaf_digest_concrete_path_bound_from_no_collision",
             "runtime_retained_leaf_digest_concrete_path_digest_contract_from_bundle",
             "runtime_retained_leaf_digest_concrete_path_position_bound_from_no_collision",
             "runtime_retained_leaf_digest_concrete_path_position_bound_from_bundle",
@@ -550,6 +551,24 @@ fn lean_retained_leaf_digest_binding_tracks_runtime_opening_contract() {
         &lean_source,
         "runtime_retained_leaf_digest_nary_path_opening_and_core_contract_from_bundle",
         &["runtime_retained_leaf_digest_nary_path_digest_contract_from_bundle"],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_retained_leaf_digest_concrete_path_bound_from_no_collision",
+        &[
+            "RuntimeRetainedLeafDigestConcretePathBinding",
+            "MerkleCompressionNoCollision compress",
+            "retainedLeafDigestPathBound",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_retained_leaf_digest_concrete_path_bound_from_no_collision",
+        &[
+            "binding.concretePathVerifies",
+            "verified_concrete_merkle_path_implies_root_commits_to_leaf_at_index_from_no_collision",
+            "binding.retainedLeafDigestPathRootCommitsToLeafImpliesPathBound",
+        ],
     );
     lean_binding::assert_theorem_prefix_contains(
         &lean_source,
