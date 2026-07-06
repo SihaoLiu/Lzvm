@@ -3650,7 +3650,8 @@ mod tests {
         .expect("device compact commitment should build");
         assert!(device.drop_retained_leaf_digest_level_for_test());
 
-        let rows = [0_u64, 3891, 4095];
+        let rows = [3888_u64, 3891, 4095];
+        let retained_parent_group_count = 2;
         let mut batch_timing = WitnessStageOpeningWorkTiming::default();
         let batch_openings = open_witness_stage_commitments_with_source_device_timing(
             &device,
@@ -3681,21 +3682,24 @@ mod tests {
         );
         assert_eq!(batch_timing.leaf_coset_extend_call_count, 0);
         assert_eq!(batch_timing.leaf_hash_rows, 0);
-        assert_eq!(batch_timing.row_values_source_row_count, rows.len() * arity);
+        assert_eq!(
+            batch_timing.row_values_source_row_count,
+            retained_parent_group_count * arity
+        );
         assert_eq!(batch_timing.row_values_source_extend_call_count, 1);
         assert_eq!(
             batch_timing.row_values_source_extend_max_row_count,
-            rows.len() * arity
+            retained_parent_group_count * arity
         );
         assert_eq!(batch_timing.row_values_device_row_count, 0);
         assert_eq!(batch_timing.row_values_device_download_batch_count, 0);
         assert_eq!(
             batch_timing.row_values_word_count,
-            rows.len() * arity * column_count
+            retained_parent_group_count * arity * column_count
         );
         assert_eq!(
             batch_timing.row_values_byte_count,
-            rows.len() * arity * column_count * WORD_BYTES
+            retained_parent_group_count * arity * column_count * WORD_BYTES
         );
         let checkpoint_parent_rows = 65536 + 16384 + 4096 + 1024 + 256 + 64 + 16 + 4 + 1;
         assert_eq!(

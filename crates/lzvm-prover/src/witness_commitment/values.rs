@@ -2539,7 +2539,8 @@ impl WitnessStageCompactTreeStorage {
                 .checked_mul(self.arity)
                 .ok_or(WitnessStageOpeningError::LengthOverflow)?,
         );
-        let mut selected_offsets = Vec::with_capacity(rows.len());
+        let mut group_indexes_by_start = HashMap::with_capacity(rows.len());
+        let mut selected_groups = Vec::with_capacity(rows.len());
         for row in rows {
             if *row >= self.extended_rows {
                 return Err(WitnessStageOpeningError::LengthOverflow);
@@ -2554,8 +2555,15 @@ impl WitnessStageCompactTreeStorage {
             if group_end > self.extended_rows {
                 return Err(WitnessStageOpeningError::LengthOverflow);
             }
-            selected_offsets.push(selected_offset);
-            source_rows.extend(group_start..group_end);
+            let group_index = if let Some(group_index) = group_indexes_by_start.get(&group_start) {
+                *group_index
+            } else {
+                let group_index = group_indexes_by_start.len();
+                group_indexes_by_start.insert(group_start, group_index);
+                source_rows.extend(group_start..group_end);
+                group_index
+            };
+            selected_groups.push((group_index, selected_offset));
         }
 
         let group_values = self
@@ -2606,14 +2614,14 @@ impl WitnessStageCompactTreeStorage {
 
         let mut openings = Vec::with_capacity(rows.len());
         for (query_index, upper_suffix) in upper_suffixes.into_iter().enumerate() {
-            let group_start = query_index
+            let (group_index, selected_offset) = selected_groups[query_index];
+            let group_start = group_index
                 .checked_mul(self.arity)
                 .ok_or(WitnessStageOpeningError::LengthOverflow)?;
             let group_end = group_start
                 .checked_add(self.arity)
                 .ok_or(WitnessStageOpeningError::LengthOverflow)?;
             let group = &group_values[group_start..group_end];
-            let selected_offset = selected_offsets[query_index];
             let mut lower_siblings = Vec::with_capacity(self.arity.saturating_sub(1));
             for (offset, values) in group.iter().enumerate() {
                 if offset != selected_offset {
