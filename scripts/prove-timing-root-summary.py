@@ -882,6 +882,27 @@ CUDA_CACHED_REUSE_COUNT_KEY = "timing_cuda_allocator_cached_reuse_count"
 CUDA_PENDING_REUSE_COUNT_KEY = "timing_cuda_allocator_pending_reuse_count"
 CUDA_NO_WAIT_BYPASS_COUNT_KEY = "timing_cuda_allocator_no_wait_bypass_count"
 CUDA_NO_WAIT_BYPASS_BYTES_KEY = "timing_cuda_allocator_no_wait_bypass_bytes"
+CUDA_COPY_SITE_DIRECTIONS = ("h2d", "d2h")
+CUDA_COPY_SITE_TOP_RANKS = (1, 2)
+CUDA_COPY_SITE_TIMING_RE = re.compile(
+    r"^timing_cuda_copy_site_(h2d|d2h)_top_(\d+)_(.+?)_"
+    r"(calls|max_bytes|max_wait_ns|avg_wait_per_call_ns|wait_ns|bytes)$"
+)
+CUDA_COPY_SITE_SUMMARY_FIELDS = tuple(
+    field
+    for direction in CUDA_COPY_SITE_DIRECTIONS
+    for rank in CUDA_COPY_SITE_TOP_RANKS
+    for field in (
+        f"cuda_copy_site_{direction}_top_{rank}_site",
+        f"cuda_copy_site_{direction}_top_{rank}_calls",
+        f"cuda_copy_site_{direction}_top_{rank}_bytes",
+        f"cuda_copy_site_{direction}_top_{rank}_max_bytes",
+        f"cuda_copy_site_{direction}_top_{rank}_wait_ms",
+        f"cuda_copy_site_{direction}_top_{rank}_max_wait_ms",
+        f"cuda_copy_site_{direction}_top_{rank}_avg_wait_ms",
+    )
+)
+CUDA_COPY_SITE_HEADER = ",".join(CUDA_COPY_SITE_SUMMARY_FIELDS)
 SOURCE_RETENTION_ATTEMPTS_KEY = "timing_guest_stage_source_retention_attempts"
 SOURCE_RETENTION_RETAINED_KEY = "timing_guest_stage_source_retention_retained"
 SOURCE_RETENTION_REJECTED_KEY = "timing_guest_stage_source_retention_rejected"
@@ -1321,7 +1342,9 @@ HEADER = (
     "cuda_allocator_no_wait_bypass_count,cuda_allocator_no_wait_bypass_bytes,"
     "cuda_allocator_reuse_action_hint,"
     "cuda_host_register_wait_ms,cuda_host_unregister_wait_ms,"
-    "cuda_host_registration_total_wait_ms,cuda_h2d_bytes,cuda_transfer_action_hint,"
+    "cuda_host_registration_total_wait_ms,cuda_h2d_bytes,"
+    f"{CUDA_COPY_SITE_HEADER},"
+    "cuda_transfer_action_hint,"
     "data_residency_action_hint,"
     "copy_summary_gpu_residency_hint,copy_summary_h2d_bulk_app_frame_hint,"
     "copy_summary_small_d2h_batching_hint,"
@@ -1890,6 +1913,59 @@ def csv_cell(value: object) -> str:
     return text
 
 
+def cuda_copy_site_site_key(direction: str, rank: int) -> str:
+    return f"cuda_copy_site_{direction}_top_{rank}_site"
+
+
+def cuda_copy_site_numeric_key(direction: str, rank: int, field: str) -> str:
+    return f"cuda_copy_site_{direction}_top_{rank}_{field}"
+
+
+def cuda_copy_site_summary_fields(values: dict[str, int | str]) -> str:
+    fields: list[str] = []
+    for direction in CUDA_COPY_SITE_DIRECTIONS:
+        for rank in CUDA_COPY_SITE_TOP_RANKS:
+            site = values.get(cuda_copy_site_site_key(direction, rank), "none")
+            calls = values.get(cuda_copy_site_numeric_key(direction, rank, "calls"), 0)
+            bytes_value = values.get(
+                cuda_copy_site_numeric_key(direction, rank, "bytes"), 0
+            )
+            max_bytes = values.get(
+                cuda_copy_site_numeric_key(direction, rank, "max_bytes"), 0
+            )
+            wait_ms = (
+                values.get(cuda_copy_site_numeric_key(direction, rank, "wait_ns"), 0)
+                / 1_000_000.0
+            )
+            max_wait_ms = (
+                values.get(
+                    cuda_copy_site_numeric_key(direction, rank, "max_wait_ns"), 0
+                )
+                / 1_000_000.0
+            )
+            avg_wait_ms = (
+                values.get(
+                    cuda_copy_site_numeric_key(
+                        direction, rank, "avg_wait_per_call_ns"
+                    ),
+                    0,
+                )
+                / 1_000_000.0
+            )
+            fields.extend(
+                [
+                    csv_cell(site),
+                    str(calls),
+                    str(bytes_value),
+                    str(max_bytes),
+                    f"{wait_ms:.3f}",
+                    f"{max_wait_ms:.3f}",
+                    f"{avg_wait_ms:.3f}",
+                ]
+            )
+    return ",".join(fields)
+
+
 def parse_timing_log(text: str) -> dict[str, int | str]:
     values: dict[str, int | str] = {}
     nsys_copy_block = None
@@ -2209,14 +2285,27 @@ def parse_timing_log(text: str) -> dict[str, int | str]:
         if "=" not in line:
             continue
         key, value = line.split("=", 1)
-        if (
-            key not in TIMING_KEYS
-            and OPENING_STAGE_ROW_VALUE_DEVICE_DOWNLOAD_BATCH_RE.match(key) is None
-            and OPENING_STAGE_ROW_VALUE_DEVICE_SINGLE_DOWNLOAD_RE.match(key) is None
-            and OPENING_STAGE_ROW_VALUE_SOURCE_EXTEND_CALLS_RE.match(key) is None
-            and OPENING_STAGE_ROW_VALUE_SOURCE_EXTEND_MAX_ROWS_RE.match(key) is None
-        ):
-            continue
+        copy_site_match = CUDA_COPY_SITE_TIMING_RE.match(key)
+        if copy_site_match is not None:
+            direction, rank_text, site, field = copy_site_match.groups()
+            rank = int(rank_text)
+            if rank not in CUDA_COPY_SITE_TOP_RANKS:
+                continue
+            site_key = cuda_copy_site_site_key(direction, rank)
+            site_value = compact_csv_token(site)
+            if site_key in values and values[site_key] != site_value:
+                raise SystemExit(f"duplicate timing field: {site_key}")
+            values[site_key] = site_value
+            key = cuda_copy_site_numeric_key(direction, rank, field)
+        else:
+            if (
+                key not in TIMING_KEYS
+                and OPENING_STAGE_ROW_VALUE_DEVICE_DOWNLOAD_BATCH_RE.match(key) is None
+                and OPENING_STAGE_ROW_VALUE_DEVICE_SINGLE_DOWNLOAD_RE.match(key) is None
+                and OPENING_STAGE_ROW_VALUE_SOURCE_EXTEND_CALLS_RE.match(key) is None
+                and OPENING_STAGE_ROW_VALUE_SOURCE_EXTEND_MAX_ROWS_RE.match(key) is None
+            ):
+                continue
         try:
             parsed_value = int(value.strip())
         except ValueError:
@@ -6916,7 +7005,8 @@ def summarize_profile_values(
         f"{cuda_allocator_no_wait_bypass_count},"
         f"{cuda_allocator_no_wait_bypass_bytes},{cuda_allocator_reuse_hint},"
         f"{cuda_host_register_wait_ms:.3f},{cuda_host_unregister_wait_ms:.3f},"
-        f"{cuda_host_registration_total_wait_ms:.3f},{cuda_h2d_bytes},{cuda_transfer_hint},"
+        f"{cuda_host_registration_total_wait_ms:.3f},{cuda_h2d_bytes},"
+        f"{cuda_copy_site_summary_fields(values)},{cuda_transfer_hint},"
         f"{data_residency_hint},"
         f"{copy_summary_gpu_residency_hint},{copy_summary_h2d_bulk_app_frame_hint},"
         f"{copy_summary_small_d2h_batching_hint},"
@@ -7256,6 +7346,18 @@ def self_test() -> None:
                         f"{LEAF_NTT_STAGE_LAUNCHES_KEY}=15732",
                         f"{LEAF_NTT_BLOCK_TWIDDLE_LAUNCHES_KEY}=23598",
                         f"{DIRECT_D2H_WAIT_NS_KEY}=192973857",
+                        "timing_cuda_copy_site_h2d_top_1_load_alpha_rs_12_calls=4",
+                        "timing_cuda_copy_site_h2d_top_1_load_alpha_rs_12_bytes=4096",
+                        "timing_cuda_copy_site_h2d_top_1_load_alpha_rs_12_max_bytes=1024",
+                        "timing_cuda_copy_site_h2d_top_1_load_alpha_rs_12_wait_ns=8000000",
+                        "timing_cuda_copy_site_h2d_top_1_load_alpha_rs_12_max_wait_ns=3000000",
+                        "timing_cuda_copy_site_h2d_top_1_load_alpha_rs_12_avg_wait_per_call_ns=2000000",
+                        "timing_cuda_copy_site_d2h_top_1_store_beta_rs_34_calls=2",
+                        "timing_cuda_copy_site_d2h_top_1_store_beta_rs_34_bytes=2048",
+                        "timing_cuda_copy_site_d2h_top_1_store_beta_rs_34_max_bytes=1024",
+                        "timing_cuda_copy_site_d2h_top_1_store_beta_rs_34_wait_ns=6000000",
+                        "timing_cuda_copy_site_d2h_top_1_store_beta_rs_34_max_wait_ns=4000000",
+                        "timing_cuda_copy_site_d2h_top_1_store_beta_rs_34_avg_wait_per_call_ns=3000000",
                         "    23.99%    23.17%  [.] sha2::sha256::x86::digest_blocks",
                         "            |--3.36%--0xf2b2442ea4d72b97",
                         "    26.35%  [.] lzvm_prover::guest_pc_trace_backend::apply_main_lowered_report_row",
