@@ -3297,7 +3297,7 @@ pub(crate) fn build_guest_pc_trace_stage_source_devices_from_device_material_tim
 
 #[cfg(feature = "cuda")]
 fn guest_pc_descriptor_stream_ingress_enabled() -> bool {
-    env_flag_enabled("LZVM_CUDA_GUEST_PC_DESCRIPTOR_STREAM_INGRESS", false)
+    env_flag_enabled("LZVM_CUDA_GUEST_PC_DESCRIPTOR_STREAM_INGRESS", true)
 }
 
 #[cfg(feature = "cuda")]
