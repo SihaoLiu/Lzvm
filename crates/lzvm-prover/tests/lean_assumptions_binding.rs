@@ -102,6 +102,45 @@ fn lean_assumptions_exports_centralized_soundness_obligations() {
         vec!["crypto", "semantic"],
         "assumption bundle should not grow unaudited assumption fields"
     );
+    lean_binding::assert_theorem_declarations(
+        &assumptions_source,
+        &[
+            "merkle_hash_collision_resistance",
+            "transcript_hash_collision_resistance",
+            "random_oracle_model",
+            "fiat_shamir_transcript_binding",
+            "pcs_binding",
+            "pcs_opening_soundness",
+            "fri_low_degree_soundness",
+            "fri_query_soundness",
+        ],
+    );
+    for snippet in [
+        "theorem merkle_hash_collision_resistance\n    (assumptions : HashCollisionResistanceAssumption) :\n    assumptions.merkleHashCollisionResistanceStatement :=",
+        "theorem transcript_hash_collision_resistance\n    (assumptions : HashCollisionResistanceAssumption) :\n    assumptions.transcriptHashCollisionResistanceStatement :=",
+        "theorem random_oracle_model\n    {system : VerifierModel}\n    (assumptions : FiatShamirRandomOracleAssumption system) :\n    assumptions.randomOracleModelStatement :=",
+        "theorem fiat_shamir_transcript_binding\n    {system : VerifierModel}\n    (assumptions : FiatShamirRandomOracleAssumption system) :\n    forall publicInput proof,\n      system.accepts publicInput proof ->\n        system.transcriptBound publicInput proof :=",
+        "theorem pcs_binding\n    {system : VerifierModel}\n    (assumptions : PcsOpeningSoundnessAssumption system) :\n    assumptions.pcsBindingStatement :=",
+        "theorem pcs_opening_soundness\n    {system : VerifierModel}\n    (assumptions : PcsOpeningSoundnessAssumption system) :\n    forall publicInput proof,\n      system.accepts publicInput proof ->\n        system.pcsOpeningsValid publicInput proof :=",
+        "theorem fri_low_degree_soundness\n    {system : VerifierModel}\n    (assumptions : FriQuerySoundnessAssumption system) :\n    assumptions.friLowDegreeSoundnessStatement :=",
+        "theorem fri_query_soundness\n    {system : VerifierModel}\n    (assumptions : FriQuerySoundnessAssumption system) :\n    forall publicInput proof,\n      system.accepts publicInput proof ->\n        system.friQueriesValid publicInput proof :=",
+    ] {
+        assert!(
+            assumptions_source.contains(snippet),
+            "Lean assumption accessor should keep the expected signature: {snippet}"
+        );
+    }
+    assert!(
+        assumptions_source.contains(":=\n  assumptions.merkleHashCollisionResistance")
+            && assumptions_source.contains(":=\n  assumptions.transcriptHashCollisionResistance")
+            && assumptions_source.contains(":=\n  assumptions.randomOracleModel")
+            && assumptions_source.contains(":=\n  assumptions.fiatShamirTranscriptBinding")
+            && assumptions_source.contains(":=\n  assumptions.pcsBinding")
+            && assumptions_source.contains(":=\n  assumptions.pcsOpeningSoundness")
+            && assumptions_source.contains(":=\n  assumptions.friLowDegreeSoundness")
+            && assumptions_source.contains(":=\n  assumptions.friQuerySoundness"),
+        "Lean assumption accessors should project their matching structure fields directly"
+    );
     assert!(
         assumptions_source.contains("def transcript_binding")
             && assumptions_source.contains("def pcs_opening_sound")
