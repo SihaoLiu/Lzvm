@@ -10887,6 +10887,18 @@ impl<'a> ZiskMainReportEffects<'a> {
             precompile_result: None,
         }
     }
+
+    fn from_checked_empty_memory_fast_path_report(
+        report: &'a GuestMachineReport,
+        register_write_index: Option<u8>,
+    ) -> Self {
+        Self {
+            register_writes: report.register_writes_with_index(register_write_index),
+            memory_accesses: &[],
+            precompile_memory_accesses: &[],
+            precompile_result: None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -11169,7 +11181,7 @@ fn validate_and_apply_zisk_main_report(
                     if let Some(timing) = timing.as_mut() {
                         timing.record_main_report_fcall_result_fast_path();
                     }
-                    let effects = ZiskMainReportEffects::from_non_precompile_fast_path_report(
+                    let effects = ZiskMainReportEffects::from_checked_empty_memory_fast_path_report(
                         report,
                         Some(store_index),
                     );
@@ -11254,7 +11266,7 @@ fn validate_and_apply_zisk_main_report(
                     if let Some(timing) = timing.as_mut() {
                         timing.record_main_report_no_memory_fast_path();
                     }
-                    let effects = ZiskMainReportEffects::from_non_precompile_fast_path_report(
+                    let effects = ZiskMainReportEffects::from_checked_empty_memory_fast_path_report(
                         report,
                         parts.store_index,
                     );
@@ -11294,8 +11306,9 @@ fn validate_and_apply_zisk_main_report(
                     if let Some(timing) = timing.as_mut() {
                         timing.record_main_report_no_memory_fast_path();
                     }
-                    let effects =
-                        ZiskMainReportEffects::from_non_precompile_fast_path_report(report, None);
+                    let effects = ZiskMainReportEffects::from_checked_empty_memory_fast_path_report(
+                        report, None,
+                    );
                     apply_internal_memory_copy_fast_path(
                         row,
                         instruction,
@@ -11375,7 +11388,7 @@ fn validate_and_apply_zisk_main_report(
                     if let Some(timing) = timing.as_mut() {
                         timing.record_main_report_jump_fast_path();
                     }
-                    let effects = ZiskMainReportEffects::from_non_precompile_fast_path_report(
+                    let effects = ZiskMainReportEffects::from_checked_empty_memory_fast_path_report(
                         report,
                         parts.store_index,
                     );
