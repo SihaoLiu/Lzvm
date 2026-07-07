@@ -6431,11 +6431,12 @@ fn guest_pc_trace_timing_reports_stage_source_retention_budget() {
     );
     assert!(
         cache_body.contains("retained_source_device_limit()")
+            && cache_body.contains("if retention_limit == 0")
             && cache_body.contains("add_stage_source_retention")
             && cache_body.contains("retained_byte_len()")
             && cache_body.contains("max_retained_byte_count")
             && cache_body.contains("max_rejected_byte_count"),
-        "retained descriptor collection should record attempts, rejections, rejected bytes, and limit"
+        "retained descriptor collection should record attempts, rejections, rejected bytes, and skip zero-budget scans"
     );
     assert!(
         cache_body.contains("retained_buffer_keys") && cache_body.contains("retained_buffer_key()"),

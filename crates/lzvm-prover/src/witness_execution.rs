@@ -3515,6 +3515,26 @@ impl WitnessStageSourceDeviceCache {
         debug_retention: bool,
     ) -> Vec<WitnessStageRetainedSourceDevice> {
         let retention_limit = retained_source_device_limit();
+        if retention_limit == 0 {
+            if let Some(timing) = timing {
+                timing.add_stage_source_retention(StageSourceRetentionTiming {
+                    attempt_count: 0,
+                    retained_count: 0,
+                    rejected_count: 0,
+                    retained_byte_count: 0,
+                    rejected_byte_count: 0,
+                    max_retained_byte_count: 0,
+                    max_rejected_byte_count: 0,
+                    limit_byte_count: retention_limit,
+                });
+            }
+            if debug_retention {
+                eprintln!(
+                    "lzvm_cuda_fri_stage_source_retained=0 attempts=0 retained_bytes=0 max_retained_bytes=0 rejected=0 rejected_bytes=0 max_rejected_bytes=0 limit_bytes={retention_limit}",
+                );
+            }
+            return Vec::new();
+        }
         let mut attempt_count = 0usize;
         let mut rejected_count = 0usize;
         let mut retained_byte_count = 0usize;
