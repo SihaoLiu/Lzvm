@@ -343,6 +343,16 @@ fn lean_proof_artifact_binding_exports_core_contract_projection() {
         &lean_source,
         "runtime_proof_artifact_binding_checked_acceptance_audited_core_contract",
         &[
+            "assumption_bundle_carries_required_crypto_evidence",
+            "assumption_bundle_carries_required_semantic_evidence",
+            "runtime_proof_artifact_binding_checked_acceptance_full_contract",
+            "runtime_proof_artifact_binding_checked_acceptance_verifier_core_contract",
+        ],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &lean_source,
+        "runtime_proof_artifact_binding_checked_acceptance_audited_core_contract",
+        &[
             "assumption_bundle_carries_required_evidence",
             "runtime_proof_artifact_binding_checked_acceptance_evidence_core_and_sound",
         ],
@@ -446,6 +456,16 @@ fn lean_proof_artifact_binding_exports_core_contract_projection() {
         ],
     );
     lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_proof_artifact_finalized_audited_core_contract",
+        &[
+            "assumption_bundle_carries_required_crypto_evidence",
+            "assumption_bundle_carries_required_semantic_evidence",
+            "runtime_proof_artifact_finalized_full_contract",
+            "runtime_proof_artifact_finalized_verifier_core_contract",
+        ],
+    );
+    lean_binding::assert_theorem_body_omits(
         &lean_source,
         "runtime_proof_artifact_finalized_audited_core_contract",
         &[

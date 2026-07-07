@@ -972,10 +972,16 @@ theorem runtime_proof_artifact_binding_checked_acceptance_audited_core_contract
           /\ RuntimeVerifierCoreContract system publicInput proof
           /\ SoundWitness system publicInput proof := by
   intro artifact publicInput proof accepted
-  have auditedAssumptions :=
-    assumption_bundle_carries_required_evidence assumptions
-  have contracts :=
-    runtime_proof_artifact_binding_checked_acceptance_evidence_core_and_sound
+  have fullContract :=
+    runtime_proof_artifact_binding_checked_acceptance_full_contract
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have coreContract :=
+    runtime_proof_artifact_binding_checked_acceptance_verifier_core_contract
       assumptions
       validation
       artifact
@@ -983,8 +989,14 @@ theorem runtime_proof_artifact_binding_checked_acceptance_audited_core_contract
       proof
       accepted
   exact
-    And.intro auditedAssumptions.left
-      (And.intro auditedAssumptions.right contracts)
+    And.intro
+      (assumption_bundle_carries_required_crypto_evidence assumptions)
+      (And.intro
+        (assumption_bundle_carries_required_semantic_evidence assumptions)
+        (And.intro fullContract.left
+          (And.intro fullContract.right.left
+            (And.intro fullContract.right.right.left
+              (And.intro coreContract fullContract.right.right.right)))))
 
 theorem
   runtime_proof_artifact_binding_checked_acceptance_concrete_core_sound_contract
@@ -1191,10 +1203,16 @@ theorem runtime_proof_artifact_finalized_audited_core_contract
           /\ RuntimeVerifierCoreContract system publicInput proof
           /\ SoundWitness system publicInput proof := by
   intro artifact publicInput proof finalized
-  have auditedAssumptions :=
-    assumption_bundle_carries_required_evidence assumptions
-  have contracts :=
-    runtime_proof_artifact_finalized_evidence_core_and_sound
+  have fullContract :=
+    runtime_proof_artifact_finalized_full_contract
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      finalized
+  have coreContract :=
+    runtime_proof_artifact_finalized_verifier_core_contract
       assumptions
       validation
       artifact
@@ -1202,7 +1220,13 @@ theorem runtime_proof_artifact_finalized_audited_core_contract
       proof
       finalized
   exact
-    And.intro auditedAssumptions.left
-      (And.intro auditedAssumptions.right contracts)
+    And.intro
+      (assumption_bundle_carries_required_crypto_evidence assumptions)
+      (And.intro
+        (assumption_bundle_carries_required_semantic_evidence assumptions)
+        (And.intro fullContract.left
+          (And.intro fullContract.right.left
+            (And.intro fullContract.right.right.left
+              (And.intro coreContract fullContract.right.right.right)))))
 
 end Lzvm
