@@ -258,7 +258,9 @@ fn lean_soundness_binding_exports_abstract_soundness_theorems() {
     for identifier in [
         "accepted_proof_crypto_core_contract",
         "accepted_proof_semantic_execution_obligations",
-        "abstract_verifier_sound",
+        "abstract_verifier_sound_with_semantic_evidence",
+        "proofSystemSound",
+        "soundWitness",
     ] {
         lean_binding::assert_theorem_body_contains_identifier(
             &lean_source,
@@ -267,6 +269,7 @@ fn lean_soundness_binding_exports_abstract_soundness_theorems() {
         );
     }
     for identifier in [
+        "abstract_verifier_sound",
         "accepted_proof_audited_core_and_sound_witness",
         "sound_witness_implies_execution_obligations",
     ] {
@@ -531,7 +534,8 @@ fn lean_soundness_binding_exports_abstract_soundness_theorems() {
     for identifier in [
         "accepted_proof_crypto_core_contract",
         "accepted_proof_semantic_execution_obligations",
-        "abstract_verifier_sound",
+        "abstract_verifier_sound_with_semantic_evidence",
+        "proofSystemSound",
     ] {
         lean_binding::assert_theorem_body_contains_identifier(
             &lean_source,
@@ -540,6 +544,7 @@ fn lean_soundness_binding_exports_abstract_soundness_theorems() {
         );
     }
     for identifier in [
+        "abstract_verifier_sound",
         "accepted_proof_audited_core_and_execution_obligations",
         "proof_system_sound_accepts_core_contract_and_execution_obligations",
     ] {
@@ -570,7 +575,8 @@ fn lean_soundness_binding_exports_abstract_soundness_theorems() {
     for identifier in [
         "accepted_proof_crypto_core_contract",
         "accepted_proof_semantic_execution_obligations",
-        "abstract_verifier_sound",
+        "abstract_verifier_sound_with_semantic_evidence",
+        "proofSystemSound",
         "coreContract",
         "transcriptBound",
         "publicInputBound",
@@ -587,6 +593,7 @@ fn lean_soundness_binding_exports_abstract_soundness_theorems() {
         );
     }
     for identifier in [
+        "abstract_verifier_sound",
         "accepted_proof_audited_proof_system_and_components",
         "assumption_bundle_verifier_core_contract",
         "assumption_bundle_carries_required_evidence",
