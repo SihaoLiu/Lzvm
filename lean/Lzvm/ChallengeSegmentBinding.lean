@@ -905,10 +905,16 @@ theorem runtime_challenge_segment_binding_checked_acceptance_audited_core_contra
           /\ RuntimeVerifierCoreContract system publicInput proof
           /\ SoundWitness system publicInput proof := by
   intro artifact publicInput proof accepted
-  have auditedAssumptions :=
-    assumption_bundle_carries_required_evidence assumptions
-  have contracts :=
-    runtime_challenge_segment_binding_checked_acceptance_evidence_core_and_sound
+  have checkedSound :=
+    runtime_challenge_segment_binding_checked_acceptance_sound
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have coreContract :=
+    runtime_challenge_segment_binding_checked_acceptance_verifier_core_contract
       assumptions
       validation
       artifact
@@ -916,8 +922,14 @@ theorem runtime_challenge_segment_binding_checked_acceptance_audited_core_contra
       proof
       accepted
   exact
-    And.intro auditedAssumptions.left
-      (And.intro auditedAssumptions.right contracts)
+    And.intro
+      (assumption_bundle_carries_required_crypto_evidence assumptions)
+      (And.intro
+        (assumption_bundle_carries_required_semantic_evidence assumptions)
+        (And.intro checkedSound.left
+          (And.intro checkedSound.right.left
+            (And.intro checkedSound.right.right.left
+              (And.intro coreContract checkedSound.right.right.right)))))
 
 theorem
   runtime_challenge_segment_binding_checked_acceptance_concrete_core_sound_contract
