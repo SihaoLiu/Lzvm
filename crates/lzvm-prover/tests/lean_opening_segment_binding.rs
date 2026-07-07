@@ -930,8 +930,13 @@ fn lean_opening_segment_binding_exports_core_contract_projection() {
             "runtime_soundness_checked_acceptance_verifier_accepts",
             "accepted_proof_crypto_core_contract",
             "accepted_proof_semantic_execution_obligations",
-            "abstract_verifier_sound",
+            "abstract_verifier_sound_with_semantic_evidence",
         ],
+    );
+    lean_binding::assert_theorem_body_omits_identifier(
+        &lean_source,
+        "runtime_opening_segment_binding_direct_core_sound_witness_contract",
+        "abstract_verifier_sound",
     );
     lean_binding::assert_theorem_body_omits(
         &lean_source,

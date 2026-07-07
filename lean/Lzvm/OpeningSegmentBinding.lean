@@ -1671,8 +1671,7 @@ theorem runtime_opening_segment_binding_direct_core_sound_witness_contract
       proof
       verifierAccepts
   have soundWitness :=
-    abstract_verifier_sound
-      assumptions
+    (abstract_verifier_sound_with_semantic_evidence assumptions).right
       publicInput
       proof
       verifierAccepts
