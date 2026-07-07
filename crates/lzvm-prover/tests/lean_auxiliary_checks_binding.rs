@@ -3227,7 +3227,11 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             )
             && witness_execution_source.contains("fn terminal_sparse_trace_source_enabled")
             && witness_execution_source.contains("LZVM_CUDA_TERMINAL_SPARSE_TRACE_SOURCE")
-            && witness_execution_source.contains("unwrap_or(false)")
+            && witness_execution_source.contains("unwrap_or(true)")
+            && compact_source_contains(
+                &lean_source,
+                "| none => config.effectiveTerminalSparseSourceSelected = match config.terminalTraceSourcePrefixRows with",
+            )
             && witness_execution_source.contains("terminal_sparse_trace_source_enabled()")
             && compact_source_contains(
                 &witness_execution_source,

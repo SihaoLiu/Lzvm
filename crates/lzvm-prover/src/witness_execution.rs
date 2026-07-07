@@ -3798,7 +3798,7 @@ fn terminal_sparse_trace_source_enabled() -> bool {
                 "1" | "true" | "TRUE" | "yes" | "YES" | "on" | "ON"
             )
         })
-        .unwrap_or(false)
+        .unwrap_or(true)
 }
 
 #[cfg(feature = "cuda")]
@@ -9240,7 +9240,7 @@ mod tests {
 
         let default_mode = GuestPcTraceSegmentCommitMode::from_input(1024, 0, None);
         assert!(
-            !default_mode
+            default_mode
                 .trace_cuda_run_config
                 .stage_source_upload
                 .terminal_sparse_trace_source

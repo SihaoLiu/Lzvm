@@ -1104,7 +1104,12 @@ def GuestPcTraceTerminalSparseSourceDecisionMatches
             | none =>
                 false)
   | none =>
-      config.effectiveTerminalSparseSourceSelected = false
+      config.effectiveTerminalSparseSourceSelected =
+        match config.terminalTraceSourcePrefixRows with
+        | some prefixRows =>
+            decide (prefixRows < config.terminalTraceLayoutRows)
+        | none =>
+            false
 
 structure GuestPcTraceTerminalSparseSourceValidation where
   terminalSparseSourceConfigAccepted :
