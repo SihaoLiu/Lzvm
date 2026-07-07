@@ -403,6 +403,8 @@ const DEFAULT_RETAINED_SOURCE_DEVICE_BYTES: usize = 0;
 #[cfg(feature = "cuda")]
 const RETAINED_SOURCE_DEVICE_RESERVE_BYTES: usize = 11 * 1024 * 1024 * 1024;
 #[cfg(feature = "cuda")]
+const MAX_RETAINED_SOURCE_DEVICE_BYTES: usize = 1_000_000_000;
+#[cfg(feature = "cuda")]
 const RETAINED_COMBINED_DEVICE_CACHE_RESERVE_BYTES: usize = 4_000_000_000;
 #[cfg(feature = "cuda")]
 const RETAINED_COMBINED_DEVICE_CACHE_RESERVE_BYTES_ENV: &str =
@@ -916,12 +918,13 @@ fn release_retained_parent_checkpoint_bytes(bytes: usize) {
 
 #[cfg(feature = "cuda")]
 pub(crate) fn retained_source_device_limit() -> usize {
-    std::env::var("LZVM_CUDA_RETAINED_SOURCE_BYTES")
+    let configured = std::env::var("LZVM_CUDA_RETAINED_SOURCE_BYTES")
         .ok()
         .and_then(|value| value.parse::<usize>().ok())
         .unwrap_or_else(|| {
             *RETAINED_SOURCE_DEVICE_LIMIT.get_or_init(default_retained_source_device_limit)
-        })
+        });
+    configured.min(MAX_RETAINED_SOURCE_DEVICE_BYTES)
 }
 
 #[cfg(feature = "cuda")]
@@ -3855,6 +3858,28 @@ mod timing_tests {
 #[cfg(all(test, feature = "cuda"))]
 mod tests {
     use super::*;
+
+    #[test]
+    fn retained_source_device_limit_caps_large_opt_in_budgets() {
+        let _lock = crate::CUDA_TEST_ENV_LOCK
+            .lock()
+            .expect("retained source env lock should acquire");
+        let previous = std::env::var_os("LZVM_CUDA_RETAINED_SOURCE_BYTES");
+
+        std::env::set_var("LZVM_CUDA_RETAINED_SOURCE_BYTES", "1048576");
+        assert_eq!(retained_source_device_limit(), 1048576);
+
+        std::env::set_var("LZVM_CUDA_RETAINED_SOURCE_BYTES", "3000000000");
+        assert_eq!(
+            retained_source_device_limit(),
+            MAX_RETAINED_SOURCE_DEVICE_BYTES
+        );
+
+        match previous {
+            Some(value) => std::env::set_var("LZVM_CUDA_RETAINED_SOURCE_BYTES", value),
+            None => std::env::remove_var("LZVM_CUDA_RETAINED_SOURCE_BYTES"),
+        }
+    }
 
     #[test]
     fn default_retained_leaf_digest_limit_stays_within_static_cache_cap() {
