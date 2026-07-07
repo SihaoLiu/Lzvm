@@ -1159,7 +1159,8 @@ theorem runtime_soundness_checked_acceptance_proof_system_sound
           /\ system.accepts publicInput proof
           /\ SoundWitness system publicInput proof := by
   intro artifact publicInput proof requiresExternalSource checked
-  have proofSystemSound := abstract_verifier_sound assumptions
+  have proofSystemSound :=
+    (abstract_verifier_sound_with_semantic_evidence assumptions).right
   have verifierAccepts :=
     runtime_soundness_checked_acceptance_verifier_accepts
       validation
@@ -1468,7 +1469,8 @@ theorem runtime_soundness_checked_acceptance_proof_system_full_soundness_contrac
               /\ system.witnessMatchesTrace witness trace)
           /\ SoundWitness system publicInput proof := by
   intro artifact publicInput proof requiresExternalSource checked
-  have proofSystemSound := abstract_verifier_sound assumptions
+  have proofSystemSound :=
+    (abstract_verifier_sound_with_semantic_evidence assumptions).right
   have acceptsFullContract :=
     runtime_soundness_checked_acceptance_accepts_full_soundness_contract
       assumptions
@@ -1700,8 +1702,7 @@ theorem runtime_soundness_checked_acceptance_direct_finalized_core_sound_witness
       proof
       verifierAccepts
   have soundWitness :=
-    abstract_verifier_sound
-      assumptions
+    (abstract_verifier_sound_with_semantic_evidence assumptions).right
       publicInput
       proof
       verifierAccepts
