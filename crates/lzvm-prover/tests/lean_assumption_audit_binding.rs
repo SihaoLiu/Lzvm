@@ -89,6 +89,7 @@ fn lean_assumption_audit_exports_runtime_soundness_coverage() {
             "assumption_bundle_trace_extraction",
             "assumption_bundle_constraint_satisfaction",
             "assumption_bundle_witness_extraction",
+            "required_assumption_statements_verifier_core_contract",
             "assumption_bundle_verifier_core_contract",
         ],
     );
@@ -219,6 +220,26 @@ fn lean_assumption_audit_exports_runtime_soundness_coverage() {
     }
     lean_binding::assert_theorem_prefix_contains(
         &audit_source,
+        "required_assumption_statements_verifier_core_contract",
+        &[
+            "RequiredCryptographicAssumptionStatements crypto",
+            "RequiredSemanticAssumptionStatements semantic",
+            "system.accepts publicInput proof",
+            "RuntimeVerifierCoreContract system publicInput proof",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &audit_source,
+        "required_assumption_statements_verifier_core_contract",
+        &[
+            "required_crypto_assumptions_fiat_shamir_transcript_binding",
+            "required_semantic_assumptions_public_input_binding",
+            "required_crypto_assumptions_pcs_opening_soundness",
+            "required_crypto_assumptions_fri_query_soundness",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &audit_source,
         "assumption_bundle_verifier_core_contract",
         &[
             "AssumptionBundle system",
@@ -227,6 +248,15 @@ fn lean_assumption_audit_exports_runtime_soundness_coverage() {
         ],
     );
     lean_binding::assert_theorem_body_contains(
+        &audit_source,
+        "assumption_bundle_verifier_core_contract",
+        &[
+            "required_assumption_statements_verifier_core_contract",
+            "assumption_bundle_carries_required_crypto_evidence",
+            "assumption_bundle_carries_required_semantic_evidence",
+        ],
+    );
+    lean_binding::assert_theorem_body_omits(
         &audit_source,
         "assumption_bundle_verifier_core_contract",
         &[
