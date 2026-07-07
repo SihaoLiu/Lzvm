@@ -228,14 +228,22 @@ theorem accepted_proof_audited_core_and_execution_obligations
               /\ system.constraintsSatisfied constraints trace
               /\ system.witnessMatchesTrace witness trace := by
   intro publicInput proof accepted
-  have auditedCoreExecutionAndWitness :=
-    accepted_proof_audited_core_execution_and_sound_witness
+  have cryptoCore :=
+    accepted_proof_crypto_core_contract
       assumptions
       publicInput
       proof
       accepted
-  rcases auditedCoreExecutionAndWitness with
-    ⟨cryptoEvidence, semanticEvidence, coreContract, executionObligations, _soundWitness⟩
+  have semanticExecution :=
+    accepted_proof_semantic_execution_obligations
+      assumptions
+      publicInput
+      proof
+      accepted
+  rcases cryptoCore with
+    ⟨cryptoEvidence, coreContract⟩
+  rcases semanticExecution with
+    ⟨semanticEvidence, executionObligations⟩
   exact
     ⟨cryptoEvidence,
       semanticEvidence,
