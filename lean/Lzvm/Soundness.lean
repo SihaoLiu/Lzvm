@@ -241,15 +241,11 @@ theorem accepted_proof_audited_core_and_execution_obligations
       publicInput
       proof
       accepted
-  rcases cryptoCore with
-    ⟨cryptoEvidence, coreContract⟩
-  rcases semanticExecution with
-    ⟨semanticEvidence, executionObligations⟩
   exact
-    ⟨cryptoEvidence,
-      semanticEvidence,
-      coreContract,
-      executionObligations⟩
+    ⟨cryptoCore.1,
+      semanticExecution.1,
+      cryptoCore.2,
+      semanticExecution.2⟩
 
 theorem accepted_proof_audited_full_evidence
     {system : VerifierModel}
