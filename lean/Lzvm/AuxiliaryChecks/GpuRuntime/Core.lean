@@ -769,5 +769,161 @@ theorem gpu_allocator_no_wait_bypass_checked_acceptance_core_and_sound
   exact And.intro sameRequest
     (And.intro pendingNotReused (And.intro freshIssued coreAndSound))
 
+theorem gpu_setup_checked_acceptance_constants_audited_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : GpuSetupCacheValidation)
+    (request : GpuSetupRequest) :
+    forall publicInput proof,
+      GpuSetupCheckedAcceptance system validation request publicInput proof ->
+        RequiredCryptographicAssumptionStatements assumptions.crypto
+          /\ RequiredSemanticAssumptionStatements assumptions.semantic
+          /\ validation.constantsSoundFor request.device request.requiredBits
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof checked
+  have auditedAssumptions :=
+    assumption_bundle_carries_required_evidence assumptions
+  have contracts :=
+    gpu_setup_checked_acceptance_constants_core_and_sound
+      assumptions
+      validation
+      request
+      publicInput
+      proof
+      checked
+  exact
+    And.intro auditedAssumptions.left
+      (And.intro auditedAssumptions.right contracts)
+
+theorem gpu_allocation_checked_acceptance_written_contents_audited_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : GpuAllocationCacheValidation)
+    (allocation : GpuAllocationSource) :
+    forall publicInput proof,
+      GpuAllocationCheckedAcceptance system validation allocation publicInput proof ->
+        RequiredCryptographicAssumptionStatements assumptions.crypto
+          /\ RequiredSemanticAssumptionStatements assumptions.semantic
+          /\ validation.writtenContentsBound allocation publicInput proof
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof checked
+  have auditedAssumptions :=
+    assumption_bundle_carries_required_evidence assumptions
+  have contracts :=
+    gpu_allocation_checked_acceptance_written_contents_core_and_sound
+      assumptions
+      validation
+      allocation
+      publicInput
+      proof
+      checked
+  exact
+    And.intro auditedAssumptions.left
+      (And.intro auditedAssumptions.right contracts)
+
+theorem gpu_host_device_copy_round_trip_checked_acceptance_written_contents_audited_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : GpuHostDeviceCopyRoundTripValidation)
+    (allocation : GpuAllocationSource) :
+    forall publicInput proof,
+      GpuHostDeviceCopyRoundTripCheckedAcceptance
+          system
+          validation
+          allocation
+          publicInput
+          proof ->
+        RequiredCryptographicAssumptionStatements assumptions.crypto
+          /\ RequiredSemanticAssumptionStatements assumptions.semantic
+          /\ validation.allocationValidation.writtenContentsBound allocation publicInput proof
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof checked
+  have auditedAssumptions :=
+    assumption_bundle_carries_required_evidence assumptions
+  have contracts :=
+    gpu_host_device_copy_round_trip_checked_acceptance_written_contents_core_and_sound
+      assumptions
+      validation
+      allocation
+      publicInput
+      proof
+      checked
+  exact
+    And.intro auditedAssumptions.left
+      (And.intro auditedAssumptions.right contracts)
+
+theorem gpu_temporary_buffer_reuse_checked_acceptance_reuse_audited_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : GpuTemporaryBufferReuseValidation)
+    (previous next : GpuAllocationSource) :
+    forall publicInput proof,
+      GpuTemporaryBufferReuseCheckedAcceptance
+          system
+          validation
+          previous
+          next
+          publicInput
+          proof ->
+        RequiredCryptographicAssumptionStatements assumptions.crypto
+          /\ RequiredSemanticAssumptionStatements assumptions.semantic
+          /\ GpuAllocationSameRequest previous next
+          /\ validation.pendingDeviceReadsComplete previous publicInput proof
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof checked
+  have auditedAssumptions :=
+    assumption_bundle_carries_required_evidence assumptions
+  have contracts :=
+    gpu_temporary_buffer_reuse_checked_acceptance_reuse_core_and_sound
+      assumptions
+      validation
+      previous
+      next
+      publicInput
+      proof
+      checked
+  exact
+    And.intro auditedAssumptions.left
+      (And.intro auditedAssumptions.right contracts)
+
+theorem gpu_allocator_no_wait_bypass_checked_acceptance_audited_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : GpuAllocatorNoWaitBypassValidation)
+    (pending fresh : GpuAllocationSource) :
+    forall publicInput proof,
+      GpuAllocatorNoWaitBypassCheckedAcceptance
+          system
+          validation
+          pending
+          fresh
+          publicInput
+          proof ->
+        RequiredCryptographicAssumptionStatements assumptions.crypto
+          /\ RequiredSemanticAssumptionStatements assumptions.semantic
+          /\ GpuAllocationSameRequest pending fresh
+          /\ validation.pendingAllocationNotReused pending publicInput proof
+          /\ validation.freshAllocationIssued fresh publicInput proof
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof checked
+  have auditedAssumptions :=
+    assumption_bundle_carries_required_evidence assumptions
+  have contracts :=
+    gpu_allocator_no_wait_bypass_checked_acceptance_core_and_sound
+      assumptions
+      validation
+      pending
+      fresh
+      publicInput
+      proof
+      checked
+  exact
+    And.intro auditedAssumptions.left
+      (And.intro auditedAssumptions.right contracts)
 
 end Lzvm

@@ -5777,18 +5777,24 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "gpu_setup_checked_acceptance_sound",
             "gpu_setup_checked_acceptance_verifier_core_contract",
             "gpu_setup_checked_acceptance_constants_core_and_sound",
+            "gpu_setup_checked_acceptance_constants_audited_core_contract",
             "gpu_setup_cache_reuse_sound",
             "gpu_setup_cache_reuse_request_device_sound",
             "gpu_allocation_checked_acceptance_projects_written_contents",
             "gpu_allocation_checked_acceptance_sound",
             "gpu_allocation_checked_acceptance_verifier_core_contract",
             "gpu_allocation_checked_acceptance_written_contents_core_and_sound",
+            "gpu_allocation_checked_acceptance_written_contents_audited_core_contract",
             "gpu_host_device_copy_round_trip_implies_written_contents",
             "gpu_host_device_copy_round_trip_checked_acceptance_projects_round_trip",
             "gpu_host_device_copy_round_trip_checked_acceptance_projects_written_contents",
             "gpu_host_device_copy_round_trip_checked_acceptance_sound",
             "gpu_host_device_copy_round_trip_checked_acceptance_verifier_core_contract",
             "gpu_host_device_copy_round_trip_checked_acceptance_written_contents_core_and_sound",
+            concat!(
+                "gpu_host_device_copy_round_trip_checked_acceptance_written_contents_",
+                "audited_core_contract"
+            ),
             "gpu_temporary_buffer_reuse_implies_same_request",
             "gpu_temporary_buffer_reuse_implies_pending_reads_complete",
             "gpu_temporary_buffer_reuse_checked_acceptance_projects_same_request",
@@ -5796,6 +5802,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "gpu_temporary_buffer_reuse_checked_acceptance_sound",
             "gpu_temporary_buffer_reuse_checked_acceptance_verifier_core_contract",
             "gpu_temporary_buffer_reuse_checked_acceptance_reuse_core_and_sound",
+            "gpu_temporary_buffer_reuse_checked_acceptance_reuse_audited_core_contract",
             "gpu_leaf_output_buffer_reuse_implies_canonical_leaf_bytes",
             "gpu_leaf_output_buffer_reuse_checked_acceptance_projects_verifier_acceptance",
             "gpu_leaf_output_buffer_reuse_checked_acceptance_projects_length_match",
@@ -5813,6 +5820,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "gpu_allocator_no_wait_bypass_checked_acceptance_sound",
             "gpu_allocator_no_wait_bypass_checked_acceptance_verifier_core_contract",
             "gpu_allocator_no_wait_bypass_checked_acceptance_core_and_sound",
+            "gpu_allocator_no_wait_bypass_checked_acceptance_audited_core_contract",
             "gpu_allocator_no_wait_limit_checked_acceptance_projects_decision",
             "gpu_allocator_no_wait_limit_checked_acceptance_sound",
             "gpu_allocator_no_wait_limit_checked_acceptance_verifier_core_contract",
@@ -6009,6 +6017,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "fri_fixed_column_cache_checked_acceptance_sound",
             "fri_fixed_column_cache_checked_acceptance_verifier_core_contract",
             "fri_fixed_column_cache_checked_acceptance_core_and_sound",
+            "fri_fixed_column_cache_checked_acceptance_audited_core_contract",
             "gpu_coset_extension_matches_host_implies_leaf_bytes",
             "gpu_coset_extension_checked_acceptance_projects_verifier_acceptance",
             "gpu_coset_extension_checked_acceptance_projects_matches_host",
@@ -7674,6 +7683,129 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "sound_witness_implies_verifier_core_contract",
         ],
     );
+    for (theorem, prefix_terms, combined_helper, omitted_terms) in [
+        (
+            "gpu_setup_checked_acceptance_constants_audited_core_contract",
+            &[
+                "RequiredCryptographicAssumptionStatements assumptions.crypto",
+                "RequiredSemanticAssumptionStatements assumptions.semantic",
+                "validation.constantsSoundFor request.device request.requiredBits",
+                "RuntimeVerifierCoreContract system publicInput proof",
+                "SoundWitness system publicInput proof",
+            ][..],
+            "gpu_setup_checked_acceptance_constants_core_and_sound",
+            &[
+                "gpu_setup_checked_acceptance_sound",
+                "gpu_setup_checked_acceptance_verifier_core_contract",
+                "sound_witness_implies_verifier_core_contract",
+            ][..],
+        ),
+        (
+            "gpu_allocation_checked_acceptance_written_contents_audited_core_contract",
+            &[
+                "RequiredCryptographicAssumptionStatements assumptions.crypto",
+                "RequiredSemanticAssumptionStatements assumptions.semantic",
+                "validation.writtenContentsBound allocation publicInput proof",
+                "RuntimeVerifierCoreContract system publicInput proof",
+                "SoundWitness system publicInput proof",
+            ][..],
+            "gpu_allocation_checked_acceptance_written_contents_core_and_sound",
+            &[
+                "gpu_allocation_checked_acceptance_sound",
+                "gpu_allocation_checked_acceptance_verifier_core_contract",
+                "sound_witness_implies_verifier_core_contract",
+            ][..],
+        ),
+        (
+            concat!(
+                "gpu_host_device_copy_round_trip_checked_acceptance_written_contents_",
+                "audited_core_contract"
+            ),
+            &[
+                "RequiredCryptographicAssumptionStatements assumptions.crypto",
+                "RequiredSemanticAssumptionStatements assumptions.semantic",
+                "validation.allocationValidation.writtenContentsBound allocation publicInput proof",
+                "RuntimeVerifierCoreContract system publicInput proof",
+                "SoundWitness system publicInput proof",
+            ][..],
+            concat!(
+                "gpu_host_device_copy_round_trip_checked_acceptance_written_contents_",
+                "core_and_sound"
+            ),
+            &[
+                "gpu_host_device_copy_round_trip_checked_acceptance_sound",
+                concat!(
+                    "gpu_host_device_copy_round_trip_checked_acceptance_",
+                    "verifier_core_contract"
+                ),
+                "sound_witness_implies_verifier_core_contract",
+            ][..],
+        ),
+        (
+            "gpu_temporary_buffer_reuse_checked_acceptance_reuse_audited_core_contract",
+            &[
+                "RequiredCryptographicAssumptionStatements assumptions.crypto",
+                "RequiredSemanticAssumptionStatements assumptions.semantic",
+                "GpuAllocationSameRequest previous next",
+                "validation.pendingDeviceReadsComplete previous publicInput proof",
+                "RuntimeVerifierCoreContract system publicInput proof",
+                "SoundWitness system publicInput proof",
+            ][..],
+            "gpu_temporary_buffer_reuse_checked_acceptance_reuse_core_and_sound",
+            &[
+                "gpu_temporary_buffer_reuse_checked_acceptance_sound",
+                "gpu_temporary_buffer_reuse_checked_acceptance_verifier_core_contract",
+                "sound_witness_implies_verifier_core_contract",
+            ][..],
+        ),
+        (
+            "gpu_allocator_no_wait_bypass_checked_acceptance_audited_core_contract",
+            &[
+                "RequiredCryptographicAssumptionStatements assumptions.crypto",
+                "RequiredSemanticAssumptionStatements assumptions.semantic",
+                "GpuAllocationSameRequest pending fresh",
+                "validation.pendingAllocationNotReused pending publicInput proof",
+                "validation.freshAllocationIssued fresh publicInput proof",
+                "RuntimeVerifierCoreContract system publicInput proof",
+                "SoundWitness system publicInput proof",
+            ][..],
+            "gpu_allocator_no_wait_bypass_checked_acceptance_core_and_sound",
+            &[
+                "gpu_allocator_no_wait_bypass_checked_acceptance_sound",
+                "gpu_allocator_no_wait_bypass_checked_acceptance_verifier_core_contract",
+                "sound_witness_implies_verifier_core_contract",
+            ][..],
+        ),
+        (
+            "fri_fixed_column_cache_checked_acceptance_audited_core_contract",
+            &[
+                "RequiredCryptographicAssumptionStatements assumptions.crypto",
+                "RequiredSemanticAssumptionStatements assumptions.semantic",
+                "validation.fixedColumnCacheRequestBound cached fresh",
+                "validation.allocationValidation.writtenContentsBound fresh publicInput proof",
+                "validation.allocationValidation.writtenContentsBound cached publicInput proof",
+                "RuntimeVerifierCoreContract system publicInput proof",
+                "SoundWitness system publicInput proof",
+            ][..],
+            "fri_fixed_column_cache_checked_acceptance_core_and_sound",
+            &[
+                "fri_fixed_column_cache_checked_acceptance_sound",
+                "fri_fixed_column_cache_checked_acceptance_verifier_core_contract",
+                "sound_witness_implies_verifier_core_contract",
+            ][..],
+        ),
+    ] {
+        lean_binding::assert_theorem_prefix_contains(&gpu_runtime_source, theorem, prefix_terms);
+        assert_theorem_body_contains_identifiers(
+            &gpu_runtime_source,
+            theorem,
+            &[
+                "assumption_bundle_carries_required_evidence",
+                combined_helper,
+            ],
+        );
+        assert_theorem_body_omits_identifiers(&gpu_runtime_source, theorem, omitted_terms);
+    }
     lean_binding::assert_theorem_body_contains(
         &lean_proof_timing_source,
         "witness_opening_row_value_aggregate_timing_acceptance_verifier_core_contract",

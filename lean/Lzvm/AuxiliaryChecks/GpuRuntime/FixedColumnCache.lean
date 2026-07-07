@@ -219,4 +219,40 @@ theorem fri_fixed_column_cache_checked_acceptance_core_and_sound
     (And.intro freshBound
       (And.intro cachedBound coreAndSound))
 
+theorem fri_fixed_column_cache_checked_acceptance_audited_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : FriFixedColumnCacheValidation)
+    (cached fresh : GpuAllocationSource) :
+    forall publicInput proof,
+      FriFixedColumnCacheCheckedAcceptance
+          system
+          validation
+          cached
+          fresh
+          publicInput
+          proof ->
+        RequiredCryptographicAssumptionStatements assumptions.crypto
+          /\ RequiredSemanticAssumptionStatements assumptions.semantic
+          /\ validation.fixedColumnCacheRequestBound cached fresh
+          /\ validation.allocationValidation.writtenContentsBound fresh publicInput proof
+          /\ validation.allocationValidation.writtenContentsBound cached publicInput proof
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof checked
+  have auditedAssumptions :=
+    assumption_bundle_carries_required_evidence assumptions
+  have contracts :=
+    fri_fixed_column_cache_checked_acceptance_core_and_sound
+      assumptions
+      validation
+      cached
+      fresh
+      publicInput
+      proof
+      checked
+  exact
+    And.intro auditedAssumptions.left
+      (And.intro auditedAssumptions.right contracts)
+
 end Lzvm
