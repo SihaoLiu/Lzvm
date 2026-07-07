@@ -9836,7 +9836,13 @@ fn guest_pc_trace_parallel_lower_configured_worker_count_override() -> Option<us
 }
 
 fn guest_pc_trace_auto_parallel_lower_worker_count() -> usize {
-    guest_pc_trace_available_worker_count().clamp(
+    guest_pc_trace_auto_parallel_lower_worker_count_for_available(
+        guest_pc_trace_available_worker_count(),
+    )
+}
+
+fn guest_pc_trace_auto_parallel_lower_worker_count_for_available(available: usize) -> usize {
+    available.clamp(
         DEFAULT_GUEST_PC_TRACE_AUTO_PARALLEL_LOWER_WORKERS,
         DEFAULT_GUEST_PC_TRACE_AUTO_PARALLEL_LOWER_MAX_WORKERS,
     )
