@@ -2129,6 +2129,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "checked_acceptance_sound_witness",
             "checked_acceptance_verifier_core_contract",
             "checked_acceptance_core_and_sound",
+            "checked_acceptance_audited_core_contract",
         ],
     );
     assert_eq!(
@@ -2251,11 +2252,34 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         ),
         "Lean theorem checked_acceptance_core_and_sound body should call the auxiliary combined helper with ordered checked-acceptance arguments"
     );
+    lean_binding::assert_theorem_prefix_contains(
+        &gpu_runtime_source,
+        "checked_acceptance_audited_core_contract",
+        &[
+            "RequiredCryptographicAssumptionStatements assumptions.crypto",
+            "RequiredSemanticAssumptionStatements assumptions.semantic",
+            "RuntimeVerifierCoreContract system publicInput proof",
+            "SoundWitness system publicInput proof",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &gpu_runtime_source,
+        "checked_acceptance_audited_core_contract",
+        &["auxiliary_checked_acceptance_audited_core_contract"],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &gpu_runtime_source,
+        "checked_acceptance_audited_core_contract",
+        &[
+            "checked_acceptance_sound_witness",
+            "checked_acceptance_verifier_core_contract",
+            "checked_acceptance_core_and_sound",
+            "abstract_verifier_sound",
+            "sound_witness_implies_verifier_core_contract",
+        ],
+    );
     let gpu_runtime_theorems = lean_binding::theorem_names(&gpu_runtime_source);
     for stem in theorem_stems_with_suffix(&gpu_runtime_source, "", "_core_and_sound") {
-        if stem == "checked_acceptance" {
-            continue;
-        }
         let audited = format!("{stem}_audited_core_contract");
         assert!(
             gpu_runtime_theorems.contains(&audited),
