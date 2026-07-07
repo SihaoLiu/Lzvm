@@ -422,7 +422,9 @@ fn lean_soundness_binding_exports_abstract_soundness_theorems() {
     for identifier in [
         "assumption_bundle_carries_required_crypto_evidence",
         "assumption_bundle_carries_required_semantic_evidence",
+        "assumption_bundle_carries_required_evidence",
         "abstract_verifier_sound",
+        "abstract_verifier_sound_with_audited_assumptions",
         "accepted_proof_audited_core_and_sound_witness",
         "accepted_proof_audited_core_execution_and_sound_witness",
     ] {
