@@ -5143,11 +5143,6 @@ fn zisk_main_report_row_count_from_report_shape(
     row: usize,
     shape: GuestMachineReportShape,
 ) -> Result<usize, GuestPcTraceBackendError> {
-    if !shape.has_memory_write
-        && !matches!(shape.instruction, RiscvInstruction::StoreConditional { .. })
-    {
-        return Ok(1);
-    }
     match shape.instruction {
         RiscvInstruction::Amo {
             kind: RiscvAmoKind::Add,
