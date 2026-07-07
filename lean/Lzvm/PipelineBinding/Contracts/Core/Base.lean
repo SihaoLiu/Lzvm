@@ -763,7 +763,8 @@ theorem runtime_pipeline_binding_checked_acceptance_proof_system_full_soundness_
                 validation.queryPlanBindingValidation.openingValidation
                 artifact publicInput proof := by
   intro artifact publicInput proof requiresExternalSource accepted
-  have proofSystemSound := abstract_verifier_sound assumptions
+  have proofSystemSound :=
+    (abstract_verifier_sound_with_semantic_evidence assumptions).right
   have acceptsFullContract :=
     runtime_pipeline_binding_checked_acceptance_accepts_full_soundness_contract
       assumptions

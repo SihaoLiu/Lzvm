@@ -89,7 +89,8 @@ theorem runtime_pipeline_binding_checked_acceptance_proof_system_sound
           /\ system.accepts publicInput proof
           /\ SoundWitness system publicInput proof := by
   intro artifact publicInput proof _requiresExternalSource accepted
-  have proofSystemSound := abstract_verifier_sound assumptions
+  have proofSystemSound :=
+    (abstract_verifier_sound_with_semantic_evidence assumptions).right
   have acceptedSound :=
     runtime_pipeline_binding_checked_acceptance_verifier_sound_witness
       assumptions
@@ -209,7 +210,8 @@ theorem runtime_pipeline_binding_checked_acceptance_audited_full_soundness_contr
             publicInput
             proof := by
   intro artifact publicInput proof requiresExternalSource accepted
-  have proofSystemSound := abstract_verifier_sound assumptions
+  have proofSystemSound :=
+    (abstract_verifier_sound_with_semantic_evidence assumptions).right
   have fullContract :=
     runtime_pipeline_binding_checked_acceptance_accepts_full_soundness_contract
       assumptions

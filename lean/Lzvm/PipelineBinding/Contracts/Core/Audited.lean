@@ -140,7 +140,8 @@ theorem runtime_pipeline_binding_checked_acceptance_audited_query_opening_core_s
   intro artifact publicInput proof requiresExternalSource accepted
   have auditedAssumptions :=
     assumption_bundle_carries_required_crypto_evidence assumptions
-  have proofSystemSound := abstract_verifier_sound assumptions
+  have proofSystemSound :=
+    (abstract_verifier_sound_with_semantic_evidence assumptions).right
   have verifierAccepts :=
     runtime_pipeline_binding_checked_acceptance_verifier_accepts
       validation
@@ -459,7 +460,8 @@ theorem runtime_pipeline_binding_checked_acceptance_audited_concrete_opening_con
   intro artifact publicInput proof _requiresExternalSource accepted
   have auditedAssumptions :=
     assumption_bundle_carries_required_crypto_evidence assumptions
-  have proofSystemSound := abstract_verifier_sound assumptions
+  have proofSystemSound :=
+    (abstract_verifier_sound_with_semantic_evidence assumptions).right
   have verifierAccepts :=
     runtime_pipeline_binding_checked_acceptance_verifier_accepts
       validation
@@ -778,7 +780,8 @@ theorem runtime_pipeline_binding_checked_acceptance_hash_concrete_opening_core_c
   intro artifact publicInput proof _requiresExternalSource accepted
   have auditedAssumptions :=
     assumption_bundle_carries_required_crypto_evidence assumptions
-  have proofSystemSound := abstract_verifier_sound assumptions
+  have proofSystemSound :=
+    (abstract_verifier_sound_with_semantic_evidence assumptions).right
   have verifierAccepts :=
     runtime_pipeline_binding_checked_acceptance_verifier_accepts
       validation
