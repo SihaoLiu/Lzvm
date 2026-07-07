@@ -922,90 +922,6 @@ theorem
         accepted)
 
 theorem
-  runtime_eth_block_public_input_binding_audited_finalized_core_sound_witness_contract
-    {system : VerifierModel}
-    (assumptions : AssumptionBundle system)
-    (validation : RuntimeEthBlockPublicInputBindingValidation system) :
-    forall artifact publicInput proof,
-      RuntimeEthBlockPublicInputBindingCheckedAcceptance
-          system
-          validation
-          artifact
-          publicInput
-          proof ->
-        RequiredCryptographicAssumptionStatements assumptions.crypto
-          /\ RequiredSemanticAssumptionStatements assumptions.semantic
-          /\ RuntimeEthBlockPublicInputBindingEvidence
-            system
-            validation
-            artifact
-            publicInput
-            proof
-          /\ RuntimeProofArtifactFinalized
-            system
-            validation.proofArtifactBindingValidation
-            artifact
-            publicInput
-            proof
-          /\ RuntimeVerifierCoreContract system publicInput proof
-          /\ (exists witness trace constraints,
-            system.traceConsistent publicInput proof trace
-              /\ system.constraintsSatisfied constraints trace
-              /\ system.witnessMatchesTrace witness trace)
-          /\ SoundWitness system publicInput proof := by
-  intro artifact publicInput proof accepted
-  have ethEvidence :=
-    runtime_eth_block_public_input_binding_checked_acceptance_evidence
-      validation
-      artifact
-      publicInput
-      proof
-      accepted
-  have artifactAccepted :=
-    runtime_eth_block_public_input_binding_checked_acceptance_artifact_binding
-      validation
-      artifact
-      publicInput
-      proof
-      accepted
-  have artifactFinalized :=
-    runtime_proof_artifact_finalized_from_checked_acceptance
-      validation.proofArtifactBindingValidation
-      artifact
-      publicInput
-      proof
-      artifactAccepted
-  have runtimeAccepted :=
-    runtime_proof_artifact_binding_checked_acceptance_runtime_accepted
-      validation.proofArtifactBindingValidation
-      artifact
-      publicInput
-      proof
-      artifactAccepted
-  have verifierAccepts :=
-    runtime_artifact_checked_acceptance_implies_verifier_accepts
-      validation.proofArtifactBindingValidation.runtimeValidation
-      artifact
-      publicInput
-      proof
-      runtimeAccepted
-  have auditedCoreExecutionSound :=
-    accepted_proof_audited_core_execution_and_sound_witness
-      assumptions
-      publicInput
-      proof
-      verifierAccepts
-  rcases auditedCoreExecutionSound with
-    ⟨cryptoEvidence, semanticEvidence, coreContract, executionObligations, soundWitness⟩
-  exact
-    And.intro cryptoEvidence
-      (And.intro semanticEvidence
-        (And.intro ethEvidence
-          (And.intro artifactFinalized
-            (And.intro coreContract
-              (And.intro executionObligations soundWitness)))))
-
-theorem
   runtime_eth_block_public_input_binding_direct_finalized_core_sound_witness_contract
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
@@ -1102,6 +1018,48 @@ theorem
           (And.intro artifactFinalized
             (And.intro coreContract
               (And.intro executionObligations soundWitness)))))
+
+theorem
+  runtime_eth_block_public_input_binding_audited_finalized_core_sound_witness_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeEthBlockPublicInputBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeEthBlockPublicInputBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RequiredCryptographicAssumptionStatements assumptions.crypto
+          /\ RequiredSemanticAssumptionStatements assumptions.semantic
+          /\ RuntimeEthBlockPublicInputBindingEvidence
+            system
+            validation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeProofArtifactFinalized
+            system
+            validation.proofArtifactBindingValidation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ (exists witness trace constraints,
+            system.traceConsistent publicInput proof trace
+              /\ system.constraintsSatisfied constraints trace
+              /\ system.witnessMatchesTrace witness trace)
+          /\ SoundWitness system publicInput proof := by
+  intro artifact publicInput proof accepted
+  exact
+    runtime_eth_block_public_input_binding_direct_finalized_core_sound_witness_contract
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
 
 theorem
   runtime_eth_block_public_input_binding_audited_core_sound_witness_contract
