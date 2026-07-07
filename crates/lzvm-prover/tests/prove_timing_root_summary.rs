@@ -3620,7 +3620,12 @@ fn prove_timing_root_summary_aggregates_key_profile_means() {
                   row_value_source_extend_ms: u64,
                   host_register_wait_ns: u64,
                   host_unregister_wait_ns: u64,
-                  h2d_bytes: u64| {
+                  h2d_bytes: u64,
+                  parallel_workers: u64,
+                  parallel_dispatched: u64,
+                  parallel_stream_chunks: u64,
+                  owned_streaming_segments: u64,
+                  result_receive_wait_ms: u64| {
         [
             "input_bytes=12447640".to_owned(),
             format!("timing_total_ms={total_ms}"),
@@ -3630,6 +3635,13 @@ fn prove_timing_root_summary_aggregates_key_profile_means() {
             format!("timing_cuda_allocator_host_register_wait_ns={host_register_wait_ns}"),
             format!("timing_cuda_allocator_host_unregister_wait_ns={host_unregister_wait_ns}"),
             format!("timing_cuda_allocator_copy_h2d_bytes={h2d_bytes}"),
+            format!("timing_guest_trace_parallel_lower_workers={parallel_workers}"),
+            format!("timing_guest_trace_parallel_lower_dispatched={parallel_dispatched}"),
+            format!("timing_guest_trace_parallel_lower_received={parallel_dispatched}"),
+            format!("timing_guest_trace_parallel_lower_emitted={parallel_dispatched}"),
+            format!("timing_guest_trace_parallel_lower_stream_chunks={parallel_stream_chunks}"),
+            format!("timing_guest_trace_owned_streaming_lower_segments={owned_streaming_segments}"),
+            format!("timing_guest_trace_parallel_lower_result_receive_wait_ms={result_receive_wait_ms}"),
             "timing_guest_stage_tree_commit_root_count=120".to_owned(),
             "timing_guest_stage_tree_commit_root_materialization_groups=120".to_owned(),
             "timing_guest_stage_tree_commit_root_materialization_max_group_size=1".to_owned(),
@@ -3645,9 +3657,40 @@ fn prove_timing_root_summary_aggregates_key_profile_means() {
             1_000_000_000_u64,
             400_000_000_u64,
             1_000_u64,
+            2_u64,
+            400_u64,
+            10_u64,
+            390_u64,
+            1_000_u64,
         ),
-        (18_000, 6_000, 6_000, 200, 2_000_000_000, 500_000_000, 2_000),
-        (21_000, 7_000, 8_000, 300, 3_000_000_000, 600_000_000, 3_000),
+        (
+            18_000,
+            6_000,
+            6_000,
+            200,
+            2_000_000_000,
+            500_000_000,
+            2_000,
+            3,
+            500,
+            20,
+            480,
+            2_000,
+        ),
+        (
+            21_000,
+            7_000,
+            8_000,
+            300,
+            3_000_000_000,
+            600_000_000,
+            3_000,
+            4,
+            600,
+            30,
+            570,
+            3_000,
+        ),
     ];
     let paths = fixtures
         .into_iter()
@@ -3658,6 +3701,7 @@ fn prove_timing_root_summary_aggregates_key_profile_means() {
                 &path,
                 sample(
                     fixture.0, fixture.1, fixture.2, fixture.3, fixture.4, fixture.5, fixture.6,
+                    fixture.7, fixture.8, fixture.9, fixture.10, fixture.11,
                 ),
             )
             .expect("sample timing log should be written");
@@ -3702,6 +3746,22 @@ fn prove_timing_root_summary_aggregates_key_profile_means() {
         "12000.000"
     );
     assert_eq!(aggregate_value("runner_ms_mean"), "6000.000");
+    assert_eq!(aggregate_value("parallel_lower_workers_mean"), "3.000");
+    assert_eq!(aggregate_value("parallel_lower_dispatched_mean"), "500.000");
+    assert_eq!(aggregate_value("parallel_lower_received_mean"), "500.000");
+    assert_eq!(aggregate_value("parallel_lower_emitted_mean"), "500.000");
+    assert_eq!(
+        aggregate_value("parallel_lower_stream_chunks_mean"),
+        "20.000"
+    );
+    assert_eq!(
+        aggregate_value("owned_streaming_lower_segments_mean"),
+        "480.000"
+    );
+    assert_eq!(
+        aggregate_value("parallel_lower_result_receive_wait_ms_mean"),
+        "2000.000"
+    );
     assert_eq!(
         aggregate_value("opening_row_value_source_extend_ms_mean"),
         "200.000"
