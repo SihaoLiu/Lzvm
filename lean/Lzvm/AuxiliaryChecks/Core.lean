@@ -217,18 +217,24 @@ theorem ignored_metadata_acceptance_audited_core_contract
           /\ RuntimeVerifierCoreContract system publicInput proof
           /\ SoundWitness system publicInput proof := by
   intro publicInput proof observed
-  have auditedAssumptions :=
-    assumption_bundle_carries_required_evidence assumptions
-  have contracts :=
-    ignored_metadata_acceptance_core_and_sound
-      assumptions
-      metadata
-      publicInput
-      proof
-      observed
   exact
-    And.intro auditedAssumptions.left
-      (And.intro auditedAssumptions.right contracts)
+    And.intro
+      (assumption_bundle_carries_required_crypto_evidence assumptions)
+      (And.intro
+        (assumption_bundle_carries_required_semantic_evidence assumptions)
+        (And.intro
+          (ignored_metadata_acceptance_verifier_core_contract
+            assumptions
+            metadata
+            publicInput
+            proof
+            observed)
+          (ignored_metadata_acceptance_sound
+            assumptions
+            metadata
+            publicInput
+            proof
+            observed)))
 
 theorem auxiliary_checked_acceptance_audited_core_contract
     {system : VerifierModel}
@@ -242,17 +248,22 @@ theorem auxiliary_checked_acceptance_audited_core_contract
           /\ RuntimeVerifierCoreContract system publicInput proof
           /\ SoundWitness system publicInput proof := by
   intro publicInput proof checked
-  have auditedAssumptions :=
-    assumption_bundle_carries_required_evidence assumptions
-  have contracts :=
-    auxiliary_checked_acceptance_core_and_sound
-      assumptions
-      publicInput
-      proof
-      checked
   exact
-    And.intro auditedAssumptions.left
-      (And.intro auditedAssumptions.right contracts)
+    And.intro
+      (assumption_bundle_carries_required_crypto_evidence assumptions)
+      (And.intro
+        (assumption_bundle_carries_required_semantic_evidence assumptions)
+        (And.intro
+          (auxiliary_checked_acceptance_verifier_core_contract
+            assumptions
+            publicInput
+            proof
+            checked)
+          (auxiliary_checked_acceptance_sound_witness
+            assumptions
+            publicInput
+            proof
+            checked)))
 
 structure TimingObservation where
   label : Nat

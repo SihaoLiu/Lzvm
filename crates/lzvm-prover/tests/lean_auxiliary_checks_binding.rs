@@ -832,22 +832,32 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "Lean theorem auxiliary_checked_acceptance_core_and_sound body should call {callee} with ordered checked-acceptance arguments"
         );
     }
-    for (theorem, combined_helper, omitted_terms) in [
+    for (theorem, direct_helpers, omitted_terms) in [
         (
             "ignored_metadata_acceptance_audited_core_contract",
-            "ignored_metadata_acceptance_core_and_sound",
             &[
-                "ignored_metadata_acceptance_sound",
+                "assumption_bundle_carries_required_crypto_evidence",
+                "assumption_bundle_carries_required_semantic_evidence",
                 "ignored_metadata_acceptance_verifier_core_contract",
+                "ignored_metadata_acceptance_sound",
+            ][..],
+            &[
+                "assumption_bundle_carries_required_evidence",
+                "ignored_metadata_acceptance_core_and_sound",
                 "sound_witness_implies_verifier_core_contract",
             ][..],
         ),
         (
             "auxiliary_checked_acceptance_audited_core_contract",
-            "auxiliary_checked_acceptance_core_and_sound",
             &[
-                "auxiliary_checked_acceptance_sound_witness",
+                "assumption_bundle_carries_required_crypto_evidence",
+                "assumption_bundle_carries_required_semantic_evidence",
                 "auxiliary_checked_acceptance_verifier_core_contract",
+                "auxiliary_checked_acceptance_sound_witness",
+            ][..],
+            &[
+                "assumption_bundle_carries_required_evidence",
+                "auxiliary_checked_acceptance_core_and_sound",
                 "sound_witness_implies_verifier_core_contract",
             ][..],
         ),
@@ -862,14 +872,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
                 "SoundWitness system publicInput proof",
             ],
         );
-        assert_theorem_body_contains_identifiers(
-            &auxiliary_source,
-            theorem,
-            &[
-                "assumption_bundle_carries_required_evidence",
-                combined_helper,
-            ],
-        );
+        assert_theorem_body_contains_identifiers(&auxiliary_source, theorem, direct_helpers);
         assert_theorem_body_omits_identifiers(&auxiliary_source, theorem, omitted_terms);
     }
     assert_eq!(
