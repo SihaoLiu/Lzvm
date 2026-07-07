@@ -7148,6 +7148,11 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
     lean_binding::assert_theorem_declarations(
         &proof_timing_finish_source,
         &[
+            "proof_artifact_finish_witness_opening_shape_acceptance_audited_core_contract",
+            "proof_artifact_finish_leaf_work_shape_acceptance_audited_core_contract",
+            "proof_artifact_finish_path_parent_hash_shape_acceptance_audited_core_contract",
+            "proof_artifact_finish_row_values_shape_acceptance_audited_core_contract",
+            "proof_artifact_finish_witness_opening_subtiming_acceptance_audited_core_contract",
             concat!(
                 "proof_artifact_finish_path_parent_hash_per_unit_shape_acceptance_",
                 "audited_core_contract"
@@ -7161,6 +7166,104 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "proof_artifact_finish_descriptor_upload_shape_acceptance_audited_core_contract",
         ],
     );
+    for (theorem, field_terms) in [
+        (
+            "proof_artifact_finish_witness_opening_shape_acceptance_audited_core_contract",
+            &[
+                "finishWitnessOpeningQueryCount := queryCount",
+                "finishWitnessOpeningQueryUnitCount := queryUnitCount",
+                "finishWitnessOpeningSingleQueryUnitCount := singleQueryUnitCount",
+                "finishWitnessOpeningMaxQueriesPerUnit := maxQueriesPerUnit",
+                "finishWitnessOpeningStageCount := stageCount",
+                "finishWitnessOpeningRetainedSourceCount := retainedSourceCount",
+                "finishWitnessOpeningExternalSourceCount := externalSourceCount",
+                "finishWitnessOpeningEmbeddedSourceCount := embeddedSourceCount",
+                "finishWitnessOpeningMissingSourceCount := missingSourceCount",
+                "finishWitnessOpeningRetainedLeafDigestOpeningCount := retainedLeafDigestOpeningCount",
+                "finishWitnessOpeningRetainedLeafDigestOpeningRowCount := retainedLeafDigestOpeningRowCount",
+                "finishWitnessOpeningRetainedParentCheckpointOpeningCount := retainedParentCheckpointOpeningCount",
+                "finishWitnessOpeningRetainedParentCheckpointOpeningRowCount := retainedParentCheckpointOpeningRowCount",
+                "finishWitnessOpeningRowDedupInputRowCount := rowDedupInputRowCount",
+                "finishWitnessOpeningRowDedupUniqueRowCount := rowDedupUniqueRowCount",
+                "finishWitnessOpeningRowDedupElidedRowCount := rowDedupElidedRowCount",
+            ][..],
+        ),
+        (
+            "proof_artifact_finish_leaf_work_shape_acceptance_audited_core_contract",
+            &[
+                "finishWitnessOpeningLeafHashRowCount := leafHashRows",
+                "finishWitnessOpeningLeafHashByteCount := leafHashBytes",
+                "finishWitnessOpeningLeafHashArity2RowCount := leafHashArity2Rows",
+                "finishWitnessOpeningLeafHashArity2ByteCount := leafHashArity2Bytes",
+                "finishWitnessOpeningLeafHashArity4RowCount := leafHashArity4Rows",
+                "finishWitnessOpeningLeafHashArity4ByteCount := leafHashArity4Bytes",
+                "finishWitnessOpeningLeafCosetExtendCallCount := leafCosetCalls",
+                "finishWitnessOpeningLeafCosetExtendOutputByteCount := leafCosetOutputBytes",
+                "finishWitnessOpeningLeafCosetExtendColumnCount := leafCosetColumns",
+                "finishWitnessOpeningLeafCosetExtendMaxColumnCount := leafCosetMaxColumns",
+                "finishWitnessOpeningLeafCosetExtendNttLaunchCount := leafCosetNttLaunches",
+                "finishWitnessOpeningLeafCosetExtendBitReverseLaunchCount := leafCosetBitReverseLaunches",
+                "finishWitnessOpeningLeafCosetExtendNttStageLaunchCount := leafCosetNttStageLaunches",
+                "finishWitnessOpeningLeafCosetExtendNttBlockTwiddleLaunchCount := leafCosetNttBlockTwiddleLaunches",
+                "finishWitnessOpeningLeafCosetExtendNormalizeLaunchCount := leafCosetNormalizeLaunches",
+                "finishWitnessOpeningLeafCosetExtendPackLaunchCount := leafCosetPackLaunches",
+                "finishWitnessOpeningLeafCosetExtendUnpackLaunchCount := leafCosetUnpackLaunches",
+            ][..],
+        ),
+        (
+            "proof_artifact_finish_path_parent_hash_shape_acceptance_audited_core_contract",
+            &[
+                "finishWitnessOpeningPathParentHashRowCount := parentHashRows",
+                "finishWitnessOpeningPathParentHashByteCount := parentHashBytes",
+                "finishWitnessOpeningPathParentHashLaunchCount := parentHashLaunches",
+                "finishWitnessOpeningPathParentHashRecomputedRowCount := recomputedRows",
+                "finishWitnessOpeningPathParentHashRecomputedByteCount := recomputedBytes",
+                "finishWitnessOpeningPathParentHashRecomputedLaunchCount := recomputedLaunches",
+                "finishWitnessOpeningPathParentHashRetainedLeafDigestRowCount := retainedLeafDigestRows",
+                "finishWitnessOpeningPathParentHashRetainedLeafDigestByteCount := retainedLeafDigestBytes",
+                "finishWitnessOpeningPathParentHashRetainedLeafDigestLaunchCount := retainedLeafDigestLaunches",
+                "finishWitnessOpeningPathParentHashRetainedParentCheckpointPrefixRowCount := retainedCheckpointPrefixRows",
+                "finishWitnessOpeningPathParentHashRetainedParentCheckpointPrefixByteCount := retainedCheckpointPrefixBytes",
+                "finishWitnessOpeningPathParentHashRetainedParentCheckpointPrefixLaunchCount := retainedCheckpointPrefixLaunches",
+                "finishWitnessOpeningPathParentHashRetainedParentCheckpointSuffixRowCount := retainedCheckpointSuffixRows",
+                "finishWitnessOpeningPathParentHashRetainedParentCheckpointSuffixByteCount := retainedCheckpointSuffixBytes",
+                "finishWitnessOpeningPathParentHashRetainedParentCheckpointSuffixLaunchCount := retainedCheckpointSuffixLaunches",
+            ][..],
+        ),
+        (
+            "proof_artifact_finish_row_values_shape_acceptance_audited_core_contract",
+            &[
+                "finishWitnessOpeningRowValuesMilliseconds := rowValuesMilliseconds",
+                "finishWitnessOpeningRowValueSourceExtendMilliseconds := sourceExtendMilliseconds",
+                "finishWitnessOpeningRowValueSourceDownloadMilliseconds := sourceDownloadMilliseconds",
+                "finishWitnessOpeningRowValueDeviceDownloadMilliseconds := deviceDownloadMilliseconds",
+                "finishWitnessOpeningRowValuesDeviceRowCount := deviceRows",
+                "finishWitnessOpeningRowValuesDeviceDownloadBatchCount := deviceDownloadBatches",
+                "finishWitnessOpeningRowValuesDeviceSingleDownloadCount := deviceSingleDownloads",
+                "finishWitnessOpeningRowValuesSourceExtendCallCount := sourceExtendCalls",
+                "finishWitnessOpeningRowValuesSourceExtendMaxRowCount := sourceExtendMaxRows",
+                "finishWitnessOpeningRowValuesSourceRowCount := sourceRows",
+                "finishWitnessOpeningRowValuesWordCount := words",
+                "finishWitnessOpeningRowValuesByteCount := bytes",
+            ][..],
+        ),
+        (
+            "proof_artifact_finish_witness_opening_subtiming_acceptance_audited_core_contract",
+            &[
+                "finishWitnessOpeningSetupMilliseconds := setupMilliseconds",
+                "finishWitnessOpeningLeafExtendMilliseconds := leafExtendMilliseconds",
+                "finishWitnessOpeningLeafHashMilliseconds := leafHashMilliseconds",
+                "finishWitnessOpeningPathMilliseconds := pathMilliseconds",
+            ][..],
+        ),
+    ] {
+        assert_updated_summary_audited_wrapper(
+            &proof_timing_finish_source,
+            theorem,
+            "proof_artifact_finish_timing_some_summary_acceptance_audited_core_contract",
+            field_terms,
+        );
+    }
     for (theorem, field, omitted_terms) in [
         (
             concat!(
