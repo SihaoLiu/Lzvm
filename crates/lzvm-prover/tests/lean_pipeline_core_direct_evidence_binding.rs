@@ -3,17 +3,13 @@ use std::path::Path;
 #[path = "support/lean_binding.rs"]
 mod lean_binding;
 
+const ACCEPTS_SOURCE_PATH: &str = "../../lean/Lzvm/PipelineBinding/Accepts.lean";
 const CORE_DERIVED_SOURCE_PATH: &str = "../../lean/Lzvm/PipelineBinding/Core/Derived.lean";
 
-#[test]
-fn lean_pipeline_core_derived_routes_required_evidence_directly() {
-    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let lean_source = lean_binding::read_lean_source(crate_root, CORE_DERIVED_SOURCE_PATH);
-    let theorem = "runtime_pipeline_binding_checked_acceptance_audited_soundness_obligations";
-
-    lean_binding::assert_theorem_declarations(&lean_source, &[theorem]);
+fn assert_routes_required_evidence_directly(lean_source: &str, theorem: &str) {
+    lean_binding::assert_theorem_declarations(lean_source, &[theorem]);
     lean_binding::assert_theorem_body_contains(
-        &lean_source,
+        lean_source,
         theorem,
         &[
             "assumption_bundle_carries_required_crypto_evidence",
@@ -21,8 +17,32 @@ fn lean_pipeline_core_derived_routes_required_evidence_directly() {
         ],
     );
     lean_binding::assert_theorem_body_omits(
-        &lean_source,
+        lean_source,
         theorem,
         &["assumption_bundle_carries_required_evidence"],
     );
+}
+
+#[test]
+fn lean_pipeline_core_derived_routes_required_evidence_directly() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let lean_source = lean_binding::read_lean_source(crate_root, CORE_DERIVED_SOURCE_PATH);
+
+    assert_routes_required_evidence_directly(
+        &lean_source,
+        "runtime_pipeline_binding_checked_acceptance_audited_soundness_obligations",
+    );
+}
+
+#[test]
+fn lean_pipeline_accepts_routes_required_evidence_directly() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let lean_source = lean_binding::read_lean_source(crate_root, ACCEPTS_SOURCE_PATH);
+
+    for theorem in [
+        "runtime_pipeline_binding_checked_acceptance_audited_soundness_accepts_contract",
+        "runtime_pipeline_binding_checked_acceptance_audited_full_soundness_contract",
+    ] {
+        assert_routes_required_evidence_directly(&lean_source, theorem);
+    }
 }
