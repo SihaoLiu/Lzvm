@@ -5817,10 +5817,12 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "gpu_allocator_no_wait_limit_checked_acceptance_sound",
             "gpu_allocator_no_wait_limit_checked_acceptance_verifier_core_contract",
             "gpu_allocator_no_wait_limit_checked_acceptance_core_and_sound",
+            "gpu_allocator_no_wait_limit_checked_acceptance_audited_core_contract",
             "guest_pc_trace_segment_queue_checked_acceptance_projects_decision",
             "guest_pc_trace_segment_queue_checked_acceptance_sound",
             "guest_pc_trace_segment_queue_checked_acceptance_verifier_core_contract",
             "guest_pc_trace_segment_queue_checked_acceptance_core_and_sound",
+            "guest_pc_trace_segment_queue_checked_acceptance_audited_core_contract",
             "guest_pc_trace_large_gpu_gate_decision_allows_unrequested",
             "guest_pc_trace_large_gpu_gate_decision_allows_below_threshold",
             "guest_pc_trace_large_gpu_gate_decision_rejects_large_without_gpu",
@@ -5845,8 +5847,17 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "guest_pc_trace_large_gpu_gate_checked_acceptance_allows_large_iff_runtime_memory",
             "guest_pc_trace_large_gpu_gate_checked_acceptance_allows_large_iff_backend_and_observed_floor",
             "guest_pc_trace_large_gpu_gate_checked_acceptance_requires_runtime_memory_for_large_allowed",
+            "guest_pc_trace_large_gpu_gate_checked_acceptance_audited_core_contract",
             "guest_pc_trace_traceless_commitment_input_decision_default_enabled",
+            concat!(
+                "guest_pc_trace_traceless_commitment_input_checked_acceptance_",
+                "audited_core_contract"
+            ),
             "guest_pc_trace_traceless_segment_output_decision_default_enabled",
+            concat!(
+                "guest_pc_trace_traceless_segment_output_checked_acceptance_",
+                "audited_core_contract"
+            ),
             "guest_pc_trace_cross_root_materialization_checked_acceptance_projects_decision",
             "guest_pc_trace_cross_root_materialization_decision_default_enabled_when_supported",
             "guest_pc_trace_cross_root_materialization_decision_disabled_when_unsupported",
@@ -5860,6 +5871,10 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             concat!(
                 "guest_pc_trace_cross_root_materialization_checked_acceptance_",
                 "core_and_sound"
+            ),
+            concat!(
+                "guest_pc_trace_cross_root_materialization_checked_acceptance_",
+                "audited_core_contract"
             ),
             "guest_pc_trace_commit_mode_checked_acceptance_projects_decision",
             "guest_pc_trace_commit_mode_effective_worker_positive",
@@ -5884,6 +5899,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "guest_pc_trace_parallel_lower_checked_acceptance_sound",
             "guest_pc_trace_parallel_lower_checked_acceptance_verifier_core_contract",
             "guest_pc_trace_parallel_lower_checked_acceptance_core_and_sound",
+            "guest_pc_trace_parallel_lower_checked_acceptance_audited_core_contract",
             "guest_pc_trace_descriptor_buffer_retention_default_disabled_for_parallel_lower",
             "guest_pc_trace_descriptor_buffer_retention_explicit_override_matches",
             "guest_pc_trace_commit_mode_descriptor_retention_matches",
@@ -6714,6 +6730,126 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
     )] {
         lean_binding::assert_theorem_prefix_contains(&gpu_runtime_source, theorem, prefix_terms);
         lean_binding::assert_theorem_body_contains(&gpu_runtime_source, theorem, body_terms);
+        lean_binding::assert_theorem_body_omits(&gpu_runtime_source, theorem, omitted_terms);
+    }
+    for (theorem, decision_term, combined_helper, omitted_terms) in [
+        (
+            "gpu_allocator_no_wait_limit_checked_acceptance_audited_core_contract",
+            "GpuAllocatorNoWaitLimitDecisionMatches config",
+            "gpu_allocator_no_wait_limit_checked_acceptance_core_and_sound",
+            &[
+                "gpu_allocator_no_wait_limit_checked_acceptance_sound",
+                "gpu_allocator_no_wait_limit_checked_acceptance_verifier_core_contract",
+                "sound_witness_implies_verifier_core_contract",
+            ][..],
+        ),
+        (
+            "guest_pc_trace_parallel_lower_checked_acceptance_audited_core_contract",
+            "GuestPcTraceParallelLowerDecisionMatches config",
+            "guest_pc_trace_parallel_lower_checked_acceptance_core_and_sound",
+            &[
+                "guest_pc_trace_parallel_lower_checked_acceptance_sound",
+                "guest_pc_trace_parallel_lower_checked_acceptance_verifier_core_contract",
+                "sound_witness_implies_verifier_core_contract",
+            ][..],
+        ),
+        (
+            "guest_pc_trace_segment_queue_checked_acceptance_audited_core_contract",
+            "GuestPcTraceSegmentQueueDecisionMatches config",
+            "guest_pc_trace_segment_queue_checked_acceptance_core_and_sound",
+            &[
+                "guest_pc_trace_segment_queue_checked_acceptance_sound",
+                "guest_pc_trace_segment_queue_checked_acceptance_verifier_core_contract",
+                "sound_witness_implies_verifier_core_contract",
+            ][..],
+        ),
+        (
+            "guest_pc_trace_large_gpu_gate_checked_acceptance_audited_core_contract",
+            "GuestPcTraceLargeGpuGateDecisionMatches config",
+            "guest_pc_trace_large_gpu_gate_checked_acceptance_core_and_sound",
+            &[
+                "guest_pc_trace_large_gpu_gate_checked_acceptance_sound",
+                "guest_pc_trace_large_gpu_gate_checked_acceptance_verifier_core_contract",
+                "sound_witness_implies_verifier_core_contract",
+            ][..],
+        ),
+        (
+            concat!(
+                "guest_pc_trace_traceless_commitment_input_checked_acceptance_",
+                "audited_core_contract"
+            ),
+            "GuestPcTraceTracelessCommitmentInputDecisionMatches config",
+            concat!(
+                "guest_pc_trace_traceless_commitment_input_checked_acceptance_",
+                "core_and_sound"
+            ),
+            &[
+                "guest_pc_trace_traceless_commitment_input_checked_acceptance_sound",
+                concat!(
+                    "guest_pc_trace_traceless_commitment_input_checked_acceptance_",
+                    "verifier_core_contract"
+                ),
+                "sound_witness_implies_verifier_core_contract",
+            ][..],
+        ),
+        (
+            concat!(
+                "guest_pc_trace_traceless_segment_output_checked_acceptance_",
+                "audited_core_contract"
+            ),
+            "GuestPcTraceTracelessSegmentOutputDecisionMatches config",
+            concat!(
+                "guest_pc_trace_traceless_segment_output_checked_acceptance_",
+                "core_and_sound"
+            ),
+            &[
+                "guest_pc_trace_traceless_segment_output_checked_acceptance_sound",
+                concat!(
+                    "guest_pc_trace_traceless_segment_output_checked_acceptance_",
+                    "verifier_core_contract"
+                ),
+                "sound_witness_implies_verifier_core_contract",
+            ][..],
+        ),
+        (
+            concat!(
+                "guest_pc_trace_cross_root_materialization_checked_acceptance_",
+                "audited_core_contract"
+            ),
+            "GuestPcTraceCrossSegmentRootMaterializationDecisionMatches config",
+            concat!(
+                "guest_pc_trace_cross_root_materialization_checked_acceptance_",
+                "core_and_sound"
+            ),
+            &[
+                "guest_pc_trace_cross_root_materialization_checked_acceptance_sound",
+                concat!(
+                    "guest_pc_trace_cross_root_materialization_checked_acceptance_",
+                    "verifier_core_contract"
+                ),
+                "sound_witness_implies_verifier_core_contract",
+            ][..],
+        ),
+    ] {
+        lean_binding::assert_theorem_prefix_contains(
+            &gpu_runtime_source,
+            theorem,
+            &[
+                "RequiredCryptographicAssumptionStatements assumptions.crypto",
+                "RequiredSemanticAssumptionStatements assumptions.semantic",
+                decision_term,
+                "RuntimeVerifierCoreContract system publicInput proof",
+                "SoundWitness system publicInput proof",
+            ],
+        );
+        lean_binding::assert_theorem_body_contains(
+            &gpu_runtime_source,
+            theorem,
+            &[
+                "assumption_bundle_carries_required_evidence",
+                combined_helper,
+            ],
+        );
         lean_binding::assert_theorem_body_omits(&gpu_runtime_source, theorem, omitted_terms);
     }
     for (theorem, prefix_term, projector, omitted_terms) in [
