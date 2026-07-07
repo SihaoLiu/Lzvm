@@ -285,10 +285,17 @@ theorem runtime_external_source_checked_acceptance_audited_core_contract
           /\ RuntimeVerifierCoreContract system publicInput proof
           /\ SoundWitness system publicInput proof := by
   intro artifact publicInput proof checked
-  have auditedAssumptions :=
-    assumption_bundle_carries_required_evidence assumptions
-  have contracts :=
-    runtime_external_source_checked_acceptance_evidence_core_and_sound
+  have checkedSound :=
+    runtime_external_source_checked_acceptance_sound
+      assumptions
+      runtimeValidation
+      sourceValidation
+      artifact
+      publicInput
+      proof
+      checked
+  have coreContract :=
+    runtime_external_source_checked_acceptance_verifier_core_contract
       assumptions
       runtimeValidation
       sourceValidation
@@ -297,8 +304,14 @@ theorem runtime_external_source_checked_acceptance_audited_core_contract
       proof
       checked
   exact
-    And.intro auditedAssumptions.left
-      (And.intro auditedAssumptions.right contracts)
+    And.intro
+      (assumption_bundle_carries_required_crypto_evidence assumptions)
+      (And.intro
+        (assumption_bundle_carries_required_semantic_evidence assumptions)
+        (And.intro checkedSound.left
+          (And.intro checkedSound.right.left
+            (And.intro checkedSound.right.right.left
+              (And.intro coreContract checkedSound.right.right.right)))))
 
 theorem runtime_guarded_external_source_checked_acceptance_sound
     {system : VerifierModel}
@@ -501,10 +514,18 @@ theorem runtime_guarded_external_source_checked_acceptance_audited_core_contract
           /\ RuntimeVerifierCoreContract system publicInput proof
           /\ SoundWitness system publicInput proof := by
   intro artifact publicInput proof requiresExternalSource checked
-  have auditedAssumptions :=
-    assumption_bundle_carries_required_evidence assumptions
-  have contracts :=
-    runtime_guarded_external_source_checked_acceptance_evidence_core_and_sound
+  have checkedSound :=
+    runtime_guarded_external_source_checked_acceptance_sound
+      assumptions
+      runtimeValidation
+      sourceValidation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      checked
+  have coreContract :=
+    runtime_guarded_external_source_checked_acceptance_verifier_core_contract
       assumptions
       runtimeValidation
       sourceValidation
@@ -514,7 +535,13 @@ theorem runtime_guarded_external_source_checked_acceptance_audited_core_contract
       requiresExternalSource
       checked
   exact
-    And.intro auditedAssumptions.left
-      (And.intro auditedAssumptions.right contracts)
+    And.intro
+      (assumption_bundle_carries_required_crypto_evidence assumptions)
+      (And.intro
+        (assumption_bundle_carries_required_semantic_evidence assumptions)
+        (And.intro checkedSound.left
+          (And.intro checkedSound.right.left
+            (And.intro checkedSound.right.right.left
+              (And.intro coreContract checkedSound.right.right.right)))))
 
 end Lzvm

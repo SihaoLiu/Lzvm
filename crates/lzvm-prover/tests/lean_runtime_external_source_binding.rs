@@ -138,6 +138,16 @@ fn lean_runtime_external_source_binding_exports_core_contract_projection() {
         &lean_source,
         "runtime_external_source_checked_acceptance_audited_core_contract",
         &[
+            "assumption_bundle_carries_required_crypto_evidence",
+            "assumption_bundle_carries_required_semantic_evidence",
+            "runtime_external_source_checked_acceptance_sound",
+            "runtime_external_source_checked_acceptance_verifier_core_contract",
+        ],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &lean_source,
+        "runtime_external_source_checked_acceptance_audited_core_contract",
+        &[
             "assumption_bundle_carries_required_evidence",
             "runtime_external_source_checked_acceptance_evidence_core_and_sound",
         ],
@@ -193,6 +203,16 @@ fn lean_runtime_external_source_binding_exports_core_contract_projection() {
         ],
     );
     lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_guarded_external_source_checked_acceptance_audited_core_contract",
+        &[
+            "assumption_bundle_carries_required_crypto_evidence",
+            "assumption_bundle_carries_required_semantic_evidence",
+            "runtime_guarded_external_source_checked_acceptance_sound",
+            "runtime_guarded_external_source_checked_acceptance_verifier_core_contract",
+        ],
+    );
+    lean_binding::assert_theorem_body_omits(
         &lean_source,
         "runtime_guarded_external_source_checked_acceptance_audited_core_contract",
         &[
