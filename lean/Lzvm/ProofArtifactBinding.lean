@@ -938,6 +938,54 @@ theorem runtime_proof_artifact_binding_checked_acceptance_evidence_core_and_soun
         (And.intro fullContract.right.right.left
           (And.intro coreContract fullContract.right.right.right)))
 
+theorem runtime_proof_artifact_binding_checked_acceptance_audited_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeProofArtifactBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeProofArtifactBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RequiredCryptographicAssumptionStatements assumptions.crypto
+          /\ RequiredSemanticAssumptionStatements assumptions.semantic
+          /\ RuntimeProofArtifactBindingEvidence
+            system
+            validation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeProofArtifactBindingStructuralObligations
+            system
+            validation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeArtifactEvidence
+            system
+            validation.runtimeValidation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro artifact publicInput proof accepted
+  have auditedAssumptions :=
+    assumption_bundle_carries_required_evidence assumptions
+  have contracts :=
+    runtime_proof_artifact_binding_checked_acceptance_evidence_core_and_sound
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  exact
+    And.intro auditedAssumptions.left
+      (And.intro auditedAssumptions.right contracts)
+
 theorem
   runtime_proof_artifact_binding_checked_acceptance_concrete_core_sound_contract
     {system : VerifierModel}
@@ -1108,5 +1156,53 @@ theorem runtime_proof_artifact_finalized_evidence_core_and_sound
       (And.intro fullContract.right.left
         (And.intro fullContract.right.right.left
           (And.intro coreContract fullContract.right.right.right)))
+
+theorem runtime_proof_artifact_finalized_audited_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeProofArtifactBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeProofArtifactFinalized
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RequiredCryptographicAssumptionStatements assumptions.crypto
+          /\ RequiredSemanticAssumptionStatements assumptions.semantic
+          /\ RuntimeProofArtifactBindingEvidence
+            system
+            validation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeProofArtifactBindingStructuralObligations
+            system
+            validation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeArtifactEvidence
+            system
+            validation.runtimeValidation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro artifact publicInput proof finalized
+  have auditedAssumptions :=
+    assumption_bundle_carries_required_evidence assumptions
+  have contracts :=
+    runtime_proof_artifact_finalized_evidence_core_and_sound
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      finalized
+  exact
+    And.intro auditedAssumptions.left
+      (And.intro auditedAssumptions.right contracts)
 
 end Lzvm

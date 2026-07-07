@@ -112,6 +112,7 @@ fn lean_retained_leaf_digest_binding_tracks_runtime_opening_contract() {
             "runtime_retained_leaf_digest_opening_checked_acceptance_verifier_core_contract",
             "runtime_retained_leaf_digest_opening_checked_acceptance_opening_and_core_contract",
             "runtime_retained_leaf_digest_opening_checked_acceptance_evidence_core_and_sound",
+            "runtime_retained_leaf_digest_opening_checked_acceptance_audited_core_contract",
             "runtime_retained_leaf_digest_opening_checked_acceptance_source_and_core_contract",
         ],
     );
@@ -450,6 +451,28 @@ fn lean_retained_leaf_digest_binding_tracks_runtime_opening_contract() {
         &lean_source,
         "runtime_retained_leaf_digest_opening_checked_acceptance_evidence_core_and_sound",
         &["sound_witness_implies_verifier_core_contract"],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_retained_leaf_digest_opening_checked_acceptance_audited_core_contract",
+        &[
+            "RequiredCryptographicAssumptionStatements assumptions.crypto",
+            "RequiredSemanticAssumptionStatements assumptions.semantic",
+            "RuntimeRetainedLeafDigestOpeningEvidence",
+            "RuntimeOpeningEvidence",
+            "RuntimeRetainedLeafDigestOpeningDigestContract",
+            "RuntimeRetainedLeafDigestOpeningRetainedRowsContract",
+            "RuntimeVerifierCoreContract system publicInput proof",
+            "SoundWitness system publicInput proof",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_retained_leaf_digest_opening_checked_acceptance_audited_core_contract",
+        &[
+            "assumption_bundle_carries_required_evidence",
+            "runtime_retained_leaf_digest_opening_checked_acceptance_evidence_core_and_sound",
+        ],
     );
     lean_binding::assert_theorem_prefix_contains(
         &lean_source,

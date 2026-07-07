@@ -75,10 +75,12 @@ fn lean_proof_artifact_binding_exports_core_contract_projection() {
             "runtime_proof_artifact_binding_checked_acceptance_full_contract",
             "runtime_proof_artifact_binding_checked_acceptance_verifier_core_contract",
             "runtime_proof_artifact_binding_checked_acceptance_evidence_core_and_sound",
+            "runtime_proof_artifact_binding_checked_acceptance_audited_core_contract",
             "runtime_proof_artifact_binding_checked_acceptance_concrete_core_sound_contract",
             "runtime_proof_artifact_finalized_full_contract",
             "runtime_proof_artifact_finalized_verifier_core_contract",
             "runtime_proof_artifact_finalized_evidence_core_and_sound",
+            "runtime_proof_artifact_finalized_audited_core_contract",
         ],
     );
     lean_binding::assert_theorem_body_contains(
@@ -326,6 +328,27 @@ fn lean_proof_artifact_binding_exports_core_contract_projection() {
     );
     lean_binding::assert_theorem_prefix_contains(
         &lean_source,
+        "runtime_proof_artifact_binding_checked_acceptance_audited_core_contract",
+        &[
+            "RequiredCryptographicAssumptionStatements assumptions.crypto",
+            "RequiredSemanticAssumptionStatements assumptions.semantic",
+            "RuntimeProofArtifactBindingEvidence",
+            "RuntimeProofArtifactBindingStructuralObligations",
+            "RuntimeArtifactEvidence",
+            "RuntimeVerifierCoreContract system publicInput proof",
+            "SoundWitness system publicInput proof",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_proof_artifact_binding_checked_acceptance_audited_core_contract",
+        &[
+            "assumption_bundle_carries_required_evidence",
+            "runtime_proof_artifact_binding_checked_acceptance_evidence_core_and_sound",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
         "runtime_proof_artifact_binding_checked_acceptance_concrete_core_sound_contract",
         &[
             "RuntimeProofArtifactBindingCheckedAcceptance",
@@ -407,6 +430,28 @@ fn lean_proof_artifact_binding_exports_core_contract_projection() {
         &lean_source,
         "runtime_proof_artifact_finalized_evidence_core_and_sound",
         &["sound_witness_implies_verifier_core_contract"],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_proof_artifact_finalized_audited_core_contract",
+        &[
+            "RequiredCryptographicAssumptionStatements assumptions.crypto",
+            "RequiredSemanticAssumptionStatements assumptions.semantic",
+            "RuntimeProofArtifactFinalized",
+            "RuntimeProofArtifactBindingEvidence",
+            "RuntimeProofArtifactBindingStructuralObligations",
+            "RuntimeArtifactEvidence",
+            "RuntimeVerifierCoreContract system publicInput proof",
+            "SoundWitness system publicInput proof",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_proof_artifact_finalized_audited_core_contract",
+        &[
+            "assumption_bundle_carries_required_evidence",
+            "runtime_proof_artifact_finalized_evidence_core_and_sound",
+        ],
     );
     assert!(
         proof_artifact_source.contains("fn finish_proof_artifact(proof: ProofArtifact)")
