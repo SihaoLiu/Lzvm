@@ -187,6 +187,52 @@ theorem runtime_soundness_required_external_source_evidence_core_and_sound
       (And.intro requiredSound.right.left
         (And.intro coreContract requiredSound.right.right))
 
+theorem runtime_soundness_required_external_source_evidence_audited_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeSoundnessValidation system) :
+    forall artifact publicInput proof (requiresExternalSource : Prop),
+      RuntimeSoundnessCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof
+          requiresExternalSource ->
+        requiresExternalSource ->
+          RequiredCryptographicAssumptionStatements assumptions.crypto
+            /\ RequiredSemanticAssumptionStatements assumptions.semantic
+            /\ RuntimeSoundnessEvidence
+                system
+                validation
+                artifact
+                publicInput
+                proof
+                requiresExternalSource
+            /\ ExternalSourceOpeningEvidence
+              system
+              validation.sourceValidation
+              publicInput
+              proof
+            /\ RuntimeVerifierCoreContract system publicInput proof
+            /\ SoundWitness system publicInput proof := by
+  intro artifact publicInput proof requiresExternalSource checked required
+  have auditedAssumptions :=
+    assumption_bundle_carries_required_evidence assumptions
+  have contracts :=
+    runtime_soundness_required_external_source_evidence_core_and_sound
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      checked
+      required
+  exact
+    And.intro auditedAssumptions.left
+      (And.intro auditedAssumptions.right contracts)
+
 theorem runtime_soundness_required_external_source_accepts_core_sound_witness
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
