@@ -291,8 +291,6 @@ theorem runtime_soundness_evidence_audited_runtime_artifact_core_contract
           /\ system.friQueriesValid publicInput proof
           /\ RuntimeVerifierCoreContract system publicInput proof := by
   intro artifact publicInput proof requiresExternalSource evidence
-  have auditedAssumptions :=
-    assumption_bundle_carries_required_evidence assumptions
   have artifactEvidence :=
     runtime_soundness_evidence_implies_runtime_artifact_evidence
       validation
@@ -342,8 +340,8 @@ theorem runtime_soundness_evidence_audited_runtime_artifact_core_contract
       requiresExternalSource
       evidence
   exact
-    ⟨auditedAssumptions.left,
-      auditedAssumptions.right,
+    ⟨assumption_bundle_carries_required_crypto_evidence assumptions,
+      assumption_bundle_carries_required_semantic_evidence assumptions,
       artifactEvidence,
       transcriptBound,
       publicInputBound,
@@ -777,11 +775,12 @@ theorem runtime_soundness_checked_acceptance_audited_soundness_obligations
   have audited :=
     runtime_soundness_checked_acceptance_audited_assumptions
       assumptions validation artifact publicInput proof requiresExternalSource checked
-  have auditedAssumptions :=
-    assumption_bundle_carries_required_evidence assumptions
   exact
-    And.intro auditedAssumptions.left
-      (And.intro auditedAssumptions.right audited.right)
+    And.intro
+      (assumption_bundle_carries_required_crypto_evidence assumptions)
+      (And.intro
+        (assumption_bundle_carries_required_semantic_evidence assumptions)
+        audited.right)
 
 theorem runtime_soundness_checked_acceptance_audited_core_contract
     {system : VerifierModel}
@@ -862,11 +861,12 @@ theorem runtime_soundness_checked_acceptance_audited_soundness_core_contract
       proof
       requiresExternalSource
       checked
-  have auditedAssumptions :=
-    assumption_bundle_carries_required_evidence assumptions
   exact
-    And.intro auditedAssumptions.left
-      (And.intro auditedAssumptions.right coreContract.right)
+    And.intro
+      (assumption_bundle_carries_required_crypto_evidence assumptions)
+      (And.intro
+        (assumption_bundle_carries_required_semantic_evidence assumptions)
+        coreContract.right)
 
 theorem runtime_soundness_checked_acceptance_verifier_sound_witness
     {system : VerifierModel}
@@ -1115,8 +1115,6 @@ theorem runtime_soundness_checked_acceptance_audited_source_core_execution_contr
               /\ system.witnessMatchesTrace witness trace)
           /\ SoundWitness system publicInput proof := by
   intro artifact publicInput proof requiresExternalSource checked
-  have auditedAssumptions :=
-    assumption_bundle_carries_required_evidence assumptions
   have sourceCoreExecution :=
     runtime_soundness_checked_acceptance_source_core_execution_contract
       assumptions
@@ -1136,8 +1134,10 @@ theorem runtime_soundness_checked_acceptance_audited_source_core_execution_contr
       requiresExternalSource
       checked
   exact
-    And.intro auditedAssumptions.left
-      (And.intro auditedAssumptions.right
+    And.intro
+      (assumption_bundle_carries_required_crypto_evidence assumptions)
+      (And.intro
+        (assumption_bundle_carries_required_semantic_evidence assumptions)
         (And.intro sourceCoreExecution.left
           (And.intro sourceCoreExecution.right.left
             (And.intro sourceCoreExecution.right.right.left
@@ -1573,11 +1573,12 @@ theorem runtime_soundness_checked_acceptance_audited_soundness_proof_system_cont
       proof
       requiresExternalSource
       checked
-  have auditedAssumptions :=
-    assumption_bundle_carries_required_evidence assumptions
   exact
-    And.intro auditedAssumptions.left
-      (And.intro auditedAssumptions.right auditedContract.right)
+    And.intro
+      (assumption_bundle_carries_required_crypto_evidence assumptions)
+      (And.intro
+        (assumption_bundle_carries_required_semantic_evidence assumptions)
+        auditedContract.right)
 
 theorem runtime_soundness_checked_acceptance_audited_soundness_finalized_proof_system_contract
     {system : VerifierModel}
