@@ -870,6 +870,8 @@ def mode_env_for_args(args: argparse.Namespace, mode: str) -> dict[str, str]:
         mode_env["LZVM_GUEST_PC_TRACE_PARALLEL_LOWER_JOB_QUEUE"] = str(
             args.parallel_lower_job_queue
         )
+    if args.parallel_lower_replay_only:
+        mode_env["LZVM_GUEST_PC_TRACE_PARALLEL_LOWER_REPLAY_ONLY"] = "1"
     if args.segment_commit_workers is not None:
         mode_env["LZVM_GUEST_PC_TRACE_SEGMENT_COMMIT_WORKERS"] = str(
             args.segment_commit_workers
@@ -1007,6 +1009,8 @@ def next_command_parts(
         parts.extend(["--parallel-lower-workers", str(args.parallel_lower_workers)])
     if args.parallel_lower_job_queue is not None:
         parts.extend(["--parallel-lower-job-queue", str(args.parallel_lower_job_queue)])
+    if args.parallel_lower_replay_only:
+        parts.append("--parallel-lower-replay-only")
     if args.segment_commit_workers is not None:
         parts.extend(["--segment-commit-workers", str(args.segment_commit_workers)])
     if args.cross_segment_root_window is not None:
@@ -1691,6 +1695,7 @@ def dry_run_summary_lines(args: argparse.Namespace, root: Path) -> list[str]:
         f"verify_proof={str(not args.skip_verify_proof).lower()}",
         f"parallel_lower_workers={args.parallel_lower_workers or ''}",
         f"parallel_lower_job_queue={args.parallel_lower_job_queue or ''}",
+        f"parallel_lower_replay_only={str(args.parallel_lower_replay_only).lower()}",
         f"segment_commit_workers={args.segment_commit_workers or ''}",
         f"cross_segment_root_window={args.cross_segment_root_window or ''}",
         "external_source_opening_batch_size="
@@ -2039,6 +2044,7 @@ def self_test() -> None:
         large_max_avg_s=None,
         parallel_lower_job_queue=None,
         parallel_lower_workers=None,
+        parallel_lower_replay_only=False,
         segment_commit_workers=None,
         cross_segment_root_window=None,
         external_source_opening_batch_size=None,
@@ -2246,6 +2252,7 @@ def main() -> None:
     parser.add_argument("--append-max-average-rejections", action="store_true")
     parser.add_argument("--parallel-lower-workers", type=positive_integer, default=None)
     parser.add_argument("--parallel-lower-job-queue", type=positive_integer, default=None)
+    parser.add_argument("--parallel-lower-replay-only", action="store_true")
     parser.add_argument("--segment-commit-workers", type=positive_integer, default=None)
     parser.add_argument("--cross-segment-root-window", type=positive_integer, default=None)
     parser.add_argument(

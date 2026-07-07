@@ -768,6 +768,41 @@ fn eth_proof_timing_batch_dry_run_applies_worker_overrides() {
 }
 
 #[test]
+fn eth_proof_timing_batch_dry_run_applies_parallel_lower_replay_only() {
+    let fixture = ProofFixture::new("eth-proof-timing-batch-replay-only");
+    let mut command = Command::new(script_path());
+    command
+        .arg("--suite")
+        .arg("small")
+        .arg("--dry-run")
+        .arg("--parallel-lower-replay-only")
+        .arg("--summary")
+        .arg("replay only");
+    fixture.apply_env(&mut command, SMALL_PREFIX);
+
+    let output = command
+        .output()
+        .expect("ETH proof timing batch dry-run should run");
+    let success = output.status.success();
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    fixture.cleanup();
+
+    assert!(
+        success,
+        "dry-run should build replay-only command: stderr={stderr}"
+    );
+    assert!(
+        stdout.contains("LZVM_GUEST_PC_TRACE_PARALLEL_LOWER_REPLAY_ONLY=1"),
+        "dry-run command should apply replay-only flag: {stdout}"
+    );
+    assert!(
+        stdout.contains("parallel_lower_replay_only=true\n"),
+        "dry-run metadata should report replay-only flag: {stdout}"
+    );
+}
+
+#[test]
 fn eth_proof_timing_batch_dry_run_pins_external_source_opening_batch_size() {
     let fixture = ProofFixture::new("eth-proof-timing-batch-external-source-batch");
     let mut command = Command::new(script_path());
