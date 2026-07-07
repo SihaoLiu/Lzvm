@@ -932,6 +932,81 @@ theorem guest_pc_trace_emit_descriptor_wait_timing_acceptance_core_and_sound
       proof
       observed
 
+theorem guest_pc_trace_emit_descriptor_wait_timing_acceptance_audited_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : GuestPcTraceTimingSummary)
+    (emitMilliseconds descriptorMilliseconds descriptorRows pendingSendWaitMilliseconds
+      pendingReceiveWaitMilliseconds segmentSendWaitMilliseconds
+      segmentReceiveWaitMilliseconds parallelWorkerCount parallelDispatchedCount
+      parallelReceivedCount parallelEmittedCount parallelMaxReorderCount
+      ownedStreamingLowerSegmentCount
+      parallelStreamStartDispatchWaitMilliseconds
+      parallelStreamChunkDispatchWaitMilliseconds
+      parallelStreamSegmentDispatchWaitMilliseconds
+      parallelStreamFinishDispatchWaitMilliseconds : Nat) :
+    forall publicInput proof,
+      GuestPcTraceTimingObservedAcceptance
+        system
+        (some
+          { summary with
+            guestTraceEmitMilliseconds := emitMilliseconds
+            guestTraceDescriptorMilliseconds := descriptorMilliseconds
+            guestTraceDescriptorRowCount := descriptorRows
+            guestTracePendingSendWaitMilliseconds := pendingSendWaitMilliseconds
+            guestTracePendingReceiveWaitMilliseconds := pendingReceiveWaitMilliseconds
+            guestTraceSegmentSendWaitMilliseconds := segmentSendWaitMilliseconds
+            guestTraceSegmentReceiveWaitMilliseconds := segmentReceiveWaitMilliseconds
+            guestTraceParallelLowerWorkerCount := parallelWorkerCount
+            guestTraceParallelLowerDispatchedCount := parallelDispatchedCount
+            guestTraceParallelLowerReceivedCount := parallelReceivedCount
+            guestTraceParallelLowerEmittedCount := parallelEmittedCount
+            guestTraceParallelLowerMaxReorderCount := parallelMaxReorderCount
+            guestTraceOwnedStreamingLowerSegmentCount := ownedStreamingLowerSegmentCount
+            guestTraceParallelLowerStreamStartDispatchWaitMilliseconds :=
+              parallelStreamStartDispatchWaitMilliseconds
+            guestTraceParallelLowerStreamChunkDispatchWaitMilliseconds :=
+              parallelStreamChunkDispatchWaitMilliseconds
+            guestTraceParallelLowerStreamSegmentDispatchWaitMilliseconds :=
+              parallelStreamSegmentDispatchWaitMilliseconds
+            guestTraceParallelLowerStreamFinishDispatchWaitMilliseconds :=
+              parallelStreamFinishDispatchWaitMilliseconds })
+        publicInput
+        proof ->
+        RequiredCryptographicAssumptionStatements assumptions.crypto
+          /\ RequiredSemanticAssumptionStatements assumptions.semantic
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof observed
+  exact
+    guest_pc_trace_timing_some_summary_acceptance_audited_core_contract
+      assumptions
+      { summary with
+            guestTraceEmitMilliseconds := emitMilliseconds
+            guestTraceDescriptorMilliseconds := descriptorMilliseconds
+            guestTraceDescriptorRowCount := descriptorRows
+            guestTracePendingSendWaitMilliseconds := pendingSendWaitMilliseconds
+            guestTracePendingReceiveWaitMilliseconds := pendingReceiveWaitMilliseconds
+            guestTraceSegmentSendWaitMilliseconds := segmentSendWaitMilliseconds
+            guestTraceSegmentReceiveWaitMilliseconds := segmentReceiveWaitMilliseconds
+            guestTraceParallelLowerWorkerCount := parallelWorkerCount
+            guestTraceParallelLowerDispatchedCount := parallelDispatchedCount
+            guestTraceParallelLowerReceivedCount := parallelReceivedCount
+            guestTraceParallelLowerEmittedCount := parallelEmittedCount
+            guestTraceParallelLowerMaxReorderCount := parallelMaxReorderCount
+            guestTraceOwnedStreamingLowerSegmentCount := ownedStreamingLowerSegmentCount
+            guestTraceParallelLowerStreamStartDispatchWaitMilliseconds :=
+              parallelStreamStartDispatchWaitMilliseconds
+            guestTraceParallelLowerStreamChunkDispatchWaitMilliseconds :=
+              parallelStreamChunkDispatchWaitMilliseconds
+            guestTraceParallelLowerStreamSegmentDispatchWaitMilliseconds :=
+              parallelStreamSegmentDispatchWaitMilliseconds
+            guestTraceParallelLowerStreamFinishDispatchWaitMilliseconds :=
+              parallelStreamFinishDispatchWaitMilliseconds }
+      publicInput
+      proof
+      observed
+
 theorem guest_pc_trace_device_source_timing_acceptance_sound
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
@@ -1015,6 +1090,37 @@ theorem guest_pc_trace_device_source_timing_acceptance_core_and_sound
           guestDeviceSourceBuildMilliseconds := buildMilliseconds
           guestDeviceSourceDescriptorUploadMilliseconds := descriptorUploadMilliseconds
           guestDeviceSourceTraceExpandMilliseconds := traceExpandMilliseconds })
+      publicInput
+      proof
+      observed
+
+theorem guest_pc_trace_device_source_timing_acceptance_audited_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : GuestPcTraceTimingSummary)
+    (buildMilliseconds descriptorUploadMilliseconds traceExpandMilliseconds : Nat) :
+    forall publicInput proof,
+      GuestPcTraceTimingObservedAcceptance
+        system
+        (some
+          { summary with
+            guestDeviceSourceBuildMilliseconds := buildMilliseconds
+            guestDeviceSourceDescriptorUploadMilliseconds := descriptorUploadMilliseconds
+            guestDeviceSourceTraceExpandMilliseconds := traceExpandMilliseconds })
+        publicInput
+        proof ->
+        RequiredCryptographicAssumptionStatements assumptions.crypto
+          /\ RequiredSemanticAssumptionStatements assumptions.semantic
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof observed
+  exact
+    guest_pc_trace_timing_some_summary_acceptance_audited_core_contract
+      assumptions
+      { summary with
+            guestDeviceSourceBuildMilliseconds := buildMilliseconds
+            guestDeviceSourceDescriptorUploadMilliseconds := descriptorUploadMilliseconds
+            guestDeviceSourceTraceExpandMilliseconds := traceExpandMilliseconds }
       publicInput
       proof
       observed
@@ -1111,6 +1217,40 @@ theorem guest_pc_trace_regular_stage_timing_acceptance_core_and_sound
           guestRegularHintsMilliseconds := regularHintsMilliseconds
           guestStageCommitMilliseconds := stageCommitMilliseconds
           guestStageTraceExtractMilliseconds := stageTraceExtractMilliseconds })
+      publicInput
+      proof
+      observed
+
+theorem guest_pc_trace_regular_stage_timing_acceptance_audited_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : GuestPcTraceTimingSummary)
+    (regularConstraintsMilliseconds regularHintsMilliseconds
+      stageCommitMilliseconds stageTraceExtractMilliseconds : Nat) :
+    forall publicInput proof,
+      GuestPcTraceTimingObservedAcceptance
+        system
+        (some
+          { summary with
+            guestRegularConstraintsMilliseconds := regularConstraintsMilliseconds
+            guestRegularHintsMilliseconds := regularHintsMilliseconds
+            guestStageCommitMilliseconds := stageCommitMilliseconds
+            guestStageTraceExtractMilliseconds := stageTraceExtractMilliseconds })
+        publicInput
+        proof ->
+        RequiredCryptographicAssumptionStatements assumptions.crypto
+          /\ RequiredSemanticAssumptionStatements assumptions.semantic
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof observed
+  exact
+    guest_pc_trace_timing_some_summary_acceptance_audited_core_contract
+      assumptions
+      { summary with
+            guestRegularConstraintsMilliseconds := regularConstraintsMilliseconds
+            guestRegularHintsMilliseconds := regularHintsMilliseconds
+            guestStageCommitMilliseconds := stageCommitMilliseconds
+            guestStageTraceExtractMilliseconds := stageTraceExtractMilliseconds }
       publicInput
       proof
       observed

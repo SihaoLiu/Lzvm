@@ -3212,6 +3212,57 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             ][..],
         ),
         (
+            "guest_pc_trace_emit_descriptor_wait_timing_acceptance_audited_core_contract",
+            &[
+                "guestTraceEmitMilliseconds := emitMilliseconds",
+                "guestTraceDescriptorMilliseconds := descriptorMilliseconds",
+                "guestTraceDescriptorRowCount := descriptorRows",
+                "guestTracePendingSendWaitMilliseconds := pendingSendWaitMilliseconds",
+                "guestTracePendingReceiveWaitMilliseconds := pendingReceiveWaitMilliseconds",
+                "guestTraceSegmentSendWaitMilliseconds := segmentSendWaitMilliseconds",
+                "guestTraceSegmentReceiveWaitMilliseconds := segmentReceiveWaitMilliseconds",
+                "guestTraceParallelLowerWorkerCount := parallelWorkerCount",
+                "guestTraceParallelLowerDispatchedCount := parallelDispatchedCount",
+                "guestTraceParallelLowerReceivedCount := parallelReceivedCount",
+                "guestTraceParallelLowerEmittedCount := parallelEmittedCount",
+                "guestTraceParallelLowerMaxReorderCount := parallelMaxReorderCount",
+                "guestTraceOwnedStreamingLowerSegmentCount := ownedStreamingLowerSegmentCount",
+                concat!(
+                    "guestTraceParallelLowerStreamStartDispatchWaitMilliseconds := ",
+                    "parallelStreamStartDispatchWaitMilliseconds"
+                ),
+                concat!(
+                    "guestTraceParallelLowerStreamChunkDispatchWaitMilliseconds := ",
+                    "parallelStreamChunkDispatchWaitMilliseconds"
+                ),
+                concat!(
+                    "guestTraceParallelLowerStreamSegmentDispatchWaitMilliseconds := ",
+                    "parallelStreamSegmentDispatchWaitMilliseconds"
+                ),
+                concat!(
+                    "guestTraceParallelLowerStreamFinishDispatchWaitMilliseconds := ",
+                    "parallelStreamFinishDispatchWaitMilliseconds"
+                ),
+            ][..],
+        ),
+        (
+            "guest_pc_trace_device_source_timing_acceptance_audited_core_contract",
+            &[
+                "guestDeviceSourceBuildMilliseconds := buildMilliseconds",
+                "guestDeviceSourceDescriptorUploadMilliseconds := descriptorUploadMilliseconds",
+                "guestDeviceSourceTraceExpandMilliseconds := traceExpandMilliseconds",
+            ][..],
+        ),
+        (
+            "guest_pc_trace_regular_stage_timing_acceptance_audited_core_contract",
+            &[
+                "guestRegularConstraintsMilliseconds := regularConstraintsMilliseconds",
+                "guestRegularHintsMilliseconds := regularHintsMilliseconds",
+                "guestStageCommitMilliseconds := stageCommitMilliseconds",
+                "guestStageTraceExtractMilliseconds := stageTraceExtractMilliseconds",
+            ][..],
+        ),
+        (
             "guest_pc_trace_source_retention_byte_counts_acceptance_audited_core_contract",
             &[
                 "guestStageSourceRetentionRetainedByteCount := retainedBytes",
@@ -6333,10 +6384,13 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "guest_pc_trace_report_lower_subtiming_acceptance_audited_core_contract",
             "guest_pc_trace_emit_descriptor_wait_timing_acceptance_sound",
             "guest_pc_trace_emit_descriptor_wait_timing_acceptance_verifier_core_contract",
+            "guest_pc_trace_emit_descriptor_wait_timing_acceptance_audited_core_contract",
             "guest_pc_trace_device_source_timing_acceptance_sound",
             "guest_pc_trace_device_source_timing_acceptance_verifier_core_contract",
+            "guest_pc_trace_device_source_timing_acceptance_audited_core_contract",
             "guest_pc_trace_regular_stage_timing_acceptance_sound",
             "guest_pc_trace_regular_stage_timing_acceptance_verifier_core_contract",
+            "guest_pc_trace_regular_stage_timing_acceptance_audited_core_contract",
             "guest_pc_trace_shape_counts_acceptance_sound",
             "guest_pc_trace_shape_counts_acceptance_verifier_core_contract",
             "guest_pc_trace_stream_elapsed_timing_acceptance_core_and_sound",
