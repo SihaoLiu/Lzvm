@@ -505,6 +505,49 @@ theorem accepted_proof_audited_proof_system_core_and_execution_obligations
       coreContract,
       executionObligations⟩
 
+theorem accepted_proof_audited_proof_system_core_execution_and_sound_witness
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system) :
+    forall publicInput proof,
+      system.accepts publicInput proof ->
+        RequiredCryptographicAssumptionStatements assumptions.crypto
+          /\ RequiredSemanticAssumptionStatements assumptions.semantic
+          /\ ProofSystemSound system
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ (exists witness trace constraints,
+            system.traceConsistent publicInput proof trace
+              /\ system.constraintsSatisfied constraints trace
+              /\ system.witnessMatchesTrace witness trace)
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof accepted
+  have semanticSound :=
+    abstract_verifier_sound_with_semantic_evidence assumptions
+  have cryptoCore :=
+    accepted_proof_crypto_core_contract
+      assumptions
+      publicInput
+      proof
+      accepted
+  have semanticExecution :=
+    accepted_proof_semantic_execution_obligations
+      assumptions
+      publicInput
+      proof
+      accepted
+  rcases semanticSound with
+    ⟨_semanticEvidenceForSound, proofSystemSound⟩
+  rcases cryptoCore with
+    ⟨cryptoEvidence, coreContract⟩
+  rcases semanticExecution with
+    ⟨semanticEvidence, executionObligations⟩
+  exact
+    ⟨cryptoEvidence,
+      semanticEvidence,
+      proofSystemSound,
+      coreContract,
+      executionObligations,
+      proofSystemSound publicInput proof accepted⟩
+
 theorem accepted_proof_audited_flat_proof_system_components
     {system : VerifierModel}
     (assumptions : AssumptionBundle system) :
