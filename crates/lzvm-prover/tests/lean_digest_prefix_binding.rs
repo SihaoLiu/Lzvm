@@ -84,14 +84,14 @@ fn lean_digest_prefix_binding_exports_core_contract_projection() {
     lean_binding::assert_theorem_body_contains(
         &lean_source,
         "row_major_digest_prefix_checked_acceptance_sound",
-        &["abstract_verifier_sound"],
+        &["abstract_verifier_sound_with_semantic_evidence"],
     );
     lean_binding::assert_theorem_body_omits(
         &lean_source,
         "row_major_digest_prefix_checked_acceptance_sound",
         &["sound_witness_implies_verifier_core_contract"],
     );
-    lean_binding::assert_theorem_body_contains_identifier(
+    lean_binding::assert_theorem_body_omits_identifier(
         &lean_source,
         "row_major_digest_prefix_checked_acceptance_sound",
         "abstract_verifier_sound",
@@ -166,7 +166,7 @@ fn lean_digest_prefix_binding_exports_core_contract_projection() {
             "assumption_bundle_carries_required_semantic_evidence",
             "row_major_digest_prefix_evidence_implies_wide_linear_digests",
             "row_major_digest_prefix_checked_acceptance_verifier_core_contract",
-            "abstract_verifier_sound",
+            "abstract_verifier_sound_with_semantic_evidence",
             "checked.right",
         ],
     );

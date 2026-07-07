@@ -107,7 +107,10 @@ theorem row_major_digest_prefix_checked_acceptance_sound
         publicInput
         proof
         checked.right)
-      (abstract_verifier_sound assumptions publicInput proof checked.left)
+      ((abstract_verifier_sound_with_semantic_evidence assumptions).right
+        publicInput
+        proof
+        checked.left)
 
 theorem row_major_digest_prefix_checked_acceptance_verifier_core_contract
     {system : VerifierModel}
@@ -210,7 +213,10 @@ theorem row_major_digest_prefix_checked_acceptance_audited_core_contract
       proof
       checked
   have sound :=
-    abstract_verifier_sound assumptions publicInput proof checked.left
+    (abstract_verifier_sound_with_semantic_evidence assumptions).right
+      publicInput
+      proof
+      checked.left
   exact
     And.intro
       (assumption_bundle_carries_required_crypto_evidence assumptions)
