@@ -159,6 +159,29 @@ theorem proof_timing_batch_small_rejected_average_acceptance_core_and_sound
       observed
   exact And.intro rejectedAverage coreAndSound
 
+theorem proof_timing_batch_small_rejected_average_acceptance_audited_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : ProofTimingBatchSummary)
+    (baselineMilliseconds : Nat) :
+    forall publicInput proof,
+      ProofTimingBatchObservedAcceptance system (some summary) publicInput proof ->
+      ProofTimingBatchSmallAverageRejected summary baselineMilliseconds ->
+        ProofTimingBatchSmallAverageRejected summary baselineMilliseconds
+          /\ RequiredCryptographicAssumptionStatements assumptions.crypto
+          /\ RequiredSemanticAssumptionStatements assumptions.semantic
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof observed rejectedAverage
+  have audited :=
+    proof_timing_batch_acceptance_audited_core_contract
+      assumptions
+      (some summary)
+      publicInput
+      proof
+      observed
+  exact And.intro rejectedAverage audited
+
 theorem proof_timing_batch_large_rejected_average_acceptance_core_and_sound
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
@@ -179,6 +202,29 @@ theorem proof_timing_batch_large_rejected_average_acceptance_core_and_sound
       proof
       observed
   exact And.intro rejectedAverage coreAndSound
+
+theorem proof_timing_batch_large_rejected_average_acceptance_audited_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : ProofTimingBatchSummary)
+    (baselineMilliseconds : Nat) :
+    forall publicInput proof,
+      ProofTimingBatchObservedAcceptance system (some summary) publicInput proof ->
+      ProofTimingBatchLargeAverageRejected summary baselineMilliseconds ->
+        ProofTimingBatchLargeAverageRejected summary baselineMilliseconds
+          /\ RequiredCryptographicAssumptionStatements assumptions.crypto
+          /\ RequiredSemanticAssumptionStatements assumptions.semantic
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof observed rejectedAverage
+  have audited :=
+    proof_timing_batch_acceptance_audited_core_contract
+      assumptions
+      (some summary)
+      publicInput
+      proof
+      observed
+  exact And.intro rejectedAverage audited
 
 def WitnessOpeningRowValueTimingObservedAcceptance
     (system : VerifierModel)
@@ -1123,6 +1169,28 @@ theorem cuda_allocator_no_wait_reuse_observed_acceptance_core_and_sound
       proof
       observed
   exact And.intro reuseObserved coreAndSound
+
+theorem cuda_allocator_no_wait_reuse_observed_acceptance_audited_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : CudaAllocatorTimingSummary) :
+    forall publicInput proof,
+      CudaAllocatorTimingObservedAcceptance system (some summary) publicInput proof ->
+      CudaAllocatorNoWaitReuseObserved summary ->
+        CudaAllocatorNoWaitReuseObserved summary
+          /\ RequiredCryptographicAssumptionStatements assumptions.crypto
+          /\ RequiredSemanticAssumptionStatements assumptions.semantic
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof observed reuseObserved
+  have audited :=
+    cuda_allocator_timing_acceptance_audited_core_contract
+      assumptions
+      (some summary)
+      publicInput
+      proof
+      observed
+  exact And.intro reuseObserved audited
 
 theorem cuda_allocator_aggregate_timing_acceptance_sound
     {system : VerifierModel}

@@ -1656,6 +1656,30 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "sound_witness_implies_verifier_core_contract",
         ],
     );
+    assert_audited_core_contract_prefix(
+        &lean_proof_timing_source,
+        "cuda_allocator_no_wait_reuse_observed_acceptance_audited_core_contract",
+        &["CudaAllocatorNoWaitReuseObserved summary"],
+    );
+    assert_theorem_body_contains_identifiers(
+        &lean_proof_timing_source,
+        "cuda_allocator_no_wait_reuse_observed_acceptance_audited_core_contract",
+        &[
+            "cuda_allocator_timing_acceptance_audited_core_contract",
+            "reuseObserved",
+        ],
+    );
+    assert_theorem_body_omits_identifiers(
+        &lean_proof_timing_source,
+        "cuda_allocator_no_wait_reuse_observed_acceptance_audited_core_contract",
+        &[
+            "cuda_allocator_no_wait_reuse_observed_acceptance_core_and_sound",
+            "cuda_allocator_timing_acceptance_core_and_sound",
+            "cuda_allocator_timing_acceptance_sound",
+            "cuda_allocator_timing_acceptance_verifier_core_contract",
+            "assumption_bundle_carries_required_evidence",
+        ],
+    );
     for (theorem, combined_helper, wraps_some, field_terms) in [
         (
             "witness_opening_row_value_aggregate_timing_acceptance_core_and_sound",
@@ -5617,7 +5641,9 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "proof_timing_batch_small_rejected_average_field_contract",
             "proof_timing_batch_large_rejected_average_field_contract",
             "proof_timing_batch_small_rejected_average_acceptance_core_and_sound",
+            "proof_timing_batch_small_rejected_average_acceptance_audited_core_contract",
             "proof_timing_batch_large_rejected_average_acceptance_core_and_sound",
+            "proof_timing_batch_large_rejected_average_acceptance_audited_core_contract",
             "witness_opening_row_value_timing_acceptance_audited_core_contract",
             "witness_opening_row_value_aggregate_timing_acceptance_audited_core_contract",
             "witness_opening_row_value_stage_timings_acceptance_audited_core_contract",
@@ -5627,6 +5653,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "gpu_run_options_acceptance_audited_core_contract",
             "cuda_backend_acceptance_audited_core_contract",
             "cuda_allocator_timing_acceptance_audited_core_contract",
+            "cuda_allocator_no_wait_reuse_observed_acceptance_audited_core_contract",
             "cuda_allocator_host_registration_timing_acceptance_audited_core_contract",
             "proof_artifact_finish_timing_acceptance_audited_core_contract",
             "proof_artifact_finish_timing_some_summary_acceptance_audited_core_contract",
@@ -5743,6 +5770,36 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
                 "proof_timing_batch_acceptance_sound",
                 "proof_timing_batch_acceptance_verifier_core_contract",
                 "sound_witness_implies_verifier_core_contract",
+            ],
+        );
+    }
+    for (theorem, evidence) in [
+        (
+            "proof_timing_batch_small_rejected_average_acceptance_audited_core_contract",
+            "ProofTimingBatchSmallAverageRejected summary baselineMilliseconds",
+        ),
+        (
+            "proof_timing_batch_large_rejected_average_acceptance_audited_core_contract",
+            "ProofTimingBatchLargeAverageRejected summary baselineMilliseconds",
+        ),
+    ] {
+        assert_audited_core_contract_prefix(&lean_proof_timing_source, theorem, &[evidence]);
+        assert_theorem_body_contains_identifiers(
+            &lean_proof_timing_source,
+            theorem,
+            &[
+                "proof_timing_batch_acceptance_audited_core_contract",
+                "rejectedAverage",
+            ],
+        );
+        assert_theorem_body_omits_identifiers(
+            &lean_proof_timing_source,
+            theorem,
+            &[
+                "proof_timing_batch_acceptance_core_and_sound",
+                "proof_timing_batch_acceptance_sound",
+                "proof_timing_batch_acceptance_verifier_core_contract",
+                "assumption_bundle_carries_required_evidence",
             ],
         );
     }
