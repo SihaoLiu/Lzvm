@@ -108,6 +108,16 @@ fn lean_external_source_binding_exports_core_contract_projection() {
             "assumptions.crypto.fri_query_sound",
         ],
     );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "external_source_opening_checked_acceptance_sound",
+        &["abstract_verifier_sound_with_semantic_evidence"],
+    );
+    lean_binding::assert_theorem_body_omits_identifier(
+        &lean_source,
+        "external_source_opening_checked_acceptance_sound",
+        "abstract_verifier_sound",
+    );
     lean_binding::assert_theorem_prefix_contains(
         &lean_source,
         "external_source_opening_checked_acceptance_evidence_core_and_sound",

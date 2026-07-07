@@ -242,14 +242,14 @@ theorem external_source_opening_checked_acceptance_sound
       publicInput
       proof
       acceptedWithExternalSource
+  have soundWitness :=
+    (abstract_verifier_sound_with_semantic_evidence assumptions).right
+      publicInput
+      proof
+      acceptedWithExternalSource.left
   exact
     And.intro evidence
-      (And.intro pcsOpenings
-        (abstract_verifier_sound
-          assumptions
-          publicInput
-          proof
-          acceptedWithExternalSource.left))
+      (And.intro pcsOpenings soundWitness)
 
 theorem external_source_opening_checked_acceptance_evidence_core_and_sound
     {system : VerifierModel}
