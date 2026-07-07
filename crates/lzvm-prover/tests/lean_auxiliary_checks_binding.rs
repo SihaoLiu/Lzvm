@@ -8069,10 +8069,11 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         lean_binding::assert_theorem_body_contains(&gpu_runtime_source, theorem, body_terms);
         lean_binding::assert_theorem_body_omits(&gpu_runtime_source, theorem, omitted_terms);
     }
-    for (theorem, decision_term, combined_helper, omitted_terms) in [
+    for (theorem, decision_term, projector, combined_helper, omitted_terms) in [
         (
             "gpu_allocator_no_wait_limit_checked_acceptance_audited_core_contract",
             "GpuAllocatorNoWaitLimitDecisionMatches config",
+            "gpu_allocator_no_wait_limit_checked_acceptance_projects_decision",
             "gpu_allocator_no_wait_limit_checked_acceptance_core_and_sound",
             &[
                 "gpu_allocator_no_wait_limit_checked_acceptance_sound",
@@ -8083,6 +8084,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         (
             "guest_pc_trace_parallel_lower_checked_acceptance_audited_core_contract",
             "GuestPcTraceParallelLowerDecisionMatches config",
+            "guest_pc_trace_parallel_lower_checked_acceptance_projects_decision",
             "guest_pc_trace_parallel_lower_checked_acceptance_core_and_sound",
             &[
                 "guest_pc_trace_parallel_lower_checked_acceptance_sound",
@@ -8093,6 +8095,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         (
             "guest_pc_trace_segment_queue_checked_acceptance_audited_core_contract",
             "GuestPcTraceSegmentQueueDecisionMatches config",
+            "guest_pc_trace_segment_queue_checked_acceptance_projects_decision",
             "guest_pc_trace_segment_queue_checked_acceptance_core_and_sound",
             &[
                 "guest_pc_trace_segment_queue_checked_acceptance_sound",
@@ -8103,6 +8106,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         (
             "guest_pc_trace_large_gpu_gate_checked_acceptance_audited_core_contract",
             "GuestPcTraceLargeGpuGateDecisionMatches config",
+            "guest_pc_trace_large_gpu_gate_checked_acceptance_projects_decision",
             "guest_pc_trace_large_gpu_gate_checked_acceptance_core_and_sound",
             &[
                 "guest_pc_trace_large_gpu_gate_checked_acceptance_sound",
@@ -8116,6 +8120,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
                 "audited_core_contract"
             ),
             "GuestPcTraceTracelessCommitmentInputDecisionMatches config",
+            "guest_pc_trace_traceless_commitment_input_checked_acceptance_projects_decision",
             concat!(
                 "guest_pc_trace_traceless_commitment_input_checked_acceptance_",
                 "core_and_sound"
@@ -8135,6 +8140,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
                 "audited_core_contract"
             ),
             "GuestPcTraceTracelessSegmentOutputDecisionMatches config",
+            "guest_pc_trace_traceless_segment_output_checked_acceptance_projects_decision",
             concat!(
                 "guest_pc_trace_traceless_segment_output_checked_acceptance_",
                 "core_and_sound"
@@ -8154,6 +8160,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
                 "audited_core_contract"
             ),
             "GuestPcTraceCrossSegmentRootMaterializationDecisionMatches config",
+            "guest_pc_trace_cross_root_materialization_checked_acceptance_projects_decision",
             concat!(
                 "guest_pc_trace_cross_root_materialization_checked_acceptance_",
                 "core_and_sound"
@@ -8180,6 +8187,14 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             ],
         );
         lean_binding::assert_theorem_body_contains(
+            &gpu_runtime_source,
+            theorem,
+            &[
+                projector,
+                "GpuRuntimeInternal.checked_acceptance_audited_core_contract",
+            ],
+        );
+        lean_binding::assert_theorem_body_omits(
             &gpu_runtime_source,
             theorem,
             &[
