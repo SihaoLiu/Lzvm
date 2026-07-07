@@ -199,6 +199,19 @@ pub fn assert_theorem_body_omits_identifier(source: &str, name: &str, identifier
     );
 }
 
+#[allow(dead_code)]
+pub fn assert_theorem_routes_accepted_evidence_by_split_helpers(source: &str, name: &str) {
+    assert_theorem_declarations(source, &[name]);
+    for identifier in [
+        "accepted_proof_crypto_core_contract",
+        "accepted_proof_semantic_execution_obligations",
+        "abstract_verifier_sound_with_semantic_evidence",
+    ] {
+        assert_theorem_body_contains_identifier(source, name, identifier);
+    }
+    assert_theorem_body_omits_identifier(source, name, "abstract_verifier_sound");
+}
+
 fn visible_source(source: &str) -> String {
     strip_lean_comments(source)
 }

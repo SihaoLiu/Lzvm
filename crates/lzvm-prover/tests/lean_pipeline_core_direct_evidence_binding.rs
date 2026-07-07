@@ -36,18 +36,10 @@ fn assert_routes_required_evidence_directly(lean_source: &str, theorem: &str) {
 }
 
 fn assert_routes_accepted_evidence_by_split_helpers(lean_source: &str, theorem: &str) {
-    lean_binding::assert_theorem_declarations(lean_source, &[theorem]);
-    for identifier in [
-        "accepted_proof_crypto_core_contract",
-        "accepted_proof_semantic_execution_obligations",
-        "abstract_verifier_sound_with_semantic_evidence",
-    ] {
-        lean_binding::assert_theorem_body_contains_identifier(lean_source, theorem, identifier);
-    }
+    lean_binding::assert_theorem_routes_accepted_evidence_by_split_helpers(lean_source, theorem);
     for identifier in [
         "accepted_proof_audited_core_execution_and_sound_witness",
         "assumption_bundle_carries_required_evidence",
-        "abstract_verifier_sound",
     ] {
         lean_binding::assert_theorem_body_omits_identifier(lean_source, theorem, identifier);
     }

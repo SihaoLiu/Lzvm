@@ -10,24 +10,21 @@ fn lean_query_plan_routes_accepted_evidence_by_split_helpers() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let lean_source = lean_binding::read_lean_source(crate_root, QUERY_PLAN_SOUNDNESS_SOURCE_PATH);
     let theorem = "runtime_query_plan_binding_direct_finalized_core_sound_witness_contract";
+    let audited_theorem =
+        "runtime_query_plan_binding_audited_finalized_core_sound_witness_contract";
 
-    for theorem_name in [
-        "runtime_query_plan_binding_audited_finalized_core_sound_witness_contract",
-        theorem,
-    ] {
-        lean_binding::assert_theorem_body_contains(
-            &lean_source,
-            theorem_name,
-            &["abstract_verifier_sound_with_semantic_evidence"],
-        );
-        lean_binding::assert_theorem_body_omits_identifier(
-            &lean_source,
-            theorem_name,
-            "abstract_verifier_sound",
-        );
-    }
+    lean_binding::assert_theorem_body_contains_identifier(
+        &lean_source,
+        audited_theorem,
+        "abstract_verifier_sound_with_semantic_evidence",
+    );
+    lean_binding::assert_theorem_body_omits_identifier(
+        &lean_source,
+        audited_theorem,
+        "abstract_verifier_sound",
+    );
+    lean_binding::assert_theorem_routes_accepted_evidence_by_split_helpers(&lean_source, theorem);
 
-    lean_binding::assert_theorem_declarations(&lean_source, &[theorem]);
     lean_binding::assert_theorem_prefix_contains(
         &lean_source,
         theorem,
@@ -57,7 +54,6 @@ fn lean_query_plan_routes_accepted_evidence_by_split_helpers() {
         "runtime_artifact_checked_acceptance_implies_verifier_accepts",
         "accepted_proof_crypto_core_contract",
         "accepted_proof_semantic_execution_obligations",
-        "abstract_verifier_sound_with_semantic_evidence",
     ] {
         lean_binding::assert_theorem_body_contains_identifier(&lean_source, theorem, identifier);
     }
