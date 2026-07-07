@@ -56,6 +56,7 @@ fn lean_challenge_segment_binding_exports_core_contract_projection() {
             "runtime_challenge_segment_binding_checked_acceptance_verifier_core_contract",
             "runtime_challenge_segment_binding_checked_acceptance_challenge_and_core_contract",
             "runtime_challenge_segment_binding_checked_acceptance_evidence_core_and_sound",
+            "runtime_challenge_segment_binding_checked_acceptance_audited_core_contract",
             "runtime_challenge_segment_binding_checked_acceptance_concrete_core_sound_contract",
         ],
     );
@@ -358,6 +359,40 @@ fn lean_challenge_segment_binding_exports_core_contract_projection() {
         &lean_source,
         "runtime_challenge_segment_binding_checked_acceptance_evidence_core_and_sound",
         &["sound_witness_implies_verifier_core_contract"],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_challenge_segment_binding_checked_acceptance_audited_core_contract",
+        &[
+            "RequiredCryptographicAssumptionStatements assumptions.crypto",
+            "RequiredSemanticAssumptionStatements assumptions.semantic",
+            "RuntimeChallengeSegmentBindingEvidence",
+            "RuntimeTranscriptBindingEvidence",
+            "system.transcriptBound publicInput proof",
+            "RuntimeVerifierCoreContract system publicInput proof",
+            "SoundWitness system publicInput proof",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_challenge_segment_binding_checked_acceptance_audited_core_contract",
+        &[
+            "assumption_bundle_carries_required_evidence",
+            "runtime_challenge_segment_binding_checked_acceptance_evidence_core_and_sound",
+            "auditedAssumptions.left",
+            "auditedAssumptions.right",
+            "contracts",
+        ],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &lean_source,
+        "runtime_challenge_segment_binding_checked_acceptance_audited_core_contract",
+        &[
+            "runtime_challenge_segment_binding_checked_acceptance_sound",
+            "runtime_challenge_segment_binding_checked_acceptance_verifier_core_contract",
+            "sound_witness_implies_verifier_core_contract",
+            "abstract_verifier_sound",
+        ],
     );
     lean_binding::assert_theorem_prefix_contains(
         &lean_source,
