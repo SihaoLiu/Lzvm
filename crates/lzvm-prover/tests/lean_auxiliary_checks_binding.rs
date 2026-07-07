@@ -3180,6 +3180,37 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
                 "guestTraceReportRowCount := reportRows",
             ][..],
         ),
+        (
+            "guest_pc_trace_valid_row_write_timing_acceptance_audited_core_contract",
+            &[
+                "guestTraceReportRowValidationMilliseconds := rowValidationMilliseconds",
+                "guestTraceReportRowCount := reportRows",
+            ][..],
+        ),
+        (
+            "guest_pc_trace_report_subtiming_acceptance_audited_core_contract",
+            &[
+                "guestTraceReportRowValidationMilliseconds := rowValidationMilliseconds",
+                "guestTraceReportSourceValuesMilliseconds := sourceValuesMilliseconds",
+                "guestTraceReportPrecompileMemoryMilliseconds := precompileMemoryMilliseconds",
+                "guestTraceReportInstructionResultMilliseconds := instructionResultMilliseconds",
+                "guestTraceReportNextPcMilliseconds := nextPcMilliseconds",
+                "guestTraceReportRegisterAccessMilliseconds := registerAccessMilliseconds",
+                "guestTraceReportMemoryAccessMilliseconds := memoryAccessMilliseconds",
+                "guestTraceReportStoreApplyMilliseconds := storeApplyMilliseconds",
+                "guestTraceReportVisitMilliseconds := visitMilliseconds",
+            ][..],
+        ),
+        (
+            "guest_pc_trace_report_lower_subtiming_acceptance_audited_core_contract",
+            &[
+                "guestTraceSingleRowReportLowerMilliseconds := singleRowMilliseconds",
+                "guestTraceMultiRowReportLowerMilliseconds := multiRowMilliseconds",
+                "guestTracePendingDmaReportLowerMilliseconds := pendingDmaMilliseconds",
+                "guestTraceAmoReportLowerMilliseconds := amoMilliseconds",
+                "guestTraceStoreConditionalReportLowerMilliseconds := storeConditionalMilliseconds",
+            ][..],
+        ),
     ] {
         assert_updated_summary_audited_wrapper(
             &timing_source,
@@ -6176,10 +6207,13 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "guest_pc_trace_report_timing_acceptance_sound",
             "guest_pc_trace_report_timing_acceptance_verifier_core_contract",
             "guest_pc_trace_report_timing_acceptance_audited_core_contract",
+            "guest_pc_trace_valid_row_write_timing_acceptance_audited_core_contract",
             "guest_pc_trace_report_subtiming_acceptance_sound",
             "guest_pc_trace_report_subtiming_acceptance_verifier_core_contract",
+            "guest_pc_trace_report_subtiming_acceptance_audited_core_contract",
             "guest_pc_trace_report_lower_subtiming_acceptance_sound",
             "guest_pc_trace_report_lower_subtiming_acceptance_verifier_core_contract",
+            "guest_pc_trace_report_lower_subtiming_acceptance_audited_core_contract",
             "guest_pc_trace_emit_descriptor_wait_timing_acceptance_sound",
             "guest_pc_trace_emit_descriptor_wait_timing_acceptance_verifier_core_contract",
             "guest_pc_trace_device_source_timing_acceptance_sound",

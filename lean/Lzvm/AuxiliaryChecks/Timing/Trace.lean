@@ -364,6 +364,35 @@ theorem guest_pc_trace_valid_row_write_timing_acceptance_core_and_sound
       proof
       observed
 
+theorem guest_pc_trace_valid_row_write_timing_acceptance_audited_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : GuestPcTraceTimingSummary)
+    (rowValidationMilliseconds reportRows : Nat) :
+    forall publicInput proof,
+      GuestPcTraceTimingObservedAcceptance
+        system
+        (some
+          { summary with
+            guestTraceReportRowValidationMilliseconds := rowValidationMilliseconds
+            guestTraceReportRowCount := reportRows })
+        publicInput
+        proof ->
+        RequiredCryptographicAssumptionStatements assumptions.crypto
+          /\ RequiredSemanticAssumptionStatements assumptions.semantic
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof observed
+  exact
+    guest_pc_trace_timing_some_summary_acceptance_audited_core_contract
+      assumptions
+      { summary with
+            guestTraceReportRowValidationMilliseconds := rowValidationMilliseconds
+            guestTraceReportRowCount := reportRows }
+      publicInput
+      proof
+      observed
+
 theorem guest_pc_trace_report_subtiming_acceptance_sound
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
@@ -493,6 +522,51 @@ theorem guest_pc_trace_report_subtiming_acceptance_core_and_sound
       proof
       observed
 
+theorem guest_pc_trace_report_subtiming_acceptance_audited_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : GuestPcTraceTimingSummary)
+    (rowValidationMilliseconds sourceValuesMilliseconds precompileMemoryMilliseconds
+      instructionResultMilliseconds nextPcMilliseconds registerAccessMilliseconds
+      memoryAccessMilliseconds storeApplyMilliseconds visitMilliseconds : Nat) :
+    forall publicInput proof,
+      GuestPcTraceTimingObservedAcceptance
+        system
+        (some
+          { summary with
+            guestTraceReportRowValidationMilliseconds := rowValidationMilliseconds
+            guestTraceReportSourceValuesMilliseconds := sourceValuesMilliseconds
+            guestTraceReportPrecompileMemoryMilliseconds := precompileMemoryMilliseconds
+            guestTraceReportInstructionResultMilliseconds := instructionResultMilliseconds
+            guestTraceReportNextPcMilliseconds := nextPcMilliseconds
+            guestTraceReportRegisterAccessMilliseconds := registerAccessMilliseconds
+            guestTraceReportMemoryAccessMilliseconds := memoryAccessMilliseconds
+            guestTraceReportStoreApplyMilliseconds := storeApplyMilliseconds
+            guestTraceReportVisitMilliseconds := visitMilliseconds })
+        publicInput
+        proof ->
+        RequiredCryptographicAssumptionStatements assumptions.crypto
+          /\ RequiredSemanticAssumptionStatements assumptions.semantic
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof observed
+  exact
+    guest_pc_trace_timing_some_summary_acceptance_audited_core_contract
+      assumptions
+      { summary with
+            guestTraceReportRowValidationMilliseconds := rowValidationMilliseconds
+            guestTraceReportSourceValuesMilliseconds := sourceValuesMilliseconds
+            guestTraceReportPrecompileMemoryMilliseconds := precompileMemoryMilliseconds
+            guestTraceReportInstructionResultMilliseconds := instructionResultMilliseconds
+            guestTraceReportNextPcMilliseconds := nextPcMilliseconds
+            guestTraceReportRegisterAccessMilliseconds := registerAccessMilliseconds
+            guestTraceReportMemoryAccessMilliseconds := memoryAccessMilliseconds
+            guestTraceReportStoreApplyMilliseconds := storeApplyMilliseconds
+            guestTraceReportVisitMilliseconds := visitMilliseconds }
+      publicInput
+      proof
+      observed
+
 theorem guest_pc_trace_report_lower_subtiming_acceptance_sound
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
@@ -597,6 +671,44 @@ theorem guest_pc_trace_report_lower_subtiming_acceptance_core_and_sound
           guestTraceAmoReportLowerMilliseconds := amoMilliseconds
           guestTraceStoreConditionalReportLowerMilliseconds :=
             storeConditionalMilliseconds })
+      publicInput
+      proof
+      observed
+
+theorem guest_pc_trace_report_lower_subtiming_acceptance_audited_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : GuestPcTraceTimingSummary)
+    (singleRowMilliseconds multiRowMilliseconds pendingDmaMilliseconds amoMilliseconds
+      storeConditionalMilliseconds : Nat) :
+    forall publicInput proof,
+      GuestPcTraceTimingObservedAcceptance
+        system
+        (some
+          { summary with
+            guestTraceSingleRowReportLowerMilliseconds := singleRowMilliseconds
+            guestTraceMultiRowReportLowerMilliseconds := multiRowMilliseconds
+            guestTracePendingDmaReportLowerMilliseconds := pendingDmaMilliseconds
+            guestTraceAmoReportLowerMilliseconds := amoMilliseconds
+            guestTraceStoreConditionalReportLowerMilliseconds :=
+              storeConditionalMilliseconds })
+        publicInput
+        proof ->
+        RequiredCryptographicAssumptionStatements assumptions.crypto
+          /\ RequiredSemanticAssumptionStatements assumptions.semantic
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof observed
+  exact
+    guest_pc_trace_timing_some_summary_acceptance_audited_core_contract
+      assumptions
+      { summary with
+            guestTraceSingleRowReportLowerMilliseconds := singleRowMilliseconds
+            guestTraceMultiRowReportLowerMilliseconds := multiRowMilliseconds
+            guestTracePendingDmaReportLowerMilliseconds := pendingDmaMilliseconds
+            guestTraceAmoReportLowerMilliseconds := amoMilliseconds
+            guestTraceStoreConditionalReportLowerMilliseconds :=
+              storeConditionalMilliseconds }
       publicInput
       proof
       observed
