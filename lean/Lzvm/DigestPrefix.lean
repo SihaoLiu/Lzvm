@@ -179,4 +179,34 @@ theorem row_major_digest_prefix_checked_acceptance_evidence_core_and_sound
   exact And.intro checked.right
     (And.intro sound.left (And.intro core sound.right))
 
+theorem row_major_digest_prefix_checked_acceptance_audited_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RowMajorDigestPrefixValidation system) :
+    forall publicInput proof,
+      RowMajorDigestPrefixCheckedAcceptance
+          system
+          validation
+          publicInput
+          proof ->
+        RequiredCryptographicAssumptionStatements assumptions.crypto
+          /\ RequiredSemanticAssumptionStatements assumptions.semantic
+          /\ RowMajorDigestPrefixEvidence system validation publicInput proof
+          /\ validation.leafValidation.wideLinearDigestsBindRows publicInput proof
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof checked
+  have auditedAssumptions :=
+    assumption_bundle_carries_required_evidence assumptions
+  have contracts :=
+    row_major_digest_prefix_checked_acceptance_evidence_core_and_sound
+      assumptions
+      validation
+      publicInput
+      proof
+      checked
+  exact
+    And.intro auditedAssumptions.left
+      (And.intro auditedAssumptions.right contracts)
+
 end Lzvm
