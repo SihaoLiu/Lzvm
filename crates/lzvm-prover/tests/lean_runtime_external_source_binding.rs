@@ -223,7 +223,15 @@ fn lean_runtime_external_source_binding_exports_core_contract_projection() {
     lean_binding::assert_theorem_body_contains(
         &lean_source,
         "runtime_guarded_external_source_checked_acceptance_sound",
-        &["assumption_bundle_pcs_opening_soundness"],
+        &[
+            "assumption_bundle_pcs_opening_soundness",
+            "abstract_verifier_sound_with_semantic_evidence",
+        ],
+    );
+    lean_binding::assert_theorem_body_omits_identifier(
+        &lean_source,
+        "runtime_guarded_external_source_checked_acceptance_sound",
+        "abstract_verifier_sound",
     );
     lean_binding::assert_theorem_body_omits(
         &lean_source,
