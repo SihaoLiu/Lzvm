@@ -522,6 +522,74 @@ theorem guest_pc_trace_commit_mode_checked_acceptance_projects_descriptor_retent
         proof
         checked)
 
+theorem guest_pc_trace_commit_mode_checked_acceptance_parallel_lower_disables_descriptor_retention
+    {system : VerifierModel}
+    (validation : GuestPcTraceSegmentCommitModeValidation)
+    (config : GuestPcTraceSegmentCommitModeConfig) :
+    config.descriptorBufferRetentionConfig.configuredDescriptorBufferRetention = none ->
+      config.descriptorBufferRetentionConfig.parallelLowerEnabledForDescriptorRetention = true ->
+        forall publicInput proof,
+          GuestPcTraceSegmentCommitModeCheckedAcceptance
+              system
+              validation
+              config
+              publicInput
+              proof ->
+            config.selectedDescriptorBufferRetention = false := by
+  intro configuredNone parallelEnabled publicInput proof checked
+  have decision :=
+    guest_pc_trace_commit_mode_checked_acceptance_projects_decision
+      validation
+      config
+      publicInput
+      proof
+      checked
+  rcases decision with
+    ⟨_workerMatch, _workerPositive, _asyncMatches, _traceDecision,
+      _traceSelected, _rootDecision, _rootSelected, descriptorDecision,
+      descriptorSelected, _windowPositive, _windowMatch⟩
+  exact
+    Eq.trans descriptorSelected
+      (guest_pc_trace_descriptor_buffer_retention_default_disabled_for_parallel_lower
+        config.descriptorBufferRetentionConfig
+        configuredNone
+        parallelEnabled
+        descriptorDecision)
+
+theorem guest_pc_trace_commit_mode_checked_acceptance_explicit_retention_override_matches
+    {system : VerifierModel}
+    (validation : GuestPcTraceSegmentCommitModeValidation)
+    (config : GuestPcTraceSegmentCommitModeConfig)
+    (configured : Bool) :
+    config.descriptorBufferRetentionConfig.configuredDescriptorBufferRetention = some configured ->
+      forall publicInput proof,
+        GuestPcTraceSegmentCommitModeCheckedAcceptance
+            system
+            validation
+            config
+            publicInput
+            proof ->
+          config.selectedDescriptorBufferRetention = configured := by
+  intro configuredSome publicInput proof checked
+  have decision :=
+    guest_pc_trace_commit_mode_checked_acceptance_projects_decision
+      validation
+      config
+      publicInput
+      proof
+      checked
+  rcases decision with
+    ⟨_workerMatch, _workerPositive, _asyncMatches, _traceDecision,
+      _traceSelected, _rootDecision, _rootSelected, descriptorDecision,
+      descriptorSelected, _windowPositive, _windowMatch⟩
+  exact
+    Eq.trans descriptorSelected
+      (guest_pc_trace_descriptor_buffer_retention_explicit_override_matches
+        config.descriptorBufferRetentionConfig
+        configured
+        configuredSome
+        descriptorDecision)
+
 theorem guest_pc_trace_commit_mode_checked_acceptance_sound
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
