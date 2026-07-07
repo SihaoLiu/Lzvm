@@ -753,10 +753,17 @@ theorem runtime_batch_witness_opening_rows_checked_acceptance_audited_core_contr
           /\ RuntimeVerifierCoreContract system publicInput proof
           /\ SoundWitness system publicInput proof := by
   intro artifact publicInput proof requiresExternalSource accepted
-  have auditedAssumptions :=
-    assumption_bundle_carries_required_evidence assumptions
-  have contracts :=
-    runtime_batch_witness_opening_rows_checked_acceptance_evidence_core_and_sound
+  have checkedSound :=
+    runtime_batch_witness_opening_rows_checked_acceptance_sound
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      accepted
+  have openingAndCore :=
+    runtime_batch_witness_opening_rows_checked_acceptance_opening_and_core_contract
       assumptions
       validation
       artifact
@@ -765,7 +772,13 @@ theorem runtime_batch_witness_opening_rows_checked_acceptance_audited_core_contr
       requiresExternalSource
       accepted
   exact
-    And.intro auditedAssumptions.left
-      (And.intro auditedAssumptions.right contracts)
+    And.intro
+      (assumption_bundle_carries_required_crypto_evidence assumptions)
+      (And.intro
+        (assumption_bundle_carries_required_semantic_evidence assumptions)
+        (And.intro checkedSound.left
+          (And.intro openingAndCore.left
+            (And.intro openingAndCore.right.left
+              (And.intro openingAndCore.right.right checkedSound.right)))))
 
 end Lzvm
