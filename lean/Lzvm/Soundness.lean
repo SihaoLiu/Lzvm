@@ -373,4 +373,64 @@ theorem accepted_proof_audited_proof_system_core_and_execution_obligations
       coreExecution.left,
       coreExecution.right⟩
 
+theorem accepted_proof_audited_flat_proof_system_components
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system) :
+    forall publicInput proof,
+      system.accepts publicInput proof ->
+        RequiredCryptographicAssumptionStatements assumptions.crypto
+          /\ RequiredSemanticAssumptionStatements assumptions.semantic
+          /\ ProofSystemSound system
+          /\ system.transcriptBound publicInput proof
+          /\ system.publicInputBound publicInput proof
+          /\ system.pcsOpeningsValid publicInput proof
+          /\ system.friQueriesValid publicInput proof
+          /\ exists witness trace constraints,
+            system.traceConsistent publicInput proof trace
+              /\ system.constraintsSatisfied constraints trace
+              /\ system.witnessMatchesTrace witness trace := by
+  intro publicInput proof accepted
+  have auditedComponents :=
+    accepted_proof_audited_proof_system_and_components
+      assumptions
+      publicInput
+      proof
+      accepted
+  rcases auditedComponents with
+    ⟨cryptoEvidence,
+      semanticEvidence,
+      proofSystemSound,
+      coreContract,
+      witnessComponents⟩
+  rcases coreContract with
+    ⟨transcriptBound,
+      publicInputBound,
+      pcsOpeningsValid,
+      friQueriesValid⟩
+  rcases witnessComponents with
+    ⟨witness,
+      trace,
+      constraints,
+      _soundTranscriptBound,
+      _soundPublicInputBound,
+      _soundPcsOpeningsValid,
+      _soundFriQueriesValid,
+      traceConsistent,
+      constraintsSatisfied,
+      witnessMatchesTrace⟩
+  exact
+    ⟨cryptoEvidence,
+      semanticEvidence,
+      proofSystemSound,
+      transcriptBound,
+      publicInputBound,
+      pcsOpeningsValid,
+      friQueriesValid,
+      witness,
+      trace,
+      constraints,
+      traceConsistent,
+      constraintsSatisfied,
+      witnessMatchesTrace⟩
+
 end Lzvm

@@ -37,6 +37,7 @@ fn lean_soundness_binding_exports_abstract_soundness_theorems() {
             "accepted_proof_audited_core_and_sound_witness_components",
             "accepted_proof_audited_proof_system_and_components",
             "accepted_proof_audited_proof_system_core_and_execution_obligations",
+            "accepted_proof_audited_flat_proof_system_components",
         ],
     );
     lean_binding::assert_theorem_body_contains(
@@ -321,6 +322,53 @@ fn lean_soundness_binding_exports_abstract_soundness_theorems() {
         lean_binding::assert_theorem_body_contains_identifier(
             &lean_source,
             "accepted_proof_audited_proof_system_core_and_execution_obligations",
+            identifier,
+        );
+    }
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "accepted_proof_audited_flat_proof_system_components",
+        &[
+            "system.accepts publicInput proof",
+            "RequiredCryptographicAssumptionStatements assumptions.crypto",
+            "RequiredSemanticAssumptionStatements assumptions.semantic",
+            "ProofSystemSound system",
+            "system.transcriptBound publicInput proof",
+            "system.publicInputBound publicInput proof",
+            "system.pcsOpeningsValid publicInput proof",
+            "system.friQueriesValid publicInput proof",
+            "exists witness trace constraints",
+            "system.traceConsistent publicInput proof trace",
+            "system.constraintsSatisfied constraints trace",
+            "system.witnessMatchesTrace witness trace",
+        ],
+    );
+    for identifier in [
+        "accepted_proof_audited_proof_system_and_components",
+        "coreContract",
+        "transcriptBound",
+        "publicInputBound",
+        "pcsOpeningsValid",
+        "friQueriesValid",
+        "traceConsistent",
+        "constraintsSatisfied",
+        "witnessMatchesTrace",
+    ] {
+        lean_binding::assert_theorem_body_contains_identifier(
+            &lean_source,
+            "accepted_proof_audited_flat_proof_system_components",
+            identifier,
+        );
+    }
+    for identifier in [
+        "assumption_bundle_verifier_core_contract",
+        "assumption_bundle_carries_required_evidence",
+        "proof_system_sound_accepts_core_contract_and_execution_obligations",
+        "sound_witness_implies_execution_obligations",
+    ] {
+        lean_binding::assert_theorem_body_omits_identifier(
+            &lean_source,
+            "accepted_proof_audited_flat_proof_system_components",
             identifier,
         );
     }
