@@ -6085,7 +6085,7 @@ fn guest_pc_descriptor_buffer_retention_enabled(input_byte_count: usize) -> bool
             let normalized = value.to_ascii_lowercase();
             match normalized.as_str() {
                 "0" | "false" | "no" | "off" | "" => false,
-                "1" | "true" | "yes" | "on" => true,
+                "true" | "yes" | "on" => true,
                 _ => value.parse::<usize>().is_ok_and(|bytes| bytes > 0),
             }
         }
@@ -10296,6 +10296,9 @@ mod tests {
         assert!(guest_pc_descriptor_buffer_retention_enabled(
             64 * 1024 * 1024
         ));
+
+        env.set("1");
+        assert!(guest_pc_descriptor_buffer_retention_enabled(0));
 
         env.set("0");
         assert!(!guest_pc_descriptor_buffer_retention_enabled(0));

@@ -6601,12 +6601,20 @@ fn guest_pc_descriptor_buffer_retention_defaults_to_bounded_inputs() {
     assert!(
         compact_source_contains(
             budget_override_body,
-            "\"1\" | \"true\" | \"yes\" | \"on\" => None"
+            "\"true\" | \"yes\" | \"on\" => None"
         ) && compact_source_contains(
             budget_override_body,
             "\"0\" | \"false\" | \"no\" | \"off\" | \"\" => Some(0)"
-        ),
-        "descriptor buffer env flags should map true values to the default budget and false values to no budget"
+        ) && budget_override_body.contains("_ => value.parse::<usize>().ok()"),
+        "descriptor buffer env flags should map true values to the default budget while numeric values remain byte budgets"
+    );
+    assert!(
+        compact_source_contains(gate_body, "\"true\" | \"yes\" | \"on\" => true")
+            && compact_source_contains(
+                gate_body,
+                "_ => value.parse::<usize>().is_ok_and(|bytes| bytes > 0)"
+            ),
+        "descriptor buffer selector should keep numeric env values as byte budgets"
     );
     let parallel_lower_gate_body = function_body(
         &execution_source,

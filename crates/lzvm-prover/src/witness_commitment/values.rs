@@ -946,7 +946,7 @@ fn retained_descriptor_buffer_limit_override(value: &str) -> Option<usize> {
     let normalized = value.to_ascii_lowercase();
     match normalized.as_str() {
         "0" | "false" | "no" | "off" | "" => Some(0),
-        "1" | "true" | "yes" | "on" => None,
+        "true" | "yes" | "on" => None,
         _ => value.parse::<usize>().ok(),
     }
 }
