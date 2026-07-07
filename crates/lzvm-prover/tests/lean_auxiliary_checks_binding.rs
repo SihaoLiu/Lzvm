@@ -1895,6 +1895,8 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
     }
     let aggregate_finish_theorem =
         "proof_artifact_finish_aggregate_timing_acceptance_core_and_sound";
+    let aggregate_finish_audited_theorem =
+        "proof_artifact_finish_aggregate_timing_acceptance_audited_core_contract";
     let aggregate_finish_field_terms = [
         "finishQueryPlanMilliseconds := queryPlanMilliseconds",
         "finishConstantOpeningMilliseconds := constantOpeningMilliseconds",
@@ -1941,6 +1943,41 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         aggregate_finish_theorem,
         "proof_artifact_finish_timing_some_summary_acceptance_core_and_sound",
         &aggregate_finish_field_terms,
+    );
+    lean_binding::assert_theorem_declarations(
+        &proof_timing_verifier_source,
+        &[aggregate_finish_audited_theorem],
+    );
+    assert_audited_core_contract_prefix(
+        &proof_timing_verifier_source,
+        aggregate_finish_audited_theorem,
+        &[],
+    );
+    let aggregate_audited_prefix = lean_binding::theorem_prefix(
+        &proof_timing_verifier_source,
+        aggregate_finish_audited_theorem,
+    );
+    for field_term in aggregate_finish_field_terms {
+        assert!(
+            compact_source_contains(&aggregate_audited_prefix, field_term),
+            "Lean theorem {aggregate_finish_audited_theorem} prefix should wire field {field_term}"
+        );
+    }
+    lean_binding::assert_theorem_body_contains(
+        &proof_timing_verifier_source,
+        aggregate_finish_audited_theorem,
+        &["proof_artifact_finish_timing_some_summary_acceptance_audited_core_contract"],
+    );
+    assert_theorem_body_omits_identifiers(
+        &proof_timing_verifier_source,
+        aggregate_finish_audited_theorem,
+        &[
+            "proof_artifact_finish_aggregate_timing_acceptance_core_and_sound",
+            "proof_artifact_finish_aggregate_timing_acceptance_verifier_core_contract",
+            "proof_artifact_finish_aggregate_timing_acceptance_sound",
+            "proof_artifact_finish_timing_some_summary_acceptance_core_and_sound",
+            "assumption_bundle_carries_required_evidence",
+        ],
     );
     let aggregate_finish_accounting_theorem =
         "proof_artifact_finish_aggregate_timing_accounting_acceptance_core_and_sound";
