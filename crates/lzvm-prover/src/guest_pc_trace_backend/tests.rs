@@ -4091,8 +4091,11 @@ fn large_runtime_auto_lower_uses_bounded_workers() {
     assert!(guest_pc_trace_parallel_lower_enabled_for_limit(600_000_000));
     assert_eq!(
         guest_pc_trace_parallel_lower_worker_count_for_limit(600_000_000),
-        Some(2)
+        Some(guest_pc_trace_auto_parallel_lower_worker_count())
     );
+    assert!((DEFAULT_GUEST_PC_TRACE_AUTO_PARALLEL_LOWER_WORKERS
+        ..=DEFAULT_GUEST_PC_TRACE_AUTO_PARALLEL_LOWER_MAX_WORKERS)
+        .contains(&guest_pc_trace_auto_parallel_lower_worker_count()));
 
     let seed_mode = GuestPcTraceRunnerSeedMode::from_runtime(600_000_000);
     assert!(seed_mode.snapshot);

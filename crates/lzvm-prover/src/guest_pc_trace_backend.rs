@@ -9823,7 +9823,7 @@ fn guest_pc_trace_parallel_lower_configured_worker_count_for_limit(
         return configured.max(1);
     }
     if guest_pc_trace_auto_parallel_lower_selected(instruction_limit) {
-        return DEFAULT_GUEST_PC_TRACE_AUTO_PARALLEL_LOWER_WORKERS;
+        return guest_pc_trace_auto_parallel_lower_worker_count();
     }
     guest_pc_trace_available_worker_count().max(1)
 }
@@ -9833,6 +9833,13 @@ fn guest_pc_trace_parallel_lower_configured_worker_count_override() -> Option<us
         .ok()
         .and_then(|value| value.parse::<usize>().ok())
         .filter(|value| *value > 0)
+}
+
+fn guest_pc_trace_auto_parallel_lower_worker_count() -> usize {
+    guest_pc_trace_available_worker_count().clamp(
+        DEFAULT_GUEST_PC_TRACE_AUTO_PARALLEL_LOWER_WORKERS,
+        DEFAULT_GUEST_PC_TRACE_AUTO_PARALLEL_LOWER_MAX_WORKERS,
+    )
 }
 
 fn guest_pc_trace_available_worker_count() -> usize {
@@ -9895,6 +9902,7 @@ const DEFAULT_GUEST_PC_TRACE_AUTO_PARALLEL_LOWER_MIN_INSTRUCTIONS: u64 = 600_000
 #[cfg(feature = "cuda")]
 const DEFAULT_GUEST_PC_TRACE_AUTO_PARALLEL_LOWER_WORK_UNITS_MIN_INSTRUCTIONS: u64 = 50_000_000;
 const DEFAULT_GUEST_PC_TRACE_AUTO_PARALLEL_LOWER_WORKERS: usize = 2;
+const DEFAULT_GUEST_PC_TRACE_AUTO_PARALLEL_LOWER_MAX_WORKERS: usize = 3;
 
 fn guest_pc_trace_parallel_lower_env_override() -> Option<bool> {
     env_flag_override("LZVM_GUEST_PC_TRACE_PARALLEL_LOWER")
