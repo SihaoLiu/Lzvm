@@ -99,6 +99,33 @@ fn prove_timing_root_summary_value(input_lines: &[&str], name: &str) -> String {
         .unwrap_or_else(|| panic!("summary should expose {name}: stdout={stdout}"))
 }
 
+#[test]
+fn prove_timing_root_summary_extracts_stable_summary_aggregate() {
+    let values = prove_timing_root_summary_values(&[
+        "profile,input_bytes,total_ms,catalog_ms",
+        "run-a.log,12,100,1",
+        "run-b.log,12,104,1",
+        "aggregate,total_count,valid_total_count,total_mean_ms",
+        "aggregate,2,2,102.000",
+    ]);
+
+    assert_eq!(
+        expect_summary_value(&values, "profile"),
+        "stdin",
+        "stable summary output should keep the input label"
+    );
+    assert_eq!(
+        expect_summary_value(&values, "total_count"),
+        "2",
+        "stable summary output should expose aggregate counts as columns"
+    );
+    assert_eq!(
+        expect_summary_value(&values, "total_mean_ms"),
+        "102.000",
+        "stable summary output should expose aggregate timing values"
+    );
+}
+
 fn expect_summary_value<'a>(values: &'a BTreeMap<String, String>, name: &str) -> &'a str {
     values.get(name).map(String::as_str).unwrap_or_else(|| {
         let keys = values.keys().collect::<Vec<_>>();

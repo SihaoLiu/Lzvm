@@ -7349,6 +7349,47 @@ def print_summary(inputs: list[tuple[str, str]]) -> None:
                 print(summarize_total_samples_by_input_bytes(input_bytes, group))
 
 
+def stable_summary_aggregate(text: str) -> tuple[list[str], list[str]] | None:
+    try:
+        rows = list(csv.reader(text.splitlines()))
+    except csv.Error:
+        return None
+    if len(rows) < 3:
+        return None
+    header = rows[0]
+    if not header or header[0] != "profile":
+        return None
+    aggregate_rows = [row for row in rows if row and row[0] == "aggregate"]
+    if len(aggregate_rows) < 2:
+        return None
+    names = aggregate_rows[-2][1:]
+    values = aggregate_rows[-1][1:]
+    if not names or len(names) != len(values) or any(not name for name in names):
+        return None
+    return names, values
+
+
+def print_stable_summary_aggregates(inputs: list[tuple[str, str]]) -> bool:
+    aggregate_names: list[str] | None = None
+    aggregate_rows: list[tuple[str, list[str]]] = []
+    for label, text in inputs:
+        aggregate = stable_summary_aggregate(text)
+        if aggregate is None:
+            return False
+        names, values = aggregate
+        if aggregate_names is None:
+            aggregate_names = names
+        elif aggregate_names != names:
+            raise SystemExit("stable summary aggregate columns differ")
+        aggregate_rows.append((label, values))
+
+    writer = csv.writer(sys.stdout, lineterminator="\n")
+    writer.writerow(["profile", *(aggregate_names or [])])
+    for label, values in aggregate_rows:
+        writer.writerow([label, *values])
+    return True
+
+
 def self_test() -> None:
     print_summary(
         [
@@ -7666,7 +7707,10 @@ def main() -> None:
         + args.nsys_kernel_summary
         + args.ncu_kernel_summary
     )
-    print_summary([read_input(path, extra_reports) for path in args.logs])
+    inputs = [read_input(path, extra_reports) for path in args.logs]
+    if not extra_reports and print_stable_summary_aggregates(inputs):
+        return
+    print_summary(inputs)
 
 
 if __name__ == "__main__":
