@@ -3766,6 +3766,8 @@ fn retained_trace_cuda_run_artifacts(
     } else {
         Vec::new()
     };
+    // Descriptor retention has its own selector; source-view retention only
+    // claims the first chance at keeping per-stage views.
     let retain_guest_pc_device_descriptor_buffer =
         trace_cuda_run_config.descriptor_buffer_retention;
     let guest_pc_device_descriptor_buffer = if retain_guest_pc_device_descriptor_buffer

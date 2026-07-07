@@ -3908,8 +3908,7 @@ def opening_source_rebuild_hint(
     if external_source_count <= 0:
         return "none"
     if (
-        source_retention_attempts > 0
-        and source_retention_retained == 0
+        source_retention_retained == 0
         and source_retention_limit_bytes == 0
     ):
         return "retained_source_disabled_external_rebuild"

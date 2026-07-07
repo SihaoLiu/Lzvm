@@ -941,10 +941,21 @@ fn default_retained_source_device_limit() -> usize {
 }
 
 #[cfg(feature = "cuda")]
+fn retained_descriptor_buffer_limit_override(value: &str) -> Option<usize> {
+    let value = value.trim();
+    let normalized = value.to_ascii_lowercase();
+    match normalized.as_str() {
+        "0" | "false" | "no" | "off" | "" => Some(0),
+        "1" | "true" | "yes" | "on" => None,
+        _ => value.parse::<usize>().ok(),
+    }
+}
+
+#[cfg(feature = "cuda")]
 pub(crate) fn retained_descriptor_buffer_limit() -> usize {
     std::env::var("LZVM_CUDA_RETAINED_DESCRIPTOR_BYTES")
         .ok()
-        .and_then(|value| value.parse::<usize>().ok())
+        .and_then(|value| retained_descriptor_buffer_limit_override(&value))
         .unwrap_or_else(|| {
             *RETAINED_DESCRIPTOR_BUFFER_LIMIT.get_or_init(default_retained_descriptor_buffer_limit)
         })

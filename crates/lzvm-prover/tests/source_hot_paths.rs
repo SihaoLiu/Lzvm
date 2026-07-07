@@ -6564,6 +6564,9 @@ fn guest_pc_descriptor_buffer_retention_defaults_to_bounded_inputs() {
     let execution_path = crate_root.join("src/witness_execution.rs");
     let execution_source =
         std::fs::read_to_string(&execution_path).expect("witness execution source should read");
+    let values_path = crate_root.join("src/witness_commitment/values.rs");
+    let values_source =
+        std::fs::read_to_string(&values_path).expect("witness values source should read");
 
     assert!(
         execution_source.contains("fn guest_pc_descriptor_buffer_retention_enabled("),
@@ -6589,6 +6592,21 @@ fn guest_pc_descriptor_buffer_retention_defaults_to_bounded_inputs() {
                 "guest_pc_descriptor_buffer_retention_default_supported_for_input(input_byte_count,)"
             ),
         "descriptor buffer retention should default to the bounded-input policy while allowing an explicit env override"
+    );
+    let budget_override_body = function_body(
+        &values_source,
+        "fn retained_descriptor_buffer_limit_override",
+        "#[cfg(feature = \"cuda\")]\npub(crate) fn retained_descriptor_buffer_limit",
+    );
+    assert!(
+        compact_source_contains(
+            budget_override_body,
+            "\"1\" | \"true\" | \"yes\" | \"on\" => None"
+        ) && compact_source_contains(
+            budget_override_body,
+            "\"0\" | \"false\" | \"no\" | \"off\" | \"\" => Some(0)"
+        ),
+        "descriptor buffer env flags should map true values to the default budget and false values to no budget"
     );
     let parallel_lower_gate_body = function_body(
         &execution_source,
@@ -6719,6 +6737,10 @@ fn guest_pc_trace_retains_stage_sources_before_descriptor_buffers() {
             "let guest_pc_device_descriptor_buffer = if retain_stage_sources\n        && retain_guest_pc_device_descriptor_buffer"
         ),
         "descriptor buffer retention should not be gated by stage source retention"
+    );
+    assert!(
+        retention_helper_body.contains("Descriptor retention has its own selector"),
+        "descriptor buffer retention should document the independent selector"
     );
     assert!(
         retained_position < descriptor_position,
