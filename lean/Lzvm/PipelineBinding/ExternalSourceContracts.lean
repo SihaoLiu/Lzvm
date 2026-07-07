@@ -388,8 +388,6 @@ theorem runtime_pipeline_binding_required_external_source_contracts_audited_soun
       requiresExternalSource
       accepted
       required
-  have auditedAssumptions :=
-    assumption_bundle_carries_required_evidence assumptions
   rcases compactCore with
     ⟨_auditedCrypto,
       proofSystemSound,
@@ -406,8 +404,8 @@ theorem runtime_pipeline_binding_required_external_source_contracts_audited_soun
       executionObligations,
       soundWitness⟩
   exact
-    ⟨auditedAssumptions.left,
-      auditedAssumptions.right,
+    ⟨assumption_bundle_carries_required_crypto_evidence assumptions,
+      assumption_bundle_carries_required_semantic_evidence assumptions,
       proofSystemSound,
       verifierAccepts,
       traceExternalEvidence,
@@ -552,8 +550,6 @@ theorem runtime_pipeline_binding_required_external_source_artifact_audited_sound
       requiresExternalSource
       accepted
       required
-  have auditedAssumptions :=
-    assumption_bundle_carries_required_evidence assumptions
   rcases artifactCore with
     ⟨artifactEvidence,
       _auditedCrypto,
@@ -572,8 +568,8 @@ theorem runtime_pipeline_binding_required_external_source_artifact_audited_sound
       soundWitness⟩
   exact
     ⟨artifactEvidence,
-      auditedAssumptions.left,
-      auditedAssumptions.right,
+      assumption_bundle_carries_required_crypto_evidence assumptions,
+      assumption_bundle_carries_required_semantic_evidence assumptions,
       proofSystemSound,
       verifierAccepts,
       traceExternalEvidence,
