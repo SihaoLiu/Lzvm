@@ -20,11 +20,19 @@ fn lean_runtime_soundness_binding_exports_core_contract_projection() {
     let contracts_path = crate_root.join("../../lean/Lzvm/RuntimeSoundness/Contracts.lean");
     let contracts_source = std::fs::read_to_string(&contracts_path)
         .expect("Lean runtime soundness contracts source should read");
+    let contracts_base_path =
+        crate_root.join("../../lean/Lzvm/RuntimeSoundness/Contracts/Base.lean");
+    let contracts_base_source = std::fs::read_to_string(&contracts_base_path)
+        .expect("Lean runtime soundness contract base source should read");
+    let contracts_external_source_path =
+        crate_root.join("../../lean/Lzvm/RuntimeSoundness/Contracts/ExternalSource.lean");
+    let contracts_external_source = std::fs::read_to_string(&contracts_external_source_path)
+        .expect("Lean runtime soundness contract external-source source should read");
     let segment_ids_path = crate_root.join("../../lean/Lzvm/RuntimeSoundness/SegmentIds.lean");
     let segment_ids_source = std::fs::read_to_string(&segment_ids_path)
         .expect("Lean runtime soundness segment-id source should read");
     let lean_source = format!(
-        "{runtime_soundness_source}\n{runtime_soundness_core_source}\n{runtime_soundness_external_source}\n{segment_ids_source}\n{contracts_source}"
+        "{runtime_soundness_source}\n{runtime_soundness_core_source}\n{runtime_soundness_external_source}\n{segment_ids_source}\n{contracts_source}\n{contracts_base_source}\n{contracts_external_source}"
     );
     let top_level_path = crate_root.join("../../lean/Lzvm.lean");
     let top_level_source =
@@ -33,6 +41,20 @@ fn lean_runtime_soundness_binding_exports_core_contract_projection() {
     assert!(
         lean_binding::contains_import(&top_level_source, "Lzvm.RuntimeSoundness"),
         "top-level Lean module should import runtime soundness"
+    );
+    assert!(
+        lean_binding::contains_import(
+            &runtime_soundness_source,
+            "Lzvm.RuntimeSoundness.SegmentIds"
+        ),
+        "runtime soundness wrapper should import segment-id projections"
+    );
+    assert!(
+        lean_binding::contains_import(
+            &runtime_soundness_source,
+            "Lzvm.RuntimeSoundness.Contracts"
+        ),
+        "runtime soundness wrapper should import runtime soundness contracts"
     );
     assert!(
         lean_binding::contains_import(&top_level_source, "Lzvm.RuntimeSoundness.Contracts"),

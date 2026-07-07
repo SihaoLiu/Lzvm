@@ -5,6 +5,7 @@ Authors: Sihao Liu
 -/
 
 import Lzvm.RuntimeSoundness.Contracts.Base
+import Lzvm.RuntimeSoundness.ExternalSource
 
 /-!
 Runtime soundness contracts for required external source obligations.

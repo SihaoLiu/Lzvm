@@ -4,7 +4,7 @@ Released under MIT OR Apache-2.0 license.
 Authors: Sihao Liu
 -/
 
-import Lzvm.RuntimeSoundness
+import Lzvm.RuntimeSoundness.Core
 
 /-!
 Runtime soundness projections for proof segment identifiers.

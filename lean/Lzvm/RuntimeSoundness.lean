@@ -6,6 +6,8 @@ Authors: Sihao Liu
 
 import Lzvm.RuntimeSoundness.Core
 import Lzvm.RuntimeSoundness.ExternalSource
+import Lzvm.RuntimeSoundness.SegmentIds
+import Lzvm.RuntimeSoundness.Contracts
 
 /-!
 Integrated runtime soundness theorem exports for checked proof artifacts.

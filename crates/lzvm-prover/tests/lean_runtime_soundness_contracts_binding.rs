@@ -50,7 +50,14 @@ const SEGMENT_ID_SNIPPETS: &[&str] = &[
 
 fn read_contracts_source() -> String {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
-    lean_binding::read_lean_source(crate_root, CONTRACTS_SOURCE_PATH)
+    lean_binding::read_lean_sources(
+        crate_root,
+        &[
+            CONTRACTS_SOURCE_PATH,
+            "../../lean/Lzvm/RuntimeSoundness/Contracts/Base.lean",
+            "../../lean/Lzvm/RuntimeSoundness/Contracts/ExternalSource.lean",
+        ],
+    )
 }
 
 fn read_top_level_source() -> String {
