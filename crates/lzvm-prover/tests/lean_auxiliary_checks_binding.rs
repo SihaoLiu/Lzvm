@@ -2049,6 +2049,38 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "abstract_verifier_sound",
         ],
     );
+    lean_binding::assert_theorem_prefix_contains(
+        &auxiliary_projected_source,
+        "runtime_performance_observation_auxiliary_flat_projected_evidence",
+        &[
+            "RuntimeVerifierCoreContract system publicInput proof",
+            "SoundWitness system publicInput proof",
+            "TimingProjectedCoreContracts system publicInput proof",
+            "ProofTimingProjectedCoreContracts system publicInput proof",
+            "RuntimePerformanceObservationProjectedCoreContracts",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &auxiliary_projected_source,
+        "runtime_performance_observation_auxiliary_flat_projected_evidence",
+        &[
+            "runtime_performance_observation_auxiliary_contracts",
+            "contracts.verifierCore",
+            "contracts.soundWitness",
+            "contracts.projected.timing",
+            "contracts.projected.proofTiming",
+            "contracts.projected.runtimePerformance",
+        ],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &auxiliary_projected_source,
+        "runtime_performance_observation_auxiliary_flat_projected_evidence",
+        &[
+            "runtime_performance_observation_acceptance_sound",
+            "runtime_performance_observation_acceptance_verifier_core_contract",
+            "abstract_verifier_sound",
+        ],
+    );
     lean_binding::assert_theorem_declarations(
         &gpu_runtime_source,
         &[

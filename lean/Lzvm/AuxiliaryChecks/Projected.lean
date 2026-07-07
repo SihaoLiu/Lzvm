@@ -170,4 +170,37 @@ theorem runtime_performance_observation_auxiliary_contract_evidence
       contracts.verifierCore
       (And.intro contracts.soundWitness contracts.projected)
 
+theorem runtime_performance_observation_auxiliary_flat_projected_evidence
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : RuntimePerformanceObservationSummary) :
+    forall publicInput proof,
+      RuntimePerformanceObservedAcceptance system summary publicInput proof ->
+        RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof
+          /\ TimingProjectedCoreContracts system publicInput proof
+          /\ ProofTimingProjectedCoreContracts system publicInput proof
+          /\ RuntimePerformanceObservationProjectedCoreContracts
+            system
+            publicInput
+            proof := by
+  intro publicInput proof observed
+  have contracts :=
+    runtime_performance_observation_auxiliary_contracts
+      assumptions
+      summary
+      publicInput
+      proof
+      observed
+  exact
+    And.intro
+      contracts.verifierCore
+      (And.intro
+        contracts.soundWitness
+        (And.intro
+          contracts.projected.timing
+          (And.intro
+            contracts.projected.proofTiming
+            contracts.projected.runtimePerformance)))
+
 end Lzvm
