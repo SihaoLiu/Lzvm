@@ -870,6 +870,10 @@ def mode_env_for_args(args: argparse.Namespace, mode: str) -> dict[str, str]:
         mode_env["LZVM_GUEST_PC_TRACE_PARALLEL_LOWER_JOB_QUEUE"] = str(
             args.parallel_lower_job_queue
         )
+    if args.report_chunk_capacity is not None:
+        mode_env["LZVM_GUEST_PC_TRACE_REPORT_CHUNK_CAPACITY"] = str(
+            args.report_chunk_capacity
+        )
     if args.parallel_lower_replay_only:
         mode_env["LZVM_GUEST_PC_TRACE_PARALLEL_LOWER_REPLAY_ONLY"] = "1"
     if args.segment_commit_workers is not None:
@@ -1009,6 +1013,8 @@ def next_command_parts(
         parts.extend(["--parallel-lower-workers", str(args.parallel_lower_workers)])
     if args.parallel_lower_job_queue is not None:
         parts.extend(["--parallel-lower-job-queue", str(args.parallel_lower_job_queue)])
+    if args.report_chunk_capacity is not None:
+        parts.extend(["--report-chunk-capacity", str(args.report_chunk_capacity)])
     if args.parallel_lower_replay_only:
         parts.append("--parallel-lower-replay-only")
     if args.segment_commit_workers is not None:
@@ -1695,6 +1701,7 @@ def dry_run_summary_lines(args: argparse.Namespace, root: Path) -> list[str]:
         f"verify_proof={str(not args.skip_verify_proof).lower()}",
         f"parallel_lower_workers={args.parallel_lower_workers or ''}",
         f"parallel_lower_job_queue={args.parallel_lower_job_queue or ''}",
+        f"report_chunk_capacity={args.report_chunk_capacity or ''}",
         f"parallel_lower_replay_only={str(args.parallel_lower_replay_only).lower()}",
         f"segment_commit_workers={args.segment_commit_workers or ''}",
         f"cross_segment_root_window={args.cross_segment_root_window or ''}",
@@ -2044,6 +2051,7 @@ def self_test() -> None:
         large_max_avg_s=None,
         parallel_lower_job_queue=None,
         parallel_lower_workers=None,
+        report_chunk_capacity=None,
         parallel_lower_replay_only=False,
         segment_commit_workers=None,
         cross_segment_root_window=None,
@@ -2124,6 +2132,20 @@ def self_test() -> None:
         if "descriptor_stream_ingress=true" not in dry_run_summary_lines(args, root):
             raise SystemExit("self-test descriptor stream dry-run summary missing")
         args.descriptor_stream_ingress = False
+        args.report_chunk_capacity = 262144
+        chunk_command = command_for_env(
+            small_config,
+            args.small_mode,
+            not args.skip_verify_proof,
+            mode_env_for_args(args, args.small_mode),
+            proof_tuning_args(args),
+            allow_stale_bin=args.allow_stale_bin,
+        )
+        if "LZVM_GUEST_PC_TRACE_REPORT_CHUNK_CAPACITY=262144" not in chunk_command:
+            raise SystemExit("self-test report chunk env assignment missing")
+        if "report_chunk_capacity=262144" not in dry_run_summary_lines(args, root):
+            raise SystemExit("self-test report chunk dry-run summary missing")
+        args.report_chunk_capacity = None
         args.retained_descriptor_bytes = 1234
         retained_command = command_for_env(
             small_config,
@@ -2252,6 +2274,7 @@ def main() -> None:
     parser.add_argument("--append-max-average-rejections", action="store_true")
     parser.add_argument("--parallel-lower-workers", type=positive_integer, default=None)
     parser.add_argument("--parallel-lower-job-queue", type=positive_integer, default=None)
+    parser.add_argument("--report-chunk-capacity", type=positive_integer, default=None)
     parser.add_argument("--parallel-lower-replay-only", action="store_true")
     parser.add_argument("--segment-commit-workers", type=positive_integer, default=None)
     parser.add_argument("--cross-segment-root-window", type=positive_integer, default=None)
