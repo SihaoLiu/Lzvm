@@ -243,16 +243,27 @@ fn lean_soundness_binding_exports_abstract_soundness_theorems() {
             "SoundWitness system publicInput proof",
         ],
     );
-    lean_binding::assert_theorem_body_contains_identifier(
-        &lean_source,
-        "accepted_proof_audited_core_execution_and_sound_witness",
+    for identifier in [
+        "accepted_proof_crypto_core_contract",
+        "accepted_proof_semantic_execution_obligations",
+        "abstract_verifier_sound",
+    ] {
+        lean_binding::assert_theorem_body_contains_identifier(
+            &lean_source,
+            "accepted_proof_audited_core_execution_and_sound_witness",
+            identifier,
+        );
+    }
+    for identifier in [
         "accepted_proof_audited_core_and_sound_witness",
-    );
-    lean_binding::assert_theorem_body_contains_identifier(
-        &lean_source,
-        "accepted_proof_audited_core_execution_and_sound_witness",
         "sound_witness_implies_execution_obligations",
-    );
+    ] {
+        lean_binding::assert_theorem_body_omits_identifier(
+            &lean_source,
+            "accepted_proof_audited_core_execution_and_sound_witness",
+            identifier,
+        );
+    }
     lean_binding::assert_theorem_prefix_contains(
         &lean_source,
         "accepted_proof_audited_core_and_execution_obligations",
