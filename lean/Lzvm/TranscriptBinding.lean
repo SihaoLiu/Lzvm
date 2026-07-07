@@ -940,10 +940,23 @@ theorem runtime_transcript_binding_checked_acceptance_audited_core_contract
           /\ RuntimeVerifierCoreContract system publicInput proof
           /\ SoundWitness system publicInput proof := by
   intro artifact publicInput proof accepted
-  have auditedAssumptions :=
-    assumption_bundle_carries_required_evidence assumptions
-  have contracts :=
-    runtime_transcript_binding_checked_acceptance_evidence_core_and_sound
+  have sound :=
+    runtime_transcript_binding_checked_acceptance_sound
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have structural :=
+    runtime_transcript_binding_checked_acceptance_structural_obligations
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have coreContract :=
+    runtime_transcript_binding_checked_acceptance_verifier_core_contract
       assumptions
       validation
       artifact
@@ -951,8 +964,15 @@ theorem runtime_transcript_binding_checked_acceptance_audited_core_contract
       proof
       accepted
   exact
-    And.intro auditedAssumptions.left
-      (And.intro auditedAssumptions.right contracts)
+    And.intro
+      (assumption_bundle_carries_required_crypto_evidence assumptions)
+      (And.intro
+        (assumption_bundle_carries_required_semantic_evidence assumptions)
+        (And.intro sound.left
+          (And.intro structural
+            (And.intro sound.right.left
+              (And.intro sound.right.right.left
+                (And.intro coreContract sound.right.right.right))))))
 
 theorem
   runtime_transcript_binding_checked_acceptance_concrete_core_sound_contract
