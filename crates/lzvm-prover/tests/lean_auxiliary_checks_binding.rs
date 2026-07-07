@@ -6278,6 +6278,108 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "Lean proof finish timing theorem {stem} should expose a combined core_and_sound wrapper"
         );
     }
+    lean_binding::assert_theorem_declarations(
+        &proof_timing_finish_source,
+        &[
+            concat!(
+                "proof_artifact_finish_path_parent_hash_per_unit_shape_acceptance_",
+                "audited_core_contract"
+            ),
+            "proof_artifact_finish_external_source_timing_acceptance_audited_core_contract",
+            concat!(
+                "proof_artifact_finish_descriptor_upload_word_count_acceptance_",
+                "audited_core_contract"
+            ),
+            "proof_artifact_finish_descriptor_upload_shape_acceptance_audited_core_contract",
+        ],
+    );
+    for (theorem, field, omitted_terms) in [
+        (
+            concat!(
+                "proof_artifact_finish_path_parent_hash_per_unit_shape_acceptance_",
+                "audited_core_contract"
+            ),
+            "finishWitnessOpeningPathParentHashRowsPerQuery := rowsPerQuery",
+            &[
+                concat!(
+                    "proof_artifact_finish_path_parent_hash_per_unit_shape_acceptance_",
+                    "core_and_sound"
+                ),
+                concat!(
+                    "proof_artifact_finish_path_parent_hash_per_unit_shape_acceptance_",
+                    "verifier_core_contract"
+                ),
+                "proof_artifact_finish_path_parent_hash_per_unit_shape_acceptance_sound",
+                "assumption_bundle_carries_required_evidence",
+            ][..],
+        ),
+        (
+            "proof_artifact_finish_external_source_timing_acceptance_audited_core_contract",
+            "finishWitnessExternalSourceMilliseconds := externalSourceMilliseconds",
+            &[
+                "proof_artifact_finish_external_source_timing_acceptance_core_and_sound",
+                concat!(
+                    "proof_artifact_finish_external_source_timing_acceptance_",
+                    "verifier_core_contract"
+                ),
+                "proof_artifact_finish_external_source_timing_acceptance_sound",
+                "assumption_bundle_carries_required_evidence",
+            ][..],
+        ),
+        (
+            concat!(
+                "proof_artifact_finish_descriptor_upload_word_count_acceptance_",
+                "audited_core_contract"
+            ),
+            "finishWitnessExternalSourceDescriptorUploadWordCount := wordCount",
+            &[
+                concat!(
+                    "proof_artifact_finish_descriptor_upload_word_count_acceptance_",
+                    "core_and_sound"
+                ),
+                concat!(
+                    "proof_artifact_finish_descriptor_upload_word_count_acceptance_",
+                    "verifier_core_contract"
+                ),
+                "proof_artifact_finish_descriptor_upload_word_count_acceptance_sound",
+                "assumption_bundle_carries_required_evidence",
+            ][..],
+        ),
+        (
+            "proof_artifact_finish_descriptor_upload_shape_acceptance_audited_core_contract",
+            "finishWitnessExternalSourceDescriptorUploadByteCount := byteCount",
+            &[
+                "proof_artifact_finish_descriptor_upload_shape_acceptance_core_and_sound",
+                concat!(
+                    "proof_artifact_finish_descriptor_upload_shape_acceptance_",
+                    "verifier_core_contract"
+                ),
+                "proof_artifact_finish_descriptor_upload_shape_acceptance_sound",
+                "assumption_bundle_carries_required_evidence",
+            ][..],
+        ),
+    ] {
+        lean_binding::assert_theorem_prefix_contains(
+            &proof_timing_finish_source,
+            theorem,
+            &[
+                "RequiredCryptographicAssumptionStatements assumptions.crypto",
+                "RequiredSemanticAssumptionStatements assumptions.semantic",
+                "RuntimeVerifierCoreContract system publicInput proof",
+                "SoundWitness system publicInput proof",
+                field,
+            ],
+        );
+        lean_binding::assert_theorem_body_contains(
+            &proof_timing_finish_source,
+            theorem,
+            &[
+                "proof_artifact_finish_timing_some_summary_acceptance_audited_core_contract",
+                field,
+            ],
+        );
+        assert_theorem_body_omits_identifiers(&proof_timing_finish_source, theorem, omitted_terms);
+    }
     let runtime_sound_stems = theorem_stems_with_suffix(
         &runtime_performance_source,
         "runtime_performance_observation_",

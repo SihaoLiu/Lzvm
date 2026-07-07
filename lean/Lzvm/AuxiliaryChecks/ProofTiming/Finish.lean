@@ -1598,5 +1598,125 @@ theorem proof_artifact_finish_aggregate_timing_acceptance_sound
       proof
       observed
 
+theorem proof_artifact_finish_path_parent_hash_per_unit_shape_acceptance_audited_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : ProofArtifactFinishTimingSummary)
+    (rowsPerQuery rowsPerStage launchesPerStage : Nat) :
+    forall publicInput proof,
+      ProofArtifactFinishTimingObservedAcceptance
+        system
+        (some
+          { summary with
+            finishWitnessOpeningPathParentHashRowsPerQuery := rowsPerQuery
+            finishWitnessOpeningPathParentHashRowsPerStage := rowsPerStage
+            finishWitnessOpeningPathParentHashLaunchesPerStage := launchesPerStage })
+        publicInput
+        proof ->
+        RequiredCryptographicAssumptionStatements assumptions.crypto
+          /\ RequiredSemanticAssumptionStatements assumptions.semantic
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof observed
+  exact
+    proof_artifact_finish_timing_some_summary_acceptance_audited_core_contract
+      assumptions
+      { summary with
+        finishWitnessOpeningPathParentHashRowsPerQuery := rowsPerQuery
+        finishWitnessOpeningPathParentHashRowsPerStage := rowsPerStage
+        finishWitnessOpeningPathParentHashLaunchesPerStage := launchesPerStage }
+      publicInput
+      proof
+      observed
+
+theorem proof_artifact_finish_external_source_timing_acceptance_audited_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : ProofArtifactFinishTimingSummary)
+    (externalSourceMilliseconds descriptorUploadMilliseconds
+      traceExpandMilliseconds : Nat) :
+    forall publicInput proof,
+      ProofArtifactFinishTimingObservedAcceptance
+        system
+        (some
+          { summary with
+            finishWitnessExternalSourceMilliseconds := externalSourceMilliseconds
+            finishWitnessExternalSourceDescriptorUploadMilliseconds :=
+              descriptorUploadMilliseconds
+            finishWitnessExternalSourceTraceExpandMilliseconds := traceExpandMilliseconds })
+        publicInput
+        proof ->
+        RequiredCryptographicAssumptionStatements assumptions.crypto
+          /\ RequiredSemanticAssumptionStatements assumptions.semantic
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof observed
+  exact
+    proof_artifact_finish_timing_some_summary_acceptance_audited_core_contract
+      assumptions
+      { summary with
+        finishWitnessExternalSourceMilliseconds := externalSourceMilliseconds
+        finishWitnessExternalSourceDescriptorUploadMilliseconds :=
+          descriptorUploadMilliseconds
+        finishWitnessExternalSourceTraceExpandMilliseconds := traceExpandMilliseconds }
+      publicInput
+      proof
+      observed
+
+theorem proof_artifact_finish_descriptor_upload_word_count_acceptance_audited_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : ProofArtifactFinishTimingSummary)
+    (wordCount : Nat) :
+    forall publicInput proof,
+      ProofArtifactFinishTimingObservedAcceptance
+        system
+        (some { summary with finishWitnessExternalSourceDescriptorUploadWordCount := wordCount })
+        publicInput
+        proof ->
+        RequiredCryptographicAssumptionStatements assumptions.crypto
+          /\ RequiredSemanticAssumptionStatements assumptions.semantic
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof observed
+  exact
+    proof_artifact_finish_timing_some_summary_acceptance_audited_core_contract
+      assumptions
+      { summary with finishWitnessExternalSourceDescriptorUploadWordCount := wordCount }
+      publicInput
+      proof
+      observed
+
+theorem proof_artifact_finish_descriptor_upload_shape_acceptance_audited_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : ProofArtifactFinishTimingSummary)
+    (byteCount wordCount rowCount : Nat) :
+    forall publicInput proof,
+      ProofArtifactFinishTimingObservedAcceptance
+        system
+        (some
+          { summary with
+            finishWitnessExternalSourceDescriptorUploadByteCount := byteCount
+            finishWitnessExternalSourceDescriptorUploadWordCount := wordCount
+            finishWitnessExternalSourceDescriptorUploadRowCount := rowCount })
+        publicInput
+        proof ->
+        RequiredCryptographicAssumptionStatements assumptions.crypto
+          /\ RequiredSemanticAssumptionStatements assumptions.semantic
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof observed
+  exact
+    proof_artifact_finish_timing_some_summary_acceptance_audited_core_contract
+      assumptions
+      { summary with
+        finishWitnessExternalSourceDescriptorUploadByteCount := byteCount
+        finishWitnessExternalSourceDescriptorUploadWordCount := wordCount
+        finishWitnessExternalSourceDescriptorUploadRowCount := rowCount }
+      publicInput
+      proof
+      observed
+
 
 end Lzvm
