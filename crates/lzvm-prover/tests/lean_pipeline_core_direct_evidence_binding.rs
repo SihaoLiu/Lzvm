@@ -4,6 +4,8 @@ use std::path::Path;
 mod lean_binding;
 
 const ACCEPTS_SOURCE_PATH: &str = "../../lean/Lzvm/PipelineBinding/Accepts.lean";
+const CONTRACTS_CORE_BASE_SOURCE_PATH: &str =
+    "../../lean/Lzvm/PipelineBinding/Contracts/Core/Base.lean";
 const CORE_DERIVED_SOURCE_PATH: &str = "../../lean/Lzvm/PipelineBinding/Core/Derived.lean";
 
 fn assert_routes_required_evidence_directly(lean_source: &str, theorem: &str) {
@@ -45,4 +47,15 @@ fn lean_pipeline_accepts_routes_required_evidence_directly() {
     ] {
         assert_routes_required_evidence_directly(&lean_source, theorem);
     }
+}
+
+#[test]
+fn lean_pipeline_contracts_core_base_routes_required_evidence_directly() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let lean_source = lean_binding::read_lean_source(crate_root, CONTRACTS_CORE_BASE_SOURCE_PATH);
+
+    assert_routes_required_evidence_directly(
+        &lean_source,
+        "runtime_pipeline_binding_checked_acceptance_audited_assumption_full_contract",
+    );
 }

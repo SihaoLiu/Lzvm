@@ -876,11 +876,12 @@ theorem runtime_pipeline_binding_checked_acceptance_audited_assumption_full_cont
       proof
       requiresExternalSource
       accepted
-  have auditedAssumptions :=
-    assumption_bundle_carries_required_evidence assumptions
   exact
-    And.intro auditedAssumptions.left
-      (And.intro auditedAssumptions.right auditedContract.right)
+    And.intro
+      (assumption_bundle_carries_required_crypto_evidence assumptions)
+      (And.intro
+        (assumption_bundle_carries_required_semantic_evidence assumptions)
+        auditedContract.right)
 theorem runtime_pipeline_binding_checked_acceptance_audited_framed_guest_input_full_contract
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
