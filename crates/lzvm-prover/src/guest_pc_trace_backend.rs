@@ -9822,7 +9822,7 @@ fn guest_pc_trace_parallel_lower_configured_worker_count_for_limit(
     if let Some(configured) = guest_pc_trace_parallel_lower_configured_worker_count_override() {
         return configured.max(1);
     }
-    if guest_pc_trace_auto_parallel_lower_selected(instruction_limit) {
+    if guest_pc_trace_auto_parallel_lower_enabled(instruction_limit) {
         return guest_pc_trace_auto_parallel_lower_worker_count();
     }
     guest_pc_trace_available_worker_count().max(1)
