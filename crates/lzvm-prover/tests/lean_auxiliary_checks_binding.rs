@@ -8815,7 +8815,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         );
         assert_theorem_body_omits_identifiers(&gpu_runtime_source, theorem, omitted_terms);
     }
-    for (theorem, prefix_terms, combined_helper, omitted_terms) in [
+    for (theorem, prefix_terms, body_terms, combined_helper, omitted_terms) in [
         (
             "guest_pc_trace_commit_mode_checked_acceptance_audited_core_contract",
             &[
@@ -8824,6 +8824,10 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
                 "GuestPcTraceSegmentCommitModeDecisionMatches config",
                 "RuntimeVerifierCoreContract system publicInput proof",
                 "SoundWitness system publicInput proof",
+            ][..],
+            &[
+                "guest_pc_trace_commit_mode_checked_acceptance_projects_decision",
+                "GpuRuntimeInternal.checked_acceptance_audited_core_contract",
             ][..],
             "guest_pc_trace_commit_mode_checked_acceptance_core_and_sound",
             &[
@@ -8841,6 +8845,10 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
                 "RuntimeVerifierCoreContract system publicInput proof",
                 "SoundWitness system publicInput proof",
             ][..],
+            &[
+                "guest_pc_trace_device_trace_source_checked_acceptance_projects_decision",
+                "GpuRuntimeInternal.checked_acceptance_audited_core_contract",
+            ][..],
             "guest_pc_trace_device_trace_source_checked_acceptance_core_and_sound",
             &[
                 "guest_pc_trace_device_trace_source_checked_acceptance_sound",
@@ -8856,6 +8864,10 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
                 "GuestPcTraceSparseSourceDecisionMatches config",
                 "RuntimeVerifierCoreContract system publicInput proof",
                 "SoundWitness system publicInput proof",
+            ][..],
+            &[
+                "guest_pc_trace_sparse_source_checked_acceptance_projects_decision",
+                "GpuRuntimeInternal.checked_acceptance_audited_core_contract",
             ][..],
             "guest_pc_trace_sparse_source_checked_acceptance_core_and_sound",
             &[
@@ -8875,6 +8887,10 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
                 "GuestPcTraceTerminalSparseSourceDecisionMatches config",
                 "RuntimeVerifierCoreContract system publicInput proof",
                 "SoundWitness system publicInput proof",
+            ][..],
+            &[
+                "guest_pc_trace_terminal_sparse_source_checked_acceptance_projects_decision",
+                "GpuRuntimeInternal.checked_acceptance_audited_core_contract",
             ][..],
             concat!(
                 "guest_pc_trace_terminal_sparse_source_checked_acceptance_",
@@ -8897,6 +8913,10 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
                 "FriRetainedStageSourceDecisionMatches config",
                 "RuntimeVerifierCoreContract system publicInput proof",
                 "SoundWitness system publicInput proof",
+            ][..],
+            &[
+                "fri_retained_stage_source_checked_acceptance_projects_decision",
+                "GpuRuntimeInternal.checked_acceptance_audited_core_contract",
             ][..],
             "fri_retained_stage_source_checked_acceptance_core_and_sound",
             &[
@@ -8921,6 +8941,20 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
                 "RuntimeVerifierCoreContract system publicInput proof",
                 "SoundWitness system publicInput proof",
             ][..],
+            &[
+                "guest_pc_trace_cuda_run_checked_acceptance_projects_decision",
+                "guest_pc_trace_cuda_run_checked_acceptance_projects_sparse_source",
+                "guest_pc_trace_cuda_run_checked_acceptance_projects_sparse_source_debug",
+                "guest_pc_trace_cuda_run_checked_acceptance_projects_terminal_sparse_source",
+                "guest_pc_trace_cuda_run_checked_acceptance_projects_retained_stage_source",
+                "guest_pc_trace_cuda_run_checked_acceptance_projects_retained_source_debug",
+                concat!(
+                    "guest_pc_trace_cuda_run_checked_acceptance_projects_",
+                    "retained_debug_requires_retention"
+                ),
+                "guest_pc_trace_cuda_run_checked_acceptance_projects_descriptor_retention",
+                "GpuRuntimeInternal.checked_acceptance_audited_core_contract",
+            ][..],
             "guest_pc_trace_cuda_run_checked_acceptance_core_and_sound",
             &[
                 "guest_pc_trace_cuda_run_checked_acceptance_sound",
@@ -8936,6 +8970,10 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
                 "GpuRetainedLeafDigestLimitDecisionMatches config",
                 "RuntimeVerifierCoreContract system publicInput proof",
                 "SoundWitness system publicInput proof",
+            ][..],
+            &[
+                "gpu_retained_leaf_digest_limit_checked_acceptance_projects_decision",
+                "GpuRuntimeInternal.checked_acceptance_audited_core_contract",
             ][..],
             "gpu_retained_leaf_digest_limit_checked_acceptance_core_and_sound",
             &[
@@ -8953,6 +8991,10 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
                 "RuntimeVerifierCoreContract system publicInput proof",
                 "SoundWitness system publicInput proof",
             ][..],
+            &[
+                "gpu_retained_device_cache_budget_checked_acceptance_projects_within_limits",
+                "GpuRuntimeInternal.checked_acceptance_audited_core_contract",
+            ][..],
             "gpu_retained_device_cache_budget_checked_acceptance_core_and_sound",
             &[
                 "gpu_retained_device_cache_budget_checked_acceptance_sound",
@@ -8962,7 +9004,8 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         ),
     ] {
         lean_binding::assert_theorem_prefix_contains(&gpu_runtime_source, theorem, prefix_terms);
-        assert_theorem_body_contains_identifiers(
+        lean_binding::assert_theorem_body_contains(&gpu_runtime_source, theorem, body_terms);
+        lean_binding::assert_theorem_body_omits(
             &gpu_runtime_source,
             theorem,
             &[

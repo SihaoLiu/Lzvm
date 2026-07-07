@@ -1700,19 +1700,25 @@ theorem guest_pc_trace_commit_mode_checked_acceptance_audited_core_contract
           /\ RuntimeVerifierCoreContract system publicInput proof
           /\ SoundWitness system publicInput proof := by
   intro publicInput proof checked
-  have auditedAssumptions :=
-    assumption_bundle_carries_required_evidence assumptions
-  have contracts :=
-    guest_pc_trace_commit_mode_checked_acceptance_core_and_sound
-      assumptions
+  have decision :=
+    guest_pc_trace_commit_mode_checked_acceptance_projects_decision
       validation
       config
       publicInput
       proof
       checked
+  have audited :=
+    GpuRuntimeInternal.checked_acceptance_audited_core_contract
+      (auxiliaryAccepted := fun publicInput proof =>
+        validation.segmentCommitModeConfigAccepted config publicInput proof)
+      assumptions
+      publicInput
+      proof
+      checked
   exact
-    And.intro auditedAssumptions.left
-      (And.intro auditedAssumptions.right contracts)
+    And.intro audited.left
+      (And.intro audited.right.left
+        (And.intro decision audited.right.right))
 
 theorem guest_pc_trace_device_trace_source_checked_acceptance_audited_core_contract
     {system : VerifierModel}
@@ -1732,19 +1738,25 @@ theorem guest_pc_trace_device_trace_source_checked_acceptance_audited_core_contr
           /\ RuntimeVerifierCoreContract system publicInput proof
           /\ SoundWitness system publicInput proof := by
   intro publicInput proof checked
-  have auditedAssumptions :=
-    assumption_bundle_carries_required_evidence assumptions
-  have contracts :=
-    guest_pc_trace_device_trace_source_checked_acceptance_core_and_sound
-      assumptions
+  have decision :=
+    guest_pc_trace_device_trace_source_checked_acceptance_projects_decision
       validation
       config
       publicInput
       proof
       checked
+  have audited :=
+    GpuRuntimeInternal.checked_acceptance_audited_core_contract
+      (auxiliaryAccepted := fun publicInput proof =>
+        validation.deviceTraceSourceConfigAccepted config publicInput proof)
+      assumptions
+      publicInput
+      proof
+      checked
   exact
-    And.intro auditedAssumptions.left
-      (And.intro auditedAssumptions.right contracts)
+    And.intro audited.left
+      (And.intro audited.right.left
+        (And.intro decision audited.right.right))
 
 theorem guest_pc_trace_sparse_source_checked_acceptance_audited_core_contract
     {system : VerifierModel}
@@ -1764,19 +1776,25 @@ theorem guest_pc_trace_sparse_source_checked_acceptance_audited_core_contract
           /\ RuntimeVerifierCoreContract system publicInput proof
           /\ SoundWitness system publicInput proof := by
   intro publicInput proof checked
-  have auditedAssumptions :=
-    assumption_bundle_carries_required_evidence assumptions
-  have contracts :=
-    guest_pc_trace_sparse_source_checked_acceptance_core_and_sound
-      assumptions
+  have decision :=
+    guest_pc_trace_sparse_source_checked_acceptance_projects_decision
       validation
       config
       publicInput
       proof
       checked
+  have audited :=
+    GpuRuntimeInternal.checked_acceptance_audited_core_contract
+      (auxiliaryAccepted := fun publicInput proof =>
+        validation.sparseSourceConfigAccepted config publicInput proof)
+      assumptions
+      publicInput
+      proof
+      checked
   exact
-    And.intro auditedAssumptions.left
-      (And.intro auditedAssumptions.right contracts)
+    And.intro audited.left
+      (And.intro audited.right.left
+        (And.intro decision audited.right.right))
 
 theorem guest_pc_trace_terminal_sparse_source_checked_acceptance_audited_core_contract
     {system : VerifierModel}
@@ -1796,19 +1814,25 @@ theorem guest_pc_trace_terminal_sparse_source_checked_acceptance_audited_core_co
           /\ RuntimeVerifierCoreContract system publicInput proof
           /\ SoundWitness system publicInput proof := by
   intro publicInput proof checked
-  have auditedAssumptions :=
-    assumption_bundle_carries_required_evidence assumptions
-  have contracts :=
-    guest_pc_trace_terminal_sparse_source_checked_acceptance_core_and_sound
-      assumptions
+  have decision :=
+    guest_pc_trace_terminal_sparse_source_checked_acceptance_projects_decision
       validation
       config
       publicInput
       proof
       checked
+  have audited :=
+    GpuRuntimeInternal.checked_acceptance_audited_core_contract
+      (auxiliaryAccepted := fun publicInput proof =>
+        validation.terminalSparseSourceConfigAccepted config publicInput proof)
+      assumptions
+      publicInput
+      proof
+      checked
   exact
-    And.intro auditedAssumptions.left
-      (And.intro auditedAssumptions.right contracts)
+    And.intro audited.left
+      (And.intro audited.right.left
+        (And.intro decision audited.right.right))
 
 theorem fri_retained_stage_source_checked_acceptance_audited_core_contract
     {system : VerifierModel}
@@ -1828,19 +1852,25 @@ theorem fri_retained_stage_source_checked_acceptance_audited_core_contract
           /\ RuntimeVerifierCoreContract system publicInput proof
           /\ SoundWitness system publicInput proof := by
   intro publicInput proof checked
-  have auditedAssumptions :=
-    assumption_bundle_carries_required_evidence assumptions
-  have contracts :=
-    fri_retained_stage_source_checked_acceptance_core_and_sound
-      assumptions
+  have decision :=
+    fri_retained_stage_source_checked_acceptance_projects_decision
       validation
       config
       publicInput
       proof
       checked
+  have audited :=
+    GpuRuntimeInternal.checked_acceptance_audited_core_contract
+      (auxiliaryAccepted := fun publicInput proof =>
+        validation.retainedStageSourceConfigAccepted config publicInput proof)
+      assumptions
+      publicInput
+      proof
+      checked
   exact
-    And.intro auditedAssumptions.left
-      (And.intro auditedAssumptions.right contracts)
+    And.intro audited.left
+      (And.intro audited.right.left
+        (And.intro decision audited.right.right))
 
 theorem guest_pc_trace_cuda_run_checked_acceptance_audited_core_contract
     {system : VerifierModel}
@@ -1874,19 +1904,81 @@ theorem guest_pc_trace_cuda_run_checked_acceptance_audited_core_contract
           /\ RuntimeVerifierCoreContract system publicInput proof
           /\ SoundWitness system publicInput proof := by
   intro publicInput proof checked
-  have auditedAssumptions :=
-    assumption_bundle_carries_required_evidence assumptions
-  have contracts :=
-    guest_pc_trace_cuda_run_checked_acceptance_core_and_sound
-      assumptions
+  have decision :=
+    guest_pc_trace_cuda_run_checked_acceptance_projects_decision
       validation
       config
       publicInput
       proof
       checked
+  have sparse :=
+    guest_pc_trace_cuda_run_checked_acceptance_projects_sparse_source
+      validation
+      config
+      publicInput
+      proof
+      checked
+  have sparseDebug :=
+    guest_pc_trace_cuda_run_checked_acceptance_projects_sparse_source_debug
+      validation
+      config
+      publicInput
+      proof
+      checked
+  have terminalSparse :=
+    guest_pc_trace_cuda_run_checked_acceptance_projects_terminal_sparse_source
+      validation
+      config
+      publicInput
+      proof
+      checked
+  have retainedStage :=
+    guest_pc_trace_cuda_run_checked_acceptance_projects_retained_stage_source
+      validation
+      config
+      publicInput
+      proof
+      checked
+  have retainedDebug :=
+    guest_pc_trace_cuda_run_checked_acceptance_projects_retained_source_debug
+      validation
+      config
+      publicInput
+      proof
+      checked
+  have retainedDebugRequiresRetention :=
+    guest_pc_trace_cuda_run_checked_acceptance_projects_retained_debug_requires_retention
+      validation
+      config
+      publicInput
+      proof
+      checked
+  have descriptorRetention :=
+    guest_pc_trace_cuda_run_checked_acceptance_projects_descriptor_retention
+      validation
+      config
+      publicInput
+      proof
+      checked
+  have audited :=
+    GpuRuntimeInternal.checked_acceptance_audited_core_contract
+      (auxiliaryAccepted := fun publicInput proof =>
+        validation.traceCudaRunConfigAccepted config publicInput proof)
+      assumptions
+      publicInput
+      proof
+      checked
   exact
-    And.intro auditedAssumptions.left
-      (And.intro auditedAssumptions.right contracts)
+    And.intro audited.left
+      (And.intro audited.right.left
+        (And.intro decision
+          (And.intro sparse
+            (And.intro sparseDebug
+              (And.intro terminalSparse
+                (And.intro retainedStage
+                  (And.intro retainedDebug
+                    (And.intro retainedDebugRequiresRetention
+                      (And.intro descriptorRetention audited.right.right)))))))))
 
 theorem gpu_retained_leaf_digest_limit_checked_acceptance_audited_core_contract
     {system : VerifierModel}
@@ -1906,19 +1998,25 @@ theorem gpu_retained_leaf_digest_limit_checked_acceptance_audited_core_contract
           /\ RuntimeVerifierCoreContract system publicInput proof
           /\ SoundWitness system publicInput proof := by
   intro publicInput proof checked
-  have auditedAssumptions :=
-    assumption_bundle_carries_required_evidence assumptions
-  have contracts :=
-    gpu_retained_leaf_digest_limit_checked_acceptance_core_and_sound
-      assumptions
+  have decision :=
+    gpu_retained_leaf_digest_limit_checked_acceptance_projects_decision
       validation
       config
       publicInput
       proof
       checked
+  have audited :=
+    GpuRuntimeInternal.checked_acceptance_audited_core_contract
+      (auxiliaryAccepted := fun publicInput proof =>
+        validation.retainedLeafDigestLimitConfigAccepted config publicInput proof)
+      assumptions
+      publicInput
+      proof
+      checked
   exact
-    And.intro auditedAssumptions.left
-      (And.intro auditedAssumptions.right contracts)
+    And.intro audited.left
+      (And.intro audited.right.left
+        (And.intro decision audited.right.right))
 
 theorem gpu_retained_device_cache_budget_checked_acceptance_audited_core_contract
     {system : VerifierModel}
@@ -1938,18 +2036,24 @@ theorem gpu_retained_device_cache_budget_checked_acceptance_audited_core_contrac
           /\ RuntimeVerifierCoreContract system publicInput proof
           /\ SoundWitness system publicInput proof := by
   intro publicInput proof checked
-  have auditedAssumptions :=
-    assumption_bundle_carries_required_evidence assumptions
-  have contracts :=
-    gpu_retained_device_cache_budget_checked_acceptance_core_and_sound
-      assumptions
+  have withinLimits :=
+    gpu_retained_device_cache_budget_checked_acceptance_projects_within_limits
       validation
       budget
       publicInput
       proof
       checked
+  have audited :=
+    GpuRuntimeInternal.checked_acceptance_audited_core_contract
+      (auxiliaryAccepted := fun publicInput proof =>
+        validation.retainedDeviceCacheBudgetAccepted budget publicInput proof)
+      assumptions
+      publicInput
+      proof
+      checked
   exact
-    And.intro auditedAssumptions.left
-      (And.intro auditedAssumptions.right contracts)
+    And.intro audited.left
+      (And.intro audited.right.left
+        (And.intro withinLimits audited.right.right))
 
 end Lzvm
