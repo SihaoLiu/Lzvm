@@ -406,6 +406,56 @@ theorem witness_opening_row_value_aggregate_timing_acceptance_core_and_sound
       proof
       observed
 
+theorem witness_opening_row_value_aggregate_timing_acceptance_audited_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : WitnessOpeningRowValueTimingSummary)
+    (sourceExtendMilliseconds sourceDownloadMilliseconds deviceDownloadMilliseconds
+      deviceRows deviceDownloadBatches deviceSingleDownloads sourceExtendCalls
+      sourceExtendMaxRows sourceRows words bytes : Nat) :
+    forall publicInput proof,
+      WitnessOpeningRowValueTimingObservedAcceptance
+        system
+        (some
+          { summary with
+            rowValueSourceExtendMilliseconds := sourceExtendMilliseconds
+            rowValueSourceDownloadMilliseconds := sourceDownloadMilliseconds
+            rowValueDeviceDownloadMilliseconds := deviceDownloadMilliseconds
+            deviceRowCount := deviceRows
+            deviceDownloadBatchCount := deviceDownloadBatches
+            deviceSingleDownloadCount := deviceSingleDownloads
+            sourceExtendCallCount := sourceExtendCalls
+            sourceExtendMaxRowCount := sourceExtendMaxRows
+            sourceRowCount := sourceRows
+            wordCount := words
+            byteCount := bytes })
+        publicInput
+        proof ->
+        RequiredCryptographicAssumptionStatements assumptions.crypto
+          /\ RequiredSemanticAssumptionStatements assumptions.semantic
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof observed
+  exact
+    witness_opening_row_value_timing_acceptance_audited_core_contract
+      assumptions
+      (some
+        { summary with
+          rowValueSourceExtendMilliseconds := sourceExtendMilliseconds
+          rowValueSourceDownloadMilliseconds := sourceDownloadMilliseconds
+          rowValueDeviceDownloadMilliseconds := deviceDownloadMilliseconds
+          deviceRowCount := deviceRows
+          deviceDownloadBatchCount := deviceDownloadBatches
+          deviceSingleDownloadCount := deviceSingleDownloads
+          sourceExtendCallCount := sourceExtendCalls
+          sourceExtendMaxRowCount := sourceExtendMaxRows
+          sourceRowCount := sourceRows
+          wordCount := words
+          byteCount := bytes })
+      publicInput
+      proof
+      observed
+
 theorem witness_opening_row_value_stage_timings_acceptance_sound
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
@@ -464,6 +514,30 @@ theorem witness_opening_row_value_stage_timings_acceptance_core_and_sound
   intro publicInput proof observed
   exact
     witness_opening_row_value_timing_acceptance_core_and_sound
+      assumptions
+      (some { summary with stages := stages })
+      publicInput
+      proof
+      observed
+
+theorem witness_opening_row_value_stage_timings_acceptance_audited_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : WitnessOpeningRowValueTimingSummary)
+    (stages : List WitnessOpeningStageRowValueTimingSummary) :
+    forall publicInput proof,
+      WitnessOpeningRowValueTimingObservedAcceptance
+        system
+        (some { summary with stages := stages })
+        publicInput
+        proof ->
+        RequiredCryptographicAssumptionStatements assumptions.crypto
+          /\ RequiredSemanticAssumptionStatements assumptions.semantic
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof observed
+  exact
+    witness_opening_row_value_timing_acceptance_audited_core_contract
       assumptions
       (some { summary with stages := stages })
       publicInput
@@ -637,6 +711,40 @@ theorem constant_material_validation_aggregate_timing_acceptance_core_and_sound
   intro publicInput proof observed
   exact
     constant_material_validation_timing_acceptance_core_and_sound
+      assumptions
+      (some
+        { summary with
+          constantMaterialValidationElapsedMilliseconds := elapsedMilliseconds
+          constantMaterialValidationJoinWaitMilliseconds := joinWaitMilliseconds
+          constantMaterialValidationUnitCount := unitCount
+          constantMaterialValidationByteCount := byteCount })
+      publicInput
+      proof
+      observed
+
+theorem constant_material_validation_aggregate_timing_acceptance_audited_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : ConstantMaterialValidationTimingSummary)
+    (elapsedMilliseconds joinWaitMilliseconds unitCount byteCount : Nat) :
+    forall publicInput proof,
+      ConstantMaterialValidationTimingObservedAcceptance
+        system
+        (some
+          { summary with
+            constantMaterialValidationElapsedMilliseconds := elapsedMilliseconds
+            constantMaterialValidationJoinWaitMilliseconds := joinWaitMilliseconds
+            constantMaterialValidationUnitCount := unitCount
+            constantMaterialValidationByteCount := byteCount })
+        publicInput
+        proof ->
+        RequiredCryptographicAssumptionStatements assumptions.crypto
+          /\ RequiredSemanticAssumptionStatements assumptions.semantic
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof observed
+  exact
+    constant_material_validation_timing_acceptance_audited_core_contract
       assumptions
       (some
         { summary with

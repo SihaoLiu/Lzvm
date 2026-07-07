@@ -111,6 +111,22 @@ fn assert_updated_summary_audited_wrapper(
     audited_helper: &str,
     field_terms: &[&str],
 ) {
+    assert_updated_summary_audited_wrapper_with_shape(
+        source,
+        theorem,
+        audited_helper,
+        false,
+        field_terms,
+    );
+}
+
+fn assert_updated_summary_audited_wrapper_with_shape(
+    source: &str,
+    theorem: &str,
+    audited_helper: &str,
+    wraps_some: bool,
+    field_terms: &[&str],
+) {
     assert_audited_core_contract_prefix(source, theorem, &[]);
     assert_theorem_body_contains_identifiers(source, theorem, &[audited_helper]);
     let base_theorem = theorem
@@ -141,7 +157,11 @@ fn assert_updated_summary_audited_wrapper(
             "Lean theorem {theorem} body should pass field {field_term} through the audited helper"
         );
     }
-    let helper_summary_prefix = format!("{audited_helper} assumptions {{ summary with");
+    let helper_summary_prefix = if wraps_some {
+        format!("{audited_helper} assumptions (some {{ summary with")
+    } else {
+        format!("{audited_helper} assumptions {{ summary with")
+    };
     assert!(
         compact_source_contains(&body, &helper_summary_prefix),
         "Lean theorem {theorem} body should call the audited helper with the updated summary"
@@ -1803,6 +1823,48 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         assert!(
             compact_source_contains(&body, "publicInput proof observed"),
             "Lean theorem {theorem} body should pass the observed acceptance to the combined helper"
+        );
+    }
+    for (theorem, audited_helper, field_terms) in [
+        (
+            "witness_opening_row_value_aggregate_timing_acceptance_audited_core_contract",
+            "witness_opening_row_value_timing_acceptance_audited_core_contract",
+            &[
+                "rowValueSourceExtendMilliseconds := sourceExtendMilliseconds",
+                "rowValueSourceDownloadMilliseconds := sourceDownloadMilliseconds",
+                "rowValueDeviceDownloadMilliseconds := deviceDownloadMilliseconds",
+                "deviceRowCount := deviceRows",
+                "deviceDownloadBatchCount := deviceDownloadBatches",
+                "deviceSingleDownloadCount := deviceSingleDownloads",
+                "sourceExtendCallCount := sourceExtendCalls",
+                "sourceExtendMaxRowCount := sourceExtendMaxRows",
+                "sourceRowCount := sourceRows",
+                "wordCount := words",
+                "byteCount := bytes",
+            ][..],
+        ),
+        (
+            "witness_opening_row_value_stage_timings_acceptance_audited_core_contract",
+            "witness_opening_row_value_timing_acceptance_audited_core_contract",
+            &["stages := stages"][..],
+        ),
+        (
+            "constant_material_validation_aggregate_timing_acceptance_audited_core_contract",
+            "constant_material_validation_timing_acceptance_audited_core_contract",
+            &[
+                "constantMaterialValidationElapsedMilliseconds := elapsedMilliseconds",
+                "constantMaterialValidationJoinWaitMilliseconds := joinWaitMilliseconds",
+                "constantMaterialValidationUnitCount := unitCount",
+                "constantMaterialValidationByteCount := byteCount",
+            ][..],
+        ),
+    ] {
+        assert_updated_summary_audited_wrapper_with_shape(
+            &lean_proof_timing_source,
+            theorem,
+            audited_helper,
+            true,
+            field_terms,
         );
     }
     for (theorem, field_terms) in [
@@ -5513,7 +5575,10 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "proof_timing_batch_small_rejected_average_acceptance_core_and_sound",
             "proof_timing_batch_large_rejected_average_acceptance_core_and_sound",
             "witness_opening_row_value_timing_acceptance_audited_core_contract",
+            "witness_opening_row_value_aggregate_timing_acceptance_audited_core_contract",
+            "witness_opening_row_value_stage_timings_acceptance_audited_core_contract",
             "constant_material_validation_timing_acceptance_audited_core_contract",
+            "constant_material_validation_aggregate_timing_acceptance_audited_core_contract",
             "prover_gpu_mode_acceptance_audited_core_contract",
             "gpu_run_options_acceptance_audited_core_contract",
             "cuda_backend_acceptance_audited_core_contract",
