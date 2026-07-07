@@ -4132,6 +4132,14 @@ fn large_runtime_auto_lower_uses_bounded_workers() {
         600_000_000
     ));
 
+    std::env::set_var("LZVM_GUEST_PC_TRACE_PARALLEL_LOWER", "1");
+    assert!(!guest_pc_trace_auto_parallel_lower_selected(600_000_000));
+    assert!(guest_pc_trace_parallel_lower_enabled_for_limit(600_000_000));
+    assert_eq!(
+        guest_pc_trace_parallel_lower_worker_count_for_limit(600_000_000),
+        Some(guest_pc_trace_auto_parallel_lower_worker_count())
+    );
+
     std::env::set_var("LZVM_GUEST_PC_TRACE_AUTO_PARALLEL_LOWER", "1");
     std::env::set_var("LZVM_GUEST_PC_TRACE_PARALLEL_LOWER_WORKERS", "3");
     assert_eq!(
