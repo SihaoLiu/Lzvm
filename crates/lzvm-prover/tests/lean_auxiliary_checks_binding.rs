@@ -336,6 +336,22 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         runtime_performance_source.as_str(),
     ]
     .join("\n");
+    let lean_theorem_names = lean_binding::theorem_names(&lean_source);
+    for theorem in lean_theorem_names
+        .iter()
+        .filter(|name| name.ends_with("_core_and_sound"))
+    {
+        let audited_theorem = format!(
+            "{}_audited_core_contract",
+            theorem
+                .strip_suffix("_core_and_sound")
+                .expect("combined theorem name should use the core_and_sound suffix")
+        );
+        assert!(
+            lean_theorem_names.contains(&audited_theorem),
+            "Lean theorem {theorem} should expose audited wrapper {audited_theorem}"
+        );
+    }
     let top_level_path = crate_root.join("../../lean/Lzvm.lean");
     let top_level_source =
         std::fs::read_to_string(&top_level_path).expect("Lean top-level source should read");
