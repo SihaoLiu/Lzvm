@@ -271,8 +271,13 @@ fn lean_proof_artifact_binding_exports_core_contract_projection() {
         "runtime_proof_artifact_binding_checked_acceptance_sound",
         &[
             "runtime_proof_artifact_binding_checked_acceptance_obligations",
-            "abstract_verifier_sound",
+            "abstract_verifier_sound_with_semantic_evidence",
         ],
+    );
+    lean_binding::assert_theorem_body_omits_identifier(
+        &lean_source,
+        "runtime_proof_artifact_binding_checked_acceptance_sound",
+        "abstract_verifier_sound",
     );
     lean_binding::assert_theorem_body_omits(
         &lean_source,

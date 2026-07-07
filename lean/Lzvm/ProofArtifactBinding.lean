@@ -809,7 +809,10 @@ theorem runtime_proof_artifact_binding_checked_acceptance_sound
   exact
     And.intro obligations.left
       (And.intro obligations.right.left
-        (abstract_verifier_sound assumptions publicInput proof verifierAccepts))
+        ((abstract_verifier_sound_with_semantic_evidence assumptions).right
+          publicInput
+          proof
+          verifierAccepts))
 
 theorem runtime_proof_artifact_binding_checked_acceptance_full_contract
     {system : VerifierModel}
