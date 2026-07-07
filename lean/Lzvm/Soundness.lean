@@ -82,12 +82,20 @@ theorem abstract_verifier_sound_with_audited_soundness_obligations
     RequiredCryptographicAssumptionStatements assumptions.crypto
       /\ RequiredSemanticAssumptionStatements assumptions.semantic
       /\ ProofSystemSound system := by
+  have requiredEvidence :=
+    assumption_bundle_carries_required_evidence assumptions
+  have auditedSound :=
+    abstract_verifier_sound_with_audited_assumptions assumptions
+  rcases requiredEvidence with
+    ⟨cryptoEvidence, semanticEvidence⟩
+  rcases auditedSound with
+    ⟨_cryptoEvidenceFromAuditedSound, proofSystemSound⟩
   exact
     And.intro
-      (assumption_bundle_carries_required_crypto_evidence assumptions)
+      cryptoEvidence
       (And.intro
-        (assumption_bundle_carries_required_semantic_evidence assumptions)
-        (abstract_verifier_sound assumptions))
+        semanticEvidence
+        proofSystemSound)
 
 theorem accepted_proof_crypto_core_contract
     {system : VerifierModel}

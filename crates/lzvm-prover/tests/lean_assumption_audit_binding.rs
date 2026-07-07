@@ -428,6 +428,32 @@ fn lean_assumption_audit_exports_runtime_soundness_coverage() {
             "assumption_bundle_carries_required_semantic_evidence",
         ],
     );
+    lean_binding::assert_theorem_prefix_contains(
+        &audit_source,
+        "assumption_bundle_carries_required_evidence",
+        &[
+            "RequiredCryptographicAssumptionStatements assumptions.crypto",
+            "RequiredSemanticAssumptionStatements assumptions.semantic",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &audit_source,
+        "assumption_bundle_carries_required_crypto_evidence",
+        &["cryptographic_assumptions_carry_required_evidence assumptions.crypto"],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &audit_source,
+        "assumption_bundle_carries_required_semantic_evidence",
+        &["semantic_assumptions_carry_required_evidence assumptions.semantic"],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &audit_source,
+        "assumption_bundle_carries_required_evidence",
+        &[
+            "cryptographic_assumptions_carry_required_evidence assumptions.crypto",
+            "semantic_assumptions_carry_required_evidence assumptions.semantic",
+        ],
+    );
     lean_binding::assert_theorem_body_contains(
         &soundness_source,
         "abstract_verifier_sound_with_audited_soundness_obligations",
