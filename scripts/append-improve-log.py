@@ -36,6 +36,8 @@ TIMEOUT_EQUALS_FIELD_RE = re.compile(
 SAMPLES_FIELD_RE = re.compile(
     r"(?:^|\s)samples=([0-9]+(?:\.[0-9]+)?(?:;[0-9]+(?:\.[0-9]+)?)*)(?=\s|$)"
 )
+FAILED_FIELD_RE = re.compile(r"(?:^|\s)failed=[A-Za-z0-9_.:-]+\b")
+FAILED_FIELD_TOKEN_RE = re.compile(r"[A-Za-z][A-Za-z0-9_.:-]*=[A-Za-z0-9_.:-]+")
 AVERAGE_FIELD_PATTERNS = [
     AVG_FIELD_RE,
     LEGACY_AVG_FIELD_RE,
@@ -132,7 +134,7 @@ def summary_field_is_double_quoted(record: str) -> bool:
 
 def validate_timing_log_field(field: str, path: Path, line_number: int, column: str) -> None:
     if field:
-        timing_field_average_seconds(field, f"{path}:{line_number}: {column}")
+        validate_timing_field(field, f"{path}:{line_number}: {column}")
 
 
 def validate_improve_log(
@@ -321,6 +323,18 @@ def timing_field_average_seconds(field: str, label: str) -> float:
     return value
 
 
+def is_failed_timing_field(field: str) -> bool:
+    if FAILED_FIELD_RE.search(field) is None:
+        return False
+    return all(FAILED_FIELD_TOKEN_RE.fullmatch(part) is not None for part in field.split())
+
+
+def validate_timing_field(field: str, label: str) -> None:
+    if is_failed_timing_field(field):
+        return
+    timing_field_average_seconds(field, label)
+
+
 def parse_semicolon_samples(raw: str, label: str) -> list[float]:
     samples = []
     for index, part in enumerate(raw.split(";"), start=1):
@@ -339,6 +353,8 @@ def parse_semicolon_samples(raw: str, label: str) -> list[float]:
 def enforce_max_average(field: str, label: str, option: str, max_average: float | None) -> None:
     if max_average is None:
         return
+    if is_failed_timing_field(field):
+        return
     average = timing_field_average_seconds(field, label)
     if average > max_average:
         raise SystemExit(
@@ -353,9 +369,9 @@ def validate_candidate_timing_fields(
     if not small_proof_time_s and not large_proof_time_s:
         raise SystemExit("at least one proof time field is required")
     if small_proof_time_s:
-        timing_field_average_seconds(small_proof_time_s, "small proof time")
+        validate_timing_field(small_proof_time_s, "small proof time")
     if large_proof_time_s:
-        timing_field_average_seconds(large_proof_time_s, "large proof time")
+        validate_timing_field(large_proof_time_s, "large proof time")
 
 
 def append_row(

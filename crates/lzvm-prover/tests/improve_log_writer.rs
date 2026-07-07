@@ -375,7 +375,7 @@ fn improve_log_writer_rejects_average_above_max() {
 }
 
 #[test]
-fn improve_log_writer_rejects_malformed_explicit_timing_before_append() {
+fn improve_log_writer_accepts_failed_probe_timing_rows() {
     let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
     let workspace_root = crate_root
         .parent()
@@ -402,25 +402,37 @@ fn improve_log_writer_rejects_malformed_explicit_timing_before_append() {
         .arg("--large")
         .arg("failed=oom run=1")
         .arg("--summary")
-        .arg("malformed explicit timing")
+        .arg("failed probe timing")
         .output()
         .expect("improve-log writer should run");
+    assert!(
+        output.status.success(),
+        "improve-log writer should accept failed probe timing rows: stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let check_output = Command::new(&script_path)
+        .arg("--path")
+        .arg(&log_path)
+        .arg("--check")
+        .output()
+        .expect("improve-log writer check should run");
+    assert!(
+        check_output.status.success(),
+        "improve-log check should accept failed probe timing rows: stderr={}",
+        String::from_utf8_lossy(&check_output.stderr)
+    );
+
     let contents = std::fs::read_to_string(&log_path).expect("improve log should read");
     let _ = std::fs::remove_file(&log_path);
-
-    assert!(
-        !output.status.success(),
-        "improve-log writer should reject malformed explicit timing"
-    );
-    assert!(
-        String::from_utf8_lossy(&output.stderr)
-            .contains("large proof time: cannot parse timing average"),
-        "rejection should explain the malformed timing field: stderr={}",
-        String::from_utf8_lossy(&output.stderr)
-    );
     assert_eq!(
-        contents, original,
-        "malformed explicit timing should not append a row"
+        contents.lines().count(),
+        3,
+        "failed probe timing row should append after the original row"
+    );
+    assert!(
+        contents.contains("\"failed=oom run=1\",\"failed probe timing\""),
+        "failed probe timing row should be quoted in the improve log: {contents}"
     );
 }
 
