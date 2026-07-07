@@ -2209,6 +2209,17 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         ),
         "Lean theorem checked_acceptance_core_and_sound body should call the auxiliary combined helper with ordered checked-acceptance arguments"
     );
+    let gpu_runtime_theorems = lean_binding::theorem_names(&gpu_runtime_source);
+    for stem in theorem_stems_with_suffix(&gpu_runtime_source, "", "_core_and_sound") {
+        if stem == "checked_acceptance" {
+            continue;
+        }
+        let audited = format!("{stem}_audited_core_contract");
+        assert!(
+            gpu_runtime_theorems.contains(&audited),
+            "Lean GPU runtime theorem {stem}_core_and_sound should expose audited wrapper {audited}"
+        );
+    }
     for theorem_name in [
         "guest_pc_trace_large_gpu_gate_checked_acceptance_sound",
         "guest_pc_trace_traceless_commitment_input_checked_acceptance_sound",
