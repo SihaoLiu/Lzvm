@@ -4,6 +4,7 @@ use std::path::Path;
 mod lean_binding;
 
 const ACCEPTS_SOURCE_PATH: &str = "../../lean/Lzvm/PipelineBinding/Accepts.lean";
+const AUDITED_SOURCE_PATH: &str = "../../lean/Lzvm/PipelineBinding/Audited.lean";
 const CONTRACTS_CORE_AUDITED_SOURCE_PATH: &str =
     "../../lean/Lzvm/PipelineBinding/Contracts/Core/Audited.lean";
 const CONTRACTS_CORE_BASE_SOURCE_PATH: &str =
@@ -53,6 +54,20 @@ fn lean_pipeline_accepts_routes_required_evidence_directly() {
     for theorem in [
         "runtime_pipeline_binding_checked_acceptance_audited_soundness_accepts_contract",
         "runtime_pipeline_binding_checked_acceptance_audited_full_soundness_contract",
+    ] {
+        assert_routes_required_evidence_directly(&lean_source, theorem);
+    }
+}
+
+#[test]
+fn lean_pipeline_audited_routes_required_evidence_directly() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let lean_source = lean_binding::read_lean_source(crate_root, AUDITED_SOURCE_PATH);
+
+    for theorem in [
+        "runtime_pipeline_binding_required_external_source_audited_soundness_proof_system_contract",
+        "runtime_pipeline_binding_required_external_source_audited_soundness_pcs_fri_core_witness_contract",
+        "runtime_pipeline_binding_required_external_source_audited_sound_proof_system_core_contract",
     ] {
         assert_routes_required_evidence_directly(&lean_source, theorem);
     }

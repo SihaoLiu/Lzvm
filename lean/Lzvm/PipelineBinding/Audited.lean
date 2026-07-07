@@ -327,11 +327,12 @@ theorem runtime_pipeline_binding_required_external_source_audited_soundness_proo
       requiresExternalSource
       accepted
       required
-  have auditedAssumptions :=
-    assumption_bundle_carries_required_evidence assumptions
   exact
-    And.intro auditedAssumptions.left
-      (And.intro auditedAssumptions.right auditedContract.right)
+    And.intro
+      (assumption_bundle_carries_required_crypto_evidence assumptions)
+      (And.intro
+        (assumption_bundle_carries_required_semantic_evidence assumptions)
+        auditedContract.right)
 
 theorem runtime_pipeline_binding_required_external_source_audited_accepts_sound_witness_contract
     {system : VerifierModel}
@@ -677,11 +678,12 @@ theorem runtime_pipeline_binding_required_external_source_audited_soundness_pcs_
       requiresExternalSource
       accepted
       required
-  have auditedAssumptions :=
-    assumption_bundle_carries_required_evidence assumptions
   exact
-    And.intro auditedAssumptions.left
-      (And.intro auditedAssumptions.right compactContract.right)
+    And.intro
+      (assumption_bundle_carries_required_crypto_evidence assumptions)
+      (And.intro
+        (assumption_bundle_carries_required_semantic_evidence assumptions)
+        compactContract.right)
 
 theorem runtime_pipeline_binding_required_external_source_audited_query_opening_core_sound_contract
     {system : VerifierModel}
@@ -1429,11 +1431,12 @@ theorem runtime_pipeline_binding_required_external_source_audited_sound_proof_sy
       requiresExternalSource
       accepted
       required
-  have auditedEvidence :=
-    assumption_bundle_carries_required_evidence assumptions
   exact
-    And.intro auditedEvidence.left
-      (And.intro auditedEvidence.right coreContract.right)
+    And.intro
+      (assumption_bundle_carries_required_crypto_evidence assumptions)
+      (And.intro
+        (assumption_bundle_carries_required_semantic_evidence assumptions)
+        coreContract.right)
 
 
 end Lzvm
