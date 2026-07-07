@@ -99,8 +99,6 @@ theorem runtime_soundness_required_external_source_contracts_audited_soundness_c
       requiresExternalSource
       checked
       required
-  have auditedAssumptions :=
-    assumption_bundle_carries_required_evidence assumptions
   rcases compactContract with
     ⟨_auditedCrypto,
       proofSystemSound,
@@ -114,8 +112,10 @@ theorem runtime_soundness_required_external_source_contracts_audited_soundness_c
       executionObligations,
       soundWitness⟩
   exact
-    And.intro auditedAssumptions.left
-      (And.intro auditedAssumptions.right
+    And.intro
+      (assumption_bundle_carries_required_crypto_evidence assumptions)
+      (And.intro
+        (assumption_bundle_carries_required_semantic_evidence assumptions)
         (And.intro proofSystemSound
           (And.intro verifierAccepts
             (And.intro externalSourceEvidence
@@ -233,8 +233,6 @@ theorem runtime_soundness_required_external_source_artifact_audited_soundness_co
       requiresExternalSource
       checked
       required
-  have auditedAssumptions :=
-    assumption_bundle_carries_required_evidence assumptions
   rcases artifactContract with
     ⟨artifactEvidence,
       _auditedCrypto,
@@ -250,8 +248,10 @@ theorem runtime_soundness_required_external_source_artifact_audited_soundness_co
       soundWitness⟩
   exact
     And.intro artifactEvidence
-      (And.intro auditedAssumptions.left
-        (And.intro auditedAssumptions.right
+      (And.intro
+        (assumption_bundle_carries_required_crypto_evidence assumptions)
+        (And.intro
+          (assumption_bundle_carries_required_semantic_evidence assumptions)
           (And.intro proofSystemSound
             (And.intro verifierAccepts
               (And.intro externalSourceEvidence
@@ -434,8 +434,6 @@ theorem runtime_soundness_required_external_source_artifact_audited_segment_ids_
       requiresExternalSource
       checked
       required
-  have auditedAssumptions :=
-    assumption_bundle_carries_required_evidence assumptions
   rcases segmentContract with
     ⟨artifactEvidence,
       _auditedCrypto,
@@ -458,8 +456,8 @@ theorem runtime_soundness_required_external_source_artifact_audited_segment_ids_
       unitValuesTraceIdentityCoverage⟩
   exact
     ⟨artifactEvidence,
-      auditedAssumptions.left,
-      auditedAssumptions.right,
+      assumption_bundle_carries_required_crypto_evidence assumptions,
+      assumption_bundle_carries_required_semantic_evidence assumptions,
       proofSystemSound,
       verifierAccepts,
       externalSourceEvidence,
