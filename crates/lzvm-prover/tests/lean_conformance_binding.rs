@@ -144,9 +144,15 @@ fn lean_conformance_binding_exports_core_contract_projection() {
         &lean_source,
         "runtime_artifact_checked_acceptance_audited_sound",
         &[
-            "assumption_bundle_carries_required_evidence",
+            "assumption_bundle_carries_required_crypto_evidence",
+            "assumption_bundle_carries_required_semantic_evidence",
             "runtime_artifact_checked_acceptance_sound",
         ],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &lean_source,
+        "runtime_artifact_checked_acceptance_audited_sound",
+        &["assumption_bundle_carries_required_evidence"],
     );
     lean_binding::assert_theorem_prefix_contains(
         &lean_source,

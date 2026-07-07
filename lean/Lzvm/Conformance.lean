@@ -360,8 +360,6 @@ theorem runtime_artifact_checked_acceptance_audited_sound
             proof
           /\ SoundWitness system publicInput proof := by
   intro artifact publicInput proof artifactAccepted
-  have auditedAssumptions :=
-    assumption_bundle_carries_required_evidence assumptions
   have checkedSound :=
     runtime_artifact_checked_acceptance_sound
       assumptions
@@ -371,8 +369,11 @@ theorem runtime_artifact_checked_acceptance_audited_sound
       proof
       artifactAccepted
   exact
-    And.intro auditedAssumptions.left
-      (And.intro auditedAssumptions.right checkedSound)
+    And.intro
+      (assumption_bundle_carries_required_crypto_evidence assumptions)
+      (And.intro
+        (assumption_bundle_carries_required_semantic_evidence assumptions)
+        checkedSound)
 
 theorem runtime_artifact_checked_acceptance_audited_core_contract
     {system : VerifierModel}

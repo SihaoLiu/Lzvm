@@ -293,7 +293,8 @@ fn lean_required_external_source_binding_exports_core_contract_projection() {
         &lean_source,
         "runtime_guarded_external_source_required_audited_hash_concrete_opening_sound_with_required_evidence",
         &[
-            "assumption_bundle_carries_required_evidence",
+            "assumption_bundle_carries_required_crypto_evidence",
+            "assumption_bundle_carries_required_semantic_evidence",
             "runtime_guarded_external_source_required_audited_hash_concrete_opening_sound",
         ],
     );
@@ -308,6 +309,7 @@ fn lean_required_external_source_binding_exports_core_contract_projection() {
             "runtime_artifact_checked_acceptance_implies_verifier_accepts",
             "abstract_verifier_sound",
             "runtime_guarded_external_source_required_verifier_core_contract",
+            "assumption_bundle_carries_required_evidence",
             "sound_witness_implies_verifier_core_contract",
         ],
     );

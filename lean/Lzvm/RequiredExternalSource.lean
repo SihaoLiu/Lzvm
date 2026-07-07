@@ -653,8 +653,6 @@ theorem runtime_guarded_external_source_required_audited_hash_concrete_opening_s
             /\ RuntimeVerifierCoreContract system publicInput proof
             /\ SoundWitness system publicInput proof := by
   intro artifact publicInput proof requiresExternalSource checked openingAccepted required
-  have auditedEvidence :=
-    assumption_bundle_carries_required_evidence assumptions
   have sound :=
     runtime_guarded_external_source_required_audited_hash_concrete_opening_sound
       assumptions
@@ -672,7 +670,10 @@ theorem runtime_guarded_external_source_required_audited_hash_concrete_opening_s
       openingAccepted
       required
   exact
-    And.intro auditedEvidence.left
-      (And.intro auditedEvidence.right sound)
+    And.intro
+      (assumption_bundle_carries_required_crypto_evidence assumptions)
+      (And.intro
+        (assumption_bundle_carries_required_semantic_evidence assumptions)
+        sound)
 
 end Lzvm
