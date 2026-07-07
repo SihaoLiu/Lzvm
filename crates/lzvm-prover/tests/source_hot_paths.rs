@@ -10711,6 +10711,26 @@ fn lean_runtime_soundness_exports_checked_execution_obligations() {
 }
 
 #[test]
+fn lean_pipeline_audited_routes_soundness_through_split_helpers() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let audited_path = crate_root.join("../../lean/Lzvm/PipelineBinding/Audited.lean");
+    let audited_source =
+        std::fs::read_to_string(&audited_path).expect("Lean pipeline audited source should read");
+
+    assert!(
+        audited_source.contains("abstract_verifier_sound_with_audited_assumptions")
+            && audited_source.contains("abstract_verifier_sound_with_semantic_evidence"),
+        "pipeline audited proofs should route proof-system and witness soundness through split helpers"
+    );
+    assert!(
+        !audited_source.contains("abstract_verifier_sound assumptions")
+            && !audited_source.contains("have proofSystemSound := abstract_verifier_sound")
+            && !audited_source.contains("have soundWitness :=\n    abstract_verifier_sound"),
+        "pipeline audited proofs should not call the bare soundness helper directly"
+    );
+}
+
+#[test]
 fn lean_pipeline_binding_tracks_runtime_preflight_and_artifact_checks() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let lean_path = crate_root.join("../../lean/Lzvm/PipelineBinding.lean");

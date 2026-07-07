@@ -175,7 +175,8 @@ theorem runtime_pipeline_binding_required_external_source_proof_system_full_soun
                 publicInput
                 proof := by
   intro artifact publicInput proof requiresExternalSource accepted required
-  have proofSystemSound := abstract_verifier_sound assumptions
+  have proofSystemSound :=
+    (abstract_verifier_sound_with_audited_assumptions assumptions).right
   have fullContract :=
     runtime_pipeline_binding_required_external_source_full_soundness_contract
       assumptions
@@ -363,7 +364,8 @@ theorem runtime_pipeline_binding_required_external_source_audited_accepts_sound_
   intro artifact publicInput proof requiresExternalSource accepted required
   have auditedAssumptions :=
     assumption_bundle_carries_required_crypto_evidence assumptions
-  have proofSystemSound := abstract_verifier_sound assumptions
+  have proofSystemSound :=
+    (abstract_verifier_sound_with_audited_assumptions assumptions).right
   have verifierAccepts :=
     runtime_pipeline_binding_checked_acceptance_verifier_accepts
       validation
@@ -425,7 +427,8 @@ theorem runtime_pipeline_binding_required_external_source_audited_pcs_accepts_so
   intro artifact publicInput proof requiresExternalSource accepted required
   have auditedAssumptions :=
     assumption_bundle_carries_required_crypto_evidence assumptions
-  have proofSystemSound := abstract_verifier_sound assumptions
+  have proofSystemSound :=
+    (abstract_verifier_sound_with_audited_assumptions assumptions).right
   have verifierAccepts :=
     runtime_pipeline_binding_checked_acceptance_verifier_accepts
       validation
@@ -489,7 +492,8 @@ theorem runtime_pipeline_binding_required_external_source_audited_pcs_fri_witnes
   intro artifact publicInput proof requiresExternalSource accepted required
   have auditedAssumptions :=
     assumption_bundle_carries_required_crypto_evidence assumptions
-  have proofSystemSound := abstract_verifier_sound assumptions
+  have proofSystemSound :=
+    (abstract_verifier_sound_with_audited_assumptions assumptions).right
   have verifierAccepts :=
     runtime_pipeline_binding_checked_acceptance_verifier_accepts
       validation
@@ -740,7 +744,8 @@ theorem runtime_pipeline_binding_required_external_source_audited_query_opening_
   intro artifact publicInput proof requiresExternalSource accepted required
   have auditedAssumptions :=
     assumption_bundle_carries_required_crypto_evidence assumptions
-  have proofSystemSound := abstract_verifier_sound assumptions
+  have proofSystemSound :=
+    (abstract_verifier_sound_with_audited_assumptions assumptions).right
   have verifierAccepts :=
     runtime_pipeline_binding_checked_acceptance_verifier_accepts
       validation
@@ -843,8 +848,7 @@ theorem runtime_pipeline_binding_checked_acceptance_audited_finalized_core_sound
       proof
       verifierAccepts
   have soundWitness :=
-    abstract_verifier_sound
-      assumptions
+    (abstract_verifier_sound_with_semantic_evidence assumptions).right
       publicInput
       proof
       verifierAccepts
@@ -940,8 +944,7 @@ theorem runtime_pipeline_binding_checked_acceptance_direct_finalized_core_sound_
       proof
       verifierAccepts
   have soundWitness :=
-    abstract_verifier_sound
-      assumptions
+    (abstract_verifier_sound_with_semantic_evidence assumptions).right
       publicInput
       proof
       verifierAccepts
@@ -1192,8 +1195,7 @@ theorem runtime_pipeline_required_external_source_audited_finalized_core_sound_w
       proof
       verifierAccepts
   have soundWitness :=
-    abstract_verifier_sound
-      assumptions
+    (abstract_verifier_sound_with_semantic_evidence assumptions).right
       publicInput
       proof
       verifierAccepts
