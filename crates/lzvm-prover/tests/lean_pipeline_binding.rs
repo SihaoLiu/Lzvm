@@ -1842,7 +1842,8 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
         "runtime_pipeline_binding_checked_acceptance_audited_soundness_obligations",
         &[
             "runtime_pipeline_binding_checked_acceptance_audited_assumptions",
-            "assumption_bundle_carries_required_evidence",
+            "assumption_bundle_carries_required_crypto_evidence",
+            "assumption_bundle_carries_required_semantic_evidence",
         ],
     );
     assert!(
@@ -1863,7 +1864,8 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
         "runtime_pipeline_binding_checked_acceptance_audited_soundness_accepts_contract",
         &[
             "runtime_pipeline_binding_checked_acceptance_audited_accepts_sound_witness_contract",
-            "assumption_bundle_carries_required_evidence",
+            "assumption_bundle_carries_required_crypto_evidence",
+            "assumption_bundle_carries_required_semantic_evidence",
         ],
     );
     lean_binding::assert_theorem_prefix_contains(
@@ -1890,7 +1892,8 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
         &lean_source,
         "runtime_pipeline_binding_checked_acceptance_audited_full_soundness_contract",
         &[
-            "assumption_bundle_carries_required_evidence",
+            "assumption_bundle_carries_required_crypto_evidence",
+            "assumption_bundle_carries_required_semantic_evidence",
             "abstract_verifier_sound",
             "runtime_pipeline_binding_checked_acceptance_accepts_full_soundness_contract",
         ],
@@ -1958,7 +1961,8 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
         "runtime_pipeline_binding_checked_acceptance_audited_assumption_full_contract",
         &[
             "runtime_pipeline_binding_checked_acceptance_audited_proof_system_contract",
-            "assumption_bundle_carries_required_evidence",
+            "assumption_bundle_carries_required_crypto_evidence",
+            "assumption_bundle_carries_required_semantic_evidence",
         ],
     );
     lean_binding::assert_theorem_body_omits(
@@ -2077,7 +2081,8 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
         "runtime_pipeline_binding_checked_acceptance_contracts_audited_soundness_core_contract",
         &[
             "runtime_pipeline_binding_checked_acceptance_contracts_core_contract",
-            "assumption_bundle_carries_required_evidence",
+            "assumption_bundle_carries_required_crypto_evidence",
+            "assumption_bundle_carries_required_semantic_evidence",
         ],
     );
     lean_binding::assert_theorem_body_omits(
@@ -2230,7 +2235,8 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
         "runtime_pipeline_binding_evidence_audited_soundness_core_contract",
         &[
             "runtime_pipeline_binding_evidence_audited_core_contract",
-            "assumption_bundle_carries_required_evidence",
+            "assumption_bundle_carries_required_crypto_evidence",
+            "assumption_bundle_carries_required_semantic_evidence",
         ],
     );
     lean_binding::assert_theorem_body_omits(
@@ -2326,7 +2332,8 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
         "runtime_pipeline_binding_checked_acceptance_audited_soundness_pcs_fri_core_witness_contract",
         &[
             "runtime_pipeline_binding_checked_acceptance_audited_binding_pcs_fri_core_witness_contract",
-            "assumption_bundle_carries_required_evidence",
+            "assumption_bundle_carries_required_crypto_evidence",
+            "assumption_bundle_carries_required_semantic_evidence",
         ],
     );
     lean_binding::assert_theorem_body_omits(
@@ -2421,7 +2428,8 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
         "runtime_pipeline_binding_checked_acceptance_audited_soundness_segment_ids_contract",
         &[
             "runtime_pipeline_binding_checked_acceptance_audited_segment_ids_contract",
-            "assumption_bundle_carries_required_evidence",
+            "assumption_bundle_carries_required_crypto_evidence",
+            "assumption_bundle_carries_required_semantic_evidence",
         ],
     );
     lean_binding::assert_theorem_body_omits(
@@ -2505,7 +2513,9 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
         "runtime_pipeline_binding_checked_acceptance_audited_finalized_core_sound_witness_contract",
         &[
             "runtime_pipeline_binding_checked_acceptance_verifier_accepts",
-            "accepted_proof_audited_core_execution_and_sound_witness",
+            "accepted_proof_crypto_core_contract",
+            "accepted_proof_semantic_execution_obligations",
+            "abstract_verifier_sound",
             "runtime_pipeline_binding_checked_acceptance_artifact_finalized",
             "runtime_pipeline_binding_checked_acceptance_seed_binds_witness_tree_digests",
             "runtime_pipeline_binding_checked_acceptance_seeded_fri_opening_requirements_checked",
@@ -2515,6 +2525,7 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
         &lean_source,
         "runtime_pipeline_binding_checked_acceptance_audited_finalized_core_sound_witness_contract",
         &[
+            "accepted_proof_audited_core_execution_and_sound_witness",
             "accepted_proof_audited_core_and_sound_witness",
             "sound_witness_implies_execution_obligations",
             "RuntimePipelineBindingEvidence",
@@ -3624,7 +3635,8 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
         "runtime_pipeline_binding_required_external_source_audited_soundness_proof_system_contract",
         &[
             "runtime_pipeline_binding_required_external_source_audited_proof_system_contract",
-            "assumption_bundle_carries_required_evidence",
+            "assumption_bundle_carries_required_crypto_evidence",
+            "assumption_bundle_carries_required_semantic_evidence",
         ],
     );
     assert!(
@@ -3702,7 +3714,8 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
         "runtime_pipeline_binding_required_external_source_audited_sound_proof_system_core_contract",
         &[
             "runtime_pipeline_binding_required_external_source_audited_proof_system_core_contract",
-            "assumption_bundle_carries_required_evidence",
+            "assumption_bundle_carries_required_crypto_evidence",
+            "assumption_bundle_carries_required_semantic_evidence",
         ],
     );
     lean_binding::assert_theorem_prefix_contains(
@@ -3755,7 +3768,8 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
         "runtime_pipeline_binding_required_external_source_contracts_audited_soundness_core_contract",
         &[
             "runtime_pipeline_binding_required_external_source_contracts_core_contract",
-            "assumption_bundle_carries_required_evidence",
+            "assumption_bundle_carries_required_crypto_evidence",
+            "assumption_bundle_carries_required_semantic_evidence",
         ],
     );
     lean_binding::assert_theorem_body_omits(
@@ -3883,7 +3897,8 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
         "runtime_pipeline_binding_required_external_source_artifact_audited_soundness_core_contract",
         &[
             "runtime_pipeline_binding_required_external_source_artifact_contracts_core_contract",
-            "assumption_bundle_carries_required_evidence",
+            "assumption_bundle_carries_required_crypto_evidence",
+            "assumption_bundle_carries_required_semantic_evidence",
         ],
     );
     lean_binding::assert_theorem_body_omits(
@@ -3965,7 +3980,8 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
         "runtime_pipeline_required_external_source_concrete_audited_soundness_core_contract",
         &[
             "runtime_pipeline_required_external_source_concrete_opening_core_contract",
-            "assumption_bundle_carries_required_evidence",
+            "assumption_bundle_carries_required_crypto_evidence",
+            "assumption_bundle_carries_required_semantic_evidence",
         ],
     );
     lean_binding::assert_theorem_prefix_contains(
@@ -4044,7 +4060,8 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
         "runtime_pipeline_required_external_source_hash_concrete_audited_soundness_core_contract",
         &[
             "runtime_pipeline_required_external_source_hash_concrete_opening_core_contract",
-            "assumption_bundle_carries_required_evidence",
+            "assumption_bundle_carries_required_crypto_evidence",
+            "assumption_bundle_carries_required_semantic_evidence",
         ],
     );
     assert!(
@@ -4185,7 +4202,8 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
         "runtime_pipeline_binding_required_external_source_audited_soundness_pcs_fri_core_witness_contract",
         &[
             "runtime_pipeline_binding_required_external_source_audited_pcs_fri_core_witness_contract",
-            "assumption_bundle_carries_required_evidence",
+            "assumption_bundle_carries_required_crypto_evidence",
+            "assumption_bundle_carries_required_semantic_evidence",
         ],
     );
     lean_binding::assert_theorem_body_omits(
@@ -4265,7 +4283,9 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
         "runtime_pipeline_required_external_source_audited_finalized_core_sound_witness_contract",
         &[
             "runtime_pipeline_binding_checked_acceptance_verifier_accepts",
-            "accepted_proof_audited_core_execution_and_sound_witness",
+            "accepted_proof_crypto_core_contract",
+            "accepted_proof_semantic_execution_obligations",
+            "abstract_verifier_sound",
             "runtime_pipeline_binding_required_external_source_verifier_core_contract",
             "runtime_pipeline_binding_checked_acceptance_artifact_finalized",
             "runtime_pipeline_binding_checked_acceptance_seed_binds_witness_tree_digests",
@@ -4276,6 +4296,7 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
         &lean_source,
         "runtime_pipeline_required_external_source_audited_finalized_core_sound_witness_contract",
         &[
+            "accepted_proof_audited_core_execution_and_sound_witness",
             "accepted_proof_audited_core_and_sound_witness",
             "sound_witness_implies_execution_obligations",
             "RuntimePipelineBindingEvidence",
@@ -4371,7 +4392,8 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
         "runtime_pipeline_binding_required_external_source_audited_soundness_segment_ids_contract",
         &[
             "runtime_pipeline_binding_required_external_source_audited_segment_ids_contract",
-            "assumption_bundle_carries_required_evidence",
+            "assumption_bundle_carries_required_crypto_evidence",
+            "assumption_bundle_carries_required_semantic_evidence",
         ],
     );
     lean_binding::assert_theorem_body_omits(

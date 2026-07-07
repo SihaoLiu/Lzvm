@@ -830,8 +830,20 @@ theorem runtime_pipeline_binding_checked_acceptance_audited_finalized_core_sound
       publicInput
       proof
       accepted
-  have auditedCoreExecutionSound :=
-    accepted_proof_audited_core_execution_and_sound_witness
+  have cryptoCore :=
+    accepted_proof_crypto_core_contract
+      assumptions
+      publicInput
+      proof
+      verifierAccepts
+  have semanticExecution :=
+    accepted_proof_semantic_execution_obligations
+      assumptions
+      publicInput
+      proof
+      verifierAccepts
+  have soundWitness :=
+    abstract_verifier_sound
       assumptions
       publicInput
       proof
@@ -857,8 +869,10 @@ theorem runtime_pipeline_binding_checked_acceptance_audited_finalized_core_sound
       publicInput
       proof
       accepted
-  rcases auditedCoreExecutionSound with
-    ⟨cryptoEvidence, semanticEvidence, verifierCore, executionObligations, soundWitness⟩
+  rcases cryptoCore with
+    ⟨cryptoEvidence, verifierCore⟩
+  rcases semanticExecution with
+    ⟨semanticEvidence, executionObligations⟩
   exact
     ⟨cryptoEvidence,
       semanticEvidence,
@@ -1165,8 +1179,20 @@ theorem runtime_pipeline_required_external_source_audited_finalized_core_sound_w
       publicInput
       proof
       accepted
-  have auditedCoreExecutionSound :=
-    accepted_proof_audited_core_execution_and_sound_witness
+  have cryptoCore :=
+    accepted_proof_crypto_core_contract
+      assumptions
+      publicInput
+      proof
+      verifierAccepts
+  have semanticExecution :=
+    accepted_proof_semantic_execution_obligations
+      assumptions
+      publicInput
+      proof
+      verifierAccepts
+  have soundWitness :=
+    abstract_verifier_sound
       assumptions
       publicInput
       proof
@@ -1202,8 +1228,10 @@ theorem runtime_pipeline_required_external_source_audited_finalized_core_sound_w
       publicInput
       proof
       accepted
-  rcases auditedCoreExecutionSound with
-    ⟨cryptoEvidence, semanticEvidence, verifierCore, executionObligations, soundWitness⟩
+  rcases cryptoCore with
+    ⟨cryptoEvidence, verifierCore⟩
+  rcases semanticExecution with
+    ⟨semanticEvidence, executionObligations⟩
   rcases requiredCore with
     ⟨traceExternalEvidence, openingExternalEvidence, _requiredVerifierCore⟩
   exact

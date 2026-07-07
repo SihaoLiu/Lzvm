@@ -519,13 +519,16 @@ fn lean_query_plan_binding_exports_opening_segment_projections() {
             "runtime_challenge_segment_binding_checked_acceptance_transcript",
             "runtime_proof_artifact_binding_checked_acceptance_runtime_accepted",
             "runtime_artifact_checked_acceptance_implies_verifier_accepts",
-            "accepted_proof_audited_core_execution_and_sound_witness",
+            "accepted_proof_crypto_core_contract",
+            "accepted_proof_semantic_execution_obligations",
+            "abstract_verifier_sound",
         ],
     );
     lean_binding::assert_theorem_body_omits(
         &lean_source,
         "runtime_query_plan_binding_audited_finalized_core_sound_witness_contract",
         &[
+            "accepted_proof_audited_core_execution_and_sound_witness",
             "accepted_proof_audited_core_and_sound_witness",
             "sound_witness_implies_execution_obligations",
             "runtime_query_plan_binding_checked_acceptance_evidence_core_and_sound",
