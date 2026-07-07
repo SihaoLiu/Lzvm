@@ -205,6 +205,55 @@ theorem auxiliary_checked_acceptance_core_and_sound
         proof
         checked)
 
+theorem ignored_metadata_acceptance_audited_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    {Metadata : Type u}
+    (metadata : Metadata) :
+    forall publicInput proof,
+      IgnoredMetadataObservedAcceptance system metadata publicInput proof ->
+        RequiredCryptographicAssumptionStatements assumptions.crypto
+          /\ RequiredSemanticAssumptionStatements assumptions.semantic
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof observed
+  have auditedAssumptions :=
+    assumption_bundle_carries_required_evidence assumptions
+  have contracts :=
+    ignored_metadata_acceptance_core_and_sound
+      assumptions
+      metadata
+      publicInput
+      proof
+      observed
+  exact
+    And.intro auditedAssumptions.left
+      (And.intro auditedAssumptions.right contracts)
+
+theorem auxiliary_checked_acceptance_audited_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    {auxiliaryAccepted : PublicInput -> Proof -> Prop} :
+    forall publicInput proof,
+      system.accepts publicInput proof
+        /\ auxiliaryAccepted publicInput proof ->
+        RequiredCryptographicAssumptionStatements assumptions.crypto
+          /\ RequiredSemanticAssumptionStatements assumptions.semantic
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof checked
+  have auditedAssumptions :=
+    assumption_bundle_carries_required_evidence assumptions
+  have contracts :=
+    auxiliary_checked_acceptance_core_and_sound
+      assumptions
+      publicInput
+      proof
+      checked
+  exact
+    And.intro auditedAssumptions.left
+      (And.intro auditedAssumptions.right contracts)
+
 structure TimingObservation where
   label : Nat
   milliseconds : Nat

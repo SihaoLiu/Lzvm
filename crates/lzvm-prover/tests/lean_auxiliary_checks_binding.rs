@@ -642,6 +642,8 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         &[
             "auxiliary_checked_acceptance_sound_witness",
             "auxiliary_checked_acceptance_core_and_sound",
+            "ignored_metadata_acceptance_audited_core_contract",
+            "auxiliary_checked_acceptance_audited_core_contract",
         ],
     );
     lean_binding::assert_theorem_body_contains(
@@ -721,6 +723,46 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             compact_source_contains(&auxiliary_checked_body, &expected_call),
             "Lean theorem auxiliary_checked_acceptance_core_and_sound body should call {callee} with ordered checked-acceptance arguments"
         );
+    }
+    for (theorem, combined_helper, omitted_terms) in [
+        (
+            "ignored_metadata_acceptance_audited_core_contract",
+            "ignored_metadata_acceptance_core_and_sound",
+            &[
+                "ignored_metadata_acceptance_sound",
+                "ignored_metadata_acceptance_verifier_core_contract",
+                "sound_witness_implies_verifier_core_contract",
+            ][..],
+        ),
+        (
+            "auxiliary_checked_acceptance_audited_core_contract",
+            "auxiliary_checked_acceptance_core_and_sound",
+            &[
+                "auxiliary_checked_acceptance_sound_witness",
+                "auxiliary_checked_acceptance_verifier_core_contract",
+                "sound_witness_implies_verifier_core_contract",
+            ][..],
+        ),
+    ] {
+        lean_binding::assert_theorem_prefix_contains(
+            &auxiliary_source,
+            theorem,
+            &[
+                "RequiredCryptographicAssumptionStatements assumptions.crypto",
+                "RequiredSemanticAssumptionStatements assumptions.semantic",
+                "RuntimeVerifierCoreContract system publicInput proof",
+                "SoundWitness system publicInput proof",
+            ],
+        );
+        assert_theorem_body_contains_identifiers(
+            &auxiliary_source,
+            theorem,
+            &[
+                "assumption_bundle_carries_required_evidence",
+                combined_helper,
+            ],
+        );
+        assert_theorem_body_omits_identifiers(&auxiliary_source, theorem, omitted_terms);
     }
     assert_eq!(
         lean_binding::visible_identifier_occurrence_count(
