@@ -3832,10 +3832,10 @@ fn retained_cache_defaults_prioritize_descriptor_reuse() {
     );
     assert!(
         values_source.contains(
-            "const DEFAULT_RETAINED_DESCRIPTOR_BUFFER_BYTES: usize = 18_000_000_000"
+            "const DEFAULT_RETAINED_DESCRIPTOR_BUFFER_BYTES: usize = 19_000_000_000"
         ) && values_source.contains("const MAX_DEFAULT_RETAINED_DESCRIPTOR_BUFFER_BYTES: usize")
             && values_source.contains("DEFAULT_RETAINED_DESCRIPTOR_BUFFER_BYTES"),
-        "default descriptor-buffer retention should use the measured 18GB cap for strict opening reuse"
+        "default descriptor-buffer retention should use the measured 19GB cap for strict opening reuse"
     );
     assert!(
         values_source.contains("RETAINED_COMBINED_DEVICE_CACHE_RESERVE_BYTES")
@@ -10721,6 +10721,14 @@ fn lean_pipeline_binding_tracks_runtime_preflight_and_artifact_checks() {
     let core_base_path = crate_root.join("../../lean/Lzvm/PipelineBinding/Core/Base.lean");
     let core_base_source = std::fs::read_to_string(&core_base_path)
         .expect("Lean pipeline core base binding source should read");
+    let core_base_prelude_path =
+        crate_root.join("../../lean/Lzvm/PipelineBinding/Core/Base/Prelude.lean");
+    let core_base_prelude_source = std::fs::read_to_string(&core_base_prelude_path)
+        .expect("Lean pipeline core base prelude binding source should read");
+    let core_base_contracts_path =
+        crate_root.join("../../lean/Lzvm/PipelineBinding/Core/Base/Contracts.lean");
+    let core_base_contracts_source = std::fs::read_to_string(&core_base_contracts_path)
+        .expect("Lean pipeline core base contracts binding source should read");
     let core_derived_path = crate_root.join("../../lean/Lzvm/PipelineBinding/Core/Derived.lean");
     let core_derived_source = std::fs::read_to_string(&core_derived_path)
         .expect("Lean pipeline core derived binding source should read");
@@ -10736,7 +10744,7 @@ fn lean_pipeline_binding_tracks_runtime_preflight_and_artifact_checks() {
     let audited_source =
         std::fs::read_to_string(&audited_path).expect("Lean pipeline audited source should read");
     let lean_source = format!(
-        "{core_source}\n{core_base_source}\n{core_derived_source}\n{pipeline_source}\n{obligations_source}\n{audited_source}"
+        "{core_source}\n{core_base_source}\n{core_base_prelude_source}\n{core_base_contracts_source}\n{core_derived_source}\n{pipeline_source}\n{obligations_source}\n{audited_source}"
     );
     let lean_root_path = crate_root.join("../../lean/Lzvm.lean");
     let lean_root_source =
