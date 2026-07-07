@@ -1973,6 +1973,10 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             ),
             "proof_artifact_finish_verifier_retained_source_row_values_acceptance_verifier_core_contract",
             "proof_artifact_finish_verifier_retained_source_row_values_acceptance_core_and_sound",
+            concat!(
+                "proof_artifact_finish_verifier_retained_source_row_values_acceptance_",
+                "audited_core_contract"
+            ),
         ],
     );
     let verifier_descriptor_upload_field_terms = [
@@ -2112,6 +2116,10 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         "proof_artifact_finish_verifier_retained_source_row_values_acceptance_verifier_core_contract";
     let verifier_retained_source_row_values_combined_theorem =
         "proof_artifact_finish_verifier_retained_source_row_values_acceptance_core_and_sound";
+    let verifier_retained_source_row_values_audited_theorem = concat!(
+        "proof_artifact_finish_verifier_retained_source_row_values_acceptance_",
+        "audited_core_contract"
+    );
     lean_binding::assert_theorem_prefix_contains(
         &proof_timing_verifier_source,
         verifier_retained_source_row_values_verifier_theorem,
@@ -2149,6 +2157,39 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         &[
             "proof_artifact_finish_retained_source_row_values_acceptance_sound",
             "sound_witness_implies_verifier_core_contract",
+        ],
+    );
+    assert_audited_core_contract_prefix(
+        &proof_timing_verifier_source,
+        verifier_retained_source_row_values_audited_theorem,
+        &[],
+    );
+    let audited_prefix = lean_binding::theorem_prefix(
+        &proof_timing_verifier_source,
+        verifier_retained_source_row_values_audited_theorem,
+    );
+    for field_term in verifier_retained_source_row_values_field_terms {
+        assert!(
+            compact_source_contains(&audited_prefix, field_term),
+            "Lean theorem {verifier_retained_source_row_values_audited_theorem} prefix should wire field {field_term}"
+        );
+    }
+    lean_binding::assert_theorem_body_contains(
+        &proof_timing_verifier_source,
+        verifier_retained_source_row_values_audited_theorem,
+        &["proof_artifact_finish_retained_source_row_values_acceptance_audited_core_contract"],
+    );
+    assert_theorem_body_omits_identifiers(
+        &proof_timing_verifier_source,
+        verifier_retained_source_row_values_audited_theorem,
+        &[
+            "proof_artifact_finish_verifier_retained_source_row_values_acceptance_core_and_sound",
+            concat!(
+                "proof_artifact_finish_verifier_retained_source_row_values_acceptance_",
+                "verifier_core_contract"
+            ),
+            "proof_artifact_finish_retained_source_row_values_acceptance_core_and_sound",
+            "assumption_bundle_carries_required_evidence",
         ],
     );
     for (theorem, helper) in [
@@ -6435,6 +6476,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
                 "proof_artifact_finish_path_parent_hash_per_unit_shape_acceptance_",
                 "audited_core_contract"
             ),
+            "proof_artifact_finish_retained_source_row_values_acceptance_audited_core_contract",
             "proof_artifact_finish_external_source_timing_acceptance_audited_core_contract",
             concat!(
                 "proof_artifact_finish_descriptor_upload_word_count_acceptance_",
@@ -6460,6 +6502,19 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
                     "verifier_core_contract"
                 ),
                 "proof_artifact_finish_path_parent_hash_per_unit_shape_acceptance_sound",
+                "assumption_bundle_carries_required_evidence",
+            ][..],
+        ),
+        (
+            "proof_artifact_finish_retained_source_row_values_acceptance_audited_core_contract",
+            "finishWitnessOpeningRetainedSourceCount := retainedSourceCount",
+            &[
+                "proof_artifact_finish_retained_source_row_values_acceptance_core_and_sound",
+                concat!(
+                    "proof_artifact_finish_retained_source_row_values_acceptance_",
+                    "verifier_core_contract"
+                ),
+                "proof_artifact_finish_retained_source_row_values_acceptance_sound",
                 "assumption_bundle_carries_required_evidence",
             ][..],
         ),

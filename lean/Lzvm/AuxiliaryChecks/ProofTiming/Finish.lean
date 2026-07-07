@@ -1125,8 +1125,77 @@ theorem proof_artifact_finish_retained_source_row_values_acceptance_core_and_sou
       proof
       observed
 
-
-
+theorem proof_artifact_finish_retained_source_row_values_acceptance_audited_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : ProofArtifactFinishTimingSummary)
+    (retainedSourceCount retainedParentCheckpointOpeningCount
+      retainedParentCheckpointOpeningRowCount rowValuesMilliseconds
+      sourceExtendMilliseconds sourceDownloadMilliseconds sourceExtendCalls
+      sourceExtendMaxRows sourceRows words bytes : Nat) :
+    forall publicInput proof,
+      ProofArtifactFinishTimingObservedAcceptance
+        system
+        (some
+          { summary with
+            finishWitnessOpeningRetainedSourceCount := retainedSourceCount
+            finishWitnessOpeningExternalSourceCount := 0
+            finishWitnessOpeningEmbeddedSourceCount := 0
+            finishWitnessOpeningMissingSourceCount := 0
+            finishWitnessOpeningRetainedParentCheckpointOpeningCount :=
+              retainedParentCheckpointOpeningCount
+            finishWitnessOpeningRetainedParentCheckpointOpeningRowCount :=
+              retainedParentCheckpointOpeningRowCount
+            finishWitnessOpeningRowValuesMilliseconds := rowValuesMilliseconds
+            finishWitnessOpeningRowValueSourceExtendMilliseconds :=
+              sourceExtendMilliseconds
+            finishWitnessOpeningRowValueSourceDownloadMilliseconds :=
+              sourceDownloadMilliseconds
+            finishWitnessOpeningRowValueDeviceDownloadMilliseconds := 0
+            finishWitnessOpeningRowValuesDeviceRowCount := 0
+            finishWitnessOpeningRowValuesDeviceDownloadBatchCount := 0
+            finishWitnessOpeningRowValuesDeviceSingleDownloadCount := 0
+            finishWitnessOpeningRowValuesSourceExtendCallCount := sourceExtendCalls
+            finishWitnessOpeningRowValuesSourceExtendMaxRowCount := sourceExtendMaxRows
+            finishWitnessOpeningRowValuesSourceRowCount := sourceRows
+            finishWitnessOpeningRowValuesWordCount := words
+            finishWitnessOpeningRowValuesByteCount := bytes })
+        publicInput
+        proof ->
+        RequiredCryptographicAssumptionStatements assumptions.crypto
+          /\ RequiredSemanticAssumptionStatements assumptions.semantic
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof observed
+  exact
+    proof_artifact_finish_timing_some_summary_acceptance_audited_core_contract
+      assumptions
+      { summary with
+        finishWitnessOpeningRetainedSourceCount := retainedSourceCount
+        finishWitnessOpeningExternalSourceCount := 0
+        finishWitnessOpeningEmbeddedSourceCount := 0
+        finishWitnessOpeningMissingSourceCount := 0
+        finishWitnessOpeningRetainedParentCheckpointOpeningCount :=
+          retainedParentCheckpointOpeningCount
+        finishWitnessOpeningRetainedParentCheckpointOpeningRowCount :=
+          retainedParentCheckpointOpeningRowCount
+        finishWitnessOpeningRowValuesMilliseconds := rowValuesMilliseconds
+        finishWitnessOpeningRowValueSourceExtendMilliseconds :=
+          sourceExtendMilliseconds
+        finishWitnessOpeningRowValueSourceDownloadMilliseconds :=
+          sourceDownloadMilliseconds
+        finishWitnessOpeningRowValueDeviceDownloadMilliseconds := 0
+        finishWitnessOpeningRowValuesDeviceRowCount := 0
+        finishWitnessOpeningRowValuesDeviceDownloadBatchCount := 0
+        finishWitnessOpeningRowValuesDeviceSingleDownloadCount := 0
+        finishWitnessOpeningRowValuesSourceExtendCallCount := sourceExtendCalls
+        finishWitnessOpeningRowValuesSourceExtendMaxRowCount := sourceExtendMaxRows
+        finishWitnessOpeningRowValuesSourceRowCount := sourceRows
+        finishWitnessOpeningRowValuesWordCount := words
+        finishWitnessOpeningRowValuesByteCount := bytes }
+      publicInput
+      proof
+      observed
 
 theorem proof_artifact_finish_external_source_timing_acceptance_sound
     {system : VerifierModel}
