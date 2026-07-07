@@ -119,6 +119,25 @@ theorem proof_timing_batch_acceptance_core_and_sound
       proof
       observed
 
+theorem proof_timing_batch_acceptance_audited_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : Option ProofTimingBatchSummary) :
+    forall publicInput proof,
+      ProofTimingBatchObservedAcceptance system summary publicInput proof ->
+        RequiredCryptographicAssumptionStatements assumptions.crypto
+          /\ RequiredSemanticAssumptionStatements assumptions.semantic
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof observed
+  exact
+    ignored_metadata_acceptance_audited_core_contract
+      assumptions
+      summary
+      publicInput
+      proof
+      observed
+
 theorem proof_timing_batch_small_rejected_average_acceptance_core_and_sound
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
@@ -220,6 +239,25 @@ theorem witness_opening_row_value_timing_acceptance_core_and_sound
   intro publicInput proof observed
   exact
     ignored_metadata_acceptance_core_and_sound
+      assumptions
+      summary
+      publicInput
+      proof
+      observed
+
+theorem witness_opening_row_value_timing_acceptance_audited_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : Option WitnessOpeningRowValueTimingSummary) :
+    forall publicInput proof,
+      WitnessOpeningRowValueTimingObservedAcceptance system summary publicInput proof ->
+        RequiredCryptographicAssumptionStatements assumptions.crypto
+          /\ RequiredSemanticAssumptionStatements assumptions.semantic
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof observed
+  exact
+    ignored_metadata_acceptance_audited_core_contract
       assumptions
       summary
       publicInput
@@ -497,6 +535,25 @@ theorem constant_material_validation_timing_acceptance_core_and_sound
       proof
       observed
 
+theorem constant_material_validation_timing_acceptance_audited_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : Option ConstantMaterialValidationTimingSummary) :
+    forall publicInput proof,
+      ConstantMaterialValidationTimingObservedAcceptance system summary publicInput proof ->
+        RequiredCryptographicAssumptionStatements assumptions.crypto
+          /\ RequiredSemanticAssumptionStatements assumptions.semantic
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof observed
+  exact
+    ignored_metadata_acceptance_audited_core_contract
+      assumptions
+      summary
+      publicInput
+      proof
+      observed
+
 theorem constant_material_validation_aggregate_timing_acceptance_sound
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
@@ -656,6 +713,25 @@ theorem prover_gpu_mode_acceptance_core_and_sound
       proof
       observed
 
+theorem prover_gpu_mode_acceptance_audited_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : Option ProverGpuModeSummary) :
+    forall publicInput proof,
+      ProverGpuModeObservedAcceptance system summary publicInput proof ->
+        RequiredCryptographicAssumptionStatements assumptions.crypto
+          /\ RequiredSemanticAssumptionStatements assumptions.semantic
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof observed
+  exact
+    ignored_metadata_acceptance_audited_core_contract
+      assumptions
+      summary
+      publicInput
+      proof
+      observed
+
 def GpuRunOptionsObservedAcceptance
     (system : VerifierModel)
     (summary : Option GpuRunOptionsSummary)
@@ -715,6 +791,25 @@ theorem gpu_run_options_acceptance_core_and_sound
   intro publicInput proof observed
   exact
     ignored_metadata_acceptance_core_and_sound
+      assumptions
+      summary
+      publicInput
+      proof
+      observed
+
+theorem gpu_run_options_acceptance_audited_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : Option GpuRunOptionsSummary) :
+    forall publicInput proof,
+      GpuRunOptionsObservedAcceptance system summary publicInput proof ->
+        RequiredCryptographicAssumptionStatements assumptions.crypto
+          /\ RequiredSemanticAssumptionStatements assumptions.semantic
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof observed
+  exact
+    ignored_metadata_acceptance_audited_core_contract
       assumptions
       summary
       publicInput
@@ -786,6 +881,25 @@ theorem cuda_backend_acceptance_core_and_sound
       proof
       observed
 
+theorem cuda_backend_acceptance_audited_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : Option CudaBackendSummary) :
+    forall publicInput proof,
+      CudaBackendObservedAcceptance system summary publicInput proof ->
+        RequiredCryptographicAssumptionStatements assumptions.crypto
+          /\ RequiredSemanticAssumptionStatements assumptions.semantic
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof observed
+  exact
+    ignored_metadata_acceptance_audited_core_contract
+      assumptions
+      summary
+      publicInput
+      proof
+      observed
+
 def CudaAllocatorTimingObservedAcceptance
     (system : VerifierModel)
     (summary : Option CudaAllocatorTimingSummary)
@@ -845,6 +959,25 @@ theorem cuda_allocator_timing_acceptance_core_and_sound
   intro publicInput proof observed
   exact
     ignored_metadata_acceptance_core_and_sound
+      assumptions
+      summary
+      publicInput
+      proof
+      observed
+
+theorem cuda_allocator_timing_acceptance_audited_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : Option CudaAllocatorTimingSummary) :
+    forall publicInput proof,
+      CudaAllocatorTimingObservedAcceptance system summary publicInput proof ->
+        RequiredCryptographicAssumptionStatements assumptions.crypto
+          /\ RequiredSemanticAssumptionStatements assumptions.semantic
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof observed
+  exact
+    ignored_metadata_acceptance_audited_core_contract
       assumptions
       summary
       publicInput
@@ -1388,6 +1521,25 @@ theorem proof_artifact_finish_timing_acceptance_core_and_sound
       proof
       observed
 
+theorem proof_artifact_finish_timing_acceptance_audited_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : Option ProofArtifactFinishTimingSummary) :
+    forall publicInput proof,
+      ProofArtifactFinishTimingObservedAcceptance system summary publicInput proof ->
+        RequiredCryptographicAssumptionStatements assumptions.crypto
+          /\ RequiredSemanticAssumptionStatements assumptions.semantic
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof observed
+  exact
+    ignored_metadata_acceptance_audited_core_contract
+      assumptions
+      summary
+      publicInput
+      proof
+      observed
+
 theorem proof_artifact_finish_timing_some_summary_acceptance_sound
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
@@ -1424,6 +1576,25 @@ theorem proof_artifact_finish_timing_some_summary_acceptance_core_and_sound
   intro publicInput proof observed
   exact
     ignored_metadata_acceptance_core_and_sound
+      assumptions
+      (some summary)
+      publicInput
+      proof
+      observed
+
+theorem proof_artifact_finish_timing_some_summary_acceptance_audited_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : ProofArtifactFinishTimingSummary) :
+    forall publicInput proof,
+      ProofArtifactFinishTimingObservedAcceptance system (some summary) publicInput proof ->
+        RequiredCryptographicAssumptionStatements assumptions.crypto
+          /\ RequiredSemanticAssumptionStatements assumptions.semantic
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof observed
+  exact
+    proof_artifact_finish_timing_acceptance_audited_core_contract
       assumptions
       (some summary)
       publicInput
