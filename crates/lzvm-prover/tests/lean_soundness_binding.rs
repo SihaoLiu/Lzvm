@@ -201,9 +201,6 @@ fn lean_soundness_binding_exports_abstract_soundness_theorems() {
     for identifier in [
         "assumption_bundle_carries_required_evidence",
         "required_assumption_statements_verifier_core_contract",
-        "requiredEvidence",
-        "cryptoEvidence",
-        "semanticEvidence",
     ] {
         lean_binding::assert_theorem_body_contains_identifier(
             &lean_source,
@@ -231,7 +228,7 @@ fn lean_soundness_binding_exports_abstract_soundness_theorems() {
             "RuntimeVerifierCoreContract system publicInput proof",
         ],
     );
-    for identifier in ["accepted_proof_required_core_contract", "requiredCore"] {
+    for identifier in ["accepted_proof_required_core_contract"] {
         lean_binding::assert_theorem_body_contains_identifier(
             &lean_source,
             "accepted_proof_crypto_core_contract",

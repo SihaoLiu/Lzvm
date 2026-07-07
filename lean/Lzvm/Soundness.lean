@@ -106,9 +106,7 @@ theorem accepted_proof_required_core_contract
           /\ RequiredSemanticAssumptionStatements assumptions.semantic
           /\ RuntimeVerifierCoreContract system publicInput proof := by
   intro publicInput proof accepted
-  have requiredEvidence :=
-    assumption_bundle_carries_required_evidence assumptions
-  rcases requiredEvidence with
+  rcases assumption_bundle_carries_required_evidence assumptions with
     ⟨cryptoEvidence, semanticEvidence⟩
   exact
     ⟨cryptoEvidence,
@@ -128,14 +126,14 @@ theorem accepted_proof_crypto_core_contract
         RequiredCryptographicAssumptionStatements assumptions.crypto
           /\ RuntimeVerifierCoreContract system publicInput proof := by
   intro publicInput proof accepted
-  have requiredCore :=
+  rcases
     accepted_proof_required_core_contract
       assumptions
       publicInput
       proof
-      accepted
-  exact
-    ⟨requiredCore.1, requiredCore.2.2⟩
+      accepted with
+    ⟨cryptoEvidence, _semanticEvidence, coreContract⟩
+  exact ⟨cryptoEvidence, coreContract⟩
 
 theorem accepted_proof_semantic_execution_obligations
     {system : VerifierModel}
