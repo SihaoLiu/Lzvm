@@ -1693,6 +1693,23 @@ fn lean_runtime_soundness_binding_exports_core_contract_projection() {
         .contains("RuntimeSoundnessEvidence"),
         "compact required external-source runtime PCS/FRI contract should not force callers to unpack full runtime evidence"
     );
+    for theorem_name in [
+        "runtime_soundness_required_external_source_proof_system_full_soundness_contract",
+        "runtime_soundness_required_external_source_audited_accepts_sound_witness_contract",
+        "runtime_soundness_required_external_source_audited_pcs_accepts_sound_witness_contract",
+        "runtime_soundness_required_external_source_audited_pcs_fri_witness_contract",
+    ] {
+        lean_binding::assert_theorem_body_contains(
+            &lean_source,
+            theorem_name,
+            &["abstract_verifier_sound_with_semantic_evidence"],
+        );
+        lean_binding::assert_theorem_body_omits_identifier(
+            &lean_source,
+            theorem_name,
+            "abstract_verifier_sound",
+        );
+    }
     assert!(
         theorem_prefix(
             &lean_source,

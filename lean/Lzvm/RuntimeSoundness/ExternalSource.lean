@@ -411,7 +411,8 @@ theorem runtime_soundness_required_external_source_proof_system_full_soundness_c
                 /\ system.witnessMatchesTrace witness trace)
             /\ SoundWitness system publicInput proof := by
   intro artifact publicInput proof requiresExternalSource checked required
-  have proofSystemSound := abstract_verifier_sound assumptions
+  have proofSystemSound :=
+    (abstract_verifier_sound_with_semantic_evidence assumptions).right
   have fullContract :=
     runtime_soundness_required_external_source_full_soundness_contract
       assumptions
@@ -563,7 +564,8 @@ theorem runtime_soundness_required_external_source_audited_accepts_sound_witness
   intro artifact publicInput proof requiresExternalSource checked required
   have auditedAssumptions :=
     assumption_bundle_carries_required_crypto_evidence assumptions
-  have proofSystemSound := abstract_verifier_sound assumptions
+  have proofSystemSound :=
+    (abstract_verifier_sound_with_semantic_evidence assumptions).right
   have verifierAccepts :=
     runtime_soundness_checked_acceptance_verifier_accepts
       validation
@@ -614,7 +616,8 @@ theorem runtime_soundness_required_external_source_audited_pcs_accepts_sound_wit
   intro artifact publicInput proof requiresExternalSource checked required
   have auditedAssumptions :=
     assumption_bundle_carries_required_crypto_evidence assumptions
-  have proofSystemSound := abstract_verifier_sound assumptions
+  have proofSystemSound :=
+    (abstract_verifier_sound_with_semantic_evidence assumptions).right
   have verifierAccepts :=
     runtime_soundness_checked_acceptance_verifier_accepts
       validation
@@ -667,7 +670,8 @@ theorem runtime_soundness_required_external_source_audited_pcs_fri_witness_contr
   intro artifact publicInput proof requiresExternalSource checked required
   have auditedAssumptions :=
     assumption_bundle_carries_required_crypto_evidence assumptions
-  have proofSystemSound := abstract_verifier_sound assumptions
+  have proofSystemSound :=
+    (abstract_verifier_sound_with_semantic_evidence assumptions).right
   have verifierAccepts :=
     runtime_soundness_checked_acceptance_verifier_accepts
       validation
