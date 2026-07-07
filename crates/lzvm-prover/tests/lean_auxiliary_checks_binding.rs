@@ -631,9 +631,14 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         &auxiliary_source,
         "ignored_metadata_acceptance_sound",
         &[
-            "abstract_verifier_sound",
+            "abstract_verifier_sound_with_semantic_evidence",
             "ignored_metadata_observed_acceptance_projects_verifier_acceptance",
         ],
+    );
+    lean_binding::assert_theorem_body_omits_identifier(
+        &auxiliary_source,
+        "ignored_metadata_acceptance_sound",
+        "abstract_verifier_sound",
     );
     lean_binding::assert_theorem_body_omits(
         &auxiliary_source,
@@ -757,7 +762,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
     lean_binding::assert_theorem_body_contains(
         &auxiliary_source,
         "auxiliary_checked_acceptance_sound_witness",
-        &["abstract_verifier_sound"],
+        &["abstract_verifier_sound_with_semantic_evidence"],
     );
     lean_binding::assert_theorem_body_omits(
         &auxiliary_source,
@@ -765,6 +770,11 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         &["sound_witness_implies_verifier_core_contract"],
     );
     lean_binding::assert_theorem_body_contains_identifier(
+        &auxiliary_source,
+        "auxiliary_checked_acceptance_sound_witness",
+        "abstract_verifier_sound_with_semantic_evidence",
+    );
+    lean_binding::assert_theorem_body_omits_identifier(
         &auxiliary_source,
         "auxiliary_checked_acceptance_sound_witness",
         "abstract_verifier_sound",
@@ -880,8 +890,8 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             &auxiliary_source,
             "abstract_verifier_sound"
         ),
-        2,
-        "Lean auxiliary checks should keep direct abstract verifier soundness calls limited to ignored-metadata acceptance and auxiliary checked acceptance"
+        0,
+        "Lean auxiliary checks should route direct abstract verifier soundness through split helpers"
     );
     for theorem_name in [
         "source_lookup_auxiliary_acceptance_sound",

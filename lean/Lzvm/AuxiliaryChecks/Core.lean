@@ -94,8 +94,7 @@ theorem ignored_metadata_acceptance_sound
         SoundWitness system publicInput proof := by
   intro publicInput proof observed
   exact
-    abstract_verifier_sound
-      assumptions
+    (abstract_verifier_sound_with_semantic_evidence assumptions).right
       publicInput
       proof
       (ignored_metadata_observed_acceptance_projects_verifier_acceptance
@@ -113,7 +112,11 @@ theorem auxiliary_checked_acceptance_sound_witness
         /\ auxiliaryAccepted publicInput proof ->
         SoundWitness system publicInput proof := by
   intro publicInput proof checked
-  exact abstract_verifier_sound assumptions publicInput proof checked.left
+  exact
+    (abstract_verifier_sound_with_semantic_evidence assumptions).right
+      publicInput
+      proof
+      checked.left
 
 theorem ignored_metadata_acceptance_verifier_core_contract
     {system : VerifierModel}
