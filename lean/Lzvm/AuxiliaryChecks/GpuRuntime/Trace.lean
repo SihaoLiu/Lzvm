@@ -1682,5 +1682,274 @@ theorem gpu_retained_device_cache_budget_checked_acceptance_core_and_sound
       checked
   exact And.intro withinLimits coreAndSound
 
+theorem guest_pc_trace_commit_mode_checked_acceptance_audited_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : GuestPcTraceSegmentCommitModeValidation)
+    (config : GuestPcTraceSegmentCommitModeConfig) :
+    forall publicInput proof,
+      GuestPcTraceSegmentCommitModeCheckedAcceptance
+          system
+          validation
+          config
+          publicInput
+          proof ->
+        RequiredCryptographicAssumptionStatements assumptions.crypto
+          /\ RequiredSemanticAssumptionStatements assumptions.semantic
+          /\ GuestPcTraceSegmentCommitModeDecisionMatches config
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof checked
+  have auditedAssumptions :=
+    assumption_bundle_carries_required_evidence assumptions
+  have contracts :=
+    guest_pc_trace_commit_mode_checked_acceptance_core_and_sound
+      assumptions
+      validation
+      config
+      publicInput
+      proof
+      checked
+  exact
+    And.intro auditedAssumptions.left
+      (And.intro auditedAssumptions.right contracts)
+
+theorem guest_pc_trace_device_trace_source_checked_acceptance_audited_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : GuestPcTraceDeviceTraceSourceValidation)
+    (config : GuestPcTraceDeviceTraceSourceConfig) :
+    forall publicInput proof,
+      GuestPcTraceDeviceTraceSourceCheckedAcceptance
+          system
+          validation
+          config
+          publicInput
+          proof ->
+        RequiredCryptographicAssumptionStatements assumptions.crypto
+          /\ RequiredSemanticAssumptionStatements assumptions.semantic
+          /\ GuestPcTraceDeviceTraceSourceDecisionMatches config
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof checked
+  have auditedAssumptions :=
+    assumption_bundle_carries_required_evidence assumptions
+  have contracts :=
+    guest_pc_trace_device_trace_source_checked_acceptance_core_and_sound
+      assumptions
+      validation
+      config
+      publicInput
+      proof
+      checked
+  exact
+    And.intro auditedAssumptions.left
+      (And.intro auditedAssumptions.right contracts)
+
+theorem guest_pc_trace_sparse_source_checked_acceptance_audited_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : GuestPcTraceSparseSourceValidation)
+    (config : GuestPcTraceSparseSourceConfig) :
+    forall publicInput proof,
+      GuestPcTraceSparseSourceCheckedAcceptance
+          system
+          validation
+          config
+          publicInput
+          proof ->
+        RequiredCryptographicAssumptionStatements assumptions.crypto
+          /\ RequiredSemanticAssumptionStatements assumptions.semantic
+          /\ GuestPcTraceSparseSourceDecisionMatches config
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof checked
+  have auditedAssumptions :=
+    assumption_bundle_carries_required_evidence assumptions
+  have contracts :=
+    guest_pc_trace_sparse_source_checked_acceptance_core_and_sound
+      assumptions
+      validation
+      config
+      publicInput
+      proof
+      checked
+  exact
+    And.intro auditedAssumptions.left
+      (And.intro auditedAssumptions.right contracts)
+
+theorem guest_pc_trace_terminal_sparse_source_checked_acceptance_audited_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : GuestPcTraceTerminalSparseSourceValidation)
+    (config : GuestPcTraceTerminalSparseSourceConfig) :
+    forall publicInput proof,
+      GuestPcTraceTerminalSparseSourceCheckedAcceptance
+          system
+          validation
+          config
+          publicInput
+          proof ->
+        RequiredCryptographicAssumptionStatements assumptions.crypto
+          /\ RequiredSemanticAssumptionStatements assumptions.semantic
+          /\ GuestPcTraceTerminalSparseSourceDecisionMatches config
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof checked
+  have auditedAssumptions :=
+    assumption_bundle_carries_required_evidence assumptions
+  have contracts :=
+    guest_pc_trace_terminal_sparse_source_checked_acceptance_core_and_sound
+      assumptions
+      validation
+      config
+      publicInput
+      proof
+      checked
+  exact
+    And.intro auditedAssumptions.left
+      (And.intro auditedAssumptions.right contracts)
+
+theorem fri_retained_stage_source_checked_acceptance_audited_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : FriRetainedStageSourceValidation)
+    (config : FriRetainedStageSourceConfig) :
+    forall publicInput proof,
+      FriRetainedStageSourceCheckedAcceptance
+          system
+          validation
+          config
+          publicInput
+          proof ->
+        RequiredCryptographicAssumptionStatements assumptions.crypto
+          /\ RequiredSemanticAssumptionStatements assumptions.semantic
+          /\ FriRetainedStageSourceDecisionMatches config
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof checked
+  have auditedAssumptions :=
+    assumption_bundle_carries_required_evidence assumptions
+  have contracts :=
+    fri_retained_stage_source_checked_acceptance_core_and_sound
+      assumptions
+      validation
+      config
+      publicInput
+      proof
+      checked
+  exact
+    And.intro auditedAssumptions.left
+      (And.intro auditedAssumptions.right contracts)
+
+theorem guest_pc_trace_cuda_run_checked_acceptance_audited_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : GuestPcTraceCudaRunValidation)
+    (config : GuestPcTraceCudaRunConfig) :
+    forall publicInput proof,
+      GuestPcTraceCudaRunCheckedAcceptance
+          system
+          validation
+          config
+          publicInput
+          proof ->
+        RequiredCryptographicAssumptionStatements assumptions.crypto
+          /\ RequiredSemanticAssumptionStatements assumptions.semantic
+          /\ GuestPcTraceCudaRunDecisionMatches config
+          /\ config.selectedSparseSource =
+            config.sparseSourceConfig.effectiveSparseSourceSelected
+          /\ config.selectedSparseSourceDebug =
+            config.sparseSourceDebugConfig.effectiveSparseSourceDebug
+          /\ config.selectedTerminalSparseSource =
+            config.terminalSparseSourceConfig.effectiveTerminalSparseSourceSelected
+          /\ config.selectedRetainedStageSource =
+            config.retainedStageSourceConfig.effectiveRetainedStageSourceEnabled
+          /\ config.selectedRetainedStageSourceDebug =
+            config.retainedStageSourceDebugConfig.effectiveRetainedStageSourceDebug
+          /\ (config.selectedRetainedStageSourceDebug = true ->
+            config.selectedRetainedStageSource = true)
+          /\ config.selectedDescriptorBufferRetention =
+            config.descriptorBufferRetentionConfig.effectiveDescriptorBufferRetention
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof checked
+  have auditedAssumptions :=
+    assumption_bundle_carries_required_evidence assumptions
+  have contracts :=
+    guest_pc_trace_cuda_run_checked_acceptance_core_and_sound
+      assumptions
+      validation
+      config
+      publicInput
+      proof
+      checked
+  exact
+    And.intro auditedAssumptions.left
+      (And.intro auditedAssumptions.right contracts)
+
+theorem gpu_retained_leaf_digest_limit_checked_acceptance_audited_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : GpuRetainedLeafDigestLimitValidation)
+    (config : GpuRetainedLeafDigestLimitConfig) :
+    forall publicInput proof,
+      GpuRetainedLeafDigestLimitCheckedAcceptance
+          system
+          validation
+          config
+          publicInput
+          proof ->
+        RequiredCryptographicAssumptionStatements assumptions.crypto
+          /\ RequiredSemanticAssumptionStatements assumptions.semantic
+          /\ GpuRetainedLeafDigestLimitDecisionMatches config
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof checked
+  have auditedAssumptions :=
+    assumption_bundle_carries_required_evidence assumptions
+  have contracts :=
+    gpu_retained_leaf_digest_limit_checked_acceptance_core_and_sound
+      assumptions
+      validation
+      config
+      publicInput
+      proof
+      checked
+  exact
+    And.intro auditedAssumptions.left
+      (And.intro auditedAssumptions.right contracts)
+
+theorem gpu_retained_device_cache_budget_checked_acceptance_audited_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : GpuRetainedDeviceCacheBudgetValidation)
+    (budget : GpuRetainedDeviceCacheBudget) :
+    forall publicInput proof,
+      GpuRetainedDeviceCacheBudgetCheckedAcceptance
+          system
+          validation
+          budget
+          publicInput
+          proof ->
+        RequiredCryptographicAssumptionStatements assumptions.crypto
+          /\ RequiredSemanticAssumptionStatements assumptions.semantic
+          /\ GpuRetainedDeviceCacheBudgetWithinLimits budget
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof checked
+  have auditedAssumptions :=
+    assumption_bundle_carries_required_evidence assumptions
+  have contracts :=
+    gpu_retained_device_cache_budget_checked_acceptance_core_and_sound
+      assumptions
+      validation
+      budget
+      publicInput
+      proof
+      checked
+  exact
+    And.intro auditedAssumptions.left
+      (And.intro auditedAssumptions.right contracts)
 
 end Lzvm

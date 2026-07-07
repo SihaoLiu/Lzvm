@@ -5915,22 +5915,30 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "guest_pc_trace_commit_mode_checked_acceptance_sound",
             "guest_pc_trace_commit_mode_checked_acceptance_verifier_core_contract",
             "guest_pc_trace_commit_mode_checked_acceptance_core_and_sound",
+            "guest_pc_trace_commit_mode_checked_acceptance_audited_core_contract",
             "guest_pc_trace_device_trace_source_checked_acceptance_projects_decision",
             "guest_pc_trace_device_trace_source_checked_acceptance_sound",
             "guest_pc_trace_device_trace_source_checked_acceptance_verifier_core_contract",
             "guest_pc_trace_device_trace_source_checked_acceptance_core_and_sound",
+            "guest_pc_trace_device_trace_source_checked_acceptance_audited_core_contract",
             "guest_pc_trace_sparse_source_checked_acceptance_projects_decision",
             "guest_pc_trace_sparse_source_checked_acceptance_sound",
             "guest_pc_trace_sparse_source_checked_acceptance_verifier_core_contract",
             "guest_pc_trace_sparse_source_checked_acceptance_core_and_sound",
+            "guest_pc_trace_sparse_source_checked_acceptance_audited_core_contract",
             "guest_pc_trace_terminal_sparse_source_checked_acceptance_projects_decision",
             "guest_pc_trace_terminal_sparse_source_checked_acceptance_sound",
             "guest_pc_trace_terminal_sparse_source_checked_acceptance_verifier_core_contract",
             "guest_pc_trace_terminal_sparse_source_checked_acceptance_core_and_sound",
+            concat!(
+                "guest_pc_trace_terminal_sparse_source_checked_acceptance_",
+                "audited_core_contract"
+            ),
             "fri_retained_stage_source_checked_acceptance_projects_decision",
             "fri_retained_stage_source_checked_acceptance_sound",
             "fri_retained_stage_source_checked_acceptance_verifier_core_contract",
             "fri_retained_stage_source_checked_acceptance_core_and_sound",
+            "fri_retained_stage_source_checked_acceptance_audited_core_contract",
             "guest_pc_trace_cuda_run_checked_acceptance_projects_decision",
             "guest_pc_trace_cuda_run_sparse_source_matches",
             "guest_pc_trace_cuda_run_sparse_source_debug_matches",
@@ -5979,10 +5987,12 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "guest_pc_trace_cuda_run_checked_acceptance_sound",
             "guest_pc_trace_cuda_run_checked_acceptance_verifier_core_contract",
             "guest_pc_trace_cuda_run_checked_acceptance_core_and_sound",
+            "guest_pc_trace_cuda_run_checked_acceptance_audited_core_contract",
             "gpu_retained_leaf_digest_limit_checked_acceptance_projects_decision",
             "gpu_retained_leaf_digest_limit_checked_acceptance_sound",
             "gpu_retained_leaf_digest_limit_checked_acceptance_verifier_core_contract",
             "gpu_retained_leaf_digest_limit_checked_acceptance_core_and_sound",
+            "gpu_retained_leaf_digest_limit_checked_acceptance_audited_core_contract",
             "gpu_retained_device_cache_budget_checked_acceptance_projects_within_limits",
             "gpu_retained_device_cache_budget_within_limits_projects_source_limit",
             "gpu_retained_device_cache_budget_within_limits_projects_descriptor_limit",
@@ -5991,6 +6001,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "gpu_retained_device_cache_budget_checked_acceptance_sound",
             "gpu_retained_device_cache_budget_checked_acceptance_verifier_core_contract",
             "gpu_retained_device_cache_budget_checked_acceptance_core_and_sound",
+            "gpu_retained_device_cache_budget_checked_acceptance_audited_core_contract",
             "fri_fixed_column_cache_same_request_implies_cached_contents_bound",
             "fri_fixed_column_cache_checked_acceptance_projects_request_bound",
             "fri_fixed_column_cache_checked_acceptance_projects_fresh_contents_bound",
@@ -7459,6 +7470,163 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             &[
                 projector,
                 "GpuRuntimeInternal.checked_acceptance_core_and_sound",
+            ],
+        );
+        assert_theorem_body_omits_identifiers(&gpu_runtime_source, theorem, omitted_terms);
+    }
+    for (theorem, prefix_terms, combined_helper, omitted_terms) in [
+        (
+            "guest_pc_trace_commit_mode_checked_acceptance_audited_core_contract",
+            &[
+                "RequiredCryptographicAssumptionStatements assumptions.crypto",
+                "RequiredSemanticAssumptionStatements assumptions.semantic",
+                "GuestPcTraceSegmentCommitModeDecisionMatches config",
+                "RuntimeVerifierCoreContract system publicInput proof",
+                "SoundWitness system publicInput proof",
+            ][..],
+            "guest_pc_trace_commit_mode_checked_acceptance_core_and_sound",
+            &[
+                "guest_pc_trace_commit_mode_checked_acceptance_sound",
+                "guest_pc_trace_commit_mode_checked_acceptance_verifier_core_contract",
+                "sound_witness_implies_verifier_core_contract",
+            ][..],
+        ),
+        (
+            "guest_pc_trace_device_trace_source_checked_acceptance_audited_core_contract",
+            &[
+                "RequiredCryptographicAssumptionStatements assumptions.crypto",
+                "RequiredSemanticAssumptionStatements assumptions.semantic",
+                "GuestPcTraceDeviceTraceSourceDecisionMatches config",
+                "RuntimeVerifierCoreContract system publicInput proof",
+                "SoundWitness system publicInput proof",
+            ][..],
+            "guest_pc_trace_device_trace_source_checked_acceptance_core_and_sound",
+            &[
+                "guest_pc_trace_device_trace_source_checked_acceptance_sound",
+                "guest_pc_trace_device_trace_source_checked_acceptance_verifier_core_contract",
+                "sound_witness_implies_verifier_core_contract",
+            ][..],
+        ),
+        (
+            "guest_pc_trace_sparse_source_checked_acceptance_audited_core_contract",
+            &[
+                "RequiredCryptographicAssumptionStatements assumptions.crypto",
+                "RequiredSemanticAssumptionStatements assumptions.semantic",
+                "GuestPcTraceSparseSourceDecisionMatches config",
+                "RuntimeVerifierCoreContract system publicInput proof",
+                "SoundWitness system publicInput proof",
+            ][..],
+            "guest_pc_trace_sparse_source_checked_acceptance_core_and_sound",
+            &[
+                "guest_pc_trace_sparse_source_checked_acceptance_sound",
+                "guest_pc_trace_sparse_source_checked_acceptance_verifier_core_contract",
+                "sound_witness_implies_verifier_core_contract",
+            ][..],
+        ),
+        (
+            concat!(
+                "guest_pc_trace_terminal_sparse_source_checked_acceptance_",
+                "audited_core_contract"
+            ),
+            &[
+                "RequiredCryptographicAssumptionStatements assumptions.crypto",
+                "RequiredSemanticAssumptionStatements assumptions.semantic",
+                "GuestPcTraceTerminalSparseSourceDecisionMatches config",
+                "RuntimeVerifierCoreContract system publicInput proof",
+                "SoundWitness system publicInput proof",
+            ][..],
+            concat!(
+                "guest_pc_trace_terminal_sparse_source_checked_acceptance_",
+                "core_and_sound"
+            ),
+            &[
+                "guest_pc_trace_terminal_sparse_source_checked_acceptance_sound",
+                concat!(
+                    "guest_pc_trace_terminal_sparse_source_checked_acceptance_",
+                    "verifier_core_contract"
+                ),
+                "sound_witness_implies_verifier_core_contract",
+            ][..],
+        ),
+        (
+            "fri_retained_stage_source_checked_acceptance_audited_core_contract",
+            &[
+                "RequiredCryptographicAssumptionStatements assumptions.crypto",
+                "RequiredSemanticAssumptionStatements assumptions.semantic",
+                "FriRetainedStageSourceDecisionMatches config",
+                "RuntimeVerifierCoreContract system publicInput proof",
+                "SoundWitness system publicInput proof",
+            ][..],
+            "fri_retained_stage_source_checked_acceptance_core_and_sound",
+            &[
+                "fri_retained_stage_source_checked_acceptance_sound",
+                "fri_retained_stage_source_checked_acceptance_verifier_core_contract",
+                "sound_witness_implies_verifier_core_contract",
+            ][..],
+        ),
+        (
+            "guest_pc_trace_cuda_run_checked_acceptance_audited_core_contract",
+            &[
+                "RequiredCryptographicAssumptionStatements assumptions.crypto",
+                "RequiredSemanticAssumptionStatements assumptions.semantic",
+                "GuestPcTraceCudaRunDecisionMatches config",
+                "config.selectedSparseSource =",
+                "config.selectedSparseSourceDebug =",
+                "config.selectedTerminalSparseSource =",
+                "config.selectedRetainedStageSource =",
+                "config.selectedRetainedStageSourceDebug =",
+                "config.selectedRetainedStageSourceDebug = true ->",
+                "config.selectedDescriptorBufferRetention =",
+                "RuntimeVerifierCoreContract system publicInput proof",
+                "SoundWitness system publicInput proof",
+            ][..],
+            "guest_pc_trace_cuda_run_checked_acceptance_core_and_sound",
+            &[
+                "guest_pc_trace_cuda_run_checked_acceptance_sound",
+                "guest_pc_trace_cuda_run_checked_acceptance_verifier_core_contract",
+                "sound_witness_implies_verifier_core_contract",
+            ][..],
+        ),
+        (
+            "gpu_retained_leaf_digest_limit_checked_acceptance_audited_core_contract",
+            &[
+                "RequiredCryptographicAssumptionStatements assumptions.crypto",
+                "RequiredSemanticAssumptionStatements assumptions.semantic",
+                "GpuRetainedLeafDigestLimitDecisionMatches config",
+                "RuntimeVerifierCoreContract system publicInput proof",
+                "SoundWitness system publicInput proof",
+            ][..],
+            "gpu_retained_leaf_digest_limit_checked_acceptance_core_and_sound",
+            &[
+                "gpu_retained_leaf_digest_limit_checked_acceptance_sound",
+                "gpu_retained_leaf_digest_limit_checked_acceptance_verifier_core_contract",
+                "sound_witness_implies_verifier_core_contract",
+            ][..],
+        ),
+        (
+            "gpu_retained_device_cache_budget_checked_acceptance_audited_core_contract",
+            &[
+                "RequiredCryptographicAssumptionStatements assumptions.crypto",
+                "RequiredSemanticAssumptionStatements assumptions.semantic",
+                "GpuRetainedDeviceCacheBudgetWithinLimits budget",
+                "RuntimeVerifierCoreContract system publicInput proof",
+                "SoundWitness system publicInput proof",
+            ][..],
+            "gpu_retained_device_cache_budget_checked_acceptance_core_and_sound",
+            &[
+                "gpu_retained_device_cache_budget_checked_acceptance_sound",
+                "gpu_retained_device_cache_budget_checked_acceptance_verifier_core_contract",
+                "sound_witness_implies_verifier_core_contract",
+            ][..],
+        ),
+    ] {
+        lean_binding::assert_theorem_prefix_contains(&gpu_runtime_source, theorem, prefix_terms);
+        assert_theorem_body_contains_identifiers(
+            &gpu_runtime_source,
+            theorem,
+            &[
+                "assumption_bundle_carries_required_evidence",
+                combined_helper,
             ],
         );
         assert_theorem_body_omits_identifiers(&gpu_runtime_source, theorem, omitted_terms);
