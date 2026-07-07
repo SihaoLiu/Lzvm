@@ -98,4 +98,59 @@ theorem runtime_opening_segment_binding_checked_acceptance_concrete_core_sound_c
         requiresExternalSource
         accepted)
 
+theorem runtime_opening_segment_binding_checked_acceptance_concrete_audited_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeOpeningSegmentBindingValidation system)
+    (binding :
+      let transcriptValidation :=
+        validation.openingValidation.runtimeSoundnessValidation.transcriptValidation
+      RuntimeProofArtifactConcreteSegmentIdBinding
+        transcriptValidation.artifactBindingValidation) :
+    forall artifact publicInput proof requiresExternalSource,
+      RuntimeOpeningSegmentBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RequiredCryptographicAssumptionStatements assumptions.crypto
+          /\ RequiredSemanticAssumptionStatements assumptions.semantic
+          /\ RuntimeOpeningSegmentBindingEvidence
+            system
+            validation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeOpeningEvidence
+            system
+            validation.openingValidation
+            artifact
+            publicInput
+            proof
+            requiresExternalSource
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof
+          /\ RuntimeProofArtifactConcreteSegmentIdsAllowed proof := by
+  intro artifact publicInput proof requiresExternalSource accepted
+  have auditedAssumptions :=
+    assumption_bundle_carries_required_evidence assumptions
+  have concrete :=
+    runtime_opening_segment_binding_checked_acceptance_concrete_core_sound_contract
+      assumptions
+      validation
+      binding
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      accepted
+  exact
+    And.intro auditedAssumptions.left
+      (And.intro auditedAssumptions.right
+        (And.intro concrete.left.left
+          (And.intro concrete.left.right.left
+            (And.intro concrete.left.right.right.left
+              (And.intro concrete.left.right.right.right concrete.right)))))
+
 end Lzvm

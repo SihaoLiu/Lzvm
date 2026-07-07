@@ -212,6 +212,7 @@ fn lean_opening_segment_binding_exports_core_contract_projection() {
             "runtime_opening_segment_binding_checked_acceptance_evidence_core_and_sound",
             "runtime_opening_segment_binding_checked_acceptance_concrete_segment_ids_allowed",
             "runtime_opening_segment_binding_checked_acceptance_concrete_core_sound_contract",
+            "runtime_opening_segment_binding_checked_acceptance_concrete_audited_core_contract",
             "runtime_opening_segment_binding_checked_acceptance_opening_and_core_contract",
             "runtime_opening_segment_binding_checked_acceptance_full_soundness_contract",
             "runtime_opening_segment_binding_audited_core_sound_witness_contract",
@@ -748,6 +749,27 @@ fn lean_opening_segment_binding_exports_core_contract_projection() {
         &[
             "runtime_opening_segment_binding_checked_acceptance_evidence_core_and_sound",
             "runtime_opening_segment_binding_checked_acceptance_concrete_segment_ids_allowed",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_opening_segment_binding_checked_acceptance_concrete_audited_core_contract",
+        &[
+            "RequiredCryptographicAssumptionStatements assumptions.crypto",
+            "RequiredSemanticAssumptionStatements assumptions.semantic",
+            "RuntimeOpeningSegmentBindingEvidence",
+            "RuntimeOpeningEvidence",
+            "RuntimeVerifierCoreContract system publicInput proof",
+            "SoundWitness system publicInput proof",
+            "RuntimeProofArtifactConcreteSegmentIdsAllowed proof",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_opening_segment_binding_checked_acceptance_concrete_audited_core_contract",
+        &[
+            "assumption_bundle_carries_required_evidence",
+            "runtime_opening_segment_binding_checked_acceptance_concrete_core_sound_contract",
         ],
     );
     for identifier in [
