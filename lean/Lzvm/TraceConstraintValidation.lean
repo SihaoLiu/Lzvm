@@ -1102,10 +1102,17 @@ theorem runtime_trace_constraint_checked_acceptance_audited_core_contract
           /\ RuntimeVerifierCoreContract system publicInput proof
           /\ SoundWitness system publicInput proof := by
   intro artifact publicInput proof requiresExternalSource accepted
-  have auditedAssumptions :=
-    assumption_bundle_carries_required_evidence assumptions
-  have contracts :=
-    runtime_trace_constraint_checked_acceptance_evidence_core_and_sound
+  have sound :=
+    runtime_trace_constraint_checked_acceptance_sound
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      accepted
+  have core :=
+    runtime_trace_constraint_checked_acceptance_verifier_core_contract
       assumptions
       validation
       artifact
@@ -1114,8 +1121,11 @@ theorem runtime_trace_constraint_checked_acceptance_audited_core_contract
       requiresExternalSource
       accepted
   exact
-    And.intro auditedAssumptions.left
-      (And.intro auditedAssumptions.right contracts)
+    And.intro
+      (assumption_bundle_carries_required_crypto_evidence assumptions)
+      (And.intro
+        (assumption_bundle_carries_required_semantic_evidence assumptions)
+        (And.intro sound.left (And.intro core sound.right)))
 
 theorem runtime_trace_constraint_required_external_source_sound
     {system : VerifierModel}
