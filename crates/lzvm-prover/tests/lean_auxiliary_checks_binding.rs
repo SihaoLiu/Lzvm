@@ -3211,6 +3211,38 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
                 "guestTraceStoreConditionalReportLowerMilliseconds := storeConditionalMilliseconds",
             ][..],
         ),
+        (
+            "guest_pc_trace_source_retention_byte_counts_acceptance_audited_core_contract",
+            &[
+                "guestStageSourceRetentionRetainedByteCount := retainedBytes",
+                "guestStageSourceRetentionRejectedByteCount := rejectedBytes",
+                "guestStageSourceRetentionLimitByteCount := limitBytes",
+            ][..],
+        ),
+        (
+            "guest_pc_trace_source_retention_counts_acceptance_audited_core_contract",
+            &[
+                "guestStageSourceRetentionAttemptCount := attemptCount",
+                "guestStageSourceRetentionRetainedCount := retainedCount",
+                "guestStageSourceRetentionRejectedCount := rejectedCount",
+            ][..],
+        ),
+        (
+            "guest_pc_trace_descriptor_buffer_retention_byte_counts_acceptance_audited_core_contract",
+            &[
+                "guestDescriptorBufferRetentionRetainedByteCount := retainedBytes",
+                "guestDescriptorBufferRetentionRejectedByteCount := rejectedBytes",
+                "guestDescriptorBufferRetentionLimitByteCount := limitBytes",
+            ][..],
+        ),
+        (
+            "guest_pc_trace_descriptor_buffer_retention_counts_acceptance_audited_core_contract",
+            &[
+                "guestDescriptorBufferRetentionAttemptCount := attemptCount",
+                "guestDescriptorBufferRetentionRetainedCount := retainedCount",
+                "guestDescriptorBufferRetentionRejectedCount := rejectedCount",
+            ][..],
+        ),
     ] {
         assert_updated_summary_audited_wrapper(
             &timing_source,
@@ -6246,15 +6278,19 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "guest_pc_trace_source_retention_byte_counts_acceptance_sound",
             "guest_pc_trace_source_retention_byte_counts_acceptance_verifier_core_contract",
             "guest_pc_trace_source_retention_byte_counts_acceptance_core_and_sound",
+            "guest_pc_trace_source_retention_byte_counts_acceptance_audited_core_contract",
             "guest_pc_trace_source_retention_counts_acceptance_sound",
             "guest_pc_trace_source_retention_counts_acceptance_verifier_core_contract",
             "guest_pc_trace_source_retention_counts_acceptance_core_and_sound",
+            "guest_pc_trace_source_retention_counts_acceptance_audited_core_contract",
             "guest_pc_trace_descriptor_buffer_retention_byte_counts_acceptance_sound",
             "guest_pc_trace_descriptor_buffer_retention_byte_counts_acceptance_verifier_core_contract",
             "guest_pc_trace_descriptor_buffer_retention_byte_counts_acceptance_core_and_sound",
+            "guest_pc_trace_descriptor_buffer_retention_byte_counts_acceptance_audited_core_contract",
             "guest_pc_trace_descriptor_buffer_retention_counts_acceptance_sound",
             "guest_pc_trace_descriptor_buffer_retention_counts_acceptance_verifier_core_contract",
             "guest_pc_trace_descriptor_buffer_retention_counts_acceptance_core_and_sound",
+            "guest_pc_trace_descriptor_buffer_retention_counts_acceptance_audited_core_contract",
             "guest_pc_trace_leaf_output_cache_counts_acceptance_sound",
             "guest_pc_trace_leaf_output_cache_counts_acceptance_verifier_core_contract",
             "guest_pc_trace_leaf_output_cache_counts_acceptance_core_and_sound",

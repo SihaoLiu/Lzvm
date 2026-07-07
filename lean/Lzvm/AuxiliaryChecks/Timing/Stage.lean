@@ -99,6 +99,37 @@ theorem guest_pc_trace_source_retention_byte_counts_acceptance_core_and_sound
       proof
       observed
 
+theorem guest_pc_trace_source_retention_byte_counts_acceptance_audited_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : GuestPcTraceTimingSummary)
+    (retainedBytes rejectedBytes limitBytes : Nat) :
+    forall publicInput proof,
+      GuestPcTraceTimingObservedAcceptance
+        system
+        (some
+          { summary with
+            guestStageSourceRetentionRetainedByteCount := retainedBytes
+            guestStageSourceRetentionRejectedByteCount := rejectedBytes
+            guestStageSourceRetentionLimitByteCount := limitBytes })
+        publicInput
+        proof ->
+        RequiredCryptographicAssumptionStatements assumptions.crypto
+          /\ RequiredSemanticAssumptionStatements assumptions.semantic
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof observed
+  exact
+    guest_pc_trace_timing_some_summary_acceptance_audited_core_contract
+      assumptions
+      { summary with
+            guestStageSourceRetentionRetainedByteCount := retainedBytes
+            guestStageSourceRetentionRejectedByteCount := rejectedBytes
+            guestStageSourceRetentionLimitByteCount := limitBytes }
+      publicInput
+      proof
+      observed
+
 theorem guest_pc_trace_source_retention_counts_acceptance_sound
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
@@ -182,6 +213,37 @@ theorem guest_pc_trace_source_retention_counts_acceptance_core_and_sound
           guestStageSourceRetentionAttemptCount := attemptCount
           guestStageSourceRetentionRetainedCount := retainedCount
           guestStageSourceRetentionRejectedCount := rejectedCount })
+      publicInput
+      proof
+      observed
+
+theorem guest_pc_trace_source_retention_counts_acceptance_audited_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : GuestPcTraceTimingSummary)
+    (attemptCount retainedCount rejectedCount : Nat) :
+    forall publicInput proof,
+      GuestPcTraceTimingObservedAcceptance
+        system
+        (some
+          { summary with
+            guestStageSourceRetentionAttemptCount := attemptCount
+            guestStageSourceRetentionRetainedCount := retainedCount
+            guestStageSourceRetentionRejectedCount := rejectedCount })
+        publicInput
+        proof ->
+        RequiredCryptographicAssumptionStatements assumptions.crypto
+          /\ RequiredSemanticAssumptionStatements assumptions.semantic
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof observed
+  exact
+    guest_pc_trace_timing_some_summary_acceptance_audited_core_contract
+      assumptions
+      { summary with
+            guestStageSourceRetentionAttemptCount := attemptCount
+            guestStageSourceRetentionRetainedCount := retainedCount
+            guestStageSourceRetentionRejectedCount := rejectedCount }
       publicInput
       proof
       observed
@@ -273,6 +335,38 @@ theorem guest_pc_trace_descriptor_buffer_retention_byte_counts_acceptance_core_a
       proof
       observed
 
+theorem
+  guest_pc_trace_descriptor_buffer_retention_byte_counts_acceptance_audited_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : GuestPcTraceTimingSummary)
+    (retainedBytes rejectedBytes limitBytes : Nat) :
+    forall publicInput proof,
+      GuestPcTraceTimingObservedAcceptance
+        system
+        (some
+          { summary with
+            guestDescriptorBufferRetentionRetainedByteCount := retainedBytes
+            guestDescriptorBufferRetentionRejectedByteCount := rejectedBytes
+            guestDescriptorBufferRetentionLimitByteCount := limitBytes })
+        publicInput
+        proof ->
+        RequiredCryptographicAssumptionStatements assumptions.crypto
+          /\ RequiredSemanticAssumptionStatements assumptions.semantic
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof observed
+  exact
+    guest_pc_trace_timing_some_summary_acceptance_audited_core_contract
+      assumptions
+      { summary with
+            guestDescriptorBufferRetentionRetainedByteCount := retainedBytes
+            guestDescriptorBufferRetentionRejectedByteCount := rejectedBytes
+            guestDescriptorBufferRetentionLimitByteCount := limitBytes }
+      publicInput
+      proof
+      observed
+
 theorem guest_pc_trace_descriptor_buffer_retention_counts_acceptance_sound
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
@@ -356,6 +450,37 @@ theorem guest_pc_trace_descriptor_buffer_retention_counts_acceptance_core_and_so
           guestDescriptorBufferRetentionAttemptCount := attemptCount
           guestDescriptorBufferRetentionRetainedCount := retainedCount
           guestDescriptorBufferRetentionRejectedCount := rejectedCount })
+      publicInput
+      proof
+      observed
+
+theorem guest_pc_trace_descriptor_buffer_retention_counts_acceptance_audited_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : GuestPcTraceTimingSummary)
+    (attemptCount retainedCount rejectedCount : Nat) :
+    forall publicInput proof,
+      GuestPcTraceTimingObservedAcceptance
+        system
+        (some
+          { summary with
+            guestDescriptorBufferRetentionAttemptCount := attemptCount
+            guestDescriptorBufferRetentionRetainedCount := retainedCount
+            guestDescriptorBufferRetentionRejectedCount := rejectedCount })
+        publicInput
+        proof ->
+        RequiredCryptographicAssumptionStatements assumptions.crypto
+          /\ RequiredSemanticAssumptionStatements assumptions.semantic
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof observed
+  exact
+    guest_pc_trace_timing_some_summary_acceptance_audited_core_contract
+      assumptions
+      { summary with
+            guestDescriptorBufferRetentionAttemptCount := attemptCount
+            guestDescriptorBufferRetentionRetainedCount := retainedCount
+            guestDescriptorBufferRetentionRejectedCount := rejectedCount }
       publicInput
       proof
       observed
