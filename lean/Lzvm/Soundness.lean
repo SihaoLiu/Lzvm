@@ -478,8 +478,8 @@ theorem accepted_proof_audited_proof_system_core_and_execution_obligations
               /\ system.constraintsSatisfied constraints trace
               /\ system.witnessMatchesTrace witness trace := by
   intro publicInput proof accepted
-  have semanticSound :=
-    abstract_verifier_sound_with_semantic_evidence assumptions
+  have proofSystemSound :=
+    (abstract_verifier_sound_with_semantic_evidence assumptions).2
   have cryptoCore :=
     accepted_proof_crypto_core_contract
       assumptions
@@ -492,18 +492,12 @@ theorem accepted_proof_audited_proof_system_core_and_execution_obligations
       publicInput
       proof
       accepted
-  rcases cryptoCore with
-    ⟨cryptoEvidence, coreContract⟩
-  rcases semanticExecution with
-    ⟨semanticEvidence, executionObligations⟩
-  rcases semanticSound with
-    ⟨_semanticEvidenceForSound, proofSystemSound⟩
   exact
-    ⟨cryptoEvidence,
-      semanticEvidence,
+    ⟨cryptoCore.1,
+      semanticExecution.1,
       proofSystemSound,
-      coreContract,
-      executionObligations⟩
+      cryptoCore.2,
+      semanticExecution.2⟩
 
 theorem accepted_proof_audited_proof_system_core_execution_and_sound_witness
     {system : VerifierModel}
@@ -520,8 +514,8 @@ theorem accepted_proof_audited_proof_system_core_execution_and_sound_witness
               /\ system.witnessMatchesTrace witness trace)
           /\ SoundWitness system publicInput proof := by
   intro publicInput proof accepted
-  have semanticSound :=
-    abstract_verifier_sound_with_semantic_evidence assumptions
+  have proofSystemSound :=
+    (abstract_verifier_sound_with_semantic_evidence assumptions).2
   have cryptoCore :=
     accepted_proof_crypto_core_contract
       assumptions
@@ -534,18 +528,12 @@ theorem accepted_proof_audited_proof_system_core_execution_and_sound_witness
       publicInput
       proof
       accepted
-  rcases semanticSound with
-    ⟨_semanticEvidenceForSound, proofSystemSound⟩
-  rcases cryptoCore with
-    ⟨cryptoEvidence, coreContract⟩
-  rcases semanticExecution with
-    ⟨semanticEvidence, executionObligations⟩
   exact
-    ⟨cryptoEvidence,
-      semanticEvidence,
+    ⟨cryptoCore.1,
+      semanticExecution.1,
       proofSystemSound,
-      coreContract,
-      executionObligations,
+      cryptoCore.2,
+      semanticExecution.2,
       proofSystemSound publicInput proof accepted⟩
 
 theorem accepted_proof_audited_flat_proof_system_components

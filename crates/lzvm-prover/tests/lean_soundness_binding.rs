@@ -594,8 +594,8 @@ fn lean_soundness_binding_exports_abstract_soundness_theorems() {
         "accepted_proof_semantic_execution_obligations",
         "abstract_verifier_sound_with_semantic_evidence",
         "proofSystemSound",
-        "coreContract",
-        "executionObligations",
+        "cryptoCore",
+        "semanticExecution",
     ] {
         lean_binding::assert_theorem_body_contains_identifier(
             &lean_source,
