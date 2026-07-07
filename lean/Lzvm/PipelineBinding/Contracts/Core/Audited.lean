@@ -80,8 +80,6 @@ theorem runtime_pipeline_binding_evidence_audited_soundness_core_contract
     runtime_pipeline_binding_evidence_audited_core_contract
       assumptions
       evidence
-  have auditedAssumptions :=
-    assumption_bundle_carries_required_evidence assumptions
   rcases auditedCore with
     ⟨_cryptoEvidence,
       transcriptBound,
@@ -90,8 +88,8 @@ theorem runtime_pipeline_binding_evidence_audited_soundness_core_contract
       friQueries,
       coreContract⟩
   exact
-    ⟨auditedAssumptions.left,
-      auditedAssumptions.right,
+    ⟨assumption_bundle_carries_required_crypto_evidence assumptions,
+      assumption_bundle_carries_required_semantic_evidence assumptions,
       transcriptBound,
       publicInputBound,
       pcsOpenings,
@@ -405,11 +403,12 @@ theorem runtime_pipeline_binding_checked_acceptance_audited_soundness_pcs_fri_co
       proof
       _requiresExternalSource
       accepted
-  have auditedAssumptions :=
-    assumption_bundle_carries_required_evidence assumptions
   exact
-    And.intro auditedAssumptions.left
-      (And.intro auditedAssumptions.right compactContract.right)
+    And.intro
+      (assumption_bundle_carries_required_crypto_evidence assumptions)
+      (And.intro
+        (assumption_bundle_carries_required_semantic_evidence assumptions)
+        compactContract.right)
 
 theorem runtime_pipeline_binding_checked_acceptance_audited_concrete_opening_contract
     {Digest : Type uDigest}
@@ -697,8 +696,6 @@ runtime_pipeline_checked_acceptance_concrete_opening_audited_soundness_core_cont
       proof
       requiresExternalSource
       accepted
-  have auditedAssumptions :=
-    assumption_bundle_carries_required_evidence assumptions
   rcases concreteContract with
     ⟨_auditedCrypto,
       proofSystemSound,
@@ -713,8 +710,8 @@ runtime_pipeline_checked_acceptance_concrete_opening_audited_soundness_core_cont
       executionObligations,
       soundWitness⟩
   exact
-    ⟨auditedAssumptions.left,
-      auditedAssumptions.right,
+    ⟨assumption_bundle_carries_required_crypto_evidence assumptions,
+      assumption_bundle_carries_required_semantic_evidence assumptions,
       proofSystemSound,
       verifierAccepts,
       transcriptBound,
@@ -935,8 +932,6 @@ theorem runtime_pipeline_binding_checked_acceptance_hash_concrete_opening_audite
       proof
       requiresExternalSource
       accepted
-  have auditedAssumptions :=
-    assumption_bundle_carries_required_evidence assumptions
   rcases concreteContract with
     ⟨_auditedCrypto,
       proofSystemSound,
@@ -951,8 +946,8 @@ theorem runtime_pipeline_binding_checked_acceptance_hash_concrete_opening_audite
       executionObligations,
       soundWitness⟩
   exact
-    ⟨auditedAssumptions.left,
-      auditedAssumptions.right,
+    ⟨assumption_bundle_carries_required_crypto_evidence assumptions,
+      assumption_bundle_carries_required_semantic_evidence assumptions,
       proofSystemSound,
       verifierAccepts,
       transcriptBound,
@@ -1122,8 +1117,6 @@ theorem runtime_pipeline_binding_checked_acceptance_contracts_audited_soundness_
       proof
       requiresExternalSource
       accepted
-  have auditedAssumptions :=
-    assumption_bundle_carries_required_evidence assumptions
   rcases compactContract with
     ⟨_auditedCrypto,
       proofSystemSound,
@@ -1138,8 +1131,8 @@ theorem runtime_pipeline_binding_checked_acceptance_contracts_audited_soundness_
       executionObligations,
       soundWitness⟩
   exact
-    ⟨auditedAssumptions.left,
-      auditedAssumptions.right,
+    ⟨assumption_bundle_carries_required_crypto_evidence assumptions,
+      assumption_bundle_carries_required_semantic_evidence assumptions,
       proofSystemSound,
       verifierAccepts,
       transcriptBound,
