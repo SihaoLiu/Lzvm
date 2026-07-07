@@ -617,3 +617,32 @@ fn lean_soundness_binding_exports_abstract_soundness_theorems() {
         );
     }
 }
+
+#[test]
+fn lean_soundness_root_calls_stay_in_wrapper_theorems() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let lean_path = crate_root.join("../../lean/Lzvm/Soundness.lean");
+    let lean_source =
+        std::fs::read_to_string(&lean_path).expect("Lean soundness source should read");
+
+    let mut root_callers = lean_binding::theorem_names(&lean_source)
+        .into_iter()
+        .filter(|theorem| {
+            lean_binding::visible_identifier_occurrence_count(
+                &lean_binding::theorem_body(&lean_source, theorem),
+                "abstract_verifier_sound",
+            ) > 0
+        })
+        .collect::<Vec<_>>();
+    root_callers.sort();
+
+    assert_eq!(
+        root_callers,
+        vec![
+            "abstract_verifier_sound_with_audited_assumptions",
+            "abstract_verifier_sound_with_audited_soundness_obligations",
+            "abstract_verifier_sound_with_semantic_evidence",
+        ],
+        "direct root theorem calls should stay isolated in wrapper theorems"
+    );
+}
