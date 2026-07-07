@@ -1645,63 +1645,6 @@ theorem runtime_soundness_checked_acceptance_audited_soundness_finalized_proof_s
       (And.intro auditedContract.right.left
         (And.intro finalizedContract.left auditedContract.right.right))
 
-theorem runtime_soundness_checked_acceptance_audited_finalized_core_sound_witness_contract
-    {system : VerifierModel}
-    (assumptions : AssumptionBundle system)
-    (validation : RuntimeSoundnessValidation system) :
-    forall artifact publicInput proof requiresExternalSource,
-      RuntimeSoundnessCheckedAcceptance
-          system
-          validation
-          artifact
-          publicInput
-          proof
-          requiresExternalSource ->
-        RequiredCryptographicAssumptionStatements assumptions.crypto
-          /\ RequiredSemanticAssumptionStatements assumptions.semantic
-          /\ RuntimeProofArtifactFinalized
-            system
-            validation.transcriptValidation.artifactBindingValidation
-            artifact
-            publicInput
-            proof
-          /\ RuntimeVerifierCoreContract system publicInput proof
-          /\ (exists witness trace constraints,
-            system.traceConsistent publicInput proof trace
-              /\ system.constraintsSatisfied constraints trace
-              /\ system.witnessMatchesTrace witness trace)
-          /\ SoundWitness system publicInput proof := by
-  intro artifact publicInput proof requiresExternalSource checked
-  have artifactFinalized :=
-    runtime_transcript_binding_checked_acceptance_artifact_finalized
-      validation.transcriptValidation
-      artifact
-      publicInput
-      proof
-      checked.left
-  have verifierAccepts :=
-    runtime_soundness_checked_acceptance_verifier_accepts
-      validation
-      artifact
-      publicInput
-      proof
-      requiresExternalSource
-      checked
-  have auditedCoreExecutionSound :=
-    accepted_proof_audited_core_execution_and_sound_witness
-      assumptions
-      publicInput
-      proof
-      verifierAccepts
-  rcases auditedCoreExecutionSound with
-    ⟨cryptoEvidence, semanticEvidence, coreContract, executionObligations, soundWitness⟩
-  exact
-    And.intro cryptoEvidence
-      (And.intro semanticEvidence
-        (And.intro artifactFinalized
-          (And.intro coreContract
-            (And.intro executionObligations soundWitness))))
-
 theorem runtime_soundness_checked_acceptance_direct_finalized_core_sound_witness_contract
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
@@ -1772,6 +1715,43 @@ theorem runtime_soundness_checked_acceptance_direct_finalized_core_sound_witness
         (And.intro artifactFinalized
           (And.intro coreContract
             (And.intro executionObligations soundWitness))))
+
+theorem runtime_soundness_checked_acceptance_audited_finalized_core_sound_witness_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeSoundnessValidation system) :
+    forall artifact publicInput proof requiresExternalSource,
+      RuntimeSoundnessCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof
+          requiresExternalSource ->
+        RequiredCryptographicAssumptionStatements assumptions.crypto
+          /\ RequiredSemanticAssumptionStatements assumptions.semantic
+          /\ RuntimeProofArtifactFinalized
+            system
+            validation.transcriptValidation.artifactBindingValidation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ (exists witness trace constraints,
+            system.traceConsistent publicInput proof trace
+              /\ system.constraintsSatisfied constraints trace
+              /\ system.witnessMatchesTrace witness trace)
+          /\ SoundWitness system publicInput proof := by
+  intro artifact publicInput proof requiresExternalSource checked
+  exact
+    runtime_soundness_checked_acceptance_direct_finalized_core_sound_witness_contract
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      checked
 
 theorem
   runtime_soundness_checked_acceptance_audited_core_sound_witness_contract
