@@ -497,36 +497,47 @@ theorem assumption_bundle_witness_extraction
     required_semantic_assumptions_witness_extraction
       (assumption_bundle_carries_required_semantic_evidence assumptions)
 
+theorem required_assumption_statements_verifier_core_contract
+    {system : VerifierModel}
+    {crypto : CryptographicAssumptions system}
+    {semantic : SemanticAssumptions system}
+    (cryptoRequired : RequiredCryptographicAssumptionStatements crypto)
+    (semanticRequired : RequiredSemanticAssumptionStatements semantic) :
+    forall publicInput proof,
+      system.accepts publicInput proof ->
+        RuntimeVerifierCoreContract system publicInput proof := by
+  intro publicInput proof accepted
+  exact
+    ⟨required_crypto_assumptions_fiat_shamir_transcript_binding
+        cryptoRequired
+        publicInput
+        proof
+        accepted,
+      required_semantic_assumptions_public_input_binding
+        semanticRequired
+        publicInput
+        proof
+        accepted,
+      required_crypto_assumptions_pcs_opening_soundness
+        cryptoRequired
+        publicInput
+        proof
+        accepted,
+      required_crypto_assumptions_fri_query_soundness
+        cryptoRequired
+        publicInput
+        proof
+        accepted⟩
+
 theorem assumption_bundle_verifier_core_contract
     {system : VerifierModel}
     (assumptions : AssumptionBundle system) :
     forall publicInput proof,
       system.accepts publicInput proof ->
         RuntimeVerifierCoreContract system publicInput proof := by
-  intro publicInput proof accepted
   exact
-    And.intro
-      (assumption_bundle_fiat_shamir_transcript_binding
-        assumptions
-        publicInput
-        proof
-        accepted)
-      (And.intro
-        (assumption_bundle_public_input_binding
-          assumptions
-          publicInput
-          proof
-          accepted)
-        (And.intro
-          (assumption_bundle_pcs_opening_soundness
-            assumptions
-            publicInput
-            proof
-            accepted)
-          (assumption_bundle_fri_query_soundness
-            assumptions
-            publicInput
-            proof
-            accepted)))
+    required_assumption_statements_verifier_core_contract
+      (assumption_bundle_carries_required_crypto_evidence assumptions)
+      (assumption_bundle_carries_required_semantic_evidence assumptions)
 
 end Lzvm

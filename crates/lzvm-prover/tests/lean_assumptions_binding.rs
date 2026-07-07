@@ -174,4 +174,47 @@ fn lean_assumptions_exports_centralized_soundness_obligations() {
             && audit_source.contains("assumptions.witness_extraction"),
         "Lean assumption audit should expose semantic obligations as explicit public input, trace, constraint, and witness statements"
     );
+    lean_binding::assert_theorem_declarations(
+        &audit_source,
+        &["required_assumption_statements_verifier_core_contract"],
+    );
+    lean_binding::assert_theorem_body_contains_identifier(
+        &audit_source,
+        "required_assumption_statements_verifier_core_contract",
+        "cryptoRequired",
+    );
+    lean_binding::assert_theorem_body_contains_identifier(
+        &audit_source,
+        "required_assumption_statements_verifier_core_contract",
+        "semanticRequired",
+    );
+    for identifier in [
+        "required_crypto_assumptions_fiat_shamir_transcript_binding",
+        "required_semantic_assumptions_public_input_binding",
+        "required_crypto_assumptions_pcs_opening_soundness",
+        "required_crypto_assumptions_fri_query_soundness",
+    ] {
+        lean_binding::assert_theorem_body_contains_identifier(
+            &audit_source,
+            "required_assumption_statements_verifier_core_contract",
+            identifier,
+        );
+    }
+    lean_binding::assert_theorem_body_contains_identifier(
+        &audit_source,
+        "assumption_bundle_verifier_core_contract",
+        "required_assumption_statements_verifier_core_contract",
+    );
+    for identifier in [
+        "assumption_bundle_fiat_shamir_transcript_binding",
+        "assumption_bundle_public_input_binding",
+        "assumption_bundle_pcs_opening_soundness",
+        "assumption_bundle_fri_query_soundness",
+    ] {
+        lean_binding::assert_theorem_body_omits_identifier(
+            &audit_source,
+            "assumption_bundle_verifier_core_contract",
+            identifier,
+        );
+    }
 }
