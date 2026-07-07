@@ -1674,6 +1674,107 @@ theorem runtime_opening_segment_binding_audited_core_sound_witness_contract
             (And.intro coreContract
               (And.intro executionObligations soundWitness)))))
 
+theorem runtime_opening_segment_binding_direct_core_sound_witness_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeOpeningSegmentBindingValidation system) :
+    forall artifact publicInput proof requiresExternalSource,
+      RuntimeOpeningSegmentBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RequiredCryptographicAssumptionStatements assumptions.crypto
+          /\ RequiredSemanticAssumptionStatements assumptions.semantic
+          /\ RuntimeOpeningSegmentBindingEvidence
+            system
+            validation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeOpeningEvidence
+            system
+            validation.openingValidation
+            artifact
+            publicInput
+            proof
+            requiresExternalSource
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ (exists witness trace constraints,
+            system.traceConsistent publicInput proof trace
+              /\ system.constraintsSatisfied constraints trace
+              /\ system.witnessMatchesTrace witness trace)
+          /\ SoundWitness system publicInput proof := by
+  intro artifact publicInput proof requiresExternalSource accepted
+  have segmentEvidence :=
+    runtime_opening_segment_binding_checked_acceptance_evidence
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have openingAccepted :=
+    runtime_opening_segment_binding_checked_acceptance_opening
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have openingEvidence :=
+    runtime_opening_checked_acceptance_evidence
+      assumptions
+      validation.openingValidation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      openingAccepted
+  have runtimeChecked :=
+    validation.openingValidation.openingAcceptedImpliesRuntimeSoundnessAccepted
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      openingAccepted
+  have verifierAccepts :=
+    runtime_soundness_checked_acceptance_verifier_accepts
+      validation.openingValidation.runtimeSoundnessValidation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      runtimeChecked
+  have cryptoCore :=
+    accepted_proof_crypto_core_contract
+      assumptions
+      publicInput
+      proof
+      verifierAccepts
+  have semanticExecution :=
+    accepted_proof_semantic_execution_obligations
+      assumptions
+      publicInput
+      proof
+      verifierAccepts
+  have soundWitness :=
+    abstract_verifier_sound
+      assumptions
+      publicInput
+      proof
+      verifierAccepts
+  rcases cryptoCore with
+    ⟨cryptoEvidence, coreContract⟩
+  rcases semanticExecution with
+    ⟨semanticEvidence, executionObligations⟩
+  exact
+    And.intro cryptoEvidence
+      (And.intro semanticEvidence
+        (And.intro segmentEvidence
+          (And.intro openingEvidence
+            (And.intro coreContract
+              (And.intro executionObligations soundWitness)))))
+
 set_option linter.style.longLine false in
 theorem runtime_opening_segment_binding_checked_acceptance_full_soundness_with_fri_parser_contract
     {system : VerifierModel}
