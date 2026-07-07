@@ -133,11 +133,26 @@ theorem runtime_opening_segment_binding_checked_acceptance_concrete_audited_core
           /\ SoundWitness system publicInput proof
           /\ RuntimeProofArtifactConcreteSegmentIdsAllowed proof := by
   intro artifact publicInput proof requiresExternalSource accepted
-  have auditedAssumptions :=
-    assumption_bundle_carries_required_evidence assumptions
-  have concrete :=
-    runtime_opening_segment_binding_checked_acceptance_concrete_core_sound_contract
+  have sound :=
+    runtime_opening_segment_binding_checked_acceptance_sound
       assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      accepted
+  have core :=
+    runtime_opening_segment_binding_checked_acceptance_verifier_core_contract
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      accepted
+  have concreteSegmentIds :=
+    runtime_opening_segment_binding_checked_acceptance_concrete_segment_ids_allowed
       validation
       binding
       artifact
@@ -146,11 +161,13 @@ theorem runtime_opening_segment_binding_checked_acceptance_concrete_audited_core
       requiresExternalSource
       accepted
   exact
-    And.intro auditedAssumptions.left
-      (And.intro auditedAssumptions.right
-        (And.intro concrete.left.left
-          (And.intro concrete.left.right.left
-            (And.intro concrete.left.right.right.left
-              (And.intro concrete.left.right.right.right concrete.right)))))
+    And.intro
+      (assumption_bundle_carries_required_crypto_evidence assumptions)
+      (And.intro
+        (assumption_bundle_carries_required_semantic_evidence assumptions)
+        (And.intro sound.left
+          (And.intro sound.right.left
+            (And.intro core
+              (And.intro sound.right.right concreteSegmentIds)))))
 
 end Lzvm
