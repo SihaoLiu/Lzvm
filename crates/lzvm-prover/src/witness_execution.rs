@@ -5496,6 +5496,12 @@ fn default_guest_pc_trace_segment_commit_worker_count_for_input_and_limit(
     if guest_pc_trace_auto_parallel_lower_selected(instruction_limit) {
         return 1;
     }
+    #[cfg(feature = "cuda")]
+    if guest_pc_parallel_lower_enabled_for_descriptor_retention()
+        && guest_pc_descriptor_buffer_retention_enabled(input_byte_count)
+    {
+        return 1;
+    }
     if guest_pc_trace_segment_commit_pipeline_selected(input_byte_count) {
         DEFAULT_GUEST_PC_TRACE_COMMIT_PIPELINE_WORKERS
     } else {
@@ -9020,6 +9026,52 @@ mod tests {
                 600_000_000
             ),
             3
+        );
+    }
+
+    #[cfg(feature = "cuda")]
+    #[test]
+    fn guest_pc_segment_commit_parallel_lower_descriptor_retention_uses_single_worker() {
+        let commit_workers_env = TestEnvVarGuard::new("LZVM_GUEST_PC_TRACE_SEGMENT_COMMIT_WORKERS");
+        let descriptor_env = TestEnvVarUnlockedGuard::new("LZVM_CUDA_RETAINED_DESCRIPTOR_BYTES");
+        let parallel_env = TestEnvVarUnlockedGuard::new("LZVM_GUEST_PC_TRACE_PARALLEL_LOWER");
+        let work_units_env =
+            TestEnvVarUnlockedGuard::new("LZVM_GUEST_PC_TRACE_PARALLEL_LOWER_WORK_UNITS");
+        let auto_env = TestEnvVarUnlockedGuard::new("LZVM_GUEST_PC_TRACE_AUTO_PARALLEL_LOWER");
+        let commit_pipeline_env =
+            TestEnvVarUnlockedGuard::new("LZVM_GUEST_PC_TRACE_COMMIT_PIPELINE");
+        commit_workers_env.unset();
+        descriptor_env.set("1048576");
+        parallel_env.set("1");
+        work_units_env.unset();
+        auto_env.set("0");
+        commit_pipeline_env.unset();
+
+        assert_eq!(
+            guest_pc_trace_segment_commit_worker_count_for_input_and_limit(
+                8 * 1024 * 1024,
+                600_000_000
+            ),
+            1
+        );
+
+        parallel_env.unset();
+        work_units_env.set("1");
+        assert_eq!(
+            guest_pc_trace_segment_commit_worker_count_for_input_and_limit(
+                8 * 1024 * 1024,
+                600_000_000
+            ),
+            1
+        );
+
+        commit_workers_env.set("2");
+        assert_eq!(
+            guest_pc_trace_segment_commit_worker_count_for_input_and_limit(
+                8 * 1024 * 1024,
+                600_000_000
+            ),
+            2
         );
     }
 
