@@ -1825,7 +1825,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "Lean theorem {theorem} body should pass the observed acceptance to the combined helper"
         );
     }
-    for (theorem, audited_helper, field_terms) in [
+    for (theorem, audited_helper, field_terms, wraps_some) in [
         (
             "witness_opening_row_value_aggregate_timing_acceptance_audited_core_contract",
             "witness_opening_row_value_timing_acceptance_audited_core_contract",
@@ -1842,11 +1842,13 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
                 "wordCount := words",
                 "byteCount := bytes",
             ][..],
+            true,
         ),
         (
             "witness_opening_row_value_stage_timings_acceptance_audited_core_contract",
             "witness_opening_row_value_timing_acceptance_audited_core_contract",
             &["stages := stages"][..],
+            true,
         ),
         (
             "constant_material_validation_aggregate_timing_acceptance_audited_core_contract",
@@ -1857,13 +1859,55 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
                 "constantMaterialValidationUnitCount := unitCount",
                 "constantMaterialValidationByteCount := byteCount",
             ][..],
+            true,
+        ),
+        (
+            "cuda_allocator_host_registration_timing_acceptance_audited_core_contract",
+            "cuda_allocator_timing_acceptance_audited_core_contract",
+            &[
+                "cudaAllocatorHostRegisterCallCount := hostRegisterCalls",
+                "cudaAllocatorHostRegisterByteCount := hostRegisterBytes",
+                "cudaAllocatorHostRegisterWaitNanoseconds := hostRegisterWaitNanoseconds",
+                "cudaAllocatorHostRegisterMaxWaitNanoseconds := hostRegisterMaxWaitNanoseconds",
+                "cudaAllocatorHostUnregisterCallCount := hostUnregisterCalls",
+                "cudaAllocatorHostUnregisterWaitNanoseconds := hostUnregisterWaitNanoseconds",
+                "cudaAllocatorHostUnregisterMaxWaitNanoseconds := hostUnregisterMaxWaitNanoseconds",
+            ][..],
+            true,
+        ),
+        (
+            "proof_artifact_finish_top_level_timing_acceptance_audited_core_contract",
+            "proof_artifact_finish_timing_some_summary_acceptance_audited_core_contract",
+            &[
+                "finishQueryPlanMilliseconds := queryPlanMilliseconds",
+                "finishConstantOpeningMilliseconds := constantOpeningMilliseconds",
+                "finishWitnessOpeningMilliseconds := witnessOpeningMilliseconds",
+                "finishFriOpeningMilliseconds := friOpeningMilliseconds",
+                "finishFriOpeningUnitBuildMilliseconds := friOpeningUnitBuildMilliseconds",
+                "finishFriOpeningLayerTreeMilliseconds := friOpeningLayerTreeMilliseconds",
+                "finishFriOpeningQueryMilliseconds := friOpeningQueryMilliseconds",
+                "finishFriOpeningFoldMilliseconds := friOpeningFoldMilliseconds",
+                "finishFriOpeningUnitCount := friOpeningUnitCount",
+                "finishFriOpeningLayerCount := friOpeningLayerCount",
+                "finishFriOpeningQueryCount := friOpeningQueryCount",
+                "finishFriTranscriptUnitBuildMilliseconds := friTranscriptUnitBuildMilliseconds",
+                "finishFriTranscriptLayerTreeMilliseconds := friTranscriptLayerTreeMilliseconds",
+                "finishFriTranscriptFoldMilliseconds := friTranscriptFoldMilliseconds",
+                "finishFriTranscriptUnitCount := friTranscriptUnitCount",
+                "finishFriTranscriptLayerCount := friTranscriptLayerCount",
+                "finishProofEncodeMilliseconds := proofEncodeMilliseconds",
+                "finishContributionSegmentMilliseconds := contributionSegmentMilliseconds",
+                "finishContributionVerifyMilliseconds := contributionVerifyMilliseconds",
+                "finishContributionChallengeMilliseconds := contributionChallengeMilliseconds",
+            ][..],
+            false,
         ),
     ] {
         assert_updated_summary_audited_wrapper_with_shape(
             &lean_proof_timing_source,
             theorem,
             audited_helper,
-            true,
+            wraps_some,
             field_terms,
         );
     }
@@ -5583,8 +5627,10 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "gpu_run_options_acceptance_audited_core_contract",
             "cuda_backend_acceptance_audited_core_contract",
             "cuda_allocator_timing_acceptance_audited_core_contract",
+            "cuda_allocator_host_registration_timing_acceptance_audited_core_contract",
             "proof_artifact_finish_timing_acceptance_audited_core_contract",
             "proof_artifact_finish_timing_some_summary_acceptance_audited_core_contract",
+            "proof_artifact_finish_top_level_timing_acceptance_audited_core_contract",
         ],
     );
     for theorem in [

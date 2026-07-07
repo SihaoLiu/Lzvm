@@ -1564,6 +1564,50 @@ theorem cuda_allocator_host_registration_timing_acceptance_core_and_sound
       proof
       observed
 
+theorem cuda_allocator_host_registration_timing_acceptance_audited_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : CudaAllocatorTimingSummary)
+    (hostRegisterCalls hostRegisterBytes hostRegisterWaitNanoseconds
+      hostRegisterMaxWaitNanoseconds hostUnregisterCalls
+      hostUnregisterWaitNanoseconds hostUnregisterMaxWaitNanoseconds : Nat) :
+    forall publicInput proof,
+      CudaAllocatorTimingObservedAcceptance
+        system
+        (some
+          { summary with
+            cudaAllocatorHostRegisterCallCount := hostRegisterCalls
+            cudaAllocatorHostRegisterByteCount := hostRegisterBytes
+            cudaAllocatorHostRegisterWaitNanoseconds := hostRegisterWaitNanoseconds
+            cudaAllocatorHostRegisterMaxWaitNanoseconds := hostRegisterMaxWaitNanoseconds
+            cudaAllocatorHostUnregisterCallCount := hostUnregisterCalls
+            cudaAllocatorHostUnregisterWaitNanoseconds := hostUnregisterWaitNanoseconds
+            cudaAllocatorHostUnregisterMaxWaitNanoseconds :=
+              hostUnregisterMaxWaitNanoseconds })
+        publicInput
+        proof ->
+        RequiredCryptographicAssumptionStatements assumptions.crypto
+          /\ RequiredSemanticAssumptionStatements assumptions.semantic
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof observed
+  exact
+    cuda_allocator_timing_acceptance_audited_core_contract
+      assumptions
+      (some
+        { summary with
+          cudaAllocatorHostRegisterCallCount := hostRegisterCalls
+          cudaAllocatorHostRegisterByteCount := hostRegisterBytes
+          cudaAllocatorHostRegisterWaitNanoseconds := hostRegisterWaitNanoseconds
+          cudaAllocatorHostRegisterMaxWaitNanoseconds := hostRegisterMaxWaitNanoseconds
+          cudaAllocatorHostUnregisterCallCount := hostUnregisterCalls
+          cudaAllocatorHostUnregisterWaitNanoseconds := hostUnregisterWaitNanoseconds
+          cudaAllocatorHostUnregisterMaxWaitNanoseconds :=
+            hostUnregisterMaxWaitNanoseconds })
+      publicInput
+      proof
+      observed
+
 def ProofArtifactFinishTimingObservedAcceptance
     (system : VerifierModel)
     (summary : Option ProofArtifactFinishTimingSummary)
@@ -1894,6 +1938,79 @@ theorem proof_artifact_finish_top_level_timing_acceptance_core_and_sound
   intro publicInput proof observed
   exact
     proof_artifact_finish_timing_some_summary_acceptance_core_and_sound
+      assumptions
+      { summary with
+        finishQueryPlanMilliseconds := queryPlanMilliseconds
+        finishConstantOpeningMilliseconds := constantOpeningMilliseconds
+        finishWitnessOpeningMilliseconds := witnessOpeningMilliseconds
+        finishFriOpeningMilliseconds := friOpeningMilliseconds
+        finishFriOpeningUnitBuildMilliseconds := friOpeningUnitBuildMilliseconds
+        finishFriOpeningLayerTreeMilliseconds := friOpeningLayerTreeMilliseconds
+        finishFriOpeningQueryMilliseconds := friOpeningQueryMilliseconds
+        finishFriOpeningFoldMilliseconds := friOpeningFoldMilliseconds
+        finishFriOpeningUnitCount := friOpeningUnitCount
+        finishFriOpeningLayerCount := friOpeningLayerCount
+        finishFriOpeningQueryCount := friOpeningQueryCount
+        finishFriTranscriptUnitBuildMilliseconds := friTranscriptUnitBuildMilliseconds
+        finishFriTranscriptLayerTreeMilliseconds := friTranscriptLayerTreeMilliseconds
+        finishFriTranscriptFoldMilliseconds := friTranscriptFoldMilliseconds
+        finishFriTranscriptUnitCount := friTranscriptUnitCount
+        finishFriTranscriptLayerCount := friTranscriptLayerCount
+        finishProofEncodeMilliseconds := proofEncodeMilliseconds
+        finishContributionSegmentMilliseconds := contributionSegmentMilliseconds
+        finishContributionVerifyMilliseconds := contributionVerifyMilliseconds
+        finishContributionChallengeMilliseconds := contributionChallengeMilliseconds }
+      publicInput
+      proof
+      observed
+
+theorem proof_artifact_finish_top_level_timing_acceptance_audited_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : ProofArtifactFinishTimingSummary)
+    (queryPlanMilliseconds constantOpeningMilliseconds witnessOpeningMilliseconds
+      friOpeningMilliseconds friOpeningUnitBuildMilliseconds
+      friOpeningLayerTreeMilliseconds friOpeningQueryMilliseconds
+      friOpeningFoldMilliseconds friOpeningUnitCount friOpeningLayerCount
+      friOpeningQueryCount friTranscriptUnitBuildMilliseconds
+      friTranscriptLayerTreeMilliseconds friTranscriptFoldMilliseconds
+      friTranscriptUnitCount friTranscriptLayerCount proofEncodeMilliseconds
+      contributionSegmentMilliseconds contributionVerifyMilliseconds
+      contributionChallengeMilliseconds : Nat) :
+    forall publicInput proof,
+      ProofArtifactFinishTimingObservedAcceptance
+        system
+        (some
+          { summary with
+            finishQueryPlanMilliseconds := queryPlanMilliseconds
+            finishConstantOpeningMilliseconds := constantOpeningMilliseconds
+            finishWitnessOpeningMilliseconds := witnessOpeningMilliseconds
+            finishFriOpeningMilliseconds := friOpeningMilliseconds
+            finishFriOpeningUnitBuildMilliseconds := friOpeningUnitBuildMilliseconds
+            finishFriOpeningLayerTreeMilliseconds := friOpeningLayerTreeMilliseconds
+            finishFriOpeningQueryMilliseconds := friOpeningQueryMilliseconds
+            finishFriOpeningFoldMilliseconds := friOpeningFoldMilliseconds
+            finishFriOpeningUnitCount := friOpeningUnitCount
+            finishFriOpeningLayerCount := friOpeningLayerCount
+            finishFriOpeningQueryCount := friOpeningQueryCount
+            finishFriTranscriptUnitBuildMilliseconds := friTranscriptUnitBuildMilliseconds
+            finishFriTranscriptLayerTreeMilliseconds := friTranscriptLayerTreeMilliseconds
+            finishFriTranscriptFoldMilliseconds := friTranscriptFoldMilliseconds
+            finishFriTranscriptUnitCount := friTranscriptUnitCount
+            finishFriTranscriptLayerCount := friTranscriptLayerCount
+            finishProofEncodeMilliseconds := proofEncodeMilliseconds
+            finishContributionSegmentMilliseconds := contributionSegmentMilliseconds
+            finishContributionVerifyMilliseconds := contributionVerifyMilliseconds
+            finishContributionChallengeMilliseconds := contributionChallengeMilliseconds })
+        publicInput
+        proof ->
+        RequiredCryptographicAssumptionStatements assumptions.crypto
+          /\ RequiredSemanticAssumptionStatements assumptions.semantic
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof observed
+  exact
+    proof_artifact_finish_timing_some_summary_acceptance_audited_core_contract
       assumptions
       { summary with
         finishQueryPlanMilliseconds := queryPlanMilliseconds
