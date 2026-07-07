@@ -3900,6 +3900,7 @@ def final_proof_timing_hint(
 def opening_source_rebuild_hint(
     external_source_count: int,
     retained_source_count: int,
+    source_retention_metrics_present: bool,
     source_retention_attempts: int,
     source_retention_retained: int,
     source_retention_rejected: int,
@@ -3908,8 +3909,10 @@ def opening_source_rebuild_hint(
     if external_source_count <= 0:
         return "none"
     if (
-        source_retention_retained == 0
+        source_retention_metrics_present
+        and source_retention_retained == 0
         and source_retention_limit_bytes == 0
+        and retained_source_count == 0
     ):
         return "retained_source_disabled_external_rebuild"
     if (
@@ -6416,6 +6419,15 @@ def summarize_profile_values(
     descriptor_retention_limit_bytes = values.get(
         DESCRIPTOR_RETENTION_LIMIT_BYTES_KEY, 0
     )
+    source_retention_metrics_present = any(
+        key in values
+        for key in (
+            SOURCE_RETENTION_ATTEMPTS_KEY,
+            SOURCE_RETENTION_RETAINED_KEY,
+            SOURCE_RETENTION_REJECTED_KEY,
+            SOURCE_RETENTION_LIMIT_BYTES_KEY,
+        )
+    )
     opening_source_hint = opening_source_shape_hint(
         opening_query_units,
         opening_single_query_units,
@@ -6429,6 +6441,7 @@ def summarize_profile_values(
     source_rebuild_hint = opening_source_rebuild_hint(
         opening_external_source_count,
         opening_retained_source_count,
+        source_retention_metrics_present,
         source_retention_attempts,
         source_retention_retained,
         source_retention_rejected,

@@ -1541,6 +1541,19 @@ fn prove_timing_root_summary_reports_zero_budget_source_retention_without_attemp
 }
 
 #[test]
+fn prove_timing_root_summary_preserves_external_rebuild_without_source_retention_metrics() {
+    let values = prove_timing_root_summary_values(&[
+        "timing_finish_witness_opening_retained_source_count=0",
+        "timing_finish_witness_opening_external_source_count=7",
+    ]);
+
+    assert_eq!(
+        expect_summary_value(&values, "opening_source_rebuild_hint"),
+        "external_source_rebuild"
+    );
+}
+
+#[test]
 fn prove_timing_root_summary_avoids_increasing_partial_source_residency_beyond_device_memory() {
     let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
     let script_path = crate_root.join("../../scripts/prove-timing-root-summary.py");
