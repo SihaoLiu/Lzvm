@@ -1702,6 +1702,77 @@ theorem runtime_soundness_checked_acceptance_audited_finalized_core_sound_witnes
           (And.intro coreContract
             (And.intro executionObligations soundWitness))))
 
+theorem runtime_soundness_checked_acceptance_direct_finalized_core_sound_witness_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeSoundnessValidation system) :
+    forall artifact publicInput proof requiresExternalSource,
+      RuntimeSoundnessCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof
+          requiresExternalSource ->
+        RequiredCryptographicAssumptionStatements assumptions.crypto
+          /\ RequiredSemanticAssumptionStatements assumptions.semantic
+          /\ RuntimeProofArtifactFinalized
+            system
+            validation.transcriptValidation.artifactBindingValidation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ (exists witness trace constraints,
+            system.traceConsistent publicInput proof trace
+              /\ system.constraintsSatisfied constraints trace
+              /\ system.witnessMatchesTrace witness trace)
+          /\ SoundWitness system publicInput proof := by
+  intro artifact publicInput proof requiresExternalSource checked
+  have artifactFinalized :=
+    runtime_transcript_binding_checked_acceptance_artifact_finalized
+      validation.transcriptValidation
+      artifact
+      publicInput
+      proof
+      checked.left
+  have verifierAccepts :=
+    runtime_soundness_checked_acceptance_verifier_accepts
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      checked
+  have cryptoCore :=
+    accepted_proof_crypto_core_contract
+      assumptions
+      publicInput
+      proof
+      verifierAccepts
+  have semanticExecution :=
+    accepted_proof_semantic_execution_obligations
+      assumptions
+      publicInput
+      proof
+      verifierAccepts
+  have soundWitness :=
+    abstract_verifier_sound
+      assumptions
+      publicInput
+      proof
+      verifierAccepts
+  rcases cryptoCore with
+    ⟨cryptoEvidence, coreContract⟩
+  rcases semanticExecution with
+    ⟨semanticEvidence, executionObligations⟩
+  exact
+    And.intro cryptoEvidence
+      (And.intro semanticEvidence
+        (And.intro artifactFinalized
+          (And.intro coreContract
+            (And.intro executionObligations soundWitness))))
+
 theorem
   runtime_soundness_checked_acceptance_audited_core_sound_witness_contract
     {system : VerifierModel}
