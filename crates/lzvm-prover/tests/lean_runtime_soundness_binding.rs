@@ -2422,7 +2422,7 @@ fn lean_runtime_soundness_binding_exports_core_contract_projection() {
         "runtime_soundness_checked_acceptance_audited_binding_pcs_fri_core_witness_contract",
         &[
             "assumption_bundle_carries_required_crypto_evidence",
-            "abstract_verifier_sound",
+            "abstract_verifier_sound_with_semantic_evidence",
             "runtime_soundness_checked_acceptance_verifier_accepts",
             "runtime_soundness_checked_acceptance_transcript_bound",
             "runtime_soundness_checked_acceptance_public_input_bound",
@@ -2430,6 +2430,11 @@ fn lean_runtime_soundness_binding_exports_core_contract_projection() {
             "runtime_soundness_checked_acceptance_verifier_core_contract",
             "runtime_soundness_checked_acceptance_verifier_sound_witness",
         ],
+    );
+    lean_binding::assert_theorem_body_omits_identifier(
+        &lean_source,
+        "runtime_soundness_checked_acceptance_audited_binding_pcs_fri_core_witness_contract",
+        "abstract_verifier_sound",
     );
     lean_binding::assert_theorem_body_omits(
         &lean_source,

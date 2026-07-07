@@ -193,7 +193,8 @@ theorem runtime_soundness_checked_acceptance_audited_binding_pcs_fri_core_witnes
   intro artifact publicInput proof requiresExternalSource checked
   have auditedAssumptions :=
     assumption_bundle_carries_required_crypto_evidence assumptions
-  have proofSystemSound := abstract_verifier_sound assumptions
+  have proofSystemSound :=
+    (abstract_verifier_sound_with_semantic_evidence assumptions).right
   have verifierAccepts :=
     runtime_soundness_checked_acceptance_verifier_accepts
       validation
