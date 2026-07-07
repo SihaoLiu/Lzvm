@@ -35,6 +35,23 @@ fn assert_routes_required_evidence_directly(lean_source: &str, theorem: &str) {
     );
 }
 
+fn assert_routes_accepted_evidence_by_split_helpers(lean_source: &str, theorem: &str) {
+    lean_binding::assert_theorem_declarations(lean_source, &[theorem]);
+    for identifier in [
+        "accepted_proof_crypto_core_contract",
+        "accepted_proof_semantic_execution_obligations",
+        "abstract_verifier_sound",
+    ] {
+        lean_binding::assert_theorem_body_contains_identifier(lean_source, theorem, identifier);
+    }
+    for identifier in [
+        "accepted_proof_audited_core_execution_and_sound_witness",
+        "assumption_bundle_carries_required_evidence",
+    ] {
+        lean_binding::assert_theorem_body_omits_identifier(lean_source, theorem, identifier);
+    }
+}
+
 #[test]
 fn lean_pipeline_core_derived_routes_required_evidence_directly() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
@@ -141,5 +158,16 @@ fn lean_pipeline_segment_ids_route_required_evidence_directly() {
     assert_routes_required_evidence_directly(
         &external_source,
         "runtime_pipeline_binding_required_external_source_audited_soundness_segment_ids_contract",
+    );
+}
+
+#[test]
+fn lean_pipeline_audited_routes_accepted_evidence_by_split_helpers() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let lean_source = lean_binding::read_lean_source(crate_root, AUDITED_SOURCE_PATH);
+
+    assert_routes_accepted_evidence_by_split_helpers(
+        &lean_source,
+        "runtime_pipeline_binding_checked_acceptance_direct_finalized_core_sound_witness_contract",
     );
 }
