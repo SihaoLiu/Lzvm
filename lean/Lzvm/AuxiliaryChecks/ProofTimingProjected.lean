@@ -31,6 +31,26 @@ theorem proof_timing_projected_metadata_acceptance_verifier_core_contract
       proof
       observed
 
+theorem proof_timing_projected_metadata_acceptance_audited_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    {Metadata : Type u}
+    (metadata : Metadata) :
+    forall publicInput proof,
+      IgnoredMetadataObservedAcceptance system metadata publicInput proof ->
+        RequiredCryptographicAssumptionStatements assumptions.crypto
+          /\ RequiredSemanticAssumptionStatements assumptions.semantic
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof observed
+  exact
+    ignored_metadata_acceptance_audited_core_contract
+      assumptions
+      metadata
+      publicInput
+      proof
+      observed
+
 theorem
   proof_timing_projected_finish_summary_required_verifier_core_contract
     {system : VerifierModel}
@@ -46,6 +66,30 @@ theorem
   intro publicInput proof observed
   exact
     proof_artifact_finish_timing_some_summary_acceptance_verifier_core_contract
+      assumptions
+      summary
+      publicInput
+      proof
+      observed
+
+theorem
+  proof_timing_projected_finish_summary_required_audited_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : ProofArtifactFinishTimingSummary) :
+    forall publicInput proof,
+      ProofArtifactFinishTimingObservedAcceptance
+        system
+        (some summary)
+        publicInput
+        proof ->
+        RequiredCryptographicAssumptionStatements assumptions.crypto
+          /\ RequiredSemanticAssumptionStatements assumptions.semantic
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof observed
+  exact
+    proof_artifact_finish_timing_some_summary_acceptance_audited_core_contract
       assumptions
       summary
       publicInput
