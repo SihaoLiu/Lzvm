@@ -195,6 +195,8 @@ theorem accepted_proof_audited_core_execution_and_sound_witness
               /\ system.witnessMatchesTrace witness trace)
           /\ SoundWitness system publicInput proof := by
   intro publicInput proof accepted
+  have proofSystemSound :=
+    (abstract_verifier_sound_with_semantic_evidence assumptions).2
   have cryptoCore :=
     accepted_proof_crypto_core_contract
       assumptions
@@ -207,22 +209,12 @@ theorem accepted_proof_audited_core_execution_and_sound_witness
       publicInput
       proof
       accepted
-  have semanticSound :=
-    abstract_verifier_sound_with_semantic_evidence assumptions
-  rcases semanticSound with
-    ⟨_semanticEvidenceForSound, proofSystemSound⟩
-  have soundWitness :=
-    proofSystemSound publicInput proof accepted
-  rcases cryptoCore with
-    ⟨cryptoEvidence, coreContract⟩
-  rcases semanticExecution with
-    ⟨semanticEvidence, executionObligations⟩
   exact
-    ⟨cryptoEvidence,
-      semanticEvidence,
-      coreContract,
-      executionObligations,
-      soundWitness⟩
+    ⟨cryptoCore.1,
+      semanticExecution.1,
+      cryptoCore.2,
+      semanticExecution.2,
+      proofSystemSound publicInput proof accepted⟩
 
 theorem accepted_proof_audited_core_and_execution_obligations
     {system : VerifierModel}
