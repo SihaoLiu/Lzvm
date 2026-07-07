@@ -94,9 +94,13 @@ fn lean_soundness_binding_exports_abstract_soundness_theorems() {
         ],
     );
     for identifier in [
-        "assumption_bundle_carries_required_crypto_evidence",
-        "assumption_bundle_carries_required_semantic_evidence",
-        "abstract_verifier_sound",
+        "assumption_bundle_carries_required_evidence",
+        "abstract_verifier_sound_with_audited_assumptions",
+        "requiredEvidence",
+        "auditedSound",
+        "cryptoEvidence",
+        "semanticEvidence",
+        "proofSystemSound",
     ] {
         lean_binding::assert_theorem_body_contains_identifier(
             &lean_source,
@@ -105,8 +109,9 @@ fn lean_soundness_binding_exports_abstract_soundness_theorems() {
         );
     }
     for identifier in [
-        "abstract_verifier_sound_with_audited_assumptions",
-        "assumption_bundle_carries_required_evidence",
+        "assumption_bundle_carries_required_crypto_evidence",
+        "assumption_bundle_carries_required_semantic_evidence",
+        "abstract_verifier_sound",
     ] {
         lean_binding::assert_theorem_body_omits_identifier(
             &lean_source,
@@ -640,7 +645,6 @@ fn lean_soundness_root_calls_stay_in_wrapper_theorems() {
         root_callers,
         vec![
             "abstract_verifier_sound_with_audited_assumptions",
-            "abstract_verifier_sound_with_audited_soundness_obligations",
             "abstract_verifier_sound_with_semantic_evidence",
         ],
         "direct root theorem calls should stay isolated in wrapper theorems"
