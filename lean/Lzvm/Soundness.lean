@@ -416,19 +416,41 @@ theorem accepted_proof_audited_proof_system_and_components
               /\ system.constraintsSatisfied constraints trace
               /\ system.witnessMatchesTrace witness trace := by
   intro publicInput proof accepted
-  have components :=
-    accepted_proof_audited_core_and_sound_witness_components
+  have proofSystemSound := abstract_verifier_sound assumptions
+  have cryptoCore :=
+    accepted_proof_crypto_core_contract
       assumptions
       publicInput
       proof
       accepted
-  rcases components with
-    ⟨cryptoEvidence, semanticEvidence, coreContract, witnessComponents⟩
+  have soundWitness := proofSystemSound publicInput proof accepted
+  rcases cryptoCore with
+    ⟨cryptoEvidence, coreContract⟩
+  rcases soundWitness with
+    ⟨witness,
+      trace,
+      constraints,
+      transcriptBound,
+      publicInputBound,
+      pcsOpeningsValid,
+      friQueriesValid,
+      traceConsistent,
+      constraintsSatisfied,
+      witnessMatchesTrace⟩
   exact
     And.intro cryptoEvidence
-      (And.intro semanticEvidence
-        (And.intro (abstract_verifier_sound assumptions)
-          (And.intro coreContract witnessComponents)))
+      (And.intro (assumption_bundle_carries_required_semantic_evidence assumptions)
+        (And.intro proofSystemSound
+          (And.intro coreContract
+            (Exists.intro witness
+              (Exists.intro trace
+                (Exists.intro constraints
+                  (And.intro transcriptBound
+                    (And.intro publicInputBound
+                      (And.intro pcsOpeningsValid
+                        (And.intro friQueriesValid
+                          (And.intro traceConsistent
+                            (And.intro constraintsSatisfied witnessMatchesTrace))))))))))))
 
 theorem accepted_proof_audited_proof_system_core_and_execution_obligations
     {system : VerifierModel}

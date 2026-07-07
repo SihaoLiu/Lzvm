@@ -474,8 +474,9 @@ fn lean_soundness_binding_exports_abstract_soundness_theorems() {
         ],
     );
     for identifier in [
-        "accepted_proof_audited_core_and_sound_witness_components",
+        "accepted_proof_crypto_core_contract",
         "abstract_verifier_sound",
+        "assumption_bundle_carries_required_semantic_evidence",
     ] {
         lean_binding::assert_theorem_body_contains_identifier(
             &lean_source,
@@ -483,6 +484,11 @@ fn lean_soundness_binding_exports_abstract_soundness_theorems() {
             identifier,
         );
     }
+    lean_binding::assert_theorem_body_omits_identifier(
+        &lean_source,
+        "accepted_proof_audited_proof_system_and_components",
+        "accepted_proof_audited_core_and_sound_witness_components",
+    );
     lean_binding::assert_theorem_prefix_contains(
         &lean_source,
         "accepted_proof_audited_proof_system_core_and_execution_obligations",
