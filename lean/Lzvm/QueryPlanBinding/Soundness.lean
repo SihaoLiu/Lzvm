@@ -1104,6 +1104,139 @@ theorem runtime_query_plan_binding_audited_finalized_core_sound_witness_contract
                 (And.intro coreContract
                   (And.intro executionObligations soundWitness)))))))
 
+theorem runtime_query_plan_binding_direct_finalized_core_sound_witness_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeQueryPlanBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeQueryPlanBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RequiredCryptographicAssumptionStatements assumptions.crypto
+          /\ RequiredSemanticAssumptionStatements assumptions.semantic
+          /\ RuntimeQueryPlanBindingEvidence
+            system
+            validation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeProofArtifactFinalized
+            system
+            validation.challengeValidation.transcriptValidation.artifactBindingValidation
+            artifact
+            publicInput
+            proof
+          /\ validation.queryPlanSeedBindsWitnessTreeDigests artifact publicInput proof
+          /\ validation.queryPlanSeededFriOpeningRequirementsChecked
+            artifact
+            publicInput
+            proof
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ (exists witness trace constraints,
+            system.traceConsistent publicInput proof trace
+              /\ system.constraintsSatisfied constraints trace
+              /\ system.witnessMatchesTrace witness trace)
+          /\ SoundWitness system publicInput proof := by
+  intro artifact publicInput proof accepted
+  let transcriptValidation := validation.challengeValidation.transcriptValidation
+  let artifactValidation := transcriptValidation.artifactBindingValidation
+  have queryPlanEvidence :=
+    runtime_query_plan_binding_checked_acceptance_evidence
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have artifactFinalized :=
+    runtime_query_plan_binding_checked_acceptance_artifact_finalized
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have seedBinds :=
+    runtime_query_plan_binding_checked_acceptance_seed_binds_witness_tree_digests
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have seededFriOpeningChecked :=
+    runtime_query_plan_binding_checked_acceptance_seeded_fri_opening_requirements_checked
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have challengeAccepted :=
+    runtime_query_plan_binding_checked_acceptance_challenge
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have transcriptAccepted :=
+    runtime_challenge_segment_binding_checked_acceptance_transcript
+      validation.challengeValidation
+      artifact
+      publicInput
+      proof
+      challengeAccepted
+  have artifactAccepted :=
+    transcriptValidation.transcriptAcceptedImpliesArtifactBindingAccepted
+      artifact
+      publicInput
+      proof
+      transcriptAccepted
+  have runtimeAccepted :=
+    runtime_proof_artifact_binding_checked_acceptance_runtime_accepted
+      artifactValidation
+      artifact
+      publicInput
+      proof
+      artifactAccepted
+  have verifierAccepts :=
+    runtime_artifact_checked_acceptance_implies_verifier_accepts
+      artifactValidation.runtimeValidation
+      artifact
+      publicInput
+      proof
+      runtimeAccepted
+  have cryptoCore :=
+    accepted_proof_crypto_core_contract
+      assumptions
+      publicInput
+      proof
+      verifierAccepts
+  have semanticExecution :=
+    accepted_proof_semantic_execution_obligations
+      assumptions
+      publicInput
+      proof
+      verifierAccepts
+  have soundWitness :=
+    abstract_verifier_sound
+      assumptions
+      publicInput
+      proof
+      verifierAccepts
+  rcases cryptoCore with
+    ⟨cryptoEvidence, coreContract⟩
+  rcases semanticExecution with
+    ⟨semanticEvidence, executionObligations⟩
+  exact
+    And.intro cryptoEvidence
+      (And.intro semanticEvidence
+        (And.intro queryPlanEvidence
+          (And.intro artifactFinalized
+            (And.intro seedBinds
+              (And.intro seededFriOpeningChecked
+                (And.intro coreContract
+                  (And.intro executionObligations soundWitness)))))))
+
 theorem
   runtime_query_plan_binding_audited_seeded_core_sound_witness_contract
     {system : VerifierModel}
