@@ -447,8 +447,13 @@ fn lean_eth_block_public_input_binding_exports_core_contract_projection() {
             "runtime_artifact_checked_acceptance_implies_verifier_accepts",
             "accepted_proof_crypto_core_contract",
             "accepted_proof_semantic_execution_obligations",
-            "abstract_verifier_sound",
+            "abstract_verifier_sound_with_semantic_evidence",
         ],
+    );
+    lean_binding::assert_theorem_body_omits_identifier(
+        &lean_source,
+        "runtime_eth_block_public_input_binding_direct_finalized_core_sound_witness_contract",
+        "abstract_verifier_sound",
     );
     lean_binding::assert_theorem_body_omits(
         &lean_source,
