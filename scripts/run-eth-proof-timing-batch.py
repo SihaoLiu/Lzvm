@@ -2146,6 +2146,33 @@ def self_test() -> None:
         if "report_chunk_capacity=262144" not in dry_run_summary_lines(args, root):
             raise SystemExit("self-test report chunk dry-run summary missing")
         args.report_chunk_capacity = None
+        args.trace_runner_detail_timing_sample_stride = 1_000_000
+        runner_detail_command = command_for_env(
+            small_config,
+            args.small_mode,
+            not args.skip_verify_proof,
+            mode_env_for_args(args, args.small_mode),
+            proof_tuning_args(args),
+            allow_stale_bin=args.allow_stale_bin,
+        )
+        if "LZVM_GUEST_TRACE_RUNNER_DETAIL_TIMING=1" not in runner_detail_command:
+            raise SystemExit("self-test runner detail env assignment missing")
+        runner_detail_stride_env = (
+            "LZVM_GUEST_TRACE_RUNNER_DETAIL_TIMING_SAMPLE_STRIDE=1000000"
+        )
+        if runner_detail_stride_env not in runner_detail_command:
+            raise SystemExit("self-test runner detail stride env assignment missing")
+        runner_detail_stride_arg = "--trace-runner-detail-timing-sample-stride 1000000"
+        if runner_detail_stride_arg not in " ".join(
+            shlex.quote(part) for part in mode_args(args)
+        ):
+            raise SystemExit("self-test runner detail next-command arg missing")
+        dry_run_summary = dry_run_summary_lines(args, root)
+        if "trace_runner_detail_timing=true" not in dry_run_summary:
+            raise SystemExit("self-test runner detail dry-run summary missing")
+        if "trace_runner_detail_timing_sample_stride=1000000" not in dry_run_summary:
+            raise SystemExit("self-test runner detail stride dry-run summary missing")
+        args.trace_runner_detail_timing_sample_stride = None
         args.retained_descriptor_bytes = 1234
         retained_command = command_for_env(
             small_config,
