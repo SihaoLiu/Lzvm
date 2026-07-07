@@ -1423,6 +1423,64 @@ theorem guest_pc_trace_shape_counts_acceptance_core_and_sound
       proof
       observed
 
+theorem guest_pc_trace_shape_counts_acceptance_audited_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : GuestPcTraceTimingSummary)
+    (singleRowReports multiRowReports pendingDmaReports amoReports
+      storeConditionalReports externalOpRows copyRows flagRows precompileRows
+      indirectMemoryRows registerSourceReads memorySourceReads registerStoreRows
+      memoryStoreRows noStoreRows : Nat) :
+    forall publicInput proof,
+      GuestPcTraceTimingObservedAcceptance
+        system
+        (some
+          { summary with
+            guestTraceSingleRowReportCount := singleRowReports
+            guestTraceMultiRowReportCount := multiRowReports
+            guestTracePendingDmaReportCount := pendingDmaReports
+            guestTraceAmoReportCount := amoReports
+            guestTraceStoreConditionalReportCount := storeConditionalReports
+            guestTraceExternalOpRowCount := externalOpRows
+            guestTraceCopyRowCount := copyRows
+            guestTraceFlagRowCount := flagRows
+            guestTracePrecompileRowCount := precompileRows
+            guestTraceIndirectMemoryRowCount := indirectMemoryRows
+            guestTraceRegisterSourceReadCount := registerSourceReads
+            guestTraceMemorySourceReadCount := memorySourceReads
+            guestTraceRegisterStoreRowCount := registerStoreRows
+            guestTraceMemoryStoreRowCount := memoryStoreRows
+            guestTraceNoStoreRowCount := noStoreRows })
+        publicInput
+        proof ->
+        RequiredCryptographicAssumptionStatements assumptions.crypto
+          /\ RequiredSemanticAssumptionStatements assumptions.semantic
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof observed
+  exact
+    guest_pc_trace_timing_some_summary_acceptance_audited_core_contract
+      assumptions
+      { summary with
+            guestTraceSingleRowReportCount := singleRowReports
+            guestTraceMultiRowReportCount := multiRowReports
+            guestTracePendingDmaReportCount := pendingDmaReports
+            guestTraceAmoReportCount := amoReports
+            guestTraceStoreConditionalReportCount := storeConditionalReports
+            guestTraceExternalOpRowCount := externalOpRows
+            guestTraceCopyRowCount := copyRows
+            guestTraceFlagRowCount := flagRows
+            guestTracePrecompileRowCount := precompileRows
+            guestTraceIndirectMemoryRowCount := indirectMemoryRows
+            guestTraceRegisterSourceReadCount := registerSourceReads
+            guestTraceMemorySourceReadCount := memorySourceReads
+            guestTraceRegisterStoreRowCount := registerStoreRows
+            guestTraceMemoryStoreRowCount := memoryStoreRows
+            guestTraceNoStoreRowCount := noStoreRows }
+      publicInput
+      proof
+      observed
+
 theorem guest_pc_trace_memory_access_shape_acceptance_sound
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
@@ -1510,6 +1568,37 @@ theorem guest_pc_trace_memory_access_shape_acceptance_core_and_sound
       proof
       observed
 
+theorem guest_pc_trace_memory_access_shape_acceptance_audited_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : GuestPcTraceTimingSummary)
+    (indirectMemoryRows memorySourceReads memoryStoreRows : Nat) :
+    forall publicInput proof,
+      GuestPcTraceTimingObservedAcceptance
+        system
+        (some
+          { summary with
+            guestTraceIndirectMemoryRowCount := indirectMemoryRows
+            guestTraceMemorySourceReadCount := memorySourceReads
+            guestTraceMemoryStoreRowCount := memoryStoreRows })
+        publicInput
+        proof ->
+        RequiredCryptographicAssumptionStatements assumptions.crypto
+          /\ RequiredSemanticAssumptionStatements assumptions.semantic
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof observed
+  exact
+    guest_pc_trace_timing_some_summary_acceptance_audited_core_contract
+      assumptions
+      { summary with
+            guestTraceIndirectMemoryRowCount := indirectMemoryRows
+            guestTraceMemorySourceReadCount := memorySourceReads
+            guestTraceMemoryStoreRowCount := memoryStoreRows }
+      publicInput
+      proof
+      observed
+
 theorem guest_pc_trace_report_buffer_capacity_acceptance_sound
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
@@ -1593,6 +1682,37 @@ theorem guest_pc_trace_report_buffer_capacity_acceptance_core_and_sound
           guestTraceReportBufferCapacity := capacity
           guestTraceReportBufferMaxCapacity := maxCapacity
           guestTraceReportBufferExcessCapacity := excessCapacity })
+      publicInput
+      proof
+      observed
+
+theorem guest_pc_trace_report_buffer_capacity_acceptance_audited_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : GuestPcTraceTimingSummary)
+    (capacity maxCapacity excessCapacity : Nat) :
+    forall publicInput proof,
+      GuestPcTraceTimingObservedAcceptance
+        system
+        (some
+          { summary with
+            guestTraceReportBufferCapacity := capacity
+            guestTraceReportBufferMaxCapacity := maxCapacity
+            guestTraceReportBufferExcessCapacity := excessCapacity })
+        publicInput
+        proof ->
+        RequiredCryptographicAssumptionStatements assumptions.crypto
+          /\ RequiredSemanticAssumptionStatements assumptions.semantic
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof observed
+  exact
+    guest_pc_trace_timing_some_summary_acceptance_audited_core_contract
+      assumptions
+      { summary with
+            guestTraceReportBufferCapacity := capacity
+            guestTraceReportBufferMaxCapacity := maxCapacity
+            guestTraceReportBufferExcessCapacity := excessCapacity }
       publicInput
       proof
       observed
