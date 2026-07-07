@@ -10906,6 +10906,63 @@ fn lean_pipeline_contracts_exports_required_external_source_core_contract() {
 }
 
 #[test]
+fn guest_pc_trace_large_lower_worker_cap_stays_threshold_only() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let source_path = crate_root.join("src/guest_pc_trace_backend.rs");
+    let source = std::fs::read_to_string(&source_path).expect("guest PC trace source should read");
+
+    let worker_body = function_body(
+        &source,
+        "fn guest_pc_trace_parallel_lower_configured_worker_count_for_limit",
+        "fn guest_pc_trace_parallel_lower_configured_worker_count_override",
+    );
+    let override_index = worker_body
+        .find("guest_pc_trace_parallel_lower_configured_worker_count_override()")
+        .expect("worker override should be checked first");
+    let cap_index = worker_body
+        .find("guest_pc_trace_large_parallel_lower_worker_cap_applies(instruction_limit)")
+        .expect("large trace worker cap should be checked before fallback workers");
+    let bounded_index = worker_body
+        .find("return guest_pc_trace_auto_parallel_lower_worker_count();")
+        .expect("large trace worker cap should use the bounded worker count");
+    let fallback_index = worker_body
+        .find("guest_pc_trace_available_worker_count().max(1)")
+        .expect("worker count should still fall back to available workers");
+    assert!(
+        override_index < cap_index && cap_index < bounded_index && bounded_index < fallback_index,
+        "worker count selection should prefer explicit overrides, then large trace cap, then available workers"
+    );
+
+    let cap_body = braced_source_body(
+        &source,
+        "fn guest_pc_trace_large_parallel_lower_worker_cap_applies(instruction_limit: u64) -> bool",
+    );
+    assert_eq!(
+        compact_source(cap_body),
+        compact_source(
+            "fn guest_pc_trace_large_parallel_lower_worker_cap_applies(instruction_limit: u64) -> bool {
+                instruction_limit >= DEFAULT_GUEST_PC_TRACE_AUTO_PARALLEL_LOWER_MIN_INSTRUCTIONS
+            }"
+        ),
+        "large trace worker cap should be a threshold check"
+    );
+
+    let cpu_body = braced_source_body(
+        &source,
+        "fn guest_pc_trace_large_parallel_lower_worker_cap_applies(_instruction_limit: u64) -> bool",
+    );
+    assert_eq!(
+        compact_source(cpu_body),
+        compact_source(
+            "fn guest_pc_trace_large_parallel_lower_worker_cap_applies(_instruction_limit: u64) -> bool {
+                false
+            }"
+        ),
+        "large trace worker cap should stay disabled without the GPU feature"
+    );
+}
+
+#[test]
 fn guest_pc_trace_writes_use_direct_trace_builder_helpers() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let source_path = crate_root.join("src/guest_pc_trace_backend.rs");
