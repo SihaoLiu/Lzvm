@@ -941,24 +941,39 @@ fn default_retained_source_device_limit() -> usize {
 }
 
 #[cfg(feature = "cuda")]
-fn retained_descriptor_buffer_limit_override(value: &str) -> Option<usize> {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum RetainedDescriptorBufferEnv {
+    Disabled,
+    DefaultBudget,
+    ByteBudget(usize),
+}
+
+#[cfg(feature = "cuda")]
+pub(crate) fn retained_descriptor_buffer_env(value: &str) -> Option<RetainedDescriptorBufferEnv> {
     let value = value.trim();
     let normalized = value.to_ascii_lowercase();
     match normalized.as_str() {
-        "0" | "false" | "no" | "off" | "" => Some(0),
-        "true" | "yes" | "on" => None,
-        _ => value.parse::<usize>().ok(),
+        "0" | "false" | "no" | "off" | "" => Some(RetainedDescriptorBufferEnv::Disabled),
+        "true" | "yes" | "on" => Some(RetainedDescriptorBufferEnv::DefaultBudget),
+        _ => value
+            .parse::<usize>()
+            .ok()
+            .map(RetainedDescriptorBufferEnv::ByteBudget),
     }
 }
 
 #[cfg(feature = "cuda")]
 pub(crate) fn retained_descriptor_buffer_limit() -> usize {
-    std::env::var("LZVM_CUDA_RETAINED_DESCRIPTOR_BYTES")
+    match std::env::var("LZVM_CUDA_RETAINED_DESCRIPTOR_BYTES")
         .ok()
-        .and_then(|value| retained_descriptor_buffer_limit_override(&value))
-        .unwrap_or_else(|| {
+        .and_then(|value| retained_descriptor_buffer_env(&value))
+    {
+        Some(RetainedDescriptorBufferEnv::Disabled) => 0,
+        Some(RetainedDescriptorBufferEnv::ByteBudget(bytes)) => bytes,
+        Some(RetainedDescriptorBufferEnv::DefaultBudget) | None => {
             *RETAINED_DESCRIPTOR_BUFFER_LIMIT.get_or_init(default_retained_descriptor_buffer_limit)
-        })
+        }
+    }
 }
 
 #[cfg(feature = "cuda")]
@@ -3869,6 +3884,35 @@ mod timing_tests {
 #[cfg(all(test, feature = "cuda"))]
 mod tests {
     use super::*;
+
+    #[test]
+    fn retained_descriptor_buffer_env_parses_flags_and_budgets() {
+        assert_eq!(
+            retained_descriptor_buffer_env("0"),
+            Some(RetainedDescriptorBufferEnv::Disabled)
+        );
+        assert_eq!(
+            retained_descriptor_buffer_env("false"),
+            Some(RetainedDescriptorBufferEnv::Disabled)
+        );
+        assert_eq!(
+            retained_descriptor_buffer_env("true"),
+            Some(RetainedDescriptorBufferEnv::DefaultBudget)
+        );
+        assert_eq!(
+            retained_descriptor_buffer_env("on"),
+            Some(RetainedDescriptorBufferEnv::DefaultBudget)
+        );
+        assert_eq!(
+            retained_descriptor_buffer_env("1"),
+            Some(RetainedDescriptorBufferEnv::ByteBudget(1))
+        );
+        assert_eq!(
+            retained_descriptor_buffer_env("1048576"),
+            Some(RetainedDescriptorBufferEnv::ByteBudget(1_048_576))
+        );
+        assert_eq!(retained_descriptor_buffer_env("not-a-number"), None);
+    }
 
     #[test]
     fn retained_source_device_limit_caps_large_opt_in_budgets() {

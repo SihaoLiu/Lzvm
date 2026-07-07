@@ -72,8 +72,9 @@ use crate::witness_commitment::{
     commit_witness_stage_values_with_source_devices_and_workers,
     commit_witness_stage_values_with_source_devices_reusing_cached_stages_and_indexed_timing,
     commit_witness_stage_values_with_source_devices_reusing_cached_stages_and_workers,
-    retain_descriptor_device_buffer, retained_descriptor_buffer_limit,
-    retained_source_device_limit, PendingWitnessTraceStageCommitments, WitnessRetainedDeviceBuffer,
+    retain_descriptor_device_buffer, retained_descriptor_buffer_env,
+    retained_descriptor_buffer_limit, retained_source_device_limit,
+    PendingWitnessTraceStageCommitments, RetainedDescriptorBufferEnv, WitnessRetainedDeviceBuffer,
     WitnessStageCommitmentError, WitnessStageCommitmentReuseCache, WitnessStageLeafError,
     WitnessStageLeafWorkspaceCache, WitnessStageRetainedSourceDevice, WitnessStageSourceDevice,
     WitnessStageSourceDeviceView,
@@ -6080,15 +6081,11 @@ fn guest_pc_descriptor_buffer_retention_default_supported_for_input(
 #[cfg(feature = "cuda")]
 fn guest_pc_descriptor_buffer_retention_enabled(input_byte_count: usize) -> bool {
     match std::env::var("LZVM_CUDA_RETAINED_DESCRIPTOR_BYTES") {
-        Ok(value) => {
-            let value = value.trim();
-            let normalized = value.to_ascii_lowercase();
-            match normalized.as_str() {
-                "0" | "false" | "no" | "off" | "" => false,
-                "true" | "yes" | "on" => true,
-                _ => value.parse::<usize>().is_ok_and(|bytes| bytes > 0),
-            }
-        }
+        Ok(value) => match retained_descriptor_buffer_env(&value) {
+            Some(RetainedDescriptorBufferEnv::Disabled) | None => false,
+            Some(RetainedDescriptorBufferEnv::DefaultBudget) => true,
+            Some(RetainedDescriptorBufferEnv::ByteBudget(bytes)) => bytes > 0,
+        },
         Err(_) => {
             !guest_pc_parallel_lower_enabled_for_descriptor_retention()
                 && guest_pc_descriptor_buffer_retention_default_supported_for_input(

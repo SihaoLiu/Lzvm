@@ -6595,26 +6595,28 @@ fn guest_pc_descriptor_buffer_retention_defaults_to_bounded_inputs() {
     );
     let budget_override_body = function_body(
         &values_source,
-        "fn retained_descriptor_buffer_limit_override",
+        "fn retained_descriptor_buffer_env",
         "#[cfg(feature = \"cuda\")]\npub(crate) fn retained_descriptor_buffer_limit",
     );
     assert!(
         compact_source_contains(
             budget_override_body,
-            "\"true\" | \"yes\" | \"on\" => None"
+            "\"true\" | \"yes\" | \"on\" => Some(RetainedDescriptorBufferEnv::DefaultBudget)"
         ) && compact_source_contains(
             budget_override_body,
-            "\"0\" | \"false\" | \"no\" | \"off\" | \"\" => Some(0)"
-        ) && budget_override_body.contains("_ => value.parse::<usize>().ok()"),
+            "\"0\" | \"false\" | \"no\" | \"off\" | \"\" => Some(RetainedDescriptorBufferEnv::Disabled)"
+        ) && compact_source_contains(
+            budget_override_body,
+            ".map(RetainedDescriptorBufferEnv::ByteBudget)"
+        ),
         "descriptor buffer env flags should map true values to the default budget while numeric values remain byte budgets"
     );
     assert!(
-        compact_source_contains(gate_body, "\"true\" | \"yes\" | \"on\" => true")
-            && compact_source_contains(
-                gate_body,
-                "_ => value.parse::<usize>().is_ok_and(|bytes| bytes > 0)"
-            ),
-        "descriptor buffer selector should keep numeric env values as byte budgets"
+        gate_body.contains("retained_descriptor_buffer_env(&value)")
+            && gate_body.contains("RetainedDescriptorBufferEnv::DefaultBudget")
+            && gate_body.contains("RetainedDescriptorBufferEnv::ByteBudget(bytes)")
+            && gate_body.contains("bytes > 0"),
+        "descriptor buffer selector should share the budget parser"
     );
     let parallel_lower_gate_body = function_body(
         &execution_source,
