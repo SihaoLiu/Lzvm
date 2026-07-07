@@ -470,6 +470,16 @@ fn lean_retained_leaf_digest_binding_tracks_runtime_opening_contract() {
         &lean_source,
         "runtime_retained_leaf_digest_opening_checked_acceptance_audited_core_contract",
         &[
+            "assumption_bundle_carries_required_crypto_evidence",
+            "assumption_bundle_carries_required_semantic_evidence",
+            "runtime_retained_leaf_digest_opening_checked_acceptance_sound",
+            "runtime_retained_leaf_digest_opening_checked_acceptance_opening_and_core_contract",
+        ],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &lean_source,
+        "runtime_retained_leaf_digest_opening_checked_acceptance_audited_core_contract",
+        &[
             "assumption_bundle_carries_required_evidence",
             "runtime_retained_leaf_digest_opening_checked_acceptance_evidence_core_and_sound",
         ],

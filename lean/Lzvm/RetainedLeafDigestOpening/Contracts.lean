@@ -669,10 +669,17 @@ theorem runtime_retained_leaf_digest_opening_checked_acceptance_audited_core_con
           /\ RuntimeVerifierCoreContract system publicInput proof
           /\ SoundWitness system publicInput proof := by
   intro artifact publicInput proof requiresExternalSource accepted
-  have auditedAssumptions :=
-    assumption_bundle_carries_required_evidence assumptions
-  have contracts :=
-    runtime_retained_leaf_digest_opening_checked_acceptance_evidence_core_and_sound
+  have checkedSound :=
+    runtime_retained_leaf_digest_opening_checked_acceptance_sound
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      accepted
+  have openingAndCore :=
+    runtime_retained_leaf_digest_opening_checked_acceptance_opening_and_core_contract
       assumptions
       validation
       artifact
@@ -681,8 +688,15 @@ theorem runtime_retained_leaf_digest_opening_checked_acceptance_audited_core_con
       requiresExternalSource
       accepted
   exact
-    And.intro auditedAssumptions.left
-      (And.intro auditedAssumptions.right contracts)
+    And.intro
+      (assumption_bundle_carries_required_crypto_evidence assumptions)
+      (And.intro
+        (assumption_bundle_carries_required_semantic_evidence assumptions)
+        (And.intro checkedSound.left
+          (And.intro openingAndCore.left
+            (And.intro openingAndCore.right.left
+              (And.intro openingAndCore.right.right.left
+                (And.intro openingAndCore.right.right.right checkedSound.right))))))
 
 theorem runtime_retained_leaf_digest_concrete_path_opening_and_core_contract_from_bundle
     {system : VerifierModel}
