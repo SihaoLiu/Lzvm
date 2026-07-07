@@ -291,8 +291,10 @@ theorem runtime_pipeline_required_external_source_manifest_audited_core_contract
       requiresExternalSource
       accepted
       required
-  have auditedAssumptions :=
-    assumption_bundle_carries_required_evidence assumptions
+  have auditedCrypto :=
+    assumption_bundle_carries_required_crypto_evidence assumptions
+  have auditedSemantic :=
+    assumption_bundle_carries_required_semantic_evidence assumptions
   rcases manifestCore with
     ⟨_auditedCrypto,
       proofSystemSound,
@@ -312,8 +314,8 @@ theorem runtime_pipeline_required_external_source_manifest_audited_core_contract
       executionObligations,
       soundWitness⟩
   exact
-    ⟨auditedAssumptions.left,
-      auditedAssumptions.right,
+    ⟨auditedCrypto,
+      auditedSemantic,
       proofSystemSound,
       verifierAccepts,
       materialManifest,

@@ -3785,8 +3785,14 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
         "runtime_pipeline_required_external_source_manifest_audited_core_contract",
         &[
             "runtime_pipeline_binding_required_external_source_contracts_manifest_core_contract",
-            "assumption_bundle_carries_required_evidence",
+            "assumption_bundle_carries_required_crypto_evidence",
+            "assumption_bundle_carries_required_semantic_evidence",
         ],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &lean_source,
+        "runtime_pipeline_required_external_source_manifest_audited_core_contract",
+        &["assumption_bundle_carries_required_evidence"],
     );
     lean_binding::assert_theorem_prefix_contains(
         &lean_source,
