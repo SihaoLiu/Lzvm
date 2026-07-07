@@ -19,7 +19,7 @@ pub(crate) use memory::GuestMachineMemoryOverlaySnapshot;
 use precompile::execute_precompile;
 
 const GUEST_REGISTER_COUNT: usize = 32;
-const GUEST_INSTRUCTION_CACHE_ENTRY_COUNT: usize = 1 << 16;
+const GUEST_INSTRUCTION_CACHE_ENTRY_COUNT: usize = 1 << 18;
 const GUEST_INSTRUCTION_CACHE_ENTRY_BITS_ENV: &str = "LZVM_GUEST_INSTRUCTION_CACHE_ENTRY_BITS";
 const GUEST_INSTRUCTION_CACHE_MIN_ENTRY_BITS: u32 = 10;
 const GUEST_INSTRUCTION_CACHE_MAX_ENTRY_BITS: u32 = 22;
@@ -3458,6 +3458,12 @@ mod tests {
             std::env::set_var(name, value);
             Self { name, previous }
         }
+
+        fn unset(name: &'static str) -> Self {
+            let previous = std::env::var_os(name);
+            std::env::remove_var(name);
+            Self { name, previous }
+        }
     }
 
     impl Drop for TestEnvVarGuard {
@@ -4249,6 +4255,13 @@ mod tests {
         let _env_lock = crate::CUDA_TEST_ENV_LOCK
             .lock()
             .expect("test env lock should not be poisoned");
+        {
+            let _bits_env = TestEnvVarGuard::unset(GUEST_INSTRUCTION_CACHE_ENTRY_BITS_ENV);
+            let cache = GuestInstructionCache::default();
+            assert_eq!(guest_instruction_cache_entry_count(), 1 << 18);
+            assert_eq!(cache.entries.len(), 1 << 18);
+            assert_eq!(cache.entry_mask, (1 << 18) - 1);
+        }
         {
             let _bits_env = TestEnvVarGuard::set(GUEST_INSTRUCTION_CACHE_ENTRY_BITS_ENV, "18");
             let cache = GuestInstructionCache::default();
