@@ -259,10 +259,19 @@ theorem runtime_guarded_external_source_required_evidence_audited_core_contract
             /\ RuntimeVerifierCoreContract system publicInput proof
             /\ SoundWitness system publicInput proof := by
   intro artifact publicInput proof requiresExternalSource checked required
-  have auditedAssumptions :=
-    assumption_bundle_carries_required_evidence assumptions
-  have contracts :=
-    runtime_guarded_external_source_required_evidence_core_and_sound
+  have requiredSound :=
+    runtime_guarded_external_source_required_sound
+      assumptions
+      runtimeValidation
+      sourceValidation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      checked
+      required
+  have coreContract :=
+    runtime_guarded_external_source_required_verifier_core_contract
       assumptions
       runtimeValidation
       sourceValidation
@@ -273,8 +282,14 @@ theorem runtime_guarded_external_source_required_evidence_audited_core_contract
       checked
       required
   exact
-    And.intro auditedAssumptions.left
-      (And.intro auditedAssumptions.right contracts)
+    And.intro
+      (assumption_bundle_carries_required_crypto_evidence assumptions)
+      (And.intro
+        (assumption_bundle_carries_required_semantic_evidence assumptions)
+        (And.intro requiredSound.left
+          (And.intro requiredSound.right.left
+            (And.intro requiredSound.right.right.left
+              (And.intro coreContract requiredSound.right.right.right)))))
 
 set_option linter.style.longLine false in
 theorem runtime_guarded_external_source_required_pcs_and_fri_from_hash_concrete_opening

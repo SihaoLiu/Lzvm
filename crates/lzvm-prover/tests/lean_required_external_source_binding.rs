@@ -116,16 +116,18 @@ fn lean_required_external_source_binding_exports_core_contract_projection() {
         &lean_source,
         "runtime_guarded_external_source_required_evidence_audited_core_contract",
         &[
-            "assumption_bundle_carries_required_evidence",
-            "runtime_guarded_external_source_required_evidence_core_and_sound",
+            "assumption_bundle_carries_required_crypto_evidence",
+            "assumption_bundle_carries_required_semantic_evidence",
+            "runtime_guarded_external_source_required_sound",
+            "runtime_guarded_external_source_required_verifier_core_contract",
         ],
     );
     lean_binding::assert_theorem_body_omits(
         &lean_source,
         "runtime_guarded_external_source_required_evidence_audited_core_contract",
         &[
-            "runtime_guarded_external_source_required_sound",
-            "runtime_guarded_external_source_required_verifier_core_contract",
+            "assumption_bundle_carries_required_evidence",
+            "runtime_guarded_external_source_required_evidence_core_and_sound",
             "runtime_guarded_external_source_required_hash_concrete_opening_sound",
             "sound_witness_implies_verifier_core_contract",
         ],
