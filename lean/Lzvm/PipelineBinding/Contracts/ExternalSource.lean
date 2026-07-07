@@ -206,8 +206,6 @@ theorem runtime_pipeline_required_external_source_concrete_audited_soundness_cor
       requiresExternalSource
       accepted
       required
-  have auditedAssumptions :=
-    assumption_bundle_carries_required_evidence assumptions
   rcases coreContract with
     ⟨_auditedCrypto,
       proofSystemSound,
@@ -224,8 +222,8 @@ theorem runtime_pipeline_required_external_source_concrete_audited_soundness_cor
       executionObligations,
       soundWitness⟩
   exact
-    ⟨auditedAssumptions.left,
-      auditedAssumptions.right,
+    ⟨assumption_bundle_carries_required_crypto_evidence assumptions,
+      assumption_bundle_carries_required_semantic_evidence assumptions,
       proofSystemSound,
       verifierAccepts,
       traceExternalEvidence,
@@ -569,8 +567,6 @@ theorem runtime_pipeline_required_external_source_hash_concrete_audited_soundnes
       requiresExternalSource
       accepted
       required
-  have auditedAssumptions :=
-    assumption_bundle_carries_required_evidence assumptions
   rcases coreContract with
     ⟨_auditedCrypto,
       proofSystemSound,
@@ -587,8 +583,8 @@ theorem runtime_pipeline_required_external_source_hash_concrete_audited_soundnes
       executionObligations,
       soundWitness⟩
   exact
-    ⟨auditedAssumptions.left,
-      auditedAssumptions.right,
+    ⟨assumption_bundle_carries_required_crypto_evidence assumptions,
+      assumption_bundle_carries_required_semantic_evidence assumptions,
       proofSystemSound,
       verifierAccepts,
       traceExternalEvidence,

@@ -6,6 +6,8 @@ mod lean_binding;
 const ACCEPTS_SOURCE_PATH: &str = "../../lean/Lzvm/PipelineBinding/Accepts.lean";
 const CONTRACTS_CORE_BASE_SOURCE_PATH: &str =
     "../../lean/Lzvm/PipelineBinding/Contracts/Core/Base.lean";
+const CONTRACTS_EXTERNAL_SOURCE_PATH: &str =
+    "../../lean/Lzvm/PipelineBinding/Contracts/ExternalSource.lean";
 const CORE_DERIVED_SOURCE_PATH: &str = "../../lean/Lzvm/PipelineBinding/Core/Derived.lean";
 const SEGMENT_IDS_BASE_SOURCE_PATH: &str = "../../lean/Lzvm/PipelineBinding/SegmentIds/Base.lean";
 const SEGMENT_IDS_EXTERNAL_SOURCE_PATH: &str =
@@ -61,6 +63,19 @@ fn lean_pipeline_contracts_core_base_routes_required_evidence_directly() {
         &lean_source,
         "runtime_pipeline_binding_checked_acceptance_audited_assumption_full_contract",
     );
+}
+
+#[test]
+fn lean_pipeline_contracts_external_route_required_evidence_directly() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let lean_source = lean_binding::read_lean_source(crate_root, CONTRACTS_EXTERNAL_SOURCE_PATH);
+
+    for theorem in [
+        "runtime_pipeline_required_external_source_concrete_audited_soundness_core_contract",
+        "runtime_pipeline_required_external_source_hash_concrete_audited_soundness_core_contract",
+    ] {
+        assert_routes_required_evidence_directly(&lean_source, theorem);
+    }
 }
 
 #[test]
