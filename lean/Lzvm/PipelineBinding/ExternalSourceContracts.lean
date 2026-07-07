@@ -222,6 +222,115 @@ theorem runtime_pipeline_binding_required_external_source_contracts_manifest_cor
       executionObligations,
       soundWitness⟩
 
+theorem runtime_pipeline_required_external_source_manifest_audited_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimePipelineBindingValidation system) :
+    forall artifact publicInput proof (requiresExternalSource : Prop),
+      RuntimePipelineBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        requiresExternalSource ->
+          RequiredCryptographicAssumptionStatements assumptions.crypto
+            /\ RequiredSemanticAssumptionStatements assumptions.semantic
+            /\ ProofSystemSound system
+            /\ system.accepts publicInput proof
+            /\ RuntimeQueryPlanMaterialManifestContract
+              system
+              validation.queryPlanBindingValidation
+              artifact
+              publicInput
+              proof
+            /\ validation.queryPlanBindingValidation.queryPlanSegmentCanonical
+              artifact
+              publicInput
+              proof
+            /\ validation.queryPlanBindingValidation.queryPlanMaterialManifestMatchesSchedule
+              artifact
+              publicInput
+              proof
+            /\ ExternalSourceOpeningEvidence
+              system
+              (runtime_pipeline_trace_source_validation validation)
+              publicInput
+              proof
+            /\ ExternalSourceOpeningEvidence
+              system
+              (runtime_pipeline_opening_source_validation validation)
+              publicInput
+              proof
+            /\ system.transcriptBound publicInput proof
+            /\ system.publicInputBound publicInput proof
+            /\ system.pcsOpeningsValid publicInput proof
+            /\ system.friQueriesValid publicInput proof
+            /\ validation.queryPlanBindingValidation.queryPlanSeedBindsWitnessTreeDigests
+              artifact
+              publicInput
+              proof
+            /\ validation.queryPlanBindingValidation.queryPlanSeededFriOpeningRequirementsChecked
+              artifact
+              publicInput
+              proof
+            /\ RuntimeVerifierCoreContract system publicInput proof
+            /\ (exists witness trace constraints,
+              system.traceConsistent publicInput proof trace
+                /\ system.constraintsSatisfied constraints trace
+                /\ system.witnessMatchesTrace witness trace)
+            /\ SoundWitness system publicInput proof := by
+  intro artifact publicInput proof requiresExternalSource accepted required
+  have manifestCore :=
+    runtime_pipeline_binding_required_external_source_contracts_manifest_core_contract
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      accepted
+      required
+  have auditedAssumptions :=
+    assumption_bundle_carries_required_evidence assumptions
+  rcases manifestCore with
+    ⟨_auditedCrypto,
+      proofSystemSound,
+      verifierAccepts,
+      materialManifest,
+      segmentCanonical,
+      materialManifestMatches,
+      traceExternalEvidence,
+      openingExternalEvidence,
+      transcriptBound,
+      publicInputBound,
+      pcsOpenings,
+      friQueries,
+      seedBinds,
+      seededFriOpeningChecked,
+      verifierCore,
+      executionObligations,
+      soundWitness⟩
+  exact
+    ⟨auditedAssumptions.left,
+      auditedAssumptions.right,
+      proofSystemSound,
+      verifierAccepts,
+      materialManifest,
+      segmentCanonical,
+      materialManifestMatches,
+      traceExternalEvidence,
+      openingExternalEvidence,
+      transcriptBound,
+      publicInputBound,
+      pcsOpenings,
+      friQueries,
+      seedBinds,
+      seededFriOpeningChecked,
+      verifierCore,
+      executionObligations,
+      soundWitness⟩
+
 theorem runtime_pipeline_binding_required_external_source_contracts_audited_soundness_core_contract
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
