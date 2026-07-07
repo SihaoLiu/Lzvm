@@ -3243,6 +3243,34 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
                 "guestDescriptorBufferRetentionRejectedCount := rejectedCount",
             ][..],
         ),
+        (
+            "guest_pc_trace_leaf_output_cache_counts_acceptance_audited_core_contract",
+            &[
+                "guestStageLeafOutputCacheHitCount := hitCount",
+                "guestStageLeafOutputCacheMissCount := missCount",
+                "stageTimings := stageTimings",
+            ][..],
+        ),
+        (
+            "guest_pc_trace_leaf_extend_timing_acceptance_audited_core_contract",
+            &[
+                "guestStageLeafExtendWorkMilliseconds := extendMilliseconds",
+                "stageTimings := stageTimings",
+            ][..],
+        ),
+        (
+            "guest_pc_trace_leaf_setup_timing_acceptance_audited_core_contract",
+            &[
+                "guestStageLeafSetupWorkMilliseconds := setupMilliseconds",
+                "guestStageLeafSetupPrepareMilliseconds := prepareMilliseconds",
+                "guestStageLeafSetupOutputAllocMilliseconds := outputAllocMilliseconds",
+                "guestStageLeafSetupWorkspaceAllocMilliseconds := workspaceAllocMilliseconds",
+                "guestStageLeafSetupOutputAllocByteCount := outputAllocByteCount",
+                "guestStageLeafSetupWorkspaceAllocByteCount := workspaceAllocByteCount",
+                "guestStageLeafSetupOutputAllocCount := outputAllocCount",
+                "guestStageLeafSetupWorkspaceAllocCount := workspaceAllocCount",
+            ][..],
+        ),
     ] {
         assert_updated_summary_audited_wrapper(
             &timing_source,
@@ -6294,12 +6322,15 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "guest_pc_trace_leaf_output_cache_counts_acceptance_sound",
             "guest_pc_trace_leaf_output_cache_counts_acceptance_verifier_core_contract",
             "guest_pc_trace_leaf_output_cache_counts_acceptance_core_and_sound",
+            "guest_pc_trace_leaf_output_cache_counts_acceptance_audited_core_contract",
             "guest_pc_trace_leaf_extend_timing_acceptance_sound",
             "guest_pc_trace_leaf_extend_timing_acceptance_verifier_core_contract",
             "guest_pc_trace_leaf_extend_timing_acceptance_core_and_sound",
+            "guest_pc_trace_leaf_extend_timing_acceptance_audited_core_contract",
             "guest_pc_trace_leaf_setup_timing_acceptance_sound",
             "guest_pc_trace_leaf_setup_timing_acceptance_verifier_core_contract",
             "guest_pc_trace_leaf_setup_timing_acceptance_core_and_sound",
+            "guest_pc_trace_leaf_setup_timing_acceptance_audited_core_contract",
             "guest_pc_trace_leaf_work_timing_acceptance_sound",
             "guest_pc_trace_leaf_work_timing_acceptance_verifier_core_contract",
             "guest_pc_trace_leaf_work_timing_acceptance_core_and_sound",
