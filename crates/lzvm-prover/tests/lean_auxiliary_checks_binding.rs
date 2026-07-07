@@ -1967,6 +1967,10 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         &[
             "proof_artifact_finish_verifier_descriptor_upload_shape_acceptance_verifier_core_contract",
             "proof_artifact_finish_verifier_descriptor_upload_shape_acceptance_core_and_sound",
+            concat!(
+                "proof_artifact_finish_verifier_descriptor_upload_shape_acceptance_",
+                "audited_core_contract"
+            ),
             "proof_artifact_finish_verifier_retained_source_row_values_acceptance_verifier_core_contract",
             "proof_artifact_finish_verifier_retained_source_row_values_acceptance_core_and_sound",
         ],
@@ -1980,6 +1984,10 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         "proof_artifact_finish_verifier_descriptor_upload_shape_acceptance_verifier_core_contract";
     let verifier_descriptor_upload_combined_theorem =
         "proof_artifact_finish_verifier_descriptor_upload_shape_acceptance_core_and_sound";
+    let verifier_descriptor_upload_audited_theorem = concat!(
+        "proof_artifact_finish_verifier_descriptor_upload_shape_acceptance_",
+        "audited_core_contract"
+    );
     lean_binding::assert_theorem_prefix_contains(
         &proof_timing_verifier_source,
         verifier_descriptor_upload_verifier_theorem,
@@ -2017,6 +2025,29 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         &[
             "proof_artifact_finish_descriptor_upload_shape_acceptance_sound",
             "sound_witness_implies_verifier_core_contract",
+        ],
+    );
+    assert_audited_core_contract_prefix(
+        &proof_timing_verifier_source,
+        verifier_descriptor_upload_audited_theorem,
+        &verifier_descriptor_upload_field_terms,
+    );
+    lean_binding::assert_theorem_body_contains(
+        &proof_timing_verifier_source,
+        verifier_descriptor_upload_audited_theorem,
+        &["proof_artifact_finish_descriptor_upload_shape_acceptance_audited_core_contract"],
+    );
+    assert_theorem_body_omits_identifiers(
+        &proof_timing_verifier_source,
+        verifier_descriptor_upload_audited_theorem,
+        &[
+            "proof_artifact_finish_verifier_descriptor_upload_shape_acceptance_core_and_sound",
+            concat!(
+                "proof_artifact_finish_verifier_descriptor_upload_shape_acceptance_",
+                "verifier_core_contract"
+            ),
+            "proof_artifact_finish_descriptor_upload_shape_acceptance_core_and_sound",
+            "assumption_bundle_carries_required_evidence",
         ],
     );
     for (theorem, helper) in [

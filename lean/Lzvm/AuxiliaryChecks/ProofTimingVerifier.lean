@@ -69,6 +69,37 @@ theorem proof_artifact_finish_verifier_descriptor_upload_shape_acceptance_core_a
       proof
       observed
 
+theorem proof_artifact_finish_verifier_descriptor_upload_shape_acceptance_audited_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : ProofArtifactFinishTimingSummary)
+    (byteCount wordCount rowCount : Nat) :
+    forall publicInput proof,
+      ProofArtifactFinishTimingObservedAcceptance
+        system
+        (some
+          { summary with
+            finishWitnessExternalSourceDescriptorUploadByteCount := byteCount
+            finishWitnessExternalSourceDescriptorUploadWordCount := wordCount
+            finishWitnessExternalSourceDescriptorUploadRowCount := rowCount })
+        publicInput
+        proof ->
+        RequiredCryptographicAssumptionStatements assumptions.crypto
+          /\ RequiredSemanticAssumptionStatements assumptions.semantic
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof observed
+  exact
+    proof_artifact_finish_descriptor_upload_shape_acceptance_audited_core_contract
+      assumptions
+      summary
+      byteCount
+      wordCount
+      rowCount
+      publicInput
+      proof
+      observed
+
 theorem proof_artifact_finish_verifier_retained_source_row_values_acceptance_verifier_core_contract
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
