@@ -912,6 +912,8 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "runtime_performance_observation_projected_metadata_acceptance_sound",
             "runtime_performance_observation_projected_metadata_acceptance_verifier_core_contract",
             "runtime_performance_observation_projected_metadata_acceptance_core_and_sound",
+            "runtime_performance_observation_projected_metadata_acceptance_audited_core_contract",
+            "runtime_performance_observation_acceptance_audited_core_contract",
         ],
     );
     lean_binding::assert_theorem_body_contains(
@@ -945,12 +947,32 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "sound_witness_implies_verifier_core_contract",
         ],
     );
+    for theorem in [
+        "runtime_performance_observation_projected_metadata_acceptance_audited_core_contract",
+        "runtime_performance_observation_acceptance_audited_core_contract",
+    ] {
+        assert_audited_core_contract_wrapper(
+            &runtime_performance_source,
+            theorem,
+            &["ignored_metadata_acceptance_audited_core_contract"],
+            &[
+                "assumption_bundle_carries_required_evidence",
+                "ignored_metadata_acceptance_core_and_sound",
+                "ignored_metadata_acceptance_sound",
+                "ignored_metadata_acceptance_verifier_core_contract",
+            ],
+        );
+    }
     lean_binding::assert_theorem_declarations(
         &runtime_performance_source,
         &[
             "runtime_performance_timing_observations_metadata_acceptance_sound",
             "runtime_performance_timing_observations_metadata_acceptance_verifier_core_contract",
             "runtime_performance_timing_observations_metadata_acceptance_core_and_sound",
+            concat!(
+                "runtime_performance_timing_observations_metadata_acceptance_",
+                "audited_core_contract"
+            ),
         ],
     );
     lean_binding::assert_theorem_body_contains(
@@ -992,6 +1014,20 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "runtime_performance_timing_observations_metadata_acceptance_sound",
             "runtime_performance_timing_observations_metadata_acceptance_verifier_core_contract",
             "sound_witness_implies_verifier_core_contract",
+        ],
+    );
+    assert_audited_core_contract_wrapper(
+        &runtime_performance_source,
+        "runtime_performance_timing_observations_metadata_acceptance_audited_core_contract",
+        &[
+            "runtime_performance_observation_acceptance_audited_core_contract",
+            "timingObservations := observations",
+        ],
+        &[
+            "runtime_performance_timing_observations_metadata_acceptance_core_and_sound",
+            "runtime_performance_timing_observations_metadata_acceptance_sound",
+            "runtime_performance_timing_observations_metadata_acceptance_verifier_core_contract",
+            "assumption_bundle_carries_required_evidence",
         ],
     );
     assert_eq!(
@@ -1232,6 +1268,98 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
                 "runtime_performance_observation_projected_metadata_acceptance_core_and_sound assumptions summary"
             ),
             "Lean theorem {theorem} body should call the projected combined runtime helper with ordered arguments"
+        );
+    }
+    for (theorem, projector) in [
+        (
+            concat!(
+                "runtime_performance_observation_timing_observations_acceptance_",
+                "audited_core_contract"
+            ),
+            "runtime_performance_observation_projects_timing_observations",
+        ),
+        (
+            concat!(
+                "runtime_performance_observation_guest_pc_trace_timing_acceptance_",
+                "audited_core_contract"
+            ),
+            "runtime_performance_observation_projects_guest_pc_trace_timing",
+        ),
+        (
+            "runtime_performance_observation_row_value_timing_acceptance_audited_core_contract",
+            "runtime_performance_observation_projects_witness_opening_row_value_timing",
+        ),
+        (
+            concat!(
+                "runtime_performance_observation_constant_material_timing_acceptance_",
+                "audited_core_contract"
+            ),
+            "runtime_performance_observation_projects_constant_material_validation_timing",
+        ),
+        (
+            "runtime_performance_observation_prover_gpu_mode_acceptance_audited_core_contract",
+            "runtime_performance_observation_projects_prover_gpu_mode",
+        ),
+        (
+            "runtime_performance_observation_gpu_run_options_acceptance_audited_core_contract",
+            "runtime_performance_observation_projects_gpu_run_options",
+        ),
+        (
+            "runtime_performance_observation_cuda_backend_acceptance_audited_core_contract",
+            "runtime_performance_observation_projects_cuda_backend",
+        ),
+        (
+            concat!(
+                "runtime_performance_observation_cuda_allocator_timing_acceptance_",
+                "audited_core_contract"
+            ),
+            "runtime_performance_observation_projects_cuda_allocator_timing",
+        ),
+        (
+            "runtime_performance_observation_finish_timing_acceptance_audited_core_contract",
+            "runtime_performance_observation_projects_proof_artifact_finish_timing",
+        ),
+        (
+            concat!(
+                "runtime_performance_observation_proof_timing_batch_acceptance_",
+                "audited_core_contract"
+            ),
+            "runtime_performance_observation_projects_proof_timing_batch",
+        ),
+    ] {
+        let stem = theorem
+            .strip_suffix("_audited_core_contract")
+            .expect("audited runtime theorem name should use the audited suffix");
+        let combined_callee = format!("{stem}_core_and_sound");
+        let verifier_callee = format!("{stem}_verifier_core_contract");
+        let sound_callee = format!("{stem}_sound");
+        assert_audited_core_contract_wrapper(
+            &runtime_performance_source,
+            theorem,
+            &[
+                projector,
+                concat!(
+                    "runtime_performance_observation_projected_metadata_acceptance_",
+                    "audited_core_contract"
+                ),
+            ],
+            &[
+                combined_callee.as_str(),
+                verifier_callee.as_str(),
+                sound_callee.as_str(),
+                "assumption_bundle_carries_required_evidence",
+            ],
+        );
+        let body = lean_binding::theorem_body(&runtime_performance_source, theorem);
+        assert!(
+            compact_source_contains(
+                &body,
+                concat!(
+                    "runtime_performance_observation_projected_metadata_acceptance_",
+                    "audited_core_contract assumptions summary"
+                )
+            ),
+            "Lean theorem {theorem} body should call the projected audited runtime helper with ordered arguments"
         );
     }
     assert!(

@@ -112,6 +112,31 @@ theorem runtime_performance_observation_projected_metadata_acceptance_core_and_s
       proof
       observed
 
+theorem runtime_performance_observation_projected_metadata_acceptance_audited_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    {Metadata : Type u}
+    (summary : RuntimePerformanceObservationSummary)
+    (project : RuntimePerformanceObservationSummary -> Metadata) :
+    forall publicInput proof,
+      IgnoredMetadataObservedAcceptance
+        system
+        (project summary)
+        publicInput
+        proof ->
+        RequiredCryptographicAssumptionStatements assumptions.crypto
+          /\ RequiredSemanticAssumptionStatements assumptions.semantic
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof observed
+  exact
+    ignored_metadata_acceptance_audited_core_contract
+      assumptions
+      (project summary)
+      publicInput
+      proof
+      observed
+
 theorem runtime_performance_observation_acceptance_sound
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
@@ -155,6 +180,25 @@ theorem runtime_performance_observation_acceptance_core_and_sound
   intro publicInput proof observed
   exact
     ignored_metadata_acceptance_core_and_sound
+      assumptions
+      summary
+      publicInput
+      proof
+      observed
+
+theorem runtime_performance_observation_acceptance_audited_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : RuntimePerformanceObservationSummary) :
+    forall publicInput proof,
+      RuntimePerformanceObservedAcceptance system summary publicInput proof ->
+        RequiredCryptographicAssumptionStatements assumptions.crypto
+          /\ RequiredSemanticAssumptionStatements assumptions.semantic
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof observed
+  exact
+    ignored_metadata_acceptance_audited_core_contract
       assumptions
       summary
       publicInput
@@ -219,6 +263,30 @@ theorem runtime_performance_timing_observations_metadata_acceptance_core_and_sou
   intro publicInput proof observed
   exact
     runtime_performance_observation_acceptance_core_and_sound
+      assumptions
+      { summary with timingObservations := observations }
+      publicInput
+      proof
+      observed
+
+theorem runtime_performance_timing_observations_metadata_acceptance_audited_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : RuntimePerformanceObservationSummary)
+    (observations : List TimingObservation) :
+    forall publicInput proof,
+      RuntimePerformanceObservedAcceptance
+        system
+        { summary with timingObservations := observations }
+        publicInput
+        proof ->
+        RequiredCryptographicAssumptionStatements assumptions.crypto
+          /\ RequiredSemanticAssumptionStatements assumptions.semantic
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof observed
+  exact
+    runtime_performance_observation_acceptance_audited_core_contract
       assumptions
       { summary with timingObservations := observations }
       publicInput
@@ -291,6 +359,30 @@ theorem runtime_performance_observation_timing_observations_acceptance_core_and_
   intro publicInput proof observed
   exact
     runtime_performance_observation_projected_metadata_acceptance_core_and_sound
+      assumptions
+      summary
+      (fun summary => summary.timingObservations)
+      publicInput
+      proof
+      (runtime_performance_observation_projects_timing_observations
+        summary
+        publicInput
+        proof
+        observed)
+
+theorem runtime_performance_observation_timing_observations_acceptance_audited_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : RuntimePerformanceObservationSummary) :
+    forall publicInput proof,
+      RuntimePerformanceObservedAcceptance system summary publicInput proof ->
+        RequiredCryptographicAssumptionStatements assumptions.crypto
+          /\ RequiredSemanticAssumptionStatements assumptions.semantic
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof observed
+  exact
+    runtime_performance_observation_projected_metadata_acceptance_audited_core_contract
       assumptions
       summary
       (fun summary => summary.timingObservations)
@@ -379,6 +471,30 @@ theorem runtime_performance_observation_guest_pc_trace_timing_acceptance_core_an
         proof
         observed)
 
+theorem runtime_performance_observation_guest_pc_trace_timing_acceptance_audited_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : RuntimePerformanceObservationSummary) :
+    forall publicInput proof,
+      RuntimePerformanceObservedAcceptance system summary publicInput proof ->
+        RequiredCryptographicAssumptionStatements assumptions.crypto
+          /\ RequiredSemanticAssumptionStatements assumptions.semantic
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof observed
+  exact
+    runtime_performance_observation_projected_metadata_acceptance_audited_core_contract
+      assumptions
+      summary
+      (fun summary => summary.guestPcTraceTiming)
+      publicInput
+      proof
+      (runtime_performance_observation_projects_guest_pc_trace_timing
+        summary
+        publicInput
+        proof
+        observed)
+
 theorem runtime_performance_observation_projects_witness_opening_row_value_timing
     {system : VerifierModel}
     (summary : RuntimePerformanceObservationSummary) :
@@ -445,6 +561,30 @@ theorem runtime_performance_observation_row_value_timing_acceptance_core_and_sou
   intro publicInput proof observed
   exact
     runtime_performance_observation_projected_metadata_acceptance_core_and_sound
+      assumptions
+      summary
+      (fun summary => summary.witnessOpeningRowValueTiming)
+      publicInput
+      proof
+      (runtime_performance_observation_projects_witness_opening_row_value_timing
+        summary
+        publicInput
+        proof
+        observed)
+
+theorem runtime_performance_observation_row_value_timing_acceptance_audited_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : RuntimePerformanceObservationSummary) :
+    forall publicInput proof,
+      RuntimePerformanceObservedAcceptance system summary publicInput proof ->
+        RequiredCryptographicAssumptionStatements assumptions.crypto
+          /\ RequiredSemanticAssumptionStatements assumptions.semantic
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof observed
+  exact
+    runtime_performance_observation_projected_metadata_acceptance_audited_core_contract
       assumptions
       summary
       (fun summary => summary.witnessOpeningRowValueTiming)
@@ -533,6 +673,30 @@ theorem runtime_performance_observation_constant_material_timing_acceptance_core
         proof
         observed)
 
+theorem runtime_performance_observation_constant_material_timing_acceptance_audited_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : RuntimePerformanceObservationSummary) :
+    forall publicInput proof,
+      RuntimePerformanceObservedAcceptance system summary publicInput proof ->
+        RequiredCryptographicAssumptionStatements assumptions.crypto
+          /\ RequiredSemanticAssumptionStatements assumptions.semantic
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof observed
+  exact
+    runtime_performance_observation_projected_metadata_acceptance_audited_core_contract
+      assumptions
+      summary
+      (fun summary => summary.constantMaterialValidationTiming)
+      publicInput
+      proof
+      (runtime_performance_observation_projects_constant_material_validation_timing
+        summary
+        publicInput
+        proof
+        observed)
+
 theorem runtime_performance_observation_projects_prover_gpu_mode
     {system : VerifierModel}
     (summary : RuntimePerformanceObservationSummary) :
@@ -599,6 +763,30 @@ theorem runtime_performance_observation_prover_gpu_mode_acceptance_core_and_soun
   intro publicInput proof observed
   exact
     runtime_performance_observation_projected_metadata_acceptance_core_and_sound
+      assumptions
+      summary
+      (fun summary => summary.proverGpuMode)
+      publicInput
+      proof
+      (runtime_performance_observation_projects_prover_gpu_mode
+        summary
+        publicInput
+        proof
+        observed)
+
+theorem runtime_performance_observation_prover_gpu_mode_acceptance_audited_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : RuntimePerformanceObservationSummary) :
+    forall publicInput proof,
+      RuntimePerformanceObservedAcceptance system summary publicInput proof ->
+        RequiredCryptographicAssumptionStatements assumptions.crypto
+          /\ RequiredSemanticAssumptionStatements assumptions.semantic
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof observed
+  exact
+    runtime_performance_observation_projected_metadata_acceptance_audited_core_contract
       assumptions
       summary
       (fun summary => summary.proverGpuMode)
@@ -687,6 +875,30 @@ theorem runtime_performance_observation_gpu_run_options_acceptance_core_and_soun
         proof
         observed)
 
+theorem runtime_performance_observation_gpu_run_options_acceptance_audited_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : RuntimePerformanceObservationSummary) :
+    forall publicInput proof,
+      RuntimePerformanceObservedAcceptance system summary publicInput proof ->
+        RequiredCryptographicAssumptionStatements assumptions.crypto
+          /\ RequiredSemanticAssumptionStatements assumptions.semantic
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof observed
+  exact
+    runtime_performance_observation_projected_metadata_acceptance_audited_core_contract
+      assumptions
+      summary
+      (fun summary => summary.gpuRunOptions)
+      publicInput
+      proof
+      (runtime_performance_observation_projects_gpu_run_options
+        summary
+        publicInput
+        proof
+        observed)
+
 theorem runtime_performance_observation_projects_cuda_backend
     {system : VerifierModel}
     (summary : RuntimePerformanceObservationSummary) :
@@ -753,6 +965,30 @@ theorem runtime_performance_observation_cuda_backend_acceptance_core_and_sound
   intro publicInput proof observed
   exact
     runtime_performance_observation_projected_metadata_acceptance_core_and_sound
+      assumptions
+      summary
+      (fun summary => summary.cudaBackend)
+      publicInput
+      proof
+      (runtime_performance_observation_projects_cuda_backend
+        summary
+        publicInput
+        proof
+        observed)
+
+theorem runtime_performance_observation_cuda_backend_acceptance_audited_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : RuntimePerformanceObservationSummary) :
+    forall publicInput proof,
+      RuntimePerformanceObservedAcceptance system summary publicInput proof ->
+        RequiredCryptographicAssumptionStatements assumptions.crypto
+          /\ RequiredSemanticAssumptionStatements assumptions.semantic
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof observed
+  exact
+    runtime_performance_observation_projected_metadata_acceptance_audited_core_contract
       assumptions
       summary
       (fun summary => summary.cudaBackend)
@@ -841,6 +1077,30 @@ theorem runtime_performance_observation_cuda_allocator_timing_acceptance_core_an
         proof
         observed)
 
+theorem runtime_performance_observation_cuda_allocator_timing_acceptance_audited_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : RuntimePerformanceObservationSummary) :
+    forall publicInput proof,
+      RuntimePerformanceObservedAcceptance system summary publicInput proof ->
+        RequiredCryptographicAssumptionStatements assumptions.crypto
+          /\ RequiredSemanticAssumptionStatements assumptions.semantic
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof observed
+  exact
+    runtime_performance_observation_projected_metadata_acceptance_audited_core_contract
+      assumptions
+      summary
+      (fun summary => summary.cudaAllocatorTiming)
+      publicInput
+      proof
+      (runtime_performance_observation_projects_cuda_allocator_timing
+        summary
+        publicInput
+        proof
+        observed)
+
 theorem runtime_performance_observation_projects_proof_artifact_finish_timing
     {system : VerifierModel}
     (summary : RuntimePerformanceObservationSummary) :
@@ -918,6 +1178,30 @@ theorem runtime_performance_observation_finish_timing_acceptance_core_and_sound
         proof
         observed)
 
+theorem runtime_performance_observation_finish_timing_acceptance_audited_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : RuntimePerformanceObservationSummary) :
+    forall publicInput proof,
+      RuntimePerformanceObservedAcceptance system summary publicInput proof ->
+        RequiredCryptographicAssumptionStatements assumptions.crypto
+          /\ RequiredSemanticAssumptionStatements assumptions.semantic
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof observed
+  exact
+    runtime_performance_observation_projected_metadata_acceptance_audited_core_contract
+      assumptions
+      summary
+      (fun summary => summary.proofArtifactFinishTiming)
+      publicInput
+      proof
+      (runtime_performance_observation_projects_proof_artifact_finish_timing
+        summary
+        publicInput
+        proof
+        observed)
+
 theorem runtime_performance_observation_projects_proof_timing_batch
     {system : VerifierModel}
     (summary : RuntimePerformanceObservationSummary) :
@@ -984,6 +1268,30 @@ theorem runtime_performance_observation_proof_timing_batch_acceptance_core_and_s
   intro publicInput proof observed
   exact
     runtime_performance_observation_projected_metadata_acceptance_core_and_sound
+      assumptions
+      summary
+      (fun summary => summary.proofTimingBatch)
+      publicInput
+      proof
+      (runtime_performance_observation_projects_proof_timing_batch
+        summary
+        publicInput
+        proof
+        observed)
+
+theorem runtime_performance_observation_proof_timing_batch_acceptance_audited_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : RuntimePerformanceObservationSummary) :
+    forall publicInput proof,
+      RuntimePerformanceObservedAcceptance system summary publicInput proof ->
+        RequiredCryptographicAssumptionStatements assumptions.crypto
+          /\ RequiredSemanticAssumptionStatements assumptions.semantic
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof observed
+  exact
+    runtime_performance_observation_projected_metadata_acceptance_audited_core_contract
       assumptions
       summary
       (fun summary => summary.proofTimingBatch)
