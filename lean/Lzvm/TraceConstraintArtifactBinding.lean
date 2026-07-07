@@ -570,10 +570,8 @@ theorem runtime_trace_constraint_artifact_binding_checked_acceptance_audited_cor
           /\ RuntimeVerifierCoreContract system publicInput proof
           /\ SoundWitness system publicInput proof := by
   intro artifact publicInput proof requiresExternalSource accepted
-  have auditedAssumptions :=
-    assumption_bundle_carries_required_evidence assumptions
-  have contracts :=
-    runtime_trace_constraint_artifact_binding_checked_acceptance_evidence_core_and_sound
+  have checkedSound :=
+    runtime_trace_constraint_artifact_binding_checked_acceptance_sound
       assumptions
       validation
       artifact
@@ -581,9 +579,22 @@ theorem runtime_trace_constraint_artifact_binding_checked_acceptance_audited_cor
       proof
       requiresExternalSource
       accepted
+  have coreContract :=
+    runtime_trace_constraint_artifact_binding_checked_acceptance_verifier_core_contract
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
   exact
-    And.intro auditedAssumptions.left
-      (And.intro auditedAssumptions.right contracts)
+    And.intro
+      (assumption_bundle_carries_required_crypto_evidence assumptions)
+      (And.intro
+        (assumption_bundle_carries_required_semantic_evidence assumptions)
+        (And.intro checkedSound.left
+          (And.intro checkedSound.right.left
+            (And.intro coreContract checkedSound.right.right))))
 
 set_option linter.style.longLine false in
 theorem runtime_trace_constraint_artifact_binding_required_external_source_evidence_core_and_sound
