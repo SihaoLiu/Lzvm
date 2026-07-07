@@ -240,19 +240,44 @@ theorem fri_fixed_column_cache_checked_acceptance_audited_core_contract
           /\ RuntimeVerifierCoreContract system publicInput proof
           /\ SoundWitness system publicInput proof := by
   intro publicInput proof checked
-  have auditedAssumptions :=
-    assumption_bundle_carries_required_evidence assumptions
-  have contracts :=
-    fri_fixed_column_cache_checked_acceptance_core_and_sound
-      assumptions
+  have requestBound :=
+    fri_fixed_column_cache_checked_acceptance_projects_request_bound
       validation
       cached
       fresh
       publicInput
       proof
       checked
+  have freshBound :=
+    fri_fixed_column_cache_checked_acceptance_projects_fresh_contents_bound
+      validation
+      cached
+      fresh
+      publicInput
+      proof
+      checked
+  have cachedBound :=
+    fri_fixed_column_cache_checked_acceptance_projects_cached_contents_bound
+      validation
+      cached
+      fresh
+      publicInput
+      proof
+      checked
+  have audited :=
+    GpuRuntimeInternal.checked_acceptance_audited_core_contract
+      (auxiliaryAccepted := fun publicInput proof =>
+        validation.fixedColumnCacheRequestBound cached fresh
+          /\ validation.allocationValidation.writtenContentsBound fresh publicInput proof)
+      assumptions
+      publicInput
+      proof
+      checked
   exact
-    And.intro auditedAssumptions.left
-      (And.intro auditedAssumptions.right contracts)
+    And.intro audited.left
+      (And.intro audited.right.left
+        (And.intro requestBound
+          (And.intro freshBound
+            (And.intro cachedBound audited.right.right))))
 
 end Lzvm

@@ -782,19 +782,25 @@ theorem gpu_setup_checked_acceptance_constants_audited_core_contract
           /\ RuntimeVerifierCoreContract system publicInput proof
           /\ SoundWitness system publicInput proof := by
   intro publicInput proof checked
-  have auditedAssumptions :=
-    assumption_bundle_carries_required_evidence assumptions
-  have contracts :=
-    gpu_setup_checked_acceptance_constants_core_and_sound
-      assumptions
+  have constantsSound :=
+    gpu_setup_checked_acceptance_projects_constants_sound
       validation
       request
       publicInput
       proof
       checked
+  have audited :=
+    GpuRuntimeInternal.checked_acceptance_audited_core_contract
+      (auxiliaryAccepted := fun _publicInput _proof =>
+        validation.constantsSoundFor request.device request.requiredBits)
+      assumptions
+      publicInput
+      proof
+      checked
   exact
-    And.intro auditedAssumptions.left
-      (And.intro auditedAssumptions.right contracts)
+    And.intro audited.left
+      (And.intro audited.right.left
+        (And.intro constantsSound audited.right.right))
 
 theorem gpu_allocation_checked_acceptance_written_contents_audited_core_contract
     {system : VerifierModel}
@@ -809,19 +815,25 @@ theorem gpu_allocation_checked_acceptance_written_contents_audited_core_contract
           /\ RuntimeVerifierCoreContract system publicInput proof
           /\ SoundWitness system publicInput proof := by
   intro publicInput proof checked
-  have auditedAssumptions :=
-    assumption_bundle_carries_required_evidence assumptions
-  have contracts :=
-    gpu_allocation_checked_acceptance_written_contents_core_and_sound
-      assumptions
+  have writtenContents :=
+    gpu_allocation_checked_acceptance_projects_written_contents
       validation
       allocation
       publicInput
       proof
       checked
+  have audited :=
+    GpuRuntimeInternal.checked_acceptance_audited_core_contract
+      (auxiliaryAccepted := fun publicInput proof =>
+        validation.writtenContentsBound allocation publicInput proof)
+      assumptions
+      publicInput
+      proof
+      checked
   exact
-    And.intro auditedAssumptions.left
-      (And.intro auditedAssumptions.right contracts)
+    And.intro audited.left
+      (And.intro audited.right.left
+        (And.intro writtenContents audited.right.right))
 
 theorem gpu_host_device_copy_round_trip_checked_acceptance_written_contents_audited_core_contract
     {system : VerifierModel}
@@ -841,19 +853,25 @@ theorem gpu_host_device_copy_round_trip_checked_acceptance_written_contents_audi
           /\ RuntimeVerifierCoreContract system publicInput proof
           /\ SoundWitness system publicInput proof := by
   intro publicInput proof checked
-  have auditedAssumptions :=
-    assumption_bundle_carries_required_evidence assumptions
-  have contracts :=
-    gpu_host_device_copy_round_trip_checked_acceptance_written_contents_core_and_sound
-      assumptions
+  have writtenContents :=
+    gpu_host_device_copy_round_trip_checked_acceptance_projects_written_contents
       validation
       allocation
       publicInput
       proof
       checked
+  have audited :=
+    GpuRuntimeInternal.checked_acceptance_audited_core_contract
+      (auxiliaryAccepted := fun publicInput proof =>
+        validation.uploadedBytesRoundTrip allocation publicInput proof)
+      assumptions
+      publicInput
+      proof
+      checked
   exact
-    And.intro auditedAssumptions.left
-      (And.intro auditedAssumptions.right contracts)
+    And.intro audited.left
+      (And.intro audited.right.left
+        (And.intro writtenContents audited.right.right))
 
 theorem gpu_temporary_buffer_reuse_checked_acceptance_reuse_audited_core_contract
     {system : VerifierModel}
@@ -875,20 +893,35 @@ theorem gpu_temporary_buffer_reuse_checked_acceptance_reuse_audited_core_contrac
           /\ RuntimeVerifierCoreContract system publicInput proof
           /\ SoundWitness system publicInput proof := by
   intro publicInput proof checked
-  have auditedAssumptions :=
-    assumption_bundle_carries_required_evidence assumptions
-  have contracts :=
-    gpu_temporary_buffer_reuse_checked_acceptance_reuse_core_and_sound
-      assumptions
+  have sameRequest :=
+    gpu_temporary_buffer_reuse_checked_acceptance_projects_same_request
       validation
       previous
       next
       publicInput
       proof
       checked
+  have pendingReadsComplete :=
+    gpu_temporary_buffer_reuse_checked_acceptance_projects_pending_reads_complete
+      validation
+      previous
+      next
+      publicInput
+      proof
+      checked
+  have audited :=
+    GpuRuntimeInternal.checked_acceptance_audited_core_contract
+      (auxiliaryAccepted := fun publicInput proof =>
+        validation.temporaryBufferReuseAllowed previous next publicInput proof)
+      assumptions
+      publicInput
+      proof
+      checked
   exact
-    And.intro auditedAssumptions.left
-      (And.intro auditedAssumptions.right contracts)
+    And.intro audited.left
+      (And.intro audited.right.left
+        (And.intro sameRequest
+          (And.intro pendingReadsComplete audited.right.right)))
 
 theorem gpu_allocator_no_wait_bypass_checked_acceptance_audited_core_contract
     {system : VerifierModel}
@@ -911,19 +944,43 @@ theorem gpu_allocator_no_wait_bypass_checked_acceptance_audited_core_contract
           /\ RuntimeVerifierCoreContract system publicInput proof
           /\ SoundWitness system publicInput proof := by
   intro publicInput proof checked
-  have auditedAssumptions :=
-    assumption_bundle_carries_required_evidence assumptions
-  have contracts :=
-    gpu_allocator_no_wait_bypass_checked_acceptance_core_and_sound
-      assumptions
+  have sameRequest :=
+    gpu_allocator_no_wait_bypass_checked_acceptance_projects_same_request
       validation
       pending
       fresh
       publicInput
       proof
       checked
+  have pendingNotReused :=
+    gpu_allocator_no_wait_bypass_checked_acceptance_projects_pending_not_reused
+      validation
+      pending
+      fresh
+      publicInput
+      proof
+      checked
+  have freshIssued :=
+    gpu_allocator_no_wait_bypass_checked_acceptance_projects_fresh_allocation
+      validation
+      pending
+      fresh
+      publicInput
+      proof
+      checked
+  have audited :=
+    GpuRuntimeInternal.checked_acceptance_audited_core_contract
+      (auxiliaryAccepted := fun publicInput proof =>
+        validation.noWaitBypassAllowed pending fresh publicInput proof)
+      assumptions
+      publicInput
+      proof
+      checked
   exact
-    And.intro auditedAssumptions.left
-      (And.intro auditedAssumptions.right contracts)
+    And.intro audited.left
+      (And.intro audited.right.left
+        (And.intro sameRequest
+          (And.intro pendingNotReused
+            (And.intro freshIssued audited.right.right))))
 
 end Lzvm

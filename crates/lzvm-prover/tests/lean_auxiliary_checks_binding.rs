@@ -9000,7 +9000,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "sound_witness_implies_verifier_core_contract",
         ],
     );
-    for (theorem, prefix_terms, combined_helper, omitted_terms) in [
+    for (theorem, prefix_terms, body_terms, omitted_terms) in [
         (
             "gpu_setup_checked_acceptance_constants_audited_core_contract",
             &[
@@ -9010,8 +9010,13 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
                 "RuntimeVerifierCoreContract system publicInput proof",
                 "SoundWitness system publicInput proof",
             ][..],
-            "gpu_setup_checked_acceptance_constants_core_and_sound",
             &[
+                "gpu_setup_checked_acceptance_projects_constants_sound",
+                "GpuRuntimeInternal.checked_acceptance_audited_core_contract",
+            ][..],
+            &[
+                "assumption_bundle_carries_required_evidence",
+                "gpu_setup_checked_acceptance_constants_core_and_sound",
                 "gpu_setup_checked_acceptance_sound",
                 "gpu_setup_checked_acceptance_verifier_core_contract",
                 "sound_witness_implies_verifier_core_contract",
@@ -9026,8 +9031,13 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
                 "RuntimeVerifierCoreContract system publicInput proof",
                 "SoundWitness system publicInput proof",
             ][..],
-            "gpu_allocation_checked_acceptance_written_contents_core_and_sound",
             &[
+                "gpu_allocation_checked_acceptance_projects_written_contents",
+                "GpuRuntimeInternal.checked_acceptance_audited_core_contract",
+            ][..],
+            &[
+                "assumption_bundle_carries_required_evidence",
+                "gpu_allocation_checked_acceptance_written_contents_core_and_sound",
                 "gpu_allocation_checked_acceptance_sound",
                 "gpu_allocation_checked_acceptance_verifier_core_contract",
                 "sound_witness_implies_verifier_core_contract",
@@ -9045,11 +9055,19 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
                 "RuntimeVerifierCoreContract system publicInput proof",
                 "SoundWitness system publicInput proof",
             ][..],
-            concat!(
-                "gpu_host_device_copy_round_trip_checked_acceptance_written_contents_",
-                "core_and_sound"
-            ),
             &[
+                concat!(
+                    "gpu_host_device_copy_round_trip_checked_acceptance_",
+                    "projects_written_contents"
+                ),
+                "GpuRuntimeInternal.checked_acceptance_audited_core_contract",
+            ][..],
+            &[
+                "assumption_bundle_carries_required_evidence",
+                concat!(
+                    "gpu_host_device_copy_round_trip_checked_acceptance_written_contents_",
+                    "core_and_sound"
+                ),
                 "gpu_host_device_copy_round_trip_checked_acceptance_sound",
                 concat!(
                     "gpu_host_device_copy_round_trip_checked_acceptance_",
@@ -9068,8 +9086,14 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
                 "RuntimeVerifierCoreContract system publicInput proof",
                 "SoundWitness system publicInput proof",
             ][..],
-            "gpu_temporary_buffer_reuse_checked_acceptance_reuse_core_and_sound",
             &[
+                "gpu_temporary_buffer_reuse_checked_acceptance_projects_same_request",
+                "gpu_temporary_buffer_reuse_checked_acceptance_projects_pending_reads_complete",
+                "GpuRuntimeInternal.checked_acceptance_audited_core_contract",
+            ][..],
+            &[
+                "assumption_bundle_carries_required_evidence",
+                "gpu_temporary_buffer_reuse_checked_acceptance_reuse_core_and_sound",
                 "gpu_temporary_buffer_reuse_checked_acceptance_sound",
                 "gpu_temporary_buffer_reuse_checked_acceptance_verifier_core_contract",
                 "sound_witness_implies_verifier_core_contract",
@@ -9086,8 +9110,15 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
                 "RuntimeVerifierCoreContract system publicInput proof",
                 "SoundWitness system publicInput proof",
             ][..],
-            "gpu_allocator_no_wait_bypass_checked_acceptance_core_and_sound",
             &[
+                "gpu_allocator_no_wait_bypass_checked_acceptance_projects_same_request",
+                "gpu_allocator_no_wait_bypass_checked_acceptance_projects_pending_not_reused",
+                "gpu_allocator_no_wait_bypass_checked_acceptance_projects_fresh_allocation",
+                "GpuRuntimeInternal.checked_acceptance_audited_core_contract",
+            ][..],
+            &[
+                "assumption_bundle_carries_required_evidence",
+                "gpu_allocator_no_wait_bypass_checked_acceptance_core_and_sound",
                 "gpu_allocator_no_wait_bypass_checked_acceptance_sound",
                 "gpu_allocator_no_wait_bypass_checked_acceptance_verifier_core_contract",
                 "sound_witness_implies_verifier_core_contract",
@@ -9104,8 +9135,15 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
                 "RuntimeVerifierCoreContract system publicInput proof",
                 "SoundWitness system publicInput proof",
             ][..],
-            "fri_fixed_column_cache_checked_acceptance_core_and_sound",
             &[
+                "fri_fixed_column_cache_checked_acceptance_projects_request_bound",
+                "fri_fixed_column_cache_checked_acceptance_projects_fresh_contents_bound",
+                "fri_fixed_column_cache_checked_acceptance_projects_cached_contents_bound",
+                "GpuRuntimeInternal.checked_acceptance_audited_core_contract",
+            ][..],
+            &[
+                "assumption_bundle_carries_required_evidence",
+                "fri_fixed_column_cache_checked_acceptance_core_and_sound",
                 "fri_fixed_column_cache_checked_acceptance_sound",
                 "fri_fixed_column_cache_checked_acceptance_verifier_core_contract",
                 "sound_witness_implies_verifier_core_contract",
@@ -9113,14 +9151,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         ),
     ] {
         lean_binding::assert_theorem_prefix_contains(&gpu_runtime_source, theorem, prefix_terms);
-        assert_theorem_body_contains_identifiers(
-            &gpu_runtime_source,
-            theorem,
-            &[
-                "assumption_bundle_carries_required_evidence",
-                combined_helper,
-            ],
-        );
+        lean_binding::assert_theorem_body_contains(&gpu_runtime_source, theorem, body_terms);
         assert_theorem_body_omits_identifiers(&gpu_runtime_source, theorem, omitted_terms);
     }
     lean_binding::assert_theorem_body_contains(
