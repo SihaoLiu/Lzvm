@@ -281,4 +281,30 @@ theorem external_source_opening_checked_acceptance_evidence_core_and_sound
       (And.intro checkedSound.right.left
         (And.intro coreContract checkedSound.right.right))
 
+theorem external_source_opening_checked_acceptance_audited_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : ExternalSourceOpeningValidation system) :
+    forall publicInput proof,
+      ExternalSourceOpeningCheckedAcceptance system validation publicInput proof ->
+        RequiredCryptographicAssumptionStatements assumptions.crypto
+          /\ RequiredSemanticAssumptionStatements assumptions.semantic
+          /\ ExternalSourceOpeningEvidence system validation publicInput proof
+          /\ system.pcsOpeningsValid publicInput proof
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof acceptedWithExternalSource
+  have auditedAssumptions :=
+    assumption_bundle_carries_required_evidence assumptions
+  have contracts :=
+    external_source_opening_checked_acceptance_evidence_core_and_sound
+      assumptions
+      validation
+      publicInput
+      proof
+      acceptedWithExternalSource
+  exact
+    And.intro auditedAssumptions.left
+      (And.intro auditedAssumptions.right contracts)
+
 end Lzvm
