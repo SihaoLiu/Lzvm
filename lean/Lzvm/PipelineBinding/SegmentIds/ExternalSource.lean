@@ -234,11 +234,12 @@ theorem runtime_pipeline_binding_required_external_source_audited_soundness_segm
       requiresExternalSource
       accepted
       required
-  have auditedAssumptions :=
-    assumption_bundle_carries_required_evidence assumptions
   exact
-    And.intro auditedAssumptions.left
-      (And.intro auditedAssumptions.right auditedContract.right)
+    And.intro
+      (assumption_bundle_carries_required_crypto_evidence assumptions)
+      (And.intro
+        (assumption_bundle_carries_required_semantic_evidence assumptions)
+        auditedContract.right)
 
 theorem
 runtime_pipeline_required_external_source_audited_segment_ids_core_components_contract
