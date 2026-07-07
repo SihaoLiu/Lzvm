@@ -22,6 +22,22 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
     let core_base_path = crate_root.join("../../lean/Lzvm/PipelineBinding/Core/Base.lean");
     let core_base_source = std::fs::read_to_string(&core_base_path)
         .expect("Lean pipeline core base binding source should read");
+    assert!(
+        lean_binding::contains_import(&core_base_source, "Lzvm.PipelineBinding.Core.Base.Prelude")
+            && lean_binding::contains_import(
+                &core_base_source,
+                "Lzvm.PipelineBinding.Core.Base.Contracts",
+            ),
+        "Lean pipeline core base wrapper should re-export split base modules"
+    );
+    let core_base_prelude_path =
+        crate_root.join("../../lean/Lzvm/PipelineBinding/Core/Base/Prelude.lean");
+    let core_base_prelude_source = std::fs::read_to_string(&core_base_prelude_path)
+        .expect("Lean pipeline core base prelude binding source should read");
+    let core_base_contracts_path =
+        crate_root.join("../../lean/Lzvm/PipelineBinding/Core/Base/Contracts.lean");
+    let core_base_contracts_source = std::fs::read_to_string(&core_base_contracts_path)
+        .expect("Lean pipeline core base contracts binding source should read");
     let core_evidence_path = crate_root.join("../../lean/Lzvm/PipelineBinding/Core/Evidence.lean");
     let core_evidence_source = std::fs::read_to_string(&core_evidence_path)
         .expect("Lean pipeline core evidence binding source should read");
@@ -75,6 +91,22 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
     let segment_ids_path = crate_root.join("../../lean/Lzvm/PipelineBinding/SegmentIds.lean");
     let segment_ids_source = std::fs::read_to_string(&segment_ids_path)
         .expect("Lean pipeline segment IDs binding source should read");
+    assert!(
+        lean_binding::contains_import(&segment_ids_source, "Lzvm.PipelineBinding.SegmentIds.Base")
+            && lean_binding::contains_import(
+                &segment_ids_source,
+                "Lzvm.PipelineBinding.SegmentIds.ExternalSource",
+            ),
+        "Lean pipeline segment IDs wrapper should re-export split segment ID modules"
+    );
+    let segment_ids_base_path =
+        crate_root.join("../../lean/Lzvm/PipelineBinding/SegmentIds/Base.lean");
+    let segment_ids_base_source = std::fs::read_to_string(&segment_ids_base_path)
+        .expect("Lean pipeline segment IDs base binding source should read");
+    let segment_ids_external_source_path =
+        crate_root.join("../../lean/Lzvm/PipelineBinding/SegmentIds/ExternalSource.lean");
+    let segment_ids_external_source = std::fs::read_to_string(&segment_ids_external_source_path)
+        .expect("Lean pipeline segment IDs external-source binding source should read");
     let obligations_source = lean_binding::read_lean_sources(
         crate_root,
         &[
@@ -87,7 +119,7 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
     let audited_source =
         std::fs::read_to_string(&audited_path).expect("Lean pipeline audited source should read");
     let lean_source = format!(
-        "{core_source}\n{core_base_source}\n{core_evidence_source}\n{core_derived_source}\n{pipeline_source}\n{obligations_source}\n{audited_source}\n{accepts_source}\n{contracts_source}\n{contracts_core_source}\n{contracts_core_base_source}\n{contracts_core_audited_source}\n{contracts_external_source}\n{external_contracts_source}\n{segment_ids_source}"
+        "{core_source}\n{core_base_source}\n{core_base_prelude_source}\n{core_base_contracts_source}\n{core_evidence_source}\n{core_derived_source}\n{pipeline_source}\n{obligations_source}\n{audited_source}\n{accepts_source}\n{contracts_source}\n{contracts_core_source}\n{contracts_core_base_source}\n{contracts_core_audited_source}\n{contracts_external_source}\n{external_contracts_source}\n{segment_ids_source}\n{segment_ids_base_source}\n{segment_ids_external_source}"
     );
     let top_level_path = crate_root.join("../../lean/Lzvm.lean");
     let top_level_source =
