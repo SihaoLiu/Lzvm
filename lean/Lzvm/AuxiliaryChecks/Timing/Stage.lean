@@ -1538,6 +1538,37 @@ theorem guest_pc_trace_segment_commit_worker_timing_acceptance_core_and_sound
       proof
       observed
 
+theorem guest_pc_trace_segment_commit_worker_timing_acceptance_audited_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : GuestPcTraceTimingSummary)
+    (initialWorkerCount effectiveWorkerCount oomRetryCount : Nat) :
+    forall publicInput proof,
+      GuestPcTraceTimingObservedAcceptance
+        system
+        (some
+          { summary with
+            guestSegmentCommitInitialWorkerCount := initialWorkerCount
+            guestSegmentCommitEffectiveWorkerCount := effectiveWorkerCount
+            guestSegmentCommitOomRetryCount := oomRetryCount })
+        publicInput
+        proof ->
+        RequiredCryptographicAssumptionStatements assumptions.crypto
+          /\ RequiredSemanticAssumptionStatements assumptions.semantic
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof observed
+  exact
+    guest_pc_trace_timing_some_summary_acceptance_audited_core_contract
+      assumptions
+      { summary with
+            guestSegmentCommitInitialWorkerCount := initialWorkerCount
+            guestSegmentCommitEffectiveWorkerCount := effectiveWorkerCount
+            guestSegmentCommitOomRetryCount := oomRetryCount }
+      publicInput
+      proof
+      observed
+
 theorem guest_pc_trace_stage_timing_acceptance_sound
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
@@ -1598,6 +1629,30 @@ theorem guest_pc_trace_stage_timing_acceptance_core_and_sound
     guest_pc_trace_timing_acceptance_core_and_sound
       assumptions
       (some { summary with stageTimings := stageTimings })
+      publicInput
+      proof
+      observed
+
+theorem guest_pc_trace_stage_timing_acceptance_audited_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : GuestPcTraceTimingSummary)
+    (stageTimings : List GuestPcTraceStageTimingSummary) :
+    forall publicInput proof,
+      GuestPcTraceTimingObservedAcceptance
+        system
+        (some { summary with stageTimings := stageTimings })
+        publicInput
+        proof ->
+        RequiredCryptographicAssumptionStatements assumptions.crypto
+          /\ RequiredSemanticAssumptionStatements assumptions.semantic
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof observed
+  exact
+    guest_pc_trace_timing_some_summary_acceptance_audited_core_contract
+      assumptions
+      { summary with stageTimings := stageTimings }
       publicInput
       proof
       observed

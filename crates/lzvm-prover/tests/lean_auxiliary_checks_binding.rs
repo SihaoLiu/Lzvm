@@ -3316,6 +3316,18 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
                 "guestStageTreeCommitRetainWorkMilliseconds := retainMilliseconds",
             ][..],
         ),
+        (
+            "guest_pc_trace_segment_commit_worker_timing_acceptance_audited_core_contract",
+            &[
+                "guestSegmentCommitInitialWorkerCount := initialWorkerCount",
+                "guestSegmentCommitEffectiveWorkerCount := effectiveWorkerCount",
+                "guestSegmentCommitOomRetryCount := oomRetryCount",
+            ][..],
+        ),
+        (
+            "guest_pc_trace_stage_timing_acceptance_audited_core_contract",
+            &["stageTimings := stageTimings"][..],
+        ),
     ] {
         assert_updated_summary_audited_wrapper(
             &timing_source,
@@ -6391,9 +6403,11 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "guest_pc_trace_segment_commit_worker_timing_acceptance_sound",
             "guest_pc_trace_segment_commit_worker_timing_acceptance_verifier_core_contract",
             "guest_pc_trace_segment_commit_worker_timing_acceptance_core_and_sound",
+            "guest_pc_trace_segment_commit_worker_timing_acceptance_audited_core_contract",
             "guest_pc_trace_stage_timing_acceptance_sound",
             "guest_pc_trace_stage_timing_acceptance_verifier_core_contract",
             "guest_pc_trace_stage_timing_acceptance_core_and_sound",
+            "guest_pc_trace_stage_timing_acceptance_audited_core_contract",
             "timing_projected_core_contracts",
             "proof_timing_batch_acceptance_core_and_sound",
             "witness_opening_row_value_timing_observed_acceptance_projects_verifier_acceptance",
