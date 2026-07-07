@@ -118,6 +118,60 @@ theorem accepted_proof_audited_core_and_sound_witness
         (assumption_bundle_carries_required_semantic_evidence assumptions)
         (And.intro coreContract soundWitness))
 
+theorem accepted_proof_crypto_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system) :
+    forall publicInput proof,
+      system.accepts publicInput proof ->
+        RequiredCryptographicAssumptionStatements assumptions.crypto
+          /\ RuntimeVerifierCoreContract system publicInput proof := by
+  intro publicInput proof accepted
+  exact
+    And.intro
+      (assumption_bundle_carries_required_crypto_evidence assumptions)
+      (assumption_bundle_verifier_core_contract
+        assumptions
+        publicInput
+        proof
+        accepted)
+
+theorem accepted_proof_semantic_execution_obligations
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system) :
+    forall publicInput proof,
+      system.accepts publicInput proof ->
+        RequiredSemanticAssumptionStatements assumptions.semantic
+          /\ exists witness trace constraints,
+            system.traceConsistent publicInput proof trace
+              /\ system.constraintsSatisfied constraints trace
+              /\ system.witnessMatchesTrace witness trace := by
+  intro publicInput proof accepted
+  have soundWitness :=
+    abstract_verifier_sound
+      assumptions
+      publicInput
+      proof
+      accepted
+  rcases soundWitness with
+    ⟨witness,
+      trace,
+      constraints,
+      _transcriptBound,
+      _publicInputBound,
+      _pcsOpeningsValid,
+      _friQueriesValid,
+      traceConsistent,
+      constraintsSatisfied,
+      witnessMatchesTrace⟩
+  exact
+    And.intro
+      (assumption_bundle_carries_required_semantic_evidence assumptions)
+      (Exists.intro witness
+        (Exists.intro trace
+          (Exists.intro constraints
+            (And.intro traceConsistent
+              (And.intro constraintsSatisfied witnessMatchesTrace)))))
+
 theorem accepted_proof_audited_core_execution_and_sound_witness
     {system : VerifierModel}
     (assumptions : AssumptionBundle system) :

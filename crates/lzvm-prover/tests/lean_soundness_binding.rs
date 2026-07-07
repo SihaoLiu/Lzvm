@@ -31,6 +31,8 @@ fn lean_soundness_binding_exports_abstract_soundness_theorems() {
             "abstract_verifier_sound_with_semantic_evidence",
             "abstract_verifier_sound_with_audited_soundness_obligations",
             "accepted_proof_audited_core_and_sound_witness",
+            "accepted_proof_crypto_core_contract",
+            "accepted_proof_semantic_execution_obligations",
             "accepted_proof_audited_core_execution_and_sound_witness",
             "accepted_proof_audited_core_and_execution_obligations",
             "accepted_proof_audited_full_evidence",
@@ -158,6 +160,74 @@ fn lean_soundness_binding_exports_abstract_soundness_theorems() {
         "accepted_proof_audited_core_and_sound_witness",
         "assumption_bundle_carries_required_evidence",
     );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "accepted_proof_crypto_core_contract",
+        &[
+            "system.accepts publicInput proof",
+            "RequiredCryptographicAssumptionStatements assumptions.crypto",
+            "RuntimeVerifierCoreContract system publicInput proof",
+        ],
+    );
+    for identifier in [
+        "assumption_bundle_carries_required_crypto_evidence",
+        "assumption_bundle_verifier_core_contract",
+    ] {
+        lean_binding::assert_theorem_body_contains_identifier(
+            &lean_source,
+            "accepted_proof_crypto_core_contract",
+            identifier,
+        );
+    }
+    for identifier in [
+        "assumption_bundle_carries_required_semantic_evidence",
+        "accepted_proof_audited_core_and_sound_witness",
+        "assumption_bundle_carries_required_evidence",
+    ] {
+        lean_binding::assert_theorem_body_omits_identifier(
+            &lean_source,
+            "accepted_proof_crypto_core_contract",
+            identifier,
+        );
+    }
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "accepted_proof_semantic_execution_obligations",
+        &[
+            "system.accepts publicInput proof",
+            "RequiredSemanticAssumptionStatements assumptions.semantic",
+            "exists witness trace constraints",
+            "system.traceConsistent publicInput proof trace",
+            "system.constraintsSatisfied constraints trace",
+            "system.witnessMatchesTrace witness trace",
+        ],
+    );
+    for identifier in [
+        "assumption_bundle_carries_required_semantic_evidence",
+        "abstract_verifier_sound",
+        "soundWitness",
+        "traceConsistent",
+        "constraintsSatisfied",
+        "witnessMatchesTrace",
+    ] {
+        lean_binding::assert_theorem_body_contains_identifier(
+            &lean_source,
+            "accepted_proof_semantic_execution_obligations",
+            identifier,
+        );
+    }
+    for identifier in [
+        "assumption_bundle_carries_required_crypto_evidence",
+        "assumption_bundle_verifier_core_contract",
+        "accepted_proof_audited_core_and_sound_witness",
+        "assumption_bundle_carries_required_evidence",
+    ] {
+        lean_binding::assert_theorem_body_omits_identifier(
+            &lean_source,
+            "accepted_proof_semantic_execution_obligations",
+            identifier,
+        );
+    }
     lean_binding::assert_theorem_prefix_contains(
         &lean_source,
         "accepted_proof_audited_core_execution_and_sound_witness",
