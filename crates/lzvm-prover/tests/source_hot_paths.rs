@@ -3833,8 +3833,9 @@ fn retained_cache_defaults_prioritize_descriptor_reuse() {
     assert!(
         values_source.contains(
             "const DEFAULT_RETAINED_DESCRIPTOR_BUFFER_BYTES: usize = 19_000_000_000"
-        ) && values_source.contains("const MAX_DEFAULT_RETAINED_DESCRIPTOR_BUFFER_BYTES: usize")
-            && values_source.contains("DEFAULT_RETAINED_DESCRIPTOR_BUFFER_BYTES"),
+        ) && values_source.contains(
+            "const MAX_DEFAULT_RETAINED_DESCRIPTOR_BUFFER_BYTES: usize =\n    DEFAULT_RETAINED_DESCRIPTOR_BUFFER_BYTES"
+        ),
         "default descriptor-buffer retention should use the measured 19GB cap for strict opening reuse"
     );
     assert!(
