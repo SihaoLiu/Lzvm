@@ -28,6 +28,31 @@ fn assert_theorem_body_omits_identifiers(source: &str, theorem: &str, identifier
     }
 }
 
+fn assert_audited_core_contract_prefix(source: &str, theorem: &str, extra_terms: &[&str]) {
+    lean_binding::assert_theorem_prefix_contains(
+        source,
+        theorem,
+        &[
+            "RequiredCryptographicAssumptionStatements assumptions.crypto",
+            "RequiredSemanticAssumptionStatements assumptions.semantic",
+            "RuntimeVerifierCoreContract system publicInput proof",
+            "SoundWitness system publicInput proof",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(source, theorem, extra_terms);
+}
+
+fn assert_audited_core_contract_wrapper(
+    source: &str,
+    theorem: &str,
+    body_identifiers: &[&str],
+    omitted_identifiers: &[&str],
+) {
+    assert_audited_core_contract_prefix(source, theorem, &[]);
+    assert_theorem_body_contains_identifiers(source, theorem, body_identifiers);
+    assert_theorem_body_omits_identifiers(source, theorem, omitted_identifiers);
+}
+
 fn assert_updated_summary_core_and_sound_wrapper(
     source: &str,
     theorem: &str,
@@ -873,18 +898,12 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             ][..],
         ),
     ] {
-        lean_binding::assert_theorem_prefix_contains(
+        assert_audited_core_contract_wrapper(
             &timing_core_source,
             theorem,
-            &[
-                "RequiredCryptographicAssumptionStatements assumptions.crypto",
-                "RequiredSemanticAssumptionStatements assumptions.semantic",
-                "RuntimeVerifierCoreContract system publicInput proof",
-                "SoundWitness system publicInput proof",
-            ],
+            &[helper],
+            omitted_terms,
         );
-        assert_theorem_body_contains_identifiers(&timing_core_source, theorem, &[helper]);
-        assert_theorem_body_omits_identifiers(&timing_core_source, theorem, omitted_terms);
     }
     lean_binding::assert_theorem_declarations(
         &runtime_performance_source,
@@ -4870,24 +4889,10 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         "cuda_allocator_timing_acceptance_audited_core_contract",
         "proof_artifact_finish_timing_acceptance_audited_core_contract",
     ] {
-        lean_binding::assert_theorem_prefix_contains(
-            &lean_proof_timing_source,
-            theorem,
-            &[
-                "RequiredCryptographicAssumptionStatements assumptions.crypto",
-                "RequiredSemanticAssumptionStatements assumptions.semantic",
-                "RuntimeVerifierCoreContract system publicInput proof",
-                "SoundWitness system publicInput proof",
-            ],
-        );
-        assert_theorem_body_contains_identifiers(
+        assert_audited_core_contract_wrapper(
             &lean_proof_timing_source,
             theorem,
             &["ignored_metadata_acceptance_audited_core_contract"],
-        );
-        assert_theorem_body_omits_identifiers(
-            &lean_proof_timing_source,
-            theorem,
             &[
                 "assumption_bundle_carries_required_evidence",
                 "ignored_metadata_acceptance_core_and_sound",
@@ -4896,24 +4901,10 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             ],
         );
     }
-    lean_binding::assert_theorem_prefix_contains(
-        &lean_proof_timing_source,
-        "proof_artifact_finish_timing_some_summary_acceptance_audited_core_contract",
-        &[
-            "RequiredCryptographicAssumptionStatements assumptions.crypto",
-            "RequiredSemanticAssumptionStatements assumptions.semantic",
-            "RuntimeVerifierCoreContract system publicInput proof",
-            "SoundWitness system publicInput proof",
-        ],
-    );
-    assert_theorem_body_contains_identifiers(
+    assert_audited_core_contract_wrapper(
         &lean_proof_timing_source,
         "proof_artifact_finish_timing_some_summary_acceptance_audited_core_contract",
         &["proof_artifact_finish_timing_acceptance_audited_core_contract"],
-    );
-    assert_theorem_body_omits_identifiers(
-        &lean_proof_timing_source,
-        "proof_artifact_finish_timing_some_summary_acceptance_audited_core_contract",
         &[
             "assumption_bundle_carries_required_evidence",
             "ignored_metadata_acceptance_audited_core_contract",
@@ -6359,17 +6350,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             ][..],
         ),
     ] {
-        lean_binding::assert_theorem_prefix_contains(
-            &proof_timing_finish_source,
-            theorem,
-            &[
-                "RequiredCryptographicAssumptionStatements assumptions.crypto",
-                "RequiredSemanticAssumptionStatements assumptions.semantic",
-                "RuntimeVerifierCoreContract system publicInput proof",
-                "SoundWitness system publicInput proof",
-                field,
-            ],
-        );
+        assert_audited_core_contract_prefix(&proof_timing_finish_source, theorem, &[field]);
         lean_binding::assert_theorem_body_contains(
             &proof_timing_finish_source,
             theorem,
