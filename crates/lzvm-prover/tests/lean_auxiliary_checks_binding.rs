@@ -105,6 +105,53 @@ fn assert_updated_summary_core_and_sound_wrapper(
     );
 }
 
+fn assert_updated_summary_audited_wrapper(
+    source: &str,
+    theorem: &str,
+    audited_helper: &str,
+    field_terms: &[&str],
+) {
+    assert_audited_core_contract_prefix(source, theorem, &[]);
+    assert_theorem_body_contains_identifiers(source, theorem, &[audited_helper]);
+    let base_theorem = theorem
+        .strip_suffix("_audited_core_contract")
+        .expect("audited theorem name should use the audited suffix");
+    let combined_callee = format!("{base_theorem}_core_and_sound");
+    let verifier_callee = format!("{base_theorem}_verifier_core_contract");
+    let sound_callee = format!("{base_theorem}_sound");
+    assert_theorem_body_omits_identifiers(
+        source,
+        theorem,
+        &[
+            combined_callee.as_str(),
+            verifier_callee.as_str(),
+            sound_callee.as_str(),
+            "assumption_bundle_carries_required_evidence",
+        ],
+    );
+    let prefix = lean_binding::theorem_prefix(source, theorem);
+    let body = lean_binding::theorem_body(source, theorem);
+    for field_term in field_terms {
+        assert!(
+            compact_source_contains(&prefix, field_term),
+            "Lean theorem {theorem} prefix should wire field {field_term}"
+        );
+        assert!(
+            compact_source_contains(&body, field_term),
+            "Lean theorem {theorem} body should pass field {field_term} through the audited helper"
+        );
+    }
+    let helper_summary_prefix = format!("{audited_helper} assumptions {{ summary with");
+    assert!(
+        compact_source_contains(&body, &helper_summary_prefix),
+        "Lean theorem {theorem} body should call the audited helper with the updated summary"
+    );
+    assert!(
+        compact_source_contains(&body, "publicInput proof observed"),
+        "Lean theorem {theorem} body should pass the observed acceptance to the audited helper"
+    );
+}
+
 fn theorem_stems_with_suffix(source: &str, prefix: &str, suffix: &str) -> BTreeSet<String> {
     lean_binding::theorem_names(source)
         .into_iter()
@@ -3112,6 +3159,35 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             );
         }
     }
+    for (theorem, field_terms) in [
+        (
+            "guest_pc_trace_stream_elapsed_timing_acceptance_audited_core_contract",
+            &["guestTraceStreamElapsedMilliseconds := elapsedMilliseconds"][..],
+        ),
+        (
+            "guest_pc_trace_descriptor_width_counts_acceptance_audited_core_contract",
+            &[
+                "guestTraceDescriptorCompactRowCount := compactRows",
+                "guestTraceDescriptorWideRowCount := wideRows",
+            ][..],
+        ),
+        (
+            "guest_pc_trace_report_timing_acceptance_audited_core_contract",
+            &[
+                "guestTraceReportMilliseconds := reportMilliseconds",
+                "guestTraceReportValidationMilliseconds := validationMilliseconds",
+                "guestTraceReportCount := reportCount",
+                "guestTraceReportRowCount := reportRows",
+            ][..],
+        ),
+    ] {
+        assert_updated_summary_audited_wrapper(
+            &timing_source,
+            theorem,
+            "guest_pc_trace_timing_some_summary_acceptance_audited_core_contract",
+            field_terms,
+        );
+    }
     assert!(
         lean_source.contains("guestStageSourceRetentionRetainedByteCount")
             && lean_source.contains(
@@ -6093,10 +6169,13 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "guest_pc_trace_timing_none_summary_acceptance_core_and_sound",
             "guest_pc_trace_stream_elapsed_timing_acceptance_sound",
             "guest_pc_trace_stream_elapsed_timing_acceptance_verifier_core_contract",
+            "guest_pc_trace_stream_elapsed_timing_acceptance_audited_core_contract",
             "guest_pc_trace_descriptor_width_counts_acceptance_sound",
             "guest_pc_trace_descriptor_width_counts_acceptance_verifier_core_contract",
+            "guest_pc_trace_descriptor_width_counts_acceptance_audited_core_contract",
             "guest_pc_trace_report_timing_acceptance_sound",
             "guest_pc_trace_report_timing_acceptance_verifier_core_contract",
+            "guest_pc_trace_report_timing_acceptance_audited_core_contract",
             "guest_pc_trace_report_subtiming_acceptance_sound",
             "guest_pc_trace_report_subtiming_acceptance_verifier_core_contract",
             "guest_pc_trace_report_lower_subtiming_acceptance_sound",

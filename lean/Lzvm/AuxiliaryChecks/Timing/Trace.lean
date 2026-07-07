@@ -76,6 +76,30 @@ theorem guest_pc_trace_stream_elapsed_timing_acceptance_core_and_sound
       proof
       observed
 
+theorem guest_pc_trace_stream_elapsed_timing_acceptance_audited_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : GuestPcTraceTimingSummary)
+    (elapsedMilliseconds : Nat) :
+    forall publicInput proof,
+      GuestPcTraceTimingObservedAcceptance
+        system
+        (some { summary with guestTraceStreamElapsedMilliseconds := elapsedMilliseconds })
+        publicInput
+        proof ->
+        RequiredCryptographicAssumptionStatements assumptions.crypto
+          /\ RequiredSemanticAssumptionStatements assumptions.semantic
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof observed
+  exact
+    guest_pc_trace_timing_some_summary_acceptance_audited_core_contract
+      assumptions
+      { summary with guestTraceStreamElapsedMilliseconds := elapsedMilliseconds }
+      publicInput
+      proof
+      observed
+
 theorem guest_pc_trace_descriptor_width_counts_acceptance_sound
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
@@ -153,6 +177,35 @@ theorem guest_pc_trace_descriptor_width_counts_acceptance_core_and_sound
         { summary with
           guestTraceDescriptorCompactRowCount := compactRows
           guestTraceDescriptorWideRowCount := wideRows })
+      publicInput
+      proof
+      observed
+
+theorem guest_pc_trace_descriptor_width_counts_acceptance_audited_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : GuestPcTraceTimingSummary)
+    (compactRows wideRows : Nat) :
+    forall publicInput proof,
+      GuestPcTraceTimingObservedAcceptance
+        system
+        (some
+          { summary with
+            guestTraceDescriptorCompactRowCount := compactRows
+            guestTraceDescriptorWideRowCount := wideRows })
+        publicInput
+        proof ->
+        RequiredCryptographicAssumptionStatements assumptions.crypto
+          /\ RequiredSemanticAssumptionStatements assumptions.semantic
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof observed
+  exact
+    guest_pc_trace_timing_some_summary_acceptance_audited_core_contract
+      assumptions
+      { summary with
+            guestTraceDescriptorCompactRowCount := compactRows
+            guestTraceDescriptorWideRowCount := wideRows }
       publicInput
       proof
       observed
@@ -246,6 +299,39 @@ theorem guest_pc_trace_report_timing_acceptance_core_and_sound
           guestTraceReportValidationMilliseconds := validationMilliseconds
           guestTraceReportCount := reportCount
           guestTraceReportRowCount := reportRows })
+      publicInput
+      proof
+      observed
+
+theorem guest_pc_trace_report_timing_acceptance_audited_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : GuestPcTraceTimingSummary)
+    (reportMilliseconds validationMilliseconds reportCount reportRows : Nat) :
+    forall publicInput proof,
+      GuestPcTraceTimingObservedAcceptance
+        system
+        (some
+          { summary with
+            guestTraceReportMilliseconds := reportMilliseconds
+            guestTraceReportValidationMilliseconds := validationMilliseconds
+            guestTraceReportCount := reportCount
+            guestTraceReportRowCount := reportRows })
+        publicInput
+        proof ->
+        RequiredCryptographicAssumptionStatements assumptions.crypto
+          /\ RequiredSemanticAssumptionStatements assumptions.semantic
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof observed
+  exact
+    guest_pc_trace_timing_some_summary_acceptance_audited_core_contract
+      assumptions
+      { summary with
+            guestTraceReportMilliseconds := reportMilliseconds
+            guestTraceReportValidationMilliseconds := validationMilliseconds
+            guestTraceReportCount := reportCount
+            guestTraceReportRowCount := reportRows }
       publicInput
       proof
       observed
