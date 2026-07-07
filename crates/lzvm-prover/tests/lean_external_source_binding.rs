@@ -148,6 +148,16 @@ fn lean_external_source_binding_exports_core_contract_projection() {
         &lean_source,
         "external_source_opening_checked_acceptance_audited_core_contract",
         &[
+            "assumption_bundle_carries_required_crypto_evidence",
+            "assumption_bundle_carries_required_semantic_evidence",
+            "external_source_opening_checked_acceptance_sound",
+            "external_source_opening_checked_acceptance_verifier_core_contract",
+        ],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &lean_source,
+        "external_source_opening_checked_acceptance_audited_core_contract",
+        &[
             "assumption_bundle_carries_required_evidence",
             "external_source_opening_checked_acceptance_evidence_core_and_sound",
         ],

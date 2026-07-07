@@ -294,17 +294,27 @@ theorem external_source_opening_checked_acceptance_audited_core_contract
           /\ RuntimeVerifierCoreContract system publicInput proof
           /\ SoundWitness system publicInput proof := by
   intro publicInput proof acceptedWithExternalSource
-  have auditedAssumptions :=
-    assumption_bundle_carries_required_evidence assumptions
-  have contracts :=
-    external_source_opening_checked_acceptance_evidence_core_and_sound
+  have checkedSound :=
+    external_source_opening_checked_acceptance_sound
+      assumptions
+      validation
+      publicInput
+      proof
+      acceptedWithExternalSource
+  have coreContract :=
+    external_source_opening_checked_acceptance_verifier_core_contract
       assumptions
       validation
       publicInput
       proof
       acceptedWithExternalSource
   exact
-    And.intro auditedAssumptions.left
-      (And.intro auditedAssumptions.right contracts)
+    And.intro
+      (assumption_bundle_carries_required_crypto_evidence assumptions)
+      (And.intro
+        (assumption_bundle_carries_required_semantic_evidence assumptions)
+        (And.intro checkedSound.left
+          (And.intro checkedSound.right.left
+            (And.intro coreContract checkedSound.right.right))))
 
 end Lzvm
