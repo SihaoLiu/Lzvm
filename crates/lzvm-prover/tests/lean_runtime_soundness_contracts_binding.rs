@@ -84,6 +84,32 @@ fn assert_required_source_guard(source: &str, theorem: &str) {
 }
 
 #[test]
+fn lean_runtime_soundness_contracts_route_base_required_evidence_directly() {
+    let lean_source = read_contracts_source();
+
+    for theorem in [
+        "runtime_soundness_checked_acceptance_audited_soundness_pcs_fri_core_witness_contract",
+        "runtime_soundness_checked_acceptance_audited_soundness_contracts_core_contract",
+        "runtime_soundness_checked_acceptance_artifact_audited_soundness_contracts_core_contract",
+    ] {
+        lean_binding::assert_theorem_declarations(&lean_source, &[theorem]);
+        lean_binding::assert_theorem_body_contains(
+            &lean_source,
+            theorem,
+            &[
+                "assumption_bundle_carries_required_crypto_evidence",
+                "assumption_bundle_carries_required_semantic_evidence",
+            ],
+        );
+        lean_binding::assert_theorem_body_omits(
+            &lean_source,
+            theorem,
+            &["assumption_bundle_carries_required_evidence"],
+        );
+    }
+}
+
+#[test]
 fn lean_runtime_soundness_contracts_exports_artifact_audited_segment_contract() {
     let lean_source = read_contracts_source();
     let top_level_source = read_top_level_source();

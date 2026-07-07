@@ -290,11 +290,12 @@ theorem runtime_soundness_checked_acceptance_audited_soundness_pcs_fri_core_witn
       proof
       requiresExternalSource
       checked
-  have auditedAssumptions :=
-    assumption_bundle_carries_required_evidence assumptions
   exact
-    And.intro auditedAssumptions.left
-      (And.intro auditedAssumptions.right compactContract.right)
+    And.intro
+      (assumption_bundle_carries_required_crypto_evidence assumptions)
+      (And.intro
+        (assumption_bundle_carries_required_semantic_evidence assumptions)
+        compactContract.right)
 
 theorem runtime_soundness_checked_acceptance_contracts_core_contract
     {system : VerifierModel}
@@ -397,8 +398,6 @@ theorem runtime_soundness_checked_acceptance_audited_soundness_contracts_core_co
       proof
       requiresExternalSource
       checked
-  have auditedAssumptions :=
-    assumption_bundle_carries_required_evidence assumptions
   rcases compactContract with
     ⟨_auditedCrypto,
       proofSystemSound,
@@ -411,8 +410,10 @@ theorem runtime_soundness_checked_acceptance_audited_soundness_contracts_core_co
       executionObligations,
       soundWitness⟩
   exact
-    And.intro auditedAssumptions.left
-      (And.intro auditedAssumptions.right
+    And.intro
+      (assumption_bundle_carries_required_crypto_evidence assumptions)
+      (And.intro
+        (assumption_bundle_carries_required_semantic_evidence assumptions)
         (And.intro proofSystemSound
           (And.intro verifierAccepts
             (And.intro transcriptBound
@@ -515,8 +516,6 @@ theorem runtime_soundness_checked_acceptance_artifact_audited_soundness_contract
       proof
       requiresExternalSource
       checked
-  have auditedAssumptions :=
-    assumption_bundle_carries_required_evidence assumptions
   rcases artifactContract with
     ⟨artifactEvidence,
       _auditedCrypto,
@@ -531,8 +530,10 @@ theorem runtime_soundness_checked_acceptance_artifact_audited_soundness_contract
       soundWitness⟩
   exact
     And.intro artifactEvidence
-      (And.intro auditedAssumptions.left
-        (And.intro auditedAssumptions.right
+      (And.intro
+        (assumption_bundle_carries_required_crypto_evidence assumptions)
+        (And.intro
+          (assumption_bundle_carries_required_semantic_evidence assumptions)
           (And.intro proofSystemSound
             (And.intro verifierAccepts
               (And.intro transcriptBound
