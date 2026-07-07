@@ -823,6 +823,70 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         );
     }
     lean_binding::assert_theorem_declarations(
+        &timing_core_source,
+        &[
+            "timing_observation_acceptance_audited_core_contract",
+            "guest_pc_trace_timing_acceptance_audited_core_contract",
+            "guest_pc_trace_timing_some_summary_acceptance_audited_core_contract",
+            "guest_pc_trace_timing_none_summary_acceptance_audited_core_contract",
+        ],
+    );
+    for (theorem, helper, omitted_terms) in [
+        (
+            "timing_observation_acceptance_audited_core_contract",
+            "ignored_metadata_acceptance_audited_core_contract",
+            &[
+                "timing_observation_acceptance_core_and_sound",
+                "timing_observation_acceptance_sound",
+                "timing_observation_acceptance_verifier_core_contract",
+                "assumption_bundle_carries_required_evidence",
+            ][..],
+        ),
+        (
+            "guest_pc_trace_timing_acceptance_audited_core_contract",
+            "ignored_metadata_acceptance_audited_core_contract",
+            &[
+                "guest_pc_trace_timing_acceptance_core_and_sound",
+                "guest_pc_trace_timing_acceptance_sound",
+                "guest_pc_trace_timing_acceptance_verifier_core_contract",
+                "assumption_bundle_carries_required_evidence",
+            ][..],
+        ),
+        (
+            "guest_pc_trace_timing_some_summary_acceptance_audited_core_contract",
+            "guest_pc_trace_timing_acceptance_audited_core_contract",
+            &[
+                "ignored_metadata_acceptance_audited_core_contract",
+                "guest_pc_trace_timing_some_summary_acceptance_core_and_sound",
+                "guest_pc_trace_timing_some_summary_acceptance_verifier_core_contract",
+                "assumption_bundle_carries_required_evidence",
+            ][..],
+        ),
+        (
+            "guest_pc_trace_timing_none_summary_acceptance_audited_core_contract",
+            "guest_pc_trace_timing_acceptance_audited_core_contract",
+            &[
+                "ignored_metadata_acceptance_audited_core_contract",
+                "guest_pc_trace_timing_none_summary_acceptance_core_and_sound",
+                "guest_pc_trace_timing_none_summary_acceptance_verifier_core_contract",
+                "assumption_bundle_carries_required_evidence",
+            ][..],
+        ),
+    ] {
+        lean_binding::assert_theorem_prefix_contains(
+            &timing_core_source,
+            theorem,
+            &[
+                "RequiredCryptographicAssumptionStatements assumptions.crypto",
+                "RequiredSemanticAssumptionStatements assumptions.semantic",
+                "RuntimeVerifierCoreContract system publicInput proof",
+                "SoundWitness system publicInput proof",
+            ],
+        );
+        assert_theorem_body_contains_identifiers(&timing_core_source, theorem, &[helper]);
+        assert_theorem_body_omits_identifiers(&timing_core_source, theorem, omitted_terms);
+    }
+    lean_binding::assert_theorem_declarations(
         &runtime_performance_source,
         &[
             "runtime_performance_observation_projects_metadata",

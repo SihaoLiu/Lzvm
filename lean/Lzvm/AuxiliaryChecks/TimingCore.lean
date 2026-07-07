@@ -79,6 +79,25 @@ theorem timing_observation_acceptance_core_and_sound
       proof
       observed
 
+theorem timing_observation_acceptance_audited_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (observations : List TimingObservation) :
+    forall publicInput proof,
+      TimingObservedAcceptance system observations publicInput proof ->
+        RequiredCryptographicAssumptionStatements assumptions.crypto
+          /\ RequiredSemanticAssumptionStatements assumptions.semantic
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof observed
+  exact
+    ignored_metadata_acceptance_audited_core_contract
+      assumptions
+      observations
+      publicInput
+      proof
+      observed
+
 def GuestPcTraceTimingObservedAcceptance
     (system : VerifierModel)
     (summary : Option GuestPcTraceTimingSummary)
@@ -175,6 +194,25 @@ theorem guest_pc_trace_timing_acceptance_core_and_sound
       proof
       observed
 
+theorem guest_pc_trace_timing_acceptance_audited_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : Option GuestPcTraceTimingSummary) :
+    forall publicInput proof,
+      GuestPcTraceTimingObservedAcceptance system summary publicInput proof ->
+        RequiredCryptographicAssumptionStatements assumptions.crypto
+          /\ RequiredSemanticAssumptionStatements assumptions.semantic
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof observed
+  exact
+    ignored_metadata_acceptance_audited_core_contract
+      assumptions
+      summary
+      publicInput
+      proof
+      observed
+
 theorem guest_pc_trace_timing_some_summary_acceptance_core_and_sound
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
@@ -192,6 +230,25 @@ theorem guest_pc_trace_timing_some_summary_acceptance_core_and_sound
       proof
       observed
 
+theorem guest_pc_trace_timing_some_summary_acceptance_audited_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : GuestPcTraceTimingSummary) :
+    forall publicInput proof,
+      GuestPcTraceTimingObservedAcceptance system (some summary) publicInput proof ->
+        RequiredCryptographicAssumptionStatements assumptions.crypto
+          /\ RequiredSemanticAssumptionStatements assumptions.semantic
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof observed
+  exact
+    guest_pc_trace_timing_acceptance_audited_core_contract
+      assumptions
+      (some summary)
+      publicInput
+      proof
+      observed
+
 theorem guest_pc_trace_timing_none_summary_acceptance_core_and_sound
     {system : VerifierModel}
     (assumptions : AssumptionBundle system) :
@@ -202,6 +259,24 @@ theorem guest_pc_trace_timing_none_summary_acceptance_core_and_sound
   intro publicInput proof observed
   exact
     guest_pc_trace_timing_acceptance_core_and_sound
+      assumptions
+      none
+      publicInput
+      proof
+      observed
+
+theorem guest_pc_trace_timing_none_summary_acceptance_audited_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system) :
+    forall publicInput proof,
+      GuestPcTraceTimingObservedAcceptance system none publicInput proof ->
+        RequiredCryptographicAssumptionStatements assumptions.crypto
+          /\ RequiredSemanticAssumptionStatements assumptions.semantic
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof observed
+  exact
+    guest_pc_trace_timing_acceptance_audited_core_contract
       assumptions
       none
       publicInput
