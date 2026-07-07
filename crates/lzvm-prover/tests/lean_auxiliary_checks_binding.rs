@@ -3299,6 +3299,18 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             ][..],
         ),
         (
+            "guest_pc_trace_descriptor_upload_word_count_acceptance_audited_core_contract",
+            &["guestDeviceSourceDescriptorUploadWordCount := wordCount"][..],
+        ),
+        (
+            "guest_pc_trace_descriptor_upload_shape_acceptance_audited_core_contract",
+            &[
+                "guestDeviceSourceDescriptorUploadByteCount := byteCount",
+                "guestDeviceSourceDescriptorUploadWordCount := wordCount",
+                "guestDeviceSourceDescriptorUploadRowCount := rowCount",
+            ][..],
+        ),
+        (
             "guest_pc_trace_source_retention_byte_counts_acceptance_audited_core_contract",
             &[
                 "guestStageSourceRetentionRetainedByteCount := retainedBytes",
@@ -6450,9 +6462,11 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "guest_pc_trace_descriptor_upload_word_count_acceptance_sound",
             "guest_pc_trace_descriptor_upload_word_count_acceptance_verifier_core_contract",
             "guest_pc_trace_descriptor_upload_word_count_acceptance_core_and_sound",
+            "guest_pc_trace_descriptor_upload_word_count_acceptance_audited_core_contract",
             "guest_pc_trace_descriptor_upload_shape_acceptance_sound",
             "guest_pc_trace_descriptor_upload_shape_acceptance_verifier_core_contract",
             "guest_pc_trace_descriptor_upload_shape_acceptance_core_and_sound",
+            "guest_pc_trace_descriptor_upload_shape_acceptance_audited_core_contract",
             "guest_pc_trace_source_retention_byte_counts_acceptance_sound",
             "guest_pc_trace_source_retention_byte_counts_acceptance_verifier_core_contract",
             "guest_pc_trace_source_retention_byte_counts_acceptance_core_and_sound",

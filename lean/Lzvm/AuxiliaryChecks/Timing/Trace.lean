@@ -1792,6 +1792,33 @@ theorem guest_pc_trace_descriptor_upload_word_count_acceptance_core_and_sound
       proof
       observed
 
+theorem guest_pc_trace_descriptor_upload_word_count_acceptance_audited_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : GuestPcTraceTimingSummary)
+    (wordCount : Nat) :
+    forall publicInput proof,
+      GuestPcTraceTimingObservedAcceptance
+        system
+        (some
+          { summary with
+            guestDeviceSourceDescriptorUploadWordCount := wordCount })
+        publicInput
+        proof ->
+        RequiredCryptographicAssumptionStatements assumptions.crypto
+          /\ RequiredSemanticAssumptionStatements assumptions.semantic
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof observed
+  exact
+    guest_pc_trace_timing_some_summary_acceptance_audited_core_contract
+      assumptions
+      { summary with
+            guestDeviceSourceDescriptorUploadWordCount := wordCount }
+      publicInput
+      proof
+      observed
+
 theorem guest_pc_trace_descriptor_upload_shape_acceptance_sound
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
@@ -1875,6 +1902,37 @@ theorem guest_pc_trace_descriptor_upload_shape_acceptance_core_and_sound
           guestDeviceSourceDescriptorUploadByteCount := byteCount
           guestDeviceSourceDescriptorUploadWordCount := wordCount
           guestDeviceSourceDescriptorUploadRowCount := rowCount })
+      publicInput
+      proof
+      observed
+
+theorem guest_pc_trace_descriptor_upload_shape_acceptance_audited_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : GuestPcTraceTimingSummary)
+    (byteCount wordCount rowCount : Nat) :
+    forall publicInput proof,
+      GuestPcTraceTimingObservedAcceptance
+        system
+        (some
+          { summary with
+            guestDeviceSourceDescriptorUploadByteCount := byteCount
+            guestDeviceSourceDescriptorUploadWordCount := wordCount
+            guestDeviceSourceDescriptorUploadRowCount := rowCount })
+        publicInput
+        proof ->
+        RequiredCryptographicAssumptionStatements assumptions.crypto
+          /\ RequiredSemanticAssumptionStatements assumptions.semantic
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof observed
+  exact
+    guest_pc_trace_timing_some_summary_acceptance_audited_core_contract
+      assumptions
+      { summary with
+            guestDeviceSourceDescriptorUploadByteCount := byteCount
+            guestDeviceSourceDescriptorUploadWordCount := wordCount
+            guestDeviceSourceDescriptorUploadRowCount := rowCount }
       publicInput
       proof
       observed
