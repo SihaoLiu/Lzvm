@@ -302,7 +302,10 @@ theorem runtime_artifact_checked_acceptance_sound
   have verifierAccepts := obligations.right.left
   exact
     And.intro obligations
-      (abstract_verifier_sound assumptions publicInput proof verifierAccepts)
+      ((abstract_verifier_sound_with_semantic_evidence assumptions).right
+        publicInput
+        proof
+        verifierAccepts)
 
 theorem runtime_artifact_checked_acceptance_verifier_core_contract
     {system : VerifierModel}
