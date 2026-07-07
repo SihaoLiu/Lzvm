@@ -148,4 +148,26 @@ theorem runtime_performance_observation_auxiliary_contracts
               proof
               observed }
 
+theorem runtime_performance_observation_auxiliary_contract_evidence
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (summary : RuntimePerformanceObservationSummary) :
+    forall publicInput proof,
+      RuntimePerformanceObservedAcceptance system summary publicInput proof ->
+        RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof
+          /\ AuxiliaryProjectedCoreContracts system publicInput proof := by
+  intro publicInput proof observed
+  have contracts :=
+    runtime_performance_observation_auxiliary_contracts
+      assumptions
+      summary
+      publicInput
+      proof
+      observed
+  exact
+    And.intro
+      contracts.verifierCore
+      (And.intro contracts.soundWitness contracts.projected)
+
 end Lzvm
