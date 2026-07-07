@@ -62,6 +62,16 @@ fn lean_required_external_source_binding_exports_core_contract_projection() {
     );
     lean_binding::assert_theorem_body_contains(
         &lean_source,
+        "runtime_guarded_external_source_required_sound",
+        &["abstract_verifier_sound_with_semantic_evidence"],
+    );
+    lean_binding::assert_theorem_body_omits_identifier(
+        &lean_source,
+        "runtime_guarded_external_source_required_sound",
+        "abstract_verifier_sound",
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
         "runtime_guarded_external_source_required_verifier_core_contract",
         &["runtime_guarded_external_source_checked_acceptance_verifier_core_contract"],
     );

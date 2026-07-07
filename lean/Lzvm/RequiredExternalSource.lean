@@ -144,7 +144,10 @@ theorem runtime_guarded_external_source_required_sound
       proof
       artifactAccepted
   have soundWitness :=
-    abstract_verifier_sound assumptions publicInput proof verifierAccepts
+    (abstract_verifier_sound_with_semantic_evidence assumptions).right
+      publicInput
+      proof
+      verifierAccepts
   exact
     And.intro artifactEvidence
       (And.intro externalEvidence (And.intro pcsOpenings soundWitness))
