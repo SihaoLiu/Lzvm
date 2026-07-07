@@ -43,6 +43,16 @@ fn lean_soundness_binding_exports_abstract_soundness_theorems() {
             "accepted_proof_audited_flat_proof_system_components",
         ],
     );
+    for theorem in [
+        "accepted_proof_audited_core_execution_and_sound_witness",
+        "accepted_proof_audited_proof_system_core_and_execution_obligations",
+        "accepted_proof_audited_flat_proof_system_components",
+    ] {
+        lean_binding::assert_theorem_routes_accepted_evidence_by_split_helpers(
+            &lean_source,
+            theorem,
+        );
+    }
     lean_binding::assert_theorem_body_contains(
         &lean_source,
         "abstract_verifier_sound",
