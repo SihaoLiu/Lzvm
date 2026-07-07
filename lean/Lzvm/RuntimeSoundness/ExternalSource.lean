@@ -531,11 +531,12 @@ theorem runtime_soundness_required_external_source_audited_soundness_proof_syste
       requiresExternalSource
       checked
       required
-  have auditedAssumptions :=
-    assumption_bundle_carries_required_evidence assumptions
   exact
-    And.intro auditedAssumptions.left
-      (And.intro auditedAssumptions.right auditedContract.right)
+    And.intro
+      (assumption_bundle_carries_required_crypto_evidence assumptions)
+      (And.intro
+        (assumption_bundle_carries_required_semantic_evidence assumptions)
+        auditedContract.right)
 
 theorem runtime_soundness_required_external_source_audited_accepts_sound_witness_contract
     {system : VerifierModel}
@@ -795,11 +796,12 @@ theorem runtime_soundness_required_external_source_audited_soundness_pcs_fri_cor
       requiresExternalSource
       checked
       required
-  have auditedAssumptions :=
-    assumption_bundle_carries_required_evidence assumptions
   exact
-    And.intro auditedAssumptions.left
-      (And.intro auditedAssumptions.right compactContract.right)
+    And.intro
+      (assumption_bundle_carries_required_crypto_evidence assumptions)
+      (And.intro
+        (assumption_bundle_carries_required_semantic_evidence assumptions)
+        compactContract.right)
 
 theorem runtime_soundness_required_external_source_audited_proof_system_core_contract
     {system : VerifierModel}
