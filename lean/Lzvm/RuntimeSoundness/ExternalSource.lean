@@ -217,10 +217,18 @@ theorem runtime_soundness_required_external_source_evidence_audited_core_contrac
             /\ RuntimeVerifierCoreContract system publicInput proof
             /\ SoundWitness system publicInput proof := by
   intro artifact publicInput proof requiresExternalSource checked required
-  have auditedAssumptions :=
-    assumption_bundle_carries_required_evidence assumptions
-  have contracts :=
-    runtime_soundness_required_external_source_evidence_core_and_sound
+  have requiredSound :=
+    runtime_soundness_required_external_source_sound
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      checked
+      required
+  have coreContract :=
+    runtime_soundness_required_external_source_verifier_core_contract
       assumptions
       validation
       artifact
@@ -230,8 +238,13 @@ theorem runtime_soundness_required_external_source_evidence_audited_core_contrac
       checked
       required
   exact
-    And.intro auditedAssumptions.left
-      (And.intro auditedAssumptions.right contracts)
+    And.intro
+      (assumption_bundle_carries_required_crypto_evidence assumptions)
+      (And.intro
+        (assumption_bundle_carries_required_semantic_evidence assumptions)
+        (And.intro requiredSound.left
+          (And.intro requiredSound.right.left
+            (And.intro coreContract requiredSound.right.right))))
 
 theorem runtime_soundness_required_external_source_accepts_core_sound_witness
     {system : VerifierModel}
