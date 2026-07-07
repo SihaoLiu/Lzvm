@@ -72,13 +72,12 @@ theorem abstract_verifier_sound_with_audited_soundness_obligations
     RequiredCryptographicAssumptionStatements assumptions.crypto
       /\ RequiredSemanticAssumptionStatements assumptions.semantic
       /\ ProofSystemSound system := by
-  have auditedAssumptions :=
-    assumption_bundle_carries_required_evidence assumptions
-  have sound :=
-    abstract_verifier_sound_with_audited_assumptions assumptions
   exact
-    And.intro auditedAssumptions.left
-      (And.intro auditedAssumptions.right sound.right)
+    And.intro
+      (assumption_bundle_carries_required_crypto_evidence assumptions)
+      (And.intro
+        (assumption_bundle_carries_required_semantic_evidence assumptions)
+        (abstract_verifier_sound assumptions))
 
 theorem accepted_proof_audited_core_and_sound_witness
     {system : VerifierModel}
@@ -90,8 +89,6 @@ theorem accepted_proof_audited_core_and_sound_witness
           /\ RuntimeVerifierCoreContract system publicInput proof
           /\ SoundWitness system publicInput proof := by
   intro publicInput proof accepted
-  have auditedAssumptions :=
-    assumption_bundle_carries_required_evidence assumptions
   have coreContract :=
     assumption_bundle_verifier_core_contract
       assumptions
@@ -105,8 +102,10 @@ theorem accepted_proof_audited_core_and_sound_witness
       proof
       accepted
   exact
-    And.intro auditedAssumptions.left
-      (And.intro auditedAssumptions.right
+    And.intro
+      (assumption_bundle_carries_required_crypto_evidence assumptions)
+      (And.intro
+        (assumption_bundle_carries_required_semantic_evidence assumptions)
         (And.intro coreContract soundWitness))
 
 theorem accepted_proof_audited_core_execution_and_sound_witness

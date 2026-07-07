@@ -81,10 +81,21 @@ fn lean_soundness_binding_exports_abstract_soundness_theorems() {
         ],
     );
     for identifier in [
+        "assumption_bundle_carries_required_crypto_evidence",
+        "assumption_bundle_carries_required_semantic_evidence",
+        "abstract_verifier_sound",
+    ] {
+        lean_binding::assert_theorem_body_contains_identifier(
+            &lean_source,
+            "abstract_verifier_sound_with_audited_soundness_obligations",
+            identifier,
+        );
+    }
+    for identifier in [
         "abstract_verifier_sound_with_audited_assumptions",
         "assumption_bundle_carries_required_evidence",
     ] {
-        lean_binding::assert_theorem_body_contains_identifier(
+        lean_binding::assert_theorem_body_omits_identifier(
             &lean_source,
             "abstract_verifier_sound_with_audited_soundness_obligations",
             identifier,
@@ -102,7 +113,8 @@ fn lean_soundness_binding_exports_abstract_soundness_theorems() {
         ],
     );
     for identifier in [
-        "assumption_bundle_carries_required_evidence",
+        "assumption_bundle_carries_required_crypto_evidence",
+        "assumption_bundle_carries_required_semantic_evidence",
         "assumption_bundle_verifier_core_contract",
         "abstract_verifier_sound",
     ] {
@@ -112,6 +124,11 @@ fn lean_soundness_binding_exports_abstract_soundness_theorems() {
             identifier,
         );
     }
+    lean_binding::assert_theorem_body_omits_identifier(
+        &lean_source,
+        "accepted_proof_audited_core_and_sound_witness",
+        "assumption_bundle_carries_required_evidence",
+    );
     lean_binding::assert_theorem_prefix_contains(
         &lean_source,
         "accepted_proof_audited_core_execution_and_sound_witness",
