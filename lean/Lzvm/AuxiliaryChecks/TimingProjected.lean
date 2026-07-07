@@ -31,6 +31,26 @@ theorem timing_projected_metadata_acceptance_verifier_core_contract
       proof
       observed
 
+theorem timing_projected_metadata_acceptance_audited_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    {Metadata : Type u}
+    (metadata : Metadata) :
+    forall publicInput proof,
+      IgnoredMetadataObservedAcceptance system metadata publicInput proof ->
+        RequiredCryptographicAssumptionStatements assumptions.crypto
+          /\ RequiredSemanticAssumptionStatements assumptions.semantic
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof observed
+  exact
+    ignored_metadata_acceptance_audited_core_contract
+      assumptions
+      metadata
+      publicInput
+      proof
+      observed
+
 structure TimingProjectedCoreContracts
     (system : VerifierModel)
     (publicInput : PublicInput)

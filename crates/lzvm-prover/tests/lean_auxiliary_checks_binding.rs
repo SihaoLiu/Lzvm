@@ -1409,7 +1409,21 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
     );
     lean_binding::assert_theorem_declarations(
         &timing_projected_source,
-        &["timing_projected_metadata_acceptance_verifier_core_contract"],
+        &[
+            "timing_projected_metadata_acceptance_verifier_core_contract",
+            "timing_projected_metadata_acceptance_audited_core_contract",
+        ],
+    );
+    assert_audited_core_contract_wrapper(
+        &timing_projected_source,
+        "timing_projected_metadata_acceptance_audited_core_contract",
+        &["ignored_metadata_acceptance_audited_core_contract"],
+        &[
+            "timing_projected_metadata_acceptance_verifier_core_contract",
+            "ignored_metadata_acceptance_verifier_core_contract",
+            "ignored_metadata_acceptance_core_and_sound",
+            "assumption_bundle_carries_required_evidence",
+        ],
     );
     lean_binding::assert_theorem_body_contains(
         &timing_projected_source,
