@@ -877,6 +877,11 @@ fn lean_opening_segment_binding_exports_core_contract_projection() {
     lean_binding::assert_theorem_body_contains(
         &lean_source,
         "runtime_opening_segment_binding_audited_core_sound_witness_contract",
+        &["runtime_opening_segment_binding_direct_core_sound_witness_contract"],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &lean_source,
+        "runtime_opening_segment_binding_audited_core_sound_witness_contract",
         &[
             "runtime_opening_segment_binding_checked_acceptance_evidence",
             "runtime_opening_segment_binding_checked_acceptance_opening",
@@ -884,12 +889,6 @@ fn lean_opening_segment_binding_exports_core_contract_projection() {
             "openingAcceptedImpliesRuntimeSoundnessAccepted",
             "runtime_soundness_checked_acceptance_verifier_accepts",
             "accepted_proof_audited_core_execution_and_sound_witness",
-        ],
-    );
-    lean_binding::assert_theorem_body_omits(
-        &lean_source,
-        "runtime_opening_segment_binding_audited_core_sound_witness_contract",
-        &[
             "accepted_proof_audited_core_and_sound_witness",
             "sound_witness_implies_execution_obligations",
             "runtime_opening_segment_binding_checked_acceptance_evidence_core_and_sound",
