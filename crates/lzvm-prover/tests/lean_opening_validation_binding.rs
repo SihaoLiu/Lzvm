@@ -856,19 +856,18 @@ fn lean_opening_validation_binding_exports_core_contract_projection() {
         &lean_source,
         "runtime_opening_checked_acceptance_audited_core_contract",
         &[
-            "assumption_bundle_carries_required_evidence",
-            "runtime_opening_checked_acceptance_evidence_core_and_sound",
-            "auditedAssumptions.left",
-            "auditedAssumptions.right",
-            "contracts",
+            "assumption_bundle_carries_required_crypto_evidence",
+            "assumption_bundle_carries_required_semantic_evidence",
+            "runtime_opening_checked_acceptance_sound",
+            "runtime_opening_checked_acceptance_verifier_core_contract",
         ],
     );
     lean_binding::assert_theorem_body_omits(
         &lean_source,
         "runtime_opening_checked_acceptance_audited_core_contract",
         &[
-            "runtime_opening_checked_acceptance_sound",
-            "runtime_opening_checked_acceptance_verifier_core_contract",
+            "assumption_bundle_carries_required_evidence",
+            "runtime_opening_checked_acceptance_evidence_core_and_sound",
             "sound_witness_implies_verifier_core_contract",
             "abstract_verifier_sound",
         ],
