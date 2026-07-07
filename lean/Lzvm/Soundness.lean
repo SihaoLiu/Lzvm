@@ -466,27 +466,29 @@ theorem accepted_proof_audited_proof_system_core_and_execution_obligations
               /\ system.constraintsSatisfied constraints trace
               /\ system.witnessMatchesTrace witness trace := by
   intro publicInput proof accepted
-  have auditedCoreExecution :=
-    accepted_proof_audited_core_and_execution_obligations
+  have proofSystemSound := abstract_verifier_sound assumptions
+  have cryptoCore :=
+    accepted_proof_crypto_core_contract
       assumptions
       publicInput
       proof
       accepted
-  have proofSystemSound := abstract_verifier_sound assumptions
-  have coreExecution :=
-    proof_system_sound_accepts_core_contract_and_execution_obligations
-      proofSystemSound
+  have semanticExecution :=
+    accepted_proof_semantic_execution_obligations
+      assumptions
       publicInput
       proof
       accepted
-  rcases auditedCoreExecution with
-    ⟨cryptoEvidence, semanticEvidence, _coreContract, _executionObligations⟩
+  rcases cryptoCore with
+    ⟨cryptoEvidence, coreContract⟩
+  rcases semanticExecution with
+    ⟨semanticEvidence, executionObligations⟩
   exact
     ⟨cryptoEvidence,
       semanticEvidence,
       proofSystemSound,
-      coreExecution.left,
-      coreExecution.right⟩
+      coreContract,
+      executionObligations⟩
 
 theorem accepted_proof_audited_flat_proof_system_components
     {system : VerifierModel}

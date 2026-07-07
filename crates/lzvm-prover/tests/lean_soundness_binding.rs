@@ -505,11 +505,21 @@ fn lean_soundness_binding_exports_abstract_soundness_theorems() {
         ],
     );
     for identifier in [
-        "accepted_proof_audited_core_and_execution_obligations",
+        "accepted_proof_crypto_core_contract",
+        "accepted_proof_semantic_execution_obligations",
         "abstract_verifier_sound",
-        "proof_system_sound_accepts_core_contract_and_execution_obligations",
     ] {
         lean_binding::assert_theorem_body_contains_identifier(
+            &lean_source,
+            "accepted_proof_audited_proof_system_core_and_execution_obligations",
+            identifier,
+        );
+    }
+    for identifier in [
+        "accepted_proof_audited_core_and_execution_obligations",
+        "proof_system_sound_accepts_core_contract_and_execution_obligations",
+    ] {
+        lean_binding::assert_theorem_body_omits_identifier(
             &lean_source,
             "accepted_proof_audited_proof_system_core_and_execution_obligations",
             identifier,
