@@ -97,6 +97,29 @@ theorem abstract_verifier_sound_with_audited_soundness_obligations
         semanticEvidence
         proofSystemSound)
 
+theorem accepted_proof_required_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system) :
+    forall publicInput proof,
+      system.accepts publicInput proof ->
+        RequiredCryptographicAssumptionStatements assumptions.crypto
+          /\ RequiredSemanticAssumptionStatements assumptions.semantic
+          /\ RuntimeVerifierCoreContract system publicInput proof := by
+  intro publicInput proof accepted
+  have requiredEvidence :=
+    assumption_bundle_carries_required_evidence assumptions
+  rcases requiredEvidence with
+    ⟨cryptoEvidence, semanticEvidence⟩
+  exact
+    ⟨cryptoEvidence,
+      semanticEvidence,
+      required_assumption_statements_verifier_core_contract
+        cryptoEvidence
+        semanticEvidence
+        publicInput
+        proof
+        accepted⟩
+
 theorem accepted_proof_crypto_core_contract
     {system : VerifierModel}
     (assumptions : AssumptionBundle system) :
@@ -105,14 +128,14 @@ theorem accepted_proof_crypto_core_contract
         RequiredCryptographicAssumptionStatements assumptions.crypto
           /\ RuntimeVerifierCoreContract system publicInput proof := by
   intro publicInput proof accepted
+  have requiredCore :=
+    accepted_proof_required_core_contract
+      assumptions
+      publicInput
+      proof
+      accepted
   exact
-    And.intro
-      (assumption_bundle_carries_required_crypto_evidence assumptions)
-      (assumption_bundle_verifier_core_contract
-        assumptions
-        publicInput
-        proof
-        accepted)
+    ⟨requiredCore.1, requiredCore.2.2⟩
 
 theorem accepted_proof_semantic_execution_obligations
     {system : VerifierModel}
