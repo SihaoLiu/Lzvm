@@ -89,35 +89,6 @@ theorem abstract_verifier_sound_with_audited_soundness_obligations
         (assumption_bundle_carries_required_semantic_evidence assumptions)
         (abstract_verifier_sound assumptions))
 
-theorem accepted_proof_audited_core_and_sound_witness
-    {system : VerifierModel}
-    (assumptions : AssumptionBundle system) :
-    forall publicInput proof,
-      system.accepts publicInput proof ->
-        RequiredCryptographicAssumptionStatements assumptions.crypto
-          /\ RequiredSemanticAssumptionStatements assumptions.semantic
-          /\ RuntimeVerifierCoreContract system publicInput proof
-          /\ SoundWitness system publicInput proof := by
-  intro publicInput proof accepted
-  have coreContract :=
-    assumption_bundle_verifier_core_contract
-      assumptions
-      publicInput
-      proof
-      accepted
-  have soundWitness :=
-    abstract_verifier_sound
-      assumptions
-      publicInput
-      proof
-      accepted
-  exact
-    And.intro
-      (assumption_bundle_carries_required_crypto_evidence assumptions)
-      (And.intro
-        (assumption_bundle_carries_required_semantic_evidence assumptions)
-        (And.intro coreContract soundWitness))
-
 theorem accepted_proof_crypto_core_contract
     {system : VerifierModel}
     (assumptions : AssumptionBundle system) :
@@ -146,12 +117,12 @@ theorem accepted_proof_semantic_execution_obligations
               /\ system.constraintsSatisfied constraints trace
               /\ system.witnessMatchesTrace witness trace := by
   intro publicInput proof accepted
+  have semanticSound :=
+    abstract_verifier_sound_with_semantic_evidence assumptions
+  rcases semanticSound with
+    ⟨semanticEvidence, proofSystemSound⟩
   have soundWitness :=
-    abstract_verifier_sound
-      assumptions
-      publicInput
-      proof
-      accepted
+    proofSystemSound publicInput proof accepted
   rcases soundWitness with
     ⟨witness,
       trace,
@@ -165,12 +136,42 @@ theorem accepted_proof_semantic_execution_obligations
       witnessMatchesTrace⟩
   exact
     And.intro
-      (assumption_bundle_carries_required_semantic_evidence assumptions)
+      semanticEvidence
       (Exists.intro witness
         (Exists.intro trace
           (Exists.intro constraints
             (And.intro traceConsistent
               (And.intro constraintsSatisfied witnessMatchesTrace)))))
+
+theorem accepted_proof_audited_core_and_sound_witness
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system) :
+    forall publicInput proof,
+      system.accepts publicInput proof ->
+        RequiredCryptographicAssumptionStatements assumptions.crypto
+          /\ RequiredSemanticAssumptionStatements assumptions.semantic
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof accepted
+  have cryptoCore :=
+    accepted_proof_crypto_core_contract
+      assumptions
+      publicInput
+      proof
+      accepted
+  have semanticSound :=
+    abstract_verifier_sound_with_semantic_evidence assumptions
+  rcases cryptoCore with
+    ⟨cryptoEvidence, coreContract⟩
+  rcases semanticSound with
+    ⟨semanticEvidence, proofSystemSound⟩
+  exact
+    And.intro
+      cryptoEvidence
+      (And.intro
+        semanticEvidence
+        (And.intro coreContract
+          (proofSystemSound publicInput proof accepted)))
 
 theorem accepted_proof_audited_core_execution_and_sound_witness
     {system : VerifierModel}
@@ -312,12 +313,12 @@ theorem accepted_proof_audited_sound_witness_components
               /\ system.constraintsSatisfied constraints trace
               /\ system.witnessMatchesTrace witness trace := by
   intro publicInput proof accepted
+  have auditedSoundness :=
+    abstract_verifier_sound_with_audited_soundness_obligations assumptions
+  rcases auditedSoundness with
+    ⟨cryptoEvidence, semanticEvidence, proofSystemSound⟩
   have soundWitness :=
-    abstract_verifier_sound
-      assumptions
-      publicInput
-      proof
-      accepted
+    proofSystemSound publicInput proof accepted
   rcases soundWitness with
     ⟨witness,
       trace,
@@ -330,8 +331,8 @@ theorem accepted_proof_audited_sound_witness_components
       constraintsSatisfied,
       witnessMatchesTrace⟩
   exact
-    And.intro (assumption_bundle_carries_required_crypto_evidence assumptions)
-      (And.intro (assumption_bundle_carries_required_semantic_evidence assumptions)
+    And.intro cryptoEvidence
+      (And.intro semanticEvidence
         (Exists.intro witness
           (Exists.intro trace
             (Exists.intro constraints
@@ -365,14 +366,14 @@ theorem accepted_proof_audited_core_and_sound_witness_components
       publicInput
       proof
       accepted
-  have soundWitness :=
-    abstract_verifier_sound
-      assumptions
-      publicInput
-      proof
-      accepted
+  have semanticSound :=
+    abstract_verifier_sound_with_semantic_evidence assumptions
   rcases cryptoCore with
     ⟨cryptoEvidence, coreContract⟩
+  rcases semanticSound with
+    ⟨semanticEvidence, proofSystemSound⟩
+  have soundWitness :=
+    proofSystemSound publicInput proof accepted
   rcases soundWitness with
     ⟨witness,
       trace,
@@ -386,7 +387,7 @@ theorem accepted_proof_audited_core_and_sound_witness_components
       witnessMatchesTrace⟩
   exact
     And.intro cryptoEvidence
-      (And.intro (assumption_bundle_carries_required_semantic_evidence assumptions)
+      (And.intro semanticEvidence
         (And.intro coreContract
           (Exists.intro witness
             (Exists.intro trace
@@ -416,16 +417,19 @@ theorem accepted_proof_audited_proof_system_and_components
               /\ system.constraintsSatisfied constraints trace
               /\ system.witnessMatchesTrace witness trace := by
   intro publicInput proof accepted
-  have proofSystemSound := abstract_verifier_sound assumptions
   have cryptoCore :=
     accepted_proof_crypto_core_contract
       assumptions
       publicInput
       proof
       accepted
-  have soundWitness := proofSystemSound publicInput proof accepted
+  have semanticSound :=
+    abstract_verifier_sound_with_semantic_evidence assumptions
   rcases cryptoCore with
     ⟨cryptoEvidence, coreContract⟩
+  rcases semanticSound with
+    ⟨semanticEvidence, proofSystemSound⟩
+  have soundWitness := proofSystemSound publicInput proof accepted
   rcases soundWitness with
     ⟨witness,
       trace,
@@ -439,7 +443,7 @@ theorem accepted_proof_audited_proof_system_and_components
       witnessMatchesTrace⟩
   exact
     And.intro cryptoEvidence
-      (And.intro (assumption_bundle_carries_required_semantic_evidence assumptions)
+      (And.intro semanticEvidence
         (And.intro proofSystemSound
           (And.intro coreContract
             (Exists.intro witness
