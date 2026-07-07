@@ -196,17 +196,27 @@ theorem row_major_digest_prefix_checked_acceptance_audited_core_contract
           /\ RuntimeVerifierCoreContract system publicInput proof
           /\ SoundWitness system publicInput proof := by
   intro publicInput proof checked
-  have auditedAssumptions :=
-    assumption_bundle_carries_required_evidence assumptions
-  have contracts :=
-    row_major_digest_prefix_checked_acceptance_evidence_core_and_sound
+  have wideLinear :=
+    row_major_digest_prefix_evidence_implies_wide_linear_digests
+      validation
+      publicInput
+      proof
+      checked.right
+  have core :=
+    row_major_digest_prefix_checked_acceptance_verifier_core_contract
       assumptions
       validation
       publicInput
       proof
       checked
+  have sound :=
+    abstract_verifier_sound assumptions publicInput proof checked.left
   exact
-    And.intro auditedAssumptions.left
-      (And.intro auditedAssumptions.right contracts)
+    And.intro
+      (assumption_bundle_carries_required_crypto_evidence assumptions)
+      (And.intro
+        (assumption_bundle_carries_required_semantic_evidence assumptions)
+        (And.intro checked.right
+          (And.intro wideLinear (And.intro core sound))))
 
 end Lzvm
