@@ -6712,8 +6712,14 @@ fn guest_pc_trace_retains_stage_sources_before_descriptor_buffers() {
         .find("let retained_stage_source_devices = if retain_stage_sources")
         .expect("trace output should retain stage source views explicitly");
     let descriptor_position = retention_helper_body
-        .find("let guest_pc_device_descriptor_buffer = if retain_stage_sources")
-        .expect("trace output should retain descriptor buffers explicitly");
+        .find("let guest_pc_device_descriptor_buffer = if retain_guest_pc_device_descriptor_buffer")
+        .expect("trace output should retain descriptor buffers through their own selector");
+    assert!(
+        !retention_helper_body.contains(
+            "let guest_pc_device_descriptor_buffer = if retain_stage_sources\n        && retain_guest_pc_device_descriptor_buffer"
+        ),
+        "descriptor buffer retention should not be gated by stage source retention"
+    );
     assert!(
         retained_position < descriptor_position,
         "source views should claim retention budget before fallback descriptor buffers"

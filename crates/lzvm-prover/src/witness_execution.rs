@@ -3768,8 +3768,7 @@ fn retained_trace_cuda_run_artifacts(
     };
     let retain_guest_pc_device_descriptor_buffer =
         trace_cuda_run_config.descriptor_buffer_retention;
-    let guest_pc_device_descriptor_buffer = if retain_stage_sources
-        && retain_guest_pc_device_descriptor_buffer
+    let guest_pc_device_descriptor_buffer = if retain_guest_pc_device_descriptor_buffer
         && retained_stage_source_devices.len() < stage_source_device_cache.stage_count()
     {
         stage_source_device_cache.retained_guest_pc_device_descriptor_buffer(timing)
