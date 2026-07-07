@@ -544,7 +544,9 @@ fn lean_soundness_binding_exports_abstract_soundness_theorems() {
         ],
     );
     for identifier in [
-        "accepted_proof_audited_proof_system_and_components",
+        "accepted_proof_crypto_core_contract",
+        "accepted_proof_semantic_execution_obligations",
+        "abstract_verifier_sound",
         "coreContract",
         "transcriptBound",
         "publicInputBound",
@@ -561,6 +563,7 @@ fn lean_soundness_binding_exports_abstract_soundness_theorems() {
         );
     }
     for identifier in [
+        "accepted_proof_audited_proof_system_and_components",
         "assumption_bundle_verifier_core_contract",
         "assumption_bundle_carries_required_evidence",
         "proof_system_sound_accepts_core_contract_and_execution_obligations",

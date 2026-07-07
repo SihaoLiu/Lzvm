@@ -507,31 +507,32 @@ theorem accepted_proof_audited_flat_proof_system_components
               /\ system.constraintsSatisfied constraints trace
               /\ system.witnessMatchesTrace witness trace := by
   intro publicInput proof accepted
-  have auditedComponents :=
-    accepted_proof_audited_proof_system_and_components
+  have proofSystemSound := abstract_verifier_sound assumptions
+  have cryptoCore :=
+    accepted_proof_crypto_core_contract
       assumptions
       publicInput
       proof
       accepted
-  rcases auditedComponents with
-    ⟨cryptoEvidence,
-      semanticEvidence,
-      proofSystemSound,
-      coreContract,
-      witnessComponents⟩
+  have semanticExecution :=
+    accepted_proof_semantic_execution_obligations
+      assumptions
+      publicInput
+      proof
+      accepted
+  rcases cryptoCore with
+    ⟨cryptoEvidence, coreContract⟩
+  rcases semanticExecution with
+    ⟨semanticEvidence, executionObligations⟩
   rcases coreContract with
     ⟨transcriptBound,
       publicInputBound,
       pcsOpeningsValid,
       friQueriesValid⟩
-  rcases witnessComponents with
+  rcases executionObligations with
     ⟨witness,
       trace,
       constraints,
-      _soundTranscriptBound,
-      _soundPublicInputBound,
-      _soundPcsOpeningsValid,
-      _soundFriQueriesValid,
       traceConsistent,
       constraintsSatisfied,
       witnessMatchesTrace⟩
