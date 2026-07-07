@@ -44,6 +44,42 @@ fn lean_audited_core_contracts_use_direct_evidence_paths() {
     );
 }
 
+#[test]
+fn lean_sources_avoid_combined_required_evidence_helper() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let lean_root = crate_root.join("../../lean/Lzvm");
+    let mut lean_files = Vec::new();
+    collect_lean_files(&lean_root, &mut lean_files);
+    lean_files.sort();
+
+    let mut combined_evidence_users = Vec::new();
+    for path in lean_files {
+        if path.file_name().and_then(|name| name.to_str()) == Some("AssumptionAudit.lean") {
+            continue;
+        }
+        let source = std::fs::read_to_string(&path)
+            .unwrap_or_else(|err| panic!("Lean source {} should read: {err}", path.display()));
+        if lean_binding::visible_identifier_occurrence_count(
+            &source,
+            "assumption_bundle_carries_required_evidence",
+        ) > 0
+        {
+            combined_evidence_users.push(
+                path.strip_prefix(&lean_root)
+                    .unwrap_or(&path)
+                    .display()
+                    .to_string(),
+            );
+        }
+    }
+
+    assert!(
+        combined_evidence_users.is_empty(),
+        "Lean sources should route required evidence through direct helpers:\n{}",
+        combined_evidence_users.join("\n")
+    );
+}
+
 fn collect_lean_files(path: &Path, files: &mut Vec<PathBuf>) {
     for entry in std::fs::read_dir(path).expect("Lean source directory should read") {
         let path = entry.expect("Lean source entry should read").path();
