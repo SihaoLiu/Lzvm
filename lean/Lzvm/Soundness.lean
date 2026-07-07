@@ -312,14 +312,12 @@ theorem accepted_proof_audited_sound_witness_components
               /\ system.constraintsSatisfied constraints trace
               /\ system.witnessMatchesTrace witness trace := by
   intro publicInput proof accepted
-  have auditedCoreAndWitness :=
-    accepted_proof_audited_core_and_sound_witness
+  have soundWitness :=
+    abstract_verifier_sound
       assumptions
       publicInput
       proof
       accepted
-  rcases auditedCoreAndWitness with
-    ⟨cryptoEvidence, semanticEvidence, _coreContract, soundWitness⟩
   rcases soundWitness with
     ⟨witness,
       trace,
@@ -332,8 +330,8 @@ theorem accepted_proof_audited_sound_witness_components
       constraintsSatisfied,
       witnessMatchesTrace⟩
   exact
-    And.intro cryptoEvidence
-      (And.intro semanticEvidence
+    And.intro (assumption_bundle_carries_required_crypto_evidence assumptions)
+      (And.intro (assumption_bundle_carries_required_semantic_evidence assumptions)
         (Exists.intro witness
           (Exists.intro trace
             (Exists.intro constraints
@@ -361,14 +359,20 @@ theorem accepted_proof_audited_core_and_sound_witness_components
               /\ system.constraintsSatisfied constraints trace
               /\ system.witnessMatchesTrace witness trace := by
   intro publicInput proof accepted
-  have auditedCoreAndWitness :=
-    accepted_proof_audited_core_and_sound_witness
+  have cryptoCore :=
+    accepted_proof_crypto_core_contract
       assumptions
       publicInput
       proof
       accepted
-  rcases auditedCoreAndWitness with
-    ⟨cryptoEvidence, semanticEvidence, coreContract, soundWitness⟩
+  have soundWitness :=
+    abstract_verifier_sound
+      assumptions
+      publicInput
+      proof
+      accepted
+  rcases cryptoCore with
+    ⟨cryptoEvidence, coreContract⟩
   rcases soundWitness with
     ⟨witness,
       trace,
@@ -382,7 +386,7 @@ theorem accepted_proof_audited_core_and_sound_witness_components
       witnessMatchesTrace⟩
   exact
     And.intro cryptoEvidence
-      (And.intro semanticEvidence
+      (And.intro (assumption_bundle_carries_required_semantic_evidence assumptions)
         (And.intro coreContract
           (Exists.intro witness
             (Exists.intro trace
