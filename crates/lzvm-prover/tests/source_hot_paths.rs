@@ -11024,17 +11024,33 @@ fn guest_pc_trace_large_lower_worker_cap_stays_threshold_only() {
         .find("guest_pc_trace_parallel_lower_configured_worker_count_override()")
         .expect("worker override should be checked first");
     let cap_index = worker_body
-        .find("guest_pc_trace_large_parallel_lower_worker_cap_applies(instruction_limit)")
-        .expect("large trace worker cap should be checked before fallback workers");
+        .find("guest_pc_trace_auto_parallel_lower_worker_cap_applies(instruction_limit)")
+        .expect("auto worker cap should be checked before fallback workers");
     let bounded_index = worker_body
         .find("return guest_pc_trace_auto_parallel_lower_worker_count();")
-        .expect("large trace worker cap should use the bounded worker count");
+        .expect("auto worker cap should use the bounded worker count");
     let fallback_index = worker_body
         .find("guest_pc_trace_available_worker_count().max(1)")
         .expect("worker count should still fall back to available workers");
     assert!(
         override_index < cap_index && cap_index < bounded_index && bounded_index < fallback_index,
-        "worker count selection should prefer explicit overrides, then large trace cap, then available workers"
+        "worker count selection should prefer explicit overrides, then auto cap, then available workers"
+    );
+
+    let auto_cap_body = function_body(
+        &source,
+        "fn guest_pc_trace_auto_parallel_lower_worker_cap_applies",
+        "fn guest_pc_trace_parallel_lower_result_queue_capacity",
+    );
+    let large_index = auto_cap_body
+        .find("guest_pc_trace_large_parallel_lower_worker_cap_applies(instruction_limit)")
+        .expect("auto worker cap should include the large-trace threshold");
+    let work_units_index = auto_cap_body
+        .find("guest_pc_trace_parallel_lower_work_units_enabled_for_limit(instruction_limit)")
+        .expect("auto worker cap should include the work-units gate");
+    assert!(
+        large_index < work_units_index,
+        "auto worker cap should check the large-trace threshold before work-units gating"
     );
 
     let cap_body = braced_source_body(
