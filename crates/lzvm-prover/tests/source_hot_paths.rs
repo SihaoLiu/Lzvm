@@ -12141,6 +12141,47 @@ fn guest_machine_addi_fast_path_avoids_generic_immediate_dispatch() {
 }
 
 #[test]
+fn guest_machine_binary_op_fast_path_reuses_same_register_read() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let source_path = crate_root.join("src/guest_machine/mod.rs");
+    let source = std::fs::read_to_string(&source_path).expect("guest machine source should read");
+    let body = function_body(
+        &source,
+        "fn try_advance_guest_machine_report_fast_path",
+        "fn write_fast_reported_register",
+    );
+    let op_start = body
+        .find("RiscvInstruction::Op { kind, rd, rs1, rs2 }")
+        .expect("binary op fast path should exist");
+    let op32_start = op_start
+        + body[op_start..]
+            .find("RiscvInstruction::OpImm32")
+            .expect("word-immediate op fast path should follow binary op");
+    let op_body = &body[op_start..op32_start];
+    assert!(
+        op_body.contains("let lhs = state.read_decoded_register(rs1);")
+            && op_body.contains("let rhs = if rs1 == rs2")
+            && op_body.contains("execute_op(kind, lhs, rhs)"),
+        "binary op fast path should reuse the first register read for same-register operands"
+    );
+
+    let op32_start = body
+        .find("RiscvInstruction::Op32 { kind, rd, rs1, rs2 }")
+        .expect("word binary op fast path should exist");
+    let op32_end = op32_start
+        + body[op32_start..]
+            .find("RiscvInstruction::Load")
+            .expect("load fast path should follow word binary op");
+    let op32_body = &body[op32_start..op32_end];
+    assert!(
+        op32_body.contains("let lhs = state.read_decoded_register(rs1);")
+            && op32_body.contains("let rhs = if rs1 == rs2")
+            && op32_body.contains("execute_op_32(kind, lhs, rhs)"),
+        "word binary op fast path should reuse the first register read for same-register operands"
+    );
+}
+
+#[test]
 fn guest_machine_fetch_uses_specialized_memory_path() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let source_path = crate_root.join("src/guest_machine/mod.rs");

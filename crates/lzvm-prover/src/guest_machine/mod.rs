@@ -2284,11 +2284,13 @@ fn try_advance_guest_machine_report_fast_path(
         }
         RiscvInstruction::Op { kind, rd, rs1, rs2 } => {
             if rd != 0 {
-                let value = execute_op(
-                    kind,
-                    state.read_decoded_register(rs1),
-                    state.read_decoded_register(rs2),
-                );
+                let lhs = state.read_decoded_register(rs1);
+                let rhs = if rs1 == rs2 {
+                    lhs
+                } else {
+                    state.read_decoded_register(rs2)
+                };
+                let value = execute_op(kind, lhs, rhs);
                 register_write = write_fast_reported_register(state, rd, value);
             }
         }
@@ -2305,11 +2307,13 @@ fn try_advance_guest_machine_report_fast_path(
         }
         RiscvInstruction::Op32 { kind, rd, rs1, rs2 } => {
             if rd != 0 {
-                let value = execute_op_32(
-                    kind,
-                    state.read_decoded_register(rs1),
-                    state.read_decoded_register(rs2),
-                );
+                let lhs = state.read_decoded_register(rs1);
+                let rhs = if rs1 == rs2 {
+                    lhs
+                } else {
+                    state.read_decoded_register(rs2)
+                };
+                let value = execute_op_32(kind, lhs, rhs);
                 register_write = write_fast_reported_register(state, rd, value);
             }
         }
@@ -3968,6 +3972,57 @@ mod tests {
                 rs1: 1,
                 rs2: 1,
                 offset: 16,
+            });
+        }
+    }
+
+    #[test]
+    fn prepared_same_register_ops_match_timed_generic_advance() {
+        for kind in [
+            RiscvOpKind::Add,
+            RiscvOpKind::Sub,
+            RiscvOpKind::Sll,
+            RiscvOpKind::Slt,
+            RiscvOpKind::Sltu,
+            RiscvOpKind::Xor,
+            RiscvOpKind::Srl,
+            RiscvOpKind::Sra,
+            RiscvOpKind::Or,
+            RiscvOpKind::And,
+            RiscvOpKind::Mul,
+            RiscvOpKind::Mulh,
+            RiscvOpKind::Mulhsu,
+            RiscvOpKind::Mulhu,
+            RiscvOpKind::Div,
+            RiscvOpKind::Divu,
+            RiscvOpKind::Rem,
+            RiscvOpKind::Remu,
+        ] {
+            assert_report_fast_path_matches_generic(RiscvInstruction::Op {
+                kind,
+                rd: 8,
+                rs1: 6,
+                rs2: 6,
+            });
+        }
+
+        for kind in [
+            RiscvOp32Kind::Addw,
+            RiscvOp32Kind::Subw,
+            RiscvOp32Kind::Sllw,
+            RiscvOp32Kind::Srlw,
+            RiscvOp32Kind::Sraw,
+            RiscvOp32Kind::Mulw,
+            RiscvOp32Kind::Divw,
+            RiscvOp32Kind::Divuw,
+            RiscvOp32Kind::Remw,
+            RiscvOp32Kind::Remuw,
+        ] {
+            assert_report_fast_path_matches_generic(RiscvInstruction::Op32 {
+                kind,
+                rd: 8,
+                rs1: 6,
+                rs2: 6,
             });
         }
     }
