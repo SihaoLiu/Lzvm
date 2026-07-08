@@ -1369,6 +1369,74 @@ theorem guest_pc_trace_cuda_run_checked_acceptance_projects_descriptor_retention
         proof
         checked)
 
+theorem guest_pc_trace_cuda_run_checked_acceptance_parallel_lower_disables_descriptor_retention
+    {system : VerifierModel}
+    (validation : GuestPcTraceCudaRunValidation)
+    (config : GuestPcTraceCudaRunConfig) :
+    config.descriptorBufferRetentionConfig.configuredDescriptorBufferRetention = none ->
+      config.descriptorBufferRetentionConfig.parallelLowerEnabledForDescriptorRetention = true ->
+        forall publicInput proof,
+          GuestPcTraceCudaRunCheckedAcceptance
+              system
+              validation
+              config
+              publicInput
+              proof ->
+            config.selectedDescriptorBufferRetention = false := by
+  intro configuredNone parallelEnabled publicInput proof checked
+  have decision :=
+    guest_pc_trace_cuda_run_checked_acceptance_projects_decision
+      validation
+      config
+      publicInput
+      proof
+      checked
+  have selectedMatches :=
+    guest_pc_trace_cuda_run_descriptor_retention_matches
+      config
+      decision
+  have retentionDisabled :=
+    guest_pc_trace_descriptor_buffer_retention_default_disabled_for_parallel_lower
+      config.descriptorBufferRetentionConfig
+      configuredNone
+      parallelEnabled
+      decision.descriptorBufferRetentionDecision
+  exact Eq.trans selectedMatches retentionDisabled
+
+theorem guest_pc_trace_cuda_run_checked_acceptance_explicit_retention_override_matches
+    {system : VerifierModel}
+    (validation : GuestPcTraceCudaRunValidation)
+    (config : GuestPcTraceCudaRunConfig)
+    (configured : Bool) :
+    config.descriptorBufferRetentionConfig.configuredDescriptorBufferRetention = some configured ->
+      forall publicInput proof,
+        GuestPcTraceCudaRunCheckedAcceptance
+            system
+            validation
+            config
+            publicInput
+            proof ->
+          config.selectedDescriptorBufferRetention = configured := by
+  intro configuredSome publicInput proof checked
+  have decision :=
+    guest_pc_trace_cuda_run_checked_acceptance_projects_decision
+      validation
+      config
+      publicInput
+      proof
+      checked
+  have selectedMatches :=
+    guest_pc_trace_cuda_run_descriptor_retention_matches
+      config
+      decision
+  have retentionMatches :=
+    guest_pc_trace_descriptor_buffer_retention_explicit_override_matches
+      config.descriptorBufferRetentionConfig
+      configured
+      configuredSome
+      decision.descriptorBufferRetentionDecision
+  exact Eq.trans selectedMatches retentionMatches
+
 theorem guest_pc_trace_cuda_run_checked_acceptance_sound
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)

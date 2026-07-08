@@ -4439,6 +4439,12 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             && lean_source.contains(
                 "guest_pc_trace_cuda_run_checked_acceptance_projects_descriptor_retention",
             )
+            && lean_source.contains(
+                "guest_pc_trace_cuda_run_checked_acceptance_parallel_lower_disables_descriptor_retention",
+            )
+            && lean_source.contains(
+                "guest_pc_trace_cuda_run_checked_acceptance_explicit_retention_override_matches",
+            )
             && lean_source.contains("guest_pc_trace_cuda_run_checked_acceptance_sound")
             && lean_source
                 .contains("guest_pc_trace_cuda_run_checked_acceptance_verifier_core_contract")
@@ -4566,6 +4572,39 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "guest_pc_trace_cuda_run_checked_acceptance_projects_decision",
         ],
     );
+    for (theorem_name, projectors) in [
+        (
+            concat!(
+                "guest_pc_trace_cuda_run_checked_acceptance_",
+                "parallel_lower_disables_descriptor_retention"
+            ),
+            [
+                "guest_pc_trace_cuda_run_checked_acceptance_projects_decision",
+                "guest_pc_trace_cuda_run_descriptor_retention_matches",
+                "guest_pc_trace_descriptor_buffer_retention_default_disabled_for_parallel_lower",
+                "decision.descriptorBufferRetentionDecision",
+            ],
+        ),
+        (
+            concat!(
+                "guest_pc_trace_cuda_run_checked_acceptance_",
+                "explicit_retention_override_matches"
+            ),
+            [
+                "guest_pc_trace_cuda_run_checked_acceptance_projects_decision",
+                "guest_pc_trace_cuda_run_descriptor_retention_matches",
+                "guest_pc_trace_descriptor_buffer_retention_explicit_override_matches",
+                "decision.descriptorBufferRetentionDecision",
+            ],
+        ),
+    ] {
+        lean_binding::assert_theorem_body_contains(&gpu_runtime_source, theorem_name, &projectors);
+        lean_binding::assert_theorem_body_omits(
+            &gpu_runtime_source,
+            theorem_name,
+            &["GpuRuntimeInternal.checked_acceptance_sound_witness"],
+        );
+    }
     assert!(
         lean_source.contains("GpuRetainedDeviceCacheBudget")
             && lean_source.contains("sourceBytes")
@@ -7061,6 +7100,14 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
                 "guest_pc_trace_commit_mode_checked_acceptance_",
                 "projects_disabled_root_window"
             ),
+            concat!(
+                "guest_pc_trace_commit_mode_checked_acceptance_",
+                "parallel_lower_disables_descriptor_retention"
+            ),
+            concat!(
+                "guest_pc_trace_commit_mode_checked_acceptance_",
+                "explicit_retention_override_matches"
+            ),
             "guest_pc_trace_commit_mode_checked_acceptance_sound",
             "guest_pc_trace_commit_mode_checked_acceptance_verifier_core_contract",
             "guest_pc_trace_commit_mode_checked_acceptance_core_and_sound",
@@ -7132,6 +7179,14 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             concat!(
                 "guest_pc_trace_cuda_run_checked_acceptance_",
                 "projects_descriptor_retention"
+            ),
+            concat!(
+                "guest_pc_trace_cuda_run_checked_acceptance_",
+                "parallel_lower_disables_descriptor_retention"
+            ),
+            concat!(
+                "guest_pc_trace_cuda_run_checked_acceptance_",
+                "explicit_retention_override_matches"
             ),
             "guest_pc_trace_cuda_run_checked_acceptance_sound",
             "guest_pc_trace_cuda_run_checked_acceptance_verifier_core_contract",
