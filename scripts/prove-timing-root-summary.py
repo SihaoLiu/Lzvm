@@ -857,6 +857,15 @@ CUDA_COPY_H2D_WAIT_NS_KEY = "timing_cuda_allocator_copy_h2d_wait_ns"
 CUDA_COPY_H2D_HOT_BYTES_KEY = "timing_cuda_allocator_copy_h2d_hot_bytes"
 CUDA_COPY_H2D_HOT_COUNT_KEY = "timing_cuda_allocator_copy_h2d_hot_count"
 CUDA_COPY_H2D_HOT_WAIT_NS_KEY = "timing_cuda_allocator_copy_h2d_hot_wait_ns"
+CUDA_COPY_H2D_SECOND_HOT_BYTES_KEY = (
+    "timing_cuda_allocator_copy_h2d_second_hot_bytes"
+)
+CUDA_COPY_H2D_SECOND_HOT_COUNT_KEY = (
+    "timing_cuda_allocator_copy_h2d_second_hot_count"
+)
+CUDA_COPY_H2D_SECOND_HOT_WAIT_NS_KEY = (
+    "timing_cuda_allocator_copy_h2d_second_hot_wait_ns"
+)
 CUDA_COPY_D2H_BYTES_KEY = "timing_cuda_allocator_copy_d2h_bytes"
 CUDA_COPY_D2H_WAIT_NS_KEY = "timing_cuda_allocator_copy_d2h_wait_ns"
 CUDA_COPY_D2H_HOT_BYTES_KEY = "timing_cuda_allocator_copy_d2h_hot_bytes"
@@ -1328,6 +1337,11 @@ HEADER = (
     "cuda_memory_info_max_wait_ms,"
     "cuda_allocator_malloc_calls,cuda_allocator_malloc_wait_ms,"
     "cuda_allocator_malloc_max_wait_ms,"
+    "cuda_allocator_h2d_hot_bytes,cuda_allocator_h2d_hot_count,"
+    "cuda_allocator_h2d_hot_wait_ms,cuda_allocator_h2d_hot_wait_pct,"
+    "cuda_allocator_h2d_second_hot_bytes,cuda_allocator_h2d_second_hot_count,"
+    "cuda_allocator_h2d_second_hot_wait_ms,"
+    "cuda_allocator_h2d_second_hot_wait_pct,"
     "cuda_allocator_d2h_bytes,cuda_allocator_d2h_wait_ms,"
     "cuda_allocator_d2h_hot_bytes,cuda_allocator_d2h_hot_count,"
     "cuda_allocator_d2h_hot_wait_ms,cuda_allocator_d2h_hot_wait_pct,"
@@ -1889,6 +1903,9 @@ TIMING_KEYS = {
     CUDA_COPY_H2D_HOT_BYTES_KEY,
     CUDA_COPY_H2D_HOT_COUNT_KEY,
     CUDA_COPY_H2D_HOT_WAIT_NS_KEY,
+    CUDA_COPY_H2D_SECOND_HOT_BYTES_KEY,
+    CUDA_COPY_H2D_SECOND_HOT_COUNT_KEY,
+    CUDA_COPY_H2D_SECOND_HOT_WAIT_NS_KEY,
     CUDA_COPY_D2H_BYTES_KEY,
     CUDA_COPY_D2H_WAIT_NS_KEY,
     CUDA_COPY_D2H_HOT_BYTES_KEY,
@@ -6338,6 +6355,33 @@ def summarize_profile_values(
     cuda_allocator_malloc_max_wait_ms = (
         values.get(CUDA_MALLOC_MAX_WAIT_NS_KEY, 0) / 1_000_000.0
     )
+    cuda_allocator_h2d_wait_ms = (
+        values.get(CUDA_COPY_H2D_WAIT_NS_KEY, 0) / 1_000_000.0
+    )
+    cuda_allocator_h2d_hot_bytes = values.get(CUDA_COPY_H2D_HOT_BYTES_KEY, 0)
+    cuda_allocator_h2d_hot_count = values.get(CUDA_COPY_H2D_HOT_COUNT_KEY, 0)
+    cuda_allocator_h2d_hot_wait_ms = (
+        values.get(CUDA_COPY_H2D_HOT_WAIT_NS_KEY, 0) / 1_000_000.0
+    )
+    cuda_allocator_h2d_hot_wait_pct = (
+        cuda_allocator_h2d_hot_wait_ms * 100.0 / cuda_allocator_h2d_wait_ms
+        if cuda_allocator_h2d_wait_ms
+        else 0.0
+    )
+    cuda_allocator_h2d_second_hot_bytes = values.get(
+        CUDA_COPY_H2D_SECOND_HOT_BYTES_KEY, 0
+    )
+    cuda_allocator_h2d_second_hot_count = values.get(
+        CUDA_COPY_H2D_SECOND_HOT_COUNT_KEY, 0
+    )
+    cuda_allocator_h2d_second_hot_wait_ms = (
+        values.get(CUDA_COPY_H2D_SECOND_HOT_WAIT_NS_KEY, 0) / 1_000_000.0
+    )
+    cuda_allocator_h2d_second_hot_wait_pct = (
+        cuda_allocator_h2d_second_hot_wait_ms * 100.0 / cuda_allocator_h2d_wait_ms
+        if cuda_allocator_h2d_wait_ms
+        else 0.0
+    )
     cuda_allocator_d2h_bytes = values.get(CUDA_COPY_D2H_BYTES_KEY, 0)
     cuda_allocator_d2h_wait_ms = (
         values.get(CUDA_COPY_D2H_WAIT_NS_KEY, 0) / 1_000_000.0
@@ -7074,6 +7118,13 @@ def summarize_profile_values(
         f"{cuda_memory_info_max_wait_ms:.3f},"
         f"{cuda_allocator_malloc_calls},{cuda_allocator_malloc_wait_ms:.3f},"
         f"{cuda_allocator_malloc_max_wait_ms:.3f},"
+        f"{cuda_allocator_h2d_hot_bytes},{cuda_allocator_h2d_hot_count},"
+        f"{cuda_allocator_h2d_hot_wait_ms:.3f},"
+        f"{cuda_allocator_h2d_hot_wait_pct:.3f},"
+        f"{cuda_allocator_h2d_second_hot_bytes},"
+        f"{cuda_allocator_h2d_second_hot_count},"
+        f"{cuda_allocator_h2d_second_hot_wait_ms:.3f},"
+        f"{cuda_allocator_h2d_second_hot_wait_pct:.3f},"
         f"{cuda_allocator_d2h_bytes},{cuda_allocator_d2h_wait_ms:.3f},"
         f"{cuda_allocator_d2h_hot_bytes},{cuda_allocator_d2h_hot_count},"
         f"{cuda_allocator_d2h_hot_wait_ms:.3f},"

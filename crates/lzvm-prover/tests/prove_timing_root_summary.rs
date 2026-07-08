@@ -4072,6 +4072,13 @@ fn prove_timing_root_summary_reports_allocator_d2h_wait_shape() {
         "timing_finish_witness_opening_row_values_device_rows=43",
         "timing_finish_witness_opening_row_values_device_download_batches=0",
         "timing_finish_witness_opening_row_values_device_single_downloads=43",
+        "timing_cuda_allocator_copy_h2d_wait_ns=1000000000",
+        "timing_cuda_allocator_copy_h2d_hot_bytes=1048576",
+        "timing_cuda_allocator_copy_h2d_hot_count=4",
+        "timing_cuda_allocator_copy_h2d_hot_wait_ns=750000000",
+        "timing_cuda_allocator_copy_h2d_second_hot_bytes=65536",
+        "timing_cuda_allocator_copy_h2d_second_hot_count=8",
+        "timing_cuda_allocator_copy_h2d_second_hot_wait_ns=125000000",
         "timing_cuda_allocator_copy_d2h_bytes=291360",
         "timing_cuda_allocator_copy_d2h_wait_ns=3429156569",
         "timing_cuda_allocator_copy_d2h_hot_bytes=304",
@@ -4167,6 +4174,14 @@ fn prove_timing_root_summary_reports_allocator_d2h_wait_shape() {
     assert_eq!(value("cuda_allocator_malloc_calls"), "24");
     assert_eq!(value("cuda_allocator_malloc_wait_ms"), "61.290");
     assert_eq!(value("cuda_allocator_malloc_max_wait_ms"), "61.157");
+    assert_eq!(value("cuda_allocator_h2d_hot_bytes"), "1048576");
+    assert_eq!(value("cuda_allocator_h2d_hot_count"), "4");
+    assert_eq!(value("cuda_allocator_h2d_hot_wait_ms"), "750.000");
+    assert_eq!(value("cuda_allocator_h2d_hot_wait_pct"), "75.000");
+    assert_eq!(value("cuda_allocator_h2d_second_hot_bytes"), "65536");
+    assert_eq!(value("cuda_allocator_h2d_second_hot_count"), "8");
+    assert_eq!(value("cuda_allocator_h2d_second_hot_wait_ms"), "125.000");
+    assert_eq!(value("cuda_allocator_h2d_second_hot_wait_pct"), "12.500");
     assert_eq!(value("cuda_allocator_d2h_wait_ms"), "3429.157");
     assert_eq!(value("cuda_allocator_d2h_hot_bytes"), "304");
     assert_eq!(value("cuda_allocator_d2h_hot_count"), "120");
