@@ -1312,9 +1312,11 @@ structure GpuRetainedDeviceCacheBudget where
   sourceBytes : Nat
   descriptorBytes : Nat
   leafDigestBytes : Nat
+  parentCheckpointBytes : Nat
   sourceLimit : Nat
   descriptorLimit : Nat
   leafDigestLimit : Nat
+  parentCheckpointLimit : Nat
   combinedLimit : Option Nat
 deriving DecidableEq, Repr
 
@@ -1323,9 +1325,13 @@ def GpuRetainedDeviceCacheBudgetWithinLimits
   budget.sourceBytes <= budget.sourceLimit
     /\ budget.descriptorBytes <= budget.descriptorLimit
     /\ budget.leafDigestBytes <= budget.leafDigestLimit
+    /\ budget.parentCheckpointBytes <= budget.parentCheckpointLimit
     /\ match budget.combinedLimit with
       | some limit =>
-          budget.sourceBytes + budget.descriptorBytes + budget.leafDigestBytes <= limit
+          budget.sourceBytes
+            + budget.descriptorBytes
+            + budget.leafDigestBytes
+            + budget.parentCheckpointBytes <= limit
       | none => True
 
 structure GpuRetainedDeviceCacheBudgetValidation where
