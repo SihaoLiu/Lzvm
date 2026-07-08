@@ -6587,11 +6587,13 @@ fn guest_pc_descriptor_buffer_retention_defaults_to_bounded_inputs() {
     assert!(
         gate_body.contains("LZVM_CUDA_RETAINED_DESCRIPTOR_BYTES")
             && gate_body.contains("guest_pc_parallel_lower_enabled_for_descriptor_retention()")
+            && gate_body
+                .contains("guest_pc_parallel_lower_work_units_enabled_for_descriptor_retention()")
             && compact_source_contains(
                 gate_body,
                 "guest_pc_descriptor_buffer_retention_default_supported_for_input(input_byte_count,)"
             ),
-        "descriptor buffer retention should default to the bounded-input policy while allowing an explicit env override"
+        "descriptor buffer retention should default to the bounded-input policy, including work-units lowering, while allowing an explicit env override"
     );
     let budget_override_body = function_body(
         &values_source,
@@ -6627,6 +6629,15 @@ fn guest_pc_descriptor_buffer_retention_defaults_to_bounded_inputs() {
         parallel_lower_gate_body.contains("LZVM_GUEST_PC_TRACE_PARALLEL_LOWER")
             && parallel_lower_gate_body.contains("LZVM_GUEST_PC_TRACE_PARALLEL_LOWER_WORK_UNITS"),
         "descriptor buffer retention should use the full parallel-lower selector"
+    );
+    let work_units_gate_body = function_body(
+        &execution_source,
+        "fn guest_pc_parallel_lower_work_units_enabled_for_descriptor_retention",
+        "fn env_flag_present_and_enabled",
+    );
+    assert!(
+        work_units_gate_body.contains("LZVM_GUEST_PC_TRACE_PARALLEL_LOWER_WORK_UNITS"),
+        "descriptor buffer retention should distinguish work-units lowering from plain parallel lowering"
     );
     assert!(
         execution_source.contains("trace_cuda_run_config: Option<WitnessTraceCudaRunConfig>")
