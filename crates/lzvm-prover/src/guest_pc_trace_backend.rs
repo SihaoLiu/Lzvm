@@ -17391,6 +17391,7 @@ fn main_op_result(op: ZiskMainOp, a: u64, b: u64) -> (u64, bool) {
     }
 }
 
+#[inline(always)]
 fn zisk_main_instruction_result(
     row: usize,
     instruction: &ZiskMainInstruction,
@@ -17589,6 +17590,7 @@ fn signed_remainder_word_result(dividend: i32, divisor: i32) -> (u64, bool) {
     }
 }
 
+#[inline(always)]
 fn validate_zisk_main_next_pc(
     row: usize,
     instruction: &ZiskMainInstruction,
@@ -17615,6 +17617,7 @@ fn validate_zisk_main_next_pc(
     Ok(())
 }
 
+#[inline(always)]
 fn apply_zisk_main_store(
     row: usize,
     instruction: &ZiskMainInstruction,
@@ -17687,6 +17690,7 @@ fn apply_zisk_main_store(
     Ok(())
 }
 
+#[inline(always)]
 fn zisk_main_store_value(instruction: &ZiskMainInstruction, c: u64) -> u64 {
     if instruction.store_pc {
         instruction.pc.wrapping_add_signed(instruction.jmp_offset2)

@@ -11647,8 +11647,22 @@ fn guest_pc_source_value_lookup_marks_hot_helpers_inline() {
             "#[inline(always)]\nfn ",
             "zi",
             "sk",
+            "_main_instruction_result"
+        ),
+        concat!(
+            "#[inline(always)]\nfn validate_",
+            "zi",
+            "sk",
+            "_main_next_pc"
+        ),
+        concat!("#[inline(always)]\nfn apply_", "zi", "sk", "_main_store"),
+        concat!(
+            "#[inline(always)]\nfn ",
+            "zi",
+            "sk",
             "_main_store_memory_access"
         ),
+        concat!("#[inline(always)]\nfn ", "zi", "sk", "_main_store_value"),
         "#[inline(always)]\nfn ordered_memory_access_value",
         "#[inline(always)]\nfn validate_memory_access_fields",
         "#[inline(always)]\nfn read_then_update_register_mem_step",
