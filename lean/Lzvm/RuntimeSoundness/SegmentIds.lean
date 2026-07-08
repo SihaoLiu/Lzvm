@@ -5,6 +5,7 @@ Authors: Sihao Liu
 -/
 
 import Lzvm.RuntimeSoundness.Core
+import Lzvm.ProofSegmentIds
 
 /-!
 Runtime soundness projections for proof segment identifiers.
@@ -202,6 +203,32 @@ theorem runtime_soundness_checked_acceptance_concrete_segment_ids_allowed
       publicInput
       proof
       checked.left
+
+theorem runtime_soundness_checked_acceptance_proof_segment_ids_allowed
+    {system : VerifierModel}
+    (validation : RuntimeSoundnessValidation system)
+    (binding :
+      RuntimeProofArtifactConcreteSegmentIdBinding
+        validation.transcriptValidation.artifactBindingValidation) :
+    forall artifact publicInput proof requiresExternalSource,
+      RuntimeSoundnessCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof
+          requiresExternalSource ->
+        ProofSegmentIdsAllowed proof := by
+  intro artifact publicInput proof requiresExternalSource checked
+  exact
+    runtime_soundness_checked_acceptance_concrete_segment_ids_allowed
+      validation
+      binding
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      checked
 
 theorem runtime_soundness_checked_acceptance_concrete_core_sound_contract
     {system : VerifierModel}
