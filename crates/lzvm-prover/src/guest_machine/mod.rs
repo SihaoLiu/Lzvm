@@ -3954,6 +3954,25 @@ mod tests {
     }
 
     #[test]
+    fn prepared_same_register_branches_match_timed_generic_advance() {
+        for kind in [
+            RiscvBranchKind::Beq,
+            RiscvBranchKind::Bne,
+            RiscvBranchKind::Blt,
+            RiscvBranchKind::Bge,
+            RiscvBranchKind::Bltu,
+            RiscvBranchKind::Bgeu,
+        ] {
+            assert_report_fast_path_matches_generic(RiscvInstruction::Branch {
+                kind,
+                rs1: 1,
+                rs2: 1,
+                offset: 16,
+            });
+        }
+    }
+
+    #[test]
     fn prepared_load_width_fast_paths_match_timed_generic_advance() {
         for (kind, words) in [
             (RiscvLoadKind::Lb, &[0x0000_0080, 0][..]),
