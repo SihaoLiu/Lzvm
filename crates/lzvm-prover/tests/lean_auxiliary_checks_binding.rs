@@ -4673,6 +4673,18 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             && lean_source.contains("GpuRetainedDeviceCacheBudgetWithinLimits")
             && lean_source.contains("retainedDeviceCacheBudgetAccepted")
             && lean_source.contains("retainedDeviceCacheBudgetImpliesWithinLimits")
+            && lean_source.contains(
+                "gpu_retained_device_cache_budget_checked_acceptance_projects_source_limit",
+            )
+            && lean_source.contains(
+                "gpu_retained_device_cache_budget_checked_acceptance_projects_descriptor_limit",
+            )
+            && lean_source.contains(
+                "gpu_retained_device_cache_budget_checked_acceptance_projects_leaf_digest_limit",
+            )
+            && lean_source.contains(
+                "gpu_retained_device_cache_budget_checked_acceptance_projects_combined_limit",
+            )
             && witness_values_source.contains("retained_combined_device_cache_allows")
             && witness_values_source.contains("reserve_retained_device_bytes")
             && witness_values_source.contains("reserve_retained_descriptor_buffer_bytes")
@@ -7265,6 +7277,10 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "gpu_retained_device_cache_budget_within_limits_projects_descriptor_limit",
             "gpu_retained_device_cache_budget_within_limits_projects_leaf_digest_limit",
             "gpu_retained_device_cache_budget_within_limits_projects_combined_limit",
+            "gpu_retained_device_cache_budget_checked_acceptance_projects_source_limit",
+            "gpu_retained_device_cache_budget_checked_acceptance_projects_descriptor_limit",
+            "gpu_retained_device_cache_budget_checked_acceptance_projects_leaf_digest_limit",
+            "gpu_retained_device_cache_budget_checked_acceptance_projects_combined_limit",
             "gpu_retained_device_cache_budget_checked_acceptance_sound",
             "gpu_retained_device_cache_budget_checked_acceptance_verifier_core_contract",
             "gpu_retained_device_cache_budget_checked_acceptance_core_and_sound",
@@ -8956,6 +8972,50 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             &gpu_runtime_source,
             theorem,
             &[projected_term],
+        );
+    }
+    for (theorem, projected_term, limit_projector) in [
+        (
+            "gpu_retained_device_cache_budget_checked_acceptance_projects_source_limit",
+            "budget.sourceBytes <= budget.sourceLimit",
+            "gpu_retained_device_cache_budget_within_limits_projects_source_limit",
+        ),
+        (
+            "gpu_retained_device_cache_budget_checked_acceptance_projects_descriptor_limit",
+            "budget.descriptorBytes <= budget.descriptorLimit",
+            "gpu_retained_device_cache_budget_within_limits_projects_descriptor_limit",
+        ),
+        (
+            "gpu_retained_device_cache_budget_checked_acceptance_projects_leaf_digest_limit",
+            "budget.leafDigestBytes <= budget.leafDigestLimit",
+            "gpu_retained_device_cache_budget_within_limits_projects_leaf_digest_limit",
+        ),
+        (
+            "gpu_retained_device_cache_budget_checked_acceptance_projects_combined_limit",
+            concat!(
+                "budget.sourceBytes + budget.descriptorBytes + ",
+                "budget.leafDigestBytes <= limit"
+            ),
+            "gpu_retained_device_cache_budget_within_limits_projects_combined_limit",
+        ),
+    ] {
+        lean_binding::assert_theorem_prefix_contains(
+            &gpu_runtime_source,
+            theorem,
+            &[projected_term],
+        );
+        lean_binding::assert_theorem_body_contains(
+            &gpu_runtime_source,
+            theorem,
+            &[
+                limit_projector,
+                "gpu_retained_device_cache_budget_checked_acceptance_projects_within_limits",
+            ],
+        );
+        lean_binding::assert_theorem_body_omits(
+            &gpu_runtime_source,
+            theorem,
+            &["GpuRuntimeInternal.checked_acceptance_sound_witness"],
         );
     }
     for (theorem, prefix_term, projector, omitted_terms) in [

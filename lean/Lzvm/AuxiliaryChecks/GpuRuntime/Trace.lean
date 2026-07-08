@@ -1801,6 +1801,102 @@ theorem gpu_retained_device_cache_budget_within_limits_projects_combined_limit
   rw [combinedLimit] at combinedWithin
   exact combinedWithin
 
+theorem gpu_retained_device_cache_budget_checked_acceptance_projects_source_limit
+    {system : VerifierModel}
+    (validation : GpuRetainedDeviceCacheBudgetValidation)
+    (budget : GpuRetainedDeviceCacheBudget) :
+    forall publicInput proof,
+      GpuRetainedDeviceCacheBudgetCheckedAcceptance
+          system
+          validation
+          budget
+          publicInput
+          proof ->
+        budget.sourceBytes <= budget.sourceLimit := by
+  intro publicInput proof checked
+  exact
+    gpu_retained_device_cache_budget_within_limits_projects_source_limit
+      budget
+      (gpu_retained_device_cache_budget_checked_acceptance_projects_within_limits
+        validation
+        budget
+        publicInput
+        proof
+        checked)
+
+theorem gpu_retained_device_cache_budget_checked_acceptance_projects_descriptor_limit
+    {system : VerifierModel}
+    (validation : GpuRetainedDeviceCacheBudgetValidation)
+    (budget : GpuRetainedDeviceCacheBudget) :
+    forall publicInput proof,
+      GpuRetainedDeviceCacheBudgetCheckedAcceptance
+          system
+          validation
+          budget
+          publicInput
+          proof ->
+        budget.descriptorBytes <= budget.descriptorLimit := by
+  intro publicInput proof checked
+  exact
+    gpu_retained_device_cache_budget_within_limits_projects_descriptor_limit
+      budget
+      (gpu_retained_device_cache_budget_checked_acceptance_projects_within_limits
+        validation
+        budget
+        publicInput
+        proof
+        checked)
+
+theorem gpu_retained_device_cache_budget_checked_acceptance_projects_leaf_digest_limit
+    {system : VerifierModel}
+    (validation : GpuRetainedDeviceCacheBudgetValidation)
+    (budget : GpuRetainedDeviceCacheBudget) :
+    forall publicInput proof,
+      GpuRetainedDeviceCacheBudgetCheckedAcceptance
+          system
+          validation
+          budget
+          publicInput
+          proof ->
+        budget.leafDigestBytes <= budget.leafDigestLimit := by
+  intro publicInput proof checked
+  exact
+    gpu_retained_device_cache_budget_within_limits_projects_leaf_digest_limit
+      budget
+      (gpu_retained_device_cache_budget_checked_acceptance_projects_within_limits
+        validation
+        budget
+        publicInput
+        proof
+        checked)
+
+theorem gpu_retained_device_cache_budget_checked_acceptance_projects_combined_limit
+    {system : VerifierModel}
+    (validation : GpuRetainedDeviceCacheBudgetValidation)
+    (budget : GpuRetainedDeviceCacheBudget)
+    (limit : Nat) :
+    budget.combinedLimit = some limit ->
+      forall publicInput proof,
+        GpuRetainedDeviceCacheBudgetCheckedAcceptance
+            system
+            validation
+            budget
+            publicInput
+            proof ->
+          budget.sourceBytes + budget.descriptorBytes + budget.leafDigestBytes <= limit := by
+  intro combinedLimit publicInput proof checked
+  exact
+    gpu_retained_device_cache_budget_within_limits_projects_combined_limit
+      budget
+      limit
+      combinedLimit
+      (gpu_retained_device_cache_budget_checked_acceptance_projects_within_limits
+        validation
+        budget
+        publicInput
+        proof
+        checked)
+
 theorem gpu_retained_device_cache_budget_checked_acceptance_sound
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
