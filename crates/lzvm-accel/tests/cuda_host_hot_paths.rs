@@ -12,6 +12,11 @@ fn large_host_to_device_copies_use_page_locked_registration() {
         source.contains("cudaHostUnregister"),
         "large H2D copies should unregister temporary host page registration"
     );
+    assert!(
+        source.contains("LZVM_CUDA_H2D_PIN_THRESHOLD_BYTES")
+            && source.contains("pinned_copy_threshold_bytes"),
+        "large H2D page locking should have a tunable byte threshold"
+    );
 }
 
 #[test]

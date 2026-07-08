@@ -34,6 +34,8 @@ struct SizeWaitStats {
 constexpr std::size_t kMaxCachedBytes = std::size_t{16} << 30;
 constexpr std::size_t kMaxCachedBlocksPerSize = 2;
 constexpr std::size_t kPinnedCopyThreshold = std::size_t{1} << 20;
+constexpr const char* kPinnedCopyThresholdEnv =
+    "LZVM_CUDA_H2D_PIN_THRESHOLD_BYTES";
 constexpr std::size_t kPendingCacheNoWaitBytes = std::size_t{128} << 20;
 constexpr const char* kPendingCacheNoWaitBytesEnv =
     "LZVM_CUDA_PENDING_CACHE_NO_WAIT_BYTES";
@@ -183,6 +185,12 @@ std::size_t parse_byte_limit_or_default(const char* value, std::size_t fallback)
 std::size_t pending_cache_no_wait_bytes(std::size_t fallback) {
     return parse_byte_limit_or_default(
         std::getenv(kPendingCacheNoWaitBytesEnv), fallback);
+}
+
+std::size_t pinned_copy_threshold_bytes() {
+    static const std::size_t threshold = parse_byte_limit_or_default(
+        std::getenv(kPinnedCopyThresholdEnv), kPinnedCopyThreshold);
+    return threshold;
 }
 
 void record_wait_by_size(
@@ -387,7 +395,7 @@ std::size_t host_page_size() {
 
 RegisteredHostRange register_large_host_copy(const void* src, std::size_t bytes) {
     RegisteredHostRange range;
-    if (src == nullptr || bytes < kPinnedCopyThreshold) {
+    if (src == nullptr || bytes < pinned_copy_threshold_bytes()) {
         return range;
     }
 
