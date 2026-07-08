@@ -13168,15 +13168,7 @@ fn apply_copy_indirect_register_store_fast_path(
     let byte_len = usize::try_from(instruction.ind_width)
         .map_err(|_| GuestPcTraceBackendError::UnsupportedZiskMainSource { row: output_row })?;
     let a = state.registers[usize::from(a_index)];
-    let b = ordered_memory_access_value(
-        output_row,
-        effects,
-        0,
-        GuestMemoryAccessKind::Read,
-        a.wrapping_add_signed(b_offset),
-        byte_len,
-    )?;
-    if effects.memory_accesses.len() != 1 {
+    let [access] = effects.memory_accesses else {
         return Err(GuestPcTraceBackendError::ZiskMainEffectMismatch {
             row: output_row,
             message: format!(
@@ -13184,7 +13176,16 @@ fn apply_copy_indirect_register_store_fast_path(
                 effects.memory_accesses.len()
             ),
         });
-    }
+    };
+    validate_memory_access_fields(
+        output_row,
+        access,
+        GuestMemoryAccessKind::Read,
+        a.wrapping_add_signed(b_offset),
+        byte_len,
+        access.value,
+    )?;
+    let b = access.value;
     let c = b;
     let flag = false;
     let computed_next_pc = instruction.pc.wrapping_add_signed(instruction.jmp_offset2);
@@ -13289,15 +13290,7 @@ fn apply_copy_indirect_no_store_fast_path(
     }
     let byte_len = usize::from(width);
     let a = state.registers[usize::from(a_index)];
-    let b = ordered_memory_access_value(
-        output_row,
-        effects,
-        0,
-        GuestMemoryAccessKind::Read,
-        a.wrapping_add_signed(b_offset),
-        byte_len,
-    )?;
-    if effects.memory_accesses.len() != 1 {
+    let [access] = effects.memory_accesses else {
         return Err(GuestPcTraceBackendError::ZiskMainEffectMismatch {
             row: output_row,
             message: format!(
@@ -13305,7 +13298,16 @@ fn apply_copy_indirect_no_store_fast_path(
                 effects.memory_accesses.len()
             ),
         });
-    }
+    };
+    validate_memory_access_fields(
+        output_row,
+        access,
+        GuestMemoryAccessKind::Read,
+        a.wrapping_add_signed(b_offset),
+        byte_len,
+        access.value,
+    )?;
+    let b = access.value;
     if !effects.register_writes.is_empty() {
         return Err(GuestPcTraceBackendError::ZiskMainEffectMismatch {
             row: output_row,
@@ -13829,15 +13831,7 @@ fn apply_sign_extend_indirect_register_store_fast_path(
     let byte_len = usize::try_from(instruction.ind_width)
         .map_err(|_| GuestPcTraceBackendError::UnsupportedZiskMainSource { row: output_row })?;
     let a = state.registers[usize::from(a_index)];
-    let b = ordered_memory_access_value(
-        output_row,
-        effects,
-        0,
-        GuestMemoryAccessKind::Read,
-        a.wrapping_add_signed(b_offset),
-        byte_len,
-    )?;
-    if effects.memory_accesses.len() != 1 {
+    let [access] = effects.memory_accesses else {
         return Err(GuestPcTraceBackendError::ZiskMainEffectMismatch {
             row: output_row,
             message: format!(
@@ -13845,7 +13839,16 @@ fn apply_sign_extend_indirect_register_store_fast_path(
                 effects.memory_accesses.len()
             ),
         });
-    }
+    };
+    validate_memory_access_fields(
+        output_row,
+        access,
+        GuestMemoryAccessKind::Read,
+        a.wrapping_add_signed(b_offset),
+        byte_len,
+        access.value,
+    )?;
+    let b = access.value;
     let c = match instruction.op {
         ZiskMainOp::SignExtendB => (b as i8) as u64,
         ZiskMainOp::SignExtendH => (b as i16) as u64,
