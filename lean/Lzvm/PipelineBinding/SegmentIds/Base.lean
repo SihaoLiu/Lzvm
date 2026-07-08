@@ -6,6 +6,7 @@ Authors: Sihao Liu
 
 import Lzvm.PipelineBinding.Audited
 import Lzvm.PipelineBinding.Contracts
+import Lzvm.ProofSegmentIds
 
 /-!
 Compact proof segment identity contracts derived from runtime proof pipeline binding.
@@ -266,6 +267,32 @@ theorem runtime_pipeline_binding_checked_acceptance_concrete_core_sound_contract
         publicInput
         proof
         accepted)
+
+theorem runtime_pipeline_binding_checked_acceptance_proof_segment_ids_allowed
+    {system : VerifierModel}
+    (validation : RuntimePipelineBindingValidation system)
+    (binding :
+      let queryPlanValidation := validation.queryPlanBindingValidation
+      let challengeValidation := queryPlanValidation.challengeValidation
+      RuntimeProofArtifactConcreteSegmentIdBinding
+        challengeValidation.transcriptValidation.artifactBindingValidation) :
+    forall artifact publicInput proof,
+      RuntimePipelineBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        ProofSegmentIdsAllowed proof := by
+  intro artifact publicInput proof accepted
+  exact
+    runtime_pipeline_binding_checked_acceptance_concrete_segment_ids_allowed
+      validation
+      binding
+      artifact
+      publicInput
+      proof
+      accepted
 
 theorem runtime_pipeline_binding_checked_acceptance_audited_concrete_segment_ids_contract
     {system : VerifierModel}
