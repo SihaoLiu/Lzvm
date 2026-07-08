@@ -37,8 +37,9 @@ use lzvm_artifacts::witness_segment::{
 };
 use lzvm_field::{Felt, FieldError, MAX_ROOT_OF_UNITY_BITS, MODULUS};
 use lzvm_prover::proof_preflight::{
-    public_values_as_fields, read_checked_proof_artifact_file, validate_proof_public_values,
-    ProofPreflightError, ProofPreflightReport, PublicValueFieldError, TraceConstraintPreflightUnit,
+    public_values_as_fields, read_checked_proof_artifact_file,
+    validate_proof_artifact_runtime_shape, validate_proof_public_values, ProofPreflightError,
+    ProofPreflightReport, PublicValueFieldError, TraceConstraintPreflightUnit,
 };
 
 const SAMPLE_AUX_SEGMENT_ID: u32 = PCS_MATERIAL_MANIFEST_SEGMENT_ID;
@@ -330,6 +331,45 @@ fn rejects_unknown_fixed_proof_segments_in_memory() {
         ProofPreflightError::UnexpectedProofSegment {
             id: unknown_segment_id
         }
+    );
+}
+
+#[test]
+fn runtime_shape_accepts_witness_commitment_segment_boundaries() {
+    let public_values = sample_public_values();
+    let mut proof = sample_proof(&public_values);
+    proof.segments.push(ProofSegment {
+        id: WITNESS_COMMITMENT_SEGMENT_BASE_ID,
+        data: vec![5, 6, 7, 8],
+    });
+    proof.segments.push(ProofSegment {
+        id: PCS_MATERIAL_MANIFEST_SEGMENT_ID - 1,
+        data: vec![9, 10, 11, 12],
+    });
+
+    validate_proof_artifact_runtime_shape(&proof)
+        .expect("runtime shape should accept witness segment ID boundaries");
+}
+
+#[test]
+fn runtime_shape_reports_first_unexpected_segment_id() {
+    let public_values = sample_public_values();
+    let mut proof = sample_proof(&public_values);
+    proof.segments.push(ProofSegment {
+        id: 20_000,
+        data: vec![5, 6, 7, 8],
+    });
+    proof.segments.push(ProofSegment {
+        id: 20_001,
+        data: vec![9, 10, 11, 12],
+    });
+
+    let error = validate_proof_artifact_runtime_shape(&proof)
+        .expect_err("runtime shape should reject the first unexpected segment");
+
+    assert_eq!(
+        error,
+        ProofPreflightError::UnexpectedProofSegment { id: 20_000 }
     );
 }
 
