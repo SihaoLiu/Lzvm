@@ -549,7 +549,7 @@ theorem guest_pc_trace_commit_mode_checked_acceptance_parallel_lower_disables_de
       _traceSelected, _rootDecision, _rootSelected, descriptorDecision,
       descriptorSelected, _windowPositive, _windowMatch⟩
   exact
-    Eq.trans descriptorSelected
+    descriptorSelected.trans
       (guest_pc_trace_descriptor_buffer_retention_default_disabled_for_parallel_lower
         config.descriptorBufferRetentionConfig
         configuredNone
@@ -583,7 +583,7 @@ theorem guest_pc_trace_commit_mode_checked_acceptance_explicit_retention_overrid
       _traceSelected, _rootDecision, _rootSelected, descriptorDecision,
       descriptorSelected, _windowPositive, _windowMatch⟩
   exact
-    Eq.trans descriptorSelected
+    descriptorSelected.trans
       (guest_pc_trace_descriptor_buffer_retention_explicit_override_matches
         config.descriptorBufferRetentionConfig
         configured
@@ -1391,17 +1391,15 @@ theorem guest_pc_trace_cuda_run_checked_acceptance_parallel_lower_disables_descr
       publicInput
       proof
       checked
-  have selectedMatches :=
-    guest_pc_trace_cuda_run_descriptor_retention_matches
+  exact
+    (guest_pc_trace_cuda_run_descriptor_retention_matches
       config
-      decision
-  have retentionDisabled :=
-    guest_pc_trace_descriptor_buffer_retention_default_disabled_for_parallel_lower
-      config.descriptorBufferRetentionConfig
-      configuredNone
-      parallelEnabled
-      decision.descriptorBufferRetentionDecision
-  exact Eq.trans selectedMatches retentionDisabled
+      decision).trans
+        (guest_pc_trace_descriptor_buffer_retention_default_disabled_for_parallel_lower
+          config.descriptorBufferRetentionConfig
+          configuredNone
+          parallelEnabled
+          decision.descriptorBufferRetentionDecision)
 
 theorem guest_pc_trace_cuda_run_checked_acceptance_explicit_retention_override_matches
     {system : VerifierModel}
@@ -1425,17 +1423,15 @@ theorem guest_pc_trace_cuda_run_checked_acceptance_explicit_retention_override_m
       publicInput
       proof
       checked
-  have selectedMatches :=
-    guest_pc_trace_cuda_run_descriptor_retention_matches
+  exact
+    (guest_pc_trace_cuda_run_descriptor_retention_matches
       config
-      decision
-  have retentionMatches :=
-    guest_pc_trace_descriptor_buffer_retention_explicit_override_matches
-      config.descriptorBufferRetentionConfig
-      configured
-      configuredSome
-      decision.descriptorBufferRetentionDecision
-  exact Eq.trans selectedMatches retentionMatches
+      decision).trans
+        (guest_pc_trace_descriptor_buffer_retention_explicit_override_matches
+          config.descriptorBufferRetentionConfig
+          configured
+          configuredSome
+          decision.descriptorBufferRetentionDecision)
 
 theorem guest_pc_trace_cuda_run_checked_acceptance_sound
     {system : VerifierModel}
@@ -1602,22 +1598,21 @@ theorem guest_pc_trace_cuda_run_checked_parallel_lower_retention_core_and_sound
               /\ RuntimeVerifierCoreContract system publicInput proof
               /\ SoundWitness system publicInput proof := by
   intro configuredNone parallelEnabled publicInput proof checked
-  have retention :=
-    guest_pc_trace_cuda_run_checked_acceptance_parallel_lower_disables_descriptor_retention
-      validation
-      config
-      configuredNone
-      parallelEnabled
-      publicInput
-      proof
-      checked
-  have coreAndSound :=
-    GpuRuntimeInternal.checked_acceptance_core_and_sound
-      assumptions
-      publicInput
-      proof
-      checked
-  exact And.intro retention coreAndSound
+  exact
+    And.intro
+      (guest_pc_trace_cuda_run_checked_acceptance_parallel_lower_disables_descriptor_retention
+        validation
+        config
+        configuredNone
+        parallelEnabled
+        publicInput
+        proof
+        checked)
+      (GpuRuntimeInternal.checked_acceptance_core_and_sound
+        assumptions
+        publicInput
+        proof
+        checked)
 
 theorem guest_pc_trace_cuda_run_checked_explicit_retention_core_and_sound
     {system : VerifierModel}
@@ -1637,22 +1632,21 @@ theorem guest_pc_trace_cuda_run_checked_explicit_retention_core_and_sound
             /\ RuntimeVerifierCoreContract system publicInput proof
             /\ SoundWitness system publicInput proof := by
   intro configuredSome publicInput proof checked
-  have retention :=
-    guest_pc_trace_cuda_run_checked_acceptance_explicit_retention_override_matches
-      validation
-      config
-      configured
-      configuredSome
-      publicInput
-      proof
-      checked
-  have coreAndSound :=
-    GpuRuntimeInternal.checked_acceptance_core_and_sound
-      assumptions
-      publicInput
-      proof
-      checked
-  exact And.intro retention coreAndSound
+  exact
+    And.intro
+      (guest_pc_trace_cuda_run_checked_acceptance_explicit_retention_override_matches
+        validation
+        config
+        configured
+        configuredSome
+        publicInput
+        proof
+        checked)
+      (GpuRuntimeInternal.checked_acceptance_core_and_sound
+        assumptions
+        publicInput
+        proof
+        checked)
 
 theorem gpu_retained_leaf_digest_limit_checked_acceptance_projects_decision
     {system : VerifierModel}
@@ -2206,15 +2200,6 @@ theorem guest_pc_trace_cuda_run_checked_parallel_lower_retention_audited_core_co
               /\ RuntimeVerifierCoreContract system publicInput proof
               /\ SoundWitness system publicInput proof := by
   intro configuredNone parallelEnabled publicInput proof checked
-  have retention :=
-    guest_pc_trace_cuda_run_checked_acceptance_parallel_lower_disables_descriptor_retention
-      validation
-      config
-      configuredNone
-      parallelEnabled
-      publicInput
-      proof
-      checked
   have audited :=
     GpuRuntimeInternal.checked_acceptance_audited_core_contract
       (auxiliaryAccepted := fun publicInput proof =>
@@ -2226,7 +2211,16 @@ theorem guest_pc_trace_cuda_run_checked_parallel_lower_retention_audited_core_co
   exact
     And.intro audited.left
       (And.intro audited.right.left
-        (And.intro retention audited.right.right))
+        (And.intro
+          (guest_pc_trace_cuda_run_checked_acceptance_parallel_lower_disables_descriptor_retention
+            validation
+            config
+            configuredNone
+            parallelEnabled
+            publicInput
+            proof
+            checked)
+          audited.right.right))
 
 theorem guest_pc_trace_cuda_run_checked_explicit_retention_audited_core_contract
     {system : VerifierModel}
@@ -2248,15 +2242,6 @@ theorem guest_pc_trace_cuda_run_checked_explicit_retention_audited_core_contract
             /\ RuntimeVerifierCoreContract system publicInput proof
             /\ SoundWitness system publicInput proof := by
   intro configuredSome publicInput proof checked
-  have retention :=
-    guest_pc_trace_cuda_run_checked_acceptance_explicit_retention_override_matches
-      validation
-      config
-      configured
-      configuredSome
-      publicInput
-      proof
-      checked
   have audited :=
     GpuRuntimeInternal.checked_acceptance_audited_core_contract
       (auxiliaryAccepted := fun publicInput proof =>
@@ -2268,7 +2253,16 @@ theorem guest_pc_trace_cuda_run_checked_explicit_retention_audited_core_contract
   exact
     And.intro audited.left
       (And.intro audited.right.left
-        (And.intro retention audited.right.right))
+        (And.intro
+          (guest_pc_trace_cuda_run_checked_acceptance_explicit_retention_override_matches
+            validation
+            config
+            configured
+            configuredSome
+            publicInput
+            proof
+            checked)
+          audited.right.right))
 
 theorem gpu_retained_leaf_digest_limit_checked_acceptance_audited_core_contract
     {system : VerifierModel}
