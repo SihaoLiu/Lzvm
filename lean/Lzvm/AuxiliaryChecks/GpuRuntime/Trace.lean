@@ -1584,6 +1584,76 @@ theorem guest_pc_trace_cuda_run_checked_acceptance_core_and_sound
               (And.intro retainedDebugRequiresRetention
                 (And.intro descriptorRetention coreAndSound)))))))
 
+theorem guest_pc_trace_cuda_run_checked_parallel_lower_retention_core_and_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : GuestPcTraceCudaRunValidation)
+    (config : GuestPcTraceCudaRunConfig) :
+    config.descriptorBufferRetentionConfig.configuredDescriptorBufferRetention = none ->
+      config.descriptorBufferRetentionConfig.parallelLowerEnabledForDescriptorRetention = true ->
+        forall publicInput proof,
+          GuestPcTraceCudaRunCheckedAcceptance
+              system
+              validation
+              config
+              publicInput
+              proof ->
+            config.selectedDescriptorBufferRetention = false
+              /\ RuntimeVerifierCoreContract system publicInput proof
+              /\ SoundWitness system publicInput proof := by
+  intro configuredNone parallelEnabled publicInput proof checked
+  have retention :=
+    guest_pc_trace_cuda_run_checked_acceptance_parallel_lower_disables_descriptor_retention
+      validation
+      config
+      configuredNone
+      parallelEnabled
+      publicInput
+      proof
+      checked
+  have coreAndSound :=
+    GpuRuntimeInternal.checked_acceptance_core_and_sound
+      assumptions
+      publicInput
+      proof
+      checked
+  exact And.intro retention coreAndSound
+
+theorem guest_pc_trace_cuda_run_checked_explicit_retention_core_and_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : GuestPcTraceCudaRunValidation)
+    (config : GuestPcTraceCudaRunConfig)
+    (configured : Bool) :
+    config.descriptorBufferRetentionConfig.configuredDescriptorBufferRetention = some configured ->
+      forall publicInput proof,
+        GuestPcTraceCudaRunCheckedAcceptance
+            system
+            validation
+            config
+            publicInput
+            proof ->
+          config.selectedDescriptorBufferRetention = configured
+            /\ RuntimeVerifierCoreContract system publicInput proof
+            /\ SoundWitness system publicInput proof := by
+  intro configuredSome publicInput proof checked
+  have retention :=
+    guest_pc_trace_cuda_run_checked_acceptance_explicit_retention_override_matches
+      validation
+      config
+      configured
+      configuredSome
+      publicInput
+      proof
+      checked
+  have coreAndSound :=
+    GpuRuntimeInternal.checked_acceptance_core_and_sound
+      assumptions
+      publicInput
+      proof
+      checked
+  exact And.intro retention coreAndSound
+
 theorem gpu_retained_leaf_digest_limit_checked_acceptance_projects_decision
     {system : VerifierModel}
     (validation : GpuRetainedLeafDigestLimitValidation)
@@ -2115,6 +2185,90 @@ theorem guest_pc_trace_cuda_run_checked_acceptance_audited_core_contract
                   (And.intro retainedDebug
                     (And.intro retainedDebugRequiresRetention
                       (And.intro descriptorRetention audited.right.right)))))))))
+
+theorem guest_pc_trace_cuda_run_checked_parallel_lower_retention_audited_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : GuestPcTraceCudaRunValidation)
+    (config : GuestPcTraceCudaRunConfig) :
+    config.descriptorBufferRetentionConfig.configuredDescriptorBufferRetention = none ->
+      config.descriptorBufferRetentionConfig.parallelLowerEnabledForDescriptorRetention = true ->
+        forall publicInput proof,
+          GuestPcTraceCudaRunCheckedAcceptance
+              system
+              validation
+              config
+              publicInput
+              proof ->
+            RequiredCryptographicAssumptionStatements assumptions.crypto
+              /\ RequiredSemanticAssumptionStatements assumptions.semantic
+              /\ config.selectedDescriptorBufferRetention = false
+              /\ RuntimeVerifierCoreContract system publicInput proof
+              /\ SoundWitness system publicInput proof := by
+  intro configuredNone parallelEnabled publicInput proof checked
+  have retention :=
+    guest_pc_trace_cuda_run_checked_acceptance_parallel_lower_disables_descriptor_retention
+      validation
+      config
+      configuredNone
+      parallelEnabled
+      publicInput
+      proof
+      checked
+  have audited :=
+    GpuRuntimeInternal.checked_acceptance_audited_core_contract
+      (auxiliaryAccepted := fun publicInput proof =>
+        validation.traceCudaRunConfigAccepted config publicInput proof)
+      assumptions
+      publicInput
+      proof
+      checked
+  exact
+    And.intro audited.left
+      (And.intro audited.right.left
+        (And.intro retention audited.right.right))
+
+theorem guest_pc_trace_cuda_run_checked_explicit_retention_audited_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : GuestPcTraceCudaRunValidation)
+    (config : GuestPcTraceCudaRunConfig)
+    (configured : Bool) :
+    config.descriptorBufferRetentionConfig.configuredDescriptorBufferRetention = some configured ->
+      forall publicInput proof,
+        GuestPcTraceCudaRunCheckedAcceptance
+            system
+            validation
+            config
+            publicInput
+            proof ->
+          RequiredCryptographicAssumptionStatements assumptions.crypto
+            /\ RequiredSemanticAssumptionStatements assumptions.semantic
+            /\ config.selectedDescriptorBufferRetention = configured
+            /\ RuntimeVerifierCoreContract system publicInput proof
+            /\ SoundWitness system publicInput proof := by
+  intro configuredSome publicInput proof checked
+  have retention :=
+    guest_pc_trace_cuda_run_checked_acceptance_explicit_retention_override_matches
+      validation
+      config
+      configured
+      configuredSome
+      publicInput
+      proof
+      checked
+  have audited :=
+    GpuRuntimeInternal.checked_acceptance_audited_core_contract
+      (auxiliaryAccepted := fun publicInput proof =>
+        validation.traceCudaRunConfigAccepted config publicInput proof)
+      assumptions
+      publicInput
+      proof
+      checked
+  exact
+    And.intro audited.left
+      (And.intro audited.right.left
+        (And.intro retention audited.right.right))
 
 theorem gpu_retained_leaf_digest_limit_checked_acceptance_audited_core_contract
     {system : VerifierModel}

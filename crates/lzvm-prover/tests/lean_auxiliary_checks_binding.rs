@@ -4445,6 +4445,14 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             && lean_source.contains(
                 "guest_pc_trace_cuda_run_checked_acceptance_explicit_retention_override_matches",
             )
+            && lean_source.contains("guest_pc_trace_cuda_run_checked_parallel_lower_retention_core_and_sound")
+            && lean_source.contains("guest_pc_trace_cuda_run_checked_explicit_retention_core_and_sound")
+            && lean_source.contains(
+                "guest_pc_trace_cuda_run_checked_parallel_lower_retention_audited_core_contract",
+            )
+            && lean_source.contains(
+                "guest_pc_trace_cuda_run_checked_explicit_retention_audited_core_contract",
+            )
             && lean_source.contains("guest_pc_trace_cuda_run_checked_acceptance_sound")
             && lean_source
                 .contains("guest_pc_trace_cuda_run_checked_acceptance_verifier_core_contract")
@@ -4599,6 +4607,54 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         ),
     ] {
         lean_binding::assert_theorem_body_contains(&gpu_runtime_source, theorem_name, &projectors);
+        lean_binding::assert_theorem_body_omits(
+            &gpu_runtime_source,
+            theorem_name,
+            &["GpuRuntimeInternal.checked_acceptance_sound_witness"],
+        );
+    }
+    for (theorem_name, retention_projection, core_projector) in [
+        (
+            "guest_pc_trace_cuda_run_checked_parallel_lower_retention_core_and_sound",
+            concat!(
+                "guest_pc_trace_cuda_run_checked_acceptance_",
+                "parallel_lower_disables_descriptor_retention"
+            ),
+            "GpuRuntimeInternal.checked_acceptance_core_and_sound",
+        ),
+        (
+            "guest_pc_trace_cuda_run_checked_explicit_retention_core_and_sound",
+            concat!(
+                "guest_pc_trace_cuda_run_checked_acceptance_",
+                "explicit_retention_override_matches"
+            ),
+            "GpuRuntimeInternal.checked_acceptance_core_and_sound",
+        ),
+        (
+            concat!(
+                "guest_pc_trace_cuda_run_checked_parallel_lower_retention_",
+                "audited_core_contract"
+            ),
+            concat!(
+                "guest_pc_trace_cuda_run_checked_acceptance_",
+                "parallel_lower_disables_descriptor_retention"
+            ),
+            "GpuRuntimeInternal.checked_acceptance_audited_core_contract",
+        ),
+        (
+            "guest_pc_trace_cuda_run_checked_explicit_retention_audited_core_contract",
+            concat!(
+                "guest_pc_trace_cuda_run_checked_acceptance_",
+                "explicit_retention_override_matches"
+            ),
+            "GpuRuntimeInternal.checked_acceptance_audited_core_contract",
+        ),
+    ] {
+        lean_binding::assert_theorem_body_contains(
+            &gpu_runtime_source,
+            theorem_name,
+            &[retention_projection, core_projector],
+        );
         lean_binding::assert_theorem_body_omits(
             &gpu_runtime_source,
             theorem_name,
@@ -7188,6 +7244,13 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
                 "guest_pc_trace_cuda_run_checked_acceptance_",
                 "explicit_retention_override_matches"
             ),
+            "guest_pc_trace_cuda_run_checked_parallel_lower_retention_core_and_sound",
+            "guest_pc_trace_cuda_run_checked_explicit_retention_core_and_sound",
+            concat!(
+                "guest_pc_trace_cuda_run_checked_parallel_lower_retention_",
+                "audited_core_contract"
+            ),
+            "guest_pc_trace_cuda_run_checked_explicit_retention_audited_core_contract",
             "guest_pc_trace_cuda_run_checked_acceptance_sound",
             "guest_pc_trace_cuda_run_checked_acceptance_verifier_core_contract",
             "guest_pc_trace_cuda_run_checked_acceptance_core_and_sound",
@@ -8762,6 +8825,39 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "SoundWitness system publicInput proof",
         ],
     );
+    for theorem in [
+        "guest_pc_trace_cuda_run_checked_parallel_lower_retention_core_and_sound",
+        "guest_pc_trace_cuda_run_checked_explicit_retention_core_and_sound",
+    ] {
+        lean_binding::assert_theorem_prefix_contains(
+            &gpu_runtime_source,
+            theorem,
+            &[
+                "config.selectedDescriptorBufferRetention =",
+                "RuntimeVerifierCoreContract system publicInput proof",
+                "SoundWitness system publicInput proof",
+            ],
+        );
+    }
+    for theorem in [
+        concat!(
+            "guest_pc_trace_cuda_run_checked_parallel_lower_retention_",
+            "audited_core_contract"
+        ),
+        "guest_pc_trace_cuda_run_checked_explicit_retention_audited_core_contract",
+    ] {
+        lean_binding::assert_theorem_prefix_contains(
+            &gpu_runtime_source,
+            theorem,
+            &[
+                "RequiredCryptographicAssumptionStatements assumptions.crypto",
+                "RequiredSemanticAssumptionStatements assumptions.semantic",
+                "config.selectedDescriptorBufferRetention =",
+                "RuntimeVerifierCoreContract system publicInput proof",
+                "SoundWitness system publicInput proof",
+            ],
+        );
+    }
     assert_theorem_body_contains_identifiers(
         &gpu_runtime_source,
         "guest_pc_trace_cuda_run_checked_acceptance_core_and_sound",
