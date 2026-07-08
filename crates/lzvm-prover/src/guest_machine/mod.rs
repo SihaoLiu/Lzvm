@@ -2245,11 +2245,13 @@ fn try_advance_guest_machine_report_fast_path(
             rs2,
             offset,
         } => {
-            if branch_is_taken(
-                kind,
-                state.read_decoded_register(rs1),
-                state.read_decoded_register(rs2),
-            ) {
+            let lhs = state.read_decoded_register(rs1);
+            let rhs = if rs1 == rs2 {
+                lhs
+            } else {
+                state.read_decoded_register(rs2)
+            };
+            if branch_is_taken(kind, lhs, rhs) {
                 next_pc = address.wrapping_add_signed(i64::from(offset));
             }
         }

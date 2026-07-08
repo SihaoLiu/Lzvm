@@ -12085,6 +12085,34 @@ fn guest_machine_jump_fast_path_skips_zero_link_write() {
 }
 
 #[test]
+fn guest_machine_branch_fast_path_reuses_same_register_read() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let source_path = crate_root.join("src/guest_machine/mod.rs");
+    let source = std::fs::read_to_string(&source_path).expect("guest machine source should read");
+    let body = function_body(
+        &source,
+        "fn try_advance_guest_machine_report_fast_path",
+        "fn write_fast_reported_register",
+    );
+    let branch_start = body
+        .find("RiscvInstruction::Branch")
+        .expect("branch fast path should exist");
+    let branch_end = branch_start
+        + body[branch_start..]
+            .find("RiscvInstruction::OpImm")
+            .expect("arithmetic fast path should follow branch");
+    let branch_body = &body[branch_start..branch_end];
+
+    assert!(
+        branch_body.contains("let lhs = state.read_decoded_register(rs1);")
+            && branch_body.contains("if rs1 == rs2")
+            && branch_body.contains("state.read_decoded_register(rs2)")
+            && branch_body.contains("branch_is_taken(kind, lhs, rhs)"),
+        "branch fast path should not read the same register twice"
+    );
+}
+
+#[test]
 fn guest_machine_fetch_uses_specialized_memory_path() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let source_path = crate_root.join("src/guest_machine/mod.rs");
