@@ -16,7 +16,9 @@ use lzvm_artifacts::key_directory::{read_key_directory_catalog, KeyDirectoryErro
 use lzvm_artifacts::pcs_proof_values_segment::PCS_PROOF_VALUES_SEGMENT_ID;
 use lzvm_artifacts::program_image::ProgramImageCommitmentCache;
 use lzvm_artifacts::program_image_segment::PROGRAM_IMAGE_CACHE_SEGMENT_ID;
-use lzvm_artifacts::proof::{read_proof_artifact_file, ProofArtifactError, ProofSegment};
+use lzvm_artifacts::proof::{
+    read_proof_artifact_file, ProofArtifact, ProofArtifactError, ProofSegment,
+};
 use lzvm_artifacts::public_values::{read_public_values_file, PublicValuesError};
 use lzvm_artifacts::setup_info::StageValue;
 use lzvm_artifacts::setup_manifest::SetupDirectoryManifestError;
@@ -25,6 +27,7 @@ use lzvm_field::{poseidon2_hash_16, Ext3, Felt, FieldError, PoseidonTranscript, 
 
 use crate::contribution_eth_block::contribution_eth_block_input_reports;
 use crate::proof_preflight::{public_values_as_fields, PublicValueFieldError};
+use crate::proof_segment_ids::is_allowed_proof_segment_id;
 use crate::proof_values::{
     flatten_pcs_proof_values, load_pcs_proof_values_from_segments, LoadPcsProofValuesSegmentError,
     ProvePcsProofValuesSegmentError,
@@ -707,9 +710,8 @@ pub fn derive_global_challenge_from_files(
     let setup_dir = setup_dir.as_ref();
     let catalog = read_key_directory_catalog(setup_dir)?;
     validate_setup_directory_manifest_if_present(setup_dir, &catalog)?;
-    let proof = read_proof_artifact_file(proof_path)?;
+    let proof = read_contribution_proof_artifact_file(proof_path)?;
     let public_values = read_public_values_file(public_values_path)?;
-    validate_contribution_proof_segment_ids(&proof.segments)?;
     let public_report = validate_setup_preflight_hashes(&catalog, &proof, &public_values)?;
     let public_fields = public_values_as_fields(&public_values)?;
     let proof_values =
@@ -820,8 +822,7 @@ fn derive_global_challenge_from_contribution_proofs_with_requirement(
     let mut embedded_challenges = Vec::new();
 
     for (proof_index, proof_path) in proof_paths.iter().enumerate() {
-        let proof = read_proof_artifact_file(proof_path)?;
-        validate_contribution_proof_segment_ids(&proof.segments)?;
+        let proof = read_contribution_proof_artifact_file(proof_path)?;
         let public_report = validate_setup_preflight_hashes(&catalog, &proof, &public_values)?;
         segment_count = segment_count
             .checked_add(public_report.segment_count)
@@ -934,6 +935,14 @@ fn derive_global_challenge_from_contribution_proofs_with_requirement(
     })
 }
 
+fn read_contribution_proof_artifact_file(
+    proof_path: impl AsRef<Path>,
+) -> Result<ProofArtifact, ContributionChallengeFileError> {
+    let proof = read_proof_artifact_file(proof_path)?;
+    validate_contribution_proof_segment_ids(&proof.segments)?;
+    Ok(proof)
+}
+
 fn validate_contribution_proof_segment_ids(
     segments: &[ProofSegment],
 ) -> Result<(), ContributionChallengeFileError> {
@@ -947,6 +956,10 @@ fn validate_contribution_proof_segment_ids(
 }
 
 fn is_contribution_proof_segment_id(id: u32) -> bool {
+    if !is_allowed_proof_segment_id(id) {
+        return false;
+    }
+
     matches!(
         id,
         PCS_PROOF_VALUES_SEGMENT_ID
@@ -1268,8 +1281,12 @@ mod tests {
     use lzvm_artifacts::program_image_segment::PROGRAM_IMAGE_CACHE_SEGMENT_ID;
     use lzvm_artifacts::proof::ProofSegment;
 
-    use super::{contribution_bound_segments, validate_contribution_proof_segment_ids};
+    use super::{
+        contribution_bound_segments, is_contribution_proof_segment_id,
+        validate_contribution_proof_segment_ids, ContributionChallengeFileError,
+    };
     use crate::contribution::CONTRIBUTION_SEGMENT_ID;
+    use crate::proof_segment_ids::is_allowed_proof_segment_id;
 
     #[test]
     fn accepts_binding_segments_in_contribution_proof_inputs() {
@@ -1305,6 +1322,27 @@ mod tests {
     }
 
     #[test]
+    fn contribution_proof_segment_ids_are_runtime_allowed() {
+        for id in [
+            PCS_PROOF_VALUES_SEGMENT_ID,
+            CONTRIBUTION_SEGMENT_ID,
+            PROGRAM_IMAGE_CACHE_SEGMENT_ID,
+            CHALLENGE_VALUES_SEGMENT_ID,
+            ETH_BLOCK_INPUT_SEGMENT_ID,
+            FRAMED_GUEST_INPUT_SEGMENT_ID,
+        ] {
+            assert!(
+                is_allowed_proof_segment_id(id),
+                "{id} should be runtime allowed"
+            );
+            assert!(
+                is_contribution_proof_segment_id(id),
+                "{id} should be contribution allowed"
+            );
+        }
+    }
+
+    #[test]
     fn rejects_setup_only_segments_in_contribution_proof_inputs() {
         let segments = vec![ProofSegment {
             id: PCS_MATERIAL_MANIFEST_SEGMENT_ID,
@@ -1317,6 +1355,22 @@ mod tests {
         assert_eq!(
             error.to_string(),
             format!("unexpected contribution proof segment id {PCS_MATERIAL_MANIFEST_SEGMENT_ID}")
+        );
+    }
+
+    #[test]
+    fn rejects_runtime_unexpected_segments_in_contribution_proof_inputs() {
+        let segments = vec![ProofSegment {
+            id: 20_000,
+            data: vec![1],
+        }];
+
+        let error = validate_contribution_proof_segment_ids(&segments)
+            .expect_err("runtime-unexpected proof segment should reject");
+
+        assert_eq!(
+            error,
+            ContributionChallengeFileError::UnexpectedProofSegment { id: 20_000 }
         );
     }
 
