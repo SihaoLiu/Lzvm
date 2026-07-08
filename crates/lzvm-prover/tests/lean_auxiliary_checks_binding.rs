@@ -1368,17 +1368,11 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
     }
     for (theorem, projector) in [
         (
-            concat!(
-                "runtime_performance_observation_timing_observations_acceptance_",
-                "audited_core_contract"
-            ),
+            "runtime_performance_observation_timing_observations_acceptance_audited_core_contract",
             "runtime_performance_observation_projects_timing_observations",
         ),
         (
-            concat!(
-                "runtime_performance_observation_guest_pc_trace_timing_acceptance_",
-                "audited_core_contract"
-            ),
+            "runtime_performance_observation_guest_pc_trace_timing_acceptance_audited_core_contract",
             "runtime_performance_observation_projects_guest_pc_trace_timing",
         ),
         (
@@ -1386,10 +1380,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "runtime_performance_observation_projects_witness_opening_row_value_timing",
         ),
         (
-            concat!(
-                "runtime_performance_observation_constant_material_timing_acceptance_",
-                "audited_core_contract"
-            ),
+            "runtime_performance_observation_constant_material_timing_acceptance_audited_core_contract",
             "runtime_performance_observation_projects_constant_material_validation_timing",
         ),
         (
@@ -1405,10 +1396,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "runtime_performance_observation_projects_cuda_backend",
         ),
         (
-            concat!(
-                "runtime_performance_observation_cuda_allocator_timing_acceptance_",
-                "audited_core_contract"
-            ),
+            "runtime_performance_observation_cuda_allocator_timing_acceptance_audited_core_contract",
             "runtime_performance_observation_projects_cuda_allocator_timing",
         ),
         (
@@ -1416,10 +1404,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "runtime_performance_observation_projects_proof_artifact_finish_timing",
         ),
         (
-            concat!(
-                "runtime_performance_observation_proof_timing_batch_acceptance_",
-                "audited_core_contract"
-            ),
+            "runtime_performance_observation_proof_timing_batch_acceptance_audited_core_contract",
             "runtime_performance_observation_projects_proof_timing_batch",
         ),
     ] {
@@ -2307,16 +2292,10 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         &[
             "proof_artifact_finish_verifier_descriptor_upload_shape_acceptance_verifier_core_contract",
             "proof_artifact_finish_verifier_descriptor_upload_shape_acceptance_core_and_sound",
-            concat!(
-                "proof_artifact_finish_verifier_descriptor_upload_shape_acceptance_",
-                "audited_core_contract"
-            ),
+            "proof_artifact_finish_verifier_descriptor_upload_shape_acceptance_audited_core_contract",
             "proof_artifact_finish_verifier_retained_source_row_values_acceptance_verifier_core_contract",
             "proof_artifact_finish_verifier_retained_source_row_values_acceptance_core_and_sound",
-            concat!(
-                "proof_artifact_finish_verifier_retained_source_row_values_acceptance_",
-                "audited_core_contract"
-            ),
+            "proof_artifact_finish_verifier_retained_source_row_values_acceptance_audited_core_contract",
         ],
     );
     let verifier_descriptor_upload_field_terms = [
@@ -2328,10 +2307,8 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         "proof_artifact_finish_verifier_descriptor_upload_shape_acceptance_verifier_core_contract";
     let verifier_descriptor_upload_combined_theorem =
         "proof_artifact_finish_verifier_descriptor_upload_shape_acceptance_core_and_sound";
-    let verifier_descriptor_upload_audited_theorem = concat!(
-        "proof_artifact_finish_verifier_descriptor_upload_shape_acceptance_",
-        "audited_core_contract"
-    );
+    let verifier_descriptor_upload_audited_theorem =
+        "proof_artifact_finish_verifier_descriptor_upload_shape_acceptance_audited_core_contract";
     lean_binding::assert_theorem_prefix_contains(
         &proof_timing_verifier_source,
         verifier_descriptor_upload_verifier_theorem,
@@ -2456,10 +2433,8 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         "proof_artifact_finish_verifier_retained_source_row_values_acceptance_verifier_core_contract";
     let verifier_retained_source_row_values_combined_theorem =
         "proof_artifact_finish_verifier_retained_source_row_values_acceptance_core_and_sound";
-    let verifier_retained_source_row_values_audited_theorem = concat!(
-        "proof_artifact_finish_verifier_retained_source_row_values_acceptance_",
-        "audited_core_contract"
-    );
+    let verifier_retained_source_row_values_audited_theorem =
+        "proof_artifact_finish_verifier_retained_source_row_values_acceptance_audited_core_contract";
     lean_binding::assert_theorem_prefix_contains(
         &proof_timing_verifier_source,
         verifier_retained_source_row_values_verifier_theorem,
@@ -6996,6 +6971,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "proof_artifact_finish_path_parent_hash_per_unit_shape_acceptance_sound",
             "proof_artifact_finish_path_parent_hash_per_unit_shape_acceptance_verifier_core_contract",
             "proof_artifact_finish_path_parent_hash_per_unit_shape_acceptance_core_and_sound",
+            "proof_artifact_finish_path_parent_hash_per_unit_shape_acceptance_audited_core_contract",
             "proof_artifact_finish_row_values_shape_acceptance_sound",
             "proof_artifact_finish_row_values_shape_acceptance_verifier_core_contract",
             "proof_artifact_finish_row_values_shape_acceptance_core_and_sound",
@@ -7011,6 +6987,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "proof_artifact_finish_descriptor_upload_word_count_acceptance_sound",
             "proof_artifact_finish_descriptor_upload_word_count_acceptance_verifier_core_contract",
             "proof_artifact_finish_descriptor_upload_word_count_acceptance_core_and_sound",
+            "proof_artifact_finish_descriptor_upload_word_count_acceptance_audited_core_contract",
             "proof_artifact_finish_descriptor_upload_shape_acceptance_sound",
             "proof_artifact_finish_descriptor_upload_shape_acceptance_verifier_core_contract",
             "proof_artifact_finish_descriptor_upload_shape_acceptance_core_and_sound",
@@ -7091,10 +7068,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "gpu_host_device_copy_round_trip_checked_acceptance_sound",
             "gpu_host_device_copy_round_trip_checked_acceptance_verifier_core_contract",
             "gpu_host_device_copy_round_trip_checked_acceptance_written_contents_core_and_sound",
-            concat!(
-                "gpu_host_device_copy_round_trip_checked_acceptance_written_contents_",
-                "audited_core_contract"
-            ),
+            "gpu_host_device_copy_round_trip_checked_acceptance_written_contents_audited_core_contract",
             "gpu_temporary_buffer_reuse_implies_same_request",
             "gpu_temporary_buffer_reuse_implies_pending_reads_complete",
             "gpu_temporary_buffer_reuse_checked_acceptance_projects_same_request",
@@ -7157,15 +7131,9 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "guest_pc_trace_large_gpu_gate_checked_acceptance_requires_runtime_memory_for_large_allowed",
             "guest_pc_trace_large_gpu_gate_checked_acceptance_audited_core_contract",
             "guest_pc_trace_traceless_commitment_input_decision_default_enabled",
-            concat!(
-                "guest_pc_trace_traceless_commitment_input_checked_acceptance_",
-                "audited_core_contract"
-            ),
+            "guest_pc_trace_traceless_commitment_input_checked_acceptance_audited_core_contract",
             "guest_pc_trace_traceless_segment_output_decision_default_enabled",
-            concat!(
-                "guest_pc_trace_traceless_segment_output_checked_acceptance_",
-                "audited_core_contract"
-            ),
+            "guest_pc_trace_traceless_segment_output_checked_acceptance_audited_core_contract",
             "guest_pc_trace_cross_root_materialization_checked_acceptance_projects_decision",
             "guest_pc_trace_cross_root_materialization_decision_default_enabled_when_supported",
             "guest_pc_trace_cross_root_materialization_decision_disabled_when_unsupported",
@@ -7180,10 +7148,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
                 "guest_pc_trace_cross_root_materialization_checked_acceptance_",
                 "core_and_sound"
             ),
-            concat!(
-                "guest_pc_trace_cross_root_materialization_checked_acceptance_",
-                "audited_core_contract"
-            ),
+            "guest_pc_trace_cross_root_materialization_checked_acceptance_audited_core_contract",
             "guest_pc_trace_commit_mode_checked_acceptance_projects_decision",
             "guest_pc_trace_commit_mode_effective_worker_positive",
             "guest_pc_trace_commit_mode_async_requires_single_worker",
@@ -7246,10 +7211,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "guest_pc_trace_terminal_sparse_source_checked_acceptance_sound",
             "guest_pc_trace_terminal_sparse_source_checked_acceptance_verifier_core_contract",
             "guest_pc_trace_terminal_sparse_source_checked_acceptance_core_and_sound",
-            concat!(
-                "guest_pc_trace_terminal_sparse_source_checked_acceptance_",
-                "audited_core_contract"
-            ),
+            "guest_pc_trace_terminal_sparse_source_checked_acceptance_audited_core_contract",
             "fri_retained_stage_source_checked_acceptance_projects_decision",
             "fri_retained_stage_source_checked_acceptance_sound",
             "fri_retained_stage_source_checked_acceptance_verifier_core_contract",
@@ -7401,16 +7363,10 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "proof_artifact_finish_path_parent_hash_shape_acceptance_audited_core_contract",
             "proof_artifact_finish_row_values_shape_acceptance_audited_core_contract",
             "proof_artifact_finish_witness_opening_subtiming_acceptance_audited_core_contract",
-            concat!(
-                "proof_artifact_finish_path_parent_hash_per_unit_shape_acceptance_",
-                "audited_core_contract"
-            ),
+            "proof_artifact_finish_path_parent_hash_per_unit_shape_acceptance_audited_core_contract",
             "proof_artifact_finish_retained_source_row_values_acceptance_audited_core_contract",
             "proof_artifact_finish_external_source_timing_acceptance_audited_core_contract",
-            concat!(
-                "proof_artifact_finish_descriptor_upload_word_count_acceptance_",
-                "audited_core_contract"
-            ),
+            "proof_artifact_finish_descriptor_upload_word_count_acceptance_audited_core_contract",
             "proof_artifact_finish_descriptor_upload_shape_acceptance_audited_core_contract",
         ],
     );
@@ -7514,10 +7470,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
     }
     for (theorem, field, omitted_terms) in [
         (
-            concat!(
-                "proof_artifact_finish_path_parent_hash_per_unit_shape_acceptance_",
-                "audited_core_contract"
-            ),
+            "proof_artifact_finish_path_parent_hash_per_unit_shape_acceptance_audited_core_contract",
             "finishWitnessOpeningPathParentHashRowsPerQuery := rowsPerQuery",
             &[
                 concat!(
@@ -7559,10 +7512,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             ][..],
         ),
         (
-            concat!(
-                "proof_artifact_finish_descriptor_upload_word_count_acceptance_",
-                "audited_core_contract"
-            ),
+            "proof_artifact_finish_descriptor_upload_word_count_acceptance_audited_core_contract",
             "finishWitnessExternalSourceDescriptorUploadWordCount := wordCount",
             &[
                 concat!(
