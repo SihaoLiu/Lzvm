@@ -15270,6 +15270,7 @@ fn zisk_main_register_store(index: u8) -> ZiskMainStore {
     }
 }
 
+#[inline(always)]
 fn apply_zisk_main_register_access_values(
     row: usize,
     instruction: &ZiskMainInstruction,
@@ -16954,6 +16955,7 @@ fn validate_zisk_main_memory_accesses(
     Ok(())
 }
 
+#[inline(always)]
 fn validate_zisk_main_memory_accesses_after_source_values(
     row: usize,
     instruction: &ZiskMainInstruction,
@@ -16997,6 +16999,7 @@ fn validate_zisk_main_memory_accesses_after_source_values(
     Ok(())
 }
 
+#[inline(always)]
 fn zisk_main_store_memory_access(
     row: usize,
     instruction: &ZiskMainInstruction,

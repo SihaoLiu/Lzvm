@@ -11624,12 +11624,30 @@ fn guest_pc_source_value_lookup_marks_hot_helpers_inline() {
     let source = std::fs::read_to_string(&source_path).expect("guest PC trace source should read");
 
     for helper in [
+        concat!(
+            "#[inline(always)]\nfn apply_",
+            "zi",
+            "sk",
+            "_main_register_access_values"
+        ),
         concat!("#[inline(always)]\nfn ", "zi", "sk", "_main_source_value"),
         concat!(
             "#[inline(always)]\nfn ",
             "zi",
             "sk",
             "_main_memory_source_value"
+        ),
+        concat!(
+            "#[inline(always)]\nfn validate_",
+            "zi",
+            "sk",
+            "_main_memory_accesses_after_source_values"
+        ),
+        concat!(
+            "#[inline(always)]\nfn ",
+            "zi",
+            "sk",
+            "_main_store_memory_access"
         ),
         "#[inline(always)]\nfn ordered_memory_access_value",
         "#[inline(always)]\nfn validate_memory_access_fields",
