@@ -5,6 +5,7 @@ Authors: Sihao Liu
 -/
 
 import Lzvm.OpeningSegmentBinding
+import Lzvm.ProofSegmentIds
 
 /-!
 Concrete proof-segment identifiers for runtime opening segment binding.
@@ -97,6 +98,33 @@ theorem runtime_opening_segment_binding_checked_acceptance_concrete_core_sound_c
         proof
         requiresExternalSource
         accepted)
+
+theorem runtime_opening_segment_binding_checked_acceptance_proof_segment_ids_allowed
+    {system : VerifierModel}
+    (validation : RuntimeOpeningSegmentBindingValidation system)
+    (binding :
+      let transcriptValidation :=
+        validation.openingValidation.runtimeSoundnessValidation.transcriptValidation
+      RuntimeProofArtifactConcreteSegmentIdBinding
+        transcriptValidation.artifactBindingValidation) :
+    forall artifact publicInput proof (_requiresExternalSource : Prop),
+      RuntimeOpeningSegmentBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        ProofSegmentIdsAllowed proof := by
+  intro artifact publicInput proof _requiresExternalSource accepted
+  exact
+    runtime_opening_segment_binding_checked_acceptance_concrete_segment_ids_allowed
+      validation
+      binding
+      artifact
+      publicInput
+      proof
+      _requiresExternalSource
+      accepted
 
 theorem runtime_opening_segment_binding_checked_acceptance_concrete_audited_core_contract
     {system : VerifierModel}
