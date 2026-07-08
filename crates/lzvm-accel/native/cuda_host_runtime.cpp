@@ -53,7 +53,10 @@ extern "C" int lzvm_cuda_stream_destroy(void* stream) {
 
 extern "C" int lzvm_cuda_stream_synchronize(void* stream) {
     try {
-        return static_cast<int>(cudaStreamSynchronize(static_cast<cudaStream_t>(stream)));
+        const int status =
+            static_cast<int>(cudaStreamSynchronize(static_cast<cudaStream_t>(stream)));
+        const int reap_status = lzvm_cuda_reap_host_copy_registrations();
+        return status == 0 ? reap_status : status;
     } catch (...) {
         return -1;
     }
@@ -288,5 +291,6 @@ extern "C" int lzvm_cuda_synchronize(void) {
     const auto sync_started = std::chrono::steady_clock::now();
     const int status = static_cast<int>(cudaDeviceSynchronize());
     lzvm_cuda_record_device_synchronize_wait(saturated_nanoseconds_since(sync_started));
-    return status;
+    const int reap_status = lzvm_cuda_reap_host_copy_registrations();
+    return status == 0 ? reap_status : status;
 }

@@ -99,6 +99,13 @@ struct RegisteredHostRange {
     bool registered = false;
 };
 
+struct PendingHostCopyRegistration {
+    RegisteredHostRange range;
+    cudaEvent_t ready_event = nullptr;
+};
+
+std::vector<PendingHostCopyRegistration> g_pending_host_copy_registrations;
+
 std::size_t saturated_add(std::size_t left, std::size_t right) {
     const auto max = std::numeric_limits<std::size_t>::max();
     if (max - left < right) {
@@ -433,6 +440,127 @@ int unregister_host_copy(const RegisteredHostRange& range) {
     return status;
 }
 
+void record_event_query_status_locked(int status) {
+    g_cuda_event_query_calls = saturated_increment(g_cuda_event_query_calls);
+    if (status == cudaSuccess) {
+        g_cuda_event_query_ready_count =
+            saturated_increment(g_cuda_event_query_ready_count);
+    } else if (status == cudaErrorNotReady) {
+        g_cuda_event_query_not_ready_count =
+            saturated_increment(g_cuda_event_query_not_ready_count);
+    }
+}
+
+int reap_ready_host_copy_registrations() {
+    std::vector<PendingHostCopyRegistration> ready;
+    int first = 0;
+    {
+        std::lock_guard<std::mutex> lock(g_allocator_mutex);
+        std::size_t index = 0;
+        while (index < g_pending_host_copy_registrations.size()) {
+            PendingHostCopyRegistration& pending =
+                g_pending_host_copy_registrations[index];
+            const int status = static_cast<int>(cudaEventQuery(pending.ready_event));
+            record_event_query_status_locked(status);
+            if (status == cudaSuccess) {
+                ready.push_back(pending);
+                g_pending_host_copy_registrations.erase(
+                    g_pending_host_copy_registrations.begin() + index);
+                continue;
+            }
+            if (status != cudaErrorNotReady) {
+                first = first_status(first, status);
+            }
+            ++index;
+        }
+    }
+
+    for (const PendingHostCopyRegistration& pending : ready) {
+        if (pending.ready_event != nullptr) {
+            const int destroy_status =
+                static_cast<int>(cudaEventDestroy(pending.ready_event));
+            first = first_status(first, destroy_status);
+        }
+        first = first_status(first, unregister_host_copy(pending.range));
+    }
+    return first;
+}
+
+int release_pending_host_copy_registrations() {
+    std::vector<PendingHostCopyRegistration> pending;
+    {
+        std::lock_guard<std::mutex> lock(g_allocator_mutex);
+        pending.swap(g_pending_host_copy_registrations);
+    }
+
+    int first = 0;
+    for (const PendingHostCopyRegistration& entry : pending) {
+        int sync_status = 0;
+        if (entry.ready_event != nullptr) {
+            const auto wait_started = std::chrono::steady_clock::now();
+            sync_status = static_cast<int>(cudaEventSynchronize(entry.ready_event));
+            {
+                std::lock_guard<std::mutex> lock(g_allocator_mutex);
+                g_cuda_event_synchronize_calls =
+                    saturated_increment(g_cuda_event_synchronize_calls);
+                g_cuda_event_synchronize_bytes =
+                    saturated_add(g_cuda_event_synchronize_bytes, entry.range.bytes);
+                if (entry.range.bytes > g_cuda_event_synchronize_max_bytes) {
+                    g_cuda_event_synchronize_max_bytes = entry.range.bytes;
+                }
+                record_event_synchronize_wait(
+                    entry.range.bytes, saturated_nanoseconds_since(wait_started));
+            }
+        }
+        if (sync_status != 0) {
+            std::lock_guard<std::mutex> lock(g_allocator_mutex);
+            g_pending_host_copy_registrations.push_back(entry);
+            first = first_status(first, sync_status);
+            continue;
+        }
+        if (entry.ready_event != nullptr) {
+            const int destroy_status = static_cast<int>(cudaEventDestroy(entry.ready_event));
+            first = first_status(first, destroy_status);
+        }
+        first = first_status(first, unregister_host_copy(entry.range));
+    }
+    return first;
+}
+
+int track_pending_host_copy_registration(
+    const RegisteredHostRange& range,
+    cudaStream_t stream) {
+    if (!range.registered) {
+        return 0;
+    }
+
+    cudaEvent_t event = nullptr;
+    int status = static_cast<int>(cudaEventCreateWithFlags(&event, cudaEventDisableTiming));
+    if (status == 0) {
+        status = static_cast<int>(cudaEventRecord(event, stream));
+    }
+    if (status != 0) {
+        if (event != nullptr) {
+            (void)cudaEventDestroy(event);
+        }
+        const int sync_status = static_cast<int>(cudaStreamSynchronize(stream));
+        const int unregister_status = unregister_host_copy(range);
+        return first_status(status, first_status(sync_status, unregister_status));
+    }
+
+    try {
+        std::lock_guard<std::mutex> lock(g_allocator_mutex);
+        g_pending_host_copy_registrations.push_back(
+            PendingHostCopyRegistration{range, event});
+    } catch (...) {
+        const int sync_status = static_cast<int>(cudaEventSynchronize(event));
+        const int destroy_status = static_cast<int>(cudaEventDestroy(event));
+        const int unregister_status = unregister_host_copy(range);
+        return first_status(sync_status, first_status(destroy_status, unregister_status));
+    }
+    return 0;
+}
+
 int free_allocation_on_device(void* ptr, int device) {
     int previous_device = -1;
     int status = set_allocation_device(device, &previous_device);
@@ -758,10 +886,19 @@ extern "C" void lzvm_cuda_free_bytes(void* ptr) {
     }
 }
 
+extern "C" int lzvm_cuda_reap_host_copy_registrations(void) {
+    try {
+        return reap_ready_host_copy_registrations();
+    } catch (...) {
+        return -1;
+    }
+}
+
 extern "C" int lzvm_cuda_allocator_clear_cache(void) {
     try {
+        const int registration_status = release_pending_host_copy_registrations();
         std::lock_guard<std::mutex> lock(g_allocator_mutex);
-        const int status = release_cached_blocks_locked();
+        const int status = first_status(registration_status, release_cached_blocks_locked());
         if (status == 0) {
             g_cuda_malloc_calls = g_cuda_malloc_bytes = g_cuda_malloc_wait_ns =
                 g_cuda_malloc_max_wait_ns = 0;
@@ -801,6 +938,10 @@ extern "C" int lzvm_cuda_allocator_stats(LzvmCudaAllocatorStats* out) {
     try {
         if (out == nullptr) {
             return -1;
+        }
+        const int reap_status = reap_ready_host_copy_registrations();
+        if (reap_status != 0) {
+            return reap_status;
         }
         std::lock_guard<std::mutex> lock(g_allocator_mutex);
         out->cuda_malloc_calls = g_cuda_malloc_calls;
@@ -925,14 +1066,20 @@ extern "C" int lzvm_cuda_copy_h2d_bytes_on_stream(
     if (dst == nullptr || src == nullptr || stream == nullptr) {
         return -1;
     }
+    const RegisteredHostRange registered = register_large_host_copy(src, bytes);
+    cudaStream_t cuda_stream = static_cast<cudaStream_t>(stream);
     const auto copy_started = std::chrono::steady_clock::now();
     const int status = static_cast<int>(cudaMemcpyAsync(
-        dst, src, bytes, cudaMemcpyHostToDevice, static_cast<cudaStream_t>(stream)));
+        dst, src, bytes, cudaMemcpyHostToDevice, cuda_stream));
     {
         std::lock_guard<std::mutex> lock(g_allocator_mutex);
         record_cuda_copy_h2d_wait(bytes, saturated_nanoseconds_since(copy_started));
     }
-    return status;
+    if (status != 0) {
+        const int unregister_status = unregister_host_copy(registered);
+        return first_status(status, unregister_status);
+    }
+    return track_pending_host_copy_registration(registered, cuda_stream);
 }
 
 extern "C" int lzvm_cuda_copy_d2h_bytes(void* dst, const void* src, std::size_t bytes) {

@@ -15,6 +15,34 @@ fn large_host_to_device_copies_use_page_locked_registration() {
 }
 
 #[test]
+fn stream_host_to_device_copies_defer_page_locked_registration_release() {
+    let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let host_source = std::fs::read_to_string(crate_root.join("native/cuda_host.cpp"))
+        .expect("cuda host source should read");
+    let runtime_source = std::fs::read_to_string(crate_root.join("native/cuda_host_runtime.cpp"))
+        .expect("cuda host runtime source should read");
+    let header_source = std::fs::read_to_string(crate_root.join("native/cuda_host.hpp"))
+        .expect("cuda host header should read");
+    let stream_copy_body = function_body(
+        &host_source,
+        "extern \"C\" int lzvm_cuda_copy_h2d_bytes_on_stream",
+        "extern \"C\" int lzvm_cuda_copy_d2h_bytes",
+    );
+
+    assert!(
+        stream_copy_body.contains("register_large_host_copy")
+            && stream_copy_body.contains("track_pending_host_copy_registration"),
+        "stream H2D copies should keep large host ranges registered until stream completion"
+    );
+    assert!(
+        host_source.contains("lzvm_cuda_reap_host_copy_registrations")
+            && header_source.contains("lzvm_cuda_reap_host_copy_registrations")
+            && runtime_source.contains("lzvm_cuda_reap_host_copy_registrations"),
+        "CUDA stream/device synchronization should reap completed host copy registrations"
+    );
+}
+
+#[test]
 fn cuda_host_exposes_device_memory_info() {
     let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
     let source_path = crate_root.join("native/cuda_host_runtime.cpp");
