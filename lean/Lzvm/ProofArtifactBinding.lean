@@ -174,9 +174,7 @@ def RuntimeProofArtifactFinalized
 
 def RuntimeProofArtifactConcreteSegmentIdsAllowed
     (proof : Proof) : Prop :=
-  forall id,
-    id ∈ proof.segmentIds ->
-      IsAllowedProofSegmentId id
+  ProofSegmentIdsAllowed proof
 
 structure RuntimeProofArtifactConcreteSegmentIdBinding
     {system : VerifierModel}

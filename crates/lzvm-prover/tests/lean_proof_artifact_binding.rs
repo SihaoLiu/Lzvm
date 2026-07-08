@@ -43,8 +43,7 @@ fn lean_proof_artifact_binding_exports_core_contract_projection() {
             && lean_source.contains("RuntimeProofArtifactFinalized")
             && lean_source.contains("RuntimeProofArtifactConcreteSegmentIdBinding")
             && lean_source.contains("RuntimeProofArtifactConcreteSegmentIdsAllowed")
-            && lean_source.contains("id ∈ proof.segmentIds")
-            && lean_source.contains("IsAllowedProofSegmentId")
+            && lean_source.contains("ProofSegmentIdsAllowed proof")
             && lean_source.contains("SoundWitness system publicInput proof"),
         "Lean proof artifact binding should expose checked soundness and verifier core projection"
     );

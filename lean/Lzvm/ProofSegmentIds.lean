@@ -4,6 +4,7 @@ Released under MIT OR Apache-2.0 license.
 Authors: Sihao Liu
 -/
 
+import Lzvm.Model
 import Mathlib
 
 /-!
@@ -61,6 +62,12 @@ def IsFixedProofSegmentId (id : Nat) : Prop :=
 def IsAllowedProofSegmentId (id : Nat) : Prop :=
   IsWitnessCommitmentSegmentId id \/ IsFixedProofSegmentId id
 
+def AllProofSegmentIdsAllowed (ids : List Nat) : Prop :=
+  forall id, id ∈ ids -> IsAllowedProofSegmentId id
+
+def ProofSegmentIdsAllowed (proof : Proof) : Prop :=
+  AllProofSegmentIdsAllowed proof.segmentIds
+
 instance isWitnessCommitmentSegmentIdDecidable (id : Nat) :
     Decidable (IsWitnessCommitmentSegmentId id) := by
   unfold IsWitnessCommitmentSegmentId
@@ -83,6 +90,25 @@ theorem fixed_proof_segment_ids_nodup :
 theorem fixed_proof_segment_ids_length :
     fixedProofSegmentIds.length = 16 := by
   decide
+
+theorem empty_proof_segment_ids_allowed :
+    AllProofSegmentIdsAllowed [] := by
+  intro id membership
+  cases membership
+
+theorem proof_segment_ids_allowed_iff_all_list_ids_allowed
+    {proof : Proof} :
+    ProofSegmentIdsAllowed proof <->
+      forall id, id ∈ proof.segmentIds -> IsAllowedProofSegmentId id := by
+  rfl
+
+theorem all_proof_segment_ids_allowed_cons
+    {id : Nat}
+    {ids : List Nat} :
+    AllProofSegmentIdsAllowed (id :: ids) <->
+      IsAllowedProofSegmentId id /\ AllProofSegmentIdsAllowed ids := by
+  unfold AllProofSegmentIdsAllowed
+  simp
 
 theorem fixed_proof_segment_ids_are_at_or_above_manifest :
     forall id, IsFixedProofSegmentId id -> pcsMaterialManifestSegmentId <= id := by

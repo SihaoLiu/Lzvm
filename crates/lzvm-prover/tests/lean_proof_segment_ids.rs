@@ -41,7 +41,11 @@ fn lean_proof_segment_ids_track_runtime_allowlist() {
     assert!(
         lean_source.contains("def IsAllowedProofSegmentId")
             && lean_source.contains("def isFixedProofSegmentIdBool")
+            && lean_source.contains("def AllProofSegmentIdsAllowed")
+            && lean_source.contains("def ProofSegmentIdsAllowed")
             && lean_source.contains("theorem witness_commitment_base_id_allowed")
+            && lean_source.contains("theorem empty_proof_segment_ids_allowed")
+            && lean_source.contains("theorem all_proof_segment_ids_allowed_cons")
             && lean_source.contains("theorem first_unknown_fixed_proof_segment_id_not_allowed")
             && lean_source.contains("theorem unknown_fixed_proof_segment_id_not_allowed")
             && lean_source.contains("theorem fixed_proof_segment_ids_nodup")
@@ -54,6 +58,9 @@ fn lean_proof_segment_ids_track_runtime_allowlist() {
         &[
             "fixed_proof_segment_ids_nodup",
             "fixed_proof_segment_ids_length",
+            "empty_proof_segment_ids_allowed",
+            "proof_segment_ids_allowed_iff_all_list_ids_allowed",
+            "all_proof_segment_ids_allowed_cons",
             "fixed_proof_segment_ids_are_at_or_above_manifest",
             "witness_commitment_segment_range_disjoint_fixed_segment_ids",
             "witness_commitment_base_id_allowed",
@@ -83,6 +90,16 @@ fn lean_proof_segment_ids_track_runtime_allowlist() {
         &lean_source,
         "fixed_proof_segment_ids_length",
         &["fixedProofSegmentIds.length = 16"],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "proof_segment_ids_allowed_iff_all_list_ids_allowed",
+        &["ProofSegmentIdsAllowed proof", "id ∈ proof.segmentIds"],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "all_proof_segment_ids_allowed_cons",
+        &["unfold AllProofSegmentIdsAllowed", "simp"],
     );
     lean_binding::assert_theorem_prefix_contains(
         &lean_source,
