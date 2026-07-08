@@ -12043,6 +12043,48 @@ fn guest_machine_nonzero_register_writes_skip_second_zero_branch() {
 }
 
 #[test]
+fn guest_machine_jump_fast_path_skips_zero_link_write() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let source_path = crate_root.join("src/guest_machine/mod.rs");
+    let source = std::fs::read_to_string(&source_path).expect("guest machine source should read");
+    let body = function_body(
+        &source,
+        "fn try_advance_guest_machine_report_fast_path",
+        "fn write_fast_reported_register",
+    );
+
+    let jal_start = body
+        .find("RiscvInstruction::Jal { rd, offset }")
+        .expect("JAL fast path should exist");
+    let jal_end = jal_start
+        + body[jal_start..]
+            .find("RiscvInstruction::Jalr")
+            .expect("JALR fast path should follow JAL");
+    let jal_body = &body[jal_start..jal_end];
+    assert!(
+        jal_body.contains(
+            "if rd != 0 {\n                register_write = write_fast_reported_register(state, rd, sequential_pc);\n            }"
+        ),
+        "JAL x0 link writes should skip the register-write helper"
+    );
+
+    let jalr_start = body
+        .find("RiscvInstruction::Jalr { rd, rs1, offset }")
+        .expect("JALR fast path should exist");
+    let jalr_end = jalr_start
+        + body[jalr_start..]
+            .find("RiscvInstruction::Branch")
+            .expect("branch fast path should follow JALR");
+    let jalr_body = &body[jalr_start..jalr_end];
+    assert!(
+        jalr_body.contains(
+            "if rd != 0 {\n                register_write = write_fast_reported_register(state, rd, sequential_pc);\n            }"
+        ),
+        "JALR x0 link writes should skip the register-write helper"
+    );
+}
+
+#[test]
 fn guest_machine_fetch_uses_specialized_memory_path() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let source_path = crate_root.join("src/guest_machine/mod.rs");

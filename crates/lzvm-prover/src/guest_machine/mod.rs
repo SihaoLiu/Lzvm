@@ -2224,7 +2224,9 @@ fn try_advance_guest_machine_report_fast_path(
             );
         }
         RiscvInstruction::Jal { rd, offset } => {
-            register_write = write_fast_reported_register(state, rd, sequential_pc);
+            if rd != 0 {
+                register_write = write_fast_reported_register(state, rd, sequential_pc);
+            }
             next_pc = address.wrapping_add_signed(i64::from(offset));
         }
         RiscvInstruction::Jalr { rd, rs1, offset } => {
@@ -2232,7 +2234,9 @@ fn try_advance_guest_machine_report_fast_path(
                 .read_decoded_register(rs1)
                 .wrapping_add_signed(i64::from(offset))
                 & !1;
-            register_write = write_fast_reported_register(state, rd, sequential_pc);
+            if rd != 0 {
+                register_write = write_fast_reported_register(state, rd, sequential_pc);
+            }
             next_pc = target;
         }
         RiscvInstruction::Branch {
