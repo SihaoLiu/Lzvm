@@ -1978,6 +1978,91 @@ theorem gpu_retained_device_cache_budget_checked_acceptance_core_and_sound
       checked
   exact And.intro withinLimits coreAndSound
 
+theorem gpu_retained_device_cache_budget_checked_limits_core_and_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : GpuRetainedDeviceCacheBudgetValidation)
+    (budget : GpuRetainedDeviceCacheBudget) :
+    forall publicInput proof,
+      GpuRetainedDeviceCacheBudgetCheckedAcceptance
+          system
+          validation
+          budget
+          publicInput
+          proof ->
+        budget.sourceBytes <= budget.sourceLimit
+          /\ budget.descriptorBytes <= budget.descriptorLimit
+          /\ budget.leafDigestBytes <= budget.leafDigestLimit
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof checked
+  have sourceLimit :=
+    gpu_retained_device_cache_budget_checked_acceptance_projects_source_limit
+      validation
+      budget
+      publicInput
+      proof
+      checked
+  have descriptorLimit :=
+    gpu_retained_device_cache_budget_checked_acceptance_projects_descriptor_limit
+      validation
+      budget
+      publicInput
+      proof
+      checked
+  have leafDigestLimit :=
+    gpu_retained_device_cache_budget_checked_acceptance_projects_leaf_digest_limit
+      validation
+      budget
+      publicInput
+      proof
+      checked
+  have coreAndSound :=
+    GpuRuntimeInternal.checked_acceptance_core_and_sound
+      assumptions
+      publicInput
+      proof
+      checked
+  exact
+    And.intro sourceLimit
+      (And.intro descriptorLimit
+        (And.intro leafDigestLimit coreAndSound))
+
+theorem gpu_retained_device_cache_budget_checked_combined_limit_core_and_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : GpuRetainedDeviceCacheBudgetValidation)
+    (budget : GpuRetainedDeviceCacheBudget)
+    (limit : Nat) :
+    budget.combinedLimit = some limit ->
+      forall publicInput proof,
+        GpuRetainedDeviceCacheBudgetCheckedAcceptance
+            system
+            validation
+            budget
+            publicInput
+            proof ->
+          budget.sourceBytes + budget.descriptorBytes + budget.leafDigestBytes <= limit
+            /\ RuntimeVerifierCoreContract system publicInput proof
+            /\ SoundWitness system publicInput proof := by
+  intro combinedLimit publicInput proof checked
+  have combinedWithin :=
+    gpu_retained_device_cache_budget_checked_acceptance_projects_combined_limit
+      validation
+      budget
+      limit
+      combinedLimit
+      publicInput
+      proof
+      checked
+  have coreAndSound :=
+    GpuRuntimeInternal.checked_acceptance_core_and_sound
+      assumptions
+      publicInput
+      proof
+      checked
+  exact And.intro combinedWithin coreAndSound
+
 theorem guest_pc_trace_commit_mode_checked_acceptance_audited_core_contract
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
@@ -2435,5 +2520,103 @@ theorem gpu_retained_device_cache_budget_checked_acceptance_audited_core_contrac
     And.intro audited.left
       (And.intro audited.right.left
         (And.intro withinLimits audited.right.right))
+
+theorem gpu_retained_device_cache_budget_checked_limits_audited_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : GpuRetainedDeviceCacheBudgetValidation)
+    (budget : GpuRetainedDeviceCacheBudget) :
+    forall publicInput proof,
+      GpuRetainedDeviceCacheBudgetCheckedAcceptance
+          system
+          validation
+          budget
+          publicInput
+          proof ->
+        RequiredCryptographicAssumptionStatements assumptions.crypto
+          /\ RequiredSemanticAssumptionStatements assumptions.semantic
+          /\ budget.sourceBytes <= budget.sourceLimit
+          /\ budget.descriptorBytes <= budget.descriptorLimit
+          /\ budget.leafDigestBytes <= budget.leafDigestLimit
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof checked
+  have sourceLimit :=
+    gpu_retained_device_cache_budget_checked_acceptance_projects_source_limit
+      validation
+      budget
+      publicInput
+      proof
+      checked
+  have descriptorLimit :=
+    gpu_retained_device_cache_budget_checked_acceptance_projects_descriptor_limit
+      validation
+      budget
+      publicInput
+      proof
+      checked
+  have leafDigestLimit :=
+    gpu_retained_device_cache_budget_checked_acceptance_projects_leaf_digest_limit
+      validation
+      budget
+      publicInput
+      proof
+      checked
+  have audited :=
+    GpuRuntimeInternal.checked_acceptance_audited_core_contract
+      (auxiliaryAccepted := fun publicInput proof =>
+        validation.retainedDeviceCacheBudgetAccepted budget publicInput proof)
+      assumptions
+      publicInput
+      proof
+      checked
+  exact
+    And.intro audited.left
+      (And.intro audited.right.left
+        (And.intro sourceLimit
+          (And.intro descriptorLimit
+            (And.intro leafDigestLimit audited.right.right))))
+
+theorem gpu_retained_device_cache_budget_checked_combined_limit_audited_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : GpuRetainedDeviceCacheBudgetValidation)
+    (budget : GpuRetainedDeviceCacheBudget)
+    (limit : Nat) :
+    budget.combinedLimit = some limit ->
+      forall publicInput proof,
+        GpuRetainedDeviceCacheBudgetCheckedAcceptance
+            system
+            validation
+            budget
+            publicInput
+            proof ->
+          RequiredCryptographicAssumptionStatements assumptions.crypto
+            /\ RequiredSemanticAssumptionStatements assumptions.semantic
+            /\ budget.sourceBytes + budget.descriptorBytes + budget.leafDigestBytes <= limit
+            /\ RuntimeVerifierCoreContract system publicInput proof
+            /\ SoundWitness system publicInput proof := by
+  intro combinedLimit publicInput proof checked
+  have combinedWithin :=
+    gpu_retained_device_cache_budget_checked_acceptance_projects_combined_limit
+      validation
+      budget
+      limit
+      combinedLimit
+      publicInput
+      proof
+      checked
+  have audited :=
+    GpuRuntimeInternal.checked_acceptance_audited_core_contract
+      (auxiliaryAccepted := fun publicInput proof =>
+        validation.retainedDeviceCacheBudgetAccepted budget publicInput proof)
+      assumptions
+      publicInput
+      proof
+      checked
+  exact
+    And.intro audited.left
+      (And.intro audited.right.left
+        (And.intro combinedWithin audited.right.right))
 
 end Lzvm

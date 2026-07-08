@@ -4685,6 +4685,17 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             && lean_source.contains(
                 "gpu_retained_device_cache_budget_checked_acceptance_projects_combined_limit",
             )
+            && lean_source
+                .contains("gpu_retained_device_cache_budget_checked_limits_core_and_sound")
+            && lean_source.contains(
+                "gpu_retained_device_cache_budget_checked_combined_limit_core_and_sound",
+            )
+            && lean_source.contains(
+                "gpu_retained_device_cache_budget_checked_limits_audited_core_contract",
+            )
+            && lean_source.contains(
+                "gpu_retained_device_cache_budget_checked_combined_limit_audited_core_contract",
+            )
             && witness_values_source.contains("retained_combined_device_cache_allows")
             && witness_values_source.contains("reserve_retained_device_bytes")
             && witness_values_source.contains("reserve_retained_descriptor_buffer_bytes")
@@ -7285,6 +7296,10 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "gpu_retained_device_cache_budget_checked_acceptance_verifier_core_contract",
             "gpu_retained_device_cache_budget_checked_acceptance_core_and_sound",
             "gpu_retained_device_cache_budget_checked_acceptance_audited_core_contract",
+            "gpu_retained_device_cache_budget_checked_limits_core_and_sound",
+            "gpu_retained_device_cache_budget_checked_combined_limit_core_and_sound",
+            "gpu_retained_device_cache_budget_checked_limits_audited_core_contract",
+            "gpu_retained_device_cache_budget_checked_combined_limit_audited_core_contract",
             "fri_fixed_column_cache_same_request_implies_cached_contents_bound",
             "fri_fixed_column_cache_checked_acceptance_projects_request_bound",
             "fri_fixed_column_cache_checked_acceptance_projects_fresh_contents_bound",
@@ -9012,6 +9027,98 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
                 "gpu_retained_device_cache_budget_checked_acceptance_projects_within_limits",
             ],
         );
+        lean_binding::assert_theorem_body_omits(
+            &gpu_runtime_source,
+            theorem,
+            &["GpuRuntimeInternal.checked_acceptance_sound_witness"],
+        );
+    }
+    lean_binding::assert_theorem_prefix_contains(
+        &gpu_runtime_source,
+        "gpu_retained_device_cache_budget_checked_limits_core_and_sound",
+        &[
+            "budget.sourceBytes <= budget.sourceLimit",
+            "budget.descriptorBytes <= budget.descriptorLimit",
+            "budget.leafDigestBytes <= budget.leafDigestLimit",
+            "RuntimeVerifierCoreContract system publicInput proof",
+            "SoundWitness system publicInput proof",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &gpu_runtime_source,
+        "gpu_retained_device_cache_budget_checked_limits_core_and_sound",
+        &[
+            "gpu_retained_device_cache_budget_checked_acceptance_projects_source_limit",
+            "gpu_retained_device_cache_budget_checked_acceptance_projects_descriptor_limit",
+            "gpu_retained_device_cache_budget_checked_acceptance_projects_leaf_digest_limit",
+            "GpuRuntimeInternal.checked_acceptance_core_and_sound",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &gpu_runtime_source,
+        "gpu_retained_device_cache_budget_checked_combined_limit_core_and_sound",
+        &[
+            "budget.sourceBytes + budget.descriptorBytes + budget.leafDigestBytes <= limit",
+            "RuntimeVerifierCoreContract system publicInput proof",
+            "SoundWitness system publicInput proof",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &gpu_runtime_source,
+        "gpu_retained_device_cache_budget_checked_combined_limit_core_and_sound",
+        &[
+            "gpu_retained_device_cache_budget_checked_acceptance_projects_combined_limit",
+            "GpuRuntimeInternal.checked_acceptance_core_and_sound",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &gpu_runtime_source,
+        "gpu_retained_device_cache_budget_checked_limits_audited_core_contract",
+        &[
+            "RequiredCryptographicAssumptionStatements assumptions.crypto",
+            "RequiredSemanticAssumptionStatements assumptions.semantic",
+            "budget.sourceBytes <= budget.sourceLimit",
+            "budget.descriptorBytes <= budget.descriptorLimit",
+            "budget.leafDigestBytes <= budget.leafDigestLimit",
+            "RuntimeVerifierCoreContract system publicInput proof",
+            "SoundWitness system publicInput proof",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &gpu_runtime_source,
+        "gpu_retained_device_cache_budget_checked_limits_audited_core_contract",
+        &[
+            "gpu_retained_device_cache_budget_checked_acceptance_projects_source_limit",
+            "gpu_retained_device_cache_budget_checked_acceptance_projects_descriptor_limit",
+            "gpu_retained_device_cache_budget_checked_acceptance_projects_leaf_digest_limit",
+            "GpuRuntimeInternal.checked_acceptance_audited_core_contract",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &gpu_runtime_source,
+        "gpu_retained_device_cache_budget_checked_combined_limit_audited_core_contract",
+        &[
+            "RequiredCryptographicAssumptionStatements assumptions.crypto",
+            "RequiredSemanticAssumptionStatements assumptions.semantic",
+            "budget.sourceBytes + budget.descriptorBytes + budget.leafDigestBytes <= limit",
+            "RuntimeVerifierCoreContract system publicInput proof",
+            "SoundWitness system publicInput proof",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &gpu_runtime_source,
+        "gpu_retained_device_cache_budget_checked_combined_limit_audited_core_contract",
+        &[
+            "gpu_retained_device_cache_budget_checked_acceptance_projects_combined_limit",
+            "GpuRuntimeInternal.checked_acceptance_audited_core_contract",
+        ],
+    );
+    for theorem in [
+        "gpu_retained_device_cache_budget_checked_limits_core_and_sound",
+        "gpu_retained_device_cache_budget_checked_combined_limit_core_and_sound",
+        "gpu_retained_device_cache_budget_checked_limits_audited_core_contract",
+        "gpu_retained_device_cache_budget_checked_combined_limit_audited_core_contract",
+    ] {
         lean_binding::assert_theorem_body_omits(
             &gpu_runtime_source,
             theorem,
