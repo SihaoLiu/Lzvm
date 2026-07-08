@@ -10753,7 +10753,8 @@ impl ZiskMainStreamingDeviceSegmentBuilder {
             .as_ref()
             .filter(|_| report_detail_timing)
             .map(|_| Instant::now());
-        let pending_report = self.state.pending_dma.is_some();
+        let record_report_timing = report_shape_timing || report_started.is_some();
+        let pending_report = record_report_timing && self.state.pending_dma.is_some();
         let report_apply_started = timing
             .as_ref()
             .filter(|_| report_detail_timing)
@@ -10802,7 +10803,7 @@ impl ZiskMainStreamingDeviceSegmentBuilder {
         if let (Some(timing), Some(started)) = (timing.as_deref_mut(), unit_summary_started) {
             timing.trace_unit_summary_duration += started.elapsed();
         }
-        if report_shape_timing || report_started.is_some() {
+        if record_report_timing {
             if let Some(timing) = timing {
                 if report_shape_timing {
                     if !timing_config.shape_timing {
