@@ -2255,16 +2255,20 @@ fn try_advance_guest_machine_report_fast_path(
             rs1,
             immediate,
         } => {
-            let value = execute_op_imm(kind, state.read_decoded_register(rs1), immediate);
-            register_write = write_fast_reported_register(state, rd, value);
+            if rd != 0 {
+                let value = execute_op_imm(kind, state.read_decoded_register(rs1), immediate);
+                register_write = write_fast_reported_register(state, rd, value);
+            }
         }
         RiscvInstruction::Op { kind, rd, rs1, rs2 } => {
-            let value = execute_op(
-                kind,
-                state.read_decoded_register(rs1),
-                state.read_decoded_register(rs2),
-            );
-            register_write = write_fast_reported_register(state, rd, value);
+            if rd != 0 {
+                let value = execute_op(
+                    kind,
+                    state.read_decoded_register(rs1),
+                    state.read_decoded_register(rs2),
+                );
+                register_write = write_fast_reported_register(state, rd, value);
+            }
         }
         RiscvInstruction::OpImm32 {
             kind,
@@ -2272,16 +2276,20 @@ fn try_advance_guest_machine_report_fast_path(
             rs1,
             immediate,
         } => {
-            let value = execute_op_imm_32(kind, state.read_decoded_register(rs1), immediate);
-            register_write = write_fast_reported_register(state, rd, value);
+            if rd != 0 {
+                let value = execute_op_imm_32(kind, state.read_decoded_register(rs1), immediate);
+                register_write = write_fast_reported_register(state, rd, value);
+            }
         }
         RiscvInstruction::Op32 { kind, rd, rs1, rs2 } => {
-            let value = execute_op_32(
-                kind,
-                state.read_decoded_register(rs1),
-                state.read_decoded_register(rs2),
-            );
-            register_write = write_fast_reported_register(state, rd, value);
+            if rd != 0 {
+                let value = execute_op_32(
+                    kind,
+                    state.read_decoded_register(rs1),
+                    state.read_decoded_register(rs2),
+                );
+                register_write = write_fast_reported_register(state, rd, value);
+            }
         }
         RiscvInstruction::Load {
             kind,
