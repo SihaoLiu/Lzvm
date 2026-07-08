@@ -556,14 +556,13 @@ impl GuestRegisterWriteValue {
 
     #[inline(always)]
     fn register_writes_with_index(self, index: Option<u8>) -> GuestRegisterWriteList {
-        index
-            .filter(|index| *index != 0)
-            .map_or_else(GuestRegisterWriteList::default, |index| {
-                GuestRegisterWriteList::one(GuestRegisterWrite {
-                    index,
-                    value: self.value,
-                })
-            })
+        match index {
+            Some(index) if index != 0 => GuestRegisterWriteList::one(GuestRegisterWrite {
+                index,
+                value: self.value,
+            }),
+            _ => GuestRegisterWriteList::default(),
+        }
     }
 }
 
