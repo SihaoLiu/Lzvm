@@ -12104,11 +12104,12 @@ fn guest_machine_branch_fast_path_reuses_same_register_read() {
     let branch_body = &body[branch_start..branch_end];
 
     assert!(
-        branch_body.contains("let lhs = state.read_decoded_register(rs1);")
-            && branch_body.contains("if rs1 == rs2")
+        branch_body.contains("let taken = if rs1 == rs2")
+            && branch_body.contains("same_register_branch_is_taken(kind)")
+            && branch_body.contains("state.read_decoded_register(rs1)")
             && branch_body.contains("state.read_decoded_register(rs2)")
-            && branch_body.contains("branch_is_taken(kind, lhs, rhs)"),
-        "branch fast path should not read the same register twice"
+            && branch_body.contains("if taken"),
+        "branch fast path should not read registers for same-register comparisons"
     );
 }
 

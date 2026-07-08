@@ -2245,13 +2245,16 @@ fn try_advance_guest_machine_report_fast_path(
             rs2,
             offset,
         } => {
-            let lhs = state.read_decoded_register(rs1);
-            let rhs = if rs1 == rs2 {
-                lhs
+            let taken = if rs1 == rs2 {
+                same_register_branch_is_taken(kind)
             } else {
-                state.read_decoded_register(rs2)
+                branch_is_taken(
+                    kind,
+                    state.read_decoded_register(rs1),
+                    state.read_decoded_register(rs2),
+                )
             };
-            if branch_is_taken(kind, lhs, rhs) {
+            if taken {
                 next_pc = address.wrapping_add_signed(i64::from(offset));
             }
         }
@@ -3284,6 +3287,13 @@ fn branch_is_taken(kind: RiscvBranchKind, lhs: u64, rhs: u64) -> bool {
         RiscvBranchKind::Bltu => lhs < rhs,
         RiscvBranchKind::Bgeu => lhs >= rhs,
     }
+}
+
+fn same_register_branch_is_taken(kind: RiscvBranchKind) -> bool {
+    matches!(
+        kind,
+        RiscvBranchKind::Beq | RiscvBranchKind::Bge | RiscvBranchKind::Bgeu
+    )
 }
 
 pub(crate) fn fixed_csr_value(csr: RiscvCsr) -> Option<u64> {
