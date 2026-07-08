@@ -2925,6 +2925,26 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "sound_witness_implies_verifier_core_contract",
         ],
     );
+    lean_binding::assert_theorem_body_contains_identifier(
+        &auxiliary_source,
+        "auxiliary_checked_acceptance_audited_core_contract",
+        "auxiliary_checked_acceptance_verifier_core_contract",
+    );
+    lean_binding::assert_theorem_body_omits_identifier(
+        &auxiliary_source,
+        "auxiliary_checked_acceptance_audited_core_contract",
+        "auxiliary_checked_acceptance_core_and_sound",
+    );
+    lean_binding::assert_theorem_body_contains_identifier(
+        &gpu_runtime_source,
+        "checked_acceptance_audited_core_contract",
+        "auxiliary_checked_acceptance_audited_core_contract",
+    );
+    lean_binding::assert_theorem_body_omits_identifier(
+        &gpu_runtime_source,
+        "checked_acceptance_audited_core_contract",
+        "checked_acceptance_core_and_sound",
+    );
     let gpu_runtime_theorems = lean_binding::theorem_names(&gpu_runtime_source);
     for stem in theorem_stems_with_suffix(&gpu_runtime_source, "", "_core_and_sound") {
         let audited = format!("{stem}_audited_core_contract");
