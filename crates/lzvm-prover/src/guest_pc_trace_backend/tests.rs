@@ -4050,9 +4050,6 @@ fn large_runtime_auto_work_units_select_parallel_lower() {
     assert!(!guest_pc_trace_parallel_lower_enabled());
     assert!(!guest_pc_trace_parallel_lower_enabled_for_limit(5_000_000));
     assert!(!guest_pc_trace_parallel_lower_enabled_for_limit(49_999_999));
-    assert!(!guest_pc_trace_parallel_lower_enabled_for_limit(50_000_000));
-
-    std::env::set_var("LZVM_GUEST_PC_TRACE_AUTO_PARALLEL_LOWER_WORK_UNITS", "1");
     assert!(guest_pc_trace_parallel_lower_enabled_for_limit(50_000_000));
     assert!(guest_pc_trace_parallel_lower_work_units_enabled_for_limit(
         50_000_000
@@ -4068,6 +4065,25 @@ fn large_runtime_auto_work_units_select_parallel_lower() {
     std::env::set_var("LZVM_GUEST_PC_TRACE_AUTO_PARALLEL_LOWER_WORK_UNITS", "0");
     assert!(!guest_pc_trace_parallel_lower_enabled_for_limit(50_000_000));
     assert!(!GuestPcTraceParallelLowerMode::from_runtime(50_000_000).work_units);
+
+    std::env::set_var("LZVM_GUEST_PC_TRACE_AUTO_PARALLEL_LOWER_WORK_UNITS", "1");
+    std::env::set_var("LZVM_GUEST_PC_TRACE_AUTO_PARALLEL_LOWER", "0");
+    assert!(!guest_pc_trace_parallel_lower_enabled_for_limit(50_000_000));
+    assert!(!GuestPcTraceParallelLowerMode::from_runtime(50_000_000).work_units);
+
+    std::env::set_var("LZVM_GUEST_PC_TRACE_AUTO_PARALLEL_LOWER", "1");
+    std::env::set_var("LZVM_GUEST_PC_TRACE_PARALLEL_LOWER", "1");
+    assert!(guest_pc_trace_parallel_lower_enabled_for_limit(50_000_000));
+    assert!(!guest_pc_trace_parallel_lower_work_units_enabled_for_limit(
+        50_000_000
+    ));
+    assert!(!GuestPcTraceParallelLowerMode::from_runtime(50_000_000).work_units);
+
+    std::env::set_var("LZVM_GUEST_PC_TRACE_PARALLEL_LOWER_WORK_UNITS", "1");
+    assert!(guest_pc_trace_parallel_lower_work_units_enabled_for_limit(
+        50_000_000
+    ));
+    assert!(GuestPcTraceParallelLowerMode::from_runtime(50_000_000).work_units);
 }
 
 #[test]
@@ -4079,14 +4095,18 @@ fn large_runtime_auto_lower_uses_bounded_workers() {
     let _parallel_env = TestEnvVarGuard::unset("LZVM_GUEST_PC_TRACE_PARALLEL_LOWER");
     let _work_units_env = TestEnvVarGuard::unset("LZVM_GUEST_PC_TRACE_PARALLEL_LOWER_WORK_UNITS");
     let _auto_lower_env = TestEnvVarGuard::unset("LZVM_GUEST_PC_TRACE_AUTO_PARALLEL_LOWER");
+    let _auto_work_units_env =
+        TestEnvVarGuard::unset("LZVM_GUEST_PC_TRACE_AUTO_PARALLEL_LOWER_WORK_UNITS");
     let _workers_env = TestEnvVarGuard::unset("LZVM_GUEST_PC_TRACE_PARALLEL_LOWER_WORKERS");
     let _snapshot_env = TestEnvVarGuard::unset("LZVM_GUEST_PC_TRACE_RUNNER_SEED_SNAPSHOT");
     let _trusted_env = TestEnvVarGuard::unset("LZVM_GUEST_PC_TRACE_RUNNER_SEED_SNAPSHOT_TRUSTED");
 
     assert!(!guest_pc_trace_auto_parallel_lower_selected(599_999_999));
-    assert!(!guest_pc_trace_parallel_lower_enabled_for_limit(
-        599_999_999
-    ));
+    assert!(guest_pc_trace_parallel_lower_enabled_for_limit(599_999_999));
+    assert_eq!(
+        guest_pc_trace_parallel_lower_worker_count_for_limit(599_999_999),
+        Some(guest_pc_trace_auto_parallel_lower_worker_count())
+    );
     assert!(guest_pc_trace_auto_parallel_lower_selected(600_000_000));
     assert!(guest_pc_trace_parallel_lower_enabled_for_limit(600_000_000));
     assert_eq!(

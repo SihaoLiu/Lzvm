@@ -6974,12 +6974,22 @@ fn guest_pc_trace_parallel_lowerer_stays_seeded_and_opt_in() {
     );
     assert!(
         backend_source.contains("fn guest_pc_trace_parallel_lower_work_units_enabled"),
-        "work-unit guest PC trace lowering should expose a separate opt-in gate"
+        "work-unit guest PC trace lowering should expose a separate override gate"
     );
     assert!(
-        backend_source
-            .contains("env_flag_enabled(\"LZVM_GUEST_PC_TRACE_PARALLEL_LOWER_WORK_UNITS\", false)"),
-        "work-unit guest PC trace lowering should keep the env gate disabled by default"
+        backend_source.contains("fn guest_pc_trace_parallel_lower_work_units_override")
+            && backend_source
+                .contains("env_flag_override(\"LZVM_GUEST_PC_TRACE_PARALLEL_LOWER_WORK_UNITS\")")
+            && backend_source.contains("LZVM_GUEST_PC_TRACE_AUTO_PARALLEL_LOWER_WORK_UNITS")
+            && backend_source
+                .contains("env_flag_enabled(\"LZVM_GUEST_PC_TRACE_AUTO_PARALLEL_LOWER\", true)")
+            && backend_source.contains(
+                "DEFAULT_GUEST_PC_TRACE_AUTO_PARALLEL_LOWER_WORK_UNITS_MIN_INSTRUCTIONS: u64 = 50_000_000"
+            )
+            && backend_source.contains(
+                "env_flag_enabled(\"LZVM_GUEST_PC_TRACE_AUTO_PARALLEL_LOWER_WORK_UNITS\", true)"
+            ),
+        "work-unit guest PC trace lowering should default on for large CUDA runs while preserving explicit and global auto overrides"
     );
     assert!(
         backend_source.contains("WorkUnit(Box<GuestPcTraceParallelLowerWorkUnit>)"),

@@ -9822,7 +9822,7 @@ fn guest_pc_trace_parallel_lower_configured_worker_count_for_limit(
     if let Some(configured) = guest_pc_trace_parallel_lower_configured_worker_count_override() {
         return configured.max(1);
     }
-    if guest_pc_trace_large_parallel_lower_worker_cap_applies(instruction_limit) {
+    if guest_pc_trace_auto_parallel_lower_worker_cap_applies(instruction_limit) {
         return guest_pc_trace_auto_parallel_lower_worker_count();
     }
     guest_pc_trace_available_worker_count().max(1)
@@ -9864,6 +9864,11 @@ fn guest_pc_trace_available_worker_count() -> usize {
         .unwrap_or(1)
 }
 
+fn guest_pc_trace_auto_parallel_lower_worker_cap_applies(instruction_limit: u64) -> bool {
+    guest_pc_trace_large_parallel_lower_worker_cap_applies(instruction_limit)
+        || guest_pc_trace_parallel_lower_work_units_enabled_for_limit(instruction_limit)
+}
+
 fn guest_pc_trace_parallel_lower_result_queue_capacity(worker_count: usize) -> usize {
     worker_count.max(1)
 }
@@ -9887,12 +9892,17 @@ fn guest_pc_trace_parallel_lower_job_queue_capacity(worker_count: usize) -> usiz
 }
 
 fn guest_pc_trace_parallel_lower_work_units_enabled() -> bool {
-    env_flag_enabled("LZVM_GUEST_PC_TRACE_PARALLEL_LOWER_WORK_UNITS", false)
+    guest_pc_trace_parallel_lower_work_units_override().unwrap_or(false)
 }
 
 fn guest_pc_trace_parallel_lower_work_units_enabled_for_limit(instruction_limit: u64) -> bool {
-    guest_pc_trace_parallel_lower_work_units_enabled()
-        || guest_pc_trace_auto_parallel_lower_work_units_enabled(instruction_limit)
+    match guest_pc_trace_parallel_lower_work_units_override() {
+        Some(enabled) => enabled,
+        None => {
+            guest_pc_trace_parallel_lower_env_override().is_none()
+                && guest_pc_trace_auto_parallel_lower_work_units_enabled(instruction_limit)
+        }
+    }
 }
 
 #[cfg_attr(not(test), allow(dead_code))]
@@ -9924,6 +9934,10 @@ fn guest_pc_trace_parallel_lower_env_override() -> Option<bool> {
     env_flag_override("LZVM_GUEST_PC_TRACE_PARALLEL_LOWER")
 }
 
+fn guest_pc_trace_parallel_lower_work_units_override() -> Option<bool> {
+    env_flag_override("LZVM_GUEST_PC_TRACE_PARALLEL_LOWER_WORK_UNITS")
+}
+
 pub(crate) fn guest_pc_trace_auto_parallel_lower_selected(instruction_limit: u64) -> bool {
     guest_pc_trace_parallel_lower_env_override().is_none()
         && guest_pc_trace_auto_parallel_lower_enabled(instruction_limit)
@@ -9943,7 +9957,8 @@ fn guest_pc_trace_auto_parallel_lower_enabled(_instruction_limit: u64) -> bool {
 #[cfg(feature = "cuda")]
 fn guest_pc_trace_auto_parallel_lower_work_units_enabled(instruction_limit: u64) -> bool {
     instruction_limit >= DEFAULT_GUEST_PC_TRACE_AUTO_PARALLEL_LOWER_WORK_UNITS_MIN_INSTRUCTIONS
-        && env_flag_enabled("LZVM_GUEST_PC_TRACE_AUTO_PARALLEL_LOWER_WORK_UNITS", false)
+        && env_flag_enabled("LZVM_GUEST_PC_TRACE_AUTO_PARALLEL_LOWER", true)
+        && env_flag_enabled("LZVM_GUEST_PC_TRACE_AUTO_PARALLEL_LOWER_WORK_UNITS", true)
 }
 
 #[cfg(not(feature = "cuda"))]
