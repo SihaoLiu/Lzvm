@@ -137,8 +137,8 @@ fn allocator_does_not_wait_to_reuse_pending_configured_blocks() {
     let body = function_body(&source, "int alloc_bytes_impl", "void free_bytes_impl");
 
     assert!(
-        source.contains("kPendingCacheNoWaitBytes"),
-        "allocator should define a pending-cache no-wait threshold"
+        source.contains("kPendingCacheNoWaitBytes") && source.contains("std::size_t{512} << 20"),
+        "allocator should define the pending-cache no-wait threshold"
     );
     assert!(
         body.contains("bytes <= pending_cache_no_wait_bytes(kPendingCacheNoWaitBytes)")
