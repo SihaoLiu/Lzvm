@@ -16,6 +16,9 @@ pub const GPU_RUNTIME_TRACE_GATE_SOURCE_PATH: &str =
 pub const GPU_RUNTIME_TRACE_SOURCE_PATH: &str =
     "../../lean/Lzvm/AuxiliaryChecks/GpuRuntime/Trace.lean";
 #[allow(dead_code)]
+pub const GPU_RUNTIME_RETAINED_BUDGET_SOURCE_PATH: &str =
+    "../../lean/Lzvm/AuxiliaryChecks/GpuRuntime/RetainedBudget.lean";
+#[allow(dead_code)]
 pub const GPU_RUNTIME_FIXED_COLUMN_CACHE_SOURCE_PATH: &str =
     "../../lean/Lzvm/AuxiliaryChecks/GpuRuntime/FixedColumnCache.lean";
 
@@ -26,6 +29,7 @@ pub const GPU_RUNTIME_SOURCE_PATHS: &[&str] = &[
     GPU_RUNTIME_CORE_SOURCE_PATH,
     GPU_RUNTIME_TRACE_GATE_SOURCE_PATH,
     GPU_RUNTIME_TRACE_SOURCE_PATH,
+    GPU_RUNTIME_RETAINED_BUDGET_SOURCE_PATH,
     GPU_RUNTIME_FIXED_COLUMN_CACHE_SOURCE_PATH,
 ];
 

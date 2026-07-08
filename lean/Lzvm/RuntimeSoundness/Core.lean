@@ -11,13 +11,10 @@ import Lzvm.TranscriptBinding
 /-!
 Integrated runtime soundness theorem for checked proof artifacts.
 -/
-
 namespace Lzvm
-
 structure RuntimeSoundnessValidation (system : VerifierModel) where
   transcriptValidation : RuntimeTranscriptBindingValidation system
   sourceValidation : ExternalSourceOpeningValidation system
-
 def RuntimeSoundnessCheckedAcceptance
     (system : VerifierModel)
     (validation : RuntimeSoundnessValidation system)
@@ -37,7 +34,6 @@ def RuntimeSoundnessCheckedAcceptance
       publicInput
       proof
       requiresExternalSource
-
 def RuntimeSoundnessEvidence
     (system : VerifierModel)
     (validation : RuntimeSoundnessValidation system)

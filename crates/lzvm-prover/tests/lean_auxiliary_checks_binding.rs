@@ -240,6 +240,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         &[
             "../../lean/Lzvm/AuxiliaryChecks/Timing.lean",
             "../../lean/Lzvm/AuxiliaryChecks/Timing/Trace.lean",
+            "../../lean/Lzvm/AuxiliaryChecks/Timing/TraceDescriptor.lean",
             "../../lean/Lzvm/AuxiliaryChecks/Timing/Stage.lean",
         ],
     );
@@ -260,7 +261,13 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "Lzvm.AuxiliaryChecks.ProofTiming.Core",
         ) && lean_binding::contains_import(
             &proof_timing_aggregate_source,
+            "Lzvm.AuxiliaryChecks.ProofTiming.FinishTiming",
+        ) && lean_binding::contains_import(
+            &proof_timing_aggregate_source,
             "Lzvm.AuxiliaryChecks.ProofTiming.Finish",
+        ) && lean_binding::contains_import(
+            &proof_timing_aggregate_source,
+            "Lzvm.AuxiliaryChecks.ProofTiming.FinishExternal",
         ),
         "Lean proof timing wrapper should re-export split proof timing modules"
     );
@@ -268,14 +275,26 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         crate_root.join("../../lean/Lzvm/AuxiliaryChecks/ProofTiming/Core.lean");
     let proof_timing_core_source = std::fs::read_to_string(&proof_timing_core_path)
         .expect("Lean proof timing core checks should read");
+    let proof_timing_finish_timing_path =
+        crate_root.join("../../lean/Lzvm/AuxiliaryChecks/ProofTiming/FinishTiming.lean");
+    let proof_timing_finish_timing_source =
+        std::fs::read_to_string(&proof_timing_finish_timing_path)
+            .expect("Lean proof timing finish base checks should read");
     let proof_timing_finish_path =
         crate_root.join("../../lean/Lzvm/AuxiliaryChecks/ProofTiming/Finish.lean");
     let proof_timing_finish_source = std::fs::read_to_string(&proof_timing_finish_path)
         .expect("Lean proof timing finish checks should read");
+    let proof_timing_finish_external_path =
+        crate_root.join("../../lean/Lzvm/AuxiliaryChecks/ProofTiming/FinishExternal.lean");
+    let proof_timing_finish_external_source =
+        std::fs::read_to_string(&proof_timing_finish_external_path)
+            .expect("Lean proof timing finish external checks should read");
     let lean_proof_timing_source = [
         proof_timing_aggregate_source.as_str(),
         proof_timing_core_source.as_str(),
+        proof_timing_finish_timing_source.as_str(),
         proof_timing_finish_source.as_str(),
+        proof_timing_finish_external_source.as_str(),
     ]
     .join("\n");
     assert!(
@@ -425,6 +444,10 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             )
             && lean_binding::contains_import(
                 &gpu_runtime_wrapper_source,
+                "Lzvm.AuxiliaryChecks.GpuRuntime.RetainedBudget",
+            )
+            && lean_binding::contains_import(
+                &gpu_runtime_wrapper_source,
                 "Lzvm.AuxiliaryChecks.GpuRuntime.FixedColumnCache",
             )
             && lean_binding::contains_import(
@@ -446,7 +469,6 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         "proof_artifact_finish_leaf_work_shape_acceptance_core_and_sound",
         "proof_artifact_finish_path_parent_hash_shape_acceptance_core_and_sound",
         "proof_artifact_finish_row_values_shape_acceptance_core_and_sound",
-        "proof_artifact_finish_retained_source_row_values_acceptance_core_and_sound",
     ] {
         assert!(
             lean_binding::contains_theorem_declaration(
@@ -459,6 +481,16 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "Lean proof finish shape theorem {moved_finish_theorem} should stay in the finish module"
         );
     }
+    assert!(
+        lean_binding::contains_theorem_declaration(
+            &proof_timing_finish_external_source,
+            "proof_artifact_finish_retained_source_row_values_acceptance_core_and_sound",
+        ) && !lean_binding::contains_theorem_declaration(
+            &proof_timing_core_source,
+            "proof_artifact_finish_retained_source_row_values_acceptance_core_and_sound",
+        ),
+        "Lean proof finish external theorem should stay in the finish external module"
+    );
     for moved_runtime_theorem in [
         "guest_pc_trace_commit_mode_checked_acceptance_projects_decision",
         "guest_pc_trace_commit_mode_checked_acceptance_core_and_sound",
@@ -7356,7 +7388,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         );
     }
     lean_binding::assert_theorem_declarations(
-        &proof_timing_finish_source,
+        &proof_timing_finish_external_source,
         &[
             "proof_artifact_finish_witness_opening_shape_acceptance_audited_core_contract",
             "proof_artifact_finish_leaf_work_shape_acceptance_audited_core_contract",
@@ -7462,29 +7494,48 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
         ),
     ] {
         assert_updated_summary_audited_wrapper(
-            &proof_timing_finish_source,
+            &proof_timing_finish_external_source,
             theorem,
             "proof_artifact_finish_timing_some_summary_acceptance_audited_core_contract",
             field_terms,
         );
     }
-    for (theorem, field, omitted_terms) in [
-        (
-            "proof_artifact_finish_path_parent_hash_per_unit_shape_acceptance_audited_core_contract",
-            "finishWitnessOpeningPathParentHashRowsPerQuery := rowsPerQuery",
+    for (theorem, field, omitted_terms) in [(
+        "proof_artifact_finish_path_parent_hash_per_unit_shape_acceptance_audited_core_contract",
+        "finishWitnessOpeningPathParentHashRowsPerQuery := rowsPerQuery",
+        &[
+            concat!(
+                "proof_artifact_finish_path_parent_hash_per_unit_shape_acceptance_",
+                "core_and_sound"
+            ),
+            concat!(
+                "proof_artifact_finish_path_parent_hash_per_unit_shape_acceptance_",
+                "verifier_core_contract"
+            ),
+            "proof_artifact_finish_path_parent_hash_per_unit_shape_acceptance_sound",
+            "assumption_bundle_carries_required_evidence",
+        ][..],
+    )] {
+        assert_audited_core_contract_prefix(
+            &proof_timing_finish_external_source,
+            theorem,
+            &[field],
+        );
+        lean_binding::assert_theorem_body_contains(
+            &proof_timing_finish_external_source,
+            theorem,
             &[
-                concat!(
-                    "proof_artifact_finish_path_parent_hash_per_unit_shape_acceptance_",
-                    "core_and_sound"
-                ),
-                concat!(
-                    "proof_artifact_finish_path_parent_hash_per_unit_shape_acceptance_",
-                    "verifier_core_contract"
-                ),
-                "proof_artifact_finish_path_parent_hash_per_unit_shape_acceptance_sound",
-                "assumption_bundle_carries_required_evidence",
-            ][..],
-        ),
+                "proof_artifact_finish_timing_some_summary_acceptance_audited_core_contract",
+                field,
+            ],
+        );
+        assert_theorem_body_omits_identifiers(
+            &proof_timing_finish_external_source,
+            theorem,
+            omitted_terms,
+        );
+    }
+    for (theorem, field, omitted_terms) in [
         (
             "proof_artifact_finish_retained_source_row_values_acceptance_audited_core_contract",
             "finishWitnessOpeningRetainedSourceCount := retainedSourceCount",
@@ -7541,16 +7592,24 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             ][..],
         ),
     ] {
-        assert_audited_core_contract_prefix(&proof_timing_finish_source, theorem, &[field]);
+        assert_audited_core_contract_prefix(
+            &proof_timing_finish_external_source,
+            theorem,
+            &[field],
+        );
         lean_binding::assert_theorem_body_contains(
-            &proof_timing_finish_source,
+            &proof_timing_finish_external_source,
             theorem,
             &[
                 "proof_artifact_finish_timing_some_summary_acceptance_audited_core_contract",
                 field,
             ],
         );
-        assert_theorem_body_omits_identifiers(&proof_timing_finish_source, theorem, omitted_terms);
+        assert_theorem_body_omits_identifiers(
+            &proof_timing_finish_external_source,
+            theorem,
+            omitted_terms,
+        );
     }
     let runtime_sound_stems = theorem_stems_with_suffix(
         &runtime_performance_source,

@@ -9,11 +9,8 @@ import Lzvm.OpeningValidation
 /-!
 Runtime opening segment binding obligations.
 -/
-
 namespace Lzvm
-
 universe uDigest
-
 structure RuntimeOpeningSegmentBindingValidation (system : VerifierModel) where
   openingValidation : RuntimeOpeningValidation system
   openingSegmentBindingAccepted : RuntimeArtifact -> PublicInput -> Proof -> Prop
@@ -91,7 +88,6 @@ structure RuntimeOpeningSegmentBindingValidation (system : VerifierModel) where
             verifierQueryOutputsValid artifact publicInput proof ->
               openingUnitTraceIdentitiesMatch artifact publicInput proof ->
               openingValidation.friOpeningBound artifact publicInput proof
-
 def RuntimeOpeningSegmentBindingBoundContract
     (_system : VerifierModel)
     (validation : RuntimeOpeningSegmentBindingValidation _system)
@@ -108,7 +104,6 @@ def RuntimeOpeningSegmentBindingBoundContract
     /\ validation.openingValidation.constantOpeningsBound artifact publicInput proof
     /\ validation.openingValidation.witnessOpeningsBound artifact publicInput proof
     /\ validation.openingValidation.friOpeningBound artifact publicInput proof
-
 def RuntimeOpeningSegmentExactIdentityContract
     (_system : VerifierModel)
     (validation : RuntimeOpeningSegmentBindingValidation _system)
@@ -118,7 +113,6 @@ def RuntimeOpeningSegmentExactIdentityContract
   validation.queryPlanBound artifact publicInput proof
     /\ validation.openingUnitTraceIdentitiesMatch artifact publicInput proof
     /\ validation.openingUnitTraceIdentityCoverageExact artifact publicInput proof
-
 def RuntimeOpeningSegmentBindingEvidence
     (_system : VerifierModel)
     (validation : RuntimeOpeningSegmentBindingValidation _system)
@@ -137,7 +131,6 @@ def RuntimeOpeningSegmentBindingEvidence
       artifact
       publicInput
       proof
-
 def RuntimeFriFoldTraceIdentityContract
     (_system : VerifierModel)
     (validation : RuntimeOpeningSegmentBindingValidation _system)
@@ -147,7 +140,6 @@ def RuntimeFriFoldTraceIdentityContract
   validation.queryPlanBound artifact publicInput proof
     /\ validation.openingUnitTraceIdentitiesMatch artifact publicInput proof
     /\ validation.friFoldsValid artifact publicInput proof
-
 def RuntimeFriFoldQueryPlanOrderContract
     (_system : VerifierModel)
     (validation : RuntimeOpeningSegmentBindingValidation _system)
@@ -158,7 +150,6 @@ def RuntimeFriFoldQueryPlanOrderContract
     /\ validation.openingUnitTraceIdentitiesMatch artifact publicInput proof
     /\ validation.friFoldsValid artifact publicInput proof
     /\ validation.friFoldQueryPlanOrderPreserved artifact publicInput proof
-
 def RuntimeWitnessOpeningStageOrderContract
     (_system : VerifierModel)
     (validation : RuntimeOpeningSegmentBindingValidation _system)
@@ -167,7 +158,6 @@ def RuntimeWitnessOpeningStageOrderContract
     (proof : Proof) : Prop :=
   validation.witnessOpeningSegmentsValid artifact publicInput proof
     /\ validation.witnessOpeningStageOrderPreserved artifact publicInput proof
-
 def RuntimeOpeningSegmentBindingCheckedAcceptance
     (_system : VerifierModel)
     (validation : RuntimeOpeningSegmentBindingValidation _system)
@@ -175,7 +165,6 @@ def RuntimeOpeningSegmentBindingCheckedAcceptance
     (publicInput : PublicInput)
     (proof : Proof) : Prop :=
   validation.openingSegmentBindingAccepted artifact publicInput proof
-
 structure RuntimeFriOpeningSegmentParserBoundary
     (_system : VerifierModel)
     (validation : RuntimeOpeningSegmentBindingValidation _system) where
@@ -214,7 +203,6 @@ structure RuntimeFriOpeningSegmentParserBoundary
     forall artifact publicInput proof,
       validation.friOpeningSegmentsValid artifact publicInput proof ->
         segmentLayoutWalked artifact publicInput proof
-
 def RuntimeFriOpeningSegmentParserContract
     {system : VerifierModel}
     {validation : RuntimeOpeningSegmentBindingValidation system}
@@ -229,7 +217,6 @@ def RuntimeFriOpeningSegmentParserContract
     /\ boundary.lastLevelDigestRootsCanonical artifact publicInput proof
     /\ boundary.siblingDigestRootsCanonical artifact publicInput proof
     /\ boundary.segmentLayoutWalked artifact publicInput proof
-
 theorem runtime_opening_segment_binding_fri_segments_valid_parser_contract
     {system : VerifierModel}
     {validation : RuntimeOpeningSegmentBindingValidation system}
@@ -284,7 +271,6 @@ theorem runtime_opening_segment_binding_fri_segments_valid_parser_contract
                   publicInput
                   proof
                   friSegments))))))
-
 theorem runtime_opening_segment_binding_checked_acceptance_evidence
     {system : VerifierModel}
     (validation : RuntimeOpeningSegmentBindingValidation system) :
@@ -387,7 +373,6 @@ theorem runtime_opening_segment_binding_checked_acceptance_evidence
         (And.intro traceIdentities
           (validation.openingSegmentBindingAcceptedImpliesTraceIdentityCoverageExact
             _ _ _ accepted)))
-
 theorem runtime_opening_segment_binding_evidence_implies_bound_contract
     {system : VerifierModel}
     (validation : RuntimeOpeningSegmentBindingValidation system) :
@@ -406,7 +391,6 @@ theorem runtime_opening_segment_binding_evidence_implies_bound_contract
           proof := by
   intro artifact publicInput proof evidence
   exact evidence.left
-
 theorem runtime_opening_segment_binding_evidence_implies_query_plan_bound
     {system : VerifierModel}
     (validation : RuntimeOpeningSegmentBindingValidation system) :
@@ -420,7 +404,6 @@ theorem runtime_opening_segment_binding_evidence_implies_query_plan_bound
         validation.queryPlanBound artifact publicInput proof := by
   intro artifact publicInput proof evidence
   exact evidence.left.left
-
 theorem runtime_opening_segment_binding_evidence_implies_trace_identities_match
     {system : VerifierModel}
     (validation : RuntimeOpeningSegmentBindingValidation system) :
@@ -434,7 +417,6 @@ theorem runtime_opening_segment_binding_evidence_implies_trace_identities_match
         validation.openingUnitTraceIdentitiesMatch artifact publicInput proof := by
   intro artifact publicInput proof evidence
   exact evidence.left.right.left
-
 theorem runtime_opening_segment_binding_evidence_implies_exact_identity_contract
     {system : VerifierModel}
     (validation : RuntimeOpeningSegmentBindingValidation system) :
@@ -448,7 +430,6 @@ theorem runtime_opening_segment_binding_evidence_implies_exact_identity_contract
           proof := by
   intro _artifact _publicInput _proof evidence
   exact evidence.right
-
 theorem runtime_opening_segment_binding_checked_acceptance_trace_identity_coverage_exact
     {system : VerifierModel}
     (validation : RuntimeOpeningSegmentBindingValidation system) :
@@ -470,7 +451,6 @@ theorem runtime_opening_segment_binding_checked_acceptance_trace_identity_covera
       publicInput
       proof
       accepted
-
 theorem runtime_opening_segment_binding_checked_acceptance_exact_identity_contract
     {system : VerifierModel}
     (validation : RuntimeOpeningSegmentBindingValidation system) :
@@ -507,7 +487,6 @@ theorem runtime_opening_segment_binding_checked_acceptance_exact_identity_contra
           publicInput
           proof
           accepted))
-
 theorem runtime_opening_segment_binding_evidence_implies_fri_fold_trace_identity_contract
     {system : VerifierModel}
     (validation : RuntimeOpeningSegmentBindingValidation system) :
@@ -530,7 +509,6 @@ theorem runtime_opening_segment_binding_evidence_implies_fri_fold_trace_identity
   exact
     And.intro queryPlanBound
       (And.intro traceIdentitiesMatch friFoldsValid)
-
 theorem runtime_opening_segment_binding_evidence_implies_fri_opening_checks
     {system : VerifierModel}
     (validation : RuntimeOpeningSegmentBindingValidation system) :
@@ -561,7 +539,6 @@ theorem runtime_opening_segment_binding_evidence_implies_fri_opening_checks
     And.intro friSegments
       (And.intro friFolds
         (And.intro verifierQueries friOpeningBound))
-
 theorem runtime_opening_segment_binding_evidence_implies_pcs_and_fri
     {system : VerifierModel}
     (validation : RuntimeOpeningSegmentBindingValidation system) :
@@ -601,7 +578,6 @@ theorem runtime_opening_segment_binding_evidence_implies_pcs_and_fri
       proof
       friOpeningBound
   exact And.intro pcsOpenings friQueries
-
 theorem runtime_opening_segment_binding_evidence_implies_opening_bound_contract
     {system : VerifierModel}
     (validation : RuntimeOpeningSegmentBindingValidation system) :
@@ -631,7 +607,6 @@ theorem runtime_opening_segment_binding_evidence_implies_opening_bound_contract
       witnessBound,
       friOpeningBound⟩
   exact And.intro constantBound (And.intro witnessBound friOpeningBound)
-
 theorem runtime_opening_segment_binding_checked_acceptance_opening
     {system : VerifierModel}
     (validation : RuntimeOpeningSegmentBindingValidation system) :
@@ -655,7 +630,6 @@ theorem runtime_opening_segment_binding_checked_acceptance_opening
       publicInput
       proof
       accepted
-
 theorem runtime_opening_segment_binding_checked_acceptance_query_plan_bound
     {system : VerifierModel}
     (validation : RuntimeOpeningSegmentBindingValidation system) :
@@ -674,7 +648,6 @@ theorem runtime_opening_segment_binding_checked_acceptance_query_plan_bound
       publicInput
       proof
       accepted
-
 theorem runtime_opening_segment_binding_checked_acceptance_bound_contract
     {system : VerifierModel}
     (validation : RuntimeOpeningSegmentBindingValidation system) :
@@ -706,7 +679,6 @@ theorem runtime_opening_segment_binding_checked_acceptance_bound_contract
       publicInput
       proof
       evidence
-
 theorem runtime_opening_segment_binding_checked_acceptance_opening_bound_contract
     {system : VerifierModel}
     (validation : RuntimeOpeningSegmentBindingValidation system) :
@@ -738,7 +710,6 @@ theorem runtime_opening_segment_binding_checked_acceptance_opening_bound_contrac
       publicInput
       proof
       evidence
-
 theorem runtime_opening_segment_binding_checked_acceptance_fri_opening_checks
     {system : VerifierModel}
     (validation : RuntimeOpeningSegmentBindingValidation system) :
@@ -768,7 +739,6 @@ theorem runtime_opening_segment_binding_checked_acceptance_fri_opening_checks
       publicInput
       proof
       evidence
-
 theorem runtime_opening_segment_binding_checked_acceptance_fri_fold_trace_identity_contract
     {system : VerifierModel}
     (validation : RuntimeOpeningSegmentBindingValidation system) :
@@ -800,7 +770,6 @@ theorem runtime_opening_segment_binding_checked_acceptance_fri_fold_trace_identi
       publicInput
       proof
       evidence
-
 theorem runtime_opening_segment_binding_checked_acceptance_fri_fold_query_plan_order_contract
     {system : VerifierModel}
     (validation : RuntimeOpeningSegmentBindingValidation system) :
@@ -842,7 +811,6 @@ theorem runtime_opening_segment_binding_checked_acceptance_fri_fold_query_plan_o
             publicInput
             proof
             accepted)))
-
 theorem runtime_opening_segment_binding_checked_acceptance_witness_stage_order_contract
     {system : VerifierModel}
     (validation : RuntimeOpeningSegmentBindingValidation system) :
@@ -872,7 +840,6 @@ theorem runtime_opening_segment_binding_checked_acceptance_witness_stage_order_c
         publicInput
         proof
         accepted)
-
 theorem runtime_opening_segment_binding_checked_acceptance_fri_parser_contract
     {system : VerifierModel}
     (validation : RuntimeOpeningSegmentBindingValidation system)
@@ -903,7 +870,6 @@ theorem runtime_opening_segment_binding_checked_acceptance_fri_parser_contract
       publicInput
       proof
       friSegments
-
 theorem runtime_opening_segment_binding_checked_acceptance_pcs_and_fri_without_assumptions
     {system : VerifierModel}
     (validation : RuntimeOpeningSegmentBindingValidation system) :
@@ -931,7 +897,6 @@ theorem runtime_opening_segment_binding_checked_acceptance_pcs_and_fri_without_a
       publicInput
       proof
       evidence
-
 theorem runtime_opening_segment_binding_checked_acceptance_pcs_and_fri
     {system : VerifierModel}
     (validation : RuntimeOpeningSegmentBindingValidation system) :
@@ -952,7 +917,6 @@ theorem runtime_opening_segment_binding_checked_acceptance_pcs_and_fri
       publicInput
       proof
       accepted
-
 theorem runtime_opening_segment_binding_checked_acceptance_opening_pcs_fri_contract
     {system : VerifierModel}
     (validation : RuntimeOpeningSegmentBindingValidation system) :
@@ -999,7 +963,6 @@ theorem runtime_opening_segment_binding_checked_acceptance_opening_pcs_fri_contr
           publicInput
           proof
           accepted))
-
 theorem runtime_opening_segment_binding_checked_acceptance_bound_pcs_fri_contract
     {system : VerifierModel}
     (validation : RuntimeOpeningSegmentBindingValidation system) :
@@ -1321,7 +1284,6 @@ theorem runtime_opening_segment_binding_checked_acceptance_sound_from_concrete_n
       proof
       requiresExternalSource
       accepted
-
 theorem runtime_opening_segment_binding_checked_acceptance_sound
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)

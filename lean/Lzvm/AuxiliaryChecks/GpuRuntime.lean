@@ -7,6 +7,7 @@ Authors: Sihao Liu
 import Lzvm.AuxiliaryChecks.GpuRuntime.Core
 import Lzvm.AuxiliaryChecks.GpuRuntime.TraceGate
 import Lzvm.AuxiliaryChecks.GpuRuntime.Trace
+import Lzvm.AuxiliaryChecks.GpuRuntime.RetainedBudget
 import Lzvm.AuxiliaryChecks.GpuRuntime.FixedColumnCache
 
 /-!

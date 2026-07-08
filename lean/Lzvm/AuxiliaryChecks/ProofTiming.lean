@@ -5,4 +5,6 @@ Authors: Sihao Liu
 -/
 
 import Lzvm.AuxiliaryChecks.ProofTiming.Core
+import Lzvm.AuxiliaryChecks.ProofTiming.FinishTiming
 import Lzvm.AuxiliaryChecks.ProofTiming.Finish
+import Lzvm.AuxiliaryChecks.ProofTiming.FinishExternal

@@ -5,6 +5,7 @@ Authors: Sihao Liu
 -/
 
 import Lzvm.AuxiliaryChecks.Timing.Trace
+import Lzvm.AuxiliaryChecks.Timing.TraceDescriptor
 import Lzvm.AuxiliaryChecks.Timing.Stage
 
 /-!
