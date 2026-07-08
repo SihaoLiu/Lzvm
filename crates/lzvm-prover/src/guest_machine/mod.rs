@@ -2256,6 +2256,19 @@ fn try_advance_guest_machine_report_fast_path(
             }
         }
         RiscvInstruction::OpImm {
+            kind: RiscvOpImmKind::Addi,
+            rd,
+            rs1,
+            immediate,
+        } => {
+            if rd != 0 {
+                let value = state
+                    .read_decoded_register(rs1)
+                    .wrapping_add_signed(i64::from(immediate));
+                register_write = write_fast_reported_register(state, rd, value);
+            }
+        }
+        RiscvInstruction::OpImm {
             kind,
             rd,
             rs1,

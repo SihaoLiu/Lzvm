@@ -12113,6 +12113,33 @@ fn guest_machine_branch_fast_path_reuses_same_register_read() {
 }
 
 #[test]
+fn guest_machine_addi_fast_path_avoids_generic_immediate_dispatch() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let source_path = crate_root.join("src/guest_machine/mod.rs");
+    let source = std::fs::read_to_string(&source_path).expect("guest machine source should read");
+    let body = function_body(
+        &source,
+        "fn try_advance_guest_machine_report_fast_path",
+        "fn write_fast_reported_register",
+    );
+    let addi_start = body
+        .find("kind: RiscvOpImmKind::Addi")
+        .expect("ADDI fast path should exist");
+    let generic_start = body[addi_start..]
+        .find("RiscvInstruction::OpImm {\n            kind,")
+        .map(|offset| addi_start + offset)
+        .expect("generic OpImm fast path should remain");
+    let addi_body = &body[addi_start..generic_start];
+
+    assert!(
+        addi_body.contains(".wrapping_add_signed(i64::from(immediate))")
+            && addi_body.contains("write_fast_reported_register(state, rd, value)")
+            && !addi_body.contains("execute_op_imm("),
+        "ADDI should avoid the generic immediate-op dispatcher"
+    );
+}
+
+#[test]
 fn guest_machine_fetch_uses_specialized_memory_path() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let source_path = crate_root.join("src/guest_machine/mod.rs");
