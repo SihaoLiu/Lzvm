@@ -10722,6 +10722,89 @@ fn lean_top_level_soundness_exports_audited_global_local_contract() {
 }
 
 #[test]
+fn proof_artifact_file_readers_keep_segment_shape_checks() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let proof_preflight_path = crate_root.join("src/proof_preflight.rs");
+    let proof_preflight_source =
+        std::fs::read_to_string(&proof_preflight_path).expect("proof preflight source should read");
+    let setup_preflight_path = crate_root.join("src/setup_preflight.rs");
+    let setup_preflight_source =
+        std::fs::read_to_string(&setup_preflight_path).expect("setup preflight source should read");
+    let contribution_path = crate_root.join("src/contribution.rs");
+    let contribution_source =
+        std::fs::read_to_string(&contribution_path).expect("contribution source should read");
+    let binding_cli_path = crate_root.join("../lzvm-cli/src/verify_commands/bindings.rs");
+    let binding_cli_source =
+        std::fs::read_to_string(&binding_cli_path).expect("binding CLI source should read");
+    let eth_cli_path = crate_root.join("../lzvm-cli/src/verify_commands/eth_block_input.rs");
+    let eth_cli_source =
+        std::fs::read_to_string(&eth_cli_path).expect("ETH CLI source should read");
+
+    let checked_reader = braced_source_body(
+        &proof_preflight_source,
+        "pub fn read_checked_proof_artifact_file",
+    );
+    assert!(
+        checked_reader.contains("read_proof_artifact_file(proof_path)?")
+            && checked_reader.contains("validate_proof_artifact_runtime_shape(&proof)?")
+            && proof_preflight_source.matches("read_proof_artifact_file(").count() == 1,
+        "shared proof artifact reader should validate runtime segment shape immediately after file parse"
+    );
+
+    let setup_file_entry = braced_source_body(
+        &setup_preflight_source,
+        "pub fn validate_setup_preflight_from_files",
+    );
+    let setup_reader = braced_source_body(
+        &setup_preflight_source,
+        "fn read_setup_preflight_proof_artifact_file",
+    );
+    assert!(
+        setup_file_entry.contains("read_setup_preflight_proof_artifact_file(proof_path)?")
+            && setup_reader.contains("read_proof_artifact_file(proof_path)?")
+            && setup_reader.contains(
+                "validate_proof_artifact_runtime_shape(&proof).map_err(SetupPreflightError::Proof)?"
+            )
+            && setup_preflight_source.matches("read_proof_artifact_file(").count() == 1,
+        "setup preflight file entry should route proof loading through the shape-checked reader"
+    );
+
+    let contribution_single = braced_source_body(
+        &contribution_source,
+        "pub fn derive_global_challenge_from_files",
+    );
+    let contribution_multi = braced_source_body(
+        &contribution_source,
+        "fn derive_global_challenge_from_contribution_proofs_with_requirement",
+    );
+    let contribution_reader = braced_source_body(
+        &contribution_source,
+        "fn read_contribution_proof_artifact_file",
+    );
+    assert!(
+        contribution_single.contains("read_contribution_proof_artifact_file(proof_path)?")
+            && contribution_multi.contains("read_contribution_proof_artifact_file(proof_path)?")
+            && contribution_reader.contains("read_proof_artifact_file(proof_path)?")
+            && contribution_reader
+                .contains("validate_contribution_proof_segment_ids(&proof.segments)?")
+            && contribution_source.contains("is_allowed_proof_segment_id(id)")
+            && contribution_source
+                .matches("read_proof_artifact_file(")
+                .count()
+                == 1,
+        "contribution proof file entries should use the contribution segment-checked reader"
+    );
+
+    assert!(
+        binding_cli_source.contains("read_checked_proof_artifact_file")
+            && !binding_cli_source.contains("read_proof_artifact_file")
+            && eth_cli_source.contains("read_checked_proof_artifact_file")
+            && !eth_cli_source.contains("read_proof_artifact_file"),
+        "CLI proof verification commands should use the shared checked proof artifact reader"
+    );
+}
+
+#[test]
 fn lean_runtime_soundness_exports_checked_execution_obligations() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let runtime_core_path = crate_root.join("../../lean/Lzvm/RuntimeSoundness/Core.lean");
