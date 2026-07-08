@@ -38,6 +38,7 @@ CROSS_SEGMENT_ROOT_WINDOW_ENV = "LZVM_CUDA_GUEST_PC_CROSS_SEGMENT_ROOT_WINDOW"
 CROSS_SEGMENT_ROOTS_ENV = "LZVM_CUDA_GUEST_PC_CROSS_SEGMENT_ROOTS"
 DESCRIPTOR_STREAM_INGRESS_ENV = "LZVM_CUDA_GUEST_PC_DESCRIPTOR_STREAM_INGRESS"
 SPARSE_HIGH32_DESCRIPTORS_ENV = "LZVM_CUDA_GUEST_PC_SPARSE_HIGH32_DESCRIPTORS"
+SOURCE_DEVICE_STREAM_PIPELINE_ENV = "LZVM_CUDA_SOURCE_DEVICE_STREAM_PIPELINE"
 RETAINED_SOURCE_BYTES_ENV = "LZVM_CUDA_RETAINED_SOURCE_BYTES"
 RETAINED_DESCRIPTOR_BYTES_ENV = "LZVM_CUDA_RETAINED_DESCRIPTOR_BYTES"
 RETAINED_LEAF_DIGEST_BYTES_ENV = "LZVM_CUDA_RETAINED_LEAF_DIGEST_BYTES"
@@ -176,6 +177,7 @@ PIPELINE_ENV_TO_CLEAR = [
     CROSS_SEGMENT_ROOTS_ENV,
     DESCRIPTOR_STREAM_INGRESS_ENV,
     SPARSE_HIGH32_DESCRIPTORS_ENV,
+    SOURCE_DEVICE_STREAM_PIPELINE_ENV,
     *RETAINED_CACHE_ENVS,
 ]
 
@@ -739,6 +741,8 @@ def mode_args(args: argparse.Namespace) -> list[str]:
         result.append("--sparse-high32-descriptors")
     if args.retained_source_bytes is not None:
         result.extend(["--retained-source-bytes", str(args.retained_source_bytes)])
+    if args.retained_descriptor_default:
+        result.append("--retained-descriptor-default")
     if args.retained_descriptor_bytes is not None:
         result.extend(["--retained-descriptor-bytes", str(args.retained_descriptor_bytes)])
     if args.retained_leaf_digest_bytes is not None:
@@ -757,6 +761,13 @@ def mode_args(args: argparse.Namespace) -> list[str]:
             [
                 "--retained-combined-cache-reserve-bytes",
                 str(args.retained_combined_cache_reserve_bytes),
+            ]
+        )
+    if args.source_device_stream_pipeline is not None:
+        result.extend(
+            [
+                "--source-device-stream-pipeline",
+                str(args.source_device_stream_pipeline),
             ]
         )
     if args.trace_shape_timing:
@@ -849,6 +860,8 @@ def mode_env_for_args(args: argparse.Namespace, mode: str) -> dict[str, str]:
         mode_env[SPARSE_HIGH32_DESCRIPTORS_ENV] = "1"
     if args.retained_source_bytes is not None:
         mode_env[RETAINED_SOURCE_BYTES_ENV] = str(args.retained_source_bytes)
+    if args.retained_descriptor_default:
+        mode_env[RETAINED_DESCRIPTOR_BYTES_ENV] = "true"
     if args.retained_descriptor_bytes is not None:
         mode_env[RETAINED_DESCRIPTOR_BYTES_ENV] = str(args.retained_descriptor_bytes)
     if args.retained_leaf_digest_bytes is not None:
@@ -860,6 +873,10 @@ def mode_env_for_args(args: argparse.Namespace, mode: str) -> dict[str, str]:
     if args.retained_combined_cache_reserve_bytes is not None:
         mode_env[RETAINED_COMBINED_CACHE_RESERVE_BYTES_ENV] = str(
             args.retained_combined_cache_reserve_bytes
+        )
+    if args.source_device_stream_pipeline is not None:
+        mode_env[SOURCE_DEVICE_STREAM_PIPELINE_ENV] = str(
+            args.source_device_stream_pipeline
         )
     mode_env.update(trace_timing_env_for_args(args))
     if args.parallel_lower_workers is not None:
@@ -1714,12 +1731,15 @@ def dry_run_summary_lines(args: argparse.Namespace, root: Path) -> list[str]:
         f"descriptor_stream_ingress={str(args.descriptor_stream_ingress).lower()}",
         f"sparse_high32_descriptors={str(args.sparse_high32_descriptors).lower()}",
         f"retained_source_bytes={optional_int_text(args.retained_source_bytes)}",
+        f"retained_descriptor_default={str(args.retained_descriptor_default).lower()}",
         f"retained_descriptor_bytes={optional_int_text(args.retained_descriptor_bytes)}",
         f"retained_leaf_digest_bytes={optional_int_text(args.retained_leaf_digest_bytes)}",
         "retained_parent_checkpoint_bytes="
         f"{optional_int_text(args.retained_parent_checkpoint_bytes)}",
         "retained_combined_cache_reserve_bytes="
         f"{optional_int_text(args.retained_combined_cache_reserve_bytes)}",
+        "source_device_stream_pipeline="
+        f"{args.source_device_stream_pipeline or ''}",
         f"gpu_preallocate={str(args.gpu_preallocate).lower()}",
         f"minimal_memory={str(args.minimal_memory).lower()}",
         f"pack_trace={str(not args.no_pack_trace).lower()}",
@@ -1753,6 +1773,10 @@ def run(args: argparse.Namespace) -> int:
     root = workspace_root()
     if args.enforce_targets and args.skip_targets:
         raise SystemExit("--skip-targets conflicts with --enforce-targets")
+    if args.retained_descriptor_default and args.retained_descriptor_bytes is not None:
+        raise SystemExit(
+            "--retained-descriptor-default conflicts with --retained-descriptor-bytes"
+        )
     if effective_max_runs(args) < args.runs:
         raise SystemExit("--max-runs must be at least --runs")
     if not args.check_gpu_memory and gpu_memory_wait_requested(args):
@@ -2062,10 +2086,12 @@ def self_test() -> None:
         descriptor_stream_ingress=False,
         sparse_high32_descriptors=False,
         retained_source_bytes=None,
+        retained_descriptor_default=False,
         retained_descriptor_bytes=None,
         retained_leaf_digest_bytes=None,
         retained_parent_checkpoint_bytes=None,
         retained_combined_cache_reserve_bytes=None,
+        source_device_stream_pipeline=None,
         trace_shape_timing=False,
         trace_shape_timing_sample_stride=None,
         trace_runner_detail_timing=False,
@@ -2115,6 +2141,8 @@ def self_test() -> None:
             raise SystemExit("self-test sparse descriptor env clearing missing")
         if f"-u {DESCRIPTOR_STREAM_INGRESS_ENV}" not in default_command:
             raise SystemExit("self-test descriptor stream env clearing missing")
+        if f"-u {SOURCE_DEVICE_STREAM_PIPELINE_ENV}" not in default_command:
+            raise SystemExit("self-test source pipeline env clearing missing")
         for retained_env in RETAINED_CACHE_ENVS:
             if f"-u {retained_env}" not in default_command:
                 raise SystemExit("self-test retained cache env clearing missing")
@@ -2187,6 +2215,24 @@ def self_test() -> None:
         if "retained_descriptor_bytes=1234" not in dry_run_summary_lines(args, root):
             raise SystemExit("self-test retained descriptor dry-run summary missing")
         args.retained_descriptor_bytes = None
+        args.retained_descriptor_default = True
+        retained_default_command = command_for_env(
+            small_config,
+            args.small_mode,
+            not args.skip_verify_proof,
+            mode_env_for_args(args, args.small_mode),
+            proof_tuning_args(args),
+            allow_stale_bin=args.allow_stale_bin,
+        )
+        if f"{RETAINED_DESCRIPTOR_BYTES_ENV}=true" not in retained_default_command:
+            raise SystemExit("self-test retained descriptor default assignment missing")
+        if "retained_descriptor_default=true" not in dry_run_summary_lines(args, root):
+            raise SystemExit("self-test retained descriptor default dry-run missing")
+        if "--retained-descriptor-default" not in " ".join(
+            shlex.quote(part) for part in mode_args(args)
+        ):
+            raise SystemExit("self-test retained descriptor default next-command missing")
+        args.retained_descriptor_default = False
         args.retained_combined_cache_reserve_bytes = 4321
         retained_reserve_command = command_for_env(
             small_config,
@@ -2221,6 +2267,24 @@ def self_test() -> None:
         if "sparse_high32_descriptors=true" not in dry_run_summary_lines(args, root):
             raise SystemExit("self-test sparse descriptor dry-run summary missing")
         args.sparse_high32_descriptors = False
+        args.source_device_stream_pipeline = 2
+        source_pipeline_command = command_for_env(
+            small_config,
+            args.small_mode,
+            not args.skip_verify_proof,
+            mode_env_for_args(args, args.small_mode),
+            proof_tuning_args(args),
+            allow_stale_bin=args.allow_stale_bin,
+        )
+        if f"{SOURCE_DEVICE_STREAM_PIPELINE_ENV}=2" not in source_pipeline_command:
+            raise SystemExit("self-test source pipeline env assignment missing")
+        if "source_device_stream_pipeline=2" not in dry_run_summary_lines(args, root):
+            raise SystemExit("self-test source pipeline dry-run summary missing")
+        if "--source-device-stream-pipeline 2" not in " ".join(
+            shlex.quote(part) for part in mode_args(args)
+        ):
+            raise SystemExit("self-test source pipeline next-command missing")
+        args.source_device_stream_pipeline = None
         code = run(args)
         if code != 0:
             raise SystemExit(code)
@@ -2316,6 +2380,7 @@ def main() -> None:
     parser.add_argument("--descriptor-stream-ingress", action="store_true")
     parser.add_argument("--sparse-high32-descriptors", action="store_true")
     parser.add_argument("--retained-source-bytes", type=nonnegative_integer, default=None)
+    parser.add_argument("--retained-descriptor-default", action="store_true")
     parser.add_argument("--retained-descriptor-bytes", type=nonnegative_integer, default=None)
     parser.add_argument("--retained-leaf-digest-bytes", type=nonnegative_integer, default=None)
     parser.add_argument(
@@ -2328,6 +2393,7 @@ def main() -> None:
         type=nonnegative_integer,
         default=None,
     )
+    parser.add_argument("--source-device-stream-pipeline", type=positive_integer, default=None)
     parser.add_argument("--trace-shape-timing", action="store_true")
     parser.add_argument(
         "--trace-shape-timing-sample-stride", type=positive_integer, default=None
