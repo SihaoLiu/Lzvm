@@ -742,6 +742,24 @@ def label := "opaque unsafe string"
     }
 
     #[test]
+    fn placeholder_scan_ignores_nested_block_comments() {
+        let hidden = ["op", "aque"].concat();
+        let source = format!(
+            "/- outer {hidden}\n/- inner {hidden} -/\n{hidden} -/\ntheorem visible_fact : True := by\n  trivial\n"
+        );
+
+        let visible = strip_string_literals(&visible_source(&source));
+
+        assert!(
+            !visible
+                .lines()
+                .any(|line| contains_identifier_token(line, &hidden)),
+            "Lean placeholder scan should ignore nested comments: {visible}"
+        );
+        assert!(visible.contains("theorem visible_fact"));
+    }
+
+    #[test]
     fn import_matching_ignores_comments_strings_and_longer_modules() {
         let source = r#"
 -- import Lzvm.Commented
