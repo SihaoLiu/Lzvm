@@ -15329,6 +15329,7 @@ fn apply_zisk_main_register_access_values(
     Ok(values)
 }
 
+#[inline(always)]
 fn read_then_update_register_mem_step(
     register_mem_steps: &mut [u64; 32],
     index: u8,
@@ -15340,6 +15341,7 @@ fn read_then_update_register_mem_step(
     previous
 }
 
+#[inline(always)]
 fn zisk_main_store_register_index(
     row: usize,
     store: ZiskMainStore,
@@ -15352,6 +15354,7 @@ fn zisk_main_store_register_index(
     }
 }
 
+#[inline(always)]
 fn zisk_main_register_index(index: u8) -> Result<u8, ()> {
     if valid_main_register_index(index) {
         Ok(index)

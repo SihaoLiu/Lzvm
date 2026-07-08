@@ -11633,6 +11633,14 @@ fn guest_pc_source_value_lookup_marks_hot_helpers_inline() {
         ),
         "#[inline(always)]\nfn ordered_memory_access_value",
         "#[inline(always)]\nfn validate_memory_access_fields",
+        "#[inline(always)]\nfn read_then_update_register_mem_step",
+        concat!(
+            "#[inline(always)]\nfn ",
+            "zi",
+            "sk",
+            "_main_store_register_index"
+        ),
+        concat!("#[inline(always)]\nfn ", "zi", "sk", "_main_register_index"),
     ] {
         assert!(
             source.contains(helper),
