@@ -57,8 +57,9 @@ use crate::pcs_transcript_segments::{
     PcsTranscriptProofSegmentsError, PcsTranscriptUnitChallenges,
 };
 use crate::proof_preflight::{
-    public_values_as_fields, validate_proof_public_values_for_setup_preflight_with_fields,
-    ProofPreflightError, ProofPreflightReport, PublicValueFieldError, TraceConstraintPreflightUnit,
+    public_values_as_fields, validate_proof_artifact_runtime_shape,
+    validate_proof_public_values_for_setup_preflight_with_fields, ProofPreflightError,
+    ProofPreflightReport, PublicValueFieldError, TraceConstraintPreflightUnit,
 };
 use crate::proof_values::{
     flatten_pcs_proof_values, load_pcs_proof_values_from_segments, LoadPcsProofValuesSegmentError,
@@ -1170,9 +1171,17 @@ pub fn validate_setup_preflight_from_files(
     let catalog = read_key_directory_catalog(setup_dir)?;
     validate_setup_directory_manifest_if_present(setup_dir, &catalog)
         .map_err(SetupPreflightError::SetupDirectoryManifest)?;
-    let proof = read_proof_artifact_file(proof_path)?;
+    let proof = read_setup_preflight_proof_artifact_file(proof_path)?;
     let public_values = read_public_values_file(public_values_path)?;
     validate_setup_preflight(&catalog, &proof, &public_values).map_err(Into::into)
+}
+
+fn read_setup_preflight_proof_artifact_file(
+    proof_path: impl AsRef<Path>,
+) -> Result<ProofArtifact, SetupPreflightFileError> {
+    let proof = read_proof_artifact_file(proof_path)?;
+    validate_proof_artifact_runtime_shape(&proof).map_err(SetupPreflightError::Proof)?;
+    Ok(proof)
 }
 
 #[cfg(test)]
@@ -1182,13 +1191,15 @@ mod tests {
         CHALLENGE_VALUES_SEGMENT_ID,
     };
     use lzvm_artifacts::global_info::{CurveKind, GlobalInfo, PublicValue};
-    use lzvm_artifacts::proof::{ProofArtifact, ProofSegment};
+    use lzvm_artifacts::pcs_material_segment::PCS_MATERIAL_MANIFEST_SEGMENT_ID;
+    use lzvm_artifacts::proof::{encode_proof_artifact, ProofArtifact, ProofSegment};
     use lzvm_artifacts::public_values::{PublicValueEntry, PublicValues};
     use lzvm_field::{FieldError, MODULUS};
 
     use super::{
-        validate_optional_challenge_values_segment,
-        validate_public_values_metadata_with_field_count, SetupPreflightError,
+        read_setup_preflight_proof_artifact_file, validate_optional_challenge_values_segment,
+        validate_public_values_metadata_with_field_count, ProofPreflightError, SetupPreflightError,
+        SetupPreflightFileError,
     };
 
     const FIRST_CHALLENGE_VALUE_OFFSET: usize = 12;
@@ -1209,6 +1220,43 @@ mod tests {
 
         validate_optional_challenge_values_segment(&proof)
             .expect("challenge values segment should validate");
+    }
+
+    #[test]
+    fn setup_preflight_proof_reader_rejects_unexpected_segments() {
+        let path = setup_preflight_temp_file_path("unexpected-segment-proof.bin");
+        std::fs::create_dir_all(path.parent().expect("fixture path should have parent"))
+            .expect("fixture directory should be created");
+        let proof = ProofArtifact {
+            setup_hash: [0x11; 32],
+            public_values_hash: [0x22; 32],
+            segments: vec![
+                ProofSegment {
+                    id: PCS_MATERIAL_MANIFEST_SEGMENT_ID,
+                    data: vec![1],
+                },
+                ProofSegment {
+                    id: 20_000,
+                    data: vec![2],
+                },
+            ],
+        };
+        std::fs::write(
+            &path,
+            encode_proof_artifact(&proof).expect("proof artifact should encode"),
+        )
+        .expect("proof artifact fixture should be written");
+
+        let error = read_setup_preflight_proof_artifact_file(&path)
+            .expect_err("unexpected proof segment should reject");
+        std::fs::remove_file(&path).expect("proof artifact fixture should be removed");
+
+        assert_eq!(
+            error,
+            SetupPreflightFileError::SetupPreflight(SetupPreflightError::Proof(
+                ProofPreflightError::UnexpectedProofSegment { id: 20_000 }
+            ))
+        );
     }
 
     #[test]
@@ -1334,5 +1382,17 @@ mod tests {
             error,
             SetupPreflightError::ChallengeValues(ChallengeValuesSegmentError::InvalidMagic)
         );
+    }
+
+    fn setup_preflight_temp_file_path(name: &str) -> std::path::PathBuf {
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .and_then(std::path::Path::parent)
+            .expect("workspace root should resolve")
+            .join("temp")
+            .join(format!(
+                "lzvm-setup-preflight-{}-{name}",
+                std::process::id()
+            ))
     }
 }
