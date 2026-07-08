@@ -1811,6 +1811,21 @@ theorem gpu_retained_device_cache_budget_within_limits_projects_combined_limit
   rw [combinedLimit] at combinedWithin
   exact combinedWithin
 
+theorem gpu_retained_device_cache_budget_parent_checkpoint_headroom_implies_combined_limit
+    (budget : GpuRetainedDeviceCacheBudget)
+    (limit : Nat) :
+    budget.parentCheckpointBytes <= budget.parentCheckpointLimit ->
+      budget.sourceBytes
+        + budget.descriptorBytes
+        + budget.leafDigestBytes
+        + budget.parentCheckpointLimit <= limit ->
+        budget.sourceBytes
+          + budget.descriptorBytes
+          + budget.leafDigestBytes
+          + budget.parentCheckpointBytes <= limit := by
+  intro parentWithinLimit headroomWithin
+  omega
+
 theorem gpu_retained_device_cache_budget_checked_acceptance_projects_source_limit
     {system : VerifierModel}
     (validation : GpuRetainedDeviceCacheBudgetValidation)
@@ -1932,6 +1947,39 @@ theorem gpu_retained_device_cache_budget_checked_acceptance_projects_combined_li
         publicInput
         proof
         checked)
+
+theorem gpu_retained_device_cache_budget_checked_parent_checkpoint_headroom_implies_combined_limit
+    {system : VerifierModel}
+    (validation : GpuRetainedDeviceCacheBudgetValidation)
+    (budget : GpuRetainedDeviceCacheBudget)
+    (limit : Nat) :
+    budget.sourceBytes
+      + budget.descriptorBytes
+      + budget.leafDigestBytes
+      + budget.parentCheckpointLimit <= limit ->
+      forall publicInput proof,
+        GpuRetainedDeviceCacheBudgetCheckedAcceptance
+            system
+            validation
+            budget
+            publicInput
+            proof ->
+          budget.sourceBytes
+            + budget.descriptorBytes
+            + budget.leafDigestBytes
+            + budget.parentCheckpointBytes <= limit := by
+  intro headroomWithin publicInput proof checked
+  exact
+    gpu_retained_device_cache_budget_parent_checkpoint_headroom_implies_combined_limit
+      budget
+      limit
+      (gpu_retained_device_cache_budget_checked_acceptance_projects_parent_checkpoint_limit
+        validation
+        budget
+        publicInput
+        proof
+        checked)
+      headroomWithin
 
 theorem gpu_retained_device_cache_budget_checked_acceptance_sound
     {system : VerifierModel}
@@ -2100,6 +2148,47 @@ theorem gpu_retained_device_cache_budget_checked_combined_limit_core_and_sound
       budget
       limit
       combinedLimit
+      publicInput
+      proof
+      checked
+  have coreAndSound :=
+    GpuRuntimeInternal.checked_acceptance_core_and_sound
+      assumptions
+      publicInput
+      proof
+      checked
+  exact And.intro combinedWithin coreAndSound
+
+theorem gpu_retained_device_cache_budget_checked_parent_checkpoint_headroom_core_and_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : GpuRetainedDeviceCacheBudgetValidation)
+    (budget : GpuRetainedDeviceCacheBudget)
+    (limit : Nat) :
+    budget.sourceBytes
+      + budget.descriptorBytes
+      + budget.leafDigestBytes
+      + budget.parentCheckpointLimit <= limit ->
+      forall publicInput proof,
+        GpuRetainedDeviceCacheBudgetCheckedAcceptance
+            system
+            validation
+            budget
+            publicInput
+            proof ->
+          budget.sourceBytes
+            + budget.descriptorBytes
+            + budget.leafDigestBytes
+            + budget.parentCheckpointBytes <= limit
+            /\ RuntimeVerifierCoreContract system publicInput proof
+            /\ SoundWitness system publicInput proof := by
+  intro headroomWithin publicInput proof checked
+  have combinedWithin :=
+    gpu_retained_device_cache_budget_checked_parent_checkpoint_headroom_implies_combined_limit
+      validation
+      budget
+      limit
+      headroomWithin
       publicInput
       proof
       checked
@@ -2663,6 +2752,54 @@ theorem gpu_retained_device_cache_budget_checked_combined_limit_audited_core_con
       budget
       limit
       combinedLimit
+      publicInput
+      proof
+      checked
+  have audited :=
+    GpuRuntimeInternal.checked_acceptance_audited_core_contract
+      (auxiliaryAccepted := fun publicInput proof =>
+        validation.retainedDeviceCacheBudgetAccepted budget publicInput proof)
+      assumptions
+      publicInput
+      proof
+      checked
+  exact
+    And.intro audited.left
+      (And.intro audited.right.left
+        (And.intro combinedWithin audited.right.right))
+
+theorem gpu_retained_device_cache_budget_checked_parent_checkpoint_headroom_audited_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : GpuRetainedDeviceCacheBudgetValidation)
+    (budget : GpuRetainedDeviceCacheBudget)
+    (limit : Nat) :
+    budget.sourceBytes
+      + budget.descriptorBytes
+      + budget.leafDigestBytes
+      + budget.parentCheckpointLimit <= limit ->
+      forall publicInput proof,
+        GpuRetainedDeviceCacheBudgetCheckedAcceptance
+            system
+            validation
+            budget
+            publicInput
+            proof ->
+          RequiredCryptographicAssumptionStatements assumptions.crypto
+            /\ RequiredSemanticAssumptionStatements assumptions.semantic
+            /\ budget.sourceBytes
+              + budget.descriptorBytes
+              + budget.leafDigestBytes
+              + budget.parentCheckpointBytes <= limit
+            /\ RuntimeVerifierCoreContract system publicInput proof
+            /\ SoundWitness system publicInput proof := by
+  intro headroomWithin publicInput proof checked
+  have combinedWithin :=
+    gpu_retained_device_cache_budget_checked_parent_checkpoint_headroom_implies_combined_limit
+      validation
+      budget
+      limit
+      headroomWithin
       publicInput
       proof
       checked
