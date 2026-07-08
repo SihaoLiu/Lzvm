@@ -2295,6 +2295,21 @@ fn try_advance_guest_machine_report_fast_path(
             }
         }
         RiscvInstruction::OpImm32 {
+            kind: RiscvOpImm32Kind::Addiw,
+            rd,
+            rs1,
+            immediate,
+        } => {
+            if rd != 0 {
+                let value = sign_extend_word(
+                    state
+                        .read_decoded_register(rs1)
+                        .wrapping_add_signed(i64::from(immediate)) as u32,
+                );
+                register_write = write_fast_reported_register(state, rd, value);
+            }
+        }
+        RiscvInstruction::OpImm32 {
             kind,
             rd,
             rs1,
@@ -3974,6 +3989,16 @@ mod tests {
                 offset: 16,
             });
         }
+    }
+
+    #[test]
+    fn prepared_addiw_fast_path_matches_timed_generic_advance() {
+        assert_report_fast_path_matches_generic(RiscvInstruction::OpImm32 {
+            kind: RiscvOpImm32Kind::Addiw,
+            rd: 8,
+            rs1: 3,
+            immediate: -7,
+        });
     }
 
     #[test]

@@ -12141,6 +12141,34 @@ fn guest_machine_addi_fast_path_avoids_generic_immediate_dispatch() {
 }
 
 #[test]
+fn guest_machine_addiw_fast_path_avoids_generic_word_immediate_dispatch() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let source_path = crate_root.join("src/guest_machine/mod.rs");
+    let source = std::fs::read_to_string(&source_path).expect("guest machine source should read");
+    let body = function_body(
+        &source,
+        "fn try_advance_guest_machine_report_fast_path",
+        "fn write_fast_reported_register",
+    );
+    let addiw_start = body
+        .find("kind: RiscvOpImm32Kind::Addiw")
+        .expect("ADDIW fast path should exist");
+    let generic_start = body[addiw_start..]
+        .find("RiscvInstruction::OpImm32 {\n            kind,")
+        .map(|offset| addiw_start + offset)
+        .expect("generic word-immediate op fast path should remain");
+    let addiw_body = &body[addiw_start..generic_start];
+
+    assert!(
+        addiw_body.contains(".wrapping_add_signed(i64::from(immediate))")
+            && addiw_body.contains("sign_extend_word(")
+            && addiw_body.contains("write_fast_reported_register(state, rd, value)")
+            && !addiw_body.contains("execute_op_imm_32("),
+        "ADDIW should avoid the generic word-immediate op dispatcher"
+    );
+}
+
+#[test]
 fn guest_machine_binary_op_fast_path_reuses_same_register_read() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let source_path = crate_root.join("src/guest_machine/mod.rs");
