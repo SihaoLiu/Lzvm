@@ -219,6 +219,7 @@ def nsys_outputs(output_dir: Path, name: str) -> dict[str, Path]:
         "kernel_summary": prefixed_path(output_dir, name, ".nsys-kernel-summary.txt"),
         "sync_summary": prefixed_path(output_dir, name, ".nsys-sync-summary.txt"),
         "copy_summary": prefixed_path(output_dir, name, ".nsys-copy-summary.txt"),
+        "cpu_summary": prefixed_path(output_dir, name, ".nsys-cpu-summary.txt"),
     }
 
 
@@ -355,6 +356,12 @@ def print_nsys_outputs(args: argparse.Namespace, outputs: dict[str, Path], root:
         )
     )
     print(f"nsys_cuda_copy_summary_output={copy_summary}")
+    cpu_summary = display_path_for_shell(outputs["cpu_summary"], root)
+    print(
+        "nsys_cpu_summary_command="
+        + shell_join(["scripts/nsys-cpu-sampling-summary.py", sqlite])
+    )
+    print(f"nsys_cpu_summary_output={cpu_summary}")
 
 
 def print_ncu_outputs(outputs: dict[str, Path], root: Path) -> None:
@@ -536,6 +543,28 @@ def run_summary(
         )
 
 
+def run_optional_summary(
+    command: list[str],
+    cwd: Path,
+    output_path: Path,
+    env: dict[str, str],
+) -> bool:
+    stderr_path = prefixed_path(output_path.parent, output_path.name, ".stderr")
+    code = run_captured(command, cwd, output_path, stderr_path, env)
+    if code == 0:
+        return True
+    diagnostic = first_diagnostic_line(stderr_path.read_text(encoding="utf-8"))
+    write_text_no_follow(
+        output_path,
+        "summary_status=skipped\n"
+        f"summary_command={shell_join(command)}\n"
+        f"summary_exit_code={code}\n"
+        f"summary_stderr={stderr_path}\n"
+        f"summary_first_stderr={diagnostic}\n",
+    )
+    return False
+
+
 def profile_json_outputs(outputs: dict[str, Path], root: Path) -> dict[str, str]:
     return {
         key: display_path_for_shell(path, root)
@@ -625,6 +654,12 @@ def summarize_nsys(root: Path, outputs: dict[str, Path]) -> None:
         ],
         root,
         outputs["copy_summary"],
+        env,
+    )
+    run_optional_summary(
+        ["scripts/nsys-cpu-sampling-summary.py", str(outputs["sqlite"])],
+        root,
+        outputs["cpu_summary"],
         env,
     )
 
@@ -1057,6 +1092,7 @@ def run_profile(args: argparse.Namespace) -> int:
                         outputs["kernel_summary"],
                         outputs["sync_summary"],
                         outputs["copy_summary"],
+                        outputs["cpu_summary"],
                     ]
                 )
                 print(
@@ -1068,6 +1104,9 @@ def run_profile(args: argparse.Namespace) -> int:
                 )
                 print(
                     f"nsys_copy_summary={display_path_for_shell(outputs['copy_summary'], root)}"
+                )
+                print(
+                    f"nsys_cpu_summary={display_path_for_shell(outputs['cpu_summary'], root)}"
                 )
                 proof_timing_result = summarize_proof_timing(
                     root,

@@ -13,6 +13,7 @@ fn profiling_helpers_are_directly_executable() {
 
     for script in [
         "scripts/ncu-cuda-kernel-summary.py",
+        "scripts/nsys-cpu-sampling-summary.py",
         "scripts/nsys-cuda-copy-summary.py",
         "scripts/nsys-cuda-kernel-summary.py",
         "scripts/nsys-cuda-sync-summary.py",

@@ -31,6 +31,7 @@ fn proof_profile_self_test_runs() {
             && stdout.contains("profile_log=temp/proof-profile-self-test-")
             && stdout.contains("profile_json_output=temp/proof-profile-self-test-")
             && stdout.contains("nsys_exported_sqlite=temp/proof-profile-self-test-")
+            && stdout.contains("nsys_cpu_summary_output=temp/proof-profile-self-test-")
             && stdout.contains("ncu_csv=temp/proof-profile-self-test-")
             && stdout.contains("ncu_kernel_summary=temp/proof-profile-self-test-")
             && stdout.contains("proof_timing_summary=temp/proof-profile-self-test-"),
@@ -117,7 +118,9 @@ fn proof_profile_nsys_dry_run_prints_summary_commands() {
             && stdout.contains("nsys_cuda_kernel_summary_output=")
             && stdout.contains("nsys_cuda_sync_summary_command=")
             && stdout.contains("nsys_cuda_sync_summary_output=")
-            && stdout.contains("nsys_cuda_copy_summary_command="),
+            && stdout.contains("nsys_cuda_copy_summary_command=")
+            && stdout.contains("nsys_cpu_summary_command=")
+            && stdout.contains("nsys_cpu_summary_output="),
         "dry-run should print follow-up summary commands: {stdout}"
     );
     assert!(
