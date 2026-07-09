@@ -401,6 +401,8 @@ def require_texts_in_log(text: str, path: Path, required_texts: list[str]) -> No
 def retryable_run_failure_reason(text: str) -> str | None:
     if "GPU memory preflight failed" in text:
         return "gpu_memory_preflight"
+    if "cuda backend out of memory" in text:
+        return "cuda_memory_exhausted"
     return None
 
 
@@ -1628,6 +1630,11 @@ def self_test() -> None:
             raise SystemExit("self-test batch json should record host load average")
         if not isinstance(batch_payload.get("host_cpu_count"), int):
             raise SystemExit("self-test batch json should record host CPU count")
+        if (
+            retryable_run_failure_reason("cuda backend out of memory: error code 2")
+            != "cuda_memory_exhausted"
+        ):
+            raise SystemExit("self-test should classify cuda backend memory exhaustion")
         for key in [
             "small_stable_spread_s",
             "large_stable_spread_s",
