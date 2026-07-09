@@ -234,6 +234,56 @@ theorem runtime_guarded_external_source_required_evidence_core_and_sound
         (And.intro requiredSound.right.right.left
           (And.intro coreContract requiredSound.right.right.right)))
 
+theorem runtime_guarded_external_source_required_accepts_evidence_core_and_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (runtimeValidation : RuntimeConformanceValidation system)
+    (sourceValidation : ExternalSourceOpeningValidation system) :
+    forall artifact publicInput proof requiresExternalSource,
+      RuntimeGuardedExternalSourceCheckedAcceptance
+          system
+          runtimeValidation
+          sourceValidation
+          artifact
+          publicInput
+          proof
+          requiresExternalSource ->
+        requiresExternalSource ->
+          system.accepts publicInput proof
+            /\ RuntimeArtifactEvidence
+              system
+              runtimeValidation
+              artifact
+              publicInput
+              proof
+            /\ ExternalSourceOpeningEvidence system sourceValidation publicInput proof
+            /\ system.pcsOpeningsValid publicInput proof
+            /\ RuntimeVerifierCoreContract system publicInput proof
+            /\ SoundWitness system publicInput proof := by
+  intro artifact publicInput proof requiresExternalSource checked required
+  have checkedContract :=
+    runtime_guarded_external_source_checked_acceptance_accepts_evidence_core_and_sound
+      assumptions
+      runtimeValidation
+      sourceValidation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      checked
+  have requiredContract :=
+    runtime_guarded_external_source_required_evidence_core_and_sound
+      assumptions
+      runtimeValidation
+      sourceValidation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      checked
+      required
+  exact And.intro checkedContract.left requiredContract
+
 theorem runtime_guarded_external_source_required_evidence_audited_core_contract
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)

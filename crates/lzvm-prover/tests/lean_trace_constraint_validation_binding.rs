@@ -56,6 +56,7 @@ fn lean_trace_constraint_validation_binding_exports_core_contract_projection() {
             "runtime_trace_constraint_required_external_source_sound",
             "runtime_trace_constraint_required_external_source_verifier_core_contract",
             "runtime_trace_constraint_required_external_source_evidence_core_and_sound",
+            "runtime_trace_constraint_required_external_source_accepts_evidence_core_and_sound",
             "runtime_trace_constraint_required_external_source_accepts_backend_core_sound_witness",
         ],
     );
@@ -404,6 +405,37 @@ fn lean_trace_constraint_validation_binding_exports_core_contract_projection() {
         &lean_source,
         "runtime_trace_constraint_required_external_source_evidence_core_and_sound",
         &["sound_witness_implies_verifier_core_contract"],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_trace_constraint_required_external_source_accepts_evidence_core_and_sound",
+        &[
+            "requiresExternalSource ->",
+            "system.accepts publicInput proof",
+            "RuntimeTraceConstraintEvidence",
+            "ExternalSourceOpeningEvidence",
+            "RuntimeVerifierCoreContract system publicInput proof",
+            "SoundWitness system publicInput proof",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_trace_constraint_required_external_source_accepts_evidence_core_and_sound",
+        &[
+            "runtime_trace_constraint_checked_acceptance_accepts_evidence_core_and_sound",
+            "runtime_trace_constraint_required_external_source_evidence_core_and_sound",
+            "checkedContract.left",
+        ],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &lean_source,
+        "runtime_trace_constraint_required_external_source_accepts_evidence_core_and_sound",
+        &[
+            "runtime_trace_constraint_required_external_source_sound",
+            "runtime_trace_constraint_required_external_source_verifier_core_contract",
+            "runtime_trace_constraint_checked_acceptance_implies_verifier_accepts",
+            "sound_witness_implies_verifier_core_contract",
+        ],
     );
     lean_binding::assert_theorem_body_contains(
         &lean_source,

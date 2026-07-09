@@ -1802,4 +1802,48 @@ theorem runtime_opening_required_external_source_evidence_core_and_sound
       (And.intro requiredSound.right.left
         (And.intro core requiredSound.right.right))
 
+theorem runtime_opening_required_external_source_accepts_evidence_core_and_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeOpeningValidation system) :
+    forall artifact publicInput proof (requiresExternalSource : Prop),
+      RuntimeOpeningCheckedAcceptance system validation artifact publicInput proof ->
+        requiresExternalSource ->
+          system.accepts publicInput proof
+            /\ RuntimeOpeningEvidence
+              system
+              validation
+              artifact
+              publicInput
+              proof
+              requiresExternalSource
+            /\ ExternalSourceOpeningEvidence
+              system
+              validation.runtimeSoundnessValidation.sourceValidation
+              publicInput
+              proof
+            /\ RuntimeVerifierCoreContract system publicInput proof
+            /\ SoundWitness system publicInput proof := by
+  intro artifact publicInput proof requiresExternalSource accepted required
+  have checkedContract :=
+    runtime_opening_checked_acceptance_accepts_evidence_core_and_sound
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      accepted
+  have requiredContract :=
+    runtime_opening_required_external_source_evidence_core_and_sound
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      accepted
+      required
+  exact And.intro checkedContract.left requiredContract
+
 end Lzvm

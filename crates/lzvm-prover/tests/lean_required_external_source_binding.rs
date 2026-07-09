@@ -31,6 +31,7 @@ fn lean_required_external_source_binding_exports_core_contract_projection() {
             "runtime_guarded_external_source_required_provider_obligations",
             "runtime_guarded_external_source_required_verifier_core_contract",
             "runtime_guarded_external_source_required_evidence_core_and_sound",
+            "runtime_guarded_external_source_required_accepts_evidence_core_and_sound",
             "runtime_guarded_external_source_required_evidence_audited_core_contract",
             "runtime_guarded_external_source_required_pcs_and_fri_from_hash_concrete_opening",
             "runtime_guarded_external_source_required_pcs_and_fri_from_concrete_opening",
@@ -108,6 +109,39 @@ fn lean_required_external_source_binding_exports_core_contract_projection() {
         &lean_source,
         "runtime_guarded_external_source_required_evidence_core_and_sound",
         &["sound_witness_implies_verifier_core_contract"],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_guarded_external_source_required_accepts_evidence_core_and_sound",
+        &[
+            "RuntimeGuardedExternalSourceCheckedAcceptance",
+            "requiresExternalSource ->",
+            "system.accepts publicInput proof",
+            "RuntimeArtifactEvidence",
+            "ExternalSourceOpeningEvidence",
+            "system.pcsOpeningsValid publicInput proof",
+            "RuntimeVerifierCoreContract system publicInput proof",
+            "SoundWitness system publicInput proof",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_guarded_external_source_required_accepts_evidence_core_and_sound",
+        &[
+            "runtime_guarded_external_source_checked_acceptance_accepts_evidence_core_and_sound",
+            "runtime_guarded_external_source_required_evidence_core_and_sound",
+            "checkedContract.left",
+        ],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &lean_source,
+        "runtime_guarded_external_source_required_accepts_evidence_core_and_sound",
+        &[
+            "runtime_guarded_external_source_required_sound",
+            "runtime_guarded_external_source_required_verifier_core_contract",
+            "runtime_artifact_checked_acceptance_implies_verifier_accepts",
+            "sound_witness_implies_verifier_core_contract",
+        ],
     );
     lean_binding::assert_theorem_prefix_contains(
         &lean_source,
