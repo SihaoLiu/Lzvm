@@ -1079,6 +1079,8 @@ def write_batch_json(
     args: argparse.Namespace,
     max_runs: int,
     commit: str,
+    batch_started_at: str,
+    batch_start_load_average: list[float] | None,
     root: Path,
     batch_dir: Path,
     cwd: Path,
@@ -1116,6 +1118,7 @@ def write_batch_json(
     load_average = host_load_average()
     payload = {
         "created_at": datetime.now().astimezone().strftime("%Y-%m-%dT%H:%M:%S%z"),
+        "batch_started_at": batch_started_at,
         "workspace": str(root),
         "batch_dir": str(batch_dir),
         "cwd": str(cwd),
@@ -1149,6 +1152,7 @@ def write_batch_json(
         "commit": commit,
         "tracked_worktree_dirty": bool(worktree_status),
         "tracked_worktree_status": worktree_status,
+        "batch_start_host_load_average": batch_start_load_average,
         "host_load_average": load_average,
         "host_cpu_count": os.cpu_count(),
         "summary": args.summary,
@@ -1226,6 +1230,8 @@ def required_texts_for_label(args: argparse.Namespace, label: str) -> list[str]:
 
 def run_batch(args: argparse.Namespace) -> Path:
     root = workspace_root()
+    batch_started_at = datetime.now().astimezone().strftime("%Y-%m-%dT%H:%M:%S%z")
+    batch_start_load_average = host_load_average()
     if args.small_command is None and args.large_command is None:
         raise SystemExit("provide --small-command and/or --large-command")
     if args.summary is None:
@@ -1301,6 +1307,8 @@ def run_batch(args: argparse.Namespace) -> Path:
             args,
             max_runs,
             commit,
+            batch_started_at,
+            batch_start_load_average,
             root,
             batch_dir,
             cwd,
@@ -1606,6 +1614,13 @@ def self_test() -> None:
             raise SystemExit("self-test batch json should record dirty status")
         if not isinstance(batch_payload.get("tracked_worktree_status"), list):
             raise SystemExit("self-test batch json should record tracked status lines")
+        if not isinstance(batch_payload.get("batch_started_at"), str):
+            raise SystemExit("self-test batch json should record batch start time")
+        batch_start_load = batch_payload.get("batch_start_host_load_average")
+        if batch_start_load is not None and not (
+            isinstance(batch_start_load, list) and len(batch_start_load) == 3
+        ):
+            raise SystemExit("self-test batch json should record batch start load average")
         host_load = batch_payload.get("host_load_average")
         if host_load is not None and not (
             isinstance(host_load, list) and len(host_load) == 3
