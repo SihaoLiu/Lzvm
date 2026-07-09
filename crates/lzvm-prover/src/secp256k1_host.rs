@@ -385,8 +385,8 @@ pub(crate) fn secp256k1_point_double_limbs(point: &[u64; 8]) -> Result<[u64; 8],
 }
 
 fn native_secp_point_limb_sum(first: &[u64; 8], second: &[u64; 8]) -> Option<[u64; 8]> {
-    let first = secp256k1_point_limbs_to_native(first)?;
-    let second = secp256k1_point_limbs_to_native(second)?;
+    let first = secp256k1_nonidentity_point_limbs_to_native(first)?;
+    let second = secp256k1_nonidentity_point_limbs_to_native(second)?;
     first
         .combine(&second)
         .ok()
@@ -394,18 +394,15 @@ fn native_secp_point_limb_sum(first: &[u64; 8], second: &[u64; 8]) -> Option<[u6
 }
 
 fn native_secp_point_limb_twice(point: &[u64; 8]) -> Option<[u64; 8]> {
-    let point = secp256k1_point_limbs_to_native(point)?;
+    let point = secp256k1_nonidentity_point_limbs_to_native(point)?;
     point
         .combine(&point)
         .ok()
         .map(|point| secp256k1_point_limbs_from_native(&point))
 }
 
-fn secp256k1_point_limbs_to_native(limbs: &[u64; 8]) -> Option<NativeSecpPublicKey> {
-    if point_limbs_are_identity(limbs)
-        || !field_limbs_are_canonical(&limbs[..4])
-        || !field_limbs_are_canonical(&limbs[4..])
-    {
+fn secp256k1_nonidentity_point_limbs_to_native(limbs: &[u64; 8]) -> Option<NativeSecpPublicKey> {
+    if !field_limbs_are_canonical(&limbs[..4]) || !field_limbs_are_canonical(&limbs[4..]) {
         return None;
     }
     NativeSecpPublicKey::from_slice(&secp256k1_point_limb_uncompressed_bytes(limbs)).ok()
