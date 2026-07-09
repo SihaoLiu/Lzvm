@@ -95,6 +95,13 @@ def tracked_worktree_status(root: Path) -> list[str]:
     return [line for line in result.stdout.splitlines() if line]
 
 
+def host_load_average() -> list[float] | None:
+    try:
+        return [round(value, 3) for value in os.getloadavg()]
+    except (AttributeError, OSError):
+        return None
+
+
 def positive_run_count(raw: str) -> int:
     try:
         value = int(raw)
@@ -1106,6 +1113,7 @@ def write_batch_json(
     large_stable_spread_s = timing_spread_seconds(large_stable_timing_s)
     append_stdout_path, append_stderr_path, append_status_path = append_artifact_paths(batch_dir)
     worktree_status = tracked_worktree_status(root)
+    load_average = host_load_average()
     payload = {
         "created_at": datetime.now().astimezone().strftime("%Y-%m-%dT%H:%M:%S%z"),
         "workspace": str(root),
@@ -1141,6 +1149,8 @@ def write_batch_json(
         "commit": commit,
         "tracked_worktree_dirty": bool(worktree_status),
         "tracked_worktree_status": worktree_status,
+        "host_load_average": load_average,
+        "host_cpu_count": os.cpu_count(),
         "summary": args.summary,
         "metadata_lines": list(args.metadata_line or []),
         "small_command": args.small_command,
@@ -1596,6 +1606,13 @@ def self_test() -> None:
             raise SystemExit("self-test batch json should record dirty status")
         if not isinstance(batch_payload.get("tracked_worktree_status"), list):
             raise SystemExit("self-test batch json should record tracked status lines")
+        host_load = batch_payload.get("host_load_average")
+        if host_load is not None and not (
+            isinstance(host_load, list) and len(host_load) == 3
+        ):
+            raise SystemExit("self-test batch json should record host load average")
+        if not isinstance(batch_payload.get("host_cpu_count"), int):
+            raise SystemExit("self-test batch json should record host CPU count")
         for key in [
             "small_stable_spread_s",
             "large_stable_spread_s",
