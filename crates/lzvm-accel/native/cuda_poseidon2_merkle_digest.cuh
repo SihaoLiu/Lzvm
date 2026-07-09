@@ -101,6 +101,33 @@ __global__ void poseidon2_merkle_digest_prefix_sibling_gather_kernel(
         : 0;
 }
 
+template <size_t Arity>
+__global__ void poseidon2_merkle_digest_prefix_single_sibling_gather_kernel(
+    const uint64_t* current_digests,
+    uint64_t* siblings_out,
+    size_t state_count,
+    size_t level,
+    size_t level_span,
+    size_t query_index,
+    size_t level_sibling_words) {
+    const size_t word_index = blockIdx.x * blockDim.x + threadIdx.x;
+    if (word_index >= level_sibling_words) {
+        return;
+    }
+
+    const size_t word = word_index % kPoseidon2DigestWords;
+    const size_t sibling_slot = word_index / kPoseidon2DigestWords;
+    const size_t level_query = query_index / level_span;
+    const size_t child_slot = level_query % Arity;
+    const size_t slot = sibling_slot + (sibling_slot >= child_slot ? 1 : 0);
+    const size_t child_index = (level_query / Arity) * Arity + slot;
+    const size_t out_index =
+        level * level_sibling_words + sibling_slot * kPoseidon2DigestWords + word;
+    siblings_out[out_index] = child_index < state_count
+        ? current_digests[child_index * kPoseidon2DigestWords + word]
+        : 0;
+}
+
 template <size_t Width, size_t Arity>
 int run_poseidon2_merkle_digest_root_on_device(
     const uint64_t* device_values,
@@ -425,9 +452,11 @@ int run_poseidon2_merkle_digest_opening_prefix_batch_to_device(
         }
     }
     DeviceBuffer<size_t> device_query_indices;
-    LZVM_CUDA_RETURN_ON_ERROR(device_query_indices.reset(query_count));
-    LZVM_CUDA_RETURN_ON_ERROR(device_query_indices.copy_from_bytes(
-        query_indices, query_count * sizeof(size_t)));
+    if (query_count > 1) {
+        LZVM_CUDA_RETURN_ON_ERROR(device_query_indices.reset(query_count));
+        LZVM_CUDA_RETURN_ON_ERROR(device_query_indices.copy_from_bytes(
+            query_indices, query_count * sizeof(size_t)));
+    }
 
     const size_t first_parent_state_count = (child_state_count + Arity - 1) / Arity;
     const size_t second_parent_state_count =
@@ -447,17 +476,29 @@ int run_poseidon2_merkle_digest_opening_prefix_batch_to_device(
     for (size_t level = 0; level < prefix_level_count; ++level) {
         const size_t gather_words = query_count * level_sibling_words;
         const size_t gather_blocks = (gather_words + kThreads - 1) / kThreads;
-        poseidon2_merkle_digest_prefix_sibling_gather_kernel<Arity>
-            <<<gather_blocks, kThreads>>>(
-            current,
-            device_query_indices.data(),
-            siblings_out,
-            state_count,
-            query_count,
-            level,
-            level_span,
-            row_sibling_words,
-            level_sibling_words);
+        if (query_count == 1) {
+            poseidon2_merkle_digest_prefix_single_sibling_gather_kernel<Arity>
+                <<<gather_blocks, kThreads>>>(
+                current,
+                siblings_out,
+                state_count,
+                level,
+                level_span,
+                query_indices[0],
+                level_sibling_words);
+        } else {
+            poseidon2_merkle_digest_prefix_sibling_gather_kernel<Arity>
+                <<<gather_blocks, kThreads>>>(
+                current,
+                device_query_indices.data(),
+                siblings_out,
+                state_count,
+                query_count,
+                level,
+                level_span,
+                row_sibling_words,
+                level_sibling_words);
+        }
         LZVM_CUDA_RETURN_ON_ERROR(lzvm_cuda_check_launch());
 
         if (level + 1 < prefix_level_count) {
