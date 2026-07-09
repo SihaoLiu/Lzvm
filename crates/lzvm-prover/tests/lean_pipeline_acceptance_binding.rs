@@ -55,3 +55,50 @@ fn lean_pipeline_binding_exports_acceptance_core_sound_contract() {
         ],
     );
 }
+
+#[test]
+fn lean_pipeline_binding_exports_query_opening_acceptance_contract() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let source = lean_binding::read_lean_source(
+        crate_root,
+        "../../lean/Lzvm/PipelineBinding/Obligations/Core.lean",
+    );
+
+    lean_binding::assert_theorem_declarations(
+        &source,
+        &[
+            "runtime_pipeline_binding_checked_acceptance_accepts_query_opening_evidence_core_and_sound",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &source,
+        "runtime_pipeline_binding_checked_acceptance_accepts_query_opening_evidence_core_and_sound",
+        &[
+            "RuntimePipelineBindingCheckedAcceptance",
+            "system.accepts publicInput proof",
+            "RuntimeQueryPlanBindingEvidence",
+            "RuntimeChallengeSegmentBindingEvidence",
+            "RuntimeOpeningSegmentBindingEvidence",
+            "RuntimeOpeningEvidence",
+            "RuntimeVerifierCoreContract system publicInput proof",
+            "SoundWitness system publicInput proof",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &source,
+        "runtime_pipeline_binding_checked_acceptance_accepts_query_opening_evidence_core_and_sound",
+        &[
+            "runtime_pipeline_binding_checked_acceptance_verifier_accepts",
+            "runtime_pipeline_binding_checked_acceptance_query_opening_evidence_core_and_sound",
+            "And.intro verifierAccepts queryOpeningCoreSound",
+        ],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &source,
+        "runtime_pipeline_binding_checked_acceptance_accepts_query_opening_evidence_core_and_sound",
+        &[
+            "abstract_verifier_sound_with_semantic_evidence",
+            "sound_witness_implies_verifier_core_contract",
+        ],
+    );
+}

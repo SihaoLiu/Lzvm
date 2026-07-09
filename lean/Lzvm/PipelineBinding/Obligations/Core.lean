@@ -687,6 +687,64 @@ theorem runtime_pipeline_binding_checked_acceptance_query_opening_evidence_core_
       evidenceCore.right.right.right.right,
       sound.right⟩
 
+theorem runtime_pipeline_binding_checked_acceptance_accepts_query_opening_evidence_core_and_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimePipelineBindingValidation system) :
+    forall artifact publicInput proof requiresExternalSource,
+      RuntimePipelineBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        system.accepts publicInput proof
+          /\ RuntimeQueryPlanBindingEvidence
+            system
+            validation.queryPlanBindingValidation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeChallengeSegmentBindingEvidence
+            system
+            validation.queryPlanBindingValidation.challengeValidation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeOpeningSegmentBindingEvidence
+            system
+            validation.queryPlanBindingValidation.openingValidation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeOpeningEvidence
+            system
+            validation.queryPlanBindingValidation.openingValidation.openingValidation
+            artifact
+            publicInput
+            proof
+            requiresExternalSource
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro artifact publicInput proof requiresExternalSource accepted
+  have verifierAccepts :=
+    runtime_pipeline_binding_checked_acceptance_verifier_accepts
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have queryOpeningCoreSound :=
+    runtime_pipeline_binding_checked_acceptance_query_opening_evidence_core_and_sound
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      accepted
+  exact And.intro verifierAccepts queryOpeningCoreSound
+
 theorem runtime_pipeline_binding_checked_acceptance_query_opening_contract
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
