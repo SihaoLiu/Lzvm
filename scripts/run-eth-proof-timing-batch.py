@@ -1040,6 +1040,8 @@ def next_command_parts(
         parts.extend(["--large-max-avg-s", str(args.large_max_avg_s)])
     if args.append_max_average_rejections:
         parts.append("--append-max-average-rejections")
+    if args.retryable_failure_wait_s > 0:
+        parts.extend(["--retryable-failure-wait-s", str(args.retryable_failure_wait_s)])
     if args.parallel_lower_workers is not None:
         parts.extend(["--parallel-lower-workers", str(args.parallel_lower_workers)])
     if args.parallel_lower_job_queue is not None:
@@ -2084,6 +2086,7 @@ def self_test() -> None:
         small_bin=None,
         small_max_avg_s=None,
         append_max_average_rejections=False,
+        retryable_failure_wait_s=0.0,
         suite="both",
         summary="self test",
         work_dir=str(work_dir / "runs"),
@@ -2397,6 +2400,7 @@ def main() -> None:
     parser.add_argument("--small-max-avg-s", type=positive_timeout, default=None)
     parser.add_argument("--large-max-avg-s", type=positive_timeout, default=None)
     parser.add_argument("--append-max-average-rejections", action="store_true")
+    parser.add_argument("--retryable-failure-wait-s", type=nonnegative_float, default=0.0)
     parser.add_argument("--parallel-lower-workers", type=positive_integer, default=None)
     parser.add_argument("--parallel-lower-job-queue", type=positive_integer, default=None)
     parser.add_argument("--report-chunk-capacity", type=positive_integer, default=None)

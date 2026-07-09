@@ -703,31 +703,38 @@ def run_group(
     timing_summary_script: Path,
     required_texts: list[str],
     max_relative_spread: float,
+    retryable_failure_wait_s: float,
 ) -> list[Path]:
     if command is None:
         return []
     logs = []
     for run_index in range(1, max_run_count + 1):
-        logs.append(
-            run_once(
-                label,
-                command,
-                run_index,
-                run_count,
-                max_run_count,
-                timeout,
-                batch_dir,
-                cwd,
-                root,
-                timing_summary_script,
-                required_texts,
-            )
+        log = run_once(
+            label,
+            command,
+            run_index,
+            run_count,
+            max_run_count,
+            timeout,
+            batch_dir,
+            cwd,
+            root,
+            timing_summary_script,
+            required_texts,
         )
+        logs.append(log)
         if len(logs) >= run_count:
             if max_run_count == run_count:
                 break
             if has_stable_timing_group(logs, max_relative_spread):
                 break
+        retryable_failure = retryable_run_failure_reason(read_text(log))
+        if (
+            retryable_failure is not None
+            and retryable_failure_wait_s > 0
+            and run_index < max_run_count
+        ):
+            time.sleep(retryable_failure_wait_s)
     return logs
 
 
@@ -1188,6 +1195,7 @@ def write_batch_json(
         "max_relative_spread": args.max_relative_spread,
         "small_max_avg_s": args.small_max_avg_s,
         "large_max_avg_s": args.large_max_avg_s,
+        "retryable_failure_wait_s": args.retryable_failure_wait_s,
         "inherited_runtime_env": inherited_runtime_env(),
         "append_max_average_rejections": args.append_max_average_rejections,
         "commit": commit,
@@ -1388,6 +1396,7 @@ def run_batch(args: argparse.Namespace) -> Path:
             timing_summary_script,
             required_texts_for_label(args, "small"),
             args.max_relative_spread,
+            args.retryable_failure_wait_s,
         )
         large_logs = run_group(
             "large",
@@ -1401,6 +1410,7 @@ def run_batch(args: argparse.Namespace) -> Path:
             timing_summary_script,
             required_texts_for_label(args, "large"),
             args.max_relative_spread,
+            args.retryable_failure_wait_s,
         )
     except SystemExit:
         record_batch_json(
@@ -1596,6 +1606,7 @@ def self_test() -> None:
         metadata_line=["wrapper=proof-self-test"],
         small_max_avg_s=None,
         large_max_avg_s=None,
+        retryable_failure_wait_s=0.0,
         append_max_average_rejections=False,
         path=str(work_dir / "improve-log.csv"),
         require_proof_output=False,
@@ -1822,6 +1833,7 @@ def main() -> None:
     parser.add_argument("--max-relative-spread", type=nonnegative_float, default=0.10)
     parser.add_argument("--small-max-avg-s", type=positive_timeout, default=None)
     parser.add_argument("--large-max-avg-s", type=positive_timeout, default=None)
+    parser.add_argument("--retryable-failure-wait-s", type=nonnegative_float, default=0.0)
     parser.add_argument("--append-max-average-rejections", action="store_true")
     parser.add_argument("--append-script", default="scripts/append-improve-log.py")
     parser.add_argument("--timing-summary-script", default="scripts/prove-timing-root-summary.py")
