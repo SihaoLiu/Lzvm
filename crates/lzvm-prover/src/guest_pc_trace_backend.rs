@@ -4053,6 +4053,7 @@ fn run_guest_pc_trace_segment_slice_with_cache(
         handler,
         instruction_limit,
         row_limit,
+        0,
         None,
         instruction_cache,
         timing,
@@ -4146,6 +4147,7 @@ fn run_guest_pc_trace_segment_slice_with_boundary_snapshot_and_cache(
         handler,
         instruction_limit,
         row_limit,
+        0,
         Some(boundary_snapshot),
         instruction_cache,
         timing,
@@ -4190,6 +4192,7 @@ fn run_guest_pc_trace_segment_slice_with_elided_reports_and_boundary_snapshot_an
         handler,
         instruction_limit,
         row_limit,
+        0,
         Some(boundary_snapshot),
         instruction_cache,
         timing,
@@ -4759,6 +4762,7 @@ fn run_guest_pc_trace_segment_slice_inner<
     handler: &mut dyn GuestFcallHandler,
     instruction_limit: u64,
     row_limit: usize,
+    trace_instance_index: u32,
     mut boundary_snapshot: Option<&mut ZiskMainRunnerBoundarySnapshot>,
     instruction_cache: &mut GuestInstructionCache,
     mut timing: Option<&mut GuestPcTraceStreamTiming>,
@@ -4771,6 +4775,8 @@ fn run_guest_pc_trace_segment_slice_inner<
     let mut trace_rows = 0_usize;
     let runner_timing_config =
         GuestPcTraceRunnerTimingConfig::from_env_if_enabled(timing.is_some());
+    let mut next_report_sample_index =
+        runner_timing_config.segment_report_start_index(trace_instance_index, row_limit)?;
     let runner_path_timing = runner_timing_config.count_paths();
     let runner_instruction_cache_stats = runner_timing_config.count_instruction_cache();
     let mut instruction_cache_stats = GuestInstructionCacheStats::default();
@@ -4804,7 +4810,7 @@ fn run_guest_pc_trace_segment_slice_inner<
         }};
     }
     loop {
-        let report_detail_timing = runner_timing_config.sample(report_count);
+        let report_detail_timing = runner_timing_config.sample(next_report_sample_index);
         let report_detail_started = detail_duration_started(&timing, report_detail_timing);
         let prepare_started = detail_duration_started(&timing, report_detail_timing);
         let pc = state.pc();
@@ -5076,6 +5082,7 @@ fn run_guest_pc_trace_segment_slice_inner<
                 message: "guest PC trace report count overflow".to_owned(),
             }
         })?;
+        runner_timing_config.advance_sample_index(&mut next_report_sample_index)?;
         executed_instructions += 1;
         record_runner_detail_duration(counter_update_started, &mut timing, |timing| {
             &mut timing.runner_counter_update_duration
@@ -6448,37 +6455,46 @@ fn produce_guest_pc_trace_pending_slices(
         } else {
             None
         };
+        let trace_instance_index = u32::try_from(trace_instance_count).map_err(|_| {
+            GuestPcTraceBackendError::InvalidPcTraceLayout {
+                message: "Zisk Main trace instance index is too large".to_owned(),
+            }
+        })?;
         let slice = if let Some(snapshot) = runner_boundary_snapshot.as_mut() {
             if report_elision {
-                run_guest_pc_trace_segment_slice_with_elided_reports_and_boundary_snapshot_and_cache(
+                run_guest_pc_trace_segment_slice_inner::<true, false>(
                     &mut memory,
                     &mut state,
                     &mut fcall_handler,
                     remaining_limit,
                     row_count,
-                    snapshot,
+                    trace_instance_index,
+                    Some(snapshot),
                     &mut instruction_cache,
                     Some(&mut timing),
                 )?
             } else {
-                run_guest_pc_trace_segment_slice_with_boundary_snapshot_and_cache(
+                run_guest_pc_trace_segment_slice_inner::<true, true>(
                     &mut memory,
                     &mut state,
                     &mut fcall_handler,
                     remaining_limit,
                     row_count,
-                    snapshot,
+                    trace_instance_index,
+                    Some(snapshot),
                     &mut instruction_cache,
                     Some(&mut timing),
                 )?
             }
         } else {
-            run_guest_pc_trace_segment_slice_with_cache(
+            run_guest_pc_trace_segment_slice_inner::<false, true>(
                 &mut memory,
                 &mut state,
                 &mut fcall_handler,
                 remaining_limit,
                 row_count,
+                trace_instance_index,
+                None,
                 &mut instruction_cache,
                 Some(&mut timing),
             )?
@@ -6536,11 +6552,6 @@ fn produce_guest_pc_trace_pending_slices(
                 },
             ));
         }
-        let trace_instance_index = u32::try_from(trace_instance_count).map_err(|_| {
-            GuestPcTraceBackendError::InvalidPcTraceLayout {
-                message: "Zisk Main trace instance index is too large".to_owned(),
-            }
-        })?;
         let segment = ZiskMainTraceSegmentInfo {
             trace_instance_index,
             is_last_segment,
@@ -6791,17 +6802,17 @@ fn discover_guest_pc_trace_segment_seeds(
         let fcall_state = GuestPcTraceFcallBoundaryState::capture(&fcall_handler);
         let mut boundary_snapshot = ZiskMainRunnerBoundarySnapshot::new(&current_seed);
         let mut instruction_cache = GuestInstructionCache::default();
-        let slice =
-            run_guest_pc_trace_segment_slice_with_elided_reports_and_boundary_snapshot_and_cache(
-                &mut memory,
-                &mut state,
-                &mut fcall_handler,
-                remaining_limit,
-                row_count,
-                &mut boundary_snapshot,
-                &mut instruction_cache,
-                Some(&mut timing),
-            )?;
+        let slice = run_guest_pc_trace_segment_slice_inner::<true, false>(
+            &mut memory,
+            &mut state,
+            &mut fcall_handler,
+            remaining_limit,
+            row_count,
+            trace_instance_index,
+            Some(&mut boundary_snapshot),
+            &mut instruction_cache,
+            Some(&mut timing),
+        )?;
         timing.trace_runner_report_buffer_capacity += slice.report_capacity;
         timing.trace_runner_report_buffer_max_capacity = timing
             .trace_runner_report_buffer_max_capacity
@@ -16079,6 +16090,36 @@ impl GuestPcTraceRunnerTimingConfig {
 
     fn sample(self, index: usize) -> bool {
         self.detail_timing && index % self.detail_sample_stride == 0
+    }
+
+    fn segment_report_start_index(
+        self,
+        trace_instance_index: u32,
+        row_count: usize,
+    ) -> Result<usize, GuestPcTraceBackendError> {
+        if !self.detail_timing {
+            return Ok(0);
+        }
+        (trace_instance_index as usize)
+            .checked_mul(row_count)
+            .ok_or_else(|| GuestPcTraceBackendError::InvalidPcTraceLayout {
+                message: "guest PC trace runner report index overflow".to_owned(),
+            })
+    }
+
+    fn advance_sample_index(
+        self,
+        next_report_sample_index: &mut usize,
+    ) -> Result<(), GuestPcTraceBackendError> {
+        if self.detail_timing {
+            *next_report_sample_index =
+                next_report_sample_index.checked_add(1).ok_or_else(|| {
+                    GuestPcTraceBackendError::InvalidPcTraceLayout {
+                        message: "guest PC trace runner report index overflow".to_owned(),
+                    }
+                })?;
+        }
+        Ok(())
     }
 
     fn count_paths(self) -> bool {

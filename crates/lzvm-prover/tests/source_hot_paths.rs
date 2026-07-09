@@ -6919,7 +6919,8 @@ fn guest_pc_trace_runner_seed_snapshot_tracks_boundary_inside_runner_slice() {
         "fn lower_guest_pc_trace_pending_segments",
     );
     assert!(
-        produce_body.contains("run_guest_pc_trace_segment_slice_with_boundary_snapshot")
+        produce_body.contains("run_guest_pc_trace_segment_slice_inner::<true, true>")
+            && produce_body.contains("Some(snapshot)")
             && produce_body.contains("ZiskMainRunnerBoundarySnapshot::new"),
         "pending slice production should update runner boundary snapshots inside the runner slice"
     );
