@@ -281,6 +281,27 @@ theorem external_source_opening_checked_acceptance_evidence_core_and_sound
       (And.intro checkedSound.right.left
         (And.intro coreContract checkedSound.right.right))
 
+theorem external_source_opening_checked_acceptance_accepts_evidence_core_and_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : ExternalSourceOpeningValidation system) :
+    forall publicInput proof,
+      ExternalSourceOpeningCheckedAcceptance system validation publicInput proof ->
+        system.accepts publicInput proof
+          /\ ExternalSourceOpeningEvidence system validation publicInput proof
+          /\ system.pcsOpeningsValid publicInput proof
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof acceptedWithExternalSource
+  exact
+    And.intro acceptedWithExternalSource.left
+      (external_source_opening_checked_acceptance_evidence_core_and_sound
+        assumptions
+        validation
+        publicInput
+        proof
+        acceptedWithExternalSource)
+
 theorem external_source_opening_checked_acceptance_audited_core_contract
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
