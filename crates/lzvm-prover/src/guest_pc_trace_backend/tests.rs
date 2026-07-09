@@ -6549,7 +6549,7 @@ fn load_copy_fast_path_parts_match_generic_lowering() {
             memory_accesses: vec![memory_read(0x108, 0xaa55)].into(),
         };
 
-    let (instruction, a_index, b_offset, store_index) =
+    let (instruction, a_index, b_offset, store_index, width) =
         load_copy_indirect_register_store_fast_path_parts(3, &report)
             .expect("fast path detection should succeed")
             .expect("ld from register base into register should match");
@@ -6557,6 +6557,7 @@ fn load_copy_fast_path_parts_match_generic_lowering() {
     assert_eq!(a_index, 2);
     assert_eq!(b_offset, 8);
     assert_eq!(store_index, 3);
+    assert_eq!(width, 8);
     assert_eq!(
         instruction,
         lower_guest_report(&report).expect("generic lowering should match")
@@ -6665,7 +6666,7 @@ fn load_sign_extend_fast_path_parts_match_generic_lowering() {
             memory_accesses: vec![access].into(),
         };
 
-    let (instruction, a_index, b_offset, store_index) =
+    let (instruction, a_index, b_offset, store_index, width) =
         load_sign_extend_indirect_register_store_fast_path_parts(3, &report)
             .expect("fast path detection should succeed")
             .expect("signed load from register base into register should match");
@@ -6673,6 +6674,7 @@ fn load_sign_extend_fast_path_parts_match_generic_lowering() {
     assert_eq!(a_index, 2);
     assert_eq!(b_offset, 8);
     assert_eq!(store_index, 3);
+    assert_eq!(width, 4);
     assert_eq!(
         instruction,
         lower_guest_report(&report).expect("generic lowering should match")
@@ -6682,7 +6684,7 @@ fn load_sign_extend_fast_path_parts_match_generic_lowering() {
             &instruction,
             ZiskMainReportEffects::from_report(&report),
         ),
-        Some((2, 8, 3))
+        Some((2, 8, 3, 4))
     );
 }
 
@@ -6756,7 +6758,8 @@ fn store_copy_fast_path_parts_match_generic_lowering() {
     let parts = store_copy_indirect_store_fast_path_parts(3, &report)
         .expect("fast path detection should succeed")
         .expect("register store through register base should match");
-    let MainReportFastPathParts::StoreCopy(instruction, a_index, b_index, store_offset) = parts
+    let MainReportFastPathParts::StoreCopy(instruction, a_index, b_index, store_offset, width) =
+        parts
     else {
         panic!("register store should route to register-source store copy");
     };
@@ -6764,6 +6767,7 @@ fn store_copy_fast_path_parts_match_generic_lowering() {
     assert_eq!(a_index, 2);
     assert_eq!(b_index, 3);
     assert_eq!(store_offset, 8);
+    assert_eq!(width, 8);
     assert_eq!(
         instruction,
         lower_guest_report(&report).expect("generic lowering should match")
@@ -6786,7 +6790,8 @@ fn store_copy_fast_path_parts_match_generic_lowering() {
     let parts = store_copy_indirect_store_fast_path_parts(3, &zero_report)
         .expect("fast path detection should succeed")
         .expect("zero store through register base should match");
-    let MainReportFastPathParts::StoreImmediateCopy(instruction, a_index, b, store_offset) = parts
+    let MainReportFastPathParts::StoreImmediateCopy(instruction, a_index, b, store_offset, width) =
+        parts
     else {
         panic!("zero store should route to immediate-source store copy");
     };
@@ -6794,6 +6799,7 @@ fn store_copy_fast_path_parts_match_generic_lowering() {
     assert_eq!(a_index, 2);
     assert_eq!(b, 0);
     assert_eq!(store_offset, 8);
+    assert_eq!(width, 8);
     assert_eq!(
         instruction,
         lower_guest_report(&zero_report).expect("generic lowering should match")
@@ -6894,6 +6900,7 @@ fn copy_register_indirect_store_fast_path_preserves_row_effects() {
         0x8000_0004,
         2,
         3,
+        8,
         8,
         &mut state,
         &mut context,
@@ -7098,7 +7105,7 @@ fn copy_immediate_indirect_store_fast_path_preserves_row_effects() {
     };
     let parts = copy_immediate_indirect_store_fast_path_parts(&instruction, effects)
         .expect("immediate store through register base should match");
-    assert_eq!(parts, (2, 0x1122_3344_5566_7788, 8));
+    assert_eq!(parts, (2, 0x1122_3344_5566_7788, 8, 8));
 
     let mut state = ZiskMainTraceState::new();
     state.registers[2] = 0x100;
@@ -7121,6 +7128,7 @@ fn copy_immediate_indirect_store_fast_path_preserves_row_effects() {
         0x8000_0004,
         2,
         0x1122_3344_5566_7788,
+        8,
         8,
         &mut state,
         &mut context,
@@ -7949,6 +7957,7 @@ fn sign_extend_indirect_register_store_fast_path_preserves_row_effects() {
         2,
         8,
         3,
+        4,
         &mut state,
         &mut context,
         &mut |row, values, timing| {
@@ -9149,6 +9158,7 @@ fn copy_indirect_register_store_fast_path_preserves_row_effects() {
         2,
         8,
         3,
+        8,
         &mut state,
         &mut context,
         &mut |row, values, timing| {
@@ -9225,6 +9235,7 @@ fn copy_indirect_register_store_fast_path_rejects_invalid_registers() {
         0,
         8,
         3,
+        8,
         &mut state,
         &mut context,
         &mut |_, _, _| Ok(()),
@@ -9243,6 +9254,7 @@ fn copy_indirect_register_store_fast_path_rejects_invalid_registers() {
         2,
         8,
         32,
+        8,
         &mut state,
         &mut context,
         &mut |_, _, _| Ok(()),

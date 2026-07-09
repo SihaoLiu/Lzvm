@@ -11125,14 +11125,14 @@ struct MainJumpFastPathParts {
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum MainReportFastPathParts {
     FcallResult(ZiskMainInstruction, u8),
-    LoadCopy(ZiskMainInstruction, u8, i64, u8),
+    LoadCopy(ZiskMainInstruction, u8, i64, u8, u8),
     LoadNoStore(ZiskMainInstruction, u8, i64, u8),
-    LoadSignExtend(ZiskMainInstruction, u8, i64, u8),
+    LoadSignExtend(ZiskMainInstruction, u8, i64, u8, u8),
     NoMemory(ZiskMainInstruction, ZiskMainNoMemoryFastPathParts),
     PrecompileNoStore(ZiskMainInstruction, Option<u8>),
     InternalMemoryCopy(ZiskMainInstruction, u8, u64),
-    StoreCopy(ZiskMainInstruction, u8, u8, i64),
-    StoreImmediateCopy(ZiskMainInstruction, u8, u64, i64),
+    StoreCopy(ZiskMainInstruction, u8, u8, i64, u8),
+    StoreImmediateCopy(ZiskMainInstruction, u8, u64, i64, u8),
     SimpleCopy(ZiskMainInstruction, Option<u8>, u8),
     Jump(ZiskMainInstruction, MainJumpFastPathParts),
 }
@@ -11275,7 +11275,13 @@ fn validate_and_apply_zisk_main_report(
                         &mut visit,
                     )?;
                 }
-                MainReportFastPathParts::LoadCopy(instruction, a_index, b_offset, store_index) => {
+                MainReportFastPathParts::LoadCopy(
+                    instruction,
+                    a_index,
+                    b_offset,
+                    store_index,
+                    width,
+                ) => {
                     if let Some(timing) = timing.as_mut() {
                         timing.record_main_report_load_copy_fast_path();
                     }
@@ -11291,6 +11297,7 @@ fn validate_and_apply_zisk_main_report(
                         a_index,
                         b_offset,
                         store_index,
+                        width,
                         state,
                         context,
                         &mut visit,
@@ -11320,6 +11327,7 @@ fn validate_and_apply_zisk_main_report(
                     a_index,
                     b_offset,
                     store_index,
+                    width,
                 ) => {
                     if let Some(timing) = timing.as_mut() {
                         timing.record_main_report_load_sign_extend_fast_path();
@@ -11336,6 +11344,7 @@ fn validate_and_apply_zisk_main_report(
                         a_index,
                         b_offset,
                         store_index,
+                        width,
                         state,
                         context,
                         &mut visit,
@@ -11399,7 +11408,13 @@ fn validate_and_apply_zisk_main_report(
                         &mut visit,
                     )?;
                 }
-                MainReportFastPathParts::StoreCopy(instruction, a_index, b_index, store_offset) => {
+                MainReportFastPathParts::StoreCopy(
+                    instruction,
+                    a_index,
+                    b_index,
+                    store_offset,
+                    width,
+                ) => {
                     if let Some(timing) = timing.as_mut() {
                         timing.record_main_report_store_copy_fast_path();
                     }
@@ -11413,6 +11428,7 @@ fn validate_and_apply_zisk_main_report(
                         a_index,
                         b_index,
                         store_offset,
+                        width,
                         state,
                         context,
                         &mut visit,
@@ -11423,6 +11439,7 @@ fn validate_and_apply_zisk_main_report(
                     a_index,
                     b,
                     store_offset,
+                    width,
                 ) => {
                     if let Some(timing) = timing.as_mut() {
                         timing.record_main_report_store_copy_fast_path();
@@ -11437,6 +11454,7 @@ fn validate_and_apply_zisk_main_report(
                         a_index,
                         b,
                         store_offset,
+                        width,
                         state,
                         context,
                         &mut visit,
@@ -11606,7 +11624,7 @@ fn apply_zisk_main_lowered_report_row(
     let effects = lowered_row.effects;
     let expected_next_pc = lowered_row.expected_next_pc;
     if !detail_timing && !shape_timing && !instruction.is_external_op {
-        if let Some((a_index, b_offset, store_index)) =
+        if let Some((a_index, b_offset, store_index, width)) =
             copy_indirect_register_store_fast_path_parts(&instruction, effects)
         {
             return apply_copy_indirect_register_store_fast_path(
@@ -11617,12 +11635,13 @@ fn apply_zisk_main_lowered_report_row(
                 a_index,
                 b_offset,
                 store_index,
+                width,
                 state,
                 context,
                 visit,
             );
         }
-        if let Some((a_index, b, store_offset)) =
+        if let Some((a_index, b, store_offset, width)) =
             copy_immediate_indirect_store_fast_path_parts(&instruction, effects)
         {
             return apply_copy_immediate_indirect_store_fast_path(
@@ -11633,6 +11652,7 @@ fn apply_zisk_main_lowered_report_row(
                 a_index,
                 b,
                 store_offset,
+                width,
                 state,
                 context,
                 visit,
@@ -11652,7 +11672,7 @@ fn apply_zisk_main_lowered_report_row(
                 visit,
             );
         }
-        if let Some((a_index, b_offset, store_index)) =
+        if let Some((a_index, b_offset, store_index, width)) =
             sign_extend_indirect_register_store_fast_path_parts(&instruction, effects)
         {
             return apply_sign_extend_indirect_register_store_fast_path(
@@ -11663,6 +11683,7 @@ fn apply_zisk_main_lowered_report_row(
                 a_index,
                 b_offset,
                 store_index,
+                width,
                 state,
                 context,
                 visit,
@@ -11841,7 +11862,7 @@ fn apply_zisk_main_lowered_report_row(
 fn load_copy_indirect_register_store_fast_path_parts(
     row: usize,
     report: &GuestMachineReport,
-) -> Result<Option<(ZiskMainInstruction, u8, i64, u8)>, GuestPcTraceBackendError> {
+) -> Result<Option<(ZiskMainInstruction, u8, i64, u8, u8)>, GuestPcTraceBackendError> {
     let RiscvInstruction::Load {
         kind,
         rd,
@@ -11880,7 +11901,7 @@ fn load_copy_indirect_register_store_fast_path_parts(
         is_external_op: false,
         is_precompiled: false,
     };
-    Ok(Some((instruction, rs1, offset, rd)))
+    Ok(Some((instruction, rs1, offset, rd, ind_width as u8)))
 }
 
 #[inline(always)]
@@ -11968,8 +11989,8 @@ fn load_reserved_indirect_register_store_fast_path_parts(
         is_precompiled: false,
     };
     let parts = match width {
-        RiscvAmoWidth::Word => MainReportFastPathParts::LoadSignExtend(instruction, rs1, 0, rd),
-        RiscvAmoWidth::Doubleword => MainReportFastPathParts::LoadCopy(instruction, rs1, 0, rd),
+        RiscvAmoWidth::Word => MainReportFastPathParts::LoadSignExtend(instruction, rs1, 0, rd, 4),
+        RiscvAmoWidth::Doubleword => MainReportFastPathParts::LoadCopy(instruction, rs1, 0, rd, 8),
     };
     Ok(Some(parts))
 }
@@ -11978,7 +11999,7 @@ fn load_reserved_indirect_register_store_fast_path_parts(
 fn load_sign_extend_indirect_register_store_fast_path_parts(
     row: usize,
     report: &GuestMachineReport,
-) -> Result<Option<(ZiskMainInstruction, u8, i64, u8)>, GuestPcTraceBackendError> {
+) -> Result<Option<(ZiskMainInstruction, u8, i64, u8, u8)>, GuestPcTraceBackendError> {
     let RiscvInstruction::Load {
         kind,
         rd,
@@ -12018,7 +12039,7 @@ fn load_sign_extend_indirect_register_store_fast_path_parts(
         is_external_op: true,
         is_precompiled: false,
     };
-    Ok(Some((instruction, rs1, offset, rd)))
+    Ok(Some((instruction, rs1, offset, rd, ind_width as u8)))
 }
 
 #[inline(always)]
@@ -12068,9 +12089,9 @@ fn store_copy_indirect_store_fast_path_parts(
         is_precompiled: false,
     };
     let parts = if rs2 == 0 {
-        MainReportFastPathParts::StoreImmediateCopy(instruction, rs1, 0, offset)
+        MainReportFastPathParts::StoreImmediateCopy(instruction, rs1, 0, offset, ind_width as u8)
     } else {
-        MainReportFastPathParts::StoreCopy(instruction, rs1, rs2, offset)
+        MainReportFastPathParts::StoreCopy(instruction, rs1, rs2, offset, ind_width as u8)
     };
     Ok(Some(parts))
 }
@@ -12192,7 +12213,7 @@ fn fixed_precompile_no_store_fast_path_parts(
 fn copy_indirect_register_store_fast_path_parts(
     instruction: &ZiskMainInstruction,
     effects: ZiskMainReportEffects<'_>,
-) -> Option<(u8, i64, u8)> {
+) -> Option<(u8, i64, u8, u8)> {
     let (a_index, b_offset, store_index) = match (instruction.a, instruction.b, instruction.store) {
         (
             ZiskMainSource::Register(a_index),
@@ -12201,6 +12222,7 @@ fn copy_indirect_register_store_fast_path_parts(
         ) => (a_index, b_offset, store_index),
         _ => return None,
     };
+    let width = u8::try_from(instruction.ind_width).ok()?;
     (matches!(instruction.op, ZiskMainOp::CopyB)
         && !instruction.store_pc
         && !instruction.set_pc
@@ -12208,14 +12230,14 @@ fn copy_indirect_register_store_fast_path_parts(
         && !instruction.is_external_op
         && !instruction.is_precompiled
         && effects.precompile_memory_accesses.is_empty())
-    .then_some((a_index, b_offset, store_index))
+    .then_some((a_index, b_offset, store_index, width))
 }
 
 #[inline(always)]
 fn copy_immediate_indirect_store_fast_path_parts(
     instruction: &ZiskMainInstruction,
     effects: ZiskMainReportEffects<'_>,
-) -> Option<(u8, u64, i64)> {
+) -> Option<(u8, u64, i64, u8)> {
     let (a_index, b, store_offset) = match (instruction.a, instruction.b, instruction.store) {
         (
             ZiskMainSource::Register(a_index),
@@ -12224,6 +12246,7 @@ fn copy_immediate_indirect_store_fast_path_parts(
         ) => (a_index, b, store_offset),
         _ => return None,
     };
+    let width = u8::try_from(instruction.ind_width).ok()?;
     (matches!(instruction.op, ZiskMainOp::CopyB)
         && !instruction.store_pc
         && !instruction.set_pc
@@ -12231,14 +12254,14 @@ fn copy_immediate_indirect_store_fast_path_parts(
         && !instruction.is_external_op
         && !instruction.is_precompiled
         && effects.precompile_memory_accesses.is_empty())
-    .then_some((a_index, b, store_offset))
+    .then_some((a_index, b, store_offset, width))
 }
 
 #[inline(always)]
 fn sign_extend_indirect_register_store_fast_path_parts(
     instruction: &ZiskMainInstruction,
     effects: ZiskMainReportEffects<'_>,
-) -> Option<(u8, i64, u8)> {
+) -> Option<(u8, i64, u8, u8)> {
     let (a_index, b_offset, store_index) = match (instruction.a, instruction.b, instruction.store) {
         (
             ZiskMainSource::Register(a_index),
@@ -12258,7 +12281,7 @@ fn sign_extend_indirect_register_store_fast_path_parts(
         && instruction.is_external_op
         && !instruction.is_precompiled
         && effects.precompile_memory_accesses.is_empty())
-    .then_some((a_index, b_offset, store_index))
+    .then_some((a_index, b_offset, store_index, instruction.ind_width as u8))
 }
 
 #[inline(always)]
@@ -12532,8 +12555,14 @@ fn report_level_fast_path_parts(
             ..
         } => Ok(
             load_copy_indirect_register_store_fast_path_parts(row, report)?.map(
-                |(instruction, a_index, b_offset, store_index)| {
-                    MainReportFastPathParts::LoadCopy(instruction, a_index, b_offset, store_index)
+                |(instruction, a_index, b_offset, store_index, width)| {
+                    MainReportFastPathParts::LoadCopy(
+                        instruction,
+                        a_index,
+                        b_offset,
+                        store_index,
+                        width,
+                    )
                 },
             ),
         ),
@@ -12542,12 +12571,13 @@ fn report_level_fast_path_parts(
             ..
         } => Ok(
             load_sign_extend_indirect_register_store_fast_path_parts(row, report)?.map(
-                |(instruction, a_index, b_offset, store_index)| {
+                |(instruction, a_index, b_offset, store_index, width)| {
                     MainReportFastPathParts::LoadSignExtend(
                         instruction,
                         a_index,
                         b_offset,
                         store_index,
+                        width,
                     )
                 },
             ),
@@ -13174,6 +13204,7 @@ fn apply_copy_indirect_register_store_fast_path(
     a_index: u8,
     b_offset: i64,
     store_index: u8,
+    width: u8,
     state: &mut ZiskMainTraceState,
     context: &mut ZiskMainReportValidationContext<'_>,
     visit: &mut impl FnMut(
@@ -13195,8 +13226,7 @@ fn apply_copy_indirect_register_store_fast_path(
     if !valid_main_register_index(store_index) {
         return Err(GuestPcTraceBackendError::UnsupportedZiskMainStore { row: output_row });
     }
-    let byte_len = usize::try_from(instruction.ind_width)
-        .map_err(|_| GuestPcTraceBackendError::UnsupportedZiskMainSource { row: output_row })?;
+    let byte_len = usize::from(width);
     let a = state.registers[usize::from(a_index)];
     let [access] = effects.memory_accesses else {
         return Err(GuestPcTraceBackendError::ZiskMainEffectMismatch {
@@ -13833,6 +13863,7 @@ fn apply_sign_extend_indirect_register_store_fast_path(
     a_index: u8,
     b_offset: i64,
     store_index: u8,
+    width: u8,
     state: &mut ZiskMainTraceState,
     context: &mut ZiskMainReportValidationContext<'_>,
     visit: &mut impl FnMut(
@@ -13854,8 +13885,7 @@ fn apply_sign_extend_indirect_register_store_fast_path(
     if !valid_main_register_index(store_index) {
         return Err(GuestPcTraceBackendError::UnsupportedZiskMainStore { row: output_row });
     }
-    let byte_len = usize::try_from(instruction.ind_width)
-        .map_err(|_| GuestPcTraceBackendError::UnsupportedZiskMainSource { row: output_row })?;
+    let byte_len = usize::from(width);
     let a = state.registers[usize::from(a_index)];
     let [access] = effects.memory_accesses else {
         return Err(GuestPcTraceBackendError::ZiskMainEffectMismatch {
@@ -14174,6 +14204,7 @@ fn apply_copy_register_indirect_store_fast_path(
     a_index: u8,
     b_index: u8,
     store_offset: i64,
+    width: u8,
     state: &mut ZiskMainTraceState,
     context: &mut ZiskMainReportValidationContext<'_>,
     visit: &mut impl FnMut(
@@ -14195,8 +14226,7 @@ fn apply_copy_register_indirect_store_fast_path(
     if !valid_main_register_index(b_index) {
         return Err(GuestPcTraceBackendError::UnsupportedZiskMainSource { row: output_row });
     }
-    let byte_len = usize::try_from(instruction.ind_width)
-        .map_err(|_| GuestPcTraceBackendError::UnsupportedZiskMainStore { row: output_row })?;
+    let byte_len = usize::from(width);
     let a = state.registers[usize::from(a_index)];
     let b = state.registers[usize::from(b_index)];
     let c = b;
@@ -14283,6 +14313,7 @@ fn apply_copy_immediate_indirect_store_fast_path(
     a_index: u8,
     b: u64,
     store_offset: i64,
+    width: u8,
     state: &mut ZiskMainTraceState,
     context: &mut ZiskMainReportValidationContext<'_>,
     visit: &mut impl FnMut(
@@ -14301,8 +14332,7 @@ fn apply_copy_immediate_indirect_store_fast_path(
     if !valid_main_register_index(a_index) {
         return Err(GuestPcTraceBackendError::UnsupportedZiskMainSource { row: output_row });
     }
-    let byte_len = usize::try_from(instruction.ind_width)
-        .map_err(|_| GuestPcTraceBackendError::UnsupportedZiskMainStore { row: output_row })?;
+    let byte_len = usize::from(width);
     let a = state.registers[usize::from(a_index)];
     let c = b;
     let flag = false;
