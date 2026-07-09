@@ -13207,13 +13207,11 @@ fn apply_copy_indirect_register_store_fast_path(
             ),
         });
     };
-    validate_memory_access_fields(
+    validate_read_memory_access_fields(
         output_row,
         access,
-        GuestMemoryAccessKind::Read,
         a.wrapping_add_signed(b_offset),
         byte_len,
-        access.value,
     )?;
     let b = access.value;
     let c = b;
@@ -13329,13 +13327,11 @@ fn apply_copy_indirect_no_store_fast_path(
             ),
         });
     };
-    validate_memory_access_fields(
+    validate_read_memory_access_fields(
         output_row,
         access,
-        GuestMemoryAccessKind::Read,
         a.wrapping_add_signed(b_offset),
         byte_len,
-        access.value,
     )?;
     let b = access.value;
     if !effects.register_writes.is_empty() {
@@ -13870,13 +13866,11 @@ fn apply_sign_extend_indirect_register_store_fast_path(
             ),
         });
     };
-    validate_memory_access_fields(
+    validate_read_memory_access_fields(
         output_row,
         access,
-        GuestMemoryAccessKind::Read,
         a.wrapping_add_signed(b_offset),
         byte_len,
-        access.value,
     )?;
     let b = access.value;
     let c = match instruction.op {
@@ -17048,6 +17042,34 @@ fn validate_expected_memory_access(
         expected.byte_len,
         expected.value,
     )
+}
+
+fn validate_read_memory_access_fields(
+    row: usize,
+    found: &GuestMemoryAccess,
+    expected_address: u64,
+    expected_byte_len: usize,
+) -> Result<(), GuestPcTraceBackendError> {
+    if found.kind != GuestMemoryAccessKind::Read
+        || found.address != expected_address
+        || usize::from(found.byte_len) != expected_byte_len
+    {
+        return Err(GuestPcTraceBackendError::ZiskMainEffectMismatch {
+            row,
+            message: format!(
+                "expected {:?} at {} byte length {} value {}, found {:?} at {} byte length {} value {}",
+                GuestMemoryAccessKind::Read,
+                expected_address,
+                expected_byte_len,
+                found.value,
+                found.kind,
+                found.address,
+                found.byte_len,
+                found.value
+            ),
+        });
+    }
+    Ok(())
 }
 
 #[inline(always)]
