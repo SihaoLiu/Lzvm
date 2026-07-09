@@ -1970,6 +1970,33 @@ fn zisk_main_descriptor_expansion_writes_rows_without_full_zero_prefill() {
 }
 
 #[test]
+fn main_trace_descriptor_expansion_uses_warp_row_writer() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let cuda_path = crate_root.join("../lzvm-accel/native/cuda_main_trace_layout.cuh");
+    let cuda_source =
+        std::fs::read_to_string(&cuda_path).expect("CUDA trace layout source should read");
+
+    assert!(
+        cuda_source.contains("expand_main_trace_compact_descriptors_layout_warp_rows_kernel")
+            && cuda_source.contains("__shfl_sync")
+            && cuda_source.contains("threadIdx.x & (kMainTraceWarpLanes - 1)"),
+        "compact descriptor expansion should use a lane-coalesced row writer"
+    );
+    let launch_body = function_body(
+        &cuda_source,
+        "int launch_expand_main_trace_descriptors_layout",
+        "int launch_expand_sparse_main_trace_descriptors_layout",
+    );
+    assert!(
+        launch_body.contains("descriptor_words == kMainTraceCompactWords")
+            && launch_body.contains("kMainTraceWarpRowsPerBlock")
+            && launch_body
+                .contains("expand_main_trace_compact_descriptors_layout_warp_rows_kernel"),
+        "compact descriptor expansion should launch the warp-row path"
+    );
+}
+
+#[test]
 fn selected_zisk_main_descriptor_rows_expand_without_full_trace_materialization() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let cuda_path = crate_root.join("../lzvm-accel/native/cuda_zisk_main_trace.cuh");

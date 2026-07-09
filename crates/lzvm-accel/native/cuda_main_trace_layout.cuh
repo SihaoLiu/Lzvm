@@ -4,6 +4,8 @@ constexpr size_t kMainTraceColumns = 39;
 constexpr size_t kMainTraceCompactWords = 11;
 constexpr size_t kMainTraceSparseWords = 9;
 constexpr size_t kMainTraceWideWords = 14;
+constexpr unsigned kMainTraceWarpLanes = 32;
+constexpr size_t kMainTraceWarpRowsPerBlock = kThreads / kMainTraceWarpLanes;
 constexpr uint64_t kMainTraceSourceMemory = 1;
 constexpr uint64_t kMainTraceSourceImmediate = 2;
 constexpr uint64_t kMainTraceSourceRegister = 3;
@@ -230,6 +232,132 @@ __device__ void main_trace_write_expanded_row(
     }
 }
 
+__device__ uint64_t main_trace_expanded_column(
+    size_t column,
+    uint64_t a,
+    uint64_t b,
+    uint64_t c,
+    uint64_t pc,
+    uint64_t a_payload,
+    uint64_t b_payload,
+    uint64_t store_payload,
+    uint64_t control,
+    uint64_t jmp_offset1,
+    uint64_t jmp_offset2,
+    uint64_t a_prev_mem_step,
+    uint64_t b_prev_mem_step,
+    uint64_t store_prev_mem_step,
+    uint64_t store_prev_value,
+    unsigned layout_kind) {
+    const uint64_t a_kind = (control >> kMainTraceAKindShift) & kMainTraceKindMask;
+    const uint64_t b_kind = (control >> kMainTraceBKindShift) & kMainTraceKindMask;
+    const uint64_t store_kind = (control >> kMainTraceStoreKindShift) & kMainTraceKindMask;
+    switch (column) {
+        case 0:
+            return main_trace_low32(a);
+        case 1:
+            return main_trace_high32(a);
+        case 2:
+            return main_trace_low32(b);
+        case 3:
+            return main_trace_high32(b);
+        case 4:
+            return main_trace_low32(c);
+        case 5:
+            return main_trace_high32(c);
+        case 6:
+            return (control >> 8) & 1;
+        case 7:
+            return pc;
+        case 8:
+            return a_kind == kMainTraceSourceImmediate ? 1 : 0;
+        case 9:
+            return a_kind == kMainTraceSourceMemory ? 1 : 0;
+        case 10:
+            return main_trace_source_offset_field(a_kind, a_payload);
+        case 11:
+            return (a_kind == kMainTraceSourceImmediate || a_kind == kMainTraceSourceMemory)
+                       ? main_trace_high32(a_payload)
+                       : 0;
+        case 12:
+            return (control >> 13) & 1;
+        case 13:
+            return b_kind == kMainTraceSourceImmediate ? 1 : 0;
+        case 14:
+            return b_kind == kMainTraceSourceMemory ? 1 : 0;
+        case 15:
+            return main_trace_source_offset_field(b_kind, b_payload);
+        case 16:
+            return (b_kind == kMainTraceSourceImmediate || b_kind == kMainTraceSourceMemory)
+                       ? main_trace_high32(b_payload)
+                       : 0;
+        case 17:
+            return b_kind == kMainTraceSourceIndirect ? 1 : 0;
+        case 18:
+            return (control >> 16) & 0xffffULL;
+        case 19:
+            return (control >> 12) & 1;
+        case 20:
+            return control & 0xffULL;
+        case 21:
+            return (control >> 9) & 1;
+        case 22:
+            return store_kind == kMainTraceStoreMemory ? 1 : 0;
+        case 23:
+            return store_kind == kMainTraceStoreIndirect ? 1 : 0;
+        case 24:
+            return main_trace_store_offset_field(store_kind, store_payload);
+        case 25:
+            return (control >> 10) & 1;
+        case 26:
+            return main_trace_signed_field(jmp_offset1);
+        case 27:
+            return main_trace_signed_field(jmp_offset2);
+        case 28:
+            return (control >> 11) & 1;
+        case 29:
+            return b_kind == kMainTraceSourceIndirect
+                       ? main_trace_signed_address_field(b_payload, a)
+                       : main_trace_source_offset_field(b_kind, b_payload);
+        case 30:
+            return layout_kind == kMainTraceLayoutWithStoreAddress
+                       ? main_trace_store_address_field(store_kind, store_payload, a)
+                       : a_prev_mem_step;
+        case 31:
+            return layout_kind == kMainTraceLayoutWithStoreAddress ? a_prev_mem_step
+                                                                   : b_prev_mem_step;
+        case 32:
+            return layout_kind == kMainTraceLayoutWithStoreAddress ? b_prev_mem_step
+                                                                   : store_prev_mem_step;
+        case 33:
+            return layout_kind == kMainTraceLayoutWithStoreAddress
+                       ? store_prev_mem_step
+                       : main_trace_low32(store_prev_value);
+        case 34:
+            return layout_kind == kMainTraceLayoutWithStoreAddress
+                       ? main_trace_low32(store_prev_value)
+                       : main_trace_high32(store_prev_value);
+        case 35:
+            return layout_kind == kMainTraceLayoutWithStoreAddress
+                       ? main_trace_high32(store_prev_value)
+                       : (a_kind == kMainTraceSourceRegister ? 1 : 0);
+        case 36:
+            return layout_kind == kMainTraceLayoutWithStoreAddress
+                       ? (a_kind == kMainTraceSourceRegister ? 1 : 0)
+                       : (b_kind == kMainTraceSourceRegister ? 1 : 0);
+        case 37:
+            return layout_kind == kMainTraceLayoutWithStoreAddress
+                       ? (b_kind == kMainTraceSourceRegister ? 1 : 0)
+                       : (store_kind == kMainTraceStoreRegister ? 1 : 0);
+        case 38:
+            return layout_kind == kMainTraceLayoutWithStoreAddress
+                       ? (store_kind == kMainTraceStoreRegister ? 1 : 0)
+                       : 0;
+        default:
+            return 0;
+    }
+}
+
 __device__ uint64_t main_trace_sparse_high32(
     uint64_t mask,
     const uint64_t* high_words,
@@ -302,6 +430,24 @@ __device__ void main_trace_write_terminal_row(uint64_t* row, uint64_t terminal_p
     row[36] = 0;
     row[37] = 0;
     row[38] = 0;
+}
+
+__device__ uint64_t main_trace_terminal_column(size_t column, uint64_t terminal_pc) {
+    switch (column) {
+        case 7:
+            return terminal_pc;
+        case 8:
+        case 13:
+        case 20:
+            return 1;
+        default:
+            return 0;
+    }
+}
+
+__device__ uint64_t main_trace_shuffle_u64(uint64_t value, int source_lane) {
+    return static_cast<uint64_t>(__shfl_sync(
+        0xffffffffU, static_cast<unsigned long long>(value), source_lane));
 }
 
 __device__ void main_trace_write_descriptor_row(
@@ -421,24 +567,89 @@ __global__ void expand_main_trace_descriptors_layout_kernel(
         row, descriptors + row_index * descriptor_words, descriptor_words, layout_kind);
 }
 
-__global__ void expand_main_trace_compact_descriptors_layout_kernel(
+__global__ void expand_main_trace_compact_descriptors_layout_warp_rows_kernel(
     uint64_t* dst,
     const uint64_t* descriptors,
     size_t descriptor_count,
     size_t row_count,
     uint64_t terminal_pc,
     unsigned layout_kind) {
-    const size_t row_index = blockIdx.x * blockDim.x + threadIdx.x;
+    const unsigned lane = threadIdx.x & (kMainTraceWarpLanes - 1);
+    const size_t row_index =
+        blockIdx.x * kMainTraceWarpRowsPerBlock + threadIdx.x / kMainTraceWarpLanes;
     if (row_index >= row_count) {
         return;
     }
+
     uint64_t* row = dst + row_index * kMainTraceColumns;
     if (row_index >= descriptor_count) {
-        main_trace_write_terminal_row(row, terminal_pc);
+        row[lane] = main_trace_terminal_column(lane, terminal_pc);
+        if (lane < kMainTraceColumns - kMainTraceWarpLanes) {
+            const size_t tail_column = lane + kMainTraceWarpLanes;
+            row[tail_column] = main_trace_terminal_column(tail_column, terminal_pc);
+        }
         return;
     }
-    main_trace_write_compact_descriptor_row(
-        row, descriptors + row_index * kMainTraceCompactWords, layout_kind);
+
+    const uint64_t* descriptor = descriptors + row_index * kMainTraceCompactWords;
+    const uint64_t local = lane < kMainTraceCompactWords ? descriptor[lane] : 0;
+    const uint64_t d0 = main_trace_shuffle_u64(local, 0);
+    const uint64_t d1 = main_trace_shuffle_u64(local, 1);
+    const uint64_t d2 = main_trace_shuffle_u64(local, 2);
+    const uint64_t d3 = main_trace_shuffle_u64(local, 3);
+    const uint64_t d4 = main_trace_shuffle_u64(local, 4);
+    const uint64_t d5 = main_trace_shuffle_u64(local, 5);
+    const uint64_t d6 = main_trace_shuffle_u64(local, 6);
+    const uint64_t d7 = main_trace_shuffle_u64(local, 7);
+    const uint64_t d8 = main_trace_shuffle_u64(local, 8);
+    const uint64_t d9 = main_trace_shuffle_u64(local, 9);
+    const uint64_t d10 = main_trace_shuffle_u64(local, 10);
+    const uint64_t pc = d7 & 0xffffffffULL;
+    const uint64_t jmp_offset1 =
+        main_trace_i32_bits_to_i64_bits(static_cast<uint32_t>(d8));
+    const uint64_t jmp_offset2 =
+        main_trace_i32_bits_to_i64_bits(static_cast<uint32_t>(d8 >> 32));
+    const uint64_t a_prev_mem_step = d9 & 0xffffffffULL;
+    const uint64_t b_prev_mem_step = d9 >> 32;
+    const uint64_t store_prev_mem_step = d7 >> 32;
+
+    row[lane] = main_trace_expanded_column(
+        lane,
+        d0,
+        d1,
+        d2,
+        pc,
+        d3,
+        d4,
+        d5,
+        d6,
+        jmp_offset1,
+        jmp_offset2,
+        a_prev_mem_step,
+        b_prev_mem_step,
+        store_prev_mem_step,
+        d10,
+        layout_kind);
+    if (lane < kMainTraceColumns - kMainTraceWarpLanes) {
+        const size_t tail_column = lane + kMainTraceWarpLanes;
+        row[tail_column] = main_trace_expanded_column(
+            tail_column,
+            d0,
+            d1,
+            d2,
+            pc,
+            d3,
+            d4,
+            d5,
+            d6,
+            jmp_offset1,
+            jmp_offset2,
+            a_prev_mem_step,
+            b_prev_mem_step,
+            store_prev_mem_step,
+            d10,
+            layout_kind);
+    }
 }
 
 __global__ void expand_selected_main_trace_descriptor_rows_layout_kernel(
@@ -600,12 +811,15 @@ int launch_expand_main_trace_descriptors_layout(
         return -2;
     }
 
-    const size_t blocks = (row_count + kThreads - 1) / kThreads;
+    const size_t block_rows = descriptor_words == kMainTraceCompactWords
+                                  ? kMainTraceWarpRowsPerBlock
+                                  : kThreads;
+    const size_t blocks = (row_count + block_rows - 1) / block_rows;
     if (blocks > static_cast<size_t>(std::numeric_limits<int>::max())) {
         return -2;
     }
     if (descriptor_words == kMainTraceCompactWords) {
-        expand_main_trace_compact_descriptors_layout_kernel<<<
+        expand_main_trace_compact_descriptors_layout_warp_rows_kernel<<<
             static_cast<int>(blocks),
             kThreads,
             0,
