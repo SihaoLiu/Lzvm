@@ -374,6 +374,32 @@ __device__ void main_trace_write_descriptor_row(
         layout_kind);
 }
 
+__device__ void main_trace_write_compact_descriptor_row(
+    uint64_t* row,
+    const uint64_t* descriptor,
+    unsigned layout_kind) {
+    const uint64_t packed_pc_and_store_step = descriptor[7];
+    const uint64_t packed_jumps = descriptor[8];
+    const uint64_t packed_reg_steps = descriptor[9];
+    main_trace_write_expanded_row(
+        row,
+        descriptor[0],
+        descriptor[1],
+        descriptor[2],
+        packed_pc_and_store_step & 0xffffffffULL,
+        descriptor[3],
+        descriptor[4],
+        descriptor[5],
+        descriptor[6],
+        main_trace_i32_bits_to_i64_bits(static_cast<uint32_t>(packed_jumps)),
+        main_trace_i32_bits_to_i64_bits(static_cast<uint32_t>(packed_jumps >> 32)),
+        packed_reg_steps & 0xffffffffULL,
+        packed_reg_steps >> 32,
+        packed_pc_and_store_step >> 32,
+        descriptor[10],
+        layout_kind);
+}
+
 __global__ void expand_main_trace_descriptors_layout_kernel(
     uint64_t* dst,
     const uint64_t* descriptors,
@@ -393,6 +419,26 @@ __global__ void expand_main_trace_descriptors_layout_kernel(
     }
     main_trace_write_descriptor_row(
         row, descriptors + row_index * descriptor_words, descriptor_words, layout_kind);
+}
+
+__global__ void expand_main_trace_compact_descriptors_layout_kernel(
+    uint64_t* dst,
+    const uint64_t* descriptors,
+    size_t descriptor_count,
+    size_t row_count,
+    uint64_t terminal_pc,
+    unsigned layout_kind) {
+    const size_t row_index = blockIdx.x * blockDim.x + threadIdx.x;
+    if (row_index >= row_count) {
+        return;
+    }
+    uint64_t* row = dst + row_index * kMainTraceColumns;
+    if (row_index >= descriptor_count) {
+        main_trace_write_terminal_row(row, terminal_pc);
+        return;
+    }
+    main_trace_write_compact_descriptor_row(
+        row, descriptors + row_index * kMainTraceCompactWords, layout_kind);
 }
 
 __global__ void expand_selected_main_trace_descriptor_rows_layout_kernel(
@@ -419,6 +465,36 @@ __global__ void expand_selected_main_trace_descriptor_rows_layout_kernel(
             expanded,
             descriptors + static_cast<size_t>(source_row) * descriptor_words,
             descriptor_words,
+            layout_kind);
+    }
+    uint64_t* output_row = dst + selected_row_index * slice_width_words;
+    for (size_t column = 0; column < slice_width_words; ++column) {
+        output_row[column] = expanded[start_word + column];
+    }
+}
+
+__global__ void expand_selected_main_trace_compact_descriptor_rows_layout_kernel(
+    uint64_t* dst,
+    const uint64_t* descriptors,
+    size_t descriptor_count,
+    uint64_t terminal_pc,
+    const uint64_t* rows,
+    size_t selected_row_count,
+    size_t start_word,
+    size_t slice_width_words,
+    unsigned layout_kind) {
+    const size_t selected_row_index = blockIdx.x * blockDim.x + threadIdx.x;
+    if (selected_row_index >= selected_row_count) {
+        return;
+    }
+    uint64_t expanded[kMainTraceColumns];
+    const uint64_t source_row = rows[selected_row_index];
+    if (source_row >= descriptor_count) {
+        main_trace_write_terminal_row(expanded, terminal_pc);
+    } else {
+        main_trace_write_compact_descriptor_row(
+            expanded,
+            descriptors + static_cast<size_t>(source_row) * kMainTraceCompactWords,
             layout_kind);
     }
     uint64_t* output_row = dst + selected_row_index * slice_width_words;
@@ -528,11 +604,19 @@ int launch_expand_main_trace_descriptors_layout(
     if (blocks > static_cast<size_t>(std::numeric_limits<int>::max())) {
         return -2;
     }
-    expand_main_trace_descriptors_layout_kernel<<<
-        static_cast<int>(blocks),
-        kThreads,
-        0,
-        stream>>>(dst, descriptors, descriptor_words, descriptor_count, row_count, terminal_pc, layout_kind);
+    if (descriptor_words == kMainTraceCompactWords) {
+        expand_main_trace_compact_descriptors_layout_kernel<<<
+            static_cast<int>(blocks),
+            kThreads,
+            0,
+            stream>>>(dst, descriptors, descriptor_count, row_count, terminal_pc, layout_kind);
+    } else {
+        expand_main_trace_descriptors_layout_kernel<<<
+            static_cast<int>(blocks),
+            kThreads,
+            0,
+            stream>>>(dst, descriptors, descriptor_words, descriptor_count, row_count, terminal_pc, layout_kind);
+    }
     LZVM_CUDA_RETURN_ON_ERROR(lzvm_cuda_check_launch());
     return 0;
 }
@@ -614,21 +698,38 @@ int launch_expand_selected_main_trace_descriptor_rows_layout(
     if (blocks > static_cast<size_t>(std::numeric_limits<int>::max())) {
         return -2;
     }
-    expand_selected_main_trace_descriptor_rows_layout_kernel<<<
-        static_cast<int>(blocks),
-        kThreads,
-        0,
-        stream>>>(
-        dst,
-        descriptors,
-        descriptor_words,
-        descriptor_count,
-        terminal_pc,
-        rows,
-        selected_row_count,
-        start_word,
-        slice_width_words,
-        layout_kind);
+    if (descriptor_words == kMainTraceCompactWords) {
+        expand_selected_main_trace_compact_descriptor_rows_layout_kernel<<<
+            static_cast<int>(blocks),
+            kThreads,
+            0,
+            stream>>>(
+            dst,
+            descriptors,
+            descriptor_count,
+            terminal_pc,
+            rows,
+            selected_row_count,
+            start_word,
+            slice_width_words,
+            layout_kind);
+    } else {
+        expand_selected_main_trace_descriptor_rows_layout_kernel<<<
+            static_cast<int>(blocks),
+            kThreads,
+            0,
+            stream>>>(
+            dst,
+            descriptors,
+            descriptor_words,
+            descriptor_count,
+            terminal_pc,
+            rows,
+            selected_row_count,
+            start_word,
+            slice_width_words,
+            layout_kind);
+    }
     LZVM_CUDA_RETURN_ON_ERROR(lzvm_cuda_check_launch());
     return 0;
 }
