@@ -876,6 +876,59 @@ theorem runtime_challenge_segment_binding_checked_acceptance_evidence_core_and_s
         (And.intro checkedSound.right.right.left
           (And.intro coreContract checkedSound.right.right.right)))
 
+theorem runtime_challenge_segment_binding_checked_acceptance_accepts_evidence_core_and_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeChallengeSegmentBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeChallengeSegmentBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        system.accepts publicInput proof
+          /\ RuntimeChallengeSegmentBindingEvidence
+            system
+            validation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeTranscriptBindingEvidence
+            system
+            validation.transcriptValidation
+            artifact
+            publicInput
+            proof
+          /\ system.transcriptBound publicInput proof
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro artifact publicInput proof accepted
+  have transcriptAccepted :=
+    runtime_challenge_segment_binding_checked_acceptance_transcript
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have transcriptContract :=
+    runtime_transcript_binding_checked_acceptance_accepts_evidence_core_and_sound
+      assumptions
+      validation.transcriptValidation
+      artifact
+      publicInput
+      proof
+      transcriptAccepted
+  have evidenceCoreSound :=
+    runtime_challenge_segment_binding_checked_acceptance_evidence_core_and_sound
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  exact And.intro transcriptContract.left evidenceCoreSound
+
 theorem runtime_challenge_segment_binding_checked_acceptance_audited_core_contract
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
