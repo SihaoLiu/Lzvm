@@ -32,6 +32,7 @@ fn lean_digest_prefix_binding_exports_core_contract_projection() {
             "row_major_digest_prefix_checked_acceptance_sound",
             "row_major_digest_prefix_checked_acceptance_verifier_core_contract",
             "row_major_digest_prefix_checked_acceptance_evidence_core_and_sound",
+            "row_major_digest_prefix_checked_acceptance_accepts_evidence_core_and_sound",
             "row_major_digest_prefix_checked_acceptance_audited_core_contract",
         ],
     );
@@ -145,6 +146,33 @@ fn lean_digest_prefix_binding_exports_core_contract_projection() {
         &lean_source,
         "row_major_digest_prefix_checked_acceptance_evidence_core_and_sound",
         &["sound_witness_implies_verifier_core_contract"],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "row_major_digest_prefix_checked_acceptance_accepts_evidence_core_and_sound",
+        &[
+            "system.accepts publicInput proof",
+            "RowMajorDigestPrefixEvidence system validation publicInput proof",
+            "validation.leafValidation.wideLinearDigestsBindRows publicInput proof",
+            "RuntimeVerifierCoreContract system publicInput proof",
+            "SoundWitness system publicInput proof",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "row_major_digest_prefix_checked_acceptance_accepts_evidence_core_and_sound",
+        &[
+            "row_major_digest_prefix_checked_acceptance_evidence_core_and_sound",
+            "checked.left",
+        ],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &lean_source,
+        "row_major_digest_prefix_checked_acceptance_accepts_evidence_core_and_sound",
+        &[
+            "abstract_verifier_sound_with_semantic_evidence",
+            "sound_witness_implies_verifier_core_contract",
+        ],
     );
     lean_binding::assert_theorem_prefix_contains(
         &lean_source,

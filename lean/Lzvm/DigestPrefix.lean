@@ -182,6 +182,31 @@ theorem row_major_digest_prefix_checked_acceptance_evidence_core_and_sound
   exact And.intro checked.right
     (And.intro sound.left (And.intro core sound.right))
 
+theorem row_major_digest_prefix_checked_acceptance_accepts_evidence_core_and_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RowMajorDigestPrefixValidation system) :
+    forall publicInput proof,
+      RowMajorDigestPrefixCheckedAcceptance
+          system
+          validation
+          publicInput
+          proof ->
+        system.accepts publicInput proof
+          /\ RowMajorDigestPrefixEvidence system validation publicInput proof
+          /\ validation.leafValidation.wideLinearDigestsBindRows publicInput proof
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof checked
+  have evidenceCoreSound :=
+    row_major_digest_prefix_checked_acceptance_evidence_core_and_sound
+      assumptions
+      validation
+      publicInput
+      proof
+      checked
+  exact And.intro checked.left evidenceCoreSound
+
 theorem row_major_digest_prefix_checked_acceptance_audited_core_contract
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
