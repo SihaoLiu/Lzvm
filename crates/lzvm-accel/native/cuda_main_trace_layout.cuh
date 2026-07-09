@@ -105,6 +105,67 @@ __device__ void main_trace_write_expanded_row(
     const uint64_t a_kind = (control >> kMainTraceAKindShift) & kMainTraceKindMask;
     const uint64_t b_kind = (control >> kMainTraceBKindShift) & kMainTraceKindMask;
     const uint64_t store_kind = (control >> kMainTraceStoreKindShift) & kMainTraceKindMask;
+    if (a_kind == kMainTraceSourceRegister &&
+        (b_kind == kMainTraceSourceRegister || b_kind == kMainTraceSourceImmediate) &&
+        store_kind == kMainTraceStoreRegister) {
+        const uint64_t b_is_register = b_kind == kMainTraceSourceRegister ? 1 : 0;
+        const uint64_t b_is_immediate = b_kind == kMainTraceSourceImmediate ? 1 : 0;
+        const uint64_t b_offset =
+            b_is_register == 1 ? b_payload : main_trace_low32(b_payload);
+        row[0] = main_trace_low32(a);
+        row[1] = main_trace_high32(a);
+        row[2] = main_trace_low32(b);
+        row[3] = main_trace_high32(b);
+        row[4] = main_trace_low32(c);
+        row[5] = main_trace_high32(c);
+        row[6] = (control >> 8) & 1;
+        row[7] = pc;
+        row[8] = 0;
+        row[9] = 0;
+        row[10] = a_payload;
+        row[11] = 0;
+        row[12] = (control >> 13) & 1;
+        row[13] = b_is_immediate;
+        row[14] = 0;
+        row[15] = b_offset;
+        row[16] = b_is_immediate == 1 ? main_trace_high32(b_payload) : 0;
+        row[17] = 0;
+        row[18] = (control >> 16) & 0xffffULL;
+        row[19] = (control >> 12) & 1;
+        row[20] = control & 0xffULL;
+        row[21] = (control >> 9) & 1;
+        row[22] = 0;
+        row[23] = 0;
+        row[24] = store_payload;
+        row[25] = (control >> 10) & 1;
+        row[26] = main_trace_signed_field(jmp_offset1);
+        row[27] = main_trace_signed_field(jmp_offset2);
+        row[28] = (control >> 11) & 1;
+        row[29] = b_offset;
+
+        if (layout_kind == kMainTraceLayoutWithStoreAddress) {
+            row[30] = store_payload;
+            row[31] = a_prev_mem_step;
+            row[32] = b_prev_mem_step;
+            row[33] = store_prev_mem_step;
+            row[34] = main_trace_low32(store_prev_value);
+            row[35] = main_trace_high32(store_prev_value);
+            row[36] = 1;
+            row[37] = b_is_register;
+            row[38] = 1;
+        } else {
+            row[30] = a_prev_mem_step;
+            row[31] = b_prev_mem_step;
+            row[32] = store_prev_mem_step;
+            row[33] = main_trace_low32(store_prev_value);
+            row[34] = main_trace_high32(store_prev_value);
+            row[35] = 1;
+            row[36] = b_is_register;
+            row[37] = 1;
+            row[38] = 0;
+        }
+        return;
+    }
 
     row[0] = main_trace_low32(a);
     row[1] = main_trace_high32(a);
