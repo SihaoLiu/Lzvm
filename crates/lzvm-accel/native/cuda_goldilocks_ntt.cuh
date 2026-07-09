@@ -113,17 +113,14 @@ __global__ void ntt_stage_block_twiddle_kernel(
     uint64_t root,
     bool inverse_roots) {
     __shared__ uint64_t block_base;
-    __shared__ uint64_t stage_twiddle;
     __shared__ uint64_t thread_powers[kNttThreadPowerBits];
 
     const size_t pair_count = len / 2;
     const size_t pair = blockIdx.x * blockDim.x + threadIdx.x;
     const size_t half = stage_len / 2;
     const size_t block_offset = (blockIdx.x * blockDim.x) % half;
-    if (threadIdx.x == 0) {
-        stage_twiddle = ntt_stage_twiddle(len, stage_len, stage_bits, root, inverse_roots);
-    }
-    __syncthreads();
+    const uint64_t stage_twiddle =
+        ntt_stage_twiddle(len, stage_len, stage_bits, root, inverse_roots);
     ntt_stage_prepare_thread_powers(stage_twiddle, thread_powers);
     if (threadIdx.x == 0) {
         block_base = ntt_stage_block_base(thread_powers, block_offset);
