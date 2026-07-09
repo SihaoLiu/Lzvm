@@ -361,6 +361,80 @@ theorem runtime_retained_parent_checkpoint_opening_checked_acceptance_evidence_c
             (And.intro openingAndCore.right.right.right.left
               (And.intro openingAndCore.right.right.right.right checkedSound.right)))))
 
+set_option linter.style.longLine false in
+theorem runtime_retained_parent_checkpoint_opening_checked_acceptance_accepts_evidence_core_and_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeRetainedParentCheckpointOpeningValidation system) :
+    forall artifact publicInput proof requiresExternalSource,
+      RuntimeRetainedParentCheckpointOpeningCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        system.accepts publicInput proof
+          /\ RuntimeRetainedParentCheckpointOpeningEvidence
+            system
+            validation
+            artifact
+            publicInput
+            proof
+            requiresExternalSource
+          /\ RuntimeOpeningEvidence
+            system
+            validation.batchRowsValidation.openingSegmentValidation.openingValidation
+            artifact
+            publicInput
+            proof
+            requiresExternalSource
+          /\ RuntimeRetainedParentCheckpointOpeningDigestContract
+            system
+            validation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeRetainedParentCheckpointOpeningPrefixBatchContract
+            system
+            validation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeRetainedParentCheckpointOpeningRetainedRowsContract
+            system
+            validation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro artifact publicInput proof requiresExternalSource accepted
+  have batchAccepted :=
+    validation.retainedParentCheckpointOpeningAcceptedImpliesBatchRowsAccepted
+      artifact
+      publicInput
+      proof
+      accepted
+  have batchContract :=
+    runtime_batch_witness_opening_rows_checked_acceptance_accepts_evidence_core_and_sound
+      assumptions
+      validation.batchRowsValidation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      batchAccepted
+  have evidenceCoreSound :=
+    runtime_retained_parent_checkpoint_opening_checked_acceptance_evidence_core_and_sound
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      accepted
+  exact And.intro batchContract.left evidenceCoreSound
+
 theorem runtime_retained_parent_checkpoint_opening_checked_acceptance_audited_core_contract
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
