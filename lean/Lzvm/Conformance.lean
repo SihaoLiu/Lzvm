@@ -347,6 +347,34 @@ theorem runtime_artifact_checked_acceptance_evidence_core_and_sound
     And.intro checkedSound.left.left
       (And.intro checkedSound.left.right.right checkedSound.right)
 
+theorem runtime_artifact_checked_acceptance_accepts_evidence_core_and_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeConformanceValidation system) :
+    forall artifact publicInput proof,
+      RuntimeArtifactCheckedAcceptance system validation artifact publicInput proof ->
+        system.accepts publicInput proof
+          /\ RuntimeArtifactEvidence system validation artifact publicInput proof
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro artifact publicInput proof artifactAccepted
+  have verifierAccepts :=
+    runtime_artifact_checked_acceptance_implies_verifier_accepts
+      validation
+      artifact
+      publicInput
+      proof
+      artifactAccepted
+  have evidenceCoreSound :=
+    runtime_artifact_checked_acceptance_evidence_core_and_sound
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      artifactAccepted
+  exact And.intro verifierAccepts evidenceCoreSound
+
 theorem runtime_artifact_checked_acceptance_audited_sound
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
