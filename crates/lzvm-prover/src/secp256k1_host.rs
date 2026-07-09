@@ -2,6 +2,7 @@ use std::sync::OnceLock;
 
 use num_bigint::BigUint;
 use num_traits::{One, Zero};
+use secp256k1::PublicKey as NativeSecpPublicKey;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum Secp256k1Error {
@@ -182,6 +183,9 @@ pub(crate) fn secp256k1_point_add(
     if second.infinity {
         return Ok(first.clone());
     }
+    if let Some(result) = secp256k1_point_add_native(first, second) {
+        return Ok(result);
+    }
     let modulus = secp256k1_field_modulus();
     if first.x == second.x {
         if (&first.y + &second.y) % modulus == BigUint::zero() {
@@ -214,6 +218,9 @@ pub(crate) fn secp256k1_point_add(
 pub(crate) fn secp256k1_point_double(point: &SecpPoint) -> Result<SecpPoint, Secp256k1Error> {
     if point.infinity || point.y.is_zero() {
         return Ok(SecpPoint::identity());
+    }
+    if let Some(result) = secp256k1_point_double_native(point) {
+        return Ok(result);
     }
     let modulus = secp256k1_field_modulus();
     let numerator = field_mul(
@@ -282,6 +289,54 @@ fn secp256k1_double_scalar_mul_projective(
 
 fn secp256k1_point_has_canonical_coordinates(point: &SecpPoint) -> bool {
     point.infinity || (point.x < *secp256k1_field_modulus() && point.y < *secp256k1_field_modulus())
+}
+
+fn secp256k1_point_add_native(first: &SecpPoint, second: &SecpPoint) -> Option<SecpPoint> {
+    let first = secp256k1_point_to_native(first)?;
+    let second = secp256k1_point_to_native(second)?;
+    first
+        .combine(&second)
+        .ok()
+        .map(|point| secp256k1_point_from_native(&point))
+}
+
+fn secp256k1_point_double_native(point: &SecpPoint) -> Option<SecpPoint> {
+    let point = secp256k1_point_to_native(point)?;
+    point
+        .combine(&point)
+        .ok()
+        .map(|point| secp256k1_point_from_native(&point))
+}
+
+fn secp256k1_point_to_native(point: &SecpPoint) -> Option<NativeSecpPublicKey> {
+    if point.infinity || !secp256k1_point_has_canonical_coordinates(point) {
+        return None;
+    }
+    NativeSecpPublicKey::from_slice(&secp256k1_point_uncompressed_bytes(point)).ok()
+}
+
+fn secp256k1_point_from_native(point: &NativeSecpPublicKey) -> SecpPoint {
+    let bytes = point.serialize_uncompressed();
+    SecpPoint {
+        x: BigUint::from_bytes_be(&bytes[1..33]),
+        y: BigUint::from_bytes_be(&bytes[33..65]),
+        infinity: false,
+    }
+}
+
+fn secp256k1_point_uncompressed_bytes(point: &SecpPoint) -> [u8; 65] {
+    let mut bytes = [0_u8; 65];
+    bytes[0] = 4;
+    write_field_element_be(&point.x, &mut bytes[1..33]);
+    write_field_element_be(&point.y, &mut bytes[33..65]);
+    bytes
+}
+
+fn write_field_element_be(value: &BigUint, bytes: &mut [u8]) {
+    let limbs = biguint_to_limbs::<4>(value);
+    for (limb, chunk) in limbs.iter().rev().zip(bytes.chunks_exact_mut(8)) {
+        chunk.copy_from_slice(&limb.to_be_bytes());
+    }
 }
 
 pub(crate) fn limbs_to_biguint(limbs: &[u64]) -> BigUint {
@@ -509,6 +564,45 @@ mod tests {
             .to_affine()
             .expect("inverse projective add should convert");
         assert_eq!(inverse_sum, SecpPoint::identity());
+    }
+
+    #[test]
+    fn point_add_returns_identity_for_inverse_points() {
+        let g = SecpPoint::from_limbs(&SECP256K1_G);
+        let modulus = secp256k1_field_modulus();
+        let neg_g = SecpPoint {
+            x: g.x.clone(),
+            y: (modulus - &g.y) % modulus,
+            infinity: false,
+        };
+
+        let actual = secp256k1_point_add(&g, &neg_g).expect("inverse add should convert");
+
+        assert_eq!(actual, SecpPoint::identity());
+    }
+
+    #[test]
+    fn point_add_preserves_affine_result_for_invalid_canonical_inputs() {
+        let first = SecpPoint {
+            x: BigUint::from(1_u8),
+            y: BigUint::from(1_u8),
+            infinity: false,
+        };
+        let second = SecpPoint {
+            x: BigUint::from(2_u8),
+            y: BigUint::from(3_u8),
+            infinity: false,
+        };
+        let expected = SecpPoint {
+            x: BigUint::from(1_u8),
+            y: secp256k1_field_modulus() - BigUint::from(1_u8),
+            infinity: false,
+        };
+
+        let actual = secp256k1_point_add(&first, &second)
+            .expect("invalid canonical inputs should use affine formula");
+
+        assert_eq!(actual, expected);
     }
 
     fn affine_double_scalar_mul_reference(
