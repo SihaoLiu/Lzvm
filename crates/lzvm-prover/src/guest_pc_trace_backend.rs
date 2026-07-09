@@ -2690,7 +2690,8 @@ fn append_main_device_trace_descriptor(
         convert_zisk_main_sparse_descriptors_to_wide(descriptors);
     }
     if descriptors.descriptor_words == ZISK_MAIN_DEVICE_TRACE_DESCRIPTOR_WORDS {
-        if let Some(compact_words) = zisk_main_compact_device_trace_descriptor_words(
+        if push_compact_main_device_trace_words(
+            &mut descriptors.words,
             values,
             a_payload,
             b_payload,
@@ -2701,7 +2702,6 @@ fn append_main_device_trace_descriptor(
             store_prev_mem_step,
             store_prev_value,
         ) {
-            descriptors.words.extend_from_slice(&compact_words);
             descriptors.descriptor_rows += 1;
             return Ok(());
         }
@@ -2874,7 +2874,8 @@ fn zisk_main_sparse_descriptor_value(
 #[cfg(feature = "cuda")]
 #[allow(clippy::too_many_arguments)]
 #[inline(always)]
-fn zisk_main_compact_device_trace_descriptor_words(
+fn push_compact_main_device_trace_words(
+    words: &mut Vec<u64>,
     values: &ZiskMainReportTraceValues,
     a_payload: u64,
     b_payload: u64,
@@ -2884,23 +2885,36 @@ fn zisk_main_compact_device_trace_descriptor_words(
     b_prev_mem_step: u64,
     store_prev_mem_step: u64,
     store_prev_value: u64,
-) -> Option<[u64; ZISK_MAIN_DEVICE_TRACE_DESCRIPTOR_WORDS]> {
-    Some([
-        values.a,
-        values.b,
-        values.c,
-        a_payload,
-        b_payload,
-        store_payload,
-        control,
-        zisk_main_pack_u32_pair(values.instruction.pc, store_prev_mem_step)?,
-        zisk_main_pack_i32_pair(
-            values.instruction.jmp_offset1,
-            values.instruction.jmp_offset2,
-        )?,
-        zisk_main_pack_u32_pair(a_prev_mem_step, b_prev_mem_step)?,
-        store_prev_value,
-    ])
+) -> bool {
+    let pc = values.instruction.pc;
+    if (pc | store_prev_mem_step | a_prev_mem_step | b_prev_mem_step) >> 32 != 0 {
+        return false;
+    }
+    const MIN_OFFSET: i64 = i32::MIN as i64;
+    const MAX_OFFSET: i64 = i32::MAX as i64;
+    let first_offset = values.instruction.jmp_offset1;
+    let second_offset = values.instruction.jmp_offset2;
+    if !(MIN_OFFSET..=MAX_OFFSET).contains(&first_offset)
+        || !(MIN_OFFSET..=MAX_OFFSET).contains(&second_offset)
+    {
+        return false;
+    }
+    let pc_and_store_step = pc | (store_prev_mem_step << 32);
+    let jump_offsets =
+        u64::from(first_offset as i32 as u32) | (u64::from(second_offset as i32 as u32) << 32);
+    let register_mem_steps = a_prev_mem_step | (b_prev_mem_step << 32);
+    words.push(values.a);
+    words.push(values.b);
+    words.push(values.c);
+    words.push(a_payload);
+    words.push(b_payload);
+    words.push(store_payload);
+    words.push(control);
+    words.push(pc_and_store_step);
+    words.push(jump_offsets);
+    words.push(register_mem_steps);
+    words.push(store_prev_value);
+    true
 }
 
 #[cfg(feature = "cuda")]
