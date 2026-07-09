@@ -12,10 +12,6 @@ constexpr uint64_t kMainTraceStoreMemory = 1;
 constexpr uint64_t kMainTraceStoreRegister = 2;
 constexpr uint64_t kMainTraceStoreIndirect = 3;
 constexpr uint64_t kMainTraceKindMask = 0x7ULL;
-constexpr uint64_t kMainTraceOpCopyB = 0x01ULL;
-constexpr uint64_t kMainTraceNoFlagControlMask =
-    (1ULL << 8) | (1ULL << 9) | (1ULL << 10) | (1ULL << 11) |
-    (1ULL << 12) | (1ULL << 13);
 constexpr unsigned kMainTraceAKindShift = 32;
 constexpr unsigned kMainTraceBKindShift = 35;
 constexpr unsigned kMainTraceStoreKindShift = 38;
@@ -109,65 +105,6 @@ __device__ void main_trace_write_expanded_row(
     const uint64_t a_kind = (control >> kMainTraceAKindShift) & kMainTraceKindMask;
     const uint64_t b_kind = (control >> kMainTraceBKindShift) & kMainTraceKindMask;
     const uint64_t store_kind = (control >> kMainTraceStoreKindShift) & kMainTraceKindMask;
-
-    if ((control & 0xffULL) == kMainTraceOpCopyB &&
-        (control & kMainTraceNoFlagControlMask) == 0 &&
-        a_kind == kMainTraceSourceRegister &&
-        b_kind == kMainTraceSourceIndirect &&
-        store_kind == kMainTraceStoreRegister) {
-        row[0] = main_trace_low32(a);
-        row[1] = main_trace_high32(a);
-        row[2] = main_trace_low32(b);
-        row[3] = main_trace_high32(b);
-        row[4] = main_trace_low32(c);
-        row[5] = main_trace_high32(c);
-        row[6] = 0;
-        row[7] = pc;
-        row[8] = 0;
-        row[9] = 0;
-        row[10] = a_payload;
-        row[11] = 0;
-        row[12] = 0;
-        row[13] = 0;
-        row[14] = 0;
-        row[15] = main_trace_signed_field(b_payload);
-        row[16] = 0;
-        row[17] = 1;
-        row[18] = (control >> 16) & 0xffffULL;
-        row[19] = 0;
-        row[20] = kMainTraceOpCopyB;
-        row[21] = 0;
-        row[22] = 0;
-        row[23] = 0;
-        row[24] = store_payload;
-        row[25] = 0;
-        row[26] = main_trace_signed_field(jmp_offset1);
-        row[27] = main_trace_signed_field(jmp_offset2);
-        row[28] = 0;
-        row[29] = main_trace_signed_address_field(b_payload, a);
-        if (layout_kind == kMainTraceLayoutWithStoreAddress) {
-            row[30] = store_payload;
-            row[31] = a_prev_mem_step;
-            row[32] = b_prev_mem_step;
-            row[33] = store_prev_mem_step;
-            row[34] = main_trace_low32(store_prev_value);
-            row[35] = main_trace_high32(store_prev_value);
-            row[36] = 1;
-            row[37] = 0;
-            row[38] = 1;
-        } else {
-            row[30] = a_prev_mem_step;
-            row[31] = b_prev_mem_step;
-            row[32] = store_prev_mem_step;
-            row[33] = main_trace_low32(store_prev_value);
-            row[34] = main_trace_high32(store_prev_value);
-            row[35] = 1;
-            row[36] = 0;
-            row[37] = 1;
-            row[38] = 0;
-        }
-        return;
-    }
 
     row[0] = main_trace_low32(a);
     row[1] = main_trace_high32(a);
