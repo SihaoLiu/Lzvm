@@ -3474,7 +3474,7 @@ fn prove_timing_root_summary_reports_external_source_row_value_boundary_without_
     );
     assert_eq!(
         value("opening_source_row_value_action_hint"),
-        "select_descriptor_rows_for_external_source_openings"
+        "evaluate_external_source_rows_from_descriptors"
     );
     assert_eq!(
         value("retained_parent_checkpoint_batching_hint"),

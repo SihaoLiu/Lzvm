@@ -4856,6 +4856,10 @@ fn retained_leaf_digest_opening_uses_shifted_row_weight_cache() {
         "small batched compact source row values should use selected-row helpers"
     );
     assert!(
+        !source_batch_body.contains("from_main_trace_descriptor_selected_row_major_u64_slice_with_layout"),
+        "source row values need coset evaluation from the full source buffer, not a descriptor row slice"
+    );
+    assert!(
         source_batch_body
             .contains("cuda_goldilocks_coset_extend_row_major_columns_shifted_rows_device")
             && source_batch_body

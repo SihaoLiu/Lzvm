@@ -8,8 +8,8 @@ from pathlib import Path
 
 INPUT_BYTES_KEY = "input_bytes"
 LOWERER_SOURCE_VALUE_CLOSE_TO_DESCRIPTOR_RATIO = 0.75
-SELECTED_DESCRIPTOR_ROW_REBUILD_RATIO = 1024
-SELECTED_DESCRIPTOR_ROW_REBUILD_MIN_ROWS = 1024
+DESCRIPTOR_BACKED_EVALUATION_REBUILD_RATIO = 1024
+DESCRIPTOR_BACKED_EVALUATION_MIN_ROWS = 1024
 ROOT_COUNT_KEY = "timing_guest_stage_tree_commit_root_count"
 ROOT_GROUPS_KEY = "timing_guest_stage_tree_commit_root_materialization_groups"
 ROOT_MAX_GROUP_KEY = "timing_guest_stage_tree_commit_root_materialization_max_group_size"
@@ -4078,12 +4078,12 @@ def opening_source_row_value_action_hint(
     if external_source_count > 0 and query_units > 0 and single_query_units >= query_units:
         selected_row_baseline = max(source_rows, query_units)
         if (
-            external_descriptor_upload_rows >= SELECTED_DESCRIPTOR_ROW_REBUILD_MIN_ROWS
+            external_descriptor_upload_rows >= DESCRIPTOR_BACKED_EVALUATION_MIN_ROWS
             and selected_row_baseline > 0
             and external_descriptor_upload_rows
-            >= selected_row_baseline * SELECTED_DESCRIPTOR_ROW_REBUILD_RATIO
+            >= selected_row_baseline * DESCRIPTOR_BACKED_EVALUATION_REBUILD_RATIO
         ):
-            return "select_descriptor_rows_for_external_source_openings"
+            return "evaluate_external_source_rows_from_descriptors"
         return "profile_external_source_row_value_rebuilds"
     if source_extend_ms >= 1000:
         return "reduce_source_row_value_extension"
