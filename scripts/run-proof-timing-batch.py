@@ -102,6 +102,43 @@ def host_load_average() -> list[float] | None:
         return None
 
 
+def host_gpu_status() -> list[dict[str, int]] | None:
+    try:
+        result = subprocess.run(
+            [
+                "nvidia-smi",
+                "--query-gpu=index,memory.total,memory.used,utilization.gpu",
+                "--format=csv,noheader,nounits",
+            ],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            timeout=2.0,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if result.returncode != 0:
+        return None
+    devices = []
+    for line in result.stdout.splitlines():
+        parts = [part.strip() for part in line.split(",")]
+        if len(parts) != 4:
+            return None
+        try:
+            index, total_mib, used_mib, utilization_pct = map(int, parts)
+        except ValueError:
+            return None
+        devices.append(
+            {
+                "index": index,
+                "memory_total_mib": total_mib,
+                "memory_used_mib": used_mib,
+                "utilization_gpu_pct": utilization_pct,
+            }
+        )
+    return devices or None
+
+
 def positive_run_count(raw: str) -> int:
     try:
         value = int(raw)
@@ -1083,6 +1120,7 @@ def write_batch_json(
     commit: str,
     batch_started_at: str,
     batch_start_load_average: list[float] | None,
+    batch_start_gpu_status: list[dict[str, int]] | None,
     root: Path,
     batch_dir: Path,
     cwd: Path,
@@ -1118,6 +1156,7 @@ def write_batch_json(
     append_stdout_path, append_stderr_path, append_status_path = append_artifact_paths(batch_dir)
     worktree_status = tracked_worktree_status(root)
     load_average = host_load_average()
+    gpu_status = host_gpu_status()
     payload = {
         "created_at": datetime.now().astimezone().strftime("%Y-%m-%dT%H:%M:%S%z"),
         "batch_started_at": batch_started_at,
@@ -1155,7 +1194,9 @@ def write_batch_json(
         "tracked_worktree_dirty": bool(worktree_status),
         "tracked_worktree_status": worktree_status,
         "batch_start_host_load_average": batch_start_load_average,
+        "batch_start_gpu_status": batch_start_gpu_status,
         "host_load_average": load_average,
+        "host_gpu_status": gpu_status,
         "host_cpu_count": os.cpu_count(),
         "summary": args.summary,
         "metadata_lines": list(args.metadata_line or []),
@@ -1234,6 +1275,7 @@ def run_batch(args: argparse.Namespace) -> Path:
     root = workspace_root()
     batch_started_at = datetime.now().astimezone().strftime("%Y-%m-%dT%H:%M:%S%z")
     batch_start_load_average = host_load_average()
+    batch_start_gpu_status = host_gpu_status()
     if args.small_command is None and args.large_command is None:
         raise SystemExit("provide --small-command and/or --large-command")
     if args.summary is None:
@@ -1311,6 +1353,7 @@ def run_batch(args: argparse.Namespace) -> Path:
             commit,
             batch_started_at,
             batch_start_load_average,
+            batch_start_gpu_status,
             root,
             batch_dir,
             cwd,
@@ -1628,6 +1671,10 @@ def self_test() -> None:
             isinstance(host_load, list) and len(host_load) == 3
         ):
             raise SystemExit("self-test batch json should record host load average")
+        for key in ["batch_start_gpu_status", "host_gpu_status"]:
+            gpu_status = batch_payload.get(key)
+            if gpu_status is not None and not isinstance(gpu_status, list):
+                raise SystemExit(f"self-test batch json should record {key}")
         if not isinstance(batch_payload.get("host_cpu_count"), int):
             raise SystemExit("self-test batch json should record host CPU count")
         if (
