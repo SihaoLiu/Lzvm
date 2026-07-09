@@ -8144,13 +8144,16 @@ fn arithmetic_fast_path_parts_match_generic_lowering() {
             .expect("arithmetic matcher should not fail")
             .expect("arithmetic row should match");
         assert_eq!(actual, expected);
-        assert_eq!(
-            Some(parts),
-            no_memory_external_fast_path_parts(
-                &expected,
-                ZiskMainReportEffects::from_report(&report)
-            )
-        );
+        let lowered_parts = no_memory_external_fast_path_parts(
+            &expected,
+            ZiskMainReportEffects::from_report(&report),
+        )
+        .expect("lowered arithmetic row should match no-memory shape");
+        assert_eq!(parts.a_index, lowered_parts.a_index);
+        assert_eq!(parts.b_index, lowered_parts.b_index);
+        assert_eq!(parts.store_index, lowered_parts.store_index);
+        assert!(parts.next_pc_checked);
+        assert!(!lowered_parts.next_pc_checked);
     }
 }
 
