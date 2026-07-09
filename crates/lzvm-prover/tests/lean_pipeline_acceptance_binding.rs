@@ -102,3 +102,50 @@ fn lean_pipeline_binding_exports_query_opening_acceptance_contract() {
         ],
     );
 }
+
+#[test]
+fn lean_pipeline_binding_exports_trace_artifact_acceptance_contract() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let source = lean_binding::read_lean_source(
+        crate_root,
+        "../../lean/Lzvm/PipelineBinding/Obligations/Soundness.lean",
+    );
+
+    lean_binding::assert_theorem_declarations(
+        &source,
+        &[
+            "runtime_pipeline_binding_checked_acceptance_trace_artifact_accepts_evidence_core_and_sound",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &source,
+        "runtime_pipeline_binding_checked_acceptance_trace_artifact_accepts_evidence_core_and_sound",
+        &[
+            "RuntimePipelineBindingCheckedAcceptance",
+            "system.accepts publicInput proof",
+            "RuntimeTraceConstraintPreflightBindingEvidence",
+            "RuntimeTraceConstraintEvidence",
+            "RuntimeVerifierCoreContract system publicInput proof",
+            "SoundWitness system publicInput proof",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &source,
+        "runtime_pipeline_binding_checked_acceptance_trace_artifact_accepts_evidence_core_and_sound",
+        &[
+            "runtime_pipeline_binding_checked_acceptance_trace",
+            "runtime_trace_constraint_artifact_binding_checked_acceptance_accepts_evidence_core_and_sound",
+            "runtime_pipeline_binding_checked_acceptance_trace_artifact_evidence_core_and_sound",
+            "traceContract.left",
+        ],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &source,
+        "runtime_pipeline_binding_checked_acceptance_trace_artifact_accepts_evidence_core_and_sound",
+        &[
+            "runtime_trace_constraint_artifact_binding_checked_acceptance_evidence_core_and_sound",
+            "runtime_trace_constraint_artifact_binding_checked_acceptance_sound",
+            "sound_witness_implies_verifier_core_contract",
+        ],
+    );
+}
