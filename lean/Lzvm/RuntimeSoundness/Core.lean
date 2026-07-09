@@ -955,6 +955,48 @@ theorem runtime_soundness_checked_acceptance_evidence_core_and_sound
       checked
   exact And.intro sound.left (And.intro coreContract sound.right)
 
+theorem runtime_soundness_checked_acceptance_accepts_evidence_core_and_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeSoundnessValidation system) :
+    forall artifact publicInput proof requiresExternalSource,
+      RuntimeSoundnessCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof
+          requiresExternalSource ->
+        system.accepts publicInput proof
+          /\ RuntimeSoundnessEvidence
+            system
+            validation
+            artifact
+            publicInput
+            proof
+            requiresExternalSource
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro artifact publicInput proof requiresExternalSource checked
+  have verifierAccepts :=
+    runtime_soundness_checked_acceptance_verifier_accepts
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      checked
+  have evidenceCoreSound :=
+    runtime_soundness_checked_acceptance_evidence_core_and_sound
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      checked
+  exact And.intro verifierAccepts evidenceCoreSound
+
 theorem runtime_soundness_checked_acceptance_accepts_core_sound_witness
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
