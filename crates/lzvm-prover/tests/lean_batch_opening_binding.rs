@@ -46,6 +46,7 @@ fn lean_batch_opening_binding_tracks_runtime_batch_helpers() {
             "runtime_batch_witness_opening_rows_checked_acceptance_bound_and_core_contract",
             "runtime_batch_witness_opening_rows_checked_acceptance_opening_and_core_contract",
             "runtime_batch_witness_opening_rows_checked_acceptance_evidence_core_and_sound",
+            "runtime_batch_witness_opening_rows_checked_acceptance_accepts_evidence_core_and_sound",
             "runtime_batch_witness_opening_rows_checked_acceptance_audited_core_contract",
         ],
     );
@@ -89,6 +90,38 @@ fn lean_batch_opening_binding_tracks_runtime_batch_helpers() {
         &lean_source,
         "runtime_batch_witness_opening_rows_checked_acceptance_evidence_core_and_sound",
         &["sound_witness_implies_verifier_core_contract"],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_batch_witness_opening_rows_checked_acceptance_accepts_evidence_core_and_sound",
+        &[
+            "RuntimeBatchWitnessOpeningRowsCheckedAcceptance",
+            "system.accepts publicInput proof",
+            "RuntimeBatchWitnessOpeningRowsEvidence",
+            "RuntimeOpeningEvidence",
+            "RuntimeBatchWitnessOpeningRowsBoundContract",
+            "RuntimeVerifierCoreContract system publicInput proof",
+            "SoundWitness system publicInput proof",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_batch_witness_opening_rows_checked_acceptance_accepts_evidence_core_and_sound",
+        &[
+            "batchWitnessOpeningRowsAcceptedImpliesOpeningSegmentAccepted",
+            "runtime_opening_segment_binding_checked_acceptance_accepts_evidence_core_and_sound",
+            "runtime_batch_witness_opening_rows_checked_acceptance_evidence_core_and_sound",
+            "segmentContract.left",
+        ],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &lean_source,
+        "runtime_batch_witness_opening_rows_checked_acceptance_accepts_evidence_core_and_sound",
+        &[
+            "runtime_batch_witness_opening_rows_checked_acceptance_sound",
+            "runtime_opening_segment_binding_checked_acceptance_evidence_core_and_sound",
+            "sound_witness_implies_verifier_core_contract",
+        ],
     );
     lean_binding::assert_theorem_prefix_contains(
         &lean_source,

@@ -717,6 +717,67 @@ theorem runtime_batch_witness_opening_rows_checked_acceptance_evidence_core_and_
         (And.intro openingAndCore.right.left
           (And.intro openingAndCore.right.right checkedSound.right)))
 
+theorem runtime_batch_witness_opening_rows_checked_acceptance_accepts_evidence_core_and_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeBatchWitnessOpeningRowsValidation system) :
+    forall artifact publicInput proof requiresExternalSource,
+      RuntimeBatchWitnessOpeningRowsCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        system.accepts publicInput proof
+          /\ RuntimeBatchWitnessOpeningRowsEvidence
+            system
+            validation
+            artifact
+            publicInput
+            proof
+            requiresExternalSource
+          /\ RuntimeOpeningEvidence
+            system
+            validation.openingSegmentValidation.openingValidation
+            artifact
+            publicInput
+            proof
+            requiresExternalSource
+          /\ RuntimeBatchWitnessOpeningRowsBoundContract
+            system
+            validation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro artifact publicInput proof requiresExternalSource accepted
+  have segmentAccepted :=
+    validation.batchWitnessOpeningRowsAcceptedImpliesOpeningSegmentAccepted
+      artifact
+      publicInput
+      proof
+      accepted
+  have segmentContract :=
+    runtime_opening_segment_binding_checked_acceptance_accepts_evidence_core_and_sound
+      assumptions
+      validation.openingSegmentValidation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      segmentAccepted
+  have evidenceCoreSound :=
+    runtime_batch_witness_opening_rows_checked_acceptance_evidence_core_and_sound
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      accepted
+  exact And.intro segmentContract.left evidenceCoreSound
+
 theorem runtime_batch_witness_opening_rows_checked_acceptance_audited_core_contract
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
