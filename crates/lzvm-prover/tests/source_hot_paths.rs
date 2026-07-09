@@ -316,7 +316,7 @@ fn cuda_poseidon_row_major_digest_has_stream_entrypoints() {
             .contains("run_poseidon2_width16_linear_round_row_major_digest_on_device_on_stream")
             && row_major_source.contains("cudaStream_t stream")
             && row_major_source.contains(
-                "poseidon2_width16_linear_round_row_major_kernel<<<blocks, kThreads, 0, stream>>>"
+                "poseidon2_width16_linear_round_row_major_kernel<<<blocks, kPoseidon2RowMajorThreads, 0, stream>>>"
             ),
         "native width16 row-major digest rounds should launch on the caller-provided stream"
     );
