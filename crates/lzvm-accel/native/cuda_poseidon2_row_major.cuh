@@ -1,3 +1,5 @@
+constexpr size_t kPoseidon2RowMajorThreads = 64;
+
 __global__ void poseidon2_width8_linear_round_row_major_kernel(
     const uint64_t* current_states,
     const uint64_t* row_values,
@@ -74,8 +76,8 @@ int run_poseidon2_width8_linear_round_row_major_on_device(
         return -2;
     }
 
-    const size_t blocks = (row_count + kThreads - 1) / kThreads;
-    poseidon2_width8_linear_round_row_major_kernel<<<blocks, kThreads>>>(
+    const size_t blocks = (row_count + kPoseidon2RowMajorThreads - 1) / kPoseidon2RowMajorThreads;
+    poseidon2_width8_linear_round_row_major_kernel<<<blocks, kPoseidon2RowMajorThreads>>>(
         current_states, row_values, device_out, row_count, column_count, offset, chunk_len,
         kPoseidon2Width8);
     LZVM_CUDA_RETURN_ON_ERROR(lzvm_cuda_check_launch());
@@ -102,8 +104,8 @@ int run_poseidon2_width8_linear_round_row_major_digest_on_device_on_stream(
         return -2;
     }
 
-    const size_t blocks = (row_count + kThreads - 1) / kThreads;
-    poseidon2_width8_linear_round_row_major_kernel<<<blocks, kThreads, 0, stream>>>(
+    const size_t blocks = (row_count + kPoseidon2RowMajorThreads - 1) / kPoseidon2RowMajorThreads;
+    poseidon2_width8_linear_round_row_major_kernel<<<blocks, kPoseidon2RowMajorThreads, 0, stream>>>(
         current_states, row_values, device_out, row_count, column_count, offset, chunk_len,
         kPoseidon2DigestWords);
     LZVM_CUDA_RETURN_ON_ERROR(lzvm_cuda_check_launch());
@@ -141,8 +143,8 @@ int run_poseidon2_width16_linear_round_row_major_on_device(
         return -2;
     }
 
-    const size_t blocks = (row_count + kThreads - 1) / kThreads;
-    poseidon2_width16_linear_round_row_major_kernel<<<blocks, kThreads>>>(
+    const size_t blocks = (row_count + kPoseidon2RowMajorThreads - 1) / kPoseidon2RowMajorThreads;
+    poseidon2_width16_linear_round_row_major_kernel<<<blocks, kPoseidon2RowMajorThreads>>>(
         current_states, row_values, device_out, row_count, column_count, offset, chunk_len,
         kPoseidon2Width16);
     LZVM_CUDA_RETURN_ON_ERROR(lzvm_cuda_check_launch());
@@ -169,8 +171,8 @@ int run_poseidon2_width16_linear_round_row_major_digest_on_device_on_stream(
         return -2;
     }
 
-    const size_t blocks = (row_count + kThreads - 1) / kThreads;
-    poseidon2_width16_linear_round_row_major_kernel<<<blocks, kThreads, 0, stream>>>(
+    const size_t blocks = (row_count + kPoseidon2RowMajorThreads - 1) / kPoseidon2RowMajorThreads;
+    poseidon2_width16_linear_round_row_major_kernel<<<blocks, kPoseidon2RowMajorThreads, 0, stream>>>(
         current_states, row_values, device_out, row_count, column_count, offset, chunk_len,
         kPoseidon2DigestWords);
     LZVM_CUDA_RETURN_ON_ERROR(lzvm_cuda_check_launch());
