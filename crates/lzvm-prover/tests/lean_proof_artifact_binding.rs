@@ -80,6 +80,7 @@ fn lean_proof_artifact_binding_exports_core_contract_projection() {
             "runtime_proof_artifact_finalized_full_contract",
             "runtime_proof_artifact_finalized_verifier_core_contract",
             "runtime_proof_artifact_finalized_evidence_core_and_sound",
+            "runtime_proof_artifact_finalized_accepts_evidence_core_and_sound",
             "runtime_proof_artifact_finalized_audited_core_contract",
         ],
     );
@@ -476,6 +477,37 @@ fn lean_proof_artifact_binding_exports_core_contract_projection() {
         &lean_source,
         "runtime_proof_artifact_finalized_evidence_core_and_sound",
         &["sound_witness_implies_verifier_core_contract"],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_proof_artifact_finalized_accepts_evidence_core_and_sound",
+        &[
+            "RuntimeProofArtifactFinalized",
+            "system.accepts publicInput proof",
+            "RuntimeProofArtifactBindingEvidence",
+            "RuntimeProofArtifactBindingStructuralObligations",
+            "RuntimeArtifactEvidence",
+            "RuntimeVerifierCoreContract system publicInput proof",
+            "SoundWitness system publicInput proof",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_proof_artifact_finalized_accepts_evidence_core_and_sound",
+        &[
+            "runtime_proof_artifact_binding_checked_acceptance_accepts_evidence_core_and_sound",
+            "runtime_proof_artifact_finalized_evidence_core_and_sound",
+            "checkedContract.left",
+        ],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &lean_source,
+        "runtime_proof_artifact_finalized_accepts_evidence_core_and_sound",
+        &[
+            "runtime_proof_artifact_finalized_full_contract",
+            "runtime_artifact_checked_acceptance_evidence_core_and_sound",
+            "sound_witness_implies_verifier_core_contract",
+        ],
     );
     lean_binding::assert_theorem_prefix_contains(
         &lean_source,
