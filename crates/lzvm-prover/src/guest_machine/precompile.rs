@@ -11,8 +11,6 @@ use crate::secp256k1_host::{
     secp256k1_point_add_limbs, secp256k1_point_double_limbs, Secp256k1Error,
 };
 
-const KECCAK_STATE_BYTES: usize = 25 * 8;
-
 pub(super) fn execute_precompile(
     memory: &mut GuestMachineMemory,
     state: &mut GuestMachineState,
@@ -74,7 +72,6 @@ fn execute_keccak_precompile(
 ) -> Result<(), GuestMachineError> {
     let mut words = read_u64_words::<25, 200>(memory, effects, address)?;
     keccakf(&mut words);
-    state.clear_reservation_if_overlaps(address, KECCAK_STATE_BYTES);
     write_u64_words::<25, 200>(memory, state, effects, address, &words)?;
     Ok(())
 }
