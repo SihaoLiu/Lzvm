@@ -1481,6 +1481,50 @@ theorem runtime_opening_checked_acceptance_evidence_core_and_sound
       accepted
   exact And.intro sound.left (And.intro core sound.right)
 
+theorem runtime_opening_checked_acceptance_accepts_evidence_core_and_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeOpeningValidation system) :
+    forall artifact publicInput proof requiresExternalSource,
+      RuntimeOpeningCheckedAcceptance system validation artifact publicInput proof ->
+        system.accepts publicInput proof
+          /\ RuntimeOpeningEvidence
+            system
+            validation
+            artifact
+            publicInput
+            proof
+            requiresExternalSource
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro artifact publicInput proof requiresExternalSource accepted
+  have runtimeAccepted :=
+    validation.openingAcceptedImpliesRuntimeSoundnessAccepted
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      accepted
+  have runtimeContract :=
+    runtime_soundness_checked_acceptance_accepts_evidence_core_and_sound
+      assumptions
+      validation.runtimeSoundnessValidation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      runtimeAccepted
+  have openingCoreSound :=
+    runtime_opening_checked_acceptance_evidence_core_and_sound
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      accepted
+  exact And.intro runtimeContract.left openingCoreSound
+
 theorem runtime_opening_checked_acceptance_audited_core_contract
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
