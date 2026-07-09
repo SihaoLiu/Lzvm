@@ -104,6 +104,7 @@ fn lean_retained_parent_checkpoint_binding_tracks_runtime_opening_contract() {
             "runtime_retained_parent_checkpoint_nary_opening_source_and_core_contract_from_bundle",
             "runtime_retained_parent_checkpoint_nary_opening_source_core_sound_contract_from_bundle",
             "runtime_retained_parent_checkpoint_nary_opening_source_core_sound_contract_from_concrete_opening_bundle",
+            "runtime_retained_parent_checkpoint_nary_opening_source_core_sound_contract_from_hash_concrete_opening",
             "runtime_retained_parent_checkpoint_prefix_batch_implies_lower_prefix_bound",
             "runtime_retained_parent_checkpoint_opening_checked_acceptance_prefix_batch_contract",
             "runtime_retained_parent_checkpoint_opening_checked_acceptance_source_contract",
@@ -522,6 +523,42 @@ fn lean_retained_parent_checkpoint_binding_tracks_runtime_opening_contract() {
         &lean_source,
         "runtime_retained_parent_checkpoint_nary_opening_source_core_sound_contract_from_concrete_opening_bundle",
         &["runtime_retained_parent_checkpoint_opening_checked_acceptance_sound\n"],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "runtime_retained_parent_checkpoint_nary_opening_source_core_sound_contract_from_hash_concrete_opening",
+        &[
+            "AssumptionBundle system",
+            "HashCollisionResistanceAssumption",
+            "CentralizedNAryMerkleCompressionCollisionResistance",
+            "RuntimeRetainedParentCheckpointNAryConcreteOpeningBinding",
+            "RuntimeConstantOpeningNAryConcreteBinding",
+            "RuntimeWitnessOpeningNAryConcreteBinding",
+            "RuntimeRetainedParentCheckpointOpeningDigestContract",
+            "RuntimeRetainedParentCheckpointOpeningSourceContract",
+            "RuntimeRetainedParentCheckpointOpeningRetainedRowsContract",
+            "RuntimeVerifierCoreContract system publicInput proof",
+            "SoundWitness system publicInput proof",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_retained_parent_checkpoint_nary_opening_source_core_sound_contract_from_hash_concrete_opening",
+        &[
+            "runtime_retained_parent_checkpoint_nary_opening_digest_contract_from_hash_assumption",
+            "runtime_retained_parent_checkpoint_opening_checked_acceptance_source_contract",
+            "runtime_retained_parent_checkpoint_opening_checked_acceptance_retained_rows_contract",
+            "runtime_retained_parent_checkpoint_opening_checked_acceptance_verifier_core_contract",
+            "runtime_retained_parent_checkpoint_opening_checked_acceptance_sound_from_hash_concrete_opening",
+        ],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &lean_source,
+        "runtime_retained_parent_checkpoint_nary_opening_source_core_sound_contract_from_hash_concrete_opening",
+        &[
+            "runtime_retained_parent_checkpoint_nary_opening_source_and_core_contract_from_bundle",
+            "runtime_retained_parent_checkpoint_opening_checked_acceptance_sound_from_concrete_nary_merkle",
+        ],
     );
     lean_binding::assert_theorem_prefix_contains(
         &lean_source,
