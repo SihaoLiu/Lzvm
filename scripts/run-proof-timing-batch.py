@@ -1126,6 +1126,7 @@ def write_batch_json(
         "append_max_average_rejections": args.append_max_average_rejections,
         "commit": commit,
         "summary": args.summary,
+        "metadata_lines": list(args.metadata_line or []),
         "small_command": args.small_command,
         "large_command": args.large_command,
         "timing_summary_script": args.timing_summary_script,
@@ -1513,6 +1514,7 @@ def self_test() -> None:
         timing_summary_script="scripts/prove-timing-root-summary.py",
         max_relative_spread=0.10,
         max_runs=None,
+        metadata_line=["wrapper=proof-self-test"],
         small_max_avg_s=None,
         large_max_avg_s=None,
         append_max_average_rejections=False,
@@ -1572,6 +1574,8 @@ def self_test() -> None:
         }
         if batch_payload.get("inherited_runtime_env") != expected_runtime_env:
             raise SystemExit("self-test batch json should record inherited runtime env")
+        if batch_payload.get("metadata_lines") != ["wrapper=proof-self-test"]:
+            raise SystemExit("self-test batch json should record metadata lines")
         for key in [
             "small_stable_spread_s",
             "large_stable_spread_s",
@@ -1715,6 +1719,7 @@ def main() -> None:
     parser.add_argument("--append-max-average-rejections", action="store_true")
     parser.add_argument("--append-script", default="scripts/append-improve-log.py")
     parser.add_argument("--timing-summary-script", default="scripts/prove-timing-root-summary.py")
+    parser.add_argument("--metadata-line", action="append", default=[])
     parser.add_argument("--require-text", action="append", default=[])
     parser.add_argument("--small-require-text", action="append", default=[])
     parser.add_argument("--large-require-text", action="append", default=[])

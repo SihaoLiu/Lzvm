@@ -933,6 +933,20 @@ def optional_int_text(value: int | None) -> str:
     return "" if value is None else str(value)
 
 
+def cleared_parent_env_names(
+    args: argparse.Namespace,
+    selected: list[tuple[ProofEnv, str]],
+) -> list[str]:
+    explicit_names = set()
+    for _config, mode in selected:
+        explicit_names.update(mode_env_for_args(args, mode))
+    return sorted(
+        name
+        for name in PIPELINE_ENV_TO_CLEAR
+        if os.environ.get(name) is not None and name not in explicit_names
+    )
+
+
 def next_command_parts(
     args: argparse.Namespace,
     root: Path,
@@ -1689,6 +1703,8 @@ def runner_command(args: argparse.Namespace, root: Path) -> list[str]:
             command.extend(["--large-max-avg-s", str(large_max_avg_s)])
     if args.append_max_average_rejections:
         command.append("--append-max-average-rejections")
+    for line in dry_run_summary_lines(args, root):
+        command.extend(["--metadata-line", line])
     for config, mode in selected:
         option = "--small-command" if config.label == "small" else "--large-command"
         command.extend(
@@ -1710,9 +1726,11 @@ def runner_command(args: argparse.Namespace, root: Path) -> list[str]:
 def dry_run_summary_lines(args: argparse.Namespace, root: Path) -> list[str]:
     selected = selected_envs(args, root)
     selected_labels = [config.label for config, _mode in selected]
+    cleared_envs = cleared_parent_env_names(args, selected)
     lines = [
         f"suite={args.suite}",
         f"selected={','.join(selected_labels)}",
+        f"cleared_parent_envs={','.join(cleared_envs)}",
         f"runs={args.runs}",
         f"max_runs={effective_max_runs(args)}",
         f"verify_proof={str(not args.skip_verify_proof).lower()}",
@@ -2127,8 +2145,17 @@ def self_test() -> None:
         write_env_template=None,
         skip_verify_proof=False,
     )
+    previous_pipeline_env = {
+        name: os.environ.get(name) for name in PIPELINE_ENV_TO_CLEAR
+    }
+    for name in PIPELINE_ENV_TO_CLEAR:
+        os.environ.pop(name, None)
+    os.environ[RETAINED_SOURCE_BYTES_ENV] = "1234"
     try:
         small_config, _large_config = proof_envs(args, root)
+        cleared_env_line = f"cleared_parent_envs={RETAINED_SOURCE_BYTES_ENV}"
+        if cleared_env_line not in dry_run_summary_lines(args, root):
+            raise SystemExit("self-test cleared parent env dry-run summary missing")
         default_command = command_for_env(
             small_config,
             args.small_mode,
@@ -2299,6 +2326,8 @@ def self_test() -> None:
             raise SystemExit("self-test batch directory missing")
         batch_dir = batch_dirs[0]
         batch_json = json.loads((batch_dir / "batch.json").read_text(encoding="utf-8"))
+        if cleared_env_line not in batch_json.get("metadata_lines", []):
+            raise SystemExit("self-test wrapper metadata should record cleared envs")
         expected_spread = {
             "small_stable_spread_s": 0.002,
             "large_stable_spread_s": 0.002,
@@ -2346,6 +2375,11 @@ def self_test() -> None:
             if "aggregate,total_count,valid_total_count" not in summary_text:
                 raise SystemExit(f"self-test {key} aggregate row missing")
     finally:
+        for name, value in previous_pipeline_env.items():
+            if value is None:
+                os.environ.pop(name, None)
+            else:
+                os.environ[name] = value
         shutil.rmtree(work_dir, ignore_errors=True)
 
 
