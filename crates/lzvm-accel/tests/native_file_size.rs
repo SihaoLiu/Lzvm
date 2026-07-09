@@ -182,8 +182,16 @@ fn ntt_uses_block_twiddle_kernel_for_large_stages() {
         "large NTT stages should avoid per-butterfly full twiddle exponentiation"
     );
     assert!(
-        run_ntt_body.contains("stage_len / 2 > kThreads"),
+        run_ntt_body.contains("const size_t half = stage_len / 2;"),
+        "NTT stage dispatch should derive the half-stage length once"
+    );
+    assert!(
+        run_ntt_body.contains("if (half > kThreads)"),
         "block twiddle path should be limited to stages with block-aligned offsets"
+    );
+    assert!(
+        run_ntt_body.contains("else if (half >= kNttThreadPowerKernelMinHalf)"),
+        "thread-power path should cover middle stages before the block twiddle path"
     );
 }
 

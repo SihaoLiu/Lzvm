@@ -1029,4 +1029,72 @@ theorem
         proof
         accepted)
 
+theorem
+  runtime_transcript_binding_checked_acceptance_audited_concrete_core_sound_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeTranscriptBindingValidation system)
+    (binding :
+      RuntimeProofArtifactConcreteSegmentIdBinding
+        validation.artifactBindingValidation) :
+    forall artifact publicInput proof,
+      RuntimeTranscriptBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RequiredCryptographicAssumptionStatements assumptions.crypto
+          /\ RequiredSemanticAssumptionStatements assumptions.semantic
+          /\ RuntimeTranscriptBindingEvidence
+            system
+            validation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeTranscriptBindingStructuralObligations
+            system
+            validation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeArtifactEvidence
+            system
+            validation.artifactBindingValidation.runtimeValidation
+            artifact
+            publicInput
+            proof
+          /\ system.transcriptBound publicInput proof
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof
+          /\ RuntimeProofArtifactConcreteSegmentIdsAllowed proof := by
+  intro artifact publicInput proof accepted
+  have auditedContract :=
+    runtime_transcript_binding_checked_acceptance_audited_core_contract
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have concreteSegmentIds :=
+    runtime_transcript_binding_checked_acceptance_concrete_segment_ids_allowed
+      validation
+      binding
+      artifact
+      publicInput
+      proof
+      accepted
+  exact
+    And.intro auditedContract.left
+      (And.intro auditedContract.right.left
+        (And.intro auditedContract.right.right.left
+          (And.intro auditedContract.right.right.right.left
+            (And.intro auditedContract.right.right.right.right.left
+              (And.intro auditedContract.right.right.right.right.right.left
+                (And.intro auditedContract.right.right.right.right.right.right.left
+                  (And.intro
+                    auditedContract.right.right.right.right.right.right.right
+                    concreteSegmentIds)))))))
+
 end Lzvm
