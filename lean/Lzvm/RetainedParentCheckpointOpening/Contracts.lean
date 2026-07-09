@@ -957,6 +957,117 @@ theorem
         (And.intro sourceCore.right.right.left
           (And.intro sourceCore.right.right.right sound.right)))
 
+set_option linter.style.longLine false in
+theorem
+  runtime_retained_parent_checkpoint_nary_opening_source_core_sound_contract_from_hash_concrete_opening
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (hashAssumptions : HashCollisionResistanceAssumption)
+    (validation : RuntimeRetainedParentCheckpointOpeningValidation system)
+    {Digest : Type uDigest}
+    {compress : List Digest -> Digest}
+    (centralized :
+      CentralizedNAryMerkleCompressionCollisionResistance
+        hashAssumptions
+        compress)
+    (binding :
+      RuntimeRetainedParentCheckpointNAryConcreteOpeningBinding
+        system
+        validation
+        Digest
+        compress)
+    (constantBinding :
+      RuntimeConstantOpeningNAryConcreteBinding
+        system
+        validation.batchRowsValidation.openingSegmentValidation.openingValidation
+        Digest
+        compress)
+    (witnessBinding :
+      RuntimeWitnessOpeningNAryConcreteBinding
+        system
+        validation.batchRowsValidation.openingSegmentValidation.openingValidation
+        Digest
+        compress) :
+    forall artifact publicInput proof,
+      RuntimeRetainedParentCheckpointOpeningCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeRetainedParentCheckpointOpeningDigestContract
+            system
+            validation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeRetainedParentCheckpointOpeningSourceContract
+            system
+            validation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeRetainedParentCheckpointOpeningRetainedRowsContract
+            system
+            validation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro artifact publicInput proof accepted
+  have digest :=
+    runtime_retained_parent_checkpoint_nary_opening_digest_contract_from_hash_assumption
+      hashAssumptions
+      validation
+      centralized
+      binding
+      artifact
+      publicInput
+      proof
+      accepted
+  have source :=
+    runtime_retained_parent_checkpoint_opening_checked_acceptance_source_contract
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have retainedRows :=
+    runtime_retained_parent_checkpoint_opening_checked_acceptance_retained_rows_contract
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have core :=
+    runtime_retained_parent_checkpoint_opening_checked_acceptance_verifier_core_contract
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have sound :=
+    runtime_retained_parent_checkpoint_opening_checked_acceptance_sound_from_hash_concrete_opening
+      assumptions
+      hashAssumptions
+      validation
+      centralized
+      constantBinding
+      witnessBinding
+      artifact
+      publicInput
+      proof
+      False
+      accepted
+  exact
+    And.intro digest
+      (And.intro source
+        (And.intro retainedRows
+          (And.intro core sound.right)))
+
 theorem runtime_retained_parent_checkpoint_opening_checked_acceptance_source_and_core_contract
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
