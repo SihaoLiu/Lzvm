@@ -541,6 +541,61 @@ theorem runtime_trace_constraint_artifact_binding_checked_acceptance_evidence_co
       (And.intro checkedSound.right.left
         (And.intro coreContract checkedSound.right.right))
 
+theorem runtime_trace_constraint_artifact_binding_checked_acceptance_accepts_evidence_core_and_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeTraceConstraintArtifactBindingValidation system) :
+    forall artifact publicInput proof requiresExternalSource,
+      RuntimeTraceConstraintArtifactBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        system.accepts publicInput proof
+          /\ RuntimeTraceConstraintPreflightBindingEvidence
+            system
+            validation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeTraceConstraintEvidence
+            system
+            validation.traceConstraintValidation
+            artifact
+            publicInput
+            proof
+            requiresExternalSource
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro artifact publicInput proof requiresExternalSource accepted
+  have traceConstraintAccepted :=
+    runtime_trace_constraint_artifact_binding_checked_acceptance_trace_constraint
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have traceConstraintContract :=
+    runtime_trace_constraint_checked_acceptance_accepts_evidence_core_and_sound
+      assumptions
+      validation.traceConstraintValidation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      traceConstraintAccepted
+  have evidenceCoreSound :=
+    runtime_trace_constraint_artifact_binding_checked_acceptance_evidence_core_and_sound
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      accepted
+  exact And.intro traceConstraintContract.left evidenceCoreSound
+
 theorem runtime_trace_constraint_artifact_binding_checked_acceptance_audited_core_contract
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
