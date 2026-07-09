@@ -139,6 +139,77 @@ def host_gpu_status() -> list[dict[str, int]] | None:
     return devices or None
 
 
+def selected_gpu_status(
+    devices: list[dict[str, int]],
+) -> dict[str, int] | None:
+    visible_devices = os.environ.get("CUDA_VISIBLE_DEVICES")
+    if visible_devices is not None:
+        token = next(
+            (part.strip() for part in visible_devices.split(",") if part.strip()),
+            "",
+        )
+        if token.lower() in {"", "-1", "none", "nodevfiles", "void"}:
+            return None
+        if token.isdecimal():
+            requested_index = int(token)
+            for device in devices:
+                if device["index"] == requested_index:
+                    return device
+            return None
+    return devices[0] if devices else None
+
+
+def pre_run_gpu_memory_wait_status_lines(
+    label: str,
+    run_index: int,
+    min_free_mib: int | None,
+    wait_timeout_s: float,
+    wait_poll_s: float,
+) -> tuple[list[str], bool]:
+    if min_free_mib is None:
+        return ([], True)
+    lines = [
+        f"pre_run_gpu_memory_min_free_mib={min_free_mib}",
+        f"pre_run_gpu_memory_wait_timeout_s={wait_timeout_s:.3f}",
+        f"pre_run_gpu_memory_wait_poll_s={wait_poll_s:.3f}",
+    ]
+    deadline = time.monotonic() + wait_timeout_s
+    attempt = 1
+    while True:
+        lines.append(f"pre_run_gpu_memory_wait_attempt={attempt}")
+        devices = host_gpu_status()
+        selected = selected_gpu_status(devices or [])
+        if selected is None:
+            lines.append("pre_run_gpu_memory_status=device_unavailable")
+        else:
+            total = selected["memory_total_mib"]
+            used = selected["memory_used_mib"]
+            free = max(total - used, 0)
+            lines.extend(
+                [
+                    f"pre_run_gpu_memory_selected_index={selected['index']}",
+                    f"pre_run_gpu_memory_total_mib={total}",
+                    f"pre_run_gpu_memory_used_mib={used}",
+                    f"pre_run_gpu_memory_free_mib={free}",
+                ]
+            )
+            if free >= min_free_mib:
+                lines.append("pre_run_gpu_memory_wait_status=ready")
+                return (lines, True)
+            lines.append("pre_run_gpu_memory_status=low")
+        remaining_s = deadline - time.monotonic()
+        if remaining_s <= 0.0:
+            lines.append("pre_run_gpu_memory_wait_status=timeout")
+            return (lines, False)
+        print(
+            f"{label}_pre_run_gpu_memory_wait="
+            f"run={run_index} attempt={attempt} seconds={min(wait_poll_s, remaining_s):.3f}",
+            flush=True,
+        )
+        time.sleep(min(wait_poll_s, remaining_s))
+        attempt += 1
+
+
 def positive_run_count(raw: str) -> int:
     try:
         value = int(raw)
@@ -169,6 +240,16 @@ def finite_float(raw: str, label: str) -> float:
 def nonnegative_float(raw: str) -> float:
     value = finite_float(raw, "float")
     if value < 0.0:
+        raise argparse.ArgumentTypeError("value must be nonnegative")
+    return value
+
+
+def nonnegative_integer(raw: str) -> int:
+    try:
+        value = int(raw)
+    except ValueError as error:
+        raise argparse.ArgumentTypeError(f"invalid integer: {raw!r}") from error
+    if value < 0:
         raise argparse.ArgumentTypeError("value must be nonnegative")
     return value
 
@@ -563,6 +644,9 @@ def run_once(
     root: Path,
     timing_summary_script: Path,
     required_texts: list[str],
+    pre_run_min_gpu_free_mib: int | None,
+    pre_run_gpu_wait_timeout_s: float,
+    pre_run_gpu_wait_poll_s: float,
 ) -> Path:
     stem = f"{label}-{run_index:03d}"
     tmp_dir = batch_dir / f"{stem}.tmp"
@@ -592,6 +676,19 @@ def run_once(
 
     try:
         prepare_run_tmp_dir(tmp_dir)
+        wait_lines, gpu_ready = pre_run_gpu_memory_wait_status_lines(
+            label,
+            run_index,
+            pre_run_min_gpu_free_mib,
+            pre_run_gpu_wait_timeout_s,
+            pre_run_gpu_wait_poll_s,
+        )
+        status_lines.extend(wait_lines)
+        if not gpu_ready:
+            write_status(status_path, status_lines)
+            raise SystemExit(
+                f"{label} run {run_index} GPU memory wait timed out; status: {status_path}"
+            )
     except SystemExit as error:
         status_lines.append(f"validation_error={error}")
         write_status(status_path, status_lines)
@@ -704,6 +801,9 @@ def run_group(
     required_texts: list[str],
     max_relative_spread: float,
     retryable_failure_wait_s: float,
+    pre_run_min_gpu_free_mib: int | None,
+    pre_run_gpu_wait_timeout_s: float,
+    pre_run_gpu_wait_poll_s: float,
 ) -> list[Path]:
     if command is None:
         return []
@@ -721,6 +821,9 @@ def run_group(
             root,
             timing_summary_script,
             required_texts,
+            pre_run_min_gpu_free_mib,
+            pre_run_gpu_wait_timeout_s,
+            pre_run_gpu_wait_poll_s,
         )
         logs.append(log)
         if len(logs) >= run_count:
@@ -1200,6 +1303,9 @@ def write_batch_json(
         "small_max_avg_s": args.small_max_avg_s,
         "large_max_avg_s": args.large_max_avg_s,
         "retryable_failure_wait_s": args.retryable_failure_wait_s,
+        "pre_run_min_gpu_free_mib": args.pre_run_min_gpu_free_mib,
+        "pre_run_gpu_wait_timeout_s": args.pre_run_gpu_wait_timeout_s,
+        "pre_run_gpu_wait_poll_s": args.pre_run_gpu_wait_poll_s,
         "inherited_runtime_env": inherited_runtime_env(),
         "append_max_average_rejections": args.append_max_average_rejections,
         "commit": commit,
@@ -1401,6 +1507,9 @@ def run_batch(args: argparse.Namespace) -> Path:
             required_texts_for_label(args, "small"),
             args.max_relative_spread,
             args.retryable_failure_wait_s,
+            args.pre_run_min_gpu_free_mib,
+            args.pre_run_gpu_wait_timeout_s,
+            args.pre_run_gpu_wait_poll_s,
         )
         large_logs = run_group(
             "large",
@@ -1415,6 +1524,9 @@ def run_batch(args: argparse.Namespace) -> Path:
             required_texts_for_label(args, "large"),
             args.max_relative_spread,
             args.retryable_failure_wait_s,
+            args.pre_run_min_gpu_free_mib,
+            args.pre_run_gpu_wait_timeout_s,
+            args.pre_run_gpu_wait_poll_s,
         )
     except SystemExit:
         record_batch_json(
@@ -1611,6 +1723,9 @@ def self_test() -> None:
         small_max_avg_s=None,
         large_max_avg_s=None,
         retryable_failure_wait_s=0.0,
+        pre_run_min_gpu_free_mib=None,
+        pre_run_gpu_wait_timeout_s=0.0,
+        pre_run_gpu_wait_poll_s=5.0,
         append_max_average_rejections=False,
         path=str(work_dir / "improve-log.csv"),
         require_proof_output=False,
@@ -1839,6 +1954,9 @@ def main() -> None:
     parser.add_argument("--small-max-avg-s", type=positive_timeout, default=None)
     parser.add_argument("--large-max-avg-s", type=positive_timeout, default=None)
     parser.add_argument("--retryable-failure-wait-s", type=nonnegative_float, default=0.0)
+    parser.add_argument("--pre-run-min-gpu-free-mib", type=nonnegative_integer, default=None)
+    parser.add_argument("--pre-run-gpu-wait-timeout-s", type=nonnegative_float, default=0.0)
+    parser.add_argument("--pre-run-gpu-wait-poll-s", type=positive_timeout, default=5.0)
     parser.add_argument("--append-max-average-rejections", action="store_true")
     parser.add_argument("--append-script", default="scripts/append-improve-log.py")
     parser.add_argument("--timing-summary-script", default="scripts/prove-timing-root-summary.py")

@@ -1705,6 +1705,20 @@ def runner_command(args: argparse.Namespace, root: Path) -> list[str]:
             command.extend(["--large-max-avg-s", str(large_max_avg_s)])
     if args.append_max_average_rejections:
         command.append("--append-max-average-rejections")
+    if args.check_gpu_memory:
+        command.extend(["--pre-run-min-gpu-free-mib", str(args.min_gpu_free_mib)])
+        command.extend(
+            [
+                "--pre-run-gpu-wait-timeout-s",
+                str(args.gpu_memory_wait_timeout_s),
+            ]
+        )
+        command.extend(
+            [
+                "--pre-run-gpu-wait-poll-s",
+                str(args.gpu_memory_wait_poll_s),
+            ]
+        )
     for line in dry_run_summary_lines(args, root):
         command.extend(["--metadata-line", line])
     for config, mode in selected:
@@ -2320,6 +2334,21 @@ def self_test() -> None:
         if "--retryable-failure-wait-s 3.0" not in retry_wait_command:
             raise SystemExit("self-test retry wait next-command missing")
         args.retryable_failure_wait_s = 0.0
+        args.check_gpu_memory = True
+        args.min_gpu_free_mib = 123
+        args.gpu_memory_wait_timeout_s = 7.0
+        args.gpu_memory_wait_poll_s = 2.0
+        gpu_wait_runner_command = " ".join(shlex.quote(part) for part in runner_command(args, root))
+        if "--pre-run-min-gpu-free-mib 123" not in gpu_wait_runner_command:
+            raise SystemExit("self-test pre-run gpu memory arg missing")
+        if "--pre-run-gpu-wait-timeout-s 7.0" not in gpu_wait_runner_command:
+            raise SystemExit("self-test pre-run gpu wait timeout arg missing")
+        if "--pre-run-gpu-wait-poll-s 2.0" not in gpu_wait_runner_command:
+            raise SystemExit("self-test pre-run gpu wait poll arg missing")
+        args.check_gpu_memory = False
+        args.min_gpu_free_mib = DEFAULT_MIN_GPU_FREE_MIB
+        args.gpu_memory_wait_timeout_s = DEFAULT_GPU_MEMORY_WAIT_TIMEOUT_S
+        args.gpu_memory_wait_poll_s = DEFAULT_GPU_MEMORY_WAIT_POLL_S
         code = run(args)
         if code != 0:
             raise SystemExit(code)
