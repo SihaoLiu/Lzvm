@@ -688,11 +688,9 @@ impl GuestMachineMemorySegment {
             return;
         }
 
-        let mut word_address = address;
-        for word in words {
-            self.write_u64_le::<8>(word_address, *word);
-            word_address += 8;
-        }
+        let mut bytes = [0_u8; BYTES];
+        write_u64_words_to_le_bytes(&mut bytes, words);
+        self.write_range(address, &bytes);
     }
 
     fn written_block_mut(
