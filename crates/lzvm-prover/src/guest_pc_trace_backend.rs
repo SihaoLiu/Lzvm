@@ -12066,6 +12066,12 @@ fn simple_copy_register_store_fast_path_parts(
     row: usize,
     report: &GuestMachineReport,
 ) -> Result<Option<(ZiskMainInstruction, Option<u8>, u8)>, GuestPcTraceBackendError> {
+    if !report.precompile_memory_accesses().is_empty() {
+        return Ok(None);
+    }
+    let Some(instruction_size) = sequential_report_fast_path_instruction_size(row, report)? else {
+        return Ok(None);
+    };
     let (b, b_index, store_index) = match report.instruction {
         RiscvInstruction::Lui { rd, immediate } if rd != 0 => {
             (ZiskMainSource::Immediate(immediate as u64), None, rd)
@@ -12083,23 +12089,6 @@ fn simple_copy_register_store_fast_path_parts(
             immediate: 0,
         } if rd != 0 && rs1 != 0 => (ZiskMainSource::Register(rs1), Some(rs1), rd),
         _ => return Ok(None),
-    };
-    simple_copy_register_store_fast_path_parts_from_source(row, report, b, b_index, store_index)
-}
-
-#[inline(always)]
-fn simple_copy_register_store_fast_path_parts_from_source(
-    row: usize,
-    report: &GuestMachineReport,
-    b: ZiskMainSource,
-    b_index: Option<u8>,
-    store_index: u8,
-) -> Result<Option<(ZiskMainInstruction, Option<u8>, u8)>, GuestPcTraceBackendError> {
-    if !report.precompile_memory_accesses().is_empty() {
-        return Ok(None);
-    }
-    let Some(instruction_size) = sequential_report_fast_path_instruction_size(row, report)? else {
-        return Ok(None);
     };
     let instruction = ZiskMainInstruction {
         pc: report.address(),
@@ -12593,21 +12582,13 @@ fn report_level_fast_path_parts(
             rd,
             rs1,
             immediate,
-        } if rd != 0 && (rs1 == 0 || immediate == 0) => {
-            let (b, b_index) = if rs1 == 0 {
-                (ZiskMainSource::Immediate(i64::from(immediate) as u64), None)
-            } else {
-                (ZiskMainSource::Register(rs1), Some(rs1))
-            };
-            Ok(simple_copy_register_store_fast_path_parts_from_source(
-                row, report, b, b_index, rd,
-            )?
-            .map(
+        } if rd != 0 && (rs1 == 0 || immediate == 0) => Ok(
+            simple_copy_register_store_fast_path_parts(row, report)?.map(
                 |(instruction, b_index, store_index)| {
                     MainReportFastPathParts::SimpleCopy(instruction, b_index, store_index)
                 },
-            ))
-        }
+            ),
+        ),
         RiscvInstruction::OpImm {
             kind: RiscvOpImmKind::Addi,
             ..
