@@ -10667,6 +10667,11 @@ struct ZiskMainStreamingDeviceReportFeeder<'a> {
 
 #[cfg(feature = "cuda")]
 impl<'a> ZiskMainStreamingDeviceReportFeeder<'a> {
+    #[cfg(test)]
+    fn new(timing_config: ZiskMainTraceLowerTimingConfig) -> Self {
+        Self::new_with_start(timing_config, 0)
+    }
+
     fn new_with_start(
         timing_config: ZiskMainTraceLowerTimingConfig,
         next_report_index: usize,
