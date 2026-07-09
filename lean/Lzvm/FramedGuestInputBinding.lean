@@ -718,6 +718,58 @@ theorem runtime_framed_guest_input_binding_checked_acceptance_full_contract
       sound.right.right.right.left,
       sound.right.right.right.right⟩
 
+theorem runtime_framed_guest_input_binding_checked_acceptance_accepts_evidence_core_and_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeFramedGuestInputBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeFramedGuestInputBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        system.accepts publicInput proof
+          /\ RuntimeFramedGuestInputBindingEvidence
+            system
+            validation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeFramedGuestInputBindingStructuralObligations
+            system
+            validation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro artifact publicInput proof accepted
+  have ethAccepted :=
+    runtime_framed_guest_input_binding_checked_acceptance_eth_block_acceptance
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have ethContract :=
+    runtime_eth_block_public_input_binding_checked_acceptance_accepts_evidence_core_and_sound
+      assumptions
+      validation.ethBlockValidation
+      artifact
+      publicInput
+      proof
+      ethAccepted
+  have fullContract :=
+    runtime_framed_guest_input_binding_checked_acceptance_full_contract
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  exact And.intro ethContract.left fullContract
+
 theorem
   runtime_framed_guest_input_binding_checked_acceptance_concrete_core_sound_contract
     {system : VerifierModel}
