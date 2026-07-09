@@ -6806,7 +6806,9 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "source_lookup_auxiliary_acceptance_sound",
             "source_lookup_checked_acceptance_verifier_core_contract",
             "source_lookup_checked_acceptance_auxiliary_evidence_core_and_sound",
+            "source_lookup_checked_acceptance_accepts_auxiliary_evidence_core_and_sound",
             "source_lookup_checked_acceptance_auxiliary_evidence_audited_core_contract",
+            "source_lookup_checked_acceptance_accepts_auxiliary_evidence_audited_core_contract",
             "witness_leaf_digest_checked_acceptance_projects_verifier_acceptance",
             "witness_leaf_digest_checked_acceptance_projects_evidence",
             "witness_leaf_digest_checked_acceptance_projects_canonical_leaf_bytes",
@@ -6815,7 +6817,9 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "witness_leaf_digest_acceptance_sound",
             "witness_leaf_digest_checked_acceptance_verifier_core_contract",
             "witness_leaf_digest_checked_acceptance_evidence_core_and_sound",
+            "witness_leaf_digest_checked_acceptance_accepts_evidence_core_and_sound",
             "witness_leaf_digest_checked_acceptance_evidence_audited_core_contract",
+            "witness_leaf_digest_checked_acceptance_accepts_evidence_audited_core_contract",
             "gpu_canonical_leaf_checked_acceptance_projects_verifier_acceptance",
             "gpu_canonical_leaf_checked_acceptance_projects_flag_clear",
             "gpu_canonical_leaf_checked_acceptance_projects_leaf_bytes",
@@ -10180,6 +10184,104 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             &[
                 "gpu_merkle_digest_prefix_batch_checked_acceptance_sound",
                 "gpu_merkle_digest_prefix_batch_checked_acceptance_verifier_core_contract",
+                "sound_witness_implies_verifier_core_contract",
+            ][..],
+        ),
+    ] {
+        lean_binding::assert_theorem_prefix_contains(&auxiliary_source, theorem, prefix_terms);
+        assert_theorem_body_contains_identifiers(&auxiliary_source, theorem, body_terms);
+        assert_theorem_body_omits_identifiers(&auxiliary_source, theorem, omitted_terms);
+    }
+    for (theorem, prefix_terms, body_terms, omitted_terms) in [
+        (
+            "source_lookup_checked_acceptance_accepts_auxiliary_evidence_core_and_sound",
+            &[
+                "SourceLookupCheckedAcceptance system auxiliary publicInput proof",
+                "system.accepts publicInput proof",
+                "SourceLookupAuxiliaryEvidence system auxiliary publicInput proof",
+                "RuntimeVerifierCoreContract system publicInput proof",
+                "SoundWitness system publicInput proof",
+            ][..],
+            &[
+                "source_lookup_checked_acceptance_projects_verifier_acceptance",
+                "source_lookup_checked_acceptance_auxiliary_evidence_core_and_sound",
+            ][..],
+            &[
+                "source_lookup_auxiliary_acceptance_sound",
+                "source_lookup_checked_acceptance_verifier_core_contract",
+                "auxiliary_checked_acceptance_core_and_sound",
+                "sound_witness_implies_verifier_core_contract",
+            ][..],
+        ),
+        (
+            "witness_leaf_digest_checked_acceptance_accepts_evidence_core_and_sound",
+            &[
+                "WitnessLeafDigestCheckedAcceptance system validation publicInput proof",
+                "system.accepts publicInput proof",
+                "WitnessLeafDigestEvidence system validation publicInput proof",
+                "RuntimeVerifierCoreContract system publicInput proof",
+                "SoundWitness system publicInput proof",
+            ][..],
+            &[
+                "witness_leaf_digest_checked_acceptance_projects_verifier_acceptance",
+                "witness_leaf_digest_checked_acceptance_evidence_core_and_sound",
+            ][..],
+            &[
+                "witness_leaf_digest_acceptance_sound",
+                "witness_leaf_digest_checked_acceptance_verifier_core_contract",
+                "auxiliary_checked_acceptance_core_and_sound",
+                "sound_witness_implies_verifier_core_contract",
+            ][..],
+        ),
+    ] {
+        lean_binding::assert_theorem_prefix_contains(&auxiliary_source, theorem, prefix_terms);
+        assert_theorem_body_contains_identifiers(&auxiliary_source, theorem, body_terms);
+        assert_theorem_body_omits_identifiers(&auxiliary_source, theorem, omitted_terms);
+    }
+    for (theorem, prefix_terms, body_terms, omitted_terms) in [
+        (
+            "source_lookup_checked_acceptance_accepts_auxiliary_evidence_audited_core_contract",
+            &[
+                "RequiredCryptographicAssumptionStatements assumptions.crypto",
+                "RequiredSemanticAssumptionStatements assumptions.semantic",
+                "system.accepts publicInput proof",
+                "SourceLookupAuxiliaryEvidence system auxiliary publicInput proof",
+                "RuntimeVerifierCoreContract system publicInput proof",
+                "SoundWitness system publicInput proof",
+            ][..],
+            &[
+                "assumption_bundle_carries_required_crypto_evidence",
+                "assumption_bundle_carries_required_semantic_evidence",
+                "source_lookup_checked_acceptance_accepts_auxiliary_evidence_core_and_sound",
+            ][..],
+            &[
+                "source_lookup_auxiliary_acceptance_sound",
+                "source_lookup_checked_acceptance_verifier_core_contract",
+                "auxiliary_checked_acceptance_core_and_sound",
+                "auxiliary_checked_acceptance_audited_core_contract",
+                "sound_witness_implies_verifier_core_contract",
+            ][..],
+        ),
+        (
+            "witness_leaf_digest_checked_acceptance_accepts_evidence_audited_core_contract",
+            &[
+                "RequiredCryptographicAssumptionStatements assumptions.crypto",
+                "RequiredSemanticAssumptionStatements assumptions.semantic",
+                "system.accepts publicInput proof",
+                "WitnessLeafDigestEvidence system validation publicInput proof",
+                "RuntimeVerifierCoreContract system publicInput proof",
+                "SoundWitness system publicInput proof",
+            ][..],
+            &[
+                "assumption_bundle_carries_required_crypto_evidence",
+                "assumption_bundle_carries_required_semantic_evidence",
+                "witness_leaf_digest_checked_acceptance_accepts_evidence_core_and_sound",
+            ][..],
+            &[
+                "witness_leaf_digest_acceptance_sound",
+                "witness_leaf_digest_checked_acceptance_verifier_core_contract",
+                "auxiliary_checked_acceptance_core_and_sound",
+                "auxiliary_checked_acceptance_audited_core_contract",
                 "sound_witness_implies_verifier_core_contract",
             ][..],
         ),

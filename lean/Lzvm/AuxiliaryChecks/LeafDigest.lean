@@ -91,6 +91,32 @@ theorem source_lookup_checked_acceptance_auxiliary_evidence_core_and_sound
       checked
   exact And.intro evidence coreAndSound
 
+theorem source_lookup_checked_acceptance_accepts_auxiliary_evidence_core_and_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (auxiliary : AuxiliaryValidation system) :
+    forall publicInput proof,
+      SourceLookupCheckedAcceptance system auxiliary publicInput proof ->
+        system.accepts publicInput proof
+          /\ SourceLookupAuxiliaryEvidence system auxiliary publicInput proof
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof checked
+  have accepts :=
+    source_lookup_checked_acceptance_projects_verifier_acceptance
+      auxiliary
+      publicInput
+      proof
+      checked
+  have evidenceCoreSound :=
+    source_lookup_checked_acceptance_auxiliary_evidence_core_and_sound
+      assumptions
+      auxiliary
+      publicInput
+      proof
+      checked
+  exact And.intro accepts evidenceCoreSound
+
 theorem witness_leaf_digest_checked_acceptance_projects_verifier_acceptance
     {system : VerifierModel}
     (validation : WitnessLeafDigestValidation system) :
@@ -196,6 +222,32 @@ theorem witness_leaf_digest_checked_acceptance_evidence_core_and_sound
       proof
       checked
   exact And.intro evidence coreAndSound
+
+theorem witness_leaf_digest_checked_acceptance_accepts_evidence_core_and_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : WitnessLeafDigestValidation system) :
+    forall publicInput proof,
+      WitnessLeafDigestCheckedAcceptance system validation publicInput proof ->
+        system.accepts publicInput proof
+          /\ WitnessLeafDigestEvidence system validation publicInput proof
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof checked
+  have accepts :=
+    witness_leaf_digest_checked_acceptance_projects_verifier_acceptance
+      validation
+      publicInput
+      proof
+      checked
+  have evidenceCoreSound :=
+    witness_leaf_digest_checked_acceptance_evidence_core_and_sound
+      assumptions
+      validation
+      publicInput
+      proof
+      checked
+  exact And.intro accepts evidenceCoreSound
 
 theorem gpu_canonical_leaf_checked_acceptance_projects_verifier_acceptance
     {system : VerifierModel}
@@ -781,6 +833,33 @@ theorem source_lookup_checked_acceptance_auxiliary_evidence_audited_core_contrac
       (And.intro audited.right.left
         (And.intro evidence audited.right.right))
 
+theorem source_lookup_checked_acceptance_accepts_auxiliary_evidence_audited_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (auxiliary : AuxiliaryValidation system) :
+    forall publicInput proof,
+      SourceLookupCheckedAcceptance system auxiliary publicInput proof ->
+        RequiredCryptographicAssumptionStatements assumptions.crypto
+          /\ RequiredSemanticAssumptionStatements assumptions.semantic
+          /\ system.accepts publicInput proof
+          /\ SourceLookupAuxiliaryEvidence system auxiliary publicInput proof
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof checked
+  have acceptsEvidenceCoreSound :=
+    source_lookup_checked_acceptance_accepts_auxiliary_evidence_core_and_sound
+      assumptions
+      auxiliary
+      publicInput
+      proof
+      checked
+  exact
+    And.intro
+      (assumption_bundle_carries_required_crypto_evidence assumptions)
+      (And.intro
+        (assumption_bundle_carries_required_semantic_evidence assumptions)
+        acceptsEvidenceCoreSound)
+
 theorem witness_leaf_digest_checked_acceptance_evidence_audited_core_contract
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
@@ -811,6 +890,33 @@ theorem witness_leaf_digest_checked_acceptance_evidence_audited_core_contract
     And.intro audited.left
       (And.intro audited.right.left
         (And.intro evidence audited.right.right))
+
+theorem witness_leaf_digest_checked_acceptance_accepts_evidence_audited_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : WitnessLeafDigestValidation system) :
+    forall publicInput proof,
+      WitnessLeafDigestCheckedAcceptance system validation publicInput proof ->
+        RequiredCryptographicAssumptionStatements assumptions.crypto
+          /\ RequiredSemanticAssumptionStatements assumptions.semantic
+          /\ system.accepts publicInput proof
+          /\ WitnessLeafDigestEvidence system validation publicInput proof
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof checked
+  have acceptsEvidenceCoreSound :=
+    witness_leaf_digest_checked_acceptance_accepts_evidence_core_and_sound
+      assumptions
+      validation
+      publicInput
+      proof
+      checked
+  exact
+    And.intro
+      (assumption_bundle_carries_required_crypto_evidence assumptions)
+      (And.intro
+        (assumption_bundle_carries_required_semantic_evidence assumptions)
+        acceptsEvidenceCoreSound)
 
 theorem gpu_canonical_leaf_checked_acceptance_leaf_bytes_audited_core_contract
     {system : VerifierModel}
