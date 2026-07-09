@@ -734,6 +734,12 @@ def run_group(
             and retryable_failure_wait_s > 0
             and run_index < max_run_count
         ):
+            print(
+                f"{label}_retryable_failure_wait="
+                f"run={run_index} reason={retryable_failure} "
+                f"seconds={retryable_failure_wait_s:.3f}",
+                flush=True,
+            )
             time.sleep(retryable_failure_wait_s)
     return logs
 
@@ -1771,6 +1777,7 @@ def self_test() -> None:
         retry_args.large_command = retry_command
         retry_args.max_runs = 4
         retry_args.path = str(work_dir / "retry-log.csv")
+        retry_args.retryable_failure_wait_s = 0.001
         retry_args.summary = "retry self test"
         retry_args.work_dir = str(work_dir / "retry-runs")
         retry_batch_dir = run_batch(retry_args)

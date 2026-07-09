@@ -2315,6 +2315,11 @@ def self_test() -> None:
         ):
             raise SystemExit("self-test source pipeline next-command missing")
         args.source_device_stream_pipeline = None
+        args.retryable_failure_wait_s = 3.0
+        retry_wait_command = " ".join(shlex.quote(part) for part in next_command_parts(args, root))
+        if "--retryable-failure-wait-s 3.0" not in retry_wait_command:
+            raise SystemExit("self-test retry wait next-command missing")
+        args.retryable_failure_wait_s = 0.0
         code = run(args)
         if code != 0:
             raise SystemExit(code)
