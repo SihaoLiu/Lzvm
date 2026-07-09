@@ -7010,7 +7010,10 @@ fn lower_guest_pc_trace_owned_streaming_pending_segment(
 
     let lower_started = Instant::now();
     let timing_config = ZiskMainTraceLowerTimingConfig::from_env_if_enabled(timing.is_some());
-    let mut feeder = ZiskMainOwnedStreamingDeviceReportFeeder::new(timing_config);
+    let report_start_index =
+        timing_config.segment_report_start_index(segment, layout.row_count())?;
+    let mut feeder =
+        ZiskMainOwnedStreamingDeviceReportFeeder::new_with_start(timing_config, report_start_index);
     let aggregate_report_started = timing.as_ref().map(|_| Instant::now());
     for report in std::mem::take(&mut pending.reports) {
         feeder.push_report(&mut builder, report, timing.as_deref_mut())?;
@@ -8069,12 +8072,16 @@ impl GuestPcTraceActiveChunkedSegment {
         else {
             return Ok(Err(pending));
         };
+        let timing_config = ZiskMainTraceLowerTimingConfig::from_env_if_enabled(timing_enabled);
+        let report_start_index =
+            timing_config.segment_report_start_index(segment, layout.row_count())?;
         Ok(Ok(Self {
             pending,
             seed,
             builder,
-            feeder: ZiskMainOwnedStreamingDeviceReportFeeder::new(
-                ZiskMainTraceLowerTimingConfig::from_env_if_enabled(timing_enabled),
+            feeder: ZiskMainOwnedStreamingDeviceReportFeeder::new_with_start(
+                timing_config,
+                report_start_index,
             ),
             aggregate_report_started: timing_enabled.then(Instant::now),
         }))
@@ -8686,12 +8693,16 @@ impl GuestPcTraceParallelStreamedSegment {
             ZiskMainStreamingDeviceSegmentBuilder::new(layout, &seed.initial_state, segment)?;
         let retain_reports = builder.is_none();
         let aggregate_report_started = (timing_enabled && builder.is_some()).then(Instant::now);
+        let timing_config = ZiskMainTraceLowerTimingConfig::from_env_if_enabled(timing_enabled);
+        let report_start_index =
+            timing_config.segment_report_start_index(segment, layout.row_count())?;
         Ok(Self {
             trace_instance_index: start.trace_instance_index,
             seed,
             builder,
-            feeder: ZiskMainOwnedStreamingDeviceReportFeeder::new(
-                ZiskMainTraceLowerTimingConfig::from_env_if_enabled(timing_enabled),
+            feeder: ZiskMainOwnedStreamingDeviceReportFeeder::new_with_start(
+                timing_config,
+                report_start_index,
             ),
             pending: None,
             reports: retain_reports.then(Vec::new),
@@ -10606,6 +10617,21 @@ impl ZiskMainTraceLowerTimingConfig {
                 .is_some_and(|stride| report_index.is_multiple_of(stride))
     }
 
+    fn segment_report_start_index(
+        self,
+        segment: ZiskMainTraceSegmentInfo,
+        row_count: usize,
+    ) -> Result<usize, GuestPcTraceBackendError> {
+        if !self.row_timing_enabled {
+            return Ok(0);
+        }
+        (segment.trace_instance_index as usize)
+            .checked_mul(row_count)
+            .ok_or_else(|| GuestPcTraceBackendError::InvalidPcTraceLayout {
+                message: "guest PC trace report index overflow".to_owned(),
+            })
+    }
+
     fn advance_report_index(
         self,
         next_report_index: &mut usize,
@@ -10630,10 +10656,13 @@ struct ZiskMainStreamingDeviceReportFeeder<'a> {
 
 #[cfg(feature = "cuda")]
 impl<'a> ZiskMainStreamingDeviceReportFeeder<'a> {
-    fn new(timing_config: ZiskMainTraceLowerTimingConfig) -> Self {
+    fn new_with_start(
+        timing_config: ZiskMainTraceLowerTimingConfig,
+        next_report_index: usize,
+    ) -> Self {
         Self {
             pending_report: None,
-            next_report_index: 0,
+            next_report_index,
             timing_config,
         }
     }
@@ -10689,10 +10718,13 @@ struct ZiskMainOwnedStreamingDeviceReportFeeder {
 
 #[cfg(feature = "cuda")]
 impl ZiskMainOwnedStreamingDeviceReportFeeder {
-    fn new(timing_config: ZiskMainTraceLowerTimingConfig) -> Self {
+    fn new_with_start(
+        timing_config: ZiskMainTraceLowerTimingConfig,
+        next_report_index: usize,
+    ) -> Self {
         Self {
             pending_report: None,
-            next_report_index: 0,
+            next_report_index,
             timing_config,
         }
     }
@@ -15588,7 +15620,10 @@ fn build_layout_zisk_main_trace_segment_device_material(
     };
 
     let timing_config = ZiskMainTraceLowerTimingConfig::from_env_if_enabled(timing.is_some());
-    let mut feeder = ZiskMainStreamingDeviceReportFeeder::new(timing_config);
+    let report_start_index =
+        timing_config.segment_report_start_index(segment, layout.row_count())?;
+    let mut feeder =
+        ZiskMainStreamingDeviceReportFeeder::new_with_start(timing_config, report_start_index);
     let aggregate_report_started = timing.as_ref().map(|_| Instant::now());
     for report in reports {
         feeder.push_report(&mut builder, report, timing.as_deref_mut())?;
@@ -16138,8 +16173,22 @@ fn build_layout_zisk_main_trace_segment(
         None
     };
     let row_timing_enabled = detail_timing || shape_timing || shape_sample_stride.is_some();
+    let report_start_index = if row_timing_enabled {
+        (segment.trace_instance_index as usize)
+            .checked_mul(layout.row_count())
+            .ok_or_else(|| GuestPcTraceBackendError::InvalidPcTraceLayout {
+                message: "guest PC trace report index overflow".to_owned(),
+            })?
+    } else {
+        0
+    };
     let aggregate_report_started = timing.as_ref().map(|_| Instant::now());
-    for (report_index, report) in reports.iter().enumerate() {
+    for (segment_report_index, report) in reports.iter().enumerate() {
+        let report_index = report_start_index
+            .checked_add(segment_report_index)
+            .ok_or_else(|| GuestPcTraceBackendError::InvalidPcTraceLayout {
+                message: "guest PC trace report index overflow".to_owned(),
+            })?;
         let report_detail_timing = detail_timing && report_index % detail_sample_stride == 0;
         let report_shape_timing = shape_timing
             || shape_sample_stride.is_some_and(|stride| report_index.is_multiple_of(stride));
