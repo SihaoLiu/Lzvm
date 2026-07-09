@@ -384,6 +384,59 @@ theorem runtime_pipeline_binding_required_external_source_evidence_core_and_soun
           (And.intro requiredSound.right.right.right.left
             (And.intro coreContract.right.right requiredSound.right.right.right.right))))
 
+theorem runtime_pipeline_binding_required_external_source_accepts_evidence_core_and_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimePipelineBindingValidation system) :
+    forall artifact publicInput proof (requiresExternalSource : Prop),
+      RuntimePipelineBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        requiresExternalSource ->
+          system.accepts publicInput proof
+            /\ RuntimePipelineBindingEvidence
+              system
+              validation
+              artifact
+              publicInput
+              proof
+              requiresExternalSource
+            /\ ExternalSourceOpeningEvidence
+              system
+              (runtime_pipeline_trace_source_validation validation)
+              publicInput
+              proof
+            /\ ExternalSourceOpeningEvidence
+              system
+              (runtime_pipeline_opening_source_validation validation)
+              publicInput
+              proof
+            /\ system.pcsOpeningsValid publicInput proof
+            /\ RuntimeVerifierCoreContract system publicInput proof
+            /\ SoundWitness system publicInput proof := by
+  intro artifact publicInput proof requiresExternalSource accepted required
+  have verifierAccepts :=
+    runtime_pipeline_binding_checked_acceptance_verifier_accepts
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have requiredContract :=
+    runtime_pipeline_binding_required_external_source_evidence_core_and_sound
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      accepted
+      required
+  exact And.intro verifierAccepts requiredContract
+
 theorem runtime_pipeline_binding_checked_acceptance_core_obligations_from_semantic_assumptions
     {system : VerifierModel}
     (semanticAssumptions : SemanticAssumptions system)

@@ -104,6 +104,53 @@ fn lean_pipeline_binding_exports_query_opening_acceptance_contract() {
 }
 
 #[test]
+fn lean_pipeline_binding_exports_required_source_acceptance_contract() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let source = lean_binding::read_lean_source(
+        crate_root,
+        "../../lean/Lzvm/PipelineBinding/Obligations/Core.lean",
+    );
+
+    lean_binding::assert_theorem_declarations(
+        &source,
+        &["runtime_pipeline_binding_required_external_source_accepts_evidence_core_and_sound"],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &source,
+        "runtime_pipeline_binding_required_external_source_accepts_evidence_core_and_sound",
+        &[
+            "RuntimePipelineBindingCheckedAcceptance",
+            "requiresExternalSource ->",
+            "system.accepts publicInput proof",
+            "RuntimePipelineBindingEvidence",
+            "ExternalSourceOpeningEvidence",
+            "system.pcsOpeningsValid publicInput proof",
+            "RuntimeVerifierCoreContract system publicInput proof",
+            "SoundWitness system publicInput proof",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &source,
+        "runtime_pipeline_binding_required_external_source_accepts_evidence_core_and_sound",
+        &[
+            "runtime_pipeline_binding_checked_acceptance_verifier_accepts",
+            "runtime_pipeline_binding_required_external_source_evidence_core_and_sound",
+            "And.intro verifierAccepts requiredContract",
+        ],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &source,
+        "runtime_pipeline_binding_required_external_source_accepts_evidence_core_and_sound",
+        &[
+            "runtime_pipeline_binding_required_external_source_sound",
+            "runtime_pipeline_binding_required_external_source_verifier_core_contract",
+            "runtime_pipeline_binding_checked_acceptance_accepts_evidence_core_and_sound",
+            "sound_witness_implies_verifier_core_contract",
+        ],
+    );
+}
+
+#[test]
 fn lean_pipeline_binding_exports_trace_artifact_acceptance_contract() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let source = lean_binding::read_lean_source(

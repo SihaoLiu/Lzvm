@@ -716,4 +716,60 @@ theorem runtime_trace_constraint_artifact_binding_required_external_source_evide
           (And.intro requiredContract.right.right.left
             requiredContract.right.right.right)))
 
+set_option linter.style.longLine false in
+theorem runtime_trace_constraint_artifact_binding_required_external_source_accepts_evidence_core_and_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeTraceConstraintArtifactBindingValidation system) :
+    forall artifact publicInput proof (requiresExternalSource : Prop),
+      RuntimeTraceConstraintArtifactBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        requiresExternalSource ->
+          system.accepts publicInput proof
+            /\ RuntimeTraceConstraintPreflightBindingEvidence
+              system
+              validation
+              artifact
+              publicInput
+              proof
+            /\ RuntimeTraceConstraintEvidence
+              system
+              validation.traceConstraintValidation
+              artifact
+              publicInput
+              proof
+              requiresExternalSource
+            /\ ExternalSourceOpeningEvidence
+              system
+              validation.traceConstraintValidation.openingValidation.runtimeSoundnessValidation.sourceValidation
+              publicInput
+              proof
+            /\ RuntimeVerifierCoreContract system publicInput proof
+            /\ SoundWitness system publicInput proof := by
+  intro artifact publicInput proof requiresExternalSource accepted required
+  have checkedContract :=
+    runtime_trace_constraint_artifact_binding_checked_acceptance_accepts_evidence_core_and_sound
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      accepted
+  have requiredContract :=
+    runtime_trace_constraint_artifact_binding_required_external_source_evidence_core_and_sound
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      accepted
+      required
+  exact And.intro checkedContract.left requiredContract
+
 end Lzvm
