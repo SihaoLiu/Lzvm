@@ -66,6 +66,41 @@ __global__ void poseidon2_merkle_digest_selected_parent_kernel(
     }
 }
 
+template <size_t Arity>
+__global__ void poseidon2_merkle_digest_prefix_sibling_gather_kernel(
+    const uint64_t* current_digests,
+    const size_t* query_indices,
+    uint64_t* siblings_out,
+    size_t state_count,
+    size_t query_count,
+    size_t level,
+    size_t level_span,
+    size_t row_sibling_words,
+    size_t level_sibling_words) {
+    const size_t word_index = blockIdx.x * blockDim.x + threadIdx.x;
+    const size_t sibling_count = query_count * (Arity - 1);
+    const size_t word_count = sibling_count * kPoseidon2DigestWords;
+    if (word_index >= word_count) {
+        return;
+    }
+
+    const size_t word = word_index % kPoseidon2DigestWords;
+    const size_t sibling_index = word_index / kPoseidon2DigestWords;
+    const size_t sibling_slot = sibling_index % (Arity - 1);
+    const size_t query = sibling_index / (Arity - 1);
+    const size_t level_query = query_indices[query] / level_span;
+    const size_t child_slot = level_query % Arity;
+    const size_t slot = sibling_slot + (sibling_slot >= child_slot ? 1 : 0);
+    const size_t child_index = (level_query / Arity) * Arity + slot;
+    const size_t out_index = query * row_sibling_words
+        + level * level_sibling_words
+        + sibling_slot * kPoseidon2DigestWords
+        + word;
+    siblings_out[out_index] = child_index < state_count
+        ? current_digests[child_index * kPoseidon2DigestWords + word]
+        : 0;
+}
+
 template <size_t Width, size_t Arity>
 int run_poseidon2_merkle_digest_root_on_device(
     const uint64_t* device_values,
@@ -384,12 +419,15 @@ int run_poseidon2_merkle_digest_opening_prefix_batch_to_device(
         return 0;
     }
 
-    std::vector<size_t> level_queries(query_indices, query_indices + query_count);
     for (size_t query = 0; query < query_count; ++query) {
-        if (level_queries[query] >= child_state_count) {
+        if (query_indices[query] >= child_state_count) {
             return -2;
         }
     }
+    DeviceBuffer<size_t> device_query_indices;
+    LZVM_CUDA_RETURN_ON_ERROR(device_query_indices.reset(query_count));
+    LZVM_CUDA_RETURN_ON_ERROR(device_query_indices.copy_from_bytes(
+        query_indices, query_count * sizeof(size_t)));
 
     const size_t first_parent_state_count = (child_state_count + Arity - 1) / Arity;
     const size_t second_parent_state_count =
@@ -405,36 +443,22 @@ int run_poseidon2_merkle_digest_opening_prefix_batch_to_device(
     uint64_t* next = scratch_a.data();
     size_t state_count = child_state_count;
     const size_t level_sibling_words = (Arity - 1) * kPoseidon2DigestWords;
+    size_t level_span = 1;
     for (size_t level = 0; level < prefix_level_count; ++level) {
-        for (size_t query = 0; query < query_count; ++query) {
-            const size_t level_query = level_queries[query];
-            const size_t child_slot = level_query % Arity;
-            const size_t group_start = (level_query / Arity) * Arity;
-            size_t sibling_slot = 0;
-            for (size_t slot = 0; slot < Arity; ++slot) {
-                if (slot == child_slot) {
-                    continue;
-                }
-                const size_t child_index = group_start + slot;
-                uint64_t* sibling_out = siblings_out
-                    + query * row_sibling_words
-                    + level * level_sibling_words
-                    + sibling_slot * kPoseidon2DigestWords;
-                if (child_index < state_count) {
-                    LZVM_CUDA_RETURN_ON_ERROR(cudaMemcpyAsync(
-                        sibling_out,
-                        current + child_index * kPoseidon2DigestWords,
-                        kPoseidon2DigestWords * sizeof(uint64_t),
-                        cudaMemcpyDeviceToDevice));
-                } else {
-                    LZVM_CUDA_RETURN_ON_ERROR(cudaMemsetAsync(
-                        sibling_out,
-                        0,
-                        kPoseidon2DigestWords * sizeof(uint64_t)));
-                }
-                ++sibling_slot;
-            }
-        }
+        const size_t gather_words = query_count * level_sibling_words;
+        const size_t gather_blocks = (gather_words + kThreads - 1) / kThreads;
+        poseidon2_merkle_digest_prefix_sibling_gather_kernel<Arity>
+            <<<gather_blocks, kThreads>>>(
+            current,
+            device_query_indices.data(),
+            siblings_out,
+            state_count,
+            query_count,
+            level,
+            level_span,
+            row_sibling_words,
+            level_sibling_words);
+        LZVM_CUDA_RETURN_ON_ERROR(lzvm_cuda_check_launch());
 
         if (level + 1 < prefix_level_count) {
             const size_t parent_state_count = (state_count + Arity - 1) / Arity;
@@ -447,9 +471,7 @@ int run_poseidon2_merkle_digest_opening_prefix_batch_to_device(
 
             current = next;
             state_count = parent_state_count;
-            for (size_t query = 0; query < query_count; ++query) {
-                level_queries[query] /= Arity;
-            }
+            level_span *= Arity;
             next = next == scratch_a.data() ? scratch_b.data() : scratch_a.data();
         }
     }
