@@ -8,7 +8,7 @@ use crate::guest_machine::{
 };
 use crate::guest_memory::GuestMemoryError;
 use crate::secp256k1_host::{
-    secp256k1_point_add, secp256k1_point_double, Secp256k1Error, SecpPoint,
+    secp256k1_point_add_limbs, secp256k1_point_double_limbs, Secp256k1Error,
 };
 
 const KECCAK_STATE_BYTES: usize = 25 * 8;
@@ -131,9 +131,9 @@ fn execute_secp256k1_add_precompile(
     let params = read_u64_words::<2, 16>(memory, effects, params_address)?;
     let p1 = read_u64_words::<8, 64>(memory, effects, params[0])?;
     let p2 = read_u64_words::<8, 64>(memory, effects, params[1])?;
-    let result = secp256k1_point_add(&SecpPoint::from_limbs(&p1), &SecpPoint::from_limbs(&p2))
+    let result = secp256k1_point_add_limbs(&p1, &p2)
         .map_err(|error| secp256k1_precompile_error(instruction_address, error))?;
-    write_u64_words::<8, 64>(memory, state, effects, params[0], &result.to_limbs())?;
+    write_u64_words::<8, 64>(memory, state, effects, params[0], &result)?;
     Ok(())
 }
 
@@ -145,9 +145,9 @@ fn execute_secp256k1_dbl_precompile(
     address: u64,
 ) -> Result<(), GuestMachineError> {
     let p1 = read_u64_words::<8, 64>(memory, effects, address)?;
-    let result = secp256k1_point_double(&SecpPoint::from_limbs(&p1))
+    let result = secp256k1_point_double_limbs(&p1)
         .map_err(|error| secp256k1_precompile_error(instruction_address, error))?;
-    write_u64_words::<8, 64>(memory, state, effects, address, &result.to_limbs())?;
+    write_u64_words::<8, 64>(memory, state, effects, address, &result)?;
     Ok(())
 }
 

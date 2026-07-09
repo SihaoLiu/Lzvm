@@ -4,6 +4,13 @@ use num_bigint::BigUint;
 use num_traits::{One, Zero};
 use secp256k1::PublicKey as NativeSecpPublicKey;
 
+const SECP256K1_FIELD_MODULUS_LIMBS: [u64; 4] = [
+    0xffff_fffe_ffff_fc2f,
+    0xffff_ffff_ffff_ffff,
+    0xffff_ffff_ffff_ffff,
+    0xffff_ffff_ffff_ffff,
+];
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum Secp256k1Error {
     NonInvertibleScalar,
@@ -347,6 +354,117 @@ pub(crate) fn limbs_to_biguint(limbs: &[u64]) -> BigUint {
     BigUint::from_bytes_le(&bytes)
 }
 
+pub(crate) fn secp256k1_point_add_limbs(
+    first: &[u64; 8],
+    second: &[u64; 8],
+) -> Result<[u64; 8], Secp256k1Error> {
+    if point_limbs_are_identity(first) {
+        return Ok(*second);
+    }
+    if point_limbs_are_identity(second) {
+        return Ok(*first);
+    }
+    if let Some(result) = native_secp_point_limb_sum(first, second) {
+        return Ok(result);
+    }
+    secp256k1_point_add(
+        &SecpPoint::from_limbs(first),
+        &SecpPoint::from_limbs(second),
+    )
+    .map(|point| point.to_limbs())
+}
+
+pub(crate) fn secp256k1_point_double_limbs(point: &[u64; 8]) -> Result<[u64; 8], Secp256k1Error> {
+    if point_limbs_are_identity(point) || point_y_limbs_are_zero(point) {
+        return Ok([0; 8]);
+    }
+    if let Some(result) = native_secp_point_limb_twice(point) {
+        return Ok(result);
+    }
+    secp256k1_point_double(&SecpPoint::from_limbs(point)).map(|point| point.to_limbs())
+}
+
+fn native_secp_point_limb_sum(first: &[u64; 8], second: &[u64; 8]) -> Option<[u64; 8]> {
+    let first = secp256k1_point_limbs_to_native(first)?;
+    let second = secp256k1_point_limbs_to_native(second)?;
+    first
+        .combine(&second)
+        .ok()
+        .map(|point| secp256k1_point_limbs_from_native(&point))
+}
+
+fn native_secp_point_limb_twice(point: &[u64; 8]) -> Option<[u64; 8]> {
+    let point = secp256k1_point_limbs_to_native(point)?;
+    point
+        .combine(&point)
+        .ok()
+        .map(|point| secp256k1_point_limbs_from_native(&point))
+}
+
+fn secp256k1_point_limbs_to_native(limbs: &[u64; 8]) -> Option<NativeSecpPublicKey> {
+    if point_limbs_are_identity(limbs)
+        || !field_limbs_are_canonical(&limbs[..4])
+        || !field_limbs_are_canonical(&limbs[4..])
+    {
+        return None;
+    }
+    NativeSecpPublicKey::from_slice(&secp256k1_point_limb_uncompressed_bytes(limbs)).ok()
+}
+
+fn secp256k1_point_limbs_from_native(point: &NativeSecpPublicKey) -> [u64; 8] {
+    let bytes = point.serialize_uncompressed();
+    let mut limbs = [0_u64; 8];
+    limbs[..4].copy_from_slice(&read_field_limbs_be(&bytes[1..33]));
+    limbs[4..].copy_from_slice(&read_field_limbs_be(&bytes[33..65]));
+    limbs
+}
+
+fn secp256k1_point_limb_uncompressed_bytes(limbs: &[u64; 8]) -> [u8; 65] {
+    let mut bytes = [0_u8; 65];
+    bytes[0] = 4;
+    write_field_limbs_be(&limbs[..4], &mut bytes[1..33]);
+    write_field_limbs_be(&limbs[4..], &mut bytes[33..65]);
+    bytes
+}
+
+fn point_limbs_are_identity(limbs: &[u64; 8]) -> bool {
+    limbs.iter().all(|limb| *limb == 0)
+}
+
+fn point_y_limbs_are_zero(limbs: &[u64; 8]) -> bool {
+    limbs[4..].iter().all(|limb| *limb == 0)
+}
+
+fn field_limbs_are_canonical(limbs: &[u64]) -> bool {
+    for (limb, modulus_limb) in limbs
+        .iter()
+        .rev()
+        .zip(SECP256K1_FIELD_MODULUS_LIMBS.iter().rev())
+    {
+        if limb < modulus_limb {
+            return true;
+        }
+        if limb > modulus_limb {
+            return false;
+        }
+    }
+    false
+}
+
+fn write_field_limbs_be(limbs: &[u64], bytes: &mut [u8]) {
+    for (limb, chunk) in limbs.iter().rev().zip(bytes.chunks_exact_mut(8)) {
+        chunk.copy_from_slice(&limb.to_be_bytes());
+    }
+}
+
+fn read_field_limbs_be(bytes: &[u8]) -> [u64; 4] {
+    let mut limbs = [0_u64; 4];
+    for (limb, chunk) in limbs.iter_mut().rev().zip(bytes.chunks_exact(8)) {
+        *limb = u64::from_be_bytes(chunk.try_into().expect("field chunk is exactly 8 bytes"));
+    }
+    limbs
+}
+
 fn secp256k1_double_scalar_mul_affine(
     first_scalar: &[u64; 4],
     first_point: &SecpPoint,
@@ -439,8 +557,9 @@ mod tests {
     use num_bigint::BigUint;
 
     use super::{
-        limb_bit, secp256k1_double_scalar_mul, secp256k1_field_modulus, secp256k1_point_add,
-        secp256k1_point_double, Secp256k1Error, SecpPoint, SecpProjectivePoint,
+        biguint_to_limbs, limb_bit, secp256k1_double_scalar_mul, secp256k1_field_modulus,
+        secp256k1_point_add, secp256k1_point_add_limbs, secp256k1_point_double,
+        secp256k1_point_double_limbs, Secp256k1Error, SecpPoint, SecpProjectivePoint,
     };
 
     const SECP256K1_G: [u64; 8] = [
@@ -601,6 +720,38 @@ mod tests {
 
         let actual = secp256k1_point_add(&first, &second)
             .expect("invalid canonical inputs should use affine formula");
+
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn point_limb_helpers_match_point_operations_for_base_point() {
+        let g = SecpPoint::from_limbs(&SECP256K1_G);
+        let two_g = secp256k1_point_double(&g).expect("base point should double");
+
+        let two_g_limbs =
+            secp256k1_point_double_limbs(&SECP256K1_G).expect("base point limbs should double");
+        assert_eq!(two_g_limbs, two_g.to_limbs());
+
+        let actual =
+            secp256k1_point_add_limbs(&SECP256K1_G, &two_g_limbs).expect("limbs should add");
+        let expected = secp256k1_point_add(&g, &two_g)
+            .expect("base point and doubled base point should add")
+            .to_limbs();
+
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn point_limb_add_preserves_affine_result_for_invalid_canonical_inputs() {
+        let first = [1, 0, 0, 0, 1, 0, 0, 0];
+        let second = [2, 0, 0, 0, 3, 0, 0, 0];
+        let mut expected = [0_u64; 8];
+        expected[0] = 1;
+        expected[4..].copy_from_slice(&biguint_to_limbs::<4>(&(secp256k1_field_modulus() - 1_u8)));
+
+        let actual = secp256k1_point_add_limbs(&first, &second)
+            .expect("invalid canonical limb inputs should use affine formula");
 
         assert_eq!(actual, expected);
     }
