@@ -1074,6 +1074,37 @@ theorem gpu_merkle_digest_prefix_batch_checked_acceptance_lower_prefixes_audited
       (And.intro audited.right.left
         (And.intro lowerPrefixes audited.right.right))
 
+theorem gpu_merkle_digest_prefix_batch_checked_acceptance_matches_single_paths_audited_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : GpuMerkleDigestPrefixBatchValidation system) :
+    forall publicInput proof,
+      GpuMerkleDigestPrefixBatchCheckedAcceptance system validation publicInput proof ->
+        RequiredCryptographicAssumptionStatements assumptions.crypto
+          /\ RequiredSemanticAssumptionStatements assumptions.semantic
+          /\ validation.gpuMerkleDigestPrefixBatchMatchesSinglePaths publicInput proof
+          /\ validation.lowerPrefixesBound publicInput proof
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof checked
+  have matchesSinglePaths :=
+    gpu_merkle_digest_prefix_batch_checked_acceptance_projects_matches_single_paths
+      validation
+      publicInput
+      proof
+      checked
+  have audited :=
+    gpu_merkle_digest_prefix_batch_checked_acceptance_lower_prefixes_audited_core_contract
+      assumptions
+      validation
+      publicInput
+      proof
+      checked
+  exact
+    And.intro audited.left
+      (And.intro audited.right.left
+        (And.intro matchesSinglePaths audited.right.right))
+
 theorem gpu_setup_cache_reuse_sound
     (validation : GpuSetupCacheValidation)
     (state : GpuSetupCacheState)
