@@ -723,6 +723,55 @@ theorem
               proof
               accepted))))
 
+theorem runtime_retained_parent_checkpoint_opening_checked_acceptance_source_and_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeRetainedParentCheckpointOpeningValidation system) :
+    forall artifact publicInput proof,
+      RuntimeRetainedParentCheckpointOpeningCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeRetainedParentCheckpointOpeningSourceContract
+            system
+            validation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeRetainedParentCheckpointOpeningRetainedRowsContract
+            system
+            validation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeVerifierCoreContract system publicInput proof := by
+  intro artifact publicInput proof accepted
+  exact
+    And.intro
+      (runtime_retained_parent_checkpoint_opening_checked_acceptance_source_contract
+        validation
+        artifact
+        publicInput
+        proof
+        accepted)
+      (And.intro
+        (runtime_retained_parent_checkpoint_opening_checked_acceptance_retained_rows_contract
+          assumptions
+          validation
+          artifact
+          publicInput
+          proof
+          accepted)
+        (runtime_retained_parent_checkpoint_opening_checked_acceptance_verifier_core_contract
+          assumptions
+          validation
+          artifact
+          publicInput
+          proof
+          accepted))
+
 theorem
   runtime_retained_parent_checkpoint_nary_opening_source_and_core_contract_from_bundle
     {system : VerifierModel}
@@ -767,6 +816,14 @@ theorem
             proof
           /\ RuntimeVerifierCoreContract system publicInput proof := by
   intro artifact publicInput proof accepted
+  have sourceCore :=
+    runtime_retained_parent_checkpoint_opening_checked_acceptance_source_and_core_contract
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
   exact
     And.intro
       (runtime_retained_parent_checkpoint_nary_opening_digest_contract_from_bundle
@@ -778,28 +835,7 @@ theorem
         publicInput
         proof
         accepted)
-      (And.intro
-        (runtime_retained_parent_checkpoint_opening_checked_acceptance_source_contract
-          validation
-          artifact
-          publicInput
-          proof
-          accepted)
-        (And.intro
-          (runtime_retained_parent_checkpoint_opening_checked_acceptance_retained_rows_contract
-            assumptions
-            validation
-            artifact
-            publicInput
-            proof
-            accepted)
-          (runtime_retained_parent_checkpoint_opening_checked_acceptance_verifier_core_contract
-            assumptions
-            validation
-            artifact
-            publicInput
-            proof
-            accepted)))
+      sourceCore
 
 theorem
   runtime_retained_parent_checkpoint_nary_opening_source_core_sound_contract_from_bundle
@@ -1026,23 +1062,8 @@ theorem
       publicInput
       proof
       accepted
-  have source :=
-    runtime_retained_parent_checkpoint_opening_checked_acceptance_source_contract
-      validation
-      artifact
-      publicInput
-      proof
-      accepted
-  have retainedRows :=
-    runtime_retained_parent_checkpoint_opening_checked_acceptance_retained_rows_contract
-      assumptions
-      validation
-      artifact
-      publicInput
-      proof
-      accepted
-  have core :=
-    runtime_retained_parent_checkpoint_opening_checked_acceptance_verifier_core_contract
+  have sourceCore :=
+    runtime_retained_parent_checkpoint_opening_checked_acceptance_source_and_core_contract
       assumptions
       validation
       artifact
@@ -1064,57 +1085,8 @@ theorem
       accepted
   exact
     And.intro digest
-      (And.intro source
-        (And.intro retainedRows
-          (And.intro core sound.right)))
-
-theorem runtime_retained_parent_checkpoint_opening_checked_acceptance_source_and_core_contract
-    {system : VerifierModel}
-    (assumptions : AssumptionBundle system)
-    (validation : RuntimeRetainedParentCheckpointOpeningValidation system) :
-    forall artifact publicInput proof,
-      RuntimeRetainedParentCheckpointOpeningCheckedAcceptance
-          system
-          validation
-          artifact
-          publicInput
-          proof ->
-        RuntimeRetainedParentCheckpointOpeningSourceContract
-            system
-            validation
-            artifact
-            publicInput
-            proof
-          /\ RuntimeRetainedParentCheckpointOpeningRetainedRowsContract
-            system
-            validation
-            artifact
-            publicInput
-            proof
-          /\ RuntimeVerifierCoreContract system publicInput proof := by
-  intro artifact publicInput proof accepted
-  exact
-    And.intro
-      (runtime_retained_parent_checkpoint_opening_checked_acceptance_source_contract
-        validation
-        artifact
-        publicInput
-        proof
-        accepted)
-      (And.intro
-        (runtime_retained_parent_checkpoint_opening_checked_acceptance_retained_rows_contract
-          assumptions
-          validation
-          artifact
-          publicInput
-          proof
-          accepted)
-        (runtime_retained_parent_checkpoint_opening_checked_acceptance_verifier_core_contract
-          assumptions
-          validation
-          artifact
-          publicInput
-          proof
-          accepted))
+      (And.intro sourceCore.left
+        (And.intro sourceCore.right.left
+          (And.intro sourceCore.right.right sound.right)))
 
 end Lzvm

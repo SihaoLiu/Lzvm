@@ -198,14 +198,14 @@ theorem row_major_digest_prefix_checked_acceptance_accepts_evidence_core_and_sou
           /\ RuntimeVerifierCoreContract system publicInput proof
           /\ SoundWitness system publicInput proof := by
   intro publicInput proof checked
-  have evidenceCoreSound :=
-    row_major_digest_prefix_checked_acceptance_evidence_core_and_sound
-      assumptions
-      validation
-      publicInput
-      proof
-      checked
-  exact And.intro checked.left evidenceCoreSound
+  exact
+    And.intro checked.left
+      (row_major_digest_prefix_checked_acceptance_evidence_core_and_sound
+        assumptions
+        validation
+        publicInput
+        proof
+        checked)
 
 theorem row_major_digest_prefix_checked_acceptance_audited_core_contract
     {system : VerifierModel}
