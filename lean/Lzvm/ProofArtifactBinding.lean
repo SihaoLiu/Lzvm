@@ -939,6 +939,64 @@ theorem runtime_proof_artifact_binding_checked_acceptance_evidence_core_and_soun
         (And.intro fullContract.right.right.left
           (And.intro coreContract fullContract.right.right.right)))
 
+theorem runtime_proof_artifact_binding_checked_acceptance_accepts_evidence_core_and_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeProofArtifactBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimeProofArtifactBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        system.accepts publicInput proof
+          /\ RuntimeProofArtifactBindingEvidence
+            system
+            validation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeProofArtifactBindingStructuralObligations
+            system
+            validation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeArtifactEvidence
+            system
+            validation.runtimeValidation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro artifact publicInput proof accepted
+  have runtimeAccepted :=
+    runtime_proof_artifact_binding_checked_acceptance_runtime_accepted
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have runtimeContract :=
+    runtime_artifact_checked_acceptance_accepts_evidence_core_and_sound
+      assumptions
+      validation.runtimeValidation
+      artifact
+      publicInput
+      proof
+      runtimeAccepted
+  have evidenceCoreSound :=
+    runtime_proof_artifact_binding_checked_acceptance_evidence_core_and_sound
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  exact And.intro runtimeContract.left evidenceCoreSound
+
 theorem runtime_proof_artifact_binding_checked_acceptance_audited_core_contract
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
