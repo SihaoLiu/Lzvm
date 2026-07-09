@@ -1,3 +1,5 @@
+constexpr size_t kPoseidon2MerkleDigestParentThreads = 128;
+
 template <size_t Width, size_t Arity>
 __global__ void poseidon2_merkle_digest_parent_kernel(
     const uint64_t* current_digests,
@@ -98,8 +100,10 @@ int run_poseidon2_merkle_digest_root_on_device(
     size_t state_count = child_state_count;
     while (state_count > 1) {
         const size_t parent_state_count = (state_count + Arity - 1) / Arity;
-        const size_t blocks = (parent_state_count + kThreads - 1) / kThreads;
-        poseidon2_merkle_digest_parent_kernel<Width, Arity><<<blocks, kThreads>>>(
+        const size_t blocks = (parent_state_count + kPoseidon2MerkleDigestParentThreads - 1)
+            / kPoseidon2MerkleDigestParentThreads;
+        poseidon2_merkle_digest_parent_kernel<Width, Arity>
+            <<<blocks, kPoseidon2MerkleDigestParentThreads>>>(
             current, next, state_count);
         LZVM_CUDA_RETURN_ON_ERROR(lzvm_cuda_check_launch());
 
@@ -128,8 +132,10 @@ int run_poseidon2_merkle_digest_parent_on_device(
     }
 
     const size_t parent_state_count = (child_state_count + Arity - 1) / Arity;
-    const size_t blocks = (parent_state_count + kThreads - 1) / kThreads;
-    poseidon2_merkle_digest_parent_kernel<Width, Arity><<<blocks, kThreads>>>(
+    const size_t blocks = (parent_state_count + kPoseidon2MerkleDigestParentThreads - 1)
+        / kPoseidon2MerkleDigestParentThreads;
+    poseidon2_merkle_digest_parent_kernel<Width, Arity>
+        <<<blocks, kPoseidon2MerkleDigestParentThreads>>>(
         device_values,
         device_out,
         child_state_count);
@@ -227,8 +233,10 @@ int run_poseidon2_merkle_digest_opening_path_on_device(
         }
 
         const size_t parent_state_count = (state_count + Arity - 1) / Arity;
-        const size_t blocks = (parent_state_count + kThreads - 1) / kThreads;
-        poseidon2_merkle_digest_parent_kernel<Width, Arity><<<blocks, kThreads>>>(
+        const size_t blocks = (parent_state_count + kPoseidon2MerkleDigestParentThreads - 1)
+            / kPoseidon2MerkleDigestParentThreads;
+        poseidon2_merkle_digest_parent_kernel<Width, Arity>
+            <<<blocks, kPoseidon2MerkleDigestParentThreads>>>(
             current, next, state_count);
         LZVM_CUDA_RETURN_ON_ERROR(lzvm_cuda_check_launch());
 
@@ -324,8 +332,10 @@ int run_poseidon2_merkle_digest_opening_prefix_on_device(
 
         if (level + 1 < prefix_level_count) {
             const size_t parent_state_count = (state_count + Arity - 1) / Arity;
-            const size_t blocks = (parent_state_count + kThreads - 1) / kThreads;
-            poseidon2_merkle_digest_parent_kernel<Width, Arity><<<blocks, kThreads>>>(
+            const size_t blocks = (parent_state_count + kPoseidon2MerkleDigestParentThreads - 1)
+                / kPoseidon2MerkleDigestParentThreads;
+            poseidon2_merkle_digest_parent_kernel<Width, Arity>
+                <<<blocks, kPoseidon2MerkleDigestParentThreads>>>(
                 current, next, state_count);
             LZVM_CUDA_RETURN_ON_ERROR(lzvm_cuda_check_launch());
 
@@ -428,8 +438,10 @@ int run_poseidon2_merkle_digest_opening_prefix_batch_to_device(
 
         if (level + 1 < prefix_level_count) {
             const size_t parent_state_count = (state_count + Arity - 1) / Arity;
-            const size_t blocks = (parent_state_count + kThreads - 1) / kThreads;
-            poseidon2_merkle_digest_parent_kernel<Width, Arity><<<blocks, kThreads>>>(
+            const size_t blocks = (parent_state_count + kPoseidon2MerkleDigestParentThreads - 1)
+                / kPoseidon2MerkleDigestParentThreads;
+            poseidon2_merkle_digest_parent_kernel<Width, Arity>
+                <<<blocks, kPoseidon2MerkleDigestParentThreads>>>(
                 current, next, state_count);
             LZVM_CUDA_RETURN_ON_ERROR(lzvm_cuda_check_launch());
 
