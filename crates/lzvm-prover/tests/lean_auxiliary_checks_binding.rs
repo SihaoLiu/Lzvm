@@ -7374,6 +7374,7 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             "gpu_merkle_digest_prefix_batch_checked_acceptance_sound",
             "gpu_merkle_digest_prefix_batch_checked_acceptance_verifier_core_contract",
             "gpu_merkle_digest_prefix_batch_checked_acceptance_lower_prefixes_core_and_sound",
+            "gpu_merkle_digest_prefix_batch_checked_acceptance_matches_single_paths_audited_core_contract",
         ],
     );
     let finish_sound_stems =
@@ -10423,6 +10424,27 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
             &[
                 "gpu_merkle_digest_prefix_batch_checked_acceptance_projects_lower_prefixes_bound",
                 "auxiliary_checked_acceptance_audited_core_contract",
+            ][..],
+            "gpu_merkle_digest_prefix_batch_checked_acceptance_lower_prefixes_core_and_sound",
+            &[
+                "gpu_merkle_digest_prefix_batch_checked_acceptance_sound",
+                "gpu_merkle_digest_prefix_batch_checked_acceptance_verifier_core_contract",
+                "sound_witness_implies_verifier_core_contract",
+            ][..],
+        ),
+        (
+            "gpu_merkle_digest_prefix_batch_checked_acceptance_matches_single_paths_audited_core_contract",
+            &[
+                "RequiredCryptographicAssumptionStatements assumptions.crypto",
+                "RequiredSemanticAssumptionStatements assumptions.semantic",
+                "validation.gpuMerkleDigestPrefixBatchMatchesSinglePaths publicInput proof",
+                "validation.lowerPrefixesBound publicInput proof",
+                "RuntimeVerifierCoreContract system publicInput proof",
+                "SoundWitness system publicInput proof",
+            ][..],
+            &[
+                "gpu_merkle_digest_prefix_batch_checked_acceptance_projects_matches_single_paths",
+                "gpu_merkle_digest_prefix_batch_checked_acceptance_lower_prefixes_audited_core_contract",
             ][..],
             "gpu_merkle_digest_prefix_batch_checked_acceptance_lower_prefixes_core_and_sound",
             &[
