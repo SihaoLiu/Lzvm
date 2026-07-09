@@ -15,9 +15,15 @@ __device__ uint64_t ntt_stage_twiddle(
 }
 
 __device__ void ntt_stage_prepare_thread_powers(
-    uint64_t stage_twiddle,
+    size_t len,
+    size_t stage_len,
+    size_t stage_bits,
+    uint64_t root,
+    bool inverse_roots,
     uint64_t* thread_powers) {
     if (threadIdx.x == 0) {
+        const uint64_t stage_twiddle =
+            ntt_stage_twiddle(len, stage_len, stage_bits, root, inverse_roots);
         thread_powers[0] = stage_twiddle;
         for (size_t bit = 1; bit < kNttThreadPowerBits; ++bit) {
             thread_powers[bit] = mul_mod(thread_powers[bit - 1], thread_powers[bit - 1]);
@@ -85,9 +91,8 @@ __global__ void ntt_stage_thread_twiddle_kernel(
     bool inverse_roots) {
     __shared__ uint64_t thread_powers[kNttThreadPowerBits];
 
-    const uint64_t stage_twiddle =
-        ntt_stage_twiddle(len, stage_len, stage_bits, root, inverse_roots);
-    ntt_stage_prepare_thread_powers(stage_twiddle, thread_powers);
+    ntt_stage_prepare_thread_powers(
+        len, stage_len, stage_bits, root, inverse_roots, thread_powers);
 
     const size_t pair_count = len / 2;
     const size_t pair = blockIdx.x * blockDim.x + threadIdx.x;
@@ -119,9 +124,8 @@ __global__ void ntt_stage_block_twiddle_kernel(
     const size_t pair = blockIdx.x * blockDim.x + threadIdx.x;
     const size_t half = stage_len / 2;
     const size_t block_offset = (blockIdx.x * blockDim.x) % half;
-    const uint64_t stage_twiddle =
-        ntt_stage_twiddle(len, stage_len, stage_bits, root, inverse_roots);
-    ntt_stage_prepare_thread_powers(stage_twiddle, thread_powers);
+    ntt_stage_prepare_thread_powers(
+        len, stage_len, stage_bits, root, inverse_roots, thread_powers);
     if (threadIdx.x == 0) {
         block_base = ntt_stage_block_base(thread_powers, block_offset);
     }
