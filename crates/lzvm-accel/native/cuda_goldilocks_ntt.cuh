@@ -1,6 +1,7 @@
 #pragma once
 
 constexpr size_t kNttThreadPowerBits = 8;
+constexpr size_t kNttThreadPowerKernelMinHalf = 16;
 
 __device__ uint64_t ntt_stage_twiddle(
     size_t len,
@@ -75,6 +76,35 @@ __global__ void ntt_stage_kernel(
     }
 }
 
+__global__ void ntt_stage_thread_twiddle_kernel(
+    uint64_t* values,
+    size_t len,
+    size_t stage_len,
+    size_t stage_bits,
+    uint64_t root,
+    bool inverse_roots) {
+    __shared__ uint64_t thread_powers[kNttThreadPowerBits];
+
+    const uint64_t stage_twiddle =
+        ntt_stage_twiddle(len, stage_len, stage_bits, root, inverse_roots);
+    ntt_stage_prepare_thread_powers(stage_twiddle, thread_powers);
+
+    const size_t pair_count = len / 2;
+    const size_t pair = blockIdx.x * blockDim.x + threadIdx.x;
+    if (pair < pair_count) {
+        const size_t half = stage_len / 2;
+        const size_t group = pair / half;
+        const size_t offset = pair % half;
+        const size_t even_index = group * stage_len + offset;
+        const size_t odd_index = even_index + half;
+        const uint64_t factor = ntt_stage_thread_twiddle(1, thread_powers, offset);
+        const uint64_t even = values[even_index];
+        const uint64_t odd = mul_mod(values[odd_index], factor);
+        values[even_index] = add_mod(even, odd);
+        values[odd_index] = sub_mod(even, odd);
+    }
+}
+
 __global__ void ntt_stage_block_twiddle_kernel(
     uint64_t* values,
     size_t len,
@@ -131,8 +161,12 @@ cudaError_t run_ntt(
     for (size_t stage_len = 2, stage_bits = 1; stage_len <= len; stage_len <<= 1, ++stage_bits) {
         const size_t pair_count = len / 2;
         const size_t stage_blocks = (pair_count + kThreads - 1) / kThreads;
-        if (stage_len / 2 > kThreads) {
+        const size_t half = stage_len / 2;
+        if (half > kThreads) {
             ntt_stage_block_twiddle_kernel<<<stage_blocks, kThreads, 0, stream>>>(
+                device_values, len, stage_len, stage_bits, root, inverse_roots);
+        } else if (half >= kNttThreadPowerKernelMinHalf) {
+            ntt_stage_thread_twiddle_kernel<<<stage_blocks, kThreads, 0, stream>>>(
                 device_values, len, stage_len, stage_bits, root, inverse_roots);
         } else {
             ntt_stage_kernel<<<stage_blocks, kThreads, 0, stream>>>(
