@@ -82,6 +82,19 @@ def current_commit(root: Path) -> str:
     return result.stdout.strip()
 
 
+def tracked_worktree_status(root: Path) -> list[str]:
+    result = subprocess.run(
+        ["git", "status", "--short", "--untracked-files=no"],
+        cwd=root,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+    )
+    if result.returncode != 0:
+        return []
+    return [line for line in result.stdout.splitlines() if line]
+
+
 def positive_run_count(raw: str) -> int:
     try:
         value = int(raw)
@@ -1092,6 +1105,7 @@ def write_batch_json(
     small_stable_spread_s = timing_spread_seconds(small_stable_timing_s)
     large_stable_spread_s = timing_spread_seconds(large_stable_timing_s)
     append_stdout_path, append_stderr_path, append_status_path = append_artifact_paths(batch_dir)
+    worktree_status = tracked_worktree_status(root)
     payload = {
         "created_at": datetime.now().astimezone().strftime("%Y-%m-%dT%H:%M:%S%z"),
         "workspace": str(root),
@@ -1125,6 +1139,8 @@ def write_batch_json(
         "inherited_runtime_env": inherited_runtime_env(),
         "append_max_average_rejections": args.append_max_average_rejections,
         "commit": commit,
+        "tracked_worktree_dirty": bool(worktree_status),
+        "tracked_worktree_status": worktree_status,
         "summary": args.summary,
         "metadata_lines": list(args.metadata_line or []),
         "small_command": args.small_command,
@@ -1576,6 +1592,10 @@ def self_test() -> None:
             raise SystemExit("self-test batch json should record inherited runtime env")
         if batch_payload.get("metadata_lines") != ["wrapper=proof-self-test"]:
             raise SystemExit("self-test batch json should record metadata lines")
+        if not isinstance(batch_payload.get("tracked_worktree_dirty"), bool):
+            raise SystemExit("self-test batch json should record dirty status")
+        if not isinstance(batch_payload.get("tracked_worktree_status"), list):
+            raise SystemExit("self-test batch json should record tracked status lines")
         for key in [
             "small_stable_spread_s",
             "large_stable_spread_s",
