@@ -728,12 +728,10 @@ def run_group(
                 break
             if has_stable_timing_group(logs, max_relative_spread):
                 break
+        if retryable_failure_wait_s <= 0 or run_index >= max_run_count:
+            continue
         retryable_failure = retryable_run_failure_reason(read_text(log))
-        if (
-            retryable_failure is not None
-            and retryable_failure_wait_s > 0
-            and run_index < max_run_count
-        ):
+        if retryable_failure is not None:
             print(
                 f"{label}_retryable_failure_wait="
                 f"run={run_index} reason={retryable_failure} "
