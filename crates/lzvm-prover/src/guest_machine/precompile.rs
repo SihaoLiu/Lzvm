@@ -190,11 +190,8 @@ fn read_u64_words<const N: usize, const BYTES: usize>(
     address: u64,
 ) -> Result<[u64; N], GuestMemoryError> {
     debug_assert_eq!(BYTES, N * 8);
-    let mut bytes = [0_u8; BYTES];
-    memory.read_range_into(address, &mut bytes)?;
-    let mut words = [0_u64; N];
-    for (index, (word, chunk)) in words.iter_mut().zip(bytes.chunks_exact(8)).enumerate() {
-        *word = u64::from_le_bytes(chunk.try_into().expect("word chunk is exactly 8 bytes"));
+    let words = memory.read_u64_words_le::<N, BYTES>(address)?;
+    for (index, word) in words.iter().enumerate() {
         effects.record_precompile_memory_read(address + index as u64 * 8, 8, *word);
     }
     Ok(words)
@@ -208,12 +205,8 @@ fn write_u64_words<const N: usize, const BYTES: usize>(
     words: &[u64; N],
 ) -> Result<(), GuestMemoryError> {
     debug_assert_eq!(BYTES, N * 8);
-    let mut bytes = [0_u8; BYTES];
-    for (chunk, word) in bytes.chunks_exact_mut(8).zip(words) {
-        chunk.copy_from_slice(&word.to_le_bytes());
-    }
-    state.clear_reservation_if_overlaps(address, bytes.len());
-    memory.write_range(address, &bytes)?;
+    state.clear_reservation_if_overlaps(address, BYTES);
+    memory.write_u64_words_le::<N, BYTES>(address, words)?;
     for (index, word) in words.iter().enumerate() {
         effects.record_precompile_memory_write(address + index as u64 * 8, 8, *word);
     }

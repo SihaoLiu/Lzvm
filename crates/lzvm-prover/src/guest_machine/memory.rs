@@ -133,6 +133,22 @@ impl GuestMachineMemory {
         Err(GuestMemoryError::AddressNotMapped { address, byte_len })
     }
 
+    #[inline(always)]
+    pub(crate) fn read_u64_words_le<const N: usize, const BYTES: usize>(
+        &self,
+        address: u64,
+    ) -> Result<[u64; N], GuestMemoryError> {
+        debug_assert_eq!(BYTES, N * 8);
+        let end_address = checked_address_end(address, BYTES)?;
+        if let Some(index) = self.segment_index_containing_range(address, end_address)? {
+            return Ok(self.segments[index].read_u64_words_le::<N, BYTES>(address));
+        }
+        Err(GuestMemoryError::AddressNotMapped {
+            address,
+            byte_len: BYTES,
+        })
+    }
+
     pub(crate) fn fetch_instruction(
         &self,
         address: u64,
@@ -209,6 +225,24 @@ impl GuestMachineMemory {
         Err(GuestMemoryError::AddressNotMapped {
             address,
             byte_len: BYTE_LEN,
+        })
+    }
+
+    #[inline(always)]
+    pub(crate) fn write_u64_words_le<const N: usize, const BYTES: usize>(
+        &mut self,
+        address: u64,
+        words: &[u64; N],
+    ) -> Result<(), GuestMemoryError> {
+        debug_assert_eq!(BYTES, N * 8);
+        let end_address = checked_address_end(address, BYTES)?;
+        if let Some(index) = self.segment_index_containing_range(address, end_address)? {
+            self.segments[index].write_u64_words_le::<N, BYTES>(address, words);
+            return Ok(());
+        }
+        Err(GuestMemoryError::AddressNotMapped {
+            address,
+            byte_len: BYTES,
         })
     }
 
@@ -499,6 +533,23 @@ impl GuestMachineMemorySegment {
     }
 
     #[inline(always)]
+    fn read_u64_words_le<const N: usize, const BYTES: usize>(&self, address: u64) -> [u64; N] {
+        debug_assert_eq!(BYTES, N * 8);
+        let offset = address - self.virtual_address;
+        if self.written_blocks.is_empty() {
+            if let Some(bytes) = self.contiguous_initialized_bytes(offset, BYTES) {
+                return u64_words_from_le_bytes(bytes);
+            }
+        } else if let Some(bytes) = self.contiguous_initialized_or_overlay_bytes(offset, BYTES) {
+            return u64_words_from_le_bytes(bytes);
+        }
+
+        let mut bytes = [0_u8; BYTES];
+        self.read_range_into(address, &mut bytes);
+        u64_words_from_le_bytes(&bytes)
+    }
+
+    #[inline(always)]
     fn read_unwritten_u64_le(&self, offset: u64, byte_len: usize) -> u64 {
         if let Some(bytes) = self.contiguous_initialized_bytes(offset, byte_len) {
             return low_le_bytes_to_u64(bytes);
@@ -618,6 +669,32 @@ impl GuestMachineMemorySegment {
         }
     }
 
+    #[inline(always)]
+    fn write_u64_words_le<const N: usize, const BYTES: usize>(
+        &mut self,
+        address: u64,
+        words: &[u64; N],
+    ) {
+        debug_assert_eq!(BYTES, N * 8);
+        if BYTES == 0 {
+            return;
+        }
+        let offset = address - self.virtual_address;
+        let block_index = offset / GUEST_MEMORY_OVERLAY_BLOCK_SIZE;
+        let block_offset = (offset % GUEST_MEMORY_OVERLAY_BLOCK_SIZE) as usize;
+        if block_offset + BYTES <= GUEST_MEMORY_OVERLAY_BLOCK_SIZE_USIZE {
+            let block = self.written_block_mut(block_index);
+            write_u64_words_to_le_bytes(&mut block[block_offset..block_offset + BYTES], words);
+            return;
+        }
+
+        let mut word_address = address;
+        for word in words {
+            self.write_u64_le::<8>(word_address, *word);
+            word_address += 8;
+        }
+    }
+
     fn written_block_mut(
         &mut self,
         block_index: u64,
@@ -683,6 +760,20 @@ fn write_low_u64_le_bytes<const BYTE_LEN: usize>(out: &mut [u8], value: u64) {
     }
     if BYTE_LEN > 7 {
         out[7] = (value >> 56) as u8;
+    }
+}
+
+fn u64_words_from_le_bytes<const N: usize>(bytes: &[u8]) -> [u64; N] {
+    let mut words = [0_u64; N];
+    for (word, chunk) in words.iter_mut().zip(bytes.chunks_exact(8)) {
+        *word = u64::from_le_bytes(chunk.try_into().expect("word chunk is exactly 8 bytes"));
+    }
+    words
+}
+
+fn write_u64_words_to_le_bytes<const N: usize>(out: &mut [u8], words: &[u64; N]) {
+    for (chunk, word) in out.chunks_exact_mut(8).zip(words) {
+        chunk.copy_from_slice(&word.to_le_bytes());
     }
 }
 
@@ -1004,6 +1095,58 @@ mod tests {
         assert_eq!(
             bytes,
             [before_2, before_1, 0xdd, 0xcc, 0xbb, 0xaa, after_2, after_3,]
+        );
+    }
+
+    #[test]
+    fn word_batch_le_helpers_match_initialized_and_overlay_bytes() {
+        let words: [u64; 4] = [
+            0x0706_0504_0302_0100,
+            0x1716_1514_1312_1110,
+            0x2726_2524_2322_2120,
+            0x3736_3534_3332_3130,
+        ];
+        let mut initialized = Vec::new();
+        for word in words {
+            initialized.extend_from_slice(&word.to_le_bytes());
+        }
+        let image = sample_guest_image_with_program_header(&initialized, 0x400);
+        let mut memory = GuestMachineMemory::from_image(&image);
+
+        assert_eq!(
+            memory
+                .read_u64_words_le::<4, 32>(TEST_ENTRY)
+                .expect("initialized words should read"),
+            words
+        );
+        assert_eq!(
+            memory
+                .read_u64_words_le::<2, 16>(TEST_ENTRY + 0x100)
+                .expect("zeroed words should read"),
+            [0, 0]
+        );
+
+        let overlay_words = [0xaabb_ccdd_0011_2233, 0x4455_6677_8899_aabb];
+        memory
+            .write_u64_words_le::<2, 16>(TEST_ENTRY + 8, &overlay_words)
+            .expect("single-block words should write");
+        assert_eq!(
+            memory
+                .read_u64_words_le::<2, 16>(TEST_ENTRY + 8)
+                .expect("single-block overlay words should read"),
+            overlay_words
+        );
+
+        let cross_block_words = [0x0123_4567_89ab_cdef, 0xfedc_ba98_7654_3210];
+        let cross_block_address = TEST_ENTRY + GUEST_MEMORY_OVERLAY_BLOCK_SIZE - 8;
+        memory
+            .write_u64_words_le::<2, 16>(cross_block_address, &cross_block_words)
+            .expect("cross-block words should write");
+        assert_eq!(
+            memory
+                .read_u64_words_le::<2, 16>(cross_block_address)
+                .expect("cross-block overlay words should read"),
+            cross_block_words
         );
     }
 
