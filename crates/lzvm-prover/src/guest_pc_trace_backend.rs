@@ -11240,13 +11240,19 @@ fn validate_and_apply_zisk_main_report(
     let count_main_report_generic_fallback = !detail_timing && !shape_timing;
     let mut next_instruction_cache = None;
     if count_main_report_generic_fallback {
-        let dma_prepare_lookahead = match report.instruction {
-            RiscvInstruction::ZiskDmaPrepare { .. } => {
+        let (dma_prepare_lookahead, fast_path_pending_dma) = match report.instruction {
+            RiscvInstruction::ZiskDmaPrepare { kind, rs1 } => {
                 let lookahead = next_instruction();
                 next_instruction_cache = Some(lookahead);
-                lookahead
+                (
+                    lookahead,
+                    Some(ZiskMainPendingDma {
+                        kind,
+                        first_arg_reg: rs1,
+                    }),
+                )
             }
-            _ => None,
+            _ => (None, None),
         };
         if let Some(fast_path) = report_level_fast_path_parts(row, report, dma_prepare_lookahead)? {
             match fast_path {
@@ -11476,13 +11482,7 @@ fn validate_and_apply_zisk_main_report(
                     )?;
                 }
             }
-            state.pending_dma = match report.instruction {
-                RiscvInstruction::ZiskDmaPrepare { kind, rs1 } => Some(ZiskMainPendingDma {
-                    kind,
-                    first_arg_reg: rs1,
-                }),
-                _ => None,
-            };
+            state.pending_dma = fast_path_pending_dma;
             return Ok(1);
         }
         if let Some(timing) = timing.as_mut() {
