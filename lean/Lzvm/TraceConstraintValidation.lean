@@ -1079,6 +1079,46 @@ theorem runtime_trace_constraint_checked_acceptance_evidence_core_and_sound
       accepted
   exact And.intro sound.left (And.intro core sound.right)
 
+theorem runtime_trace_constraint_checked_acceptance_accepts_evidence_core_and_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeTraceConstraintValidation system) :
+    forall artifact publicInput proof requiresExternalSource,
+      RuntimeTraceConstraintCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        system.accepts publicInput proof
+          /\ RuntimeTraceConstraintEvidence
+            system
+            validation
+            artifact
+            publicInput
+            proof
+            requiresExternalSource
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ SoundWitness system publicInput proof := by
+  intro artifact publicInput proof requiresExternalSource accepted
+  have verifierAccepts :=
+    runtime_trace_constraint_checked_acceptance_implies_verifier_accepts
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have evidenceCoreSound :=
+    runtime_trace_constraint_checked_acceptance_evidence_core_and_sound
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      requiresExternalSource
+      accepted
+  exact And.intro verifierAccepts evidenceCoreSound
+
 theorem runtime_trace_constraint_checked_acceptance_audited_core_contract
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
