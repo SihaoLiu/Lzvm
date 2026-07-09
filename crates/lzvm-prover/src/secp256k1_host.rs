@@ -183,7 +183,7 @@ pub(crate) fn secp256k1_point_add(
     if second.infinity {
         return Ok(first.clone());
     }
-    if let Some(result) = secp256k1_point_add_native(first, second) {
+    if let Some(result) = native_secp_point_sum(first, second) {
         return Ok(result);
     }
     let modulus = secp256k1_field_modulus();
@@ -219,7 +219,7 @@ pub(crate) fn secp256k1_point_double(point: &SecpPoint) -> Result<SecpPoint, Sec
     if point.infinity || point.y.is_zero() {
         return Ok(SecpPoint::identity());
     }
-    if let Some(result) = secp256k1_point_double_native(point) {
+    if let Some(result) = native_secp_point_twice(point) {
         return Ok(result);
     }
     let modulus = secp256k1_field_modulus();
@@ -291,7 +291,7 @@ fn secp256k1_point_has_canonical_coordinates(point: &SecpPoint) -> bool {
     point.infinity || (point.x < *secp256k1_field_modulus() && point.y < *secp256k1_field_modulus())
 }
 
-fn secp256k1_point_add_native(first: &SecpPoint, second: &SecpPoint) -> Option<SecpPoint> {
+fn native_secp_point_sum(first: &SecpPoint, second: &SecpPoint) -> Option<SecpPoint> {
     let first = secp256k1_point_to_native(first)?;
     let second = secp256k1_point_to_native(second)?;
     first
@@ -300,7 +300,7 @@ fn secp256k1_point_add_native(first: &SecpPoint, second: &SecpPoint) -> Option<S
         .map(|point| secp256k1_point_from_native(&point))
 }
 
-fn secp256k1_point_double_native(point: &SecpPoint) -> Option<SecpPoint> {
+fn native_secp_point_twice(point: &SecpPoint) -> Option<SecpPoint> {
     let point = secp256k1_point_to_native(point)?;
     point
         .combine(&point)
