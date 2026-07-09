@@ -1705,6 +1705,8 @@ def runner_command(args: argparse.Namespace, root: Path) -> list[str]:
             command.extend(["--large-max-avg-s", str(large_max_avg_s)])
     if args.append_max_average_rejections:
         command.append("--append-max-average-rejections")
+    if args.retryable_failure_wait_s > 0:
+        command.extend(["--retryable-failure-wait-s", str(args.retryable_failure_wait_s)])
     if args.check_gpu_memory:
         command.extend(["--pre-run-min-gpu-free-mib", str(args.min_gpu_free_mib)])
         command.extend(
@@ -2333,6 +2335,11 @@ def self_test() -> None:
         retry_wait_command = " ".join(shlex.quote(part) for part in next_command_parts(args, root))
         if "--retryable-failure-wait-s 3.0" not in retry_wait_command:
             raise SystemExit("self-test retry wait next-command missing")
+        retry_wait_runner_command = " ".join(
+            shlex.quote(part) for part in runner_command(args, root)
+        )
+        if "--retryable-failure-wait-s 3.0" not in retry_wait_runner_command:
+            raise SystemExit("self-test retry wait runner arg missing")
         args.retryable_failure_wait_s = 0.0
         args.check_gpu_memory = True
         args.min_gpu_free_mib = 123
