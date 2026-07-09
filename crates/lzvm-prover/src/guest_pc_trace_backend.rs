@@ -11114,6 +11114,7 @@ struct ZiskMainNoMemoryFastPathParts {
     a_index: Option<u8>,
     b_index: Option<u8>,
     store_index: Option<u8>,
+    next_pc_checked: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -12303,6 +12304,7 @@ fn no_memory_copy_fast_path_parts(
         a_index: no_memory_fast_path_source_index(instruction.a)?,
         b_index: no_memory_fast_path_source_index(instruction.b)?,
         store_index: no_memory_fast_path_store_index(instruction.store)?,
+        next_pc_checked: false,
     })
 }
 
@@ -12325,6 +12327,7 @@ fn no_memory_external_fast_path_parts(
         a_index: no_memory_fast_path_source_index(instruction.a)?,
         b_index: no_memory_fast_path_source_index(instruction.b)?,
         store_index: no_memory_fast_path_store_index(instruction.store)?,
+        next_pc_checked: false,
     })
 }
 
@@ -12434,6 +12437,7 @@ fn dma_prepare_fast_path_parts(
             a_index: None,
             b_index,
             store_index: None,
+            next_pc_checked: true,
         },
     )))
 }
@@ -12819,6 +12823,7 @@ fn special_no_memory_fast_path_parts(
             a_index,
             b_index,
             store_index,
+            next_pc_checked: true,
         },
     )))
 }
@@ -12958,6 +12963,7 @@ fn arithmetic_fast_path_parts(
             a_index,
             b_index,
             store_index,
+            next_pc_checked: true,
         },
     )))
 }
@@ -13095,6 +13101,7 @@ fn branch_fast_path_parts(
             a_index: (rs1 != 0).then_some(rs1),
             b_index: (rs2 != 0).then_some(rs2),
             store_index: None,
+            next_pc_checked: false,
         },
     )))
 }
@@ -13467,6 +13474,7 @@ fn apply_jump_fast_path(
             a_index: None,
             b_index: parts.b_index,
             store_index: parts.store_index,
+            next_pc_checked: false,
         },
     )?;
     match parts.store_index {
@@ -13550,16 +13558,18 @@ fn apply_no_memory_fast_path(
     let a = no_memory_fast_path_source_value(output_row, instruction.a, parts.a_index, state)?;
     let b = no_memory_fast_path_source_value(output_row, instruction.b, parts.b_index, state)?;
     let (c, flag) = main_op_result(instruction.op, a, b);
-    let computed_next_pc = if flag {
-        instruction.pc.wrapping_add_signed(instruction.jmp_offset1)
-    } else {
-        instruction.pc.wrapping_add_signed(instruction.jmp_offset2)
-    };
-    if expected_next_pc != computed_next_pc {
-        return Err(GuestPcTraceBackendError::ZiskMainEffectMismatch {
-            row: output_row,
-            message: format!("expected next pc {computed_next_pc}, found {expected_next_pc}"),
-        });
+    if !parts.next_pc_checked {
+        let computed_next_pc = if flag {
+            instruction.pc.wrapping_add_signed(instruction.jmp_offset1)
+        } else {
+            instruction.pc.wrapping_add_signed(instruction.jmp_offset2)
+        };
+        if expected_next_pc != computed_next_pc {
+            return Err(GuestPcTraceBackendError::ZiskMainEffectMismatch {
+                row: output_row,
+                message: format!("expected next pc {computed_next_pc}, found {expected_next_pc}"),
+            });
+        }
     }
 
     let row_mem_step_base = context.row_mem_step_base(output_row)?;
@@ -13667,6 +13677,7 @@ fn apply_precompile_no_store_fast_path(
             a_index: None,
             b_index,
             store_index: None,
+            next_pc_checked: false,
         },
     )?;
     state.last_c = c;
@@ -13752,6 +13763,7 @@ fn apply_internal_memory_copy_fast_path(
             a_index: None,
             b_index: Some(b_index),
             store_index: None,
+            next_pc_checked: false,
         },
     )?;
     state

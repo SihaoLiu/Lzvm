@@ -8012,6 +8012,7 @@ fn no_memory_external_fast_path_parts_match_generic_lowering() {
             a_index: Some(2),
             b_index: None,
             store_index: Some(3),
+            next_pc_checked: false,
         })
     );
 }
@@ -8894,6 +8895,7 @@ fn no_memory_copy_fast_path_preserves_row_effects() {
             a_index: None,
             b_index: Some(2),
             store_index: Some(3),
+            next_pc_checked: false,
         }
     );
 
@@ -8998,6 +9000,7 @@ fn no_memory_external_register_store_fast_path_preserves_row_effects() {
             a_index: Some(2),
             b_index: None,
             store_index: Some(3),
+            next_pc_checked: false,
         },
         &mut state,
         &mut context,
@@ -9074,6 +9077,7 @@ fn no_memory_external_no_store_fast_path_preserves_source_steps() {
             a_index: Some(2),
             b_index: Some(3),
             store_index: None,
+            next_pc_checked: false,
         },
         &mut state,
         &mut context,
