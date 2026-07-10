@@ -4763,9 +4763,56 @@ fn run_guest_pc_trace_segment_slice_inner<
     instruction_limit: u64,
     row_limit: usize,
     trace_instance_index: u32,
+    boundary_snapshot: Option<&mut ZiskMainRunnerBoundarySnapshot>,
+    instruction_cache: &mut GuestInstructionCache,
+    timing: Option<&mut GuestPcTraceStreamTiming>,
+) -> Result<GuestPcTraceSegmentSlice, GuestPcTraceBackendError> {
+    let runner_timing_config =
+        GuestPcTraceRunnerTimingConfig::from_env_if_enabled(timing.is_some());
+    if runner_timing_config.enabled() {
+        run_guest_pc_trace_segment_slice_inner_configured::<TRACK_BOUNDARY, RETAIN_REPORTS, true>(
+            memory,
+            state,
+            handler,
+            instruction_limit,
+            row_limit,
+            trace_instance_index,
+            boundary_snapshot,
+            instruction_cache,
+            timing,
+            runner_timing_config,
+        )
+    } else {
+        run_guest_pc_trace_segment_slice_inner_configured::<TRACK_BOUNDARY, RETAIN_REPORTS, false>(
+            memory,
+            state,
+            handler,
+            instruction_limit,
+            row_limit,
+            trace_instance_index,
+            boundary_snapshot,
+            instruction_cache,
+            None,
+            runner_timing_config,
+        )
+    }
+}
+
+fn run_guest_pc_trace_segment_slice_inner_configured<
+    const TRACK_BOUNDARY: bool,
+    const RETAIN_REPORTS: bool,
+    const RUNNER_DIAGNOSTICS: bool,
+>(
+    memory: &mut GuestMachineMemory,
+    state: &mut GuestMachineState,
+    handler: &mut dyn GuestFcallHandler,
+    instruction_limit: u64,
+    row_limit: usize,
+    trace_instance_index: u32,
     mut boundary_snapshot: Option<&mut ZiskMainRunnerBoundarySnapshot>,
     instruction_cache: &mut GuestInstructionCache,
     mut timing: Option<&mut GuestPcTraceStreamTiming>,
+    runner_timing_config: GuestPcTraceRunnerTimingConfig,
 ) -> Result<GuestPcTraceSegmentSlice, GuestPcTraceBackendError> {
     let mut reports =
         new_guest_pc_trace_report_buffer::<RETAIN_REPORTS>(instruction_limit, row_limit);
@@ -4773,12 +4820,14 @@ fn run_guest_pc_trace_segment_slice_inner<
     let mut report_count = 0_usize;
     let mut executed_instructions = 0_u64;
     let mut trace_rows = 0_usize;
-    let runner_timing_config =
-        GuestPcTraceRunnerTimingConfig::from_env_if_enabled(timing.is_some());
-    let mut next_report_sample_index =
-        runner_timing_config.segment_report_start_index(trace_instance_index, row_limit)?;
-    let runner_path_timing = runner_timing_config.count_paths();
-    let runner_instruction_cache_stats = runner_timing_config.count_instruction_cache();
+    let mut next_report_sample_index = if RUNNER_DIAGNOSTICS {
+        runner_timing_config.segment_report_start_index(trace_instance_index, row_limit)?
+    } else {
+        0
+    };
+    let runner_path_timing = RUNNER_DIAGNOSTICS && runner_timing_config.count_paths();
+    let runner_instruction_cache_stats =
+        RUNNER_DIAGNOSTICS && runner_timing_config.count_instruction_cache();
     let mut instruction_cache_stats = GuestInstructionCacheStats::default();
     enum GuestMachineAdvancedReportStorage<'a> {
         Borrowed(&'a GuestMachineReport),
@@ -4801,7 +4850,7 @@ fn run_guest_pc_trace_segment_slice_inner<
     }
     macro_rules! finish_trace_slice {
         ($finish:expr) => {{
-            if runner_instruction_cache_stats {
+            if RUNNER_DIAGNOSTICS && runner_instruction_cache_stats {
                 if let Some(timing) = timing.as_deref_mut() {
                     timing.record_runner_instruction_cache_stats(instruction_cache_stats);
                 }
@@ -4810,7 +4859,8 @@ fn run_guest_pc_trace_segment_slice_inner<
         }};
     }
     loop {
-        let report_detail_timing = runner_timing_config.sample(next_report_sample_index);
+        let report_detail_timing =
+            RUNNER_DIAGNOSTICS && runner_timing_config.sample(next_report_sample_index);
         let report_detail_started = detail_duration_started(&timing, report_detail_timing);
         let prepare_started = detail_duration_started(&timing, report_detail_timing);
         let pc = state.pc();
@@ -5082,7 +5132,9 @@ fn run_guest_pc_trace_segment_slice_inner<
                 message: "guest PC trace report count overflow".to_owned(),
             }
         })?;
-        runner_timing_config.advance_sample_index(&mut next_report_sample_index)?;
+        if RUNNER_DIAGNOSTICS {
+            runner_timing_config.advance_sample_index(&mut next_report_sample_index)?;
+        }
         executed_instructions += 1;
         record_runner_detail_duration(counter_update_started, &mut timing, |timing| {
             &mut timing.runner_counter_update_duration
@@ -16133,6 +16185,10 @@ impl GuestPcTraceRunnerTimingConfig {
 
     fn count_instruction_cache(self) -> bool {
         self.instruction_cache_stats
+    }
+
+    fn enabled(self) -> bool {
+        self.detail_timing || self.path_timing || self.instruction_cache_stats
     }
 }
 

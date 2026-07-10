@@ -6885,6 +6885,38 @@ fn guest_pc_trace_segments_split_runner_and_lowerer_with_bounded_pending_queue()
 }
 
 #[test]
+fn guest_pc_trace_runner_specializes_disabled_diagnostics() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let backend_source = std::fs::read_to_string(crate_root.join("src/guest_pc_trace_backend.rs"))
+        .expect("guest PC trace backend source should read");
+    let dispatch_body = function_body(
+        &backend_source,
+        "fn run_guest_pc_trace_segment_slice_inner<",
+        "fn run_guest_pc_trace_segment_slice_inner_configured<",
+    );
+    let configured_body = function_body(
+        &backend_source,
+        "fn run_guest_pc_trace_segment_slice_inner_configured<",
+        "const ZISK_MAIN_MAX_INSTRUCTION_ROWS",
+    );
+
+    assert!(
+        dispatch_body.contains("runner_timing_config.enabled()")
+            && dispatch_body.contains("RETAIN_REPORTS, true>")
+            && dispatch_body.contains("RETAIN_REPORTS, false>"),
+        "runner diagnostics should dispatch once before entering the instruction loop"
+    );
+    assert!(
+        configured_body.contains("const RUNNER_DIAGNOSTICS: bool")
+            && configured_body.contains(
+                "RUNNER_DIAGNOSTICS && runner_timing_config.sample(next_report_sample_index)"
+            )
+            && configured_body.contains("if RUNNER_DIAGNOSTICS"),
+        "disabled runner diagnostics should remain compile-time removable"
+    );
+}
+
+#[test]
 fn guest_pc_trace_runner_seed_snapshot_has_trusted_boundary_gate() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let backend_path = crate_root.join("src/guest_pc_trace_backend.rs");
