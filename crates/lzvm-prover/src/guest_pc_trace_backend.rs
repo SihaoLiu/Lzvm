@@ -23,7 +23,7 @@ use crate::guest_machine::{
     advance_guest_machine_with_prepared_fcalls_report_shape_path_at_pc_into_timed,
     advance_guest_machine_with_prepared_fcalls_report_shape_path_timed,
     advance_guest_machine_with_prepared_fcalls_report_shape_timed, fixed_csr_value,
-    instruction_cache_update_for_instruction, run_guest_machine_trace_with_fcalls,
+    instruction_cache_update_for_instruction_with_handler, run_guest_machine_trace_with_fcalls,
     run_guest_machine_with_fcalls, GuestDmaProofValueFlags, GuestFcallHandler,
     GuestInstructionCache, GuestInstructionCacheStats, GuestMachineAdvancePath,
     GuestMachineAdvanceTiming, GuestMachineHalt, GuestMachineMemory,
@@ -4303,7 +4303,8 @@ fn run_guest_pc_trace_segment_slice_with_live_report_chunks(
                 ));
             }
         }
-        let instruction_cache_update = instruction_cache_update_for_instruction(state, current);
+        let instruction_cache_update =
+            instruction_cache_update_for_instruction_with_handler(state, current, handler);
         let (advanced, advance_path) = if path_timing {
             advance_guest_machine_with_prepared_fcalls_report_shape_path(
                 memory, state, handler, prepared,
@@ -4537,7 +4538,8 @@ fn run_guest_pc_trace_segment_slice_with_streaming_device_material(
                 .map(Some);
             }
         }
-        let instruction_cache_update = instruction_cache_update_for_instruction(state, current);
+        let instruction_cache_update =
+            instruction_cache_update_for_instruction_with_handler(state, current, handler);
         let advanced = advance_guest_machine_with_prepared_fcalls_report_shape(
             memory, state, handler, prepared,
         )
@@ -4951,7 +4953,8 @@ fn run_guest_pc_trace_segment_slice_inner_configured<
             &mut timing.runner_row_plan_duration
         });
         let cache_policy_started = detail_duration_started(&timing, report_detail_timing);
-        let instruction_cache_update = instruction_cache_update_for_instruction(state, current);
+        let instruction_cache_update =
+            instruction_cache_update_for_instruction_with_handler(state, current, handler);
         record_runner_detail_duration(cache_policy_started, &mut timing, |timing| {
             &mut timing.runner_cache_policy_duration
         });

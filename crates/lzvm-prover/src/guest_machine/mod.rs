@@ -43,6 +43,13 @@ pub struct GuestFcallResponse {
     pub results: Vec<u64>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GuestFcallMemoryEffect {
+    Unknown,
+    ReadOnly,
+    WriteRange { address: u64, byte_len: usize },
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum GuestFcallError {
     Handler { message: String },
@@ -59,6 +66,12 @@ impl fmt::Display for GuestFcallError {
 impl std::error::Error for GuestFcallError {}
 
 pub trait GuestFcallHandler {
+    /// Declares memory writes from a successful call. Implementations must return `Unknown`
+    /// unless every possible write is covered by the returned effect.
+    fn memory_effect(&self, _function_id: u16) -> GuestFcallMemoryEffect {
+        GuestFcallMemoryEffect::Unknown
+    }
+
     fn handle_fcall(
         &mut self,
         request: GuestFcallRequest,
@@ -1742,8 +1755,14 @@ fn run_guest_machine_inner(
                 pc: state.pc(),
             });
         }
-        let instruction_cache_update =
-            instruction_cache_update_for_instruction(state, prepared.instruction);
+        let instruction_cache_update = match handler.as_deref() {
+            Some(handler) => instruction_cache_update_for_instruction_with_handler(
+                state,
+                prepared.instruction,
+                handler,
+            ),
+            None => instruction_cache_update_for_instruction(state, prepared.instruction),
+        };
         let report = match handler.as_deref_mut() {
             Some(handler) => {
                 advance_guest_machine_prepared_inner(memory, state, Some(handler), prepared)?
@@ -1766,6 +1785,34 @@ pub(crate) fn instruction_cache_update_for_instruction(
     if matches!(instruction, RiscvInstruction::ZiskFcallInvoke { .. }) {
         return GuestInstructionCacheUpdate::Clear(GuestInstructionCacheClearReason::FcallInvoke);
     }
+    instruction_cache_update_for_non_fcall_instruction(state, instruction)
+}
+
+#[inline]
+pub(crate) fn instruction_cache_update_for_instruction_with_handler(
+    state: &GuestMachineState,
+    instruction: RiscvInstruction,
+    handler: &dyn GuestFcallHandler,
+) -> GuestInstructionCacheUpdate {
+    if let RiscvInstruction::ZiskFcallInvoke { function_id } = instruction {
+        return match handler.memory_effect(function_id) {
+            GuestFcallMemoryEffect::Unknown => {
+                GuestInstructionCacheUpdate::Clear(GuestInstructionCacheClearReason::FcallInvoke)
+            }
+            GuestFcallMemoryEffect::ReadOnly => GuestInstructionCacheUpdate::None,
+            GuestFcallMemoryEffect::WriteRange { address, byte_len } => {
+                GuestInstructionCacheUpdate::InvalidateWriteRange { address, byte_len }
+            }
+        };
+    }
+    instruction_cache_update_for_non_fcall_instruction(state, instruction)
+}
+
+#[inline]
+fn instruction_cache_update_for_non_fcall_instruction(
+    state: &GuestMachineState,
+    instruction: RiscvInstruction,
+) -> GuestInstructionCacheUpdate {
     let Some(pending) = state.pending_dma else {
         return GuestInstructionCacheUpdate::None;
     };
@@ -3538,6 +3585,24 @@ mod tests {
         previous: Option<std::ffi::OsString>,
     }
 
+    struct DeclaredMemoryEffectFcallHandler(GuestFcallMemoryEffect);
+
+    impl GuestFcallHandler for DeclaredMemoryEffectFcallHandler {
+        fn memory_effect(&self, _function_id: u16) -> GuestFcallMemoryEffect {
+            self.0
+        }
+
+        fn handle_fcall(
+            &mut self,
+            _request: GuestFcallRequest,
+            _memory: &mut GuestMachineMemory,
+        ) -> Result<GuestFcallResponse, GuestFcallError> {
+            Ok(GuestFcallResponse {
+                results: Vec::new(),
+            })
+        }
+    }
+
     impl TestEnvVarGuard {
         fn set(name: &'static str, value: &str) -> Self {
             let previous = std::env::var_os(name);
@@ -4445,6 +4510,39 @@ mod tests {
             assert_eq!(cache.entries.len(), GUEST_INSTRUCTION_CACHE_ENTRY_COUNT);
             assert_eq!(cache.entry_mask, GUEST_INSTRUCTION_CACHE_ENTRY_COUNT - 1);
         }
+    }
+
+    #[test]
+    fn fcall_cache_update_uses_declared_memory_effect() {
+        let state = GuestMachineState::new(TEST_ENTRY);
+        let instruction = RiscvInstruction::ZiskFcallInvoke { function_id: 7 };
+
+        assert_eq!(
+            instruction_cache_update_for_instruction(&state, instruction),
+            GuestInstructionCacheUpdate::Clear(GuestInstructionCacheClearReason::FcallInvoke)
+        );
+        assert_eq!(
+            instruction_cache_update_for_instruction_with_handler(
+                &state,
+                instruction,
+                &DeclaredMemoryEffectFcallHandler(GuestFcallMemoryEffect::ReadOnly),
+            ),
+            GuestInstructionCacheUpdate::None
+        );
+        assert_eq!(
+            instruction_cache_update_for_instruction_with_handler(
+                &state,
+                instruction,
+                &DeclaredMemoryEffectFcallHandler(GuestFcallMemoryEffect::WriteRange {
+                    address: TEST_ENTRY + 0x1000,
+                    byte_len: 64,
+                }),
+            ),
+            GuestInstructionCacheUpdate::InvalidateWriteRange {
+                address: TEST_ENTRY + 0x1000,
+                byte_len: 64,
+            }
+        );
     }
 
     #[test]

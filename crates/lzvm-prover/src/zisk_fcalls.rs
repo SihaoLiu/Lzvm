@@ -4,8 +4,8 @@ use lzvm_artifacts::framed_stdin::{parse_framed_stdin_chunks, FramedStdinError};
 use num_bigint::BigUint;
 
 use crate::guest_machine::{
-    GuestFcallError, GuestFcallHandler, GuestFcallParam, GuestFcallRequest, GuestFcallResponse,
-    GuestMachineMemory,
+    GuestFcallError, GuestFcallHandler, GuestFcallMemoryEffect, GuestFcallParam, GuestFcallRequest,
+    GuestFcallResponse, GuestMachineMemory,
 };
 use crate::guest_memory::GuestMemoryError;
 use crate::secp256k1_host::{
@@ -324,6 +324,24 @@ impl ZiskInputFcallHandler {
 }
 
 impl GuestFcallHandler for ZiskInputFcallHandler {
+    fn memory_effect(&self, function_id: u16) -> GuestFcallMemoryEffect {
+        match function_id {
+            ZISK_INPUT_READY_FCALL_ID => match self.input_image.is_some() {
+                true => GuestFcallMemoryEffect::WriteRange {
+                    address: ZISK_INPUT_ADDRESS,
+                    byte_len: self.input_image_len,
+                },
+                false => GuestFcallMemoryEffect::ReadOnly,
+            },
+            ZISK_SECP256K1_FP_INV_FCALL_ID
+            | ZISK_SECP256K1_FN_INV_FCALL_ID
+            | ZISK_SECP256K1_FP_SQRT_FCALL_ID
+            | ZISK_MSB_POS_256_FCALL_ID
+            | ZISK_SECP256K1_ECDSA_VERIFY_FCALL_ID => GuestFcallMemoryEffect::ReadOnly,
+            _ => GuestFcallMemoryEffect::Unknown,
+        }
+    }
+
     fn handle_fcall(
         &mut self,
         request: GuestFcallRequest,
@@ -567,4 +585,46 @@ fn required_address_param(request: &GuestFcallRequest) -> Result<u64, ZiskInputF
         return Err(ZiskInputFcallError::UnexpectedRequiredAddressPort { port: *port });
     }
     Ok(*value)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn input_handler_declares_memory_effects() {
+        let mut handler = ZiskInputFcallHandler {
+            input_image: Some(vec![0; 16]),
+            input_image_len: 16,
+        };
+        assert_eq!(
+            handler.memory_effect(ZISK_INPUT_READY_FCALL_ID),
+            GuestFcallMemoryEffect::WriteRange {
+                address: ZISK_INPUT_ADDRESS,
+                byte_len: 16,
+            }
+        );
+
+        handler.input_image = None;
+        assert_eq!(
+            handler.memory_effect(ZISK_INPUT_READY_FCALL_ID),
+            GuestFcallMemoryEffect::ReadOnly
+        );
+        for function_id in [
+            ZISK_SECP256K1_FP_INV_FCALL_ID,
+            ZISK_SECP256K1_FN_INV_FCALL_ID,
+            ZISK_SECP256K1_FP_SQRT_FCALL_ID,
+            ZISK_MSB_POS_256_FCALL_ID,
+            ZISK_SECP256K1_ECDSA_VERIFY_FCALL_ID,
+        ] {
+            assert_eq!(
+                handler.memory_effect(function_id),
+                GuestFcallMemoryEffect::ReadOnly
+            );
+        }
+        assert_eq!(
+            handler.memory_effect(u16::MAX),
+            GuestFcallMemoryEffect::Unknown
+        );
+    }
 }
