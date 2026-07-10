@@ -66,8 +66,8 @@ impl fmt::Display for GuestFcallError {
 impl std::error::Error for GuestFcallError {}
 
 pub trait GuestFcallHandler {
-    /// Declares memory writes from a successful call. Implementations must return `Unknown`
-    /// unless every possible write is covered by the returned effect.
+    /// Declares memory writes from a successful call. `ReadOnly` or `WriteRange` must cover every
+    /// successful call for `function_id`; return `Unknown` otherwise to avoid stale instructions.
     fn memory_effect(&self, _function_id: u16) -> GuestFcallMemoryEffect {
         GuestFcallMemoryEffect::Unknown
     }
@@ -3603,6 +3603,35 @@ mod tests {
         }
     }
 
+    struct InstructionWritingFcallHandler {
+        address: u64,
+        instruction: u32,
+    }
+
+    impl GuestFcallHandler for InstructionWritingFcallHandler {
+        fn memory_effect(&self, _function_id: u16) -> GuestFcallMemoryEffect {
+            GuestFcallMemoryEffect::WriteRange {
+                address: self.address,
+                byte_len: std::mem::size_of::<u32>(),
+            }
+        }
+
+        fn handle_fcall(
+            &mut self,
+            _request: GuestFcallRequest,
+            memory: &mut GuestMachineMemory,
+        ) -> Result<GuestFcallResponse, GuestFcallError> {
+            memory
+                .write_range(self.address, &self.instruction.to_le_bytes())
+                .map_err(|error| GuestFcallError::Handler {
+                    message: error.to_string(),
+                })?;
+            Ok(GuestFcallResponse {
+                results: Vec::new(),
+            })
+        }
+    }
+
     impl TestEnvVarGuard {
         fn set(name: &'static str, value: &str) -> Self {
             let previous = std::env::var_os(name);
@@ -3693,6 +3722,10 @@ mod tests {
             | ((offset >> 12) & 0x00ff) << 12
             | (u32::from(rd) << 7)
             | 0x6f
+    }
+
+    fn csrwi(csr: u16, immediate: u8) -> u32 {
+        (u32::from(csr) << 20) | (u32::from(immediate) << 15) | (0x5 << 12) | 0x73
     }
 
     #[test]
@@ -4541,6 +4574,35 @@ mod tests {
             GuestInstructionCacheUpdate::InvalidateWriteRange {
                 address: TEST_ENTRY + 0x1000,
                 byte_len: 64,
+            }
+        );
+    }
+
+    #[test]
+    fn declared_fcall_write_range_invalidates_cached_instruction() {
+        let mut memory = guest_machine_memory_with_words(&[
+            addi(1, 0, 7),
+            jal(0, 8),
+            addi(2, 0, 9),
+            csrwi(0x08c0, 7),
+            jal(0, -16),
+        ]);
+        let mut state = GuestMachineState::new(TEST_ENTRY);
+        let mut handler = InstructionWritingFcallHandler {
+            address: TEST_ENTRY,
+            instruction: 0x0000_0073,
+        };
+
+        let run = run_guest_machine_with_fcalls(&mut memory, &mut state, &mut handler, 16)
+            .expect("declared write should invalidate cached instruction");
+
+        assert_eq!(
+            run,
+            GuestMachineRunReport {
+                executed_instructions: 4,
+                halt: GuestMachineHalt::Ecall {
+                    address: TEST_ENTRY,
+                },
             }
         );
     }
