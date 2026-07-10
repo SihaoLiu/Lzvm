@@ -715,6 +715,8 @@ extern "C" int lzvm_cuda_setup_init(
     LZVM_CUDA_RETURN_ON_ERROR(cudaMemcpyToSymbol(
         kNttStageRootInverses, inverse_roots, root_count * sizeof(uint64_t)));
 
+    LZVM_CUDA_RETURN_ON_ERROR(setup_ntt_thread_factors(roots, inverse_roots, root_count));
+
     const unsigned int root_limit = static_cast<unsigned int>(max_bits_ext);
     LZVM_CUDA_RETURN_ON_ERROR(
         cudaMemcpyToSymbol(kNttStageRootLimit, &root_limit, sizeof(root_limit)));

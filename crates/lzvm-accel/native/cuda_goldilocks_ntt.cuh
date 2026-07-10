@@ -2,6 +2,51 @@
 
 constexpr size_t kNttThreadPowerBits = 8;
 constexpr size_t kNttThreadPowerKernelMinHalf = 16;
+constexpr size_t kNttThreadFactorMinBits = 10;
+constexpr size_t kNttThreadFactorStageCount = kMaxRootBits - kNttThreadFactorMinBits + 1;
+constexpr size_t kNttThreadFactorDirectionCount = 2;
+constexpr size_t kNttThreadFactorCount =
+    kNttThreadFactorDirectionCount * kNttThreadFactorStageCount * kThreads;
+
+__device__ uint64_t kNttThreadFactors[kNttThreadFactorCount];
+__device__ uint64_t
+    kNttBlockTwiddles[kNttThreadFactorDirectionCount * kNttThreadFactorStageCount];
+
+int setup_ntt_thread_factors(
+    const uint64_t* roots,
+    const uint64_t* inverse_roots,
+    size_t root_count) {
+    std::vector<uint64_t> thread_factors(kNttThreadFactorCount);
+    std::vector<uint64_t> block_twiddles(
+        kNttThreadFactorDirectionCount * kNttThreadFactorStageCount);
+    for (size_t direction = 0; direction < kNttThreadFactorDirectionCount; ++direction) {
+        for (size_t stage_bits = kNttThreadFactorMinBits; stage_bits < root_count; ++stage_bits) {
+            const size_t stage_index =
+                direction * kNttThreadFactorStageCount + stage_bits - kNttThreadFactorMinBits;
+            const uint64_t stage_twiddle =
+                direction == 0 ? roots[stage_bits] : inverse_roots[stage_bits];
+            uint64_t factor = 1;
+            const size_t factor_offset = stage_index * kThreads;
+            for (size_t thread = 0; thread < kThreads; ++thread) {
+                thread_factors[factor_offset + thread] = factor;
+                factor = host_mul_mod(factor, stage_twiddle);
+            }
+            block_twiddles[stage_index] = factor;
+        }
+    }
+    cudaError_t status = cudaMemcpyToSymbol(
+        kNttThreadFactors,
+        thread_factors.data(),
+        thread_factors.size() * sizeof(uint64_t));
+    if (status != cudaSuccess) {
+        return static_cast<int>(status);
+    }
+    return static_cast<int>(
+        cudaMemcpyToSymbol(
+            kNttBlockTwiddles,
+            block_twiddles.data(),
+            block_twiddles.size() * sizeof(uint64_t)));
+}
 
 __device__ uint64_t ntt_stage_twiddle(
     size_t len,
@@ -32,12 +77,16 @@ __device__ void ntt_stage_prepare_thread_powers(
     __syncthreads();
 }
 
-__device__ uint64_t ntt_stage_block_base(const uint64_t* thread_powers, size_t block_offset) {
+__device__ size_t ntt_stage_thread_factor_index(size_t stage_bits, bool inverse_roots) {
+    const size_t direction_offset =
+        inverse_roots ? kNttThreadFactorStageCount : static_cast<size_t>(0);
+    return direction_offset + stage_bits - kNttThreadFactorMinBits;
+}
+
+__device__ uint64_t ntt_stage_block_base(uint64_t block_twiddle, size_t block_offset) {
     if (block_offset == 0) {
         return 1;
     }
-    const uint64_t block_twiddle =
-        mul_mod(thread_powers[kNttThreadPowerBits - 1], thread_powers[kNttThreadPowerBits - 1]);
     return pow_mod(block_twiddle, block_offset >> kNttThreadPowerBits);
 }
 
@@ -115,19 +164,16 @@ __global__ void ntt_stage_block_twiddle_kernel(
     size_t len,
     size_t stage_len,
     size_t stage_bits,
-    uint64_t root,
     bool inverse_roots) {
     __shared__ uint64_t block_base;
-    __shared__ uint64_t thread_powers[kNttThreadPowerBits];
 
     const size_t pair_count = len / 2;
     const size_t pair = blockIdx.x * blockDim.x + threadIdx.x;
     const size_t half = stage_len / 2;
     const size_t block_offset = (blockIdx.x * blockDim.x) % half;
-    ntt_stage_prepare_thread_powers(
-        len, stage_len, stage_bits, root, inverse_roots, thread_powers);
+    const size_t factor_stage = ntt_stage_thread_factor_index(stage_bits, inverse_roots);
     if (threadIdx.x == 0) {
-        block_base = ntt_stage_block_base(thread_powers, block_offset);
+        block_base = ntt_stage_block_base(kNttBlockTwiddles[factor_stage], block_offset);
     }
     __syncthreads();
 
@@ -136,8 +182,9 @@ __global__ void ntt_stage_block_twiddle_kernel(
         const size_t offset = block_offset + threadIdx.x;
         const size_t even_index = group * stage_len + offset;
         const size_t odd_index = even_index + half;
-        const uint64_t factor =
-            ntt_stage_thread_twiddle(block_base, thread_powers, static_cast<size_t>(threadIdx.x));
+        const uint64_t thread_factor =
+            __ldg(&kNttThreadFactors[factor_stage * kThreads + threadIdx.x]);
+        const uint64_t factor = mul_mod(block_base, thread_factor);
         const uint64_t even = values[even_index];
         const uint64_t odd = mul_mod(values[odd_index], factor);
         values[even_index] = add_mod(even, odd);
@@ -165,7 +212,7 @@ cudaError_t run_ntt(
         const size_t half = stage_len / 2;
         if (half > kThreads) {
             ntt_stage_block_twiddle_kernel<<<stage_blocks, kThreads, 0, stream>>>(
-                device_values, len, stage_len, stage_bits, root, inverse_roots);
+                device_values, len, stage_len, stage_bits, inverse_roots);
         } else if (half >= kNttThreadPowerKernelMinHalf) {
             ntt_stage_thread_twiddle_kernel<<<stage_blocks, kThreads, 0, stream>>>(
                 device_values, len, stage_len, stage_bits, root, inverse_roots);

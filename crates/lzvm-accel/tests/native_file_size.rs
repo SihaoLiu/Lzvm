@@ -222,7 +222,7 @@ fn ntt_reuses_shared_twiddle_powers_inside_stage_kernels() {
 }
 
 #[test]
-fn ntt_block_twiddle_base_reuses_thread_powers() {
+fn ntt_block_twiddle_kernel_reuses_precomputed_thread_factors() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let source = std::fs::read_to_string(crate_root.join("native/cuda_goldilocks_ntt.cuh"))
         .expect("CUDA NTT native source should read");
@@ -233,9 +233,11 @@ fn ntt_block_twiddle_base_reuses_thread_powers() {
     );
 
     assert!(
-        source.contains("ntt_stage_block_base")
-            && block_body.contains("ntt_stage_block_base(thread_powers, block_offset)"),
-        "block-twiddle NTT should derive block bases from shared thread powers"
+        source.contains("kNttThreadFactors")
+            && source.contains("kNttBlockTwiddles")
+            && block_body.contains("__ldg(&kNttThreadFactors[")
+            && block_body.contains("ntt_stage_block_base(kNttBlockTwiddles[factor_stage]"),
+        "block-twiddle NTT should reuse setup-time thread factors and block twiddles"
     );
 }
 
