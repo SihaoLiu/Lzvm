@@ -1212,7 +1212,9 @@ impl GuestInstructionCache {
         report: &GuestMachineReport,
         shape: GuestMachineReportShape,
     ) {
-        if shape.has_memory_write {
+        if let Some((address, byte_len)) = common_instruction_write_range(report, shape) {
+            self.invalidate_range(address, byte_len);
+        } else if shape.has_memory_write {
             self.invalidate_report(report);
         }
     }
@@ -1223,7 +1225,9 @@ impl GuestInstructionCache {
         shape: GuestMachineReportShape,
         stats: &mut GuestInstructionCacheStats,
     ) {
-        if shape.has_memory_write {
+        if let Some((address, byte_len)) = common_instruction_write_range(report, shape) {
+            self.invalidate_range_with_stats(address, byte_len, stats);
+        } else if shape.has_memory_write {
             self.invalidate_report_with_stats(report, stats);
         }
     }
@@ -1355,6 +1359,30 @@ impl GuestInstructionCache {
     fn index(&self, address: u64) -> usize {
         ((address >> 1) as usize) & self.entry_mask
     }
+}
+
+#[inline(always)]
+fn common_instruction_write_range(
+    report: &GuestMachineReport,
+    shape: GuestMachineReportShape,
+) -> Option<(u64, usize)> {
+    if !shape.has_memory_write {
+        return None;
+    }
+    let access = match &report.memory_accesses.entries {
+        GuestMemoryAccessEntries::One(access) => access,
+        GuestMemoryAccessEntries::Many(accesses)
+            if matches!(shape.instruction, RiscvInstruction::Amo { .. }) =>
+        {
+            accesses.last()?
+        }
+        GuestMemoryAccessEntries::Empty
+        | GuestMemoryAccessEntries::Many(_)
+        | GuestMemoryAccessEntries::Precompile(_) => return None,
+    };
+    debug_assert_eq!(access.kind, GuestMemoryAccessKind::Write);
+    (access.kind == GuestMemoryAccessKind::Write)
+        .then_some((access.address, usize::from(access.byte_len)))
 }
 
 impl GuestInstructionCacheUpdate {
@@ -4532,6 +4560,76 @@ mod tests {
                 .instruction,
             initial.instruction
         );
+    }
+
+    #[test]
+    fn common_instruction_write_range_uses_final_atomic_access() {
+        let instruction = RiscvInstruction::Amo {
+            kind: RiscvAmoKind::Add,
+            width: RiscvAmoWidth::Doubleword,
+            rd: 3,
+            rs1: 4,
+            rs2: 5,
+            acquire: false,
+            release: false,
+        };
+        let report = GuestMachineReport::new(
+            TEST_ENTRY,
+            4,
+            instruction,
+            TEST_ENTRY + 4,
+            GuestRegisterWriteList::default(),
+            vec![
+                GuestMemoryAccess {
+                    kind: GuestMemoryAccessKind::Read,
+                    address: TEST_ENTRY + 0x1000,
+                    byte_len: 8,
+                    value: 7,
+                },
+                GuestMemoryAccess {
+                    kind: GuestMemoryAccessKind::Write,
+                    address: TEST_ENTRY + 0x1000,
+                    byte_len: 8,
+                    value: 9,
+                },
+            ]
+            .into(),
+            None,
+        );
+
+        assert_eq!(
+            common_instruction_write_range(
+                &report,
+                GuestMachineReportShape {
+                    instruction,
+                    has_memory_write: true,
+                },
+            ),
+            Some((TEST_ENTRY + 0x1000, 8))
+        );
+        assert_eq!(
+            common_instruction_write_range(
+                &report,
+                GuestMachineReportShape {
+                    instruction,
+                    has_memory_write: false,
+                },
+            ),
+            None
+        );
+
+        let mut cache = GuestInstructionCache::default();
+        let mut stats = GuestInstructionCacheStats::default();
+        cache.invalidate_report_shape_with_stats(
+            &report,
+            GuestMachineReportShape {
+                instruction,
+                has_memory_write: true,
+            },
+            &mut stats,
+        );
+        assert_eq!(stats.write_invalidation_range_count, 1);
+        assert_eq!(stats.write_invalidation_skipped_range_count, 1);
     }
 
     #[test]
