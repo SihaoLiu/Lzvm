@@ -1,11 +1,12 @@
 use super::{
     cached_coset_extend_residue_row_weights_device, coset_extend_domain, coset_extend_row_weights,
-    cuda_status, ensure_cuda_setup, shifted_row_weight_groups, AccelError, CudaDeviceBuffer,
-    CudaRowMajorColumnView, MainTraceDeviceLayout,
+    cuda_status, ensure_cuda_setup, AccelError, CudaDeviceBuffer, CudaRowMajorColumnView,
+    MainTraceDeviceLayout,
 };
 
 const MAIN_TRACE_COMPACT_DESCRIPTOR_WORDS: usize = 11;
 const MAIN_TRACE_COLUMN_COUNT: usize = 39;
+const MAIN_TRACE_SELECTED_TARGET_BATCH: usize = 4;
 
 unsafe extern "C" {
     #[link_name = "lzvm_cuda_goldilocks_coset_extend_row_major_columns_selected_rows_device"]
@@ -33,7 +34,10 @@ unsafe extern "C" {
     #[link_name = "lzvm_cuda_goldilocks_coset_extend_main_trace_compact_descriptors_shifted_rows_device"]
     fn lzvm_cuda_goldilocks_coset_extend_main_trace_compact_descriptors_shifted_rows_device_raw(
         descriptors: *const u64,
-        weights: *const u64,
+        weights0: *const u64,
+        weights1: *const u64,
+        weights2: *const u64,
+        weights3: *const u64,
         weight_shifts: *const u64,
         output_rows: *const u64,
         out: *mut u64,
@@ -321,22 +325,64 @@ pub fn cuda_goldilocks_coset_extend_main_trace_compact_descriptors_shifted_rows_
         return Ok(());
     }
     ensure_cuda_setup(target_bits)?;
-    for group in shifted_row_weight_groups(source_bits, target_bits, target_rows)? {
-        let (weights_buffer, _) = cached_coset_extend_residue_row_weights_device(
-            source_len,
-            target_len,
-            source_root,
-            target_root,
-            source_bits,
-            target_bits,
-            group.residue_row,
-        )?;
-        let shifts = CudaDeviceBuffer::from_u64_words(&group.weight_shifts)?;
-        let output_rows = CudaDeviceBuffer::from_u64_words(&group.output_rows)?;
+    for (chunk_index, target_chunk) in target_rows
+        .chunks(MAIN_TRACE_SELECTED_TARGET_BATCH)
+        .enumerate()
+    {
+        let output_start = chunk_index
+            .checked_mul(MAIN_TRACE_SELECTED_TARGET_BATCH)
+            .ok_or(AccelError::InvalidDomain {
+                bits: target_bits,
+                len: target_rows.len(),
+            })?;
+        let mut weight_buffers = Vec::with_capacity(target_chunk.len());
+        let mut weight_shifts = Vec::with_capacity(target_chunk.len());
+        let mut output_positions = Vec::with_capacity(target_chunk.len());
+        for (chunk_offset, &target_row) in target_chunk.iter().enumerate() {
+            let (weights, weight_shift) = cached_coset_extend_residue_row_weights_device(
+                source_len,
+                target_len,
+                source_root,
+                target_root,
+                source_bits,
+                target_bits,
+                target_row,
+            )?;
+            weight_buffers.push(weights);
+            weight_shifts.push(u64::try_from(weight_shift).map_err(|_| {
+                AccelError::InvalidDomain {
+                    bits: target_bits,
+                    len: target_row,
+                }
+            })?);
+            let output_position =
+                output_start
+                    .checked_add(chunk_offset)
+                    .ok_or(AccelError::InvalidDomain {
+                        bits: target_bits,
+                        len: target_rows.len(),
+                    })?;
+            output_positions.push(u64::try_from(output_position).map_err(|_| {
+                AccelError::InvalidDomain {
+                    bits: target_bits,
+                    len: target_rows.len(),
+                }
+            })?);
+        }
+        let shifts = CudaDeviceBuffer::from_u64_words(&weight_shifts)?;
+        let output_rows = CudaDeviceBuffer::from_u64_words(&output_positions)?;
+        let weight_ptr = |index: usize| {
+            weight_buffers
+                .get(index)
+                .map_or(std::ptr::null(), |buffer| buffer.as_raw_ptr() as *const u64)
+        };
         let code = unsafe {
             lzvm_cuda_goldilocks_coset_extend_main_trace_compact_descriptors_shifted_rows_device_raw(
                 descriptors.as_raw_ptr() as *const u64,
-                weights_buffer.as_raw_ptr() as *const u64,
+                weight_ptr(0),
+                weight_ptr(1),
+                weight_ptr(2),
+                weight_ptr(3),
                 shifts.as_raw_ptr() as *const u64,
                 output_rows.as_raw_ptr() as *const u64,
                 out.as_raw_ptr() as *mut u64,
@@ -345,7 +391,7 @@ pub fn cuda_goldilocks_coset_extend_main_trace_compact_descriptors_shifted_rows_
                 terminal_pc,
                 column_offset,
                 column_count,
-                group.output_rows.len(),
+                target_chunk.len(),
                 layout.raw(),
             )
         };

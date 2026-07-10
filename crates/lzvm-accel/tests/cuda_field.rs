@@ -482,7 +482,7 @@ fn cuda_extends_shifted_main_trace_rows_directly_from_compact_descriptors() {
     let row_count = 1_usize << source_bits;
     let descriptor_count = row_count - 3;
     let terminal_pc = 0x8000_1000;
-    let target_rows = [0_usize, 3, 17, 63, 17];
+    let target_rows = [4_usize, 5, 6, 7, 17, 63, 17, 2, 17];
     let mut descriptors = Vec::with_capacity(descriptor_count * WORDS_PER_DESCRIPTOR);
     for row in 0..descriptor_count {
         let row_u64 = row as u64;

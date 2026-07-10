@@ -5,7 +5,10 @@ constexpr size_t kMainTraceSelectedTargetBatch = 4;
 
 __global__ void extend_main_trace_compact_descriptors_shifted_rows_partial_kernel(
     const uint64_t* descriptors,
-    const uint64_t* weights,
+    const uint64_t* weights0,
+    const uint64_t* weights1,
+    const uint64_t* weights2,
+    const uint64_t* weights3,
     const uint64_t* weight_shifts,
     uint64_t* partials,
     size_t descriptor_count,
@@ -19,7 +22,6 @@ __global__ void extend_main_trace_compact_descriptors_shifted_rows_partial_kerne
     const unsigned lane = threadIdx.x & (kMainTraceWarpLanes - 1);
     const unsigned warp = threadIdx.x / kMainTraceWarpLanes;
     const size_t chunk = blockIdx.x;
-    const size_t target_base = blockIdx.y * kMainTraceSelectedTargetBatch;
     const size_t row_start = chunk * kMainTraceSelectedRowsPerBlock;
     const size_t row_end = min(row_start + kMainTraceSelectedRowsPerBlock, source_len);
     __shared__ uint64_t warp_sums
@@ -104,17 +106,20 @@ __global__ void extend_main_trace_compact_descriptors_shifted_rows_partial_kerne
 
 #pragma unroll
         for (unsigned target = 0; target < kMainTraceSelectedTargetBatch; ++target) {
-            const size_t target_row = target_base + target;
             uint64_t weight = 0;
-            if (lane == target && target_row < target_row_count) {
+            if (lane == target && target < target_row_count) {
+                const uint64_t* target_weights =
+                    target == 0 ? weights0
+                                : (target == 1 ? weights1
+                                               : (target == 2 ? weights2 : weights3));
                 const size_t weight_row =
-                    row_index + static_cast<size_t>(weight_shifts[target_row]);
+                    row_index + static_cast<size_t>(weight_shifts[target]);
                 const size_t weight_index =
                     weight_row >= source_len ? weight_row - source_len : weight_row;
-                weight = weights[weight_index];
+                weight = target_weights[weight_index];
             }
             weight = main_trace_shuffle_u64(weight, target);
-            if (target_row < target_row_count) {
+            if (target < target_row_count) {
                 sums[target] = add_mod(sums[target], mul_mod(value, weight));
                 tail_sums[target] =
                     add_mod(tail_sums[target], mul_mod(tail_value, weight));
@@ -124,7 +129,7 @@ __global__ void extend_main_trace_compact_descriptors_shifted_rows_partial_kerne
 
 #pragma unroll
     for (unsigned target = 0; target < kMainTraceSelectedTargetBatch; ++target) {
-        if (target_base + target >= target_row_count) {
+        if (target >= target_row_count) {
             continue;
         }
         if (lane < column_count) {
@@ -141,8 +146,7 @@ __global__ void extend_main_trace_compact_descriptors_shifted_rows_partial_kerne
     }
 #pragma unroll
     for (unsigned target = 0; target < kMainTraceSelectedTargetBatch; ++target) {
-        const size_t target_row = target_base + target;
-        if (target_row >= target_row_count) {
+        if (target >= target_row_count) {
             continue;
         }
         if (lane < column_count) {
@@ -152,7 +156,7 @@ __global__ void extend_main_trace_compact_descriptors_shifted_rows_partial_kerne
                  ++source_warp) {
                 sum = add_mod(sum, warp_sums[target][lane][source_warp]);
             }
-            partials[(target_row * column_count + lane) * chunk_count + chunk] = sum;
+            partials[(target * column_count + lane) * chunk_count + chunk] = sum;
         }
         if (lane + kMainTraceWarpLanes < column_count) {
             const size_t column = lane + kMainTraceWarpLanes;
@@ -162,14 +166,17 @@ __global__ void extend_main_trace_compact_descriptors_shifted_rows_partial_kerne
                  ++source_warp) {
                 sum = add_mod(sum, warp_sums[target][column][source_warp]);
             }
-            partials[(target_row * column_count + column) * chunk_count + chunk] = sum;
+            partials[(target * column_count + column) * chunk_count + chunk] = sum;
         }
     }
 }
 
 int launch_extend_main_trace_compact_descriptors_shifted_rows(
     const uint64_t* descriptors,
-    const uint64_t* weights,
+    const uint64_t* weights0,
+    const uint64_t* weights1,
+    const uint64_t* weights2,
+    const uint64_t* weights3,
     const uint64_t* weight_shifts,
     const uint64_t* output_rows,
     uint64_t* out,
@@ -183,11 +190,15 @@ int launch_extend_main_trace_compact_descriptors_shifted_rows(
     if (target_row_count == 0) {
         return 0;
     }
-    if (weights == nullptr || weight_shifts == nullptr || output_rows == nullptr ||
-        out == nullptr || (descriptor_count > 0 && descriptors == nullptr)) {
+    if (weights0 == nullptr || (target_row_count > 1 && weights1 == nullptr) ||
+        (target_row_count > 2 && weights2 == nullptr) ||
+        (target_row_count > 3 && weights3 == nullptr) || weight_shifts == nullptr ||
+        output_rows == nullptr || out == nullptr ||
+        (descriptor_count > 0 && descriptors == nullptr)) {
         return -1;
     }
     if (source_len == 0 || descriptor_count > source_len || column_count == 0 ||
+        target_row_count > kMainTraceSelectedTargetBatch ||
         column_offset > kMainTraceColumns ||
         column_count > kMainTraceColumns - column_offset ||
         layout_kind > kMainTraceLayoutWithStoreAddress) {
@@ -206,20 +217,15 @@ int launch_extend_main_trace_compact_descriptors_shifted_rows(
         row_column_count > static_cast<size_t>(std::numeric_limits<unsigned>::max())) {
         return -2;
     }
-    const size_t target_batch_count =
-        (target_row_count + kMainTraceSelectedTargetBatch - 1) /
-        kMainTraceSelectedTargetBatch;
-    if (target_batch_count > static_cast<size_t>(std::numeric_limits<unsigned>::max())) {
-        return -2;
-    }
-
     DeviceBuffer<uint64_t> partials;
     LZVM_CUDA_RETURN_ON_ERROR(partials.reset(partial_count));
-    const dim3 blocks(
-        static_cast<unsigned>(chunk_count), static_cast<unsigned>(target_batch_count));
+    const dim3 blocks(static_cast<unsigned>(chunk_count));
     extend_main_trace_compact_descriptors_shifted_rows_partial_kernel<<<blocks, kThreads>>>(
         descriptors,
-        weights,
+        weights0,
+        weights1,
+        weights2,
+        weights3,
         weight_shifts,
         partials.data(),
         descriptor_count,
@@ -240,7 +246,10 @@ int launch_extend_main_trace_compact_descriptors_shifted_rows(
 extern "C" int
 lzvm_cuda_goldilocks_coset_extend_main_trace_compact_descriptors_shifted_rows_device(
     const uint64_t* descriptors,
-    const uint64_t* weights,
+    const uint64_t* weights0,
+    const uint64_t* weights1,
+    const uint64_t* weights2,
+    const uint64_t* weights3,
     const uint64_t* weight_shifts,
     const uint64_t* output_rows,
     uint64_t* out,
@@ -253,7 +262,10 @@ lzvm_cuda_goldilocks_coset_extend_main_trace_compact_descriptors_shifted_rows_de
     unsigned layout_kind) {
     return launch_extend_main_trace_compact_descriptors_shifted_rows(
         descriptors,
-        weights,
+        weights0,
+        weights1,
+        weights2,
+        weights3,
         weight_shifts,
         output_rows,
         out,
