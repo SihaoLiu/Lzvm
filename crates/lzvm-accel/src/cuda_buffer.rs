@@ -17,7 +17,7 @@ pub enum MainTraceDeviceLayout {
 }
 
 impl MainTraceDeviceLayout {
-    fn raw(self) -> u32 {
+    pub(crate) fn raw(self) -> u32 {
         match self {
             Self::Legacy => 0,
             Self::WithStoreAddress => 1,

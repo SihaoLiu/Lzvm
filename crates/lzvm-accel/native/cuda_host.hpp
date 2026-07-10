@@ -302,6 +302,20 @@ extern "C" int lzvm_cuda_goldilocks_coset_extend_row_major_columns_selected_rows
     std::size_t source_len,
     std::size_t column_count,
     std::size_t target_row_count);
+extern "C" int
+lzvm_cuda_goldilocks_coset_extend_main_trace_compact_descriptors_shifted_rows_device(
+    const std::uint64_t* descriptors,
+    const std::uint64_t* weights,
+    const std::uint64_t* weight_shifts,
+    const std::uint64_t* output_rows,
+    std::uint64_t* out,
+    std::size_t descriptor_count,
+    std::size_t source_len,
+    std::uint64_t terminal_pc,
+    std::size_t column_offset,
+    std::size_t column_count,
+    std::size_t target_row_count,
+    unsigned layout_kind);
 extern "C" int lzvm_cuda_goldilocks_coset_extend_row_major_columns_shifted_rows_device(
     const std::uint64_t* values,
     const std::uint64_t* weights,

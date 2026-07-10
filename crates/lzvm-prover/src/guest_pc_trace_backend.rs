@@ -45,7 +45,7 @@ use crate::zisk_main::{
     ZiskMainStore, ZISK_EXTRA_PARAMS_ADDRESS,
 };
 #[cfg(feature = "cuda")]
-use lzvm_accel::{CudaDeviceBuffer, CudaStream, MainTraceDeviceLayout};
+use lzvm_accel::{CudaDeviceBuffer, CudaEvent, CudaStream, MainTraceDeviceLayout};
 use lzvm_artifacts::guest_image::GuestImageInfo;
 use lzvm_field::{Felt, FieldError};
 
@@ -2237,6 +2237,20 @@ pub(crate) struct GuestPcTraceDeviceTraceBuilder {
 }
 
 #[cfg(feature = "cuda")]
+#[derive(Debug, Clone)]
+pub(crate) struct GuestPcTraceDeviceDescriptorSource {
+    material: Arc<GuestPcTraceDeviceSegmentMaterial>,
+    descriptors: Arc<CudaDeviceBuffer>,
+    descriptor_count: usize,
+    row_count: usize,
+    row_stride: usize,
+    terminal_pc: u64,
+    layout: MainTraceDeviceLayout,
+    pending_upload: Option<Arc<CudaEvent>>,
+    stages: Vec<GuestPcTraceDeviceTraceStage>,
+}
+
+#[cfg(feature = "cuda")]
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub(crate) struct GuestPcDeviceSourceBuildTiming {
     descriptor_upload_duration: Duration,
@@ -2423,6 +2437,10 @@ impl ZiskMainDeviceTraceDescriptors {
 
     pub(crate) fn is_sparse(&self) -> bool {
         self.descriptor_words == ZISK_MAIN_DEVICE_TRACE_SPARSE_DESCRIPTOR_WORDS
+    }
+
+    pub(crate) fn is_compact(&self) -> bool {
+        self.descriptor_words == ZISK_MAIN_DEVICE_TRACE_DESCRIPTOR_WORDS
     }
 
     pub(crate) fn upload_word_count(&self) -> usize {
@@ -3123,6 +3141,45 @@ impl GuestPcTraceDeviceTraceBuilder {
 }
 
 #[cfg(feature = "cuda")]
+impl GuestPcTraceDeviceDescriptorSource {
+    pub(crate) fn material(&self) -> Arc<GuestPcTraceDeviceSegmentMaterial> {
+        Arc::clone(&self.material)
+    }
+
+    pub(crate) fn descriptors(&self) -> &Arc<CudaDeviceBuffer> {
+        &self.descriptors
+    }
+
+    pub(crate) fn descriptor_count(&self) -> usize {
+        self.descriptor_count
+    }
+
+    pub(crate) fn row_count(&self) -> usize {
+        self.row_count
+    }
+
+    pub(crate) fn row_stride(&self) -> usize {
+        self.row_stride
+    }
+
+    pub(crate) fn terminal_pc(&self) -> u64 {
+        self.terminal_pc
+    }
+
+    pub(crate) fn layout(&self) -> MainTraceDeviceLayout {
+        self.layout
+    }
+
+    pub(crate) fn pending_upload(&self) -> Option<Arc<CudaEvent>> {
+        self.pending_upload.clone()
+    }
+
+    pub(crate) fn stages(&self) -> &[GuestPcTraceDeviceTraceStage] {
+        &self.stages
+    }
+}
+
+#[cfg(feature = "cuda")]
 impl GuestPcTraceDeviceTraceStage {
     pub(crate) fn stage_index(&self) -> usize {
         self.stage_index
@@ -3307,6 +3364,102 @@ pub(crate) fn build_guest_pc_trace_stage_source_devices_from_device_material_tim
     )?;
     builder.device_trace_descriptor_buffer = Some(descriptor_buffer);
     Ok(builder)
+}
+
+#[cfg(feature = "cuda")]
+pub(crate) fn build_guest_pc_trace_descriptor_source_from_device_material_timing(
+    layout: &WitnessTraceLayout,
+    material: Arc<GuestPcTraceDeviceSegmentMaterial>,
+    retained_descriptors: Option<Arc<CudaDeviceBuffer>>,
+    mut timing: Option<&mut GuestPcDeviceSourceBuildTiming>,
+) -> Result<Option<GuestPcTraceDeviceDescriptorSource>, WitnessTraceRunError> {
+    if !is_guest_pc_trace_segmented_layout_supported(layout) {
+        return Err(guest_pc_device_trace_source_error(
+            "guest PC device material requires a supported segmented layout",
+        ));
+    }
+    let descriptors = &material.device_trace_descriptors;
+    if !descriptors.is_compact() {
+        return Ok(None);
+    }
+    if descriptors.row_count() != layout.row_count()
+        || descriptors.column_count() != layout.column_count()
+        || descriptors.descriptor_rows() != material.trace_source_prefix_rows
+    {
+        return Err(guest_pc_device_trace_source_error(
+            "device material descriptor shape does not match guest PC layout",
+        ));
+    }
+
+    let descriptor_upload_word_count = descriptors.words().len();
+    let descriptor_upload_byte_count = descriptor_upload_word_count
+        .checked_mul(std::mem::size_of::<u64>())
+        .ok_or_else(|| guest_pc_device_trace_source_error("descriptor byte count overflow"))?;
+    let (descriptor_buffer, pending_upload) = if let Some(buffer) = retained_descriptors {
+        if buffer.len() != descriptor_upload_byte_count {
+            return Err(guest_pc_device_trace_source_error(
+                "retained descriptor buffer length mismatch",
+            ));
+        }
+        (buffer, None)
+    } else {
+        let (buffer, pending_upload) = record_device_source_build_duration(
+            timing
+                .as_mut()
+                .map(|timing| &mut timing.descriptor_upload_duration),
+            || {
+                let stream = CudaStream::new().map_err(|error| {
+                    guest_pc_device_trace_source_error(format!(
+                        "CUDA trace descriptor stream creation failed: {error}"
+                    ))
+                })?;
+                let mut buffer =
+                    CudaDeviceBuffer::new(descriptor_upload_byte_count).map_err(|error| {
+                        guest_pc_device_trace_source_error(format!(
+                            "CUDA trace descriptor allocation failed: {error}"
+                        ))
+                    })?;
+                // The returned source retains the descriptor words until the recorded event completes.
+                unsafe {
+                    buffer
+                        .copy_from_u64_words_on_stream(descriptors.words(), &stream)
+                        .map_err(|error| {
+                            guest_pc_device_trace_source_error(format!(
+                                "CUDA trace descriptor upload failed: {error}"
+                            ))
+                        })?;
+                }
+                let pending_upload = Arc::new(CudaEvent::new().map_err(|error| {
+                    guest_pc_device_trace_source_error(format!(
+                        "CUDA trace descriptor event creation failed: {error}"
+                    ))
+                })?);
+                pending_upload.record(&stream).map_err(|error| {
+                    guest_pc_device_trace_source_error(format!(
+                        "CUDA trace descriptor event record failed: {error}"
+                    ))
+                })?;
+                Ok((Arc::new(buffer), pending_upload))
+            },
+        )?;
+        if let Some(timing) = timing.as_mut() {
+            timing.descriptor_upload_byte_count += descriptor_upload_byte_count;
+            timing.descriptor_upload_word_count += descriptor_upload_word_count;
+            timing.descriptor_upload_row_count += descriptors.descriptor_rows();
+        }
+        (buffer, Some(pending_upload))
+    };
+    Ok(Some(GuestPcTraceDeviceDescriptorSource {
+        material: Arc::clone(&material),
+        descriptors: descriptor_buffer,
+        descriptor_count: descriptors.descriptor_rows(),
+        row_count: descriptors.row_count(),
+        row_stride: descriptors.column_count(),
+        terminal_pc: descriptors.terminal_pc(),
+        layout: descriptors.device_layout(),
+        pending_upload,
+        stages: guest_pc_device_trace_stages_from_layout(layout, true),
+    }))
 }
 
 #[cfg(feature = "cuda")]
@@ -3605,7 +3758,20 @@ fn guest_pc_device_trace_builder_from_layout_with_descriptor_source(
     device_trace_descriptor_buffer: Option<Arc<CudaDeviceBuffer>>,
     has_descriptor_source: bool,
 ) -> GuestPcTraceDeviceTraceBuilder {
-    let stages = layout
+    let stages = guest_pc_device_trace_stages_from_layout(layout, has_descriptor_source);
+    GuestPcTraceDeviceTraceBuilder {
+        trace: Arc::new(trace_device),
+        device_trace_descriptor_buffer,
+        stages,
+    }
+}
+
+#[cfg(feature = "cuda")]
+fn guest_pc_device_trace_stages_from_layout(
+    layout: &WitnessTraceLayout,
+    has_descriptor_source: bool,
+) -> Vec<GuestPcTraceDeviceTraceStage> {
+    layout
         .stages()
         .iter()
         .map(|stage| GuestPcTraceDeviceTraceStage {
@@ -3619,12 +3785,7 @@ fn guest_pc_device_trace_builder_from_layout_with_descriptor_source(
                 && stage.width == 1
                 && stage.start_column == ZISK_MAIN_DEVICE_TRACE_COLUMNS - 1,
         })
-        .collect::<Vec<_>>();
-    GuestPcTraceDeviceTraceBuilder {
-        trace: Arc::new(trace_device),
-        device_trace_descriptor_buffer,
-        stages,
-    }
+        .collect()
 }
 
 #[cfg(feature = "cuda")]

@@ -1,3 +1,5 @@
+#[cfg(feature = "cuda")]
+use std::sync::Arc;
 use std::time::Instant;
 use std::{collections::BTreeSet, fmt};
 
@@ -15,6 +17,7 @@ use lzvm_field::{Felt, FieldError};
 
 #[cfg(feature = "cuda")]
 use crate::guest_pc_trace_backend::{
+    build_guest_pc_trace_descriptor_source_from_device_material_timing,
     build_guest_pc_trace_stage_source_devices_from_device_descriptors_timing,
     build_guest_pc_trace_stage_source_devices_from_device_material_timing,
     GuestPcDeviceSourceBuildTiming,
@@ -42,7 +45,7 @@ use crate::ProveSchedule;
 use crate::ProveUnitSchedule;
 
 #[cfg(any(feature = "cuda", test))]
-const DEFAULT_TRACE_OUTPUT_EXTERNAL_SOURCE_OPENING_BATCH_SIZE: usize = 1;
+const DEFAULT_TRACE_OUTPUT_EXTERNAL_SOURCE_OPENING_BATCH_SIZE: usize = 2;
 #[cfg(feature = "cuda")]
 const TRACE_OUTPUT_EXTERNAL_SOURCE_OPENING_BATCH_SIZE_ENV: &str =
     "LZVM_WITNESS_OPENING_EXTERNAL_SOURCE_BATCH_SIZE";
@@ -1485,9 +1488,9 @@ fn ensure_guest_pc_external_stage_sources<'a>(
 fn guest_pc_external_stage_sources(
     unit: &ProveUnitSchedule,
     output: &ProveWitnessTraceCommitments,
-    timing: Option<&mut GuestPcDeviceSourceBuildTiming>,
+    mut timing: Option<&mut GuestPcDeviceSourceBuildTiming>,
 ) -> Result<Option<Vec<WitnessStageSourceDevice>>, ProveWitnessOpeningSegmentError> {
-    let Some(material) = output.guest_pc_device_segment_material() else {
+    let Some(material) = output.guest_pc_device_segment_material_arc() else {
         return Ok(None);
     };
     let layout = derive_witness_trace_layout(unit).map_err(|error| {
@@ -1495,16 +1498,50 @@ fn guest_pc_external_stage_sources(
             message: error.to_string(),
         }
     })?;
+    if let Some(source) = build_guest_pc_trace_descriptor_source_from_device_material_timing(
+        &layout,
+        Arc::clone(&material),
+        output.guest_pc_device_descriptor_buffer_arc(),
+        timing.as_deref_mut(),
+    )
+    .map_err(|error| ProveWitnessOpeningSegmentError::ExternalSource {
+        message: error.to_string(),
+    })? {
+        return Ok(Some(
+            source
+                .stages()
+                .iter()
+                .map(|stage| {
+                    WitnessStageSourceDevice::from_main_trace_compact_descriptors(
+                        stage.stage_index(),
+                        source.row_count(),
+                        stage.column_count(),
+                        source.row_stride(),
+                        stage.column_offset(),
+                        stage.is_known_zero(),
+                        source.descriptor_count(),
+                        source.terminal_pc(),
+                        source.layout(),
+                        source.pending_upload(),
+                        source.material(),
+                        source.descriptors(),
+                    )
+                })
+                .collect(),
+        ));
+    }
     let builder = if let Some(descriptor_buffer) = output.guest_pc_device_descriptor_buffer() {
         build_guest_pc_trace_stage_source_devices_from_device_descriptors_timing(
             &layout,
-            material,
+            material.as_ref(),
             descriptor_buffer,
             timing,
         )
     } else {
         build_guest_pc_trace_stage_source_devices_from_device_material_timing(
-            &layout, material, timing,
+            &layout,
+            material.as_ref(),
+            timing,
         )
     }
     .map_err(|error| ProveWitnessOpeningSegmentError::ExternalSource {
@@ -1601,7 +1638,7 @@ mod tests {
 
     #[test]
     fn external_source_opening_batch_size_parser_uses_positive_values_only() {
-        assert_eq!(DEFAULT_TRACE_OUTPUT_EXTERNAL_SOURCE_OPENING_BATCH_SIZE, 1);
+        assert_eq!(DEFAULT_TRACE_OUTPUT_EXTERNAL_SOURCE_OPENING_BATCH_SIZE, 2);
         assert_eq!(
             parse_trace_output_external_source_opening_batch_size(None),
             DEFAULT_TRACE_OUTPUT_EXTERNAL_SOURCE_OPENING_BATCH_SIZE

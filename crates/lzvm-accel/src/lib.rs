@@ -54,6 +54,7 @@ pub use cuda_regular_constraints::{
 };
 #[cfg(feature = "cuda")]
 pub use cuda_row_selected::{
+    cuda_goldilocks_coset_extend_main_trace_compact_descriptors_shifted_rows_device,
     cuda_goldilocks_coset_extend_row_major_columns_selected_rows_device,
     cuda_goldilocks_coset_extend_row_major_columns_strided_selected_rows_device,
 };

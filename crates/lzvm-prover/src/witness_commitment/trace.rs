@@ -5,6 +5,8 @@ use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, Instant};
 
+#[cfg(feature = "cuda")]
+use crate::guest_pc_trace_backend::GuestPcTraceDeviceSegmentMaterial;
 use crate::witness_layout::derive_witness_trace_layout;
 use crate::witness_layout::WitnessTraceStageValues;
 use crate::witness_trace::WitnessTraceBuffer;
@@ -33,7 +35,7 @@ use super::{
     extend_witness_stage_leaves_from_source_device_view,
     record_cuda_witness_stage_root_materialization_group, retain_raw_descriptor_device_buffer,
     retain_source_device_view, synchronize_cuda_witness_stage_root_materializations,
-    PendingCudaLeafExtension, PendingCudaWitnessStageCommitment,
+    MainTraceCompactDescriptorSource, PendingCudaLeafExtension, PendingCudaWitnessStageCommitment,
     PendingCudaWitnessStageCommitmentMaterialization, RetainedCudaDeviceBuffer,
     RetainedCudaSourceDevice, WitnessStageCommitment, WitnessStageCommitmentError,
     WitnessStageDeviceCompactCommitInput, WitnessStageLeafError, WitnessStageLeafWorkspaceCache,
@@ -142,6 +144,7 @@ pub(crate) struct WitnessStageSourceDevice {
     column_offset: usize,
     known_zero: bool,
     values: Arc<CudaDeviceBuffer>,
+    main_trace_compact_descriptors: Option<MainTraceCompactDescriptorSource>,
 }
 
 #[cfg(feature = "cuda")]
@@ -172,6 +175,10 @@ impl WitnessStageRetainedSourceDevice {
 impl WitnessRetainedDeviceBuffer {
     pub(crate) fn buffer(&self) -> &CudaDeviceBuffer {
         self.buffer.buffer()
+    }
+
+    pub(crate) fn buffer_arc(&self) -> Arc<CudaDeviceBuffer> {
+        self.buffer.buffer_arc()
     }
 }
 
@@ -205,6 +212,40 @@ impl WitnessStageSourceDevice {
             column_offset,
             known_zero,
             values: Arc::clone(values),
+            main_trace_compact_descriptors: None,
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn from_main_trace_compact_descriptors(
+        stage_index: usize,
+        row_count: usize,
+        column_count: usize,
+        row_stride: usize,
+        column_offset: usize,
+        known_zero: bool,
+        descriptor_count: usize,
+        terminal_pc: u64,
+        layout: lzvm_accel::MainTraceDeviceLayout,
+        pending_upload: Option<Arc<lzvm_accel::CudaEvent>>,
+        material: Arc<GuestPcTraceDeviceSegmentMaterial>,
+        values: &Arc<CudaDeviceBuffer>,
+    ) -> Self {
+        Self {
+            stage_index,
+            row_count,
+            column_count,
+            row_stride,
+            column_offset,
+            known_zero,
+            values: Arc::clone(values),
+            main_trace_compact_descriptors: Some(MainTraceCompactDescriptorSource {
+                material,
+                descriptor_count,
+                terminal_pc,
+                layout,
+                pending_upload,
+            }),
         }
     }
 
@@ -225,6 +266,20 @@ impl WitnessStageSourceDevice {
     }
 
     pub(crate) fn source_view(&self) -> WitnessStageSourceDeviceView {
+        if let Some(source) = self.main_trace_compact_descriptors.clone() {
+            return WitnessStageSourceDeviceView::from_main_trace_compact_descriptors(
+                self.row_count,
+                self.column_count,
+                self.row_stride,
+                self.column_offset,
+                source.descriptor_count,
+                source.terminal_pc,
+                source.layout,
+                source.pending_upload,
+                Arc::clone(&source.material),
+                Arc::clone(&self.values),
+            );
+        }
         WitnessStageSourceDeviceView::new(
             self.row_count,
             self.column_count,

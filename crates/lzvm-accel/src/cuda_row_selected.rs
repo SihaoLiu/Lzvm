@@ -1,7 +1,11 @@
 use super::{
-    coset_extend_domain, coset_extend_row_weights, cuda_status, ensure_cuda_setup, AccelError,
-    CudaDeviceBuffer, CudaRowMajorColumnView,
+    cached_coset_extend_residue_row_weights_device, coset_extend_domain, coset_extend_row_weights,
+    cuda_status, ensure_cuda_setup, shifted_row_weight_groups, AccelError, CudaDeviceBuffer,
+    CudaRowMajorColumnView, MainTraceDeviceLayout,
 };
+
+const MAIN_TRACE_COMPACT_DESCRIPTOR_WORDS: usize = 11;
+const MAIN_TRACE_COLUMN_COUNT: usize = 39;
 
 unsafe extern "C" {
     #[link_name = "lzvm_cuda_goldilocks_coset_extend_row_major_columns_selected_rows_device"]
@@ -24,6 +28,22 @@ unsafe extern "C" {
         column_offset: usize,
         column_count: usize,
         target_row_count: usize,
+    ) -> i32;
+
+    #[link_name = "lzvm_cuda_goldilocks_coset_extend_main_trace_compact_descriptors_shifted_rows_device"]
+    fn lzvm_cuda_goldilocks_coset_extend_main_trace_compact_descriptors_shifted_rows_device_raw(
+        descriptors: *const u64,
+        weights: *const u64,
+        weight_shifts: *const u64,
+        output_rows: *const u64,
+        out: *mut u64,
+        descriptor_count: usize,
+        source_len: usize,
+        terminal_pc: u64,
+        column_offset: usize,
+        column_count: usize,
+        target_row_count: usize,
+        layout_kind: u32,
     ) -> i32;
 }
 
@@ -243,4 +263,93 @@ pub fn cuda_goldilocks_coset_extend_row_major_columns_strided_selected_rows_devi
         )
     };
     cuda_status(code)
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn cuda_goldilocks_coset_extend_main_trace_compact_descriptors_shifted_rows_device(
+    descriptors: &CudaDeviceBuffer,
+    out: &mut CudaDeviceBuffer,
+    descriptor_count: usize,
+    row_count: usize,
+    terminal_pc: u64,
+    column_offset: usize,
+    column_count: usize,
+    layout: MainTraceDeviceLayout,
+    source_bits: usize,
+    target_bits: usize,
+    target_rows: &[usize],
+) -> Result<(), AccelError> {
+    if column_count == 0
+        || column_offset > MAIN_TRACE_COLUMN_COUNT
+        || column_count > MAIN_TRACE_COLUMN_COUNT - column_offset
+        || descriptor_count > row_count
+    {
+        return Err(AccelError::InvalidDomain {
+            bits: source_bits,
+            len: column_count,
+        });
+    }
+    let descriptor_words = descriptor_count
+        .checked_mul(MAIN_TRACE_COMPACT_DESCRIPTOR_WORDS)
+        .ok_or(AccelError::InvalidDomain {
+            bits: source_bits,
+            len: descriptor_count,
+        })?;
+    let descriptor_bytes = descriptor_words
+        .checked_mul(8)
+        .ok_or(AccelError::InvalidDomain {
+            bits: source_bits,
+            len: descriptor_words,
+        })?;
+    if descriptors.len() != descriptor_bytes {
+        return Err(AccelError::LengthMismatch {
+            lhs: descriptor_bytes,
+            rhs: descriptors.len(),
+        });
+    }
+    validate_output_len(out, column_count, target_bits, target_rows.len())?;
+
+    let (source_len, target_len, source_root, target_root) =
+        coset_extend_domain(row_count, source_bits, target_bits)?;
+    if source_len != row_count {
+        return Err(AccelError::InvalidDomain {
+            bits: source_bits,
+            len: row_count,
+        });
+    }
+    if target_rows.is_empty() {
+        return Ok(());
+    }
+    ensure_cuda_setup(target_bits)?;
+    for group in shifted_row_weight_groups(source_bits, target_bits, target_rows)? {
+        let (weights_buffer, _) = cached_coset_extend_residue_row_weights_device(
+            source_len,
+            target_len,
+            source_root,
+            target_root,
+            source_bits,
+            target_bits,
+            group.residue_row,
+        )?;
+        let shifts = CudaDeviceBuffer::from_u64_words(&group.weight_shifts)?;
+        let output_rows = CudaDeviceBuffer::from_u64_words(&group.output_rows)?;
+        let code = unsafe {
+            lzvm_cuda_goldilocks_coset_extend_main_trace_compact_descriptors_shifted_rows_device_raw(
+                descriptors.as_raw_ptr() as *const u64,
+                weights_buffer.as_raw_ptr() as *const u64,
+                shifts.as_raw_ptr() as *const u64,
+                output_rows.as_raw_ptr() as *const u64,
+                out.as_raw_ptr() as *mut u64,
+                descriptor_count,
+                source_len,
+                terminal_pc,
+                column_offset,
+                column_count,
+                group.output_rows.len(),
+                layout.raw(),
+            )
+        };
+        cuda_status(code)?;
+    }
+    Ok(())
 }

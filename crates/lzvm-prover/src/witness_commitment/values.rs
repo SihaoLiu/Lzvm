@@ -11,6 +11,7 @@ use std::time::Instant;
 
 #[cfg(feature = "cuda")]
 use lzvm_accel::{
+    cuda_goldilocks_coset_extend_main_trace_compact_descriptors_shifted_rows_device,
     cuda_goldilocks_coset_extend_row_major_columns_device,
     cuda_goldilocks_coset_extend_row_major_columns_device_unsynced,
     cuda_goldilocks_coset_extend_row_major_columns_selected_rows_device,
@@ -21,7 +22,7 @@ use lzvm_accel::{
     cuda_goldilocks_coset_extend_row_major_columns_strided_selected_rows_device,
     cuda_goldilocks_coset_extend_row_major_columns_strided_shifted_row_device,
     cuda_goldilocks_coset_extend_row_major_columns_strided_shifted_rows_device, cuda_memory_info,
-    CudaDeviceBuffer, CudaRowMajorColumnView,
+    CudaDeviceBuffer, CudaEvent, CudaRowMajorColumnView, MainTraceDeviceLayout,
 };
 #[cfg(not(feature = "cuda"))]
 use lzvm_field::coset_extend_evaluations;
@@ -30,6 +31,8 @@ use lzvm_field::Felt;
 use super::{coset_extend_launch_work, errors::WitnessStageOpeningError, HASH_WORDS, WORD_BYTES};
 #[cfg(feature = "cuda")]
 use crate::gpu_setup::prepare_gpu_setup;
+#[cfg(feature = "cuda")]
+use crate::guest_pc_trace_backend::GuestPcTraceDeviceSegmentMaterial;
 use crate::merkle_hash::{
     linear_hash, linear_hashes_from_row_major_bytes, parent_hash, parent_levels_from_digest_level,
 };
@@ -45,6 +48,10 @@ type CompactOnDemandOpening = (Vec<Felt>, Vec<Vec<[Felt; HASH_WORDS]>>);
 // Keep selected-row extension on tiny source batches where extra launches are cheaper than
 // materializing a full extended leaf buffer. This is a cost gate, not a proof rule.
 const SELECTED_ROW_EXTENSION_MAX_SOURCE_ROWS: usize = 16;
+#[cfg(feature = "cuda")]
+const MAIN_TRACE_COMPACT_DESCRIPTOR_WORDS: usize = 11;
+#[cfg(feature = "cuda")]
+const MAIN_TRACE_COLUMN_COUNT: usize = 39;
 
 #[cfg(feature = "cuda")]
 fn use_selected_row_extension(source_rows: usize, row_count: usize) -> bool {
@@ -501,6 +508,10 @@ impl RetainedCudaDeviceBuffer {
     pub(crate) fn buffer(&self) -> &CudaDeviceBuffer {
         self.buffer.as_ref()
     }
+
+    pub(crate) fn buffer_arc(&self) -> Arc<CudaDeviceBuffer> {
+        Arc::clone(&self.buffer)
+    }
 }
 
 #[cfg(feature = "cuda")]
@@ -620,6 +631,17 @@ pub(crate) struct WitnessStageSourceDeviceView {
     column_count: usize,
     row_stride: usize,
     column_offset: usize,
+    main_trace_compact_descriptors: Option<MainTraceCompactDescriptorSource>,
+}
+
+#[cfg(feature = "cuda")]
+#[derive(Debug, Clone)]
+pub(crate) struct MainTraceCompactDescriptorSource {
+    pub(crate) material: Arc<GuestPcTraceDeviceSegmentMaterial>,
+    pub(crate) descriptor_count: usize,
+    pub(crate) terminal_pc: u64,
+    pub(crate) layout: MainTraceDeviceLayout,
+    pub(crate) pending_upload: Option<Arc<CudaEvent>>,
 }
 
 #[cfg(feature = "cuda")]
@@ -637,6 +659,36 @@ impl WitnessStageSourceDeviceView {
             column_count,
             row_stride,
             column_offset,
+            main_trace_compact_descriptors: None,
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn from_main_trace_compact_descriptors(
+        row_count: usize,
+        column_count: usize,
+        row_stride: usize,
+        column_offset: usize,
+        descriptor_count: usize,
+        terminal_pc: u64,
+        layout: MainTraceDeviceLayout,
+        pending_upload: Option<Arc<CudaEvent>>,
+        material: Arc<GuestPcTraceDeviceSegmentMaterial>,
+        buffer: Arc<CudaDeviceBuffer>,
+    ) -> Self {
+        Self {
+            buffer,
+            row_count,
+            column_count,
+            row_stride,
+            column_offset,
+            main_trace_compact_descriptors: Some(MainTraceCompactDescriptorSource {
+                material,
+                descriptor_count,
+                terminal_pc,
+                layout,
+                pending_upload,
+            }),
         }
     }
 
@@ -681,6 +733,10 @@ impl WitnessStageSourceDeviceView {
 
     pub(crate) fn has_matching_shape(&self, row_count: usize, column_count: usize) -> bool {
         self.row_count == row_count && self.column_count == column_count
+    }
+
+    fn main_trace_compact_descriptors(&self) -> Option<&MainTraceCompactDescriptorSource> {
+        self.main_trace_compact_descriptors.as_ref()
     }
 }
 
@@ -1114,7 +1170,16 @@ impl<'a> SourceDeviceBuffer<'a> {
     }
 
     fn is_compact_for(&self, columns: usize) -> bool {
-        self.row_stride() == columns && self.column_offset() == 0
+        self.main_trace_compact_descriptors().is_none()
+            && self.row_stride() == columns
+            && self.column_offset() == 0
+    }
+
+    fn main_trace_compact_descriptors(&self) -> Option<&MainTraceCompactDescriptorSource> {
+        match self {
+            Self::Borrowed(view) => view.main_trace_compact_descriptors(),
+            Self::Owned { .. } => None,
+        }
     }
 }
 
@@ -2063,6 +2128,16 @@ impl WitnessStageCompactTreeStorage {
             return Ok(SourceDeviceBuffer::Borrowed(view));
         }
         if let Some(view) = source_device {
+            if view.main_trace_compact_descriptors().is_some() {
+                if !view.has_matching_shape(self.source_rows, self.columns)
+                    || view.row_stride() != MAIN_TRACE_COLUMN_COUNT
+                    || view.column_offset() > MAIN_TRACE_COLUMN_COUNT
+                    || self.columns > MAIN_TRACE_COLUMN_COUNT - view.column_offset()
+                {
+                    return Err(WitnessStageOpeningError::LengthOverflow);
+                }
+                return Ok(SourceDeviceBuffer::Borrowed(view));
+            }
             let Some(required_source_bytes) = view.required_byte_len() else {
                 return Err(WitnessStageOpeningError::LengthOverflow);
             };
@@ -2097,11 +2172,44 @@ impl WitnessStageCompactTreeStorage {
     }
 
     #[cfg(feature = "cuda")]
+    fn expanded_main_trace_descriptor_source_cuda(
+        &self,
+        source_buffer: &SourceDeviceBuffer<'_>,
+    ) -> Result<Option<SourceDeviceBuffer<'static>>, WitnessStageOpeningError> {
+        let Some(source) = source_buffer.main_trace_compact_descriptors() else {
+            return Ok(None);
+        };
+        if let Some(pending_upload) = &source.pending_upload {
+            pending_upload
+                .synchronize()
+                .map_err(|_| WitnessStageOpeningError::LengthOverflow)?;
+        }
+        let buffer = CudaDeviceBuffer::from_main_trace_descriptors_device_with_layout(
+            source_buffer.as_buffer(),
+            MAIN_TRACE_COMPACT_DESCRIPTOR_WORDS,
+            source.descriptor_count,
+            self.source_rows,
+            MAIN_TRACE_COLUMN_COUNT,
+            source.terminal_pc,
+            source.layout,
+        )
+        .map_err(|_| WitnessStageOpeningError::LengthOverflow)?;
+        Ok(Some(SourceDeviceBuffer::Owned {
+            buffer,
+            row_stride: MAIN_TRACE_COLUMN_COUNT,
+            column_offset: source_buffer.column_offset(),
+        }))
+    }
+
+    #[cfg(feature = "cuda")]
     fn extend_source_device_buffer_cuda(
         &self,
         source_buffer: &SourceDeviceBuffer<'_>,
         output_buffer: &mut CudaDeviceBuffer,
     ) -> Result<(), WitnessStageOpeningError> {
+        if let Some(expanded) = self.expanded_main_trace_descriptor_source_cuda(source_buffer)? {
+            return self.extend_source_device_buffer_cuda(&expanded, output_buffer);
+        }
         if source_buffer.is_compact_for(self.columns) {
             cuda_goldilocks_coset_extend_row_major_columns_device(
                 source_buffer.as_buffer(),
@@ -2133,6 +2241,10 @@ impl WitnessStageCompactTreeStorage {
         source_buffer: &SourceDeviceBuffer<'_>,
         output_buffer: &mut CudaDeviceBuffer,
     ) -> Result<CudaDeviceBuffer, WitnessStageOpeningError> {
+        if let Some(expanded) = self.expanded_main_trace_descriptor_source_cuda(source_buffer)? {
+            self.extend_source_device_buffer_cuda(&expanded, output_buffer)?;
+            return CudaDeviceBuffer::new(0).map_err(|_| WitnessStageOpeningError::LengthOverflow);
+        }
         let mut workspace = CudaDeviceBuffer::new(output_buffer.len())
             .map_err(|_| WitnessStageOpeningError::LengthOverflow)?;
         if source_buffer.is_compact_for(self.columns) {
@@ -2188,7 +2300,27 @@ impl WitnessStageCompactTreeStorage {
             || {
                 let mut row_buffer = CudaDeviceBuffer::new(row_byte_count)
                     .map_err(|_| WitnessStageOpeningError::LengthOverflow)?;
-                if source_buffer.is_compact_for(self.columns) {
+                if let Some(source) = source_buffer.main_trace_compact_descriptors() {
+                    if let Some(pending_upload) = &source.pending_upload {
+                        pending_upload
+                            .synchronize()
+                            .map_err(|_| WitnessStageOpeningError::LengthOverflow)?;
+                    }
+                    cuda_goldilocks_coset_extend_main_trace_compact_descriptors_shifted_rows_device(
+                        source_buffer.as_buffer(),
+                        &mut row_buffer,
+                        source.descriptor_count,
+                        self.source_rows,
+                        source.terminal_pc,
+                        source_buffer.column_offset(),
+                        self.columns,
+                        source.layout,
+                        self.source_bits,
+                        self.target_bits,
+                        std::slice::from_ref(&row),
+                    )
+                    .map_err(|_| WitnessStageOpeningError::LengthOverflow)?;
+                } else if source_buffer.is_compact_for(self.columns) {
                     cuda_goldilocks_coset_extend_row_major_columns_shifted_row_device(
                         source_buffer.as_buffer(),
                         &mut row_buffer,
@@ -2272,7 +2404,27 @@ impl WitnessStageCompactTreeStorage {
                 let mut row_buffer = CudaDeviceBuffer::new(byte_count)
                     .map_err(|_| WitnessStageOpeningError::LengthOverflow)?;
                 let use_selected = use_selected_row_extension(self.source_rows, rows.len());
-                if source_buffer.is_compact_for(self.columns) {
+                if let Some(source) = source_buffer.main_trace_compact_descriptors() {
+                    if let Some(pending_upload) = &source.pending_upload {
+                        pending_upload
+                            .synchronize()
+                            .map_err(|_| WitnessStageOpeningError::LengthOverflow)?;
+                    }
+                    cuda_goldilocks_coset_extend_main_trace_compact_descriptors_shifted_rows_device(
+                        source_buffer.as_buffer(),
+                        &mut row_buffer,
+                        source.descriptor_count,
+                        self.source_rows,
+                        source.terminal_pc,
+                        source_buffer.column_offset(),
+                        self.columns,
+                        source.layout,
+                        self.source_bits,
+                        self.target_bits,
+                        rows,
+                    )
+                    .map_err(|_| WitnessStageOpeningError::LengthOverflow)?;
+                } else if source_buffer.is_compact_for(self.columns) {
                     if use_selected {
                         cuda_goldilocks_coset_extend_row_major_columns_selected_rows_device(
                             source_buffer.as_buffer(),

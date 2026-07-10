@@ -1074,6 +1074,7 @@ extern "C" int lzvm_cuda_goldilocks_coset_extend_row_major_columns_strided_devic
 #include "cuda_row_major_fill.cuh"
 #include "cuda_zisk_main_trace.cuh"
 #include "cuda_main_trace_layout.cuh"
+#include "cuda_main_trace_selected_extend.cuh"
 
 extern "C" int lzvm_cuda_goldilocks_coset_extend_row_major_columns(
     const uint64_t* values, uint64_t* out, size_t source_len, size_t source_bits,

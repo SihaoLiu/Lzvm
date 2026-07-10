@@ -180,7 +180,7 @@ pub struct ProveWitnessTraceCommitments {
     #[cfg(feature = "cuda")]
     guest_pc_device_descriptor_buffer: Option<WitnessRetainedDeviceBuffer>,
     #[cfg(feature = "cuda")]
-    guest_pc_device_segment_material: Option<GuestPcTraceDeviceSegmentMaterial>,
+    guest_pc_device_segment_material: Option<Arc<GuestPcTraceDeviceSegmentMaterial>>,
     publics: Vec<Felt>,
     auxiliary_inputs: Arc<ProveWitnessAuxiliaryInputs>,
 }
@@ -196,7 +196,7 @@ struct ProveWitnessTracePendingCommitments {
     trace_constraint_checks: ProveWitnessTraceConstraintChecks,
     stage_source_devices: Vec<WitnessStageRetainedSourceDevice>,
     guest_pc_device_descriptor_buffer: Option<WitnessRetainedDeviceBuffer>,
-    guest_pc_device_segment_material: Option<GuestPcTraceDeviceSegmentMaterial>,
+    guest_pc_device_segment_material: Option<Arc<GuestPcTraceDeviceSegmentMaterial>>,
     publics: Vec<Felt>,
     auxiliary_inputs: Arc<ProveWitnessAuxiliaryInputs>,
     stage_commit_duration_before_root_materialization: Duration,
@@ -336,10 +336,24 @@ impl ProveWitnessTraceCommitments {
     }
 
     #[cfg(feature = "cuda")]
+    pub(crate) fn guest_pc_device_descriptor_buffer_arc(&self) -> Option<Arc<CudaDeviceBuffer>> {
+        self.guest_pc_device_descriptor_buffer
+            .as_ref()
+            .map(WitnessRetainedDeviceBuffer::buffer_arc)
+    }
+
+    #[cfg(feature = "cuda")]
     pub(crate) fn guest_pc_device_segment_material(
         &self,
     ) -> Option<&GuestPcTraceDeviceSegmentMaterial> {
-        self.guest_pc_device_segment_material.as_ref()
+        self.guest_pc_device_segment_material.as_deref()
+    }
+
+    #[cfg(feature = "cuda")]
+    pub(crate) fn guest_pc_device_segment_material_arc(
+        &self,
+    ) -> Option<Arc<GuestPcTraceDeviceSegmentMaterial>> {
+        self.guest_pc_device_segment_material.clone()
     }
 
     pub fn publics(&self) -> &[Felt] {
@@ -6926,7 +6940,7 @@ fn run_prove_witness_commitments_from_trace_pending_inner(
         },
         stage_source_devices: retained_artifacts.stage_source_devices,
         guest_pc_device_descriptor_buffer: retained_artifacts.guest_pc_device_descriptor_buffer,
-        guest_pc_device_segment_material,
+        guest_pc_device_segment_material: guest_pc_device_segment_material.map(Arc::new),
         publics: shared_inputs.publics.clone(),
         auxiliary_inputs,
         stage_commit_duration_before_root_materialization,
@@ -7371,7 +7385,7 @@ fn run_prove_witness_commitments_from_trace_inner(
         #[cfg(feature = "cuda")]
         guest_pc_device_descriptor_buffer: retained_artifacts.guest_pc_device_descriptor_buffer,
         #[cfg(feature = "cuda")]
-        guest_pc_device_segment_material,
+        guest_pc_device_segment_material: guest_pc_device_segment_material.map(Arc::new),
         publics: shared_inputs.publics.clone(),
         auxiliary_inputs,
     })

@@ -4,6 +4,7 @@ use lzvm_accel::{cuda_goldilocks_add, cuda_goldilocks_mul};
 use lzvm_accel::{
     cuda_goldilocks_begin_validate_canonical_words_device, cuda_goldilocks_butterfly,
     cuda_goldilocks_coset_extend, cuda_goldilocks_coset_extend_device,
+    cuda_goldilocks_coset_extend_main_trace_compact_descriptors_shifted_rows_device,
     cuda_goldilocks_coset_extend_row_major_columns,
     cuda_goldilocks_coset_extend_row_major_columns_device,
     cuda_goldilocks_coset_extend_row_major_columns_device_unsynced,
@@ -457,6 +458,126 @@ fn cuda_expands_main_trace_descriptors_with_store_address_layout() {
     expected[39 + 20] = 1;
 
     assert_same_words(&actual, &expected);
+}
+
+#[test]
+#[cfg(feature = "cuda")]
+fn cuda_extends_shifted_main_trace_rows_directly_from_compact_descriptors() {
+    const WORDS_PER_DESCRIPTOR: usize = 11;
+    const TRACE_COLUMNS: usize = 39;
+    const A_KIND_SHIFT: u64 = 32;
+    const B_KIND_SHIFT: u64 = 35;
+    const STORE_KIND_SHIFT: u64 = 38;
+
+    fn packed_u32_pair(lhs: u32, rhs: u32) -> u64 {
+        u64::from(lhs) | (u64::from(rhs) << 32)
+    }
+
+    fn packed_i32_pair(lhs: i32, rhs: i32) -> u64 {
+        u64::from(lhs as u32) | (u64::from(rhs as u32) << 32)
+    }
+
+    let source_bits = 4;
+    let target_bits = 6;
+    let row_count = 1_usize << source_bits;
+    let descriptor_count = row_count - 3;
+    let terminal_pc = 0x8000_1000;
+    let target_rows = [0_usize, 3, 17, 63, 17];
+    let mut descriptors = Vec::with_capacity(descriptor_count * WORDS_PER_DESCRIPTOR);
+    for row in 0..descriptor_count {
+        let row_u64 = row as u64;
+        let a_kind = 1 + row_u64 % 4;
+        let b_kind = 1 + (row_u64 + 1) % 4;
+        let store_kind = row_u64 % 4;
+        let control = (row_u64 & 0xff)
+            | ((row_u64 & 1) << 8)
+            | (((row_u64 >> 1) & 1) << 9)
+            | (((row_u64 >> 2) & 1) << 10)
+            | (((row_u64 >> 3) & 1) << 11)
+            | (((row_u64 >> 1) & 1) << 12)
+            | (((row_u64 >> 2) & 1) << 13)
+            | ((row_u64 * 7) << 16)
+            | (a_kind << A_KIND_SHIFT)
+            | (b_kind << B_KIND_SHIFT)
+            | (store_kind << STORE_KIND_SHIFT);
+        descriptors.extend_from_slice(&[
+            ((row_u64 + 2) << 32) | (row_u64 + 1),
+            ((row_u64 + 4) << 32) | (row_u64 + 3),
+            ((row_u64 + 6) << 32) | (row_u64 + 5),
+            row_u64.wrapping_mul(0x1_0000_0003),
+            row_u64.wrapping_mul(0x2_0000_0005),
+            row_u64.wrapping_mul(0x3_0000_0007),
+            control,
+            packed_u32_pair(0x1000 + row as u32 * 4, row as u32 + 20),
+            packed_i32_pair(-(row as i32) - 1, row as i32 + 2),
+            packed_u32_pair(row as u32 + 30, row as u32 + 40),
+            ((row_u64 + 50) << 32) | (row_u64 + 60),
+        ]);
+    }
+    let descriptor_buffer =
+        CudaDeviceBuffer::from_u64_words(&descriptors).expect("descriptors should upload");
+
+    for layout in [
+        MainTraceDeviceLayout::Legacy,
+        MainTraceDeviceLayout::WithStoreAddress,
+    ] {
+        let expanded = CudaDeviceBuffer::from_main_trace_descriptors_device_with_layout(
+            &descriptor_buffer,
+            WORDS_PER_DESCRIPTOR,
+            descriptor_count,
+            row_count,
+            TRACE_COLUMNS,
+            terminal_pc,
+            layout,
+        )
+        .expect("full descriptor expansion should run");
+        for (column_offset, column_count) in [(0, 39), (5, 17), (30, 9)] {
+            let output_bytes = target_rows.len() * column_count * 8;
+            let mut expected =
+                CudaDeviceBuffer::new(output_bytes).expect("expected output should allocate");
+            cuda_goldilocks_coset_extend_row_major_columns_strided_shifted_rows_device(
+                &expanded,
+                &mut expected,
+                CudaRowMajorColumnView {
+                    source_rows: row_count,
+                    source_row_stride: TRACE_COLUMNS,
+                    column_offset,
+                    column_count,
+                },
+                source_bits,
+                target_bits,
+                &target_rows,
+            )
+            .expect("expanded shifted-row extension should run");
+
+            let mut shifted =
+                CudaDeviceBuffer::new(output_bytes).expect("shifted output should allocate");
+            cuda_goldilocks_coset_extend_main_trace_compact_descriptors_shifted_rows_device(
+                &descriptor_buffer,
+                &mut shifted,
+                descriptor_count,
+                row_count,
+                terminal_pc,
+                column_offset,
+                column_count,
+                layout,
+                source_bits,
+                target_bits,
+                &target_rows,
+            )
+            .expect("direct shifted descriptor extension should run");
+            assert_eq!(
+                shifted
+                    .to_u64_words()
+                    .expect("direct shifted rows should download"),
+                expected
+                    .to_u64_words()
+                    .expect("expanded rows should download"),
+                "shifted layout={layout:?}, columns={column_offset}..{}",
+                column_offset + column_count
+            );
+        }
+    }
 }
 
 #[test]
