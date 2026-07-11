@@ -190,34 +190,53 @@ fn ntt_uses_block_twiddle_kernel_for_large_stages() {
         "block twiddle path should be limited to stages with block-aligned offsets"
     );
     assert!(
-        run_ntt_body.contains("else if (half >= kNttThreadPowerKernelMinHalf)"),
-        "thread-power path should cover middle stages before the block twiddle path"
+        run_ntt_body.contains("else if (half >= kNttMiddleStageKernelMinHalf)"),
+        "the dedicated middle-stage path should precede the block twiddle path"
     );
 }
 
 #[test]
-fn ntt_reuses_shared_twiddle_powers_inside_stage_kernels() {
+fn ntt_reuses_precomputed_factors_in_small_and_middle_stages() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let source = std::fs::read_to_string(crate_root.join("native/cuda_goldilocks_ntt.cuh"))
         .expect("CUDA NTT native source should read");
+    let stage_bodies = [
+        function_body(
+            &source,
+            "__global__ void ntt_stage_kernel",
+            "__global__ void ntt_stage_thread_twiddle_kernel",
+        ),
+        function_body(
+            &source,
+            "__global__ void ntt_stage_thread_twiddle_kernel",
+            "__global__ void ntt_stage_block_twiddle_kernel",
+        ),
+        function_body(
+            &source,
+            "__global__ void ntt_stage_column_group_kernel",
+            "__global__ void ntt_stage_thread_twiddle_column_group_kernel",
+        ),
+        function_body(
+            &source,
+            "__global__ void ntt_stage_thread_twiddle_column_group_kernel",
+            "__global__ void ntt_stage_block_twiddle_column_group_kernel",
+        ),
+    ];
 
     assert!(
-        source.contains("ntt_stage_thread_twiddle"),
-        "NTT kernels should use a shared helper for thread-local twiddle factors"
+        source.contains("constexpr size_t kNttThreadFactorMinBits = 1;"),
+        "setup-time factors should cover every NTT stage"
     );
+    for body in stage_bodies {
+        assert!(
+            body.contains("ntt_stage_thread_factor_index(stage_bits, inverse_roots)")
+                && body.contains("__ldg(&kNttThreadFactors["),
+            "small and middle NTT stages should load setup-time twiddle factors"
+        );
+    }
     assert!(
-        source.contains("ntt_stage_prepare_thread_powers"),
-        "NTT kernels should prepare per-block twiddle powers once in shared memory"
-    );
-
-    let block_body = function_body(
-        &source,
-        "__global__ void ntt_stage_block_twiddle_kernel",
-        "cudaError_t run_ntt",
-    );
-    assert!(
-        !block_body.contains("pow_mod(stage_twiddle, static_cast<size_t>(threadIdx.x))"),
-        "block-twiddle NTT should not repeat twiddle exponentiation in every thread"
+        !source.contains("ntt_stage_prepare_thread_powers"),
+        "NTT stages should not rebuild twiddle powers in each block"
     );
 }
 

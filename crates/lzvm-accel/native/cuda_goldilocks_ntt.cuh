@@ -1,8 +1,8 @@
 #pragma once
 
 constexpr size_t kNttThreadPowerBits = 8;
-constexpr size_t kNttThreadPowerKernelMinHalf = 16;
-constexpr size_t kNttThreadFactorMinBits = 10;
+constexpr size_t kNttMiddleStageKernelMinHalf = 16;
+constexpr size_t kNttThreadFactorMinBits = 1;
 constexpr size_t kNttThreadFactorStageCount = kMaxRootBits - kNttThreadFactorMinBits + 1;
 constexpr size_t kNttThreadFactorDirectionCount = 2;
 constexpr size_t kNttThreadFactorCount =
@@ -49,35 +49,6 @@ int setup_ntt_thread_factors(
             block_twiddles.size() * sizeof(uint64_t)));
 }
 
-__device__ uint64_t ntt_stage_twiddle(
-    size_t len,
-    size_t stage_len,
-    size_t stage_bits,
-    uint64_t root,
-    bool inverse_roots) {
-    return stage_bits <= static_cast<size_t>(kNttStageRootLimit)
-        ? (inverse_roots ? kNttStageRootInverses[stage_bits] : kNttStageRoots[stage_bits])
-        : pow_mod(root, len / stage_len);
-}
-
-__device__ void ntt_stage_prepare_thread_powers(
-    size_t len,
-    size_t stage_len,
-    size_t stage_bits,
-    uint64_t root,
-    bool inverse_roots,
-    uint64_t* thread_powers) {
-    if (threadIdx.x == 0) {
-        const uint64_t stage_twiddle =
-            ntt_stage_twiddle(len, stage_len, stage_bits, root, inverse_roots);
-        thread_powers[0] = stage_twiddle;
-        for (size_t bit = 1; bit < kNttThreadPowerBits; ++bit) {
-            thread_powers[bit] = mul_mod(thread_powers[bit - 1], thread_powers[bit - 1]);
-        }
-    }
-    __syncthreads();
-}
-
 __device__ size_t ntt_stage_thread_factor_index(size_t stage_bits, bool inverse_roots) {
     const size_t direction_offset =
         inverse_roots ? kNttThreadFactorStageCount : static_cast<size_t>(0);
@@ -91,28 +62,11 @@ __device__ uint64_t ntt_stage_block_base(uint64_t block_twiddle, size_t block_of
     return pow_mod(block_twiddle, block_offset >> kNttThreadPowerBits);
 }
 
-__device__ uint64_t ntt_stage_thread_twiddle(
-    uint64_t base,
-    const uint64_t* thread_powers,
-    size_t exponent) {
-    uint64_t factor = base;
-    size_t bit = 0;
-    while (exponent != 0 && bit < kNttThreadPowerBits) {
-        if ((exponent & 1) != 0) {
-            factor = mul_mod(factor, thread_powers[bit]);
-        }
-        exponent >>= 1;
-        ++bit;
-    }
-    return factor;
-}
-
 __global__ void ntt_stage_kernel(
     uint64_t* values,
     size_t len,
     size_t stage_len,
     size_t stage_bits,
-    uint64_t root,
     bool inverse_roots) {
     const size_t pair_count = len / 2;
     const size_t pair = blockIdx.x * blockDim.x + threadIdx.x;
@@ -122,9 +76,9 @@ __global__ void ntt_stage_kernel(
         const size_t offset = pair % half;
         const size_t even_index = group * stage_len + offset;
         const size_t odd_index = even_index + half;
-        const uint64_t stage_twiddle =
-            ntt_stage_twiddle(len, stage_len, stage_bits, root, inverse_roots);
-        const uint64_t factor = pow_mod(stage_twiddle, offset);
+        const size_t factor_stage = ntt_stage_thread_factor_index(stage_bits, inverse_roots);
+        const uint64_t factor =
+            __ldg(&kNttThreadFactors[factor_stage * kThreads + offset]);
         const uint64_t even = values[even_index];
         const uint64_t odd = mul_mod(values[odd_index], factor);
         values[even_index] = add_mod(even, odd);
@@ -137,13 +91,7 @@ __global__ void ntt_stage_thread_twiddle_kernel(
     size_t len,
     size_t stage_len,
     size_t stage_bits,
-    uint64_t root,
     bool inverse_roots) {
-    __shared__ uint64_t thread_powers[kNttThreadPowerBits];
-
-    ntt_stage_prepare_thread_powers(
-        len, stage_len, stage_bits, root, inverse_roots, thread_powers);
-
     const size_t pair_count = len / 2;
     const size_t pair = blockIdx.x * blockDim.x + threadIdx.x;
     if (pair < pair_count) {
@@ -152,7 +100,9 @@ __global__ void ntt_stage_thread_twiddle_kernel(
         const size_t offset = pair % half;
         const size_t even_index = group * stage_len + offset;
         const size_t odd_index = even_index + half;
-        const uint64_t factor = ntt_stage_thread_twiddle(1, thread_powers, offset);
+        const size_t factor_stage = ntt_stage_thread_factor_index(stage_bits, inverse_roots);
+        const uint64_t factor =
+            __ldg(&kNttThreadFactors[factor_stage * kThreads + offset]);
         const uint64_t even = values[even_index];
         const uint64_t odd = mul_mod(values[odd_index], factor);
         values[even_index] = add_mod(even, odd);
@@ -217,7 +167,6 @@ __global__ void ntt_stage_column_group_kernel(
     size_t value_stride,
     size_t stage_len,
     size_t stage_bits,
-    uint64_t root,
     bool inverse_roots) {
     const size_t pair_count = len / 2;
     const size_t pair = blockIdx.x * blockDim.x + threadIdx.x;
@@ -229,9 +178,9 @@ __global__ void ntt_stage_column_group_kernel(
         const size_t offset = pair % half;
         const size_t even_index = group * stage_len + offset;
         const size_t odd_index = even_index + half;
-        const uint64_t stage_twiddle =
-            ntt_stage_twiddle(len, stage_len, stage_bits, root, inverse_roots);
-        const uint64_t factor = pow_mod(stage_twiddle, offset);
+        const size_t factor_stage = ntt_stage_thread_factor_index(stage_bits, inverse_roots);
+        const uint64_t factor =
+            __ldg(&kNttThreadFactors[factor_stage * kThreads + offset]);
         const uint64_t even = column_values[even_index];
         const uint64_t odd = mul_mod(column_values[odd_index], factor);
         column_values[even_index] = add_mod(even, odd);
@@ -245,13 +194,7 @@ __global__ void ntt_stage_thread_twiddle_column_group_kernel(
     size_t value_stride,
     size_t stage_len,
     size_t stage_bits,
-    uint64_t root,
     bool inverse_roots) {
-    __shared__ uint64_t thread_powers[kNttThreadPowerBits];
-
-    ntt_stage_prepare_thread_powers(
-        len, stage_len, stage_bits, root, inverse_roots, thread_powers);
-
     const size_t pair_count = len / 2;
     const size_t pair = blockIdx.x * blockDim.x + threadIdx.x;
     if (pair < pair_count) {
@@ -262,7 +205,9 @@ __global__ void ntt_stage_thread_twiddle_column_group_kernel(
         const size_t offset = pair % half;
         const size_t even_index = group * stage_len + offset;
         const size_t odd_index = even_index + half;
-        const uint64_t factor = ntt_stage_thread_twiddle(1, thread_powers, offset);
+        const size_t factor_stage = ntt_stage_thread_factor_index(stage_bits, inverse_roots);
+        const uint64_t factor =
+            __ldg(&kNttThreadFactors[factor_stage * kThreads + offset]);
         const uint64_t even = column_values[even_index];
         const uint64_t odd = mul_mod(column_values[odd_index], factor);
         column_values[even_index] = add_mod(even, odd);
@@ -366,12 +311,12 @@ cudaError_t run_ntt(
         if (half > kThreads) {
             ntt_stage_block_twiddle_kernel<<<stage_blocks, kThreads, 0, stream>>>(
                 device_values, len, stage_len, stage_bits, inverse_roots);
-        } else if (half >= kNttThreadPowerKernelMinHalf) {
+        } else if (half >= kNttMiddleStageKernelMinHalf) {
             ntt_stage_thread_twiddle_kernel<<<stage_blocks, kThreads, 0, stream>>>(
-                device_values, len, stage_len, stage_bits, root, inverse_roots);
+                device_values, len, stage_len, stage_bits, inverse_roots);
         } else {
             ntt_stage_kernel<<<stage_blocks, kThreads, 0, stream>>>(
-                device_values, len, stage_len, stage_bits, root, inverse_roots);
+                device_values, len, stage_len, stage_bits, inverse_roots);
         }
         status = static_cast<cudaError_t>(lzvm_cuda_check_launch());
         if (status != cudaSuccess) {
@@ -412,14 +357,13 @@ cudaError_t run_ntt_column_group(
                 stage_len,
                 stage_bits,
                 inverse_roots);
-        } else if (half >= kNttThreadPowerKernelMinHalf) {
+        } else if (half >= kNttMiddleStageKernelMinHalf) {
             ntt_stage_thread_twiddle_column_group_kernel<<<grid, kThreads, 0, stream>>>(
                 device_values,
                 len,
                 value_stride,
                 stage_len,
                 stage_bits,
-                root,
                 inverse_roots);
         } else {
             ntt_stage_column_group_kernel<<<grid, kThreads, 0, stream>>>(
@@ -428,7 +372,6 @@ cudaError_t run_ntt_column_group(
                 value_stride,
                 stage_len,
                 stage_bits,
-                root,
                 inverse_roots);
         }
         status = static_cast<cudaError_t>(lzvm_cuda_check_launch());
