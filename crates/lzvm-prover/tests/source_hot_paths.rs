@@ -12555,6 +12555,37 @@ fn guest_pc_trace_slice_reuses_prepared_instruction_for_advance() {
 }
 
 #[test]
+fn guest_machine_default_in_place_advance_uses_untimed_hot_path() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let source_path = crate_root.join("src/guest_machine/mod.rs");
+    let source = std::fs::read_to_string(&source_path).expect("guest machine source should read");
+    let wrapper = function_body(
+        &source,
+        "pub(crate) fn advance_guest_machine_with_prepared_fcalls_report_shape_at_pc_into(",
+        "pub(crate) fn advance_guest_machine_with_prepared_fcalls_report_shape_at_pc_into_timed(",
+    );
+    let untimed = function_body(
+        &source,
+        "fn advance_guest_machine_prepared_inner_report_shape_at_pc_into_untimed(",
+        "fn advance_guest_machine_prepared_inner_report_shape_at_pc_into(",
+    );
+
+    assert!(
+        wrapper.contains("advance_guest_machine_prepared_inner_report_shape_at_pc_into_untimed("),
+        "the default retained-report runner should use the branch-free untimed advance helper"
+    );
+    assert!(
+        untimed.contains("try_advance_guest_machine_report_fast_path(")
+            && untimed.contains("advance_guest_machine_prepared_inner_report_shape_at_pc_generic("),
+        "the untimed helper should preserve both the report fast path and generic fallback"
+    );
+    assert!(
+        !untimed.contains("advance_timing_started") && !untimed.contains("record_advance_timing"),
+        "the default runner helper should not reintroduce per-instruction timing branches"
+    );
+}
+
+#[test]
 fn guest_pc_trace_retained_reports_preallocate_segment_buffer() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let source_path = crate_root.join("src/guest_pc_trace_backend.rs");

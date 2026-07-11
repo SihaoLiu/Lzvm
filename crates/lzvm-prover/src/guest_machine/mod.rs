@@ -2092,15 +2092,8 @@ pub(crate) fn advance_guest_machine_with_prepared_fcalls_report_shape_at_pc_into
     prepared: GuestMachinePreparedInstruction,
     report: &mut MaybeUninit<GuestMachineReport>,
 ) -> Result<GuestMachineReportShape, GuestMachineError> {
-    advance_guest_machine_prepared_inner_report_shape_at_pc_into(
-        memory,
-        state,
-        Some(handler),
-        pc,
-        prepared,
-        report,
-        None,
-        None,
+    advance_guest_machine_prepared_inner_report_shape_at_pc_into_untimed(
+        memory, state, handler, pc, prepared, report,
     )
 }
 
@@ -2231,6 +2224,57 @@ fn advance_guest_machine_prepared_inner_report_shape_into(
     advance_guest_machine_prepared_inner_report_shape_at_pc_into(
         memory, state, handler, pc, prepared, report, timing, path,
     )
+}
+
+// Keep the default runner free of optional diagnostic branches on every instruction.
+fn advance_guest_machine_prepared_inner_report_shape_at_pc_into_untimed(
+    memory: &mut GuestMachineMemory,
+    state: &mut GuestMachineState,
+    handler: &mut dyn GuestFcallHandler,
+    pc: u64,
+    prepared: GuestMachinePreparedInstruction,
+    report: &mut MaybeUninit<GuestMachineReport>,
+) -> Result<GuestMachineReportShape, GuestMachineError> {
+    if prepared.address != pc {
+        return Err(GuestMachineError::PreparedInstructionPcMismatch {
+            expected: pc,
+            found: prepared.address,
+        });
+    }
+    let address = pc;
+    let byte_len = prepared.byte_len;
+    let instruction = prepared.instruction;
+    let sequential_pc = address.checked_add(u64::from(byte_len)).ok_or(
+        GuestMachineError::ProgramCounterOverflow {
+            address,
+            byte_len: usize::from(byte_len),
+        },
+    )?;
+    match try_advance_guest_machine_report_fast_path(
+        memory,
+        state,
+        address,
+        byte_len,
+        sequential_pc,
+        instruction,
+        report,
+    ) {
+        Ok(Some(shape)) => return Ok(shape),
+        Ok(None) => {}
+        Err(error) => return Err(error),
+    }
+    let advanced = advance_guest_machine_prepared_inner_report_shape_at_pc_generic(
+        memory,
+        state,
+        Some(handler),
+        address,
+        byte_len,
+        sequential_pc,
+        instruction,
+        None,
+    )?;
+    report.write(advanced.report);
+    Ok(advanced.shape)
 }
 
 fn advance_guest_machine_prepared_inner_report_shape_at_pc_into(
