@@ -49,7 +49,7 @@ type CompactOnDemandOpening = (Vec<Felt>, Vec<Vec<[Felt; HASH_WORDS]>>);
 // materializing a full extended leaf buffer. This is a cost gate, not a proof rule.
 const SELECTED_ROW_EXTENSION_MAX_SOURCE_ROWS: usize = 16;
 #[cfg(feature = "cuda")]
-const MAIN_TRACE_COMPACT_DESCRIPTOR_WORDS: usize = 11;
+const MAIN_TRACE_COMPACT_DESCRIPTOR_WORDS: usize = 10;
 #[cfg(feature = "cuda")]
 const MAIN_TRACE_COLUMN_COUNT: usize = 39;
 

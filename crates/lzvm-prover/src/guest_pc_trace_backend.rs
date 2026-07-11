@@ -2480,7 +2480,7 @@ impl ZiskMainDeviceTraceDescriptors {
 #[cfg(feature = "cuda")]
 const ZISK_MAIN_DEVICE_TRACE_COLUMNS: usize = 39;
 #[cfg(feature = "cuda")]
-const ZISK_MAIN_DEVICE_TRACE_DESCRIPTOR_WORDS: usize = 11;
+const ZISK_MAIN_DEVICE_TRACE_DESCRIPTOR_WORDS: usize = 10;
 #[cfg(feature = "cuda")]
 const ZISK_MAIN_DEVICE_TRACE_SPARSE_DESCRIPTOR_WORDS: usize = 9;
 #[cfg(feature = "cuda")]
@@ -2511,6 +2511,16 @@ const ZISK_MAIN_DEVICE_TRACE_A_KIND_SHIFT: u64 = 32;
 const ZISK_MAIN_DEVICE_TRACE_B_KIND_SHIFT: u64 = 35;
 #[cfg(feature = "cuda")]
 const ZISK_MAIN_DEVICE_TRACE_STORE_KIND_SHIFT: u64 = 38;
+#[cfg(feature = "cuda")]
+const ZISK_MAIN_DEVICE_TRACE_A_REGISTER_SHIFT: u64 = 41;
+#[cfg(feature = "cuda")]
+const ZISK_MAIN_DEVICE_TRACE_B_REGISTER_SHIFT: u64 = 47;
+#[cfg(feature = "cuda")]
+const ZISK_MAIN_DEVICE_TRACE_STORE_REGISTER_SHIFT: u64 = 53;
+#[cfg(feature = "cuda")]
+const ZISK_MAIN_DEVICE_TRACE_KIND_MASK: u64 = 0x7;
+#[cfg(feature = "cuda")]
+const ZISK_MAIN_DEVICE_TRACE_REGISTER_MASK: u64 = 0x3f;
 
 #[cfg(feature = "cuda")]
 fn main_device_trace_descriptors(
@@ -2671,7 +2681,22 @@ fn append_main_device_trace_descriptor(
         | (instruction.ind_width << 16)
         | (a_kind << ZISK_MAIN_DEVICE_TRACE_A_KIND_SHIFT)
         | (b_kind << ZISK_MAIN_DEVICE_TRACE_B_KIND_SHIFT)
-        | (store_kind << ZISK_MAIN_DEVICE_TRACE_STORE_KIND_SHIFT);
+        | (store_kind << ZISK_MAIN_DEVICE_TRACE_STORE_KIND_SHIFT)
+        | (zisk_main_compact_register_index(
+            a_kind,
+            ZISK_MAIN_DEVICE_TRACE_SOURCE_REGISTER,
+            a_payload,
+        ) << ZISK_MAIN_DEVICE_TRACE_A_REGISTER_SHIFT)
+        | (zisk_main_compact_register_index(
+            b_kind,
+            ZISK_MAIN_DEVICE_TRACE_SOURCE_REGISTER,
+            b_payload,
+        ) << ZISK_MAIN_DEVICE_TRACE_B_REGISTER_SHIFT)
+        | (zisk_main_compact_register_index(
+            store_kind,
+            ZISK_MAIN_DEVICE_TRACE_STORE_REGISTER,
+            store_payload,
+        ) << ZISK_MAIN_DEVICE_TRACE_STORE_REGISTER_SHIFT);
     let a_prev_mem_step = values.register_accesses.a_prev_mem_step.unwrap_or(0);
     let b_prev_mem_step = values.register_accesses.b_prev_mem_step.unwrap_or(0);
     let store_prev_mem_step = values.register_accesses.store_prev_mem_step.unwrap_or(0);
@@ -2767,6 +2792,35 @@ fn zisk_main_unpaired_descriptor_values(
 #[cfg(feature = "cuda")]
 fn zisk_main_high32_nonzero(value: u64) -> bool {
     value >> 32 != 0
+}
+
+#[cfg(feature = "cuda")]
+#[inline(always)]
+fn zisk_main_compact_register_index(kind: u64, register_kind: u64, payload: u64) -> u64 {
+    if kind == register_kind {
+        payload & ZISK_MAIN_DEVICE_TRACE_REGISTER_MASK
+    } else {
+        0
+    }
+}
+
+#[cfg(feature = "cuda")]
+#[inline(always)]
+fn zisk_main_compact_source_payload_is_embeddable(kind: u64, payload: u64, value: u64) -> bool {
+    match kind {
+        ZISK_MAIN_DEVICE_TRACE_SOURCE_IMMEDIATE => payload == value,
+        ZISK_MAIN_DEVICE_TRACE_SOURCE_REGISTER => {
+            payload & !ZISK_MAIN_DEVICE_TRACE_REGISTER_MASK == 0
+        }
+        _ => true,
+    }
+}
+
+#[cfg(feature = "cuda")]
+#[inline(always)]
+fn zisk_main_compact_store_payload_is_embeddable(kind: u64, payload: u64) -> bool {
+    kind != ZISK_MAIN_DEVICE_TRACE_STORE_REGISTER
+        || payload & !ZISK_MAIN_DEVICE_TRACE_REGISTER_MASK == 0
 }
 
 #[cfg(feature = "cuda")]
@@ -2921,18 +2975,138 @@ fn push_compact_main_device_trace_words(
     let jump_offsets =
         u64::from(first_offset as i32 as u32) | (u64::from(second_offset as i32 as u32) << 32);
     let register_mem_steps = a_prev_mem_step | (b_prev_mem_step << 32);
+    let a_kind =
+        (control >> ZISK_MAIN_DEVICE_TRACE_A_KIND_SHIFT) & ZISK_MAIN_DEVICE_TRACE_KIND_MASK;
+    let b_kind =
+        (control >> ZISK_MAIN_DEVICE_TRACE_B_KIND_SHIFT) & ZISK_MAIN_DEVICE_TRACE_KIND_MASK;
+    let store_kind =
+        (control >> ZISK_MAIN_DEVICE_TRACE_STORE_KIND_SHIFT) & ZISK_MAIN_DEVICE_TRACE_KIND_MASK;
+    if !zisk_main_compact_source_payload_is_embeddable(a_kind, a_payload, values.a)
+        || !zisk_main_compact_source_payload_is_embeddable(b_kind, b_payload, values.b)
+        || !zisk_main_compact_store_payload_is_embeddable(store_kind, store_payload)
+    {
+        return false;
+    }
+    let Some(payloads) = zisk_main_compact_explicit_payloads(
+        a_kind,
+        a_payload,
+        b_kind,
+        b_payload,
+        store_kind,
+        store_payload,
+    ) else {
+        return false;
+    };
     words.push(values.a);
     words.push(values.b);
     words.push(values.c);
-    words.push(a_payload);
-    words.push(b_payload);
-    words.push(store_payload);
+    words.push(payloads[0]);
+    words.push(payloads[1]);
     words.push(control);
     words.push(pc_and_store_step);
     words.push(jump_offsets);
     words.push(register_mem_steps);
     words.push(store_prev_value);
     true
+}
+
+#[cfg(feature = "cuda")]
+#[allow(clippy::too_many_arguments)]
+#[inline(always)]
+fn zisk_main_compact_explicit_payloads(
+    a_kind: u64,
+    a_payload: u64,
+    b_kind: u64,
+    b_payload: u64,
+    store_kind: u64,
+    store_payload: u64,
+) -> Option<[u64; 2]> {
+    let mut payloads = [0_u64; 2];
+    let mut count = 0_usize;
+    for (is_explicit, payload) in [
+        (
+            matches!(
+                a_kind,
+                ZISK_MAIN_DEVICE_TRACE_SOURCE_MEMORY | ZISK_MAIN_DEVICE_TRACE_SOURCE_INDIRECT
+            ),
+            a_payload,
+        ),
+        (
+            matches!(
+                b_kind,
+                ZISK_MAIN_DEVICE_TRACE_SOURCE_MEMORY | ZISK_MAIN_DEVICE_TRACE_SOURCE_INDIRECT
+            ),
+            b_payload,
+        ),
+        (
+            matches!(
+                store_kind,
+                ZISK_MAIN_DEVICE_TRACE_STORE_MEMORY | ZISK_MAIN_DEVICE_TRACE_STORE_INDIRECT
+            ),
+            store_payload,
+        ),
+    ] {
+        if !is_explicit {
+            continue;
+        }
+        let slot = payloads.get_mut(count)?;
+        *slot = payload;
+        count += 1;
+    }
+    Some(payloads)
+}
+
+#[cfg(feature = "cuda")]
+#[inline(always)]
+fn zisk_main_take_compact_payload(payloads: [u64; 2], index: &mut usize) -> u64 {
+    let payload = payloads.get(*index).copied().unwrap_or(0);
+    *index = (*index).saturating_add(1);
+    payload
+}
+
+#[cfg(feature = "cuda")]
+#[inline(always)]
+fn zisk_main_decode_compact_payloads(a: u64, b: u64, payloads: [u64; 2], control: u64) -> [u64; 3] {
+    let a_kind =
+        (control >> ZISK_MAIN_DEVICE_TRACE_A_KIND_SHIFT) & ZISK_MAIN_DEVICE_TRACE_KIND_MASK;
+    let b_kind =
+        (control >> ZISK_MAIN_DEVICE_TRACE_B_KIND_SHIFT) & ZISK_MAIN_DEVICE_TRACE_KIND_MASK;
+    let store_kind =
+        (control >> ZISK_MAIN_DEVICE_TRACE_STORE_KIND_SHIFT) & ZISK_MAIN_DEVICE_TRACE_KIND_MASK;
+    let mut payload_index = 0_usize;
+    let a_payload = match a_kind {
+        ZISK_MAIN_DEVICE_TRACE_SOURCE_IMMEDIATE => a,
+        ZISK_MAIN_DEVICE_TRACE_SOURCE_REGISTER => {
+            (control >> ZISK_MAIN_DEVICE_TRACE_A_REGISTER_SHIFT)
+                & ZISK_MAIN_DEVICE_TRACE_REGISTER_MASK
+        }
+        ZISK_MAIN_DEVICE_TRACE_SOURCE_MEMORY | ZISK_MAIN_DEVICE_TRACE_SOURCE_INDIRECT => {
+            zisk_main_take_compact_payload(payloads, &mut payload_index)
+        }
+        _ => 0,
+    };
+    let b_payload = match b_kind {
+        ZISK_MAIN_DEVICE_TRACE_SOURCE_IMMEDIATE => b,
+        ZISK_MAIN_DEVICE_TRACE_SOURCE_REGISTER => {
+            (control >> ZISK_MAIN_DEVICE_TRACE_B_REGISTER_SHIFT)
+                & ZISK_MAIN_DEVICE_TRACE_REGISTER_MASK
+        }
+        ZISK_MAIN_DEVICE_TRACE_SOURCE_MEMORY | ZISK_MAIN_DEVICE_TRACE_SOURCE_INDIRECT => {
+            zisk_main_take_compact_payload(payloads, &mut payload_index)
+        }
+        _ => 0,
+    };
+    let store_payload = match store_kind {
+        ZISK_MAIN_DEVICE_TRACE_STORE_REGISTER => {
+            (control >> ZISK_MAIN_DEVICE_TRACE_STORE_REGISTER_SHIFT)
+                & ZISK_MAIN_DEVICE_TRACE_REGISTER_MASK
+        }
+        ZISK_MAIN_DEVICE_TRACE_STORE_MEMORY | ZISK_MAIN_DEVICE_TRACE_STORE_INDIRECT => {
+            zisk_main_take_compact_payload(payloads, &mut payload_index)
+        }
+        _ => 0,
+    };
+    [a_payload, b_payload, store_payload]
 }
 
 #[cfg(feature = "cuda")]
@@ -3064,24 +3238,31 @@ fn convert_zisk_main_compact_descriptors_to_wide(descriptors: &mut ZiskMainDevic
         .words
         .chunks_exact(ZISK_MAIN_DEVICE_TRACE_DESCRIPTOR_WORDS)
     {
-        let pc_and_store_step = compact[7];
-        let jump_offsets = compact[8];
-        let register_mem_steps = compact[9];
+        let control = compact[5];
+        let [a_payload, b_payload, store_payload] = zisk_main_decode_compact_payloads(
+            compact[0],
+            compact[1],
+            [compact[3], compact[4]],
+            control,
+        );
+        let pc_and_store_step = compact[6];
+        let jump_offsets = compact[7];
+        let register_mem_steps = compact[8];
         wide_words.extend_from_slice(&[
             compact[0],
             compact[1],
             compact[2],
             pc_and_store_step & 0xffff_ffff,
-            compact[3],
-            compact[4],
-            compact[5],
-            compact[6],
+            a_payload,
+            b_payload,
+            store_payload,
+            control,
             zisk_main_unpack_i32_low(jump_offsets),
             zisk_main_unpack_i32_high(jump_offsets),
             register_mem_steps & 0xffff_ffff,
             register_mem_steps >> 32,
             pc_and_store_step >> 32,
-            compact[10],
+            compact[9],
         ]);
     }
     descriptors.words = wide_words;

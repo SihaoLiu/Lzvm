@@ -5,6 +5,7 @@ use super::{cuda_allocator, cuda_status, u64_word_byte_len, AccelError, CudaStre
 
 const SPARSE_U64_WORD_CHUNK: usize = 8 * 1024 * 1024;
 const ZISK_MAIN_TRACE_COMPACT_DESCRIPTOR_WORDS: usize = 11;
+const MAIN_TRACE_COMPACT_DESCRIPTOR_WORDS: usize = 10;
 const ZISK_MAIN_TRACE_SPARSE_DESCRIPTOR_WORDS: usize = 9;
 const ZISK_MAIN_TRACE_WIDE_DESCRIPTOR_WORDS: usize = 14;
 const ZISK_MAIN_TRACE_WIDTH_WORDS: usize = 39;
@@ -270,7 +271,7 @@ fn zisk_main_trace_descriptor_words_supported(descriptor_words: usize) -> bool {
 }
 
 fn main_trace_descriptor_words_supported(descriptor_words: usize) -> bool {
-    descriptor_words == ZISK_MAIN_TRACE_COMPACT_DESCRIPTOR_WORDS
+    descriptor_words == MAIN_TRACE_COMPACT_DESCRIPTOR_WORDS
         || descriptor_words == ZISK_MAIN_TRACE_WIDE_DESCRIPTOR_WORDS
 }
 

@@ -4,7 +4,7 @@ use super::{
     MainTraceDeviceLayout,
 };
 
-const MAIN_TRACE_COMPACT_DESCRIPTOR_WORDS: usize = 11;
+const MAIN_TRACE_COMPACT_DESCRIPTOR_WORDS: usize = 10;
 const MAIN_TRACE_COLUMN_COUNT: usize = 39;
 const MAIN_TRACE_SELECTED_TARGET_BATCH: usize = 4;
 

@@ -48,15 +48,19 @@ void extend_main_trace_compact_descriptors_shifted_rows_partial_kernel(
             const uint64_t d7 = main_trace_shuffle_u64(local, 7);
             const uint64_t d8 = main_trace_shuffle_u64(local, 8);
             const uint64_t d9 = main_trace_shuffle_u64(local, 9);
-            const uint64_t d10 = main_trace_shuffle_u64(local, 10);
-            const uint64_t pc = d7 & 0xffffffffULL;
+            uint64_t a_payload;
+            uint64_t b_payload;
+            uint64_t store_payload;
+            main_trace_decode_compact_payloads(
+                d0, d1, d3, d4, d5, &a_payload, &b_payload, &store_payload);
+            const uint64_t pc = d6 & 0xffffffffULL;
             const uint64_t jmp_offset1 =
-                main_trace_i32_bits_to_i64_bits(static_cast<uint32_t>(d8));
+                main_trace_i32_bits_to_i64_bits(static_cast<uint32_t>(d7));
             const uint64_t jmp_offset2 =
-                main_trace_i32_bits_to_i64_bits(static_cast<uint32_t>(d8 >> 32));
-            const uint64_t a_prev_mem_step = d9 & 0xffffffffULL;
-            const uint64_t b_prev_mem_step = d9 >> 32;
-            const uint64_t store_prev_mem_step = d7 >> 32;
+                main_trace_i32_bits_to_i64_bits(static_cast<uint32_t>(d7 >> 32));
+            const uint64_t a_prev_mem_step = d8 & 0xffffffffULL;
+            const uint64_t b_prev_mem_step = d8 >> 32;
+            const uint64_t store_prev_mem_step = d6 >> 32;
             if (lane < column_count) {
                 value = main_trace_expanded_column(
                     column_offset + lane,
@@ -64,16 +68,16 @@ void extend_main_trace_compact_descriptors_shifted_rows_partial_kernel(
                     d1,
                     d2,
                     pc,
-                    d3,
-                    d4,
+                    a_payload,
+                    b_payload,
+                    store_payload,
                     d5,
-                    d6,
                     jmp_offset1,
                     jmp_offset2,
                     a_prev_mem_step,
                     b_prev_mem_step,
                     store_prev_mem_step,
-                    d10,
+                    d9,
                     layout_kind);
             }
             if (lane + kMainTraceWarpLanes < column_count) {
@@ -83,16 +87,16 @@ void extend_main_trace_compact_descriptors_shifted_rows_partial_kernel(
                     d1,
                     d2,
                     pc,
-                    d3,
-                    d4,
+                    a_payload,
+                    b_payload,
+                    store_payload,
                     d5,
-                    d6,
                     jmp_offset1,
                     jmp_offset2,
                     a_prev_mem_step,
                     b_prev_mem_step,
                     store_prev_mem_step,
-                    d10,
+                    d9,
                     layout_kind);
             }
         } else {

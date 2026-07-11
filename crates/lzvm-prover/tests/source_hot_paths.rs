@@ -1860,15 +1860,15 @@ fn guest_pc_trace_device_descriptors_pack_kind_fields_into_control_word() {
     let backend_path = crate_root.join("src/guest_pc_trace_backend.rs");
     let backend_source =
         std::fs::read_to_string(&backend_path).expect("guest PC trace backend source should read");
-    let cuda_path = crate_root.join("../lzvm-accel/native/cuda_zisk_main_trace.cuh");
+    let cuda_path = crate_root.join("../lzvm-accel/native/cuda_main_trace_layout.cuh");
     let cuda_source =
         std::fs::read_to_string(&cuda_path).expect("CUDA trace descriptor source should read");
 
     assert!(
-        backend_source.contains("const ZISK_MAIN_DEVICE_TRACE_DESCRIPTOR_WORDS: usize = 11")
+        backend_source.contains("const ZISK_MAIN_DEVICE_TRACE_DESCRIPTOR_WORDS: usize = 10")
             && backend_source
                 .contains("const ZISK_MAIN_DEVICE_TRACE_WIDE_DESCRIPTOR_WORDS: usize = 14"),
-        "guest PC trace descriptors should prefer an 11-word packed format with a 14-word fallback"
+        "guest PC trace descriptors should prefer a 10-word packed format with a 14-word fallback"
     );
     let append_body = function_body(
         &backend_source,
@@ -1881,15 +1881,20 @@ fn guest_pc_trace_device_descriptors_pack_kind_fields_into_control_word() {
             && append_body.contains("ZISK_MAIN_DEVICE_TRACE_STORE_KIND_SHIFT"),
         "descriptor kind fields should be packed into the control word"
     );
+    let compact_body = function_body(
+        &backend_source,
+        "fn push_compact_main_device_trace_words",
+        "fn zisk_main_compact_explicit_payloads",
+    );
     assert!(
-        !append_body.contains("a_kind,\n        a_payload")
-            && !append_body.contains("b_kind,\n        b_payload")
-            && !append_body.contains("store_kind,\n        store_payload"),
+        !compact_body.contains("words.push(a_kind)")
+            && !compact_body.contains("words.push(b_kind)")
+            && !compact_body.contains("words.push(store_kind)"),
         "descriptor words should not carry standalone kind slots"
     );
     assert!(
-        cuda_source.contains("constexpr size_t kZiskMainCompactDescriptorWords = 11")
-            && cuda_source.contains("constexpr size_t kZiskMainWideDescriptorWords = 14"),
+        cuda_source.contains("constexpr size_t kMainTraceCompactWords = 10")
+            && cuda_source.contains("constexpr size_t kMainTraceWideWords = 14"),
         "CUDA descriptor expansion must support both compact and fallback descriptor widths"
     );
 }

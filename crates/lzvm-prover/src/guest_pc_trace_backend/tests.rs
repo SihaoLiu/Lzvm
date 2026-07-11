@@ -5946,8 +5946,86 @@ fn zisk_main_device_descriptor_uses_compact_words_when_values_fit() {
     append_main_device_trace_descriptor(&mut descriptors, &values)
         .expect("descriptor row should append");
 
-    assert_eq!(descriptors.descriptor_word_count(), 11);
-    assert_eq!(descriptors.words().len(), 11);
+    assert_eq!(descriptors.descriptor_word_count(), 10);
+    assert_eq!(descriptors.words().len(), 10);
+    assert_eq!(&descriptors.words()[3..5], &[0, 0]);
+    assert_eq!(
+        zisk_main_decode_compact_payloads(
+            descriptors.words()[0],
+            descriptors.words()[1],
+            [descriptors.words()[3], descriptors.words()[4]],
+            descriptors.words()[5],
+        ),
+        [0x22, 2, 3]
+    );
+}
+
+#[test]
+#[cfg(feature = "cuda")]
+fn zisk_main_device_descriptor_compacts_two_explicit_payloads() {
+    let mut descriptors = ZiskMainDeviceTraceDescriptors::new(1, 39, 0x2000);
+    let mut values = zisk_main_descriptor_trace_values(0x1000, 5, 6, 21, 22, 23, 24, 7);
+    values.instruction.a = ZiskMainSource::Memory(0x1_0000_0011);
+    values.instruction.b = ZiskMainSource::Indirect(-7);
+    values.instruction.store = ZiskMainStore::Register(9);
+
+    append_main_device_trace_descriptor(&mut descriptors, &values)
+        .expect("descriptor row should append");
+
+    assert_eq!(descriptors.descriptor_word_count(), 10);
+    assert_eq!(
+        &descriptors.words()[3..5],
+        &[0x1_0000_0011, (-7_i64) as u64]
+    );
+    assert_eq!(
+        zisk_main_decode_compact_payloads(
+            descriptors.words()[0],
+            descriptors.words()[1],
+            [descriptors.words()[3], descriptors.words()[4]],
+            descriptors.words()[5],
+        ),
+        [0x1_0000_0011, (-7_i64) as u64, 9]
+    );
+}
+
+#[test]
+#[cfg(feature = "cuda")]
+fn zisk_main_device_descriptor_falls_back_when_three_payloads_are_explicit() {
+    let mut descriptors = ZiskMainDeviceTraceDescriptors::new(2, 39, 0x2000);
+    let first = zisk_main_descriptor_trace_values(0x1000, 5, 6, 21, 22, 23, 24, 7);
+    append_main_device_trace_descriptor(&mut descriptors, &first)
+        .expect("first compact descriptor row should append");
+
+    let mut second = zisk_main_descriptor_trace_values(0x1004, 5, 6, 25, 26, 27, 28, 8);
+    second.instruction.a = ZiskMainSource::Memory(0x1111);
+    second.instruction.b = ZiskMainSource::Indirect(-9);
+    second.instruction.store = ZiskMainStore::Memory(0x3333);
+    append_main_device_trace_descriptor(&mut descriptors, &second)
+        .expect("wide fallback descriptor row should append");
+
+    assert_eq!(descriptors.descriptor_word_count(), 14);
+    assert_eq!(descriptors.words().len(), 28);
+    assert_eq!(&descriptors.words()[4..7], &[0x22, 2, 3]);
+    assert_eq!(
+        &descriptors.words()[14 + 4..14 + 7],
+        &[0x1111, (-9_i64) as u64, 0x3333]
+    );
+}
+
+#[test]
+#[cfg(feature = "cuda")]
+fn zisk_main_device_descriptor_preserves_noncanonical_immediate_payload_in_wide_fallback() {
+    let mut descriptors = ZiskMainDeviceTraceDescriptors::new(1, 39, 0x2000);
+    let mut values = zisk_main_descriptor_trace_values(0x1000, 5, 6, 21, 22, 23, 24, 7);
+    values.instruction.a = ZiskMainSource::Immediate(0x55);
+    values.a = 0x66;
+
+    append_main_device_trace_descriptor(&mut descriptors, &values)
+        .expect("wide fallback descriptor row should append");
+
+    assert_eq!(descriptors.descriptor_word_count(), 14);
+    assert_eq!(descriptors.words()[0], 0x66);
+    assert_eq!(descriptors.words()[4], 0x55);
 }
 
 #[test]
@@ -9810,7 +9888,7 @@ fn zisk_main_descriptor_trace_values(
     ZiskMainReportTraceValues {
         instruction: ZiskMainInstruction {
             pc,
-            a: ZiskMainSource::Immediate(0x11),
+            a: ZiskMainSource::Immediate(0x22),
             b: ZiskMainSource::Register(2),
             op: ZiskMainOp::Add,
             store: ZiskMainStore::Register(3),

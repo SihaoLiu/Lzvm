@@ -89,6 +89,89 @@ fn native_host_header_declares_row_range_extension_exports() {
 #[cfg(feature = "cuda")]
 const MODULUS: u64 = 0xffff_ffff_0000_0001;
 
+#[cfg(feature = "cuda")]
+#[allow(clippy::too_many_arguments)]
+fn compact_main_trace_descriptor(
+    a: u64,
+    b: u64,
+    c: u64,
+    a_payload: u64,
+    b_payload: u64,
+    store_payload: u64,
+    mut control: u64,
+    packed_pc_and_store_step: u64,
+    packed_jumps: u64,
+    packed_register_steps: u64,
+    store_prev_value: u64,
+) -> [u64; 10] {
+    const KIND_MEMORY: u64 = 1;
+    const KIND_IMMEDIATE: u64 = 2;
+    const KIND_REGISTER: u64 = 3;
+    const KIND_INDIRECT: u64 = 4;
+    const STORE_MEMORY: u64 = 1;
+    const STORE_REGISTER: u64 = 2;
+    const STORE_INDIRECT: u64 = 3;
+    const KIND_MASK: u64 = 0x7;
+    const REGISTER_MASK: u64 = 0x3f;
+    const A_KIND_SHIFT: u64 = 32;
+    const B_KIND_SHIFT: u64 = 35;
+    const STORE_KIND_SHIFT: u64 = 38;
+    const A_REGISTER_SHIFT: u64 = 41;
+    const B_REGISTER_SHIFT: u64 = 47;
+    const STORE_REGISTER_SHIFT: u64 = 53;
+
+    let a_kind = (control >> A_KIND_SHIFT) & KIND_MASK;
+    let b_kind = (control >> B_KIND_SHIFT) & KIND_MASK;
+    let store_kind = (control >> STORE_KIND_SHIFT) & KIND_MASK;
+    let mut explicit = [0_u64; 2];
+    let mut explicit_count = 0_usize;
+    let mut push_explicit = |value| {
+        assert!(explicit_count < explicit.len());
+        explicit[explicit_count] = value;
+        explicit_count += 1;
+    };
+
+    match a_kind {
+        KIND_IMMEDIATE => assert_eq!(a_payload, a),
+        KIND_REGISTER => {
+            assert_eq!(a_payload & !REGISTER_MASK, 0);
+            control |= a_payload << A_REGISTER_SHIFT;
+        }
+        KIND_MEMORY | KIND_INDIRECT => push_explicit(a_payload),
+        _ => {}
+    }
+    match b_kind {
+        KIND_IMMEDIATE => assert_eq!(b_payload, b),
+        KIND_REGISTER => {
+            assert_eq!(b_payload & !REGISTER_MASK, 0);
+            control |= b_payload << B_REGISTER_SHIFT;
+        }
+        KIND_MEMORY | KIND_INDIRECT => push_explicit(b_payload),
+        _ => {}
+    }
+    match store_kind {
+        STORE_REGISTER => {
+            assert_eq!(store_payload & !REGISTER_MASK, 0);
+            control |= store_payload << STORE_REGISTER_SHIFT;
+        }
+        STORE_MEMORY | STORE_INDIRECT => push_explicit(store_payload),
+        _ => {}
+    }
+
+    [
+        a,
+        b,
+        c,
+        explicit[0],
+        explicit[1],
+        control,
+        packed_pc_and_store_step,
+        packed_jumps,
+        packed_register_steps,
+        store_prev_value,
+    ]
+}
+
 #[test]
 #[cfg(feature = "cuda")]
 fn cuda_pending_canonical_check_reports_valid_and_invalid_words() {
@@ -369,7 +452,7 @@ fn cuda_expands_zisk_main_trace_descriptors() {
 #[test]
 #[cfg(feature = "cuda")]
 fn cuda_expands_main_trace_descriptors_with_store_address_layout() {
-    const WORDS_PER_DESCRIPTOR: usize = 11;
+    const WORDS_PER_DESCRIPTOR: usize = 10;
     const KIND_REGISTER: u64 = 3;
     const KIND_INDIRECT: u64 = 4;
     const STORE_INDIRECT: u64 = 3;
@@ -402,7 +485,7 @@ fn cuda_expands_main_trace_descriptors_with_store_address_layout() {
         | (KIND_REGISTER << A_KIND_SHIFT)
         | (KIND_INDIRECT << B_KIND_SHIFT)
         | (STORE_INDIRECT << STORE_KIND_SHIFT);
-    let descriptors = [
+    let descriptors = compact_main_trace_descriptor(
         1000,
         7,
         9,
@@ -414,7 +497,7 @@ fn cuda_expands_main_trace_descriptors_with_store_address_layout() {
         packed_i32_pair(-4, 6),
         packed_u32_pair(31, 32),
         (14_u64 << 32) | 13,
-    ];
+    );
 
     let buffer = CudaDeviceBuffer::from_main_trace_descriptors_with_layout(
         &descriptors,
@@ -463,8 +546,15 @@ fn cuda_expands_main_trace_descriptors_with_store_address_layout() {
 #[test]
 #[cfg(feature = "cuda")]
 fn cuda_extends_shifted_main_trace_rows_directly_from_compact_descriptors() {
-    const WORDS_PER_DESCRIPTOR: usize = 11;
+    const WORDS_PER_DESCRIPTOR: usize = 10;
     const TRACE_COLUMNS: usize = 39;
+    const KIND_MEMORY: u64 = 1;
+    const KIND_IMMEDIATE: u64 = 2;
+    const KIND_REGISTER: u64 = 3;
+    const KIND_INDIRECT: u64 = 4;
+    const STORE_MEMORY: u64 = 1;
+    const STORE_REGISTER: u64 = 2;
+    const STORE_INDIRECT: u64 = 3;
     const A_KIND_SHIFT: u64 = 32;
     const B_KIND_SHIFT: u64 = 35;
     const STORE_KIND_SHIFT: u64 = 38;
@@ -488,7 +578,12 @@ fn cuda_extends_shifted_main_trace_rows_directly_from_compact_descriptors() {
         let row_u64 = row as u64;
         let a_kind = 1 + row_u64 % 4;
         let b_kind = 1 + (row_u64 + 1) % 4;
-        let store_kind = row_u64 % 4;
+        let explicit_source_count = usize::from(matches!(a_kind, KIND_MEMORY | KIND_INDIRECT))
+            + usize::from(matches!(b_kind, KIND_MEMORY | KIND_INDIRECT));
+        let mut store_kind = row_u64 % 4;
+        if explicit_source_count == 2 && matches!(store_kind, STORE_MEMORY | STORE_INDIRECT) {
+            store_kind = STORE_REGISTER;
+        }
         let control = (row_u64 & 0xff)
             | ((row_u64 & 1) << 8)
             | (((row_u64 >> 1) & 1) << 9)
@@ -500,19 +595,36 @@ fn cuda_extends_shifted_main_trace_rows_directly_from_compact_descriptors() {
             | (a_kind << A_KIND_SHIFT)
             | (b_kind << B_KIND_SHIFT)
             | (store_kind << STORE_KIND_SHIFT);
-        descriptors.extend_from_slice(&[
-            ((row_u64 + 2) << 32) | (row_u64 + 1),
-            ((row_u64 + 4) << 32) | (row_u64 + 3),
+        let a = ((row_u64 + 2) << 32) | (row_u64 + 1);
+        let b = ((row_u64 + 4) << 32) | (row_u64 + 3);
+        let a_payload = match a_kind {
+            KIND_IMMEDIATE => a,
+            KIND_REGISTER => 1 + row_u64 % 31,
+            _ => row_u64.wrapping_mul(0x1_0000_0003),
+        };
+        let b_payload = match b_kind {
+            KIND_IMMEDIATE => b,
+            KIND_REGISTER => 1 + (row_u64 + 7) % 31,
+            _ => row_u64.wrapping_mul(0x2_0000_0005),
+        };
+        let store_payload = if store_kind == STORE_REGISTER {
+            1 + (row_u64 + 13) % 31
+        } else {
+            row_u64.wrapping_mul(0x3_0000_0007)
+        };
+        descriptors.extend_from_slice(&compact_main_trace_descriptor(
+            a,
+            b,
             ((row_u64 + 6) << 32) | (row_u64 + 5),
-            row_u64.wrapping_mul(0x1_0000_0003),
-            row_u64.wrapping_mul(0x2_0000_0005),
-            row_u64.wrapping_mul(0x3_0000_0007),
+            a_payload,
+            b_payload,
+            store_payload,
             control,
             packed_u32_pair(0x1000 + row as u32 * 4, row as u32 + 20),
             packed_i32_pair(-(row as i32) - 1, row as i32 + 2),
             packed_u32_pair(row as u32 + 30, row as u32 + 40),
             ((row_u64 + 50) << 32) | (row_u64 + 60),
-        ]);
+        ));
     }
     let descriptor_buffer =
         CudaDeviceBuffer::from_u64_words(&descriptors).expect("descriptors should upload");
@@ -583,7 +695,7 @@ fn cuda_extends_shifted_main_trace_rows_directly_from_compact_descriptors() {
 #[test]
 #[cfg(feature = "cuda")]
 fn cuda_expands_sparse_main_trace_descriptors_from_device_buffers() {
-    const WORDS_PER_DESCRIPTOR: usize = 11;
+    const WORDS_PER_DESCRIPTOR: usize = 10;
     const SPARSE_WORDS_PER_DESCRIPTOR: usize = 9;
     const KIND_REGISTER: u64 = 3;
     const KIND_INDIRECT: u64 = 4;
@@ -647,7 +759,7 @@ fn cuda_expands_sparse_main_trace_descriptors_from_device_buffers() {
         | (KIND_REGISTER << A_KIND_SHIFT)
         | (KIND_INDIRECT << B_KIND_SHIFT)
         | (STORE_INDIRECT << STORE_KIND_SHIFT);
-    let descriptors = [
+    let semantic_descriptor = [
         1000,
         (2_u64 << 32) | 7,
         (4_u64 << 32) | 9,
@@ -660,12 +772,25 @@ fn cuda_expands_sparse_main_trace_descriptors_from_device_buffers() {
         packed_u32_pair(31, 32),
         (14_u64 << 32) | 13,
     ];
+    let descriptors = compact_main_trace_descriptor(
+        semantic_descriptor[0],
+        semantic_descriptor[1],
+        semantic_descriptor[2],
+        semantic_descriptor[3],
+        semantic_descriptor[4],
+        semantic_descriptor[5],
+        semantic_descriptor[6],
+        semantic_descriptor[7],
+        semantic_descriptor[8],
+        semantic_descriptor[9],
+        semantic_descriptor[10],
+    );
     let mut sparse_descriptors = Vec::with_capacity(SPARSE_WORDS_PER_DESCRIPTOR);
     let mut sparse_high_words = Vec::new();
     append_sparse_row(
         &mut sparse_descriptors,
         &mut sparse_high_words,
-        &descriptors,
+        &semantic_descriptor,
     );
     assert_eq!(sparse_descriptors.len(), SPARSE_WORDS_PER_DESCRIPTOR);
 
@@ -707,7 +832,7 @@ fn cuda_expands_sparse_main_trace_descriptors_from_device_buffers() {
 #[test]
 #[cfg(feature = "cuda")]
 fn cuda_expands_selected_main_trace_descriptor_rows_like_full_layout_slice() {
-    const WORDS_PER_DESCRIPTOR: usize = 11;
+    const WORDS_PER_DESCRIPTOR: usize = 10;
     let descriptors = (0..(WORDS_PER_DESCRIPTOR * 2))
         .map(|word| (word as u64 + 11) * 17)
         .collect::<Vec<_>>();

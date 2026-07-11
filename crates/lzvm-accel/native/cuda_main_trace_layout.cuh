@@ -1,7 +1,7 @@
 #pragma once
 
 constexpr size_t kMainTraceColumns = 39;
-constexpr size_t kMainTraceCompactWords = 11;
+constexpr size_t kMainTraceCompactWords = 10;
 constexpr size_t kMainTraceSparseWords = 9;
 constexpr size_t kMainTraceWideWords = 14;
 constexpr unsigned kMainTraceWarpLanes = 32;
@@ -17,6 +17,10 @@ constexpr uint64_t kMainTraceKindMask = 0x7ULL;
 constexpr unsigned kMainTraceAKindShift = 32;
 constexpr unsigned kMainTraceBKindShift = 35;
 constexpr unsigned kMainTraceStoreKindShift = 38;
+constexpr unsigned kMainTraceARegisterShift = 41;
+constexpr unsigned kMainTraceBRegisterShift = 47;
+constexpr unsigned kMainTraceStoreRegisterShift = 53;
+constexpr uint64_t kMainTraceRegisterMask = 0x3fULL;
 constexpr unsigned kMainTraceLayoutLegacy = 0;
 constexpr unsigned kMainTraceLayoutWithStoreAddress = 1;
 
@@ -85,6 +89,58 @@ __device__ uint64_t main_trace_store_address_field(
         return main_trace_signed_address_field(payload, base);
     }
     return main_trace_store_offset_field(kind, payload);
+}
+
+__device__ uint64_t main_trace_take_compact_payload(
+    uint64_t payload0,
+    uint64_t payload1,
+    unsigned* payload_index) {
+    const uint64_t payload =
+        *payload_index == 0 ? payload0 : (*payload_index == 1 ? payload1 : 0);
+    *payload_index += 1;
+    return payload;
+}
+
+__device__ void main_trace_decode_compact_payloads(
+    uint64_t a,
+    uint64_t b,
+    uint64_t payload0,
+    uint64_t payload1,
+    uint64_t control,
+    uint64_t* a_payload,
+    uint64_t* b_payload,
+    uint64_t* store_payload) {
+    const uint64_t a_kind = (control >> kMainTraceAKindShift) & kMainTraceKindMask;
+    const uint64_t b_kind = (control >> kMainTraceBKindShift) & kMainTraceKindMask;
+    const uint64_t store_kind = (control >> kMainTraceStoreKindShift) & kMainTraceKindMask;
+    unsigned payload_index = 0;
+    if (a_kind == kMainTraceSourceImmediate) {
+        *a_payload = a;
+    } else if (a_kind == kMainTraceSourceRegister) {
+        *a_payload = (control >> kMainTraceARegisterShift) & kMainTraceRegisterMask;
+    } else if (a_kind == kMainTraceSourceMemory || a_kind == kMainTraceSourceIndirect) {
+        *a_payload = main_trace_take_compact_payload(payload0, payload1, &payload_index);
+    } else {
+        *a_payload = 0;
+    }
+    if (b_kind == kMainTraceSourceImmediate) {
+        *b_payload = b;
+    } else if (b_kind == kMainTraceSourceRegister) {
+        *b_payload = (control >> kMainTraceBRegisterShift) & kMainTraceRegisterMask;
+    } else if (b_kind == kMainTraceSourceMemory || b_kind == kMainTraceSourceIndirect) {
+        *b_payload = main_trace_take_compact_payload(payload0, payload1, &payload_index);
+    } else {
+        *b_payload = 0;
+    }
+    if (store_kind == kMainTraceStoreRegister) {
+        *store_payload =
+            (control >> kMainTraceStoreRegisterShift) & kMainTraceRegisterMask;
+    } else if (store_kind == kMainTraceStoreMemory ||
+               store_kind == kMainTraceStoreIndirect) {
+        *store_payload = main_trace_take_compact_payload(payload0, payload1, &payload_index);
+    } else {
+        *store_payload = 0;
+    }
 }
 
 __device__ void main_trace_write_expanded_row(
@@ -464,10 +520,16 @@ __device__ void main_trace_write_descriptor_row(
     uint64_t store_payload;
     uint64_t control;
     if (descriptor_words == kMainTraceCompactWords) {
-        a_payload = descriptor[3];
-        b_payload = descriptor[4];
-        store_payload = descriptor[5];
-        control = descriptor[6];
+        control = descriptor[5];
+        main_trace_decode_compact_payloads(
+            a,
+            b,
+            descriptor[3],
+            descriptor[4],
+            control,
+            &a_payload,
+            &b_payload,
+            &store_payload);
     } else {
         pc = descriptor[3];
         a_payload = descriptor[4];
@@ -482,16 +544,16 @@ __device__ void main_trace_write_descriptor_row(
     uint64_t store_prev_mem_step;
     uint64_t store_prev_value;
     if (descriptor_words == kMainTraceCompactWords) {
-        const uint64_t packed_pc_and_store_step = descriptor[7];
-        const uint64_t packed_jumps = descriptor[8];
-        const uint64_t packed_reg_steps = descriptor[9];
+        const uint64_t packed_pc_and_store_step = descriptor[6];
+        const uint64_t packed_jumps = descriptor[7];
+        const uint64_t packed_reg_steps = descriptor[8];
         pc = packed_pc_and_store_step & 0xffffffffULL;
         jmp_offset1 = main_trace_i32_bits_to_i64_bits(static_cast<uint32_t>(packed_jumps));
         jmp_offset2 = main_trace_i32_bits_to_i64_bits(static_cast<uint32_t>(packed_jumps >> 32));
         a_prev_mem_step = packed_reg_steps & 0xffffffffULL;
         b_prev_mem_step = packed_reg_steps >> 32;
         store_prev_mem_step = packed_pc_and_store_step >> 32;
-        store_prev_value = descriptor[10];
+        store_prev_value = descriptor[9];
     } else {
         jmp_offset1 = descriptor[8];
         jmp_offset2 = descriptor[9];
@@ -524,25 +586,38 @@ __device__ void main_trace_write_compact_descriptor_row(
     uint64_t* row,
     const uint64_t* descriptor,
     unsigned layout_kind) {
-    const uint64_t packed_pc_and_store_step = descriptor[7];
-    const uint64_t packed_jumps = descriptor[8];
-    const uint64_t packed_reg_steps = descriptor[9];
+    const uint64_t control = descriptor[5];
+    uint64_t a_payload;
+    uint64_t b_payload;
+    uint64_t store_payload;
+    main_trace_decode_compact_payloads(
+        descriptor[0],
+        descriptor[1],
+        descriptor[3],
+        descriptor[4],
+        control,
+        &a_payload,
+        &b_payload,
+        &store_payload);
+    const uint64_t packed_pc_and_store_step = descriptor[6];
+    const uint64_t packed_jumps = descriptor[7];
+    const uint64_t packed_reg_steps = descriptor[8];
     main_trace_write_expanded_row(
         row,
         descriptor[0],
         descriptor[1],
         descriptor[2],
         packed_pc_and_store_step & 0xffffffffULL,
-        descriptor[3],
-        descriptor[4],
-        descriptor[5],
-        descriptor[6],
+        a_payload,
+        b_payload,
+        store_payload,
+        control,
         main_trace_i32_bits_to_i64_bits(static_cast<uint32_t>(packed_jumps)),
         main_trace_i32_bits_to_i64_bits(static_cast<uint32_t>(packed_jumps >> 32)),
         packed_reg_steps & 0xffffffffULL,
         packed_reg_steps >> 32,
         packed_pc_and_store_step >> 32,
-        descriptor[10],
+        descriptor[9],
         layout_kind);
 }
 
@@ -603,15 +678,19 @@ __global__ void expand_main_trace_compact_descriptors_layout_warp_rows_kernel(
     const uint64_t d7 = main_trace_shuffle_u64(local, 7);
     const uint64_t d8 = main_trace_shuffle_u64(local, 8);
     const uint64_t d9 = main_trace_shuffle_u64(local, 9);
-    const uint64_t d10 = main_trace_shuffle_u64(local, 10);
-    const uint64_t pc = d7 & 0xffffffffULL;
+    uint64_t a_payload;
+    uint64_t b_payload;
+    uint64_t store_payload;
+    main_trace_decode_compact_payloads(
+        d0, d1, d3, d4, d5, &a_payload, &b_payload, &store_payload);
+    const uint64_t pc = d6 & 0xffffffffULL;
     const uint64_t jmp_offset1 =
-        main_trace_i32_bits_to_i64_bits(static_cast<uint32_t>(d8));
+        main_trace_i32_bits_to_i64_bits(static_cast<uint32_t>(d7));
     const uint64_t jmp_offset2 =
-        main_trace_i32_bits_to_i64_bits(static_cast<uint32_t>(d8 >> 32));
-    const uint64_t a_prev_mem_step = d9 & 0xffffffffULL;
-    const uint64_t b_prev_mem_step = d9 >> 32;
-    const uint64_t store_prev_mem_step = d7 >> 32;
+        main_trace_i32_bits_to_i64_bits(static_cast<uint32_t>(d7 >> 32));
+    const uint64_t a_prev_mem_step = d8 & 0xffffffffULL;
+    const uint64_t b_prev_mem_step = d8 >> 32;
+    const uint64_t store_prev_mem_step = d6 >> 32;
 
     row[lane] = main_trace_expanded_column(
         lane,
@@ -619,16 +698,16 @@ __global__ void expand_main_trace_compact_descriptors_layout_warp_rows_kernel(
         d1,
         d2,
         pc,
-        d3,
-        d4,
+        a_payload,
+        b_payload,
+        store_payload,
         d5,
-        d6,
         jmp_offset1,
         jmp_offset2,
         a_prev_mem_step,
         b_prev_mem_step,
         store_prev_mem_step,
-        d10,
+        d9,
         layout_kind);
     if (lane < kMainTraceColumns - kMainTraceWarpLanes) {
         const size_t tail_column = lane + kMainTraceWarpLanes;
@@ -638,16 +717,16 @@ __global__ void expand_main_trace_compact_descriptors_layout_warp_rows_kernel(
             d1,
             d2,
             pc,
-            d3,
-            d4,
+            a_payload,
+            b_payload,
+            store_payload,
             d5,
-            d6,
             jmp_offset1,
             jmp_offset2,
             a_prev_mem_step,
             b_prev_mem_step,
             store_prev_mem_step,
-            d10,
+            d9,
             layout_kind);
     }
 }
