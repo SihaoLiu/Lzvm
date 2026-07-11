@@ -6,6 +6,8 @@ constexpr size_t kNttThreadFactorStageCount = kMaxRootBits - kNttThreadFactorMin
 constexpr size_t kNttThreadFactorDirectionCount = 2;
 constexpr size_t kNttThreadFactorCount =
     kNttThreadFactorDirectionCount * kNttThreadFactorStageCount * kThreads;
+constexpr size_t kNttInitialStageBits = 9;
+constexpr size_t kNttInitialStageLen = static_cast<size_t>(1) << kNttInitialStageBits;
 constexpr size_t kNttColumnGroupSize = 4;
 constexpr size_t kNttBlockStageColumnsPerThread = 2;
 
@@ -102,6 +104,54 @@ __global__ void ntt_stage_kernel(
         const uint64_t odd = mul_mod(values[odd_index], factor);
         values[even_index] = add_mod(even, odd);
         values[odd_index] = sub_mod(even, odd);
+    }
+}
+
+// After bit reversal, stages 1 through 9 are independent within 512-value chunks.
+__global__ void ntt_initial_stages_kernel(
+    uint64_t* values,
+    size_t len,
+    size_t value_stride,
+    size_t fused_stage_bits,
+    bool inverse_roots) {
+    __shared__ uint64_t stage_values[kNttInitialStageLen];
+
+    const size_t chunk_len = static_cast<size_t>(1) << fused_stage_bits;
+    const size_t chunk_start = static_cast<size_t>(blockIdx.x) * chunk_len;
+    uint64_t* column_values = values + static_cast<size_t>(blockIdx.y) * value_stride;
+    for (size_t index = threadIdx.x; index < chunk_len; index += blockDim.x) {
+        const size_t value_index = chunk_start + index;
+        stage_values[index] = value_index < len ? column_values[value_index] : 0;
+    }
+    __syncthreads();
+
+#pragma unroll
+    for (size_t stage_bits = 1; stage_bits <= kNttInitialStageBits; ++stage_bits) {
+        if (stage_bits <= fused_stage_bits) {
+            const size_t half = static_cast<size_t>(1) << (stage_bits - 1);
+            const size_t pair = threadIdx.x;
+            if (pair < chunk_len / 2) {
+                const size_t group = pair / half;
+                const size_t offset = pair % half;
+                const size_t even_index = group * (half * 2) + offset;
+                const size_t odd_index = even_index + half;
+                const size_t factor_stage =
+                    ntt_stage_thread_factor_index(stage_bits, inverse_roots);
+                const uint64_t factor =
+                    __ldg(&kNttThreadFactors[factor_stage * kThreads + offset]);
+                const uint64_t even = stage_values[even_index];
+                const uint64_t odd = mul_mod(stage_values[odd_index], factor);
+                stage_values[even_index] = add_mod(even, odd);
+                stage_values[odd_index] = sub_mod(even, odd);
+            }
+        }
+        __syncthreads();
+    }
+
+    for (size_t index = threadIdx.x; index < chunk_len; index += blockDim.x) {
+        if (chunk_start + index < len) {
+            column_values[chunk_start + index] = stage_values[index];
+        }
     }
 }
 
@@ -338,7 +388,23 @@ cudaError_t run_ntt(
         return status;
     }
 
-    for (size_t stage_len = 2, stage_bits = 1; stage_len <= len; stage_len <<= 1, ++stage_bits) {
+    size_t first_stage_bits = 1;
+    if (use_precomputed_factors && bits != 0) {
+        const size_t fused_stage_bits = std::min(bits, kNttInitialStageBits);
+        const size_t fused_stage_len = static_cast<size_t>(1) << fused_stage_bits;
+        const size_t fused_blocks = (len + fused_stage_len - 1) / fused_stage_len;
+        ntt_initial_stages_kernel<<<fused_blocks, kThreads, 0, stream>>>(
+            device_values, len, 0, fused_stage_bits, inverse_roots);
+        status = static_cast<cudaError_t>(lzvm_cuda_check_launch());
+        if (status != cudaSuccess) {
+            return status;
+        }
+        first_stage_bits = fused_stage_bits + 1;
+    }
+
+    size_t stage_len = static_cast<size_t>(1) << first_stage_bits;
+    for (size_t stage_bits = first_stage_bits; stage_len <= len;
+         stage_len <<= 1, ++stage_bits) {
         const size_t pair_count = len / 2;
         const size_t stage_blocks = (pair_count + kThreads - 1) / kThreads;
         const size_t half = stage_len / 2;
@@ -383,7 +449,23 @@ cudaError_t run_ntt_column_group(
         return status;
     }
 
-    for (size_t stage_len = 2, stage_bits = 1; stage_len <= len;
+    size_t first_stage_bits = 1;
+    if (use_precomputed_factors && bits != 0) {
+        const size_t fused_stage_bits = std::min(bits, kNttInitialStageBits);
+        const size_t fused_stage_len = static_cast<size_t>(1) << fused_stage_bits;
+        const size_t fused_blocks = (len + fused_stage_len - 1) / fused_stage_len;
+        const dim3 fused_grid(fused_blocks, column_count);
+        ntt_initial_stages_kernel<<<fused_grid, kThreads, 0, stream>>>(
+            device_values, len, value_stride, fused_stage_bits, inverse_roots);
+        status = static_cast<cudaError_t>(lzvm_cuda_check_launch());
+        if (status != cudaSuccess) {
+            return status;
+        }
+        first_stage_bits = fused_stage_bits + 1;
+    }
+
+    size_t stage_len = static_cast<size_t>(1) << first_stage_bits;
+    for (size_t stage_bits = first_stage_bits; stage_len <= len;
          stage_len <<= 1, ++stage_bits) {
         const size_t pair_count = len / 2;
         const size_t stage_blocks = (pair_count + kThreads - 1) / kThreads;

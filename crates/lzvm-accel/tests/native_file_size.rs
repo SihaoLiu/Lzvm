@@ -233,6 +233,33 @@ fn ntt_reuses_precomputed_factors_in_non_block_stages() {
 }
 
 #[test]
+fn ntt_fuses_initial_stages_in_shared_memory() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let source = std::fs::read_to_string(crate_root.join("native/cuda_goldilocks_ntt.cuh"))
+        .expect("CUDA NTT native source should read");
+    let fused_body = function_body(
+        &source,
+        "__global__ void ntt_initial_stages_kernel",
+        "__global__ void ntt_stage_block_twiddle_kernel",
+    );
+    let run_ntt_body = function_body(
+        &source,
+        "cudaError_t run_ntt",
+        "int run_coset_extend_on_device_unsynced",
+    );
+
+    assert!(
+        source.contains("constexpr size_t kNttInitialStageBits = 9;")
+            && fused_body.contains("__shared__ uint64_t stage_values[kNttInitialStageLen]")
+            && fused_body.contains("stage_bits <= kNttInitialStageBits")
+            && fused_body.contains("__syncthreads()")
+            && run_ntt_body.contains("ntt_initial_stages_kernel<<<")
+            && run_ntt_body.contains("first_stage_bits = fused_stage_bits + 1"),
+        "canonical NTTs should fuse their first nine stages in shared memory"
+    );
+}
+
+#[test]
 fn ntt_block_twiddle_kernel_reuses_precomputed_thread_factors() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let source = std::fs::read_to_string(crate_root.join("native/cuda_goldilocks_ntt.cuh"))

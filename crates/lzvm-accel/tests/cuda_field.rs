@@ -1765,6 +1765,27 @@ fn cuda_computes_forward_ntt() {
 
 #[test]
 #[cfg(feature = "cuda")]
+fn cuda_computes_ntt_across_fused_stage_boundary() {
+    let bits = 10;
+    let input = (0..1_usize << bits)
+        .map(|index| (index as u64 * 17 + 5) % MODULUS)
+        .collect::<Vec<_>>();
+    let mut expected = input
+        .iter()
+        .map(|value| Felt::from_u64(*value))
+        .collect::<Vec<_>>();
+    ntt_in_place(&mut expected, bits).expect("cpu ntt should run");
+    let expected = expected.into_iter().map(Felt::to_u64).collect::<Vec<_>>();
+
+    let actual = cuda_goldilocks_ntt(&input, bits).expect("cuda ntt should run");
+    let recovered = cuda_goldilocks_intt(&actual, bits).expect("cuda intt should run");
+
+    assert_eq!(actual, expected);
+    assert_eq!(recovered, input);
+}
+
+#[test]
+#[cfg(feature = "cuda")]
 fn cuda_initializes_setup_constants_before_ntt() {
     cuda_setup_init(4).expect("cuda setup should initialize");
 

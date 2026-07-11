@@ -58,7 +58,8 @@ pub(crate) fn coset_extend_launch_work(
 }
 
 fn coset_extend_ntt_stage_launch_count(bits: usize) -> usize {
-    bits.min(9)
+    // Canonical CUDA NTTs fuse stages 1 through 9 into one shared-memory launch.
+    usize::from(bits != 0)
 }
 
 fn coset_extend_ntt_block_twiddle_launch_count(bits: usize) -> usize {
@@ -74,18 +75,18 @@ mod launch_work_tests {
         let work = coset_extend_launch_work(3, 22, 25);
 
         assert_eq!(work.bit_reverse_launch_count, 2);
-        assert_eq!(work.ntt_stage_launch_count, 18);
+        assert_eq!(work.ntt_stage_launch_count, 2);
         assert_eq!(work.ntt_block_twiddle_launch_count, 29);
-        assert_eq!(work.ntt_launch_count, 49);
+        assert_eq!(work.ntt_launch_count, 33);
         assert_eq!(work.normalize_launch_count, 1);
         assert_eq!(work.pack_launch_count, 1);
         assert_eq!(work.unpack_launch_count, 1);
 
         let two_groups = coset_extend_launch_work(5, 22, 25);
         assert_eq!(two_groups.bit_reverse_launch_count, 4);
-        assert_eq!(two_groups.ntt_stage_launch_count, 36);
+        assert_eq!(two_groups.ntt_stage_launch_count, 4);
         assert_eq!(two_groups.ntt_block_twiddle_launch_count, 58);
-        assert_eq!(two_groups.ntt_launch_count, 98);
+        assert_eq!(two_groups.ntt_launch_count, 66);
         assert_eq!(two_groups.normalize_launch_count, 2);
     }
 }
