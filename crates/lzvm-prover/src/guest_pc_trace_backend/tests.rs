@@ -3479,7 +3479,7 @@ fn pending_work_units_parallel_lower_without_replay_snapshots() {
         );
     }
 
-    let work_units = pending
+    let mut work_units = pending
         .into_iter()
         .map(GuestPcTraceParallelLowerWorkUnit::try_from)
         .collect::<Result<Vec<_>, _>>()
@@ -3489,9 +3489,37 @@ fn pending_work_units_parallel_lower_without_replay_snapshots() {
         .all(|unit| unit.reports.len() == unit.report_count));
     assert!(work_units.iter().all(|unit| !unit.reports_elided));
 
-    let parallel =
+    let recycled_work_unit = work_units
+        .pop()
+        .expect("pending work units should include a recyclable tail segment");
+    let recycled_report_capacity = recycled_work_unit.reports.capacity();
+    let (recycled_report_sender, recycled_report_receiver) = std::sync::mpsc::channel();
+    let mut first_timing = GuestPcTraceStreamTiming::default();
+    let recycled_parallel = lower_guest_pc_trace_parallel_work_unit_job(
+        &layout,
+        recycled_work_unit,
+        None,
+        GuestPcTraceParallelLowerMode::from_env(),
+        &mut first_timing,
+        Some(&recycled_report_sender),
+    )
+    .expect("recycled parallel work unit should lower")
+    .lowered;
+    let recycled_reports = recycled_report_receiver
+        .try_recv()
+        .expect("parallel work unit should recycle its report buffer");
+    assert!(recycled_reports.is_empty());
+    assert_eq!(recycled_reports.capacity(), recycled_report_capacity);
+    let recycled_ptr = recycled_reports.as_ptr();
+    let reused_reports =
+        new_guest_pc_trace_report_buffer::<true>(32, layout.row_count(), Some(recycled_reports));
+    assert_eq!(reused_reports.as_ptr(), recycled_ptr);
+    assert_eq!(reused_reports.capacity(), recycled_report_capacity);
+
+    let mut parallel =
         lower_guest_pc_trace_parallel_lower_work_units_with_workers(&layout, work_units, None, 2)
             .expect("parallel work units should lower");
+    parallel.push(recycled_parallel);
 
     assert_eq!(parallel.len(), serial.len());
     for (parallel, serial) in parallel.iter().zip(serial.iter()) {
@@ -3652,7 +3680,7 @@ fn seeded_pending_segment_owned_streaming_lower_matches_borrowed_output() {
     let mut owned_timing = GuestPcTraceStreamTiming::default();
     let owned = lower_guest_pc_trace_owned_streaming_pending_segment(
         &layout,
-        segment,
+        &segment,
         &seed,
         None,
         false,
@@ -3723,7 +3751,7 @@ fn live_chunks_before_segment_start_lower_with_traceless_output() {
         .expect("seed mirror should attach a segment seed")
         .clone();
     let expected_lowered = lower_guest_pc_trace_owned_streaming_pending_segment(
-        &layout, expected, &seed, None, false, None,
+        &layout, &expected, &seed, None, false, None,
     )
     .expect("expected segment should lower");
 

@@ -4399,6 +4399,7 @@ fn run_guest_pc_trace_segment_slice_with_cache(
         None,
         instruction_cache,
         timing,
+        None,
     )
 }
 
@@ -4493,6 +4494,7 @@ fn run_guest_pc_trace_segment_slice_with_boundary_snapshot_and_cache(
         Some(boundary_snapshot),
         instruction_cache,
         timing,
+        None,
     )
 }
 
@@ -4538,6 +4540,7 @@ fn run_guest_pc_trace_segment_slice_with_elided_reports_and_boundary_snapshot_an
         Some(boundary_snapshot),
         instruction_cache,
         timing,
+        None,
     )
 }
 
@@ -5089,12 +5092,19 @@ fn finish_guest_pc_trace_segment_slice(
 fn new_guest_pc_trace_report_buffer<const RETAIN_REPORTS: bool>(
     instruction_limit: u64,
     row_limit: usize,
+    recycled_reports: Option<Vec<GuestMachineReport>>,
 ) -> Vec<GuestMachineReport> {
     if !RETAIN_REPORTS {
         return Vec::new();
     }
     let instruction_capacity = usize::try_from(instruction_limit).unwrap_or(usize::MAX);
-    Vec::with_capacity(row_limit.min(instruction_capacity))
+    let report_capacity = row_limit.min(instruction_capacity);
+    let mut reports = recycled_reports.unwrap_or_default();
+    reports.clear();
+    if reports.capacity() < report_capacity {
+        reports.reserve_exact(report_capacity);
+    }
+    reports
 }
 
 fn run_guest_pc_trace_segment_slice_inner<
@@ -5110,6 +5120,7 @@ fn run_guest_pc_trace_segment_slice_inner<
     boundary_snapshot: Option<&mut ZiskMainRunnerBoundarySnapshot>,
     instruction_cache: &mut GuestInstructionCache,
     timing: Option<&mut GuestPcTraceStreamTiming>,
+    recycled_reports: Option<Vec<GuestMachineReport>>,
 ) -> Result<GuestPcTraceSegmentSlice, GuestPcTraceBackendError> {
     let runner_timing_config =
         GuestPcTraceRunnerTimingConfig::from_env_if_enabled(timing.is_some());
@@ -5125,6 +5136,7 @@ fn run_guest_pc_trace_segment_slice_inner<
             instruction_cache,
             timing,
             runner_timing_config,
+            recycled_reports,
         )
     } else {
         run_guest_pc_trace_segment_slice_inner_configured::<TRACK_BOUNDARY, RETAIN_REPORTS, false>(
@@ -5138,6 +5150,7 @@ fn run_guest_pc_trace_segment_slice_inner<
             instruction_cache,
             None,
             runner_timing_config,
+            recycled_reports,
         )
     }
 }
@@ -5157,9 +5170,13 @@ fn run_guest_pc_trace_segment_slice_inner_configured<
     instruction_cache: &mut GuestInstructionCache,
     mut timing: Option<&mut GuestPcTraceStreamTiming>,
     runner_timing_config: GuestPcTraceRunnerTimingConfig,
+    recycled_reports: Option<Vec<GuestMachineReport>>,
 ) -> Result<GuestPcTraceSegmentSlice, GuestPcTraceBackendError> {
-    let mut reports =
-        new_guest_pc_trace_report_buffer::<RETAIN_REPORTS>(instruction_limit, row_limit);
+    let mut reports = new_guest_pc_trace_report_buffer::<RETAIN_REPORTS>(
+        instruction_limit,
+        row_limit,
+        recycled_reports,
+    );
     let mut last_report_shape = None;
     let mut report_count = 0_usize;
     let mut executed_instructions = 0_u64;
@@ -5999,6 +6016,7 @@ fn produce_guest_pc_trace_segments(
 
     let (pending_sender, pending_receiver) =
         mpsc::sync_channel(guest_pc_trace_segment_queue_capacity());
+    let (recycled_report_sender, recycled_report_receiver) = mpsc::channel();
     thread::scope(|scope| {
         let runner = spawn_guest_pc_trace_thread(scope, "lzvm-gp-runner", move || {
             let runner_started = Instant::now();
@@ -6031,11 +6049,12 @@ fn produce_guest_pc_trace_segments(
                     &mut send_message,
                 )
             } else {
-                produce_guest_pc_trace_pending_slices(
+                produce_guest_pc_trace_pending_slices_with_recycled_reports(
                     instruction_limit,
                     context,
                     input,
                     row_count,
+                    Some(&recycled_report_receiver),
                     |mut pending| {
                         if report_chunks_enabled
                             && !pending.reports_elided
@@ -6111,10 +6130,11 @@ fn produce_guest_pc_trace_segments(
 
         let lowerer_started = Instant::now();
         let mut timing = GuestPcTraceStreamTiming::default();
-        let result = lower_guest_pc_trace_pending_segments(
+        let result = lower_guest_pc_trace_pending_segments_with_recycled_reports(
             instruction_limit,
             layout,
             pending_receiver,
+            Some(recycled_report_sender),
             expected_proof_values,
             &mut timing,
             &mut emit,
@@ -6800,11 +6820,30 @@ fn produce_guest_pc_trace_live_pending_messages(
     })
 }
 
+#[cfg(test)]
 fn produce_guest_pc_trace_pending_slices(
     instruction_limit: u64,
     context: WitnessComputeContext<'_>,
     input: &[u8],
     row_count: usize,
+    emit: impl FnMut(GuestPcTracePendingSegmentSlice) -> Result<(), GuestPcTraceBackendError>,
+) -> Result<GuestPcTracePendingSliceProduction, GuestPcTraceBackendError> {
+    produce_guest_pc_trace_pending_slices_with_recycled_reports(
+        instruction_limit,
+        context,
+        input,
+        row_count,
+        None,
+        emit,
+    )
+}
+
+fn produce_guest_pc_trace_pending_slices_with_recycled_reports(
+    instruction_limit: u64,
+    context: WitnessComputeContext<'_>,
+    input: &[u8],
+    row_count: usize,
+    recycled_report_receiver: Option<&mpsc::Receiver<Vec<GuestMachineReport>>>,
     mut emit: impl FnMut(GuestPcTracePendingSegmentSlice) -> Result<(), GuestPcTraceBackendError>,
 ) -> Result<GuestPcTracePendingSliceProduction, GuestPcTraceBackendError> {
     let layout = context
@@ -6857,6 +6896,8 @@ fn produce_guest_pc_trace_pending_slices(
                 message: "Zisk Main trace instance index is too large".to_owned(),
             }
         })?;
+        let recycled_reports =
+            recycled_report_receiver.and_then(|receiver| receiver.try_recv().ok());
         let slice = if let Some(snapshot) = runner_boundary_snapshot.as_mut() {
             if report_elision {
                 run_guest_pc_trace_segment_slice_inner::<true, false>(
@@ -6869,6 +6910,7 @@ fn produce_guest_pc_trace_pending_slices(
                     Some(snapshot),
                     &mut instruction_cache,
                     Some(&mut timing),
+                    None,
                 )?
             } else {
                 run_guest_pc_trace_segment_slice_inner::<true, true>(
@@ -6881,6 +6923,7 @@ fn produce_guest_pc_trace_pending_slices(
                     Some(snapshot),
                     &mut instruction_cache,
                     Some(&mut timing),
+                    recycled_reports,
                 )?
             }
         } else {
@@ -6894,6 +6937,7 @@ fn produce_guest_pc_trace_pending_slices(
                 None,
                 &mut instruction_cache,
                 Some(&mut timing),
+                recycled_reports,
             )?
         };
         timing.trace_runner_report_buffer_capacity += slice.report_capacity;
@@ -7209,6 +7253,7 @@ fn discover_guest_pc_trace_segment_seeds(
             Some(&mut boundary_snapshot),
             &mut instruction_cache,
             Some(&mut timing),
+            None,
         )?;
         timing.trace_runner_report_buffer_capacity += slice.report_capacity;
         timing.trace_runner_report_buffer_max_capacity = timing
@@ -7385,7 +7430,7 @@ fn lower_guest_pc_trace_seeded_pending_segment_with_output_mode(
 #[cfg(feature = "cuda")]
 fn lower_guest_pc_trace_owned_streaming_pending_segment(
     layout: &WitnessTraceLayout,
-    pending: GuestPcTracePendingSegmentSlice,
+    pending: &GuestPcTracePendingSegmentSlice,
     seed: &ZiskMainSegmentSeed,
     expected_proof_values: Option<&[WitnessTraceProofValue]>,
     traceless_segment_output: bool,
@@ -7500,34 +7545,50 @@ fn lower_guest_pc_trace_parallel_work_unit_job(
     expected_proof_values: Option<&[WitnessTraceProofValue]>,
     lower_mode: GuestPcTraceParallelLowerMode,
     timing: &mut GuestPcTraceStreamTiming,
+    recycled_report_sender: Option<&mpsc::Sender<Vec<GuestMachineReport>>>,
 ) -> Result<GuestPcTraceSeededLoweredSegment, GuestPcTraceBackendError> {
     let seed = (*work_unit.seed).clone();
-    let pending = GuestPcTracePendingSegmentSlice::from(work_unit);
+    let mut pending = GuestPcTracePendingSegmentSlice::from(work_unit);
     #[cfg(feature = "cuda")]
-    if lower_mode.owned_streaming_lower {
-        return Ok(GuestPcTraceSeededLoweredSegment {
-            seed: seed.clone(),
-            lowered: lower_guest_pc_trace_owned_streaming_pending_segment(
-                layout,
-                pending,
-                &seed,
-                expected_proof_values,
-                lower_mode.traceless_segment_output,
-                Some(timing),
-            )?,
-        });
-    }
-    Ok(GuestPcTraceSeededLoweredSegment {
-        seed: seed.clone(),
-        lowered: lower_guest_pc_trace_seeded_pending_segment_with_output_mode(
+    let result = if lower_mode.owned_streaming_lower {
+        lower_guest_pc_trace_owned_streaming_pending_segment(
             layout,
             &pending,
             &seed,
             expected_proof_values,
             lower_mode.traceless_segment_output,
             Some(timing),
-        )?,
-    })
+        )
+    } else {
+        lower_guest_pc_trace_seeded_pending_segment_with_output_mode(
+            layout,
+            &pending,
+            &seed,
+            expected_proof_values,
+            lower_mode.traceless_segment_output,
+            Some(timing),
+        )
+    };
+    #[cfg(not(feature = "cuda"))]
+    let result = lower_guest_pc_trace_seeded_pending_segment_with_output_mode(
+        layout,
+        &pending,
+        &seed,
+        expected_proof_values,
+        lower_mode.traceless_segment_output,
+        Some(timing),
+    );
+    let result = result.map(|lowered| GuestPcTraceSeededLoweredSegment {
+        seed: seed.clone(),
+        lowered,
+    });
+
+    if let Some(sender) = recycled_report_sender {
+        let mut reports = std::mem::take(&mut pending.reports);
+        reports.clear();
+        let _ = sender.send(reports);
+    }
+    result
 }
 
 fn lower_guest_pc_trace_replayable_pending_job(
@@ -7559,7 +7620,7 @@ fn lower_guest_pc_trace_replayable_pending_job(
             seed: seed.clone(),
             lowered: lower_guest_pc_trace_owned_streaming_pending_segment(
                 layout,
-                pending,
+                &pending,
                 &seed,
                 expected_proof_values,
                 traceless_segment_output,
@@ -8620,10 +8681,31 @@ fn validate_guest_pc_trace_no_pending_report_chunks(
     })
 }
 
+#[cfg(all(test, feature = "cuda"))]
 fn lower_guest_pc_trace_pending_segments(
     instruction_limit: u64,
     layout: &WitnessTraceLayout,
     pending_receiver: mpsc::Receiver<GuestPcTracePendingSegmentMessage>,
+    expected_proof_values: Option<&[WitnessTraceProofValue]>,
+    timing: &mut GuestPcTraceStreamTiming,
+    emit: &mut impl FnMut(GuestPcTraceSegmentTrace) -> Result<(), GuestPcTraceBackendError>,
+) -> Result<GuestPcTraceStreamResult, GuestPcTraceBackendError> {
+    lower_guest_pc_trace_pending_segments_with_recycled_reports(
+        instruction_limit,
+        layout,
+        pending_receiver,
+        None,
+        expected_proof_values,
+        timing,
+        emit,
+    )
+}
+
+fn lower_guest_pc_trace_pending_segments_with_recycled_reports(
+    instruction_limit: u64,
+    layout: &WitnessTraceLayout,
+    pending_receiver: mpsc::Receiver<GuestPcTracePendingSegmentMessage>,
+    recycled_report_sender: Option<mpsc::Sender<Vec<GuestMachineReport>>>,
     expected_proof_values: Option<&[WitnessTraceProofValue]>,
     timing: &mut GuestPcTraceStreamTiming,
     emit: &mut impl FnMut(GuestPcTraceSegmentTrace) -> Result<(), GuestPcTraceBackendError>,
@@ -8636,6 +8718,7 @@ fn lower_guest_pc_trace_pending_segments(
             instruction_limit,
             layout,
             pending_receiver,
+            recycled_report_sender,
             expected_proof_values,
             timing,
             emit,
@@ -8792,7 +8875,7 @@ fn lower_guest_pc_trace_pending_segments(
             let segment_seed = segment_seed.clone();
             lower_guest_pc_trace_owned_streaming_pending_segment(
                 layout,
-                pending,
+                &pending,
                 &segment_seed,
                 expected_proof_values,
                 traceless_segment_output,
@@ -9044,7 +9127,7 @@ fn lower_guest_pc_trace_parallel_pending_job_with_mode(
             seed: seed.clone(),
             lowered: lower_guest_pc_trace_owned_streaming_pending_segment(
                 layout,
-                pending,
+                &pending,
                 &seed,
                 expected_proof_values,
                 lower_mode.traceless_segment_output,
@@ -9360,6 +9443,7 @@ fn lower_guest_pc_trace_pending_segments_parallel(
     instruction_limit: u64,
     layout: &WitnessTraceLayout,
     pending_receiver: mpsc::Receiver<GuestPcTracePendingSegmentMessage>,
+    recycled_report_sender: Option<mpsc::Sender<Vec<GuestMachineReport>>>,
     expected_proof_values: Option<&[WitnessTraceProofValue]>,
     timing: &mut GuestPcTraceStreamTiming,
     emit: &mut impl FnMut(GuestPcTraceSegmentTrace) -> Result<(), GuestPcTraceBackendError>,
@@ -9381,6 +9465,7 @@ fn lower_guest_pc_trace_pending_segments_parallel(
                 mpsc::sync_channel::<GuestPcTraceParallelLowerJob>(job_queue_capacity);
             job_senders.push(job_sender);
             let result_sender = result_sender.clone();
+            let recycled_report_sender = recycled_report_sender.clone();
             worker_handles.push(spawn_guest_pc_trace_thread(
                 scope,
                 "lzvm-gp-plow",
@@ -9423,6 +9508,7 @@ fn lower_guest_pc_trace_pending_segments_parallel(
                                     expected_proof_values,
                                     lower_mode,
                                     &mut worker_timing,
+                                    recycled_report_sender.as_ref(),
                                 );
                                 (trace_instance_index, Some(result))
                             }

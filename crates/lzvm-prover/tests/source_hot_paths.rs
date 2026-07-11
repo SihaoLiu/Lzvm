@@ -12647,13 +12647,15 @@ fn guest_pc_trace_retained_reports_preallocate_segment_buffer() {
     );
 
     assert!(
-        constructor_body.contains("Vec::with_capacity(row_limit.min(instruction_capacity))"),
-        "retained guest PC report buffers should allocate to the segment limit before the hot loop"
+        constructor_body.contains("let report_capacity = row_limit.min(instruction_capacity);")
+            && constructor_body.contains("recycled_reports.unwrap_or_default()")
+            && constructor_body.contains("if reports.capacity() < report_capacity")
+            && constructor_body.contains("reports.reserve_exact(report_capacity)"),
+        "retained guest PC report buffers should reuse capacity and grow to the segment limit before the hot loop"
     );
     assert!(
-        runner_body.contains(
-            "new_guest_pc_trace_report_buffer::<RETAIN_REPORTS>(instruction_limit, row_limit)"
-        ),
+        runner_body.contains("new_guest_pc_trace_report_buffer::<RETAIN_REPORTS>(")
+            && runner_body.contains("recycled_reports,"),
         "guest PC trace slices should use the retained report buffer constructor"
     );
     assert!(
@@ -12805,6 +12807,49 @@ fn guest_pc_trace_segments_report_buffer_capacity_shape() {
             && source.contains("trace_report_buffer_max_capacity")
             && source.contains("trace_report_buffer_excess_capacity"),
         "guest PC trace timing should aggregate report buffer capacity shape"
+    );
+}
+
+#[test]
+fn guest_pc_trace_parallel_work_units_recycle_report_buffers() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let source_path = crate_root.join("src/guest_pc_trace_backend.rs");
+    let source = std::fs::read_to_string(&source_path).expect("guest PC trace source should read");
+
+    let buffer_body = function_body(
+        &source,
+        "fn new_guest_pc_trace_report_buffer",
+        "fn run_guest_pc_trace_segment_slice_inner",
+    );
+    assert!(
+        buffer_body.contains("recycled_reports.unwrap_or_default()")
+            && buffer_body.contains("reports.clear()")
+            && buffer_body.contains("reports.reserve_exact(report_capacity)"),
+        "retained report buffers should reuse returned capacity and grow only when required"
+    );
+
+    let producer_body = function_body(
+        &source,
+        "fn produce_guest_pc_trace_segments",
+        "struct GuestPcTracePendingSliceProduction",
+    );
+    assert!(
+        producer_body.contains("let (recycled_report_sender, recycled_report_receiver)")
+            && producer_body.contains("Some(&recycled_report_receiver)")
+            && producer_body.contains("Some(recycled_report_sender)"),
+        "the runner and parallel lowerer should share the report-buffer recycle channel"
+    );
+
+    let work_unit_body = function_body(
+        &source,
+        "fn lower_guest_pc_trace_parallel_work_unit_job",
+        "fn lower_guest_pc_trace_replayable_pending_job",
+    );
+    assert!(
+        work_unit_body.contains("std::mem::take(&mut pending.reports)")
+            && work_unit_body.contains("reports.clear()")
+            && work_unit_body.contains("sender.send(reports)"),
+        "work-unit lowering should clear initialized reports before recycling their allocation"
     );
 }
 
