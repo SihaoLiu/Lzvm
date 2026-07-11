@@ -22,8 +22,8 @@ fn cuda_allocator_pending_no_wait_limit_is_runtime_configurable() {
 
     assert!(
         native_source.contains("kPendingCacheNoWaitBytes")
-            && native_source.contains("std::size_t{128} << 20"),
-        "CUDA allocator should keep the default pending no-wait limit at 128 MiB"
+            && native_source.contains("std::size_t{512} << 20"),
+        "CUDA allocator should keep the default pending no-wait limit at 512 MiB"
     );
     assert!(
         native_source.contains("LZVM_CUDA_PENDING_CACHE_NO_WAIT_BYTES")
