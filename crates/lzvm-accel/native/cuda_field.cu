@@ -30,9 +30,8 @@ constexpr size_t kMaxRootBits = 32;
 constexpr size_t kInlineRowMajorRowSourceLimit = 16;
 constexpr uint64_t kGoldilocksEpsilon = 0xffffffffULL;
 
-__device__ __constant__ uint64_t kNttStageRoots[kMaxRootBits + 1];
-__device__ __constant__ uint64_t kNttStageRootInverses[kMaxRootBits + 1];
 __device__ __constant__ unsigned int kNttStageRootLimit;
+
 #include "cuda_field_constants.cuh"
 struct InlineRowMajorRowsRequest {
     uintptr_t sources[kInlineRowMajorRowSourceLimit];
@@ -705,16 +704,10 @@ extern "C" int lzvm_cuda_setup_init(
     int device_id = 0;
     LZVM_CUDA_RETURN_ON_ERROR(cudaGetDevice(&device_id));
     LZVM_CUDA_RETURN_ON_ERROR(cudaSetDevice(device_id));
-    LZVM_CUDA_RETURN_ON_ERROR(
-        cudaMemcpyToSymbol(kNttStageRoots, roots, root_count * sizeof(uint64_t)));
-
     uint64_t inverse_roots[kMaxRootBits + 1];
     for (size_t index = 0; index < root_count; ++index) {
         inverse_roots[index] = host_pow_mod(roots[index], kModulus - 2);
     }
-    LZVM_CUDA_RETURN_ON_ERROR(cudaMemcpyToSymbol(
-        kNttStageRootInverses, inverse_roots, root_count * sizeof(uint64_t)));
-
     LZVM_CUDA_RETURN_ON_ERROR(setup_ntt_thread_factors(roots, inverse_roots, root_count));
 
     const unsigned int root_limit = static_cast<unsigned int>(max_bits_ext);

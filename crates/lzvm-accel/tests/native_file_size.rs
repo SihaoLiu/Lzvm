@@ -186,17 +186,18 @@ fn ntt_uses_block_twiddle_kernel_for_large_stages() {
         "NTT stage dispatch should derive the half-stage length once"
     );
     assert!(
-        run_ntt_body.contains("if (half > kThreads)"),
+        run_ntt_body.contains("else if (half > kThreads)"),
         "block twiddle path should be limited to stages with block-aligned offsets"
     );
     assert!(
-        run_ntt_body.contains("else if (half >= kNttMiddleStageKernelMinHalf)"),
-        "the dedicated middle-stage path should precede the block twiddle path"
+        run_ntt_body.contains("if (!use_precomputed_factors)")
+            && run_ntt_body.contains("ntt_stage_root_kernel"),
+        "noncanonical roots should retain an explicit per-stage fallback"
     );
 }
 
 #[test]
-fn ntt_reuses_precomputed_factors_in_small_and_middle_stages() {
+fn ntt_reuses_precomputed_factors_in_non_block_stages() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let source = std::fs::read_to_string(crate_root.join("native/cuda_goldilocks_ntt.cuh"))
         .expect("CUDA NTT native source should read");
@@ -204,21 +205,11 @@ fn ntt_reuses_precomputed_factors_in_small_and_middle_stages() {
         function_body(
             &source,
             "__global__ void ntt_stage_kernel",
-            "__global__ void ntt_stage_thread_twiddle_kernel",
-        ),
-        function_body(
-            &source,
-            "__global__ void ntt_stage_thread_twiddle_kernel",
             "__global__ void ntt_stage_block_twiddle_kernel",
         ),
         function_body(
             &source,
             "__global__ void ntt_stage_column_group_kernel",
-            "__global__ void ntt_stage_thread_twiddle_column_group_kernel",
-        ),
-        function_body(
-            &source,
-            "__global__ void ntt_stage_thread_twiddle_column_group_kernel",
             "__global__ void ntt_stage_block_twiddle_column_group_kernel",
         ),
     ];
@@ -231,12 +222,13 @@ fn ntt_reuses_precomputed_factors_in_small_and_middle_stages() {
         assert!(
             body.contains("ntt_stage_thread_factor_index(stage_bits, inverse_roots)")
                 && body.contains("__ldg(&kNttThreadFactors["),
-            "small and middle NTT stages should load setup-time twiddle factors"
+            "non-block NTT stages should load setup-time twiddle factors"
         );
     }
     assert!(
-        !source.contains("ntt_stage_prepare_thread_powers"),
-        "NTT stages should not rebuild twiddle powers in each block"
+        !source.contains("ntt_stage_thread_twiddle_kernel")
+            && !source.contains("ntt_stage_thread_twiddle_column_group_kernel"),
+        "identical non-block NTT kernels should stay merged"
     );
 }
 
@@ -291,9 +283,12 @@ fn row_major_ntt_groups_four_columns_per_launch_sequence() {
     assert!(
         ntt_source.contains("constexpr size_t kNttColumnGroupSize = 4;")
             && grouped_ntt_body.contains("ntt_stage_column_group_kernel")
-            && grouped_ntt_body.contains("ntt_stage_thread_twiddle_column_group_kernel")
             && grouped_ntt_body.contains("ntt_stage_block_twiddle_column_group_kernel"),
         "grouped NTT should preserve the tuned four-column stage dispatch"
+    );
+    assert!(
+        grouped_ntt_body.contains("column_count == 0 || column_count > kNttColumnGroupSize"),
+        "grouped NTT should reject column counts outside its fixed kernel bound"
     );
     assert!(
         grouped_normalize_body

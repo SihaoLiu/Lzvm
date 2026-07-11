@@ -4743,12 +4743,76 @@ mod tests {
         cuda_goldilocks_coset_extend_row_major_columns_strided_device,
         cuda_goldilocks_coset_extend_row_major_columns_strided_device_on_stream,
         cuda_poseidon2_begin_width16_linear_round_row_major_digest_device_on_stream,
-        cuda_poseidon2_width16_linear_round_row_major_digest_device, cuda_status,
-        lzvm_cuda_goldilocks_coset_extend_row_major_columns_device_on_stream_raw, pow_mod,
-        row_weight_shift_for_target_row, CudaDeviceBuffer, CudaEvent, CudaRowMajorColumnView,
-        CudaRowMajorCosetExtensionGraphRunner, CudaStream,
-        CudaStridedRowMajorCosetExtensionGraphRunner, SHIFT,
+        cuda_poseidon2_width16_linear_round_row_major_digest_device, cuda_setup_init, cuda_status,
+        lzvm_cuda_goldilocks_coset_extend_row_major_columns_device_on_stream_raw,
+        lzvm_cuda_goldilocks_intt, lzvm_cuda_goldilocks_ntt, mul_mod, pow_mod,
+        row_weight_shift_for_target_row, sub_mod, CudaDeviceBuffer, CudaEvent,
+        CudaRowMajorColumnView, CudaRowMajorCosetExtensionGraphRunner, CudaStream,
+        CudaStridedRowMajorCosetExtensionGraphRunner, GOLDILOCKS_MODULUS, ROOTS_OF_UNITY, SHIFT,
     };
+
+    fn reference_ntt_with_root(mut values: Vec<u64>, bits: usize, root: u64) -> Vec<u64> {
+        let len = values.len();
+        for index in 0..len {
+            let reverse = index.reverse_bits() >> (usize::BITS as usize - bits);
+            if index < reverse {
+                values.swap(index, reverse);
+            }
+        }
+        let mut stage_len = 2;
+        while stage_len <= len {
+            let half = stage_len / 2;
+            let stage_twiddle = pow_mod(root, (len / stage_len) as u64);
+            for group in (0..len).step_by(stage_len) {
+                for offset in 0..half {
+                    let even_index = group + offset;
+                    let odd_index = even_index + half;
+                    let even = values[even_index];
+                    let odd = mul_mod(values[odd_index], pow_mod(stage_twiddle, offset as u64));
+                    values[even_index] =
+                        ((even as u128 + odd as u128) % GOLDILOCKS_MODULUS as u128) as u64;
+                    values[odd_index] = sub_mod(even, odd);
+                }
+            }
+            stage_len <<= 1;
+        }
+        values
+    }
+
+    #[test]
+    fn native_ntt_honors_noncanonical_root_argument() {
+        let _guard = crate::CUDA_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let bits = 3;
+        let input = vec![3, 5, 8, 13, 21, 34, 55, 89];
+        cuda_setup_init(bits).expect("CUDA setup should initialize");
+        let root = pow_mod(ROOTS_OF_UNITY[bits], 3);
+        assert_ne!(root, ROOTS_OF_UNITY[bits]);
+        let expected = reference_ntt_with_root(input.clone(), bits, root);
+        let mut actual = vec![0_u64; input.len()];
+
+        let code = unsafe {
+            lzvm_cuda_goldilocks_ntt(input.as_ptr(), actual.as_mut_ptr(), input.len(), bits, root)
+        };
+
+        assert_eq!(code, 0);
+        assert_eq!(actual, expected);
+
+        let mut recovered = vec![0_u64; input.len()];
+        let code = unsafe {
+            lzvm_cuda_goldilocks_intt(
+                actual.as_ptr(),
+                recovered.as_mut_ptr(),
+                actual.len(),
+                bits,
+                root,
+            )
+        };
+
+        assert_eq!(code, 0);
+        assert_eq!(recovered, input);
+    }
 
     #[test]
     fn copy_from_u64_words_on_stream_matches_blocking_upload() {

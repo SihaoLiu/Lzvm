@@ -1,7 +1,6 @@
 #pragma once
 
 constexpr size_t kNttThreadPowerBits = 8;
-constexpr size_t kNttMiddleStageKernelMinHalf = 16;
 constexpr size_t kNttThreadFactorMinBits = 1;
 constexpr size_t kNttThreadFactorStageCount = kMaxRootBits - kNttThreadFactorMinBits + 1;
 constexpr size_t kNttThreadFactorDirectionCount = 2;
@@ -13,6 +12,9 @@ constexpr size_t kNttBlockStageColumnsPerThread = 2;
 __device__ uint64_t kNttThreadFactors[kNttThreadFactorCount];
 __device__ uint64_t
     kNttBlockTwiddles[kNttThreadFactorDirectionCount * kNttThreadFactorStageCount];
+uint64_t gNttStageRoots[kMaxRootBits + 1];
+uint64_t gNttStageRootInverses[kMaxRootBits + 1];
+size_t gNttStageRootCount = 0;
 
 int setup_ntt_thread_factors(
     const uint64_t* roots,
@@ -36,6 +38,7 @@ int setup_ntt_thread_factors(
             block_twiddles[stage_index] = factor;
         }
     }
+    gNttStageRootCount = 0;
     cudaError_t status = cudaMemcpyToSymbol(
         kNttThreadFactors,
         thread_factors.data(),
@@ -43,11 +46,26 @@ int setup_ntt_thread_factors(
     if (status != cudaSuccess) {
         return static_cast<int>(status);
     }
-    return static_cast<int>(
-        cudaMemcpyToSymbol(
-            kNttBlockTwiddles,
-            block_twiddles.data(),
-            block_twiddles.size() * sizeof(uint64_t)));
+    status = cudaMemcpyToSymbol(
+        kNttBlockTwiddles,
+        block_twiddles.data(),
+        block_twiddles.size() * sizeof(uint64_t));
+    if (status != cudaSuccess) {
+        return static_cast<int>(status);
+    }
+    std::copy_n(roots, root_count, gNttStageRoots);
+    std::copy_n(inverse_roots, root_count, gNttStageRootInverses);
+    gNttStageRootCount = root_count;
+    return 0;
+}
+
+bool ntt_uses_precomputed_factors(size_t bits, uint64_t root, bool inverse_roots) {
+    if (bits >= gNttStageRootCount) {
+        return false;
+    }
+    const uint64_t expected_root =
+        inverse_roots ? gNttStageRootInverses[bits] : gNttStageRoots[bits];
+    return root == expected_root;
 }
 
 __device__ size_t ntt_stage_thread_factor_index(size_t stage_bits, bool inverse_roots) {
@@ -64,30 +82,6 @@ __device__ uint64_t ntt_stage_block_base(uint64_t block_twiddle, size_t block_of
 }
 
 __global__ void ntt_stage_kernel(
-    uint64_t* values,
-    size_t len,
-    size_t stage_len,
-    size_t stage_bits,
-    bool inverse_roots) {
-    const size_t pair_count = len / 2;
-    const size_t pair = blockIdx.x * blockDim.x + threadIdx.x;
-    if (pair < pair_count) {
-        const size_t half = stage_len / 2;
-        const size_t group = pair / half;
-        const size_t offset = pair % half;
-        const size_t even_index = group * stage_len + offset;
-        const size_t odd_index = even_index + half;
-        const size_t factor_stage = ntt_stage_thread_factor_index(stage_bits, inverse_roots);
-        const uint64_t factor =
-            __ldg(&kNttThreadFactors[factor_stage * kThreads + offset]);
-        const uint64_t even = values[even_index];
-        const uint64_t odd = mul_mod(values[odd_index], factor);
-        values[even_index] = add_mod(even, odd);
-        values[odd_index] = sub_mod(even, odd);
-    }
-}
-
-__global__ void ntt_stage_thread_twiddle_kernel(
     uint64_t* values,
     size_t len,
     size_t stage_len,
@@ -144,6 +138,27 @@ __global__ void ntt_stage_block_twiddle_kernel(
     }
 }
 
+__global__ void ntt_stage_root_kernel(
+    uint64_t* values,
+    size_t len,
+    size_t stage_len,
+    uint64_t stage_twiddle) {
+    const size_t pair_count = len / 2;
+    const size_t pair = blockIdx.x * blockDim.x + threadIdx.x;
+    if (pair < pair_count) {
+        const size_t half = stage_len / 2;
+        const size_t group = pair / half;
+        const size_t offset = pair % half;
+        const size_t even_index = group * stage_len + offset;
+        const size_t odd_index = even_index + half;
+        const uint64_t factor = pow_mod(stage_twiddle, offset);
+        const uint64_t even = values[even_index];
+        const uint64_t odd = mul_mod(values[odd_index], factor);
+        values[even_index] = add_mod(even, odd);
+        values[odd_index] = sub_mod(even, odd);
+    }
+}
+
 __global__ void bit_reverse_column_group_kernel(
     uint64_t* values,
     size_t len,
@@ -168,33 +183,6 @@ __global__ void bit_reverse_column_group_kernel(
 }
 
 __global__ void ntt_stage_column_group_kernel(
-    uint64_t* values,
-    size_t len,
-    size_t value_stride,
-    size_t stage_len,
-    size_t stage_bits,
-    bool inverse_roots) {
-    const size_t pair_count = len / 2;
-    const size_t pair = blockIdx.x * blockDim.x + threadIdx.x;
-    if (pair < pair_count) {
-        uint64_t* column_values =
-            values + static_cast<size_t>(blockIdx.y) * value_stride;
-        const size_t half = stage_len / 2;
-        const size_t group = pair / half;
-        const size_t offset = pair % half;
-        const size_t even_index = group * stage_len + offset;
-        const size_t odd_index = even_index + half;
-        const size_t factor_stage = ntt_stage_thread_factor_index(stage_bits, inverse_roots);
-        const uint64_t factor =
-            __ldg(&kNttThreadFactors[factor_stage * kThreads + offset]);
-        const uint64_t even = column_values[even_index];
-        const uint64_t odd = mul_mod(column_values[odd_index], factor);
-        column_values[even_index] = add_mod(even, odd);
-        column_values[odd_index] = sub_mod(even, odd);
-    }
-}
-
-__global__ void ntt_stage_thread_twiddle_column_group_kernel(
     uint64_t* values,
     size_t len,
     size_t value_stride,
@@ -266,6 +254,30 @@ __global__ void ntt_stage_block_twiddle_column_group_kernel(
     }
 }
 
+__global__ void ntt_stage_root_column_group_kernel(
+    uint64_t* values,
+    size_t len,
+    size_t value_stride,
+    size_t stage_len,
+    uint64_t stage_twiddle) {
+    const size_t pair_count = len / 2;
+    const size_t pair = blockIdx.x * blockDim.x + threadIdx.x;
+    if (pair < pair_count) {
+        uint64_t* column_values =
+            values + static_cast<size_t>(blockIdx.y) * value_stride;
+        const size_t half = stage_len / 2;
+        const size_t group = pair / half;
+        const size_t offset = pair % half;
+        const size_t even_index = group * stage_len + offset;
+        const size_t odd_index = even_index + half;
+        const uint64_t factor = pow_mod(stage_twiddle, offset);
+        const uint64_t even = column_values[even_index];
+        const uint64_t odd = mul_mod(column_values[odd_index], factor);
+        column_values[even_index] = add_mod(even, odd);
+        column_values[odd_index] = sub_mod(even, odd);
+    }
+}
+
 __global__ void normalize_shift_and_pad_column_group_kernel(
     uint64_t* values,
     size_t source_len,
@@ -317,6 +329,8 @@ cudaError_t run_ntt(
     uint64_t root,
     bool inverse_roots,
     cudaStream_t stream) {
+    const bool use_precomputed_factors =
+        ntt_uses_precomputed_factors(bits, root, inverse_roots);
     const size_t blocks = (len + kThreads - 1) / kThreads;
     bit_reverse_kernel<<<blocks, kThreads, 0, stream>>>(device_values, len, bits);
     cudaError_t status = static_cast<cudaError_t>(lzvm_cuda_check_launch());
@@ -328,11 +342,12 @@ cudaError_t run_ntt(
         const size_t pair_count = len / 2;
         const size_t stage_blocks = (pair_count + kThreads - 1) / kThreads;
         const size_t half = stage_len / 2;
-        if (half > kThreads) {
+        if (!use_precomputed_factors) {
+            const uint64_t stage_twiddle = host_pow_mod(root, len / stage_len);
+            ntt_stage_root_kernel<<<stage_blocks, kThreads, 0, stream>>>(
+                device_values, len, stage_len, stage_twiddle);
+        } else if (half > kThreads) {
             ntt_stage_block_twiddle_kernel<<<stage_blocks, kThreads, 0, stream>>>(
-                device_values, len, stage_len, stage_bits, inverse_roots);
-        } else if (half >= kNttMiddleStageKernelMinHalf) {
-            ntt_stage_thread_twiddle_kernel<<<stage_blocks, kThreads, 0, stream>>>(
                 device_values, len, stage_len, stage_bits, inverse_roots);
         } else {
             ntt_stage_kernel<<<stage_blocks, kThreads, 0, stream>>>(
@@ -355,6 +370,11 @@ cudaError_t run_ntt_column_group(
     uint64_t root,
     bool inverse_roots,
     cudaStream_t stream) {
+    if (column_count == 0 || column_count > kNttColumnGroupSize) {
+        return cudaErrorInvalidValue;
+    }
+    const bool use_precomputed_factors =
+        ntt_uses_precomputed_factors(bits, root, inverse_roots);
     const size_t blocks = (len + kThreads - 1) / kThreads;
     bit_reverse_column_group_kernel<<<blocks, kThreads, 0, stream>>>(
         device_values, len, value_stride, bits, column_count);
@@ -369,7 +389,11 @@ cudaError_t run_ntt_column_group(
         const size_t stage_blocks = (pair_count + kThreads - 1) / kThreads;
         const size_t half = stage_len / 2;
         const dim3 grid(stage_blocks, column_count);
-        if (half > kThreads) {
+        if (!use_precomputed_factors) {
+            const uint64_t stage_twiddle = host_pow_mod(root, len / stage_len);
+            ntt_stage_root_column_group_kernel<<<grid, kThreads, 0, stream>>>(
+                device_values, len, value_stride, stage_len, stage_twiddle);
+        } else if (half > kThreads) {
             const dim3 block_stage_grid(
                 stage_blocks,
                 (column_count + kNttBlockStageColumnsPerThread - 1) /
@@ -380,14 +404,6 @@ cudaError_t run_ntt_column_group(
                 len,
                 value_stride,
                 column_count,
-                stage_len,
-                stage_bits,
-                inverse_roots);
-        } else if (half >= kNttMiddleStageKernelMinHalf) {
-            ntt_stage_thread_twiddle_column_group_kernel<<<grid, kThreads, 0, stream>>>(
-                device_values,
-                len,
-                value_stride,
                 stage_len,
                 stage_bits,
                 inverse_roots);
