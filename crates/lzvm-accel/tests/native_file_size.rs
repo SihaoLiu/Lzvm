@@ -272,6 +272,11 @@ fn row_major_ntt_groups_four_columns_per_launch_sequence() {
         "cudaError_t run_ntt_column_group",
         "int run_coset_extend_on_device_unsynced",
     );
+    let grouped_normalize_body = function_body(
+        &ntt_source,
+        "__global__ void normalize_shift_and_pad_column_group_kernel",
+        "cudaError_t run_ntt",
+    );
 
     assert!(
         ntt_source.contains("constexpr size_t kNttColumnGroupSize = 4;")
@@ -279,6 +284,12 @@ fn row_major_ntt_groups_four_columns_per_launch_sequence() {
             && grouped_ntt_body.contains("ntt_stage_thread_twiddle_column_group_kernel")
             && grouped_ntt_body.contains("ntt_stage_block_twiddle_column_group_kernel"),
         "grouped NTT should preserve the tuned four-column stage dispatch"
+    );
+    assert!(
+        grouped_normalize_body
+            .contains("for (size_t column = 0; column < kNttColumnGroupSize; ++column)")
+            && !grouped_normalize_body.contains("blockIdx.y"),
+        "grouped NTT normalization should compute each row factor once for the column group"
     );
 
     for body in [

@@ -256,6 +256,7 @@ __global__ void normalize_shift_and_pad_column_group_kernel(
     size_t source_len,
     size_t target_len,
     size_t value_stride,
+    size_t column_count,
     uint64_t inverse_len,
     uint64_t shift) {
     __shared__ uint64_t block_shift;
@@ -271,10 +272,9 @@ __global__ void normalize_shift_and_pad_column_group_kernel(
 
     const size_t index = blockIdx.x * blockDim.x + threadIdx.x;
     if (index < target_len) {
-        uint64_t* column_values =
-            values + static_cast<size_t>(blockIdx.y) * value_stride;
+        uint64_t factor = 0;
         if (index < source_len) {
-            uint64_t factor = block_shift;
+            factor = block_shift;
             size_t exponent = static_cast<size_t>(threadIdx.x);
             for (size_t bit = 0; exponent != 0 && bit < kNttThreadPowerBits;
                  ++bit, exponent >>= 1) {
@@ -282,10 +282,15 @@ __global__ void normalize_shift_and_pad_column_group_kernel(
                     factor = mul_mod(factor, thread_powers[bit]);
                 }
             }
-            column_values[index] =
-                mul_mod(mul_mod(column_values[index], inverse_len), factor);
-        } else {
-            column_values[index] = 0;
+        }
+#pragma unroll
+        for (size_t column = 0; column < kNttColumnGroupSize; ++column) {
+            if (column < column_count) {
+                uint64_t* column_values = values + column * value_stride;
+                column_values[index] = index < source_len
+                    ? mul_mod(mul_mod(column_values[index], inverse_len), factor)
+                    : 0;
+            }
         }
     }
 }
@@ -438,11 +443,12 @@ int run_coset_extend_column_group_on_device_unsynced(
 
     const uint64_t inverse_len = host_pow_mod(static_cast<uint64_t>(source_len), kModulus - 2);
     const size_t blocks = (target_len + kThreads - 1) / kThreads;
-    normalize_shift_and_pad_column_group_kernel<<<dim3(blocks, column_count), kThreads, 0, stream>>>(
+    normalize_shift_and_pad_column_group_kernel<<<blocks, kThreads, 0, stream>>>(
         device_values,
         source_len,
         target_len,
         target_len,
+        column_count,
         inverse_len,
         shift);
     LZVM_CUDA_RETURN_ON_ERROR(lzvm_cuda_check_launch());
