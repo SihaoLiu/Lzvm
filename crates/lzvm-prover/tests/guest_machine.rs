@@ -3,14 +3,22 @@ use lzvm_prover::guest_instruction::{
     RiscvAmoKind, RiscvAmoWidth, RiscvBranchKind, RiscvFenceKind, RiscvInstruction, RiscvLoadKind,
     RiscvOp32Kind, RiscvOpImm32Kind, RiscvOpImmKind, RiscvOpKind, RiscvStoreKind,
 };
+#[cfg(feature = "cuda")]
+use lzvm_prover::guest_machine::GuestMachineReport;
 use lzvm_prover::guest_machine::{
     advance_guest_machine, run_guest_machine, GuestMachineError, GuestMachineHalt,
-    GuestMachineMemory, GuestMachineState,
+    GuestMachineMemory, GuestMachineState, GuestRegisterWrite,
 };
 use lzvm_prover::guest_memory::{load_guest_memory_image, GuestMemoryError, GuestMemoryImage};
 
 const ENTRY: u64 = 0x8000_0000;
 const FIRST_REGISTER: usize = 1;
+
+#[cfg(feature = "cuda")]
+#[test]
+fn cuda_guest_machine_report_uses_compact_effect_storage() {
+    assert_eq!(std::mem::size_of::<GuestMachineReport>(), 48);
+}
 
 fn sample_guest_image() -> Vec<u8> {
     let mut bytes = vec![0_u8; 64];
@@ -617,7 +625,7 @@ fn advances_integer_instructions_and_preserves_zero_register() {
     let report =
         advance_guest_machine(&mut memory, &mut state).expect("instruction should execute");
     assert_eq!(report.address(), ENTRY);
-    assert_eq!(report.next_pc, ENTRY + 4);
+    assert_eq!(report.next_pc(), ENTRY + 4);
     assert_eq!(
         report.instruction,
         RiscvInstruction::OpImm {
@@ -680,15 +688,34 @@ fn advances_branch_and_jump_instructions() {
             offset: 8,
         }
     );
+    assert_eq!(branch.next_pc(), ENTRY + 16);
+    assert!(branch.register_writes().is_empty());
     assert_eq!(state.pc(), ENTRY + 16);
     assert_eq!(state.register(3), Some(0));
 
     let jump = advance_guest_machine(&mut memory, &mut state).expect("jump should execute");
     assert_eq!(jump.instruction, RiscvInstruction::Jal { rd: 4, offset: 8 });
+    assert_eq!(jump.next_pc(), ENTRY + 24);
+    assert_eq!(
+        jump.register_writes().as_slice(),
+        &[GuestRegisterWrite {
+            index: 4,
+            value: ENTRY + 20,
+        }]
+    );
     assert_eq!(state.register(4), Some(ENTRY + 20));
     assert_eq!(state.pc(), ENTRY + 24);
 
-    advance_guest_machine(&mut memory, &mut state).expect("jump register should execute");
+    let jump_register =
+        advance_guest_machine(&mut memory, &mut state).expect("jump register should execute");
+    assert_eq!(jump_register.next_pc(), ENTRY + 28);
+    assert_eq!(
+        jump_register.register_writes().as_slice(),
+        &[GuestRegisterWrite {
+            index: 6,
+            value: ENTRY + 28,
+        }]
+    );
     assert_eq!(state.register(6), Some(ENTRY + 28));
     assert_eq!(state.pc(), ENTRY + 28);
 
@@ -1709,7 +1736,7 @@ fn advances_fence_instructions_as_noops() {
     for (kind, mode, predecessor, successor, address, next_pc) in cases {
         let report = advance_guest_machine(&mut memory, &mut state).expect("fence should execute");
         assert_eq!(report.address(), address);
-        assert_eq!(report.next_pc, next_pc);
+        assert_eq!(report.next_pc(), next_pc);
         assert_eq!(
             report.instruction,
             RiscvInstruction::Fence {

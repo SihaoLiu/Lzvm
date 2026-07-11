@@ -620,9 +620,9 @@ fn traces_guest_machine_until_ecall() {
     );
     assert_eq!(trace.reports.len(), 2);
     assert_eq!(trace.reports[0].address(), ENTRY);
-    assert_eq!(trace.reports[0].next_pc, ENTRY + 4);
+    assert_eq!(trace.reports[0].next_pc(), ENTRY + 4);
     assert_eq!(trace.reports[1].address(), ENTRY + 4);
-    assert_eq!(trace.reports[1].next_pc, ENTRY + 8);
+    assert_eq!(trace.reports[1].next_pc(), ENTRY + 8);
     assert_eq!(state.register(1), Some(7));
     assert_eq!(state.register(2), Some(10));
 }
@@ -720,7 +720,7 @@ fn guest_machine_fetch_observes_self_modified_instruction_bytes() {
 
     assert_eq!(trace.run.executed_instructions, 7);
     assert_eq!(trace.reports[4].memory_accesses[0].address, target_address);
-    assert_eq!(trace.reports[5].next_pc, target_address);
+    assert_eq!(trace.reports[5].next_pc(), target_address);
     assert_eq!(state.register(5), Some(9));
 }
 
@@ -902,7 +902,7 @@ fn traces_guest_machine_with_zisk_free_call_handler() {
         trace
             .reports
             .iter()
-            .map(|report| (report.address(), report.next_pc))
+            .map(|report| (report.address(), report.next_pc()))
             .collect::<Vec<_>>(),
         vec![
             (ENTRY, ENTRY + 4),
@@ -1008,7 +1008,7 @@ fn failed_zisk_dma_inputcpy_keeps_free_call_results_for_retry() {
     memory
         .read_range_into(data_address, &mut copied)
         .expect("copied result should read");
-    assert_eq!(retry.next_pc, ENTRY + 16);
+    assert_eq!(retry.next_pc(), ENTRY + 16);
     assert_eq!(state.register(11), Some(data_address));
     assert_eq!(copied, 0x1122_3344_5566_7788_u64.to_le_bytes());
 }

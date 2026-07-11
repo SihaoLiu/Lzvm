@@ -886,10 +886,17 @@ fn guest_instruction_byte_len(byte_len: usize) -> u8 {
 pub struct GuestMachineReport {
     pub(crate) address_and_instruction_len: u64,
     pub instruction: RiscvInstruction,
+    #[cfg(any(not(feature = "cuda"), test))]
     pub next_pc: u64,
+    #[cfg(any(not(feature = "cuda"), test))]
     pub(crate) register_write_value: GuestRegisterWriteValue,
+    #[cfg(all(feature = "cuda", not(test)))]
+    effect_value: u64,
     pub memory_accesses: GuestMemoryAccessList,
 }
+
+#[cfg(all(feature = "cuda", not(test)))]
+const _: [(); 48] = [(); std::mem::size_of::<GuestMachineReport>()];
 
 impl GuestMachineReport {
     #[inline(always)]
@@ -902,18 +909,30 @@ impl GuestMachineReport {
         memory_accesses: GuestMemoryAccessList,
         precompile_effects: Option<Box<GuestPrecompileReportEffects>>,
     ) -> Self {
+        let register_write_value = GuestRegisterWriteValue::from_register_writes(register_writes);
+        #[cfg(all(feature = "cuda", not(test)))]
+        let effect_value = guest_report_effect_value(
+            address,
+            instruction_byte_len,
+            instruction,
+            next_pc,
+            register_write_value,
+        );
+        let memory_accesses =
+            GuestMemoryAccessList::with_precompile_effects(memory_accesses, precompile_effects);
         Self {
             address_and_instruction_len: pack_report_address_and_instruction_len(
                 address,
                 instruction_byte_len,
             ),
             instruction,
+            #[cfg(any(not(feature = "cuda"), test))]
             next_pc,
-            register_write_value: GuestRegisterWriteValue::from_register_writes(register_writes),
-            memory_accesses: GuestMemoryAccessList::with_precompile_effects(
-                memory_accesses,
-                precompile_effects,
-            ),
+            #[cfg(any(not(feature = "cuda"), test))]
+            register_write_value,
+            #[cfg(all(feature = "cuda", not(test)))]
+            effect_value,
+            memory_accesses,
         }
     }
 
@@ -926,19 +945,33 @@ impl GuestMachineReport {
         register_write: Option<GuestRegisterWrite>,
         memory_access: Option<GuestMemoryAccess>,
     ) -> Self {
+        let register_write_value = register_write
+            .map(|write| GuestRegisterWriteValue::new(write.value))
+            .unwrap_or_default();
+        #[cfg(all(feature = "cuda", not(test)))]
+        let effect_value = guest_report_effect_value(
+            address,
+            instruction_byte_len,
+            instruction,
+            next_pc,
+            register_write_value,
+        );
+        let memory_accesses = memory_access
+            .map(GuestMemoryAccessList::one)
+            .unwrap_or_default();
         Self {
             address_and_instruction_len: pack_report_address_and_instruction_len(
                 address,
                 instruction_byte_len,
             ),
             instruction,
+            #[cfg(any(not(feature = "cuda"), test))]
             next_pc,
-            register_write_value: register_write
-                .map(|write| GuestRegisterWriteValue::new(write.value))
-                .unwrap_or_default(),
-            memory_accesses: memory_access
-                .map(GuestMemoryAccessList::one)
-                .unwrap_or_default(),
+            #[cfg(any(not(feature = "cuda"), test))]
+            register_write_value,
+            #[cfg(all(feature = "cuda", not(test)))]
+            effect_value,
+            memory_accesses,
         }
     }
 
@@ -953,6 +986,22 @@ impl GuestMachineReport {
     }
 
     #[inline(always)]
+    pub fn next_pc(&self) -> u64 {
+        #[cfg(all(feature = "cuda", not(test)))]
+        {
+            if guest_report_stores_next_pc(self.instruction) {
+                self.effect_value
+            } else {
+                self.sequential_pc()
+            }
+        }
+        #[cfg(any(not(feature = "cuda"), test))]
+        {
+            self.next_pc
+        }
+    }
+
+    #[inline(always)]
     pub fn precompile_memory_accesses(&self) -> &[GuestMemoryAccess] {
         self.memory_accesses.precompile_memory_accesses()
     }
@@ -962,12 +1011,52 @@ impl GuestMachineReport {
     }
 
     pub fn register_writes(&self) -> GuestRegisterWriteList {
-        self.register_write_value.register_writes(self.instruction)
+        self.report_register_write_value()
+            .register_writes(self.instruction)
     }
 
     #[inline(always)]
     pub(crate) fn register_writes_with_index(&self, index: Option<u8>) -> GuestRegisterWriteList {
-        self.register_write_value.register_writes_with_index(index)
+        self.report_register_write_value()
+            .register_writes_with_index(index)
+    }
+
+    #[inline(always)]
+    pub(crate) fn sequential_pc(&self) -> u64 {
+        self.address()
+            .wrapping_add(u64::from(self.instruction_byte_len()))
+    }
+
+    #[inline(always)]
+    pub(crate) fn known_control_flow_next_pc(&self) -> u64 {
+        #[cfg(all(feature = "cuda", not(test)))]
+        {
+            self.effect_value
+        }
+        #[cfg(any(not(feature = "cuda"), test))]
+        {
+            self.next_pc
+        }
+    }
+
+    #[inline(always)]
+    fn report_register_write_value(&self) -> GuestRegisterWriteValue {
+        #[cfg(all(feature = "cuda", not(test)))]
+        {
+            let value = if matches!(
+                self.instruction,
+                RiscvInstruction::Jal { .. } | RiscvInstruction::Jalr { .. }
+            ) {
+                self.sequential_pc()
+            } else {
+                self.effect_value
+            };
+            GuestRegisterWriteValue::new(value)
+        }
+        #[cfg(any(not(feature = "cuda"), test))]
+        {
+            self.register_write_value
+        }
     }
 
     #[cfg(test)]
@@ -982,6 +1071,38 @@ impl GuestMachineReport {
     ) {
         self.memory_accesses
             .replace_precompile_effects(precompile_effects);
+    }
+}
+
+#[cfg(all(feature = "cuda", not(test)))]
+#[inline(always)]
+fn guest_report_stores_next_pc(instruction: RiscvInstruction) -> bool {
+    matches!(
+        instruction,
+        RiscvInstruction::Jal { .. }
+            | RiscvInstruction::Jalr { .. }
+            | RiscvInstruction::Branch { .. }
+    )
+}
+
+#[cfg(all(feature = "cuda", not(test)))]
+#[inline(always)]
+fn guest_report_effect_value(
+    address: u64,
+    instruction_byte_len: u8,
+    instruction: RiscvInstruction,
+    next_pc: u64,
+    register_write_value: GuestRegisterWriteValue,
+) -> u64 {
+    if guest_report_stores_next_pc(instruction) {
+        next_pc
+    } else {
+        assert_eq!(
+            next_pc,
+            address.wrapping_add(u64::from(instruction_byte_len)),
+            "sequential guest report next pc should match its instruction length"
+        );
+        register_write_value.value
     }
 }
 

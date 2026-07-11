@@ -380,12 +380,12 @@ fn validate_sequential_next_pc(report: &GuestMachineReport) -> Result<(), ZiskMa
     let expected_next_pc = report
         .address()
         .checked_add(report.instruction_byte_len() as u64)
-        .filter(|next_pc| *next_pc == report.next_pc);
+        .filter(|next_pc| *next_pc == report.next_pc());
     match expected_next_pc {
         Some(_) => Ok(()),
         None => Err(ZiskMainLowerError::InconsistentSequentialNextPc {
             pc: report.address(),
-            next_pc: report.next_pc,
+            next_pc: report.next_pc(),
             instruction_byte_len: usize::from(report.instruction_byte_len()),
         }),
     }

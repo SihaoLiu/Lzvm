@@ -948,6 +948,7 @@ fn reports_representable_instruction_byte_lengths() {
     assert_eq!(standard.instruction_byte_len(), 4);
 }
 
+#[cfg(not(feature = "cuda"))]
 #[test]
 fn rejects_inconsistent_sequential_next_pc() {
     let error = lower_guest_report(&report_with_next_pc(
@@ -969,6 +970,22 @@ fn rejects_inconsistent_sequential_next_pc() {
             next_pc: PC + 8,
             instruction_byte_len: 4
         }
+    );
+}
+
+#[cfg(feature = "cuda")]
+#[test]
+#[should_panic(expected = "sequential guest report next pc should match its instruction length")]
+fn rejects_inconsistent_sequential_next_pc() {
+    let _ = report_with_next_pc(
+        4,
+        PC + 8,
+        RiscvInstruction::OpImm {
+            kind: RiscvOpImmKind::Addi,
+            rd: 1,
+            rs1: 0,
+            immediate: 0,
+        },
     );
 }
 

@@ -4146,7 +4146,7 @@ fn compute_guest_pc_trace(
     for (index, report) in trace.reports.iter().enumerate() {
         let offset = index * 16;
         output[offset..offset + 8].copy_from_slice(&report.address().to_le_bytes());
-        output[offset + 8..offset + 16].copy_from_slice(&report.next_pc.to_le_bytes());
+        output[offset + 8..offset + 16].copy_from_slice(&report.next_pc().to_le_bytes());
     }
     Ok(WitnessTraceOutput::with_values(
         produced_len,
@@ -7204,7 +7204,7 @@ fn lower_guest_pc_trace_seeded_pending_segment_with_output_mode(
 #[cfg(feature = "cuda")]
 fn lower_guest_pc_trace_owned_streaming_pending_segment(
     layout: &WitnessTraceLayout,
-    mut pending: GuestPcTracePendingSegmentSlice,
+    pending: GuestPcTracePendingSegmentSlice,
     seed: &ZiskMainSegmentSeed,
     expected_proof_values: Option<&[WitnessTraceProofValue]>,
     traceless_segment_output: bool,
@@ -7240,9 +7240,9 @@ fn lower_guest_pc_trace_owned_streaming_pending_segment(
     let report_start_index =
         timing_config.segment_report_start_index(segment, layout.row_count())?;
     let mut feeder =
-        ZiskMainOwnedStreamingDeviceReportFeeder::new_with_start(timing_config, report_start_index);
+        ZiskMainStreamingDeviceReportFeeder::new_with_start(timing_config, report_start_index);
     let aggregate_report_started = timing.as_ref().map(|_| Instant::now());
-    for report in std::mem::take(&mut pending.reports) {
+    for report in &pending.reports {
         feeder.push_report(&mut builder, report, timing.as_deref_mut())?;
     }
     feeder.finish(
@@ -11385,6 +11385,7 @@ struct ZiskMainNoMemoryFastPathParts {
 struct MainJumpFastPathParts {
     b_index: Option<u8>,
     store_index: Option<u8>,
+    next_pc_checked: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -11424,7 +11425,7 @@ fn validate_and_apply_zisk_main_report(
         let lowered_row = ZiskMainLoweredReportRow {
             instruction: lower_pending_dma_report(row, report, pending)?,
             effects: ZiskMainReportEffects::from_report(report),
-            expected_next_pc: report.next_pc,
+            expected_next_pc: report.next_pc(),
         };
         record_detail_duration(lowering_started, &mut timing, |timing| {
             &mut timing.trace_report_lowering_duration
@@ -11533,7 +11534,7 @@ fn validate_and_apply_zisk_main_report(
                         row,
                         instruction,
                         effects,
-                        report.next_pc,
+                        report.sequential_pc(),
                         store_index,
                         state,
                         context,
@@ -11558,7 +11559,7 @@ fn validate_and_apply_zisk_main_report(
                         row,
                         instruction,
                         effects,
-                        report.next_pc,
+                        report.sequential_pc(),
                         a_index,
                         b_offset,
                         store_index,
@@ -11578,7 +11579,7 @@ fn validate_and_apply_zisk_main_report(
                         row,
                         instruction,
                         effects,
-                        report.next_pc,
+                        report.sequential_pc(),
                         a_index,
                         b_offset,
                         width,
@@ -11605,7 +11606,7 @@ fn validate_and_apply_zisk_main_report(
                         row,
                         instruction,
                         effects,
-                        report.next_pc,
+                        report.sequential_pc(),
                         a_index,
                         b_offset,
                         store_index,
@@ -11627,7 +11628,7 @@ fn validate_and_apply_zisk_main_report(
                         row,
                         instruction,
                         effects,
-                        report.next_pc,
+                        known_fast_path_next_pc(report, parts.next_pc_checked),
                         parts,
                         state,
                         context,
@@ -11644,7 +11645,7 @@ fn validate_and_apply_zisk_main_report(
                         report,
                         instruction,
                         effects,
-                        report.next_pc,
+                        report.sequential_pc(),
                         b_index,
                         state,
                         context,
@@ -11665,7 +11666,7 @@ fn validate_and_apply_zisk_main_report(
                         row,
                         instruction,
                         effects,
-                        report.next_pc,
+                        report.sequential_pc(),
                         b_index,
                         store_address,
                         state,
@@ -11689,7 +11690,7 @@ fn validate_and_apply_zisk_main_report(
                         row,
                         instruction,
                         effects,
-                        report.next_pc,
+                        report.sequential_pc(),
                         a_index,
                         b_index,
                         store_offset,
@@ -11715,7 +11716,7 @@ fn validate_and_apply_zisk_main_report(
                         row,
                         instruction,
                         effects,
-                        report.next_pc,
+                        report.sequential_pc(),
                         a_index,
                         b,
                         store_offset,
@@ -11737,7 +11738,7 @@ fn validate_and_apply_zisk_main_report(
                         row,
                         instruction,
                         effects,
-                        report.next_pc,
+                        report.sequential_pc(),
                         b_index,
                         store_index,
                         state,
@@ -11757,7 +11758,7 @@ fn validate_and_apply_zisk_main_report(
                         row,
                         instruction,
                         effects,
-                        report.next_pc,
+                        known_fast_path_next_pc(report, parts.next_pc_checked),
                         parts,
                         state,
                         context,
@@ -12800,10 +12801,27 @@ fn sequential_report_fast_path_instruction_size(
     let Some(expected_next_pc) = report.address().checked_add(instruction_size as u64) else {
         return Ok(None);
     };
-    if expected_next_pc != report.next_pc {
-        return Ok(None);
+    #[cfg(all(feature = "cuda", not(test)))]
+    {
+        debug_assert_eq!(expected_next_pc, report.sequential_pc());
+        Ok(Some(instruction_size))
     }
-    Ok(Some(instruction_size))
+    #[cfg(any(not(feature = "cuda"), test))]
+    {
+        if expected_next_pc != report.next_pc() {
+            return Ok(None);
+        }
+        Ok(Some(instruction_size))
+    }
+}
+
+#[inline(always)]
+fn known_fast_path_next_pc(report: &GuestMachineReport, next_pc_checked: bool) -> u64 {
+    if next_pc_checked {
+        report.sequential_pc()
+    } else {
+        report.known_control_flow_next_pc()
+    }
 }
 
 #[inline(always)]
@@ -12957,6 +12975,7 @@ fn pc_relative_fast_path_parts(
         MainJumpFastPathParts {
             b_index: None,
             store_index: (rd != 0).then_some(rd),
+            next_pc_checked: true,
         },
     )))
 }
@@ -13438,6 +13457,7 @@ fn jump_fast_path_parts(
             MainJumpFastPathParts {
                 b_index: (rs1 != 0).then_some(rs1),
                 store_index: (jump_rd != 0).then_some(jump_rd),
+                next_pc_checked: false,
             },
         )
     } else {
@@ -13460,6 +13480,7 @@ fn jump_fast_path_parts(
             MainJumpFastPathParts {
                 b_index: None,
                 store_index: (jump_rd != 0).then_some(jump_rd),
+                next_pc_checked: false,
             },
         )
     };
@@ -15063,7 +15084,7 @@ fn lower_single_zisk_main_report_row<'a>(
     Ok(ZiskMainLoweredReportRow {
         instruction,
         effects: ZiskMainReportEffects::from_report(report),
-        expected_next_pc: report.next_pc,
+        expected_next_pc: report.next_pc(),
     })
 }
 
@@ -15123,7 +15144,7 @@ fn lower_amo_report_rows(
     let store_jump = if aliases_result {
         1
     } else {
-        zisk_main_pc_delta(row, store_pc, report.next_pc)?
+        zisk_main_pc_delta(row, store_pc, report.next_pc())?
     };
 
     let mut load_row = zisk_main_base_instruction(
@@ -15164,7 +15185,7 @@ fn lower_amo_report_rows(
     store_effects.memory_accesses = &report.memory_accesses[1..2];
 
     if aliases_result {
-        let register_jump = zisk_main_pc_delta(row, register_pc, report.next_pc)?;
+        let register_jump = zisk_main_pc_delta(row, register_pc, report.next_pc())?;
         let register_row = zisk_main_base_instruction(
             register_pc,
             ZiskMainSource::Immediate(0),
@@ -15194,7 +15215,7 @@ fn lower_amo_report_rows(
             ZiskMainLoweredReportRow {
                 instruction: register_row,
                 effects: register_effects,
-                expected_next_pc: report.next_pc,
+                expected_next_pc: report.next_pc(),
             },
         ]);
     }
@@ -15215,7 +15236,7 @@ fn lower_amo_report_rows(
         ZiskMainLoweredReportRow {
             instruction: store_row,
             effects: store_effects,
-            expected_next_pc: report.next_pc,
+            expected_next_pc: report.next_pc(),
         },
     ])
 }
@@ -15289,7 +15310,7 @@ fn lower_store_conditional_report_rows(
         return Ok(vec![ZiskMainLoweredReportRow {
             instruction: store_row,
             effects: memory_effects,
-            expected_next_pc: report.next_pc,
+            expected_next_pc: report.next_pc(),
         }]);
     }
 
@@ -15300,7 +15321,7 @@ fn lower_store_conditional_report_rows(
     })?;
     store_row.jmp_offset1 = 1;
     store_row.jmp_offset2 = 1;
-    let register_jump = zisk_main_pc_delta(row, register_pc, report.next_pc)?;
+    let register_jump = zisk_main_pc_delta(row, register_pc, report.next_pc())?;
     let register_row = zisk_main_base_instruction(
         register_pc,
         ZiskMainSource::Immediate(0),
@@ -15320,7 +15341,7 @@ fn lower_store_conditional_report_rows(
         ZiskMainLoweredReportRow {
             instruction: register_row,
             effects: register_effects,
-            expected_next_pc: report.next_pc,
+            expected_next_pc: report.next_pc(),
         },
     ])
 }
@@ -18512,7 +18533,10 @@ fn direct_zisk_main_report_result_c(
     instruction: &ZiskMainInstruction,
 ) -> Option<u64> {
     if instruction.set_pc {
-        return Some(wrapping_sub_signed(report.next_pc, instruction.jmp_offset1));
+        return Some(wrapping_sub_signed(
+            report.next_pc(),
+            instruction.jmp_offset1,
+        ));
     }
     if matches!(
         instruction.op,
@@ -18587,9 +18611,9 @@ fn direct_zisk_main_branch_c(
     if flag_next_pc == fallthrough_next_pc {
         return None;
     }
-    if report.next_pc == flag_next_pc {
+    if report.next_pc() == flag_next_pc {
         Some(1)
-    } else if report.next_pc == fallthrough_next_pc {
+    } else if report.next_pc() == fallthrough_next_pc {
         Some(0)
     } else {
         None
@@ -18684,7 +18708,7 @@ fn write_report_columns(
 ) -> Result<(), GuestPcTraceBackendError> {
     if let Some(pc_columns) = &columns.pc {
         write_column(builder, row, &pc_columns.pc, report.address())?;
-        write_column(builder, row, &pc_columns.next_pc, report.next_pc)?;
+        write_column(builder, row, &pc_columns.next_pc, report.next_pc())?;
     }
     if let Some(register_write_columns) = &columns.register_write {
         let register_writes = report.register_writes();
