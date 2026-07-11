@@ -3,7 +3,8 @@
 constexpr size_t kMainTraceSelectedRowsPerBlock = 512;
 constexpr size_t kMainTraceSelectedTargetBatch = 4;
 
-__global__ void extend_main_trace_compact_descriptors_shifted_rows_partial_kernel(
+__global__ __launch_bounds__(kThreads, 3)
+void extend_main_trace_compact_descriptors_shifted_rows_partial_kernel(
     const uint64_t* descriptors,
     const uint64_t* weights0,
     const uint64_t* weights1,
