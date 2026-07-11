@@ -8,6 +8,7 @@ constexpr size_t kNttThreadFactorDirectionCount = 2;
 constexpr size_t kNttThreadFactorCount =
     kNttThreadFactorDirectionCount * kNttThreadFactorStageCount * kThreads;
 constexpr size_t kNttColumnGroupSize = 4;
+constexpr size_t kNttBlockStageColumnsPerThread = 2;
 
 __device__ uint64_t kNttThreadFactors[kNttThreadFactorCount];
 __device__ uint64_t
@@ -147,16 +148,21 @@ __global__ void bit_reverse_column_group_kernel(
     uint64_t* values,
     size_t len,
     size_t value_stride,
-    size_t bits) {
+    size_t bits,
+    size_t column_count) {
     const size_t index = blockIdx.x * blockDim.x + threadIdx.x;
     if (index < len) {
-        uint64_t* column_values =
-            values + static_cast<size_t>(blockIdx.y) * value_stride;
         const size_t reverse = reverse_bits(index, bits);
         if (index < reverse) {
-            const uint64_t tmp = column_values[index];
-            column_values[index] = column_values[reverse];
-            column_values[reverse] = tmp;
+#pragma unroll
+            for (size_t column = 0; column < kNttColumnGroupSize; ++column) {
+                if (column < column_count) {
+                    uint64_t* column_values = values + column * value_stride;
+                    const uint64_t tmp = column_values[index];
+                    column_values[index] = column_values[reverse];
+                    column_values[reverse] = tmp;
+                }
+            }
         }
     }
 }
@@ -219,6 +225,7 @@ __global__ void ntt_stage_block_twiddle_column_group_kernel(
     uint64_t* values,
     size_t len,
     size_t value_stride,
+    size_t column_count,
     size_t stage_len,
     size_t stage_bits,
     bool inverse_roots) {
@@ -235,8 +242,8 @@ __global__ void ntt_stage_block_twiddle_column_group_kernel(
     __syncthreads();
 
     if (pair < pair_count) {
-        uint64_t* column_values =
-            values + static_cast<size_t>(blockIdx.y) * value_stride;
+        const size_t first_column =
+            static_cast<size_t>(blockIdx.y) * kNttBlockStageColumnsPerThread;
         const size_t group = pair / half;
         const size_t offset = block_offset + threadIdx.x;
         const size_t even_index = group * stage_len + offset;
@@ -244,10 +251,18 @@ __global__ void ntt_stage_block_twiddle_column_group_kernel(
         const uint64_t thread_factor =
             __ldg(&kNttThreadFactors[factor_stage * kThreads + threadIdx.x]);
         const uint64_t factor = mul_mod(block_base, thread_factor);
-        const uint64_t even = column_values[even_index];
-        const uint64_t odd = mul_mod(column_values[odd_index], factor);
-        column_values[even_index] = add_mod(even, odd);
-        column_values[odd_index] = sub_mod(even, odd);
+#pragma unroll
+        for (size_t local_column = 0; local_column < kNttBlockStageColumnsPerThread;
+             ++local_column) {
+            const size_t column = first_column + local_column;
+            if (column < column_count) {
+                uint64_t* column_values = values + column * value_stride;
+                const uint64_t even = column_values[even_index];
+                const uint64_t odd = mul_mod(column_values[odd_index], factor);
+                column_values[even_index] = add_mod(even, odd);
+                column_values[odd_index] = sub_mod(even, odd);
+            }
+        }
     }
 }
 
@@ -341,8 +356,8 @@ cudaError_t run_ntt_column_group(
     bool inverse_roots,
     cudaStream_t stream) {
     const size_t blocks = (len + kThreads - 1) / kThreads;
-    bit_reverse_column_group_kernel<<<dim3(blocks, column_count), kThreads, 0, stream>>>(
-        device_values, len, value_stride, bits);
+    bit_reverse_column_group_kernel<<<blocks, kThreads, 0, stream>>>(
+        device_values, len, value_stride, bits, column_count);
     cudaError_t status = static_cast<cudaError_t>(lzvm_cuda_check_launch());
     if (status != cudaSuccess) {
         return status;
@@ -355,10 +370,16 @@ cudaError_t run_ntt_column_group(
         const size_t half = stage_len / 2;
         const dim3 grid(stage_blocks, column_count);
         if (half > kThreads) {
-            ntt_stage_block_twiddle_column_group_kernel<<<grid, kThreads, 0, stream>>>(
+            const dim3 block_stage_grid(
+                stage_blocks,
+                (column_count + kNttBlockStageColumnsPerThread - 1) /
+                    kNttBlockStageColumnsPerThread);
+            ntt_stage_block_twiddle_column_group_kernel
+                <<<block_stage_grid, kThreads, 0, stream>>>(
                 device_values,
                 len,
                 value_stride,
+                column_count,
                 stage_len,
                 stage_bits,
                 inverse_roots);

@@ -277,6 +277,16 @@ fn row_major_ntt_groups_four_columns_per_launch_sequence() {
         "__global__ void normalize_shift_and_pad_column_group_kernel",
         "cudaError_t run_ntt",
     );
+    let grouped_bit_reverse_body = function_body(
+        &ntt_source,
+        "__global__ void bit_reverse_column_group_kernel",
+        "__global__ void ntt_stage_column_group_kernel",
+    );
+    let grouped_block_stage_body = function_body(
+        &ntt_source,
+        "__global__ void ntt_stage_block_twiddle_column_group_kernel",
+        "__global__ void normalize_shift_and_pad_column_group_kernel",
+    );
 
     assert!(
         ntt_source.contains("constexpr size_t kNttColumnGroupSize = 4;")
@@ -290,6 +300,18 @@ fn row_major_ntt_groups_four_columns_per_launch_sequence() {
             .contains("for (size_t column = 0; column < kNttColumnGroupSize; ++column)")
             && !grouped_normalize_body.contains("blockIdx.y"),
         "grouped NTT normalization should compute each row factor once for the column group"
+    );
+    assert!(
+        grouped_bit_reverse_body
+            .contains("for (size_t column = 0; column < kNttColumnGroupSize; ++column)")
+            && !grouped_bit_reverse_body.contains("blockIdx.y"),
+        "grouped bit reversal should compute each reversed index once for the column group"
+    );
+    assert!(
+        ntt_source.contains("constexpr size_t kNttBlockStageColumnsPerThread = 2;")
+            && grouped_block_stage_body.contains("kNttBlockStageColumnsPerThread")
+            && grouped_ntt_body.contains("block_stage_grid"),
+        "large grouped NTT stages should reuse each block factor across tuned two-column groups"
     );
 
     for body in [
