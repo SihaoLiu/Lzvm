@@ -241,6 +241,46 @@ fn ntt_block_twiddle_kernel_reuses_precomputed_thread_factors() {
     );
 }
 
+#[test]
+fn row_major_ntt_groups_four_columns_per_launch_sequence() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let ntt_source = std::fs::read_to_string(crate_root.join("native/cuda_goldilocks_ntt.cuh"))
+        .expect("CUDA NTT native source should read");
+    let field_source = std::fs::read_to_string(crate_root.join("native/cuda_field.cu"))
+        .expect("CUDA field source should read");
+    let grouped_ntt_body = function_body(
+        &ntt_source,
+        "cudaError_t run_ntt_column_group",
+        "int run_coset_extend_on_device_unsynced",
+    );
+
+    assert!(
+        ntt_source.contains("constexpr size_t kNttColumnGroupSize = 4;")
+            && grouped_ntt_body.contains("ntt_stage_column_group_kernel")
+            && grouped_ntt_body.contains("ntt_stage_thread_twiddle_column_group_kernel")
+            && grouped_ntt_body.contains("ntt_stage_block_twiddle_column_group_kernel"),
+        "grouped NTT should preserve the tuned four-column stage dispatch"
+    );
+
+    for body in [
+        function_body(
+            &field_source,
+            "int run_row_major_columns_device",
+            "extern \"C\" int lzvm_cuda_goldilocks_coset_extend_row_major_columns_device",
+        ),
+        function_body(
+            &field_source,
+            "int run_row_major_columns_strided_device",
+            "extern \"C\" int lzvm_cuda_goldilocks_coset_extend_row_major_columns_strided_device",
+        ),
+    ] {
+        assert!(
+            body.contains("run_coset_extend_column_groups_on_device_unsynced"),
+            "row-major extension should launch NTTs in bounded column groups"
+        );
+    }
+}
+
 fn collect_oversized_sources(root: &Path, path: &Path, oversized: &mut Vec<String>) {
     let entries = std::fs::read_dir(path).expect("native source directory should read");
     for entry in entries {

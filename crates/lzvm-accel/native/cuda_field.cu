@@ -957,11 +957,9 @@ int run_row_major_columns_device(
     pack_row_major_columns_kernel<<<source_blocks, kThreads, 0, stream>>>(
         values, columns, source_len, target_len, column_count);
     LZVM_CUDA_RETURN_ON_ERROR(lzvm_cuda_check_launch());
-    for (size_t column = 0; column < column_count; ++column) {
-        LZVM_CUDA_RETURN_ON_ERROR(run_coset_extend_on_device_unsynced(
-            columns + column * target_len, source_len, source_bits, target_len, target_bits,
-            source_root_inverse, target_root, shift, stream));
-    }
+    LZVM_CUDA_RETURN_ON_ERROR(run_coset_extend_column_groups_on_device_unsynced(
+        columns, source_len, source_bits, target_len, target_bits, column_count,
+        source_root_inverse, target_root, shift, stream));
     const size_t target_blocks = (target_words + kThreads - 1) / kThreads;
     unpack_row_major_columns_kernel<<<target_blocks, kThreads, 0, stream>>>(
         columns, out, target_len, column_count);
@@ -1025,11 +1023,9 @@ int run_row_major_columns_strided_device(
     pack_row_major_columns_strided_kernel<<<source_blocks, kThreads, 0, stream>>>(
         values, columns, source_len, target_len, source_row_stride, column_offset, column_count);
     LZVM_CUDA_RETURN_ON_ERROR(lzvm_cuda_check_launch());
-    for (size_t column = 0; column < column_count; ++column) {
-        LZVM_CUDA_RETURN_ON_ERROR(run_coset_extend_on_device_unsynced(
-            columns + column * target_len, source_len, source_bits, target_len, target_bits,
-            source_root_inverse, target_root, shift, stream));
-    }
+    LZVM_CUDA_RETURN_ON_ERROR(run_coset_extend_column_groups_on_device_unsynced(
+        columns, source_len, source_bits, target_len, target_bits, column_count,
+        source_root_inverse, target_root, shift, stream));
     const size_t target_blocks = (target_words + kThreads - 1) / kThreads;
     unpack_row_major_columns_kernel<<<target_blocks, kThreads, 0, stream>>>(
         columns, out, target_len, column_count);
