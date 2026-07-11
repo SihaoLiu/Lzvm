@@ -937,25 +937,61 @@ impl GuestMachineReport {
     }
 
     #[inline(always)]
-    fn new_single_effect(
+    fn new_single_effect_sequential(
         address: u64,
         instruction_byte_len: u8,
         instruction: RiscvInstruction,
-        next_pc: u64,
         register_write: Option<GuestRegisterWrite>,
         memory_access: Option<GuestMemoryAccess>,
     ) -> Self {
         let register_write_value = register_write
             .map(|write| GuestRegisterWriteValue::new(write.value))
             .unwrap_or_default();
-        #[cfg(all(feature = "cuda", not(test)))]
-        let effect_value = guest_report_effect_value(
+        let next_pc = address.wrapping_add(u64::from(instruction_byte_len));
+        let effect_value = register_write_value.value;
+        Self::new_single_effect_with_values(
             address,
             instruction_byte_len,
             instruction,
             next_pc,
             register_write_value,
-        );
+            effect_value,
+            memory_access,
+        )
+    }
+
+    #[inline(always)]
+    fn new_single_effect_control_flow(
+        address: u64,
+        instruction_byte_len: u8,
+        instruction: RiscvInstruction,
+        next_pc: u64,
+        register_write: Option<GuestRegisterWrite>,
+    ) -> Self {
+        let register_write_value = register_write
+            .map(|write| GuestRegisterWriteValue::new(write.value))
+            .unwrap_or_default();
+        Self::new_single_effect_with_values(
+            address,
+            instruction_byte_len,
+            instruction,
+            next_pc,
+            register_write_value,
+            next_pc,
+            None,
+        )
+    }
+
+    #[inline(always)]
+    fn new_single_effect_with_values(
+        address: u64,
+        instruction_byte_len: u8,
+        instruction: RiscvInstruction,
+        _next_pc: u64,
+        _register_write_value: GuestRegisterWriteValue,
+        _effect_value: u64,
+        memory_access: Option<GuestMemoryAccess>,
+    ) -> Self {
         let memory_accesses = memory_access
             .map(GuestMemoryAccessList::one)
             .unwrap_or_default();
@@ -966,11 +1002,11 @@ impl GuestMachineReport {
             ),
             instruction,
             #[cfg(any(not(feature = "cuda"), test))]
-            next_pc,
+            next_pc: _next_pc,
             #[cfg(any(not(feature = "cuda"), test))]
-            register_write_value,
+            register_write_value: _register_write_value,
             #[cfg(all(feature = "cuda", not(test)))]
-            effect_value,
+            effect_value: _effect_value,
             memory_accesses,
         }
     }
@@ -2434,11 +2470,10 @@ fn try_advance_guest_machine_report_fast_path(
                 }
             };
         state.retire_instruction();
-        report.write(GuestMachineReport::new_single_effect(
+        report.write(GuestMachineReport::new_single_effect_sequential(
             address,
             byte_len,
             instruction,
-            sequential_pc,
             register_write,
             None,
         ));
@@ -2448,7 +2483,6 @@ fn try_advance_guest_machine_report_fast_path(
         }));
     }
 
-    let mut next_pc = sequential_pc;
     let mut register_write = None;
     let mut memory_access = None;
     let mut has_memory_write = false;
@@ -2464,20 +2498,41 @@ fn try_advance_guest_machine_report_fast_path(
             );
         }
         RiscvInstruction::Jal { rd, offset } => {
-            if rd != 0 {
-                register_write = write_fast_reported_register(state, rd, sequential_pc);
-            }
-            next_pc = address.wrapping_add_signed(i64::from(offset));
+            let register_write = if rd == 0 {
+                None
+            } else {
+                write_fast_reported_register(state, rd, sequential_pc)
+            };
+            let next_pc = address.wrapping_add_signed(i64::from(offset));
+            return Ok(Some(finish_fast_control_flow_report(
+                state,
+                report,
+                address,
+                byte_len,
+                instruction,
+                next_pc,
+                register_write,
+            )));
         }
         RiscvInstruction::Jalr { rd, rs1, offset } => {
             let target = state
                 .read_decoded_register(rs1)
                 .wrapping_add_signed(i64::from(offset))
                 & !1;
-            if rd != 0 {
-                register_write = write_fast_reported_register(state, rd, sequential_pc);
-            }
-            next_pc = target;
+            let register_write = if rd == 0 {
+                None
+            } else {
+                write_fast_reported_register(state, rd, sequential_pc)
+            };
+            return Ok(Some(finish_fast_control_flow_report(
+                state,
+                report,
+                address,
+                byte_len,
+                instruction,
+                target,
+                register_write,
+            )));
         }
         RiscvInstruction::Branch {
             kind,
@@ -2494,9 +2549,20 @@ fn try_advance_guest_machine_report_fast_path(
                     state.read_decoded_register(rs2),
                 )
             };
-            if taken {
-                next_pc = address.wrapping_add_signed(i64::from(offset));
-            }
+            let next_pc = if taken {
+                address.wrapping_add_signed(i64::from(offset))
+            } else {
+                sequential_pc
+            };
+            return Ok(Some(finish_fast_control_flow_report(
+                state,
+                report,
+                address,
+                byte_len,
+                instruction,
+                next_pc,
+                None,
+            )));
         }
         RiscvInstruction::OpImm {
             kind: RiscvOpImmKind::Addi,
@@ -2638,13 +2704,13 @@ fn try_advance_guest_machine_report_fast_path(
             };
             let register_write = write_fast_reported_register(state, rd, amo_result(width, loaded));
             state.clear_reservation_if_overlaps(write_address, access_byte_len);
-            state.set_pc(next_pc);
+            state.set_pc(sequential_pc);
             state.retire_instruction();
             report.write(GuestMachineReport::new(
                 address,
                 byte_len,
                 instruction,
-                next_pc,
+                sequential_pc,
                 register_write
                     .map(GuestRegisterWriteList::one)
                     .unwrap_or_default(),
@@ -2717,13 +2783,12 @@ fn try_advance_guest_machine_report_fast_path(
         _ => return Ok(None),
     }
 
-    state.set_pc(next_pc);
+    state.set_pc(sequential_pc);
     state.retire_instruction();
-    report.write(GuestMachineReport::new_single_effect(
+    report.write(GuestMachineReport::new_single_effect_sequential(
         address,
         byte_len,
         instruction,
-        next_pc,
         register_write,
         memory_access,
     ));
@@ -2731,6 +2796,31 @@ fn try_advance_guest_machine_report_fast_path(
         instruction,
         has_memory_write,
     }))
+}
+
+#[inline(always)]
+fn finish_fast_control_flow_report(
+    state: &mut GuestMachineState,
+    report: &mut MaybeUninit<GuestMachineReport>,
+    address: u64,
+    byte_len: u8,
+    instruction: RiscvInstruction,
+    next_pc: u64,
+    register_write: Option<GuestRegisterWrite>,
+) -> GuestMachineReportShape {
+    state.set_pc(next_pc);
+    state.retire_instruction();
+    report.write(GuestMachineReport::new_single_effect_control_flow(
+        address,
+        byte_len,
+        instruction,
+        next_pc,
+        register_write,
+    ));
+    GuestMachineReportShape {
+        instruction,
+        has_memory_write: false,
+    }
 }
 
 fn write_fast_reported_register(

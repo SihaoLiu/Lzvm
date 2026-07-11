@@ -12187,9 +12187,8 @@ fn guest_machine_jump_fast_path_skips_zero_link_write() {
             .expect("JALR fast path should follow JAL");
     let jal_body = &body[jal_start..jal_end];
     assert!(
-        jal_body.contains(
-            "if rd != 0 {\n                register_write = write_fast_reported_register(state, rd, sequential_pc);\n            }"
-        ),
+        compact_source_contains(jal_body, "let register_write = if rd == 0 { None } else")
+            && jal_body.contains("write_fast_reported_register(state, rd, sequential_pc)"),
         "JAL x0 link writes should skip the register-write helper"
     );
 
@@ -12202,10 +12201,56 @@ fn guest_machine_jump_fast_path_skips_zero_link_write() {
             .expect("branch fast path should follow JALR");
     let jalr_body = &body[jalr_start..jalr_end];
     assert!(
-        jalr_body.contains(
-            "if rd != 0 {\n                register_write = write_fast_reported_register(state, rd, sequential_pc);\n            }"
-        ),
+        compact_source_contains(jalr_body, "let register_write = if rd == 0 { None } else")
+            && jalr_body.contains("write_fast_reported_register(state, rd, sequential_pc)"),
         "JALR x0 link writes should skip the register-write helper"
+    );
+}
+
+#[test]
+fn guest_machine_fast_reports_split_sequential_and_control_flow_effects() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let source_path = crate_root.join("src/guest_machine/mod.rs");
+    let source = std::fs::read_to_string(&source_path).expect("guest machine source should read");
+    let sequential_constructor = function_body(
+        &source,
+        "fn new_single_effect_sequential(",
+        "fn new_single_effect_control_flow(",
+    );
+    let control_flow_constructor = function_body(
+        &source,
+        "fn new_single_effect_control_flow(",
+        "fn new_single_effect_with_values(",
+    );
+    let fast_path = function_body(
+        &source,
+        "fn try_advance_guest_machine_report_fast_path",
+        "fn finish_fast_control_flow_report",
+    );
+
+    assert!(
+        compact_source_contains(
+            sequential_constructor,
+            "let next_pc = address.wrapping_add(u64::from(instruction_byte_len));"
+        ) && sequential_constructor.contains("let effect_value = register_write_value.value;")
+            && !sequential_constructor.contains("guest_report_effect_value"),
+        "sequential fast reports should derive their next PC and packed effect without reclassifying the instruction"
+    );
+    assert!(
+        compact_source_contains(
+            control_flow_constructor,
+            "register_write_value, next_pc, None"
+        ) && !control_flow_constructor.contains("guest_report_effect_value"),
+        "control-flow fast reports should store their already known next PC directly"
+    );
+    assert!(
+        !fast_path.contains("let mut next_pc = sequential_pc")
+            && fast_path
+                .matches("finish_fast_control_flow_report(")
+                .count()
+                == 3
+            && fast_path.contains("new_single_effect_sequential("),
+        "the common sequential tail should not merge or reclassify control-flow next PCs"
     );
 }
 
