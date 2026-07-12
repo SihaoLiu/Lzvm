@@ -38,7 +38,8 @@ impl Hasher for U64IdentityHasher {
     }
 
     fn write_u64(&mut self, value: u64) {
-        self.0 = value;
+        // Keep bucket-selection bits stable while spreading hashbrown's top-bit fingerprint.
+        self.0 = value ^ (value << 57);
     }
 }
 
@@ -894,6 +895,20 @@ mod tests {
 
     fn sample_guest_image_with_program_header(code: &[u8], memory_size: u64) -> GuestMemoryImage {
         sample_guest_image_with_program_headers(&[(TEST_ENTRY, code, memory_size)])
+    }
+
+    #[test]
+    fn overlay_block_hasher_preserves_bucket_bits_and_spreads_fingerprints() {
+        let low_bits = u64::MAX >> 7;
+        let mut fingerprints = [false; 128];
+        for value in 0..128_u64 {
+            let mut hasher = U64IdentityHasher::default();
+            hasher.write_u64(value);
+            let hash = hasher.finish();
+            assert_eq!(hash & low_bits, value);
+            fingerprints[(hash >> 57) as usize] = true;
+        }
+        assert!(fingerprints.into_iter().all(|present| present));
     }
 
     #[test]
