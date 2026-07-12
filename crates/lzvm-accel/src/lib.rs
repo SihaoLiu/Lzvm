@@ -425,6 +425,14 @@ unsafe extern "C" {
         query_count: usize,
         prefix_level_count: usize,
     ) -> i32;
+    #[link_name = "lzvm_cuda_poseidon2_width8_merkle_digest_opening_suffixes_batch_to_device"]
+    fn lzvm_cuda_poseidon2_width8_merkle_digest_opening_suffixes_batch_to_device_raw(
+        values: *const *const u64,
+        child_state_counts: *const usize,
+        query_indices: *const usize,
+        siblings_out: *const *mut u64,
+        group_count: usize,
+    ) -> i32;
     #[link_name = "lzvm_cuda_poseidon2_width8_linear_round_device"]
     fn lzvm_cuda_poseidon2_width8_linear_round_device_raw(
         current_states: *const u64,
@@ -543,6 +551,14 @@ unsafe extern "C" {
         child_state_count: usize,
         query_count: usize,
         prefix_level_count: usize,
+    ) -> i32;
+    #[link_name = "lzvm_cuda_poseidon2_width16_merkle_digest_opening_suffixes_batch_to_device"]
+    fn lzvm_cuda_poseidon2_width16_merkle_digest_opening_suffixes_batch_to_device_raw(
+        values: *const *const u64,
+        child_state_counts: *const usize,
+        query_indices: *const usize,
+        siblings_out: *const *mut u64,
+        group_count: usize,
     ) -> i32;
     #[link_name = "lzvm_cuda_poseidon2_width16_linear_round_device"]
     fn lzvm_cuda_poseidon2_width16_linear_round_device_raw(
@@ -3117,10 +3133,26 @@ type CudaPoseidon2MerkleOpeningPrefixBatchDeviceOp =
     unsafe extern "C" fn(*const u64, *const usize, *mut u64, usize, usize, usize) -> i32;
 
 #[cfg(feature = "cuda")]
+type CudaPoseidon2MerkleOpeningSuffixesBatchDeviceOp = unsafe extern "C" fn(
+    *const *const u64,
+    *const usize,
+    *const usize,
+    *const *mut u64,
+    usize,
+) -> i32;
+
+#[cfg(feature = "cuda")]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CudaMerkleOpeningPathWords {
     pub root: [u64; 4],
     pub siblings: Vec<u64>,
+}
+
+#[cfg(feature = "cuda")]
+#[derive(Clone, Copy)]
+pub struct CudaMerkleDigestOpeningSuffixSource<'a> {
+    pub values: &'a CudaDeviceBuffer,
+    pub query_index: usize,
 }
 
 #[cfg(feature = "cuda")]
@@ -3734,6 +3766,73 @@ fn run_cuda_poseidon2_merkle_digest_opening_prefix_batch_device_buffer_op(
 }
 
 #[cfg(feature = "cuda")]
+fn run_cuda_poseidon2_merkle_digest_opening_suffixes_batch_device_buffer_op(
+    sources: &[CudaMerkleDigestOpeningSuffixSource<'_>],
+    arity: usize,
+    bits: usize,
+    operation: CudaPoseidon2MerkleOpeningSuffixesBatchDeviceOp,
+) -> Result<Vec<CudaDeviceBuffer>, AccelError> {
+    let mut values = Vec::with_capacity(sources.len());
+    let mut child_state_counts = Vec::with_capacity(sources.len());
+    let mut query_indices = Vec::with_capacity(sources.len());
+    let mut outputs = Vec::with_capacity(sources.len());
+    for source in sources {
+        if !source.values.len().is_multiple_of(8) {
+            return Err(AccelError::LengthMismatch {
+                lhs: source.values.len(),
+                rhs: source.values.len() / 8 * 8,
+            });
+        }
+        let child_word_count = source.values.len() / 8;
+        if !child_word_count.is_multiple_of(4) {
+            return Err(AccelError::InvalidDomain {
+                bits,
+                len: child_word_count,
+            });
+        }
+        let child_state_count = child_word_count / 4;
+        if child_state_count == 0 || source.query_index >= child_state_count {
+            return Err(AccelError::InvalidDomain {
+                bits,
+                len: child_state_count,
+            });
+        }
+        let level_count = merkle_opening_level_count(child_state_count, arity);
+        let sibling_word_count = level_count
+            .checked_mul(arity.saturating_sub(1))
+            .and_then(|count| count.checked_mul(4))
+            .ok_or(AccelError::InvalidDomain {
+                bits,
+                len: child_state_count,
+            })?;
+        values.push(source.values.as_raw_ptr() as *const u64);
+        child_state_counts.push(child_state_count);
+        query_indices.push(source.query_index);
+        outputs.push(CudaDeviceBuffer::new(u64_word_byte_len(
+            sibling_word_count,
+        )?)?);
+    }
+    if sources.is_empty() {
+        return Ok(outputs);
+    }
+    let output_ptrs = outputs
+        .iter()
+        .map(|output| output.as_raw_ptr() as *mut u64)
+        .collect::<Vec<_>>();
+    let code = unsafe {
+        operation(
+            values.as_ptr(),
+            child_state_counts.as_ptr(),
+            query_indices.as_ptr(),
+            output_ptrs.as_ptr(),
+            sources.len(),
+        )
+    };
+    cuda_status(code)?;
+    Ok(outputs)
+}
+
+#[cfg(feature = "cuda")]
 fn merkle_opening_level_count(mut state_count: usize, arity: usize) -> usize {
     let mut level_count = 0;
     while state_count > 1 {
@@ -4213,6 +4312,18 @@ pub fn cuda_poseidon2_width8_merkle_digest_opening_prefix_batch_device_buffer(
 }
 
 #[cfg(feature = "cuda")]
+pub fn cuda_poseidon2_width8_merkle_digest_opening_suffixes_batch_device_buffers(
+    sources: &[CudaMerkleDigestOpeningSuffixSource<'_>],
+) -> Result<Vec<CudaDeviceBuffer>, AccelError> {
+    run_cuda_poseidon2_merkle_digest_opening_suffixes_batch_device_buffer_op(
+        sources,
+        2,
+        3,
+        lzvm_cuda_poseidon2_width8_merkle_digest_opening_suffixes_batch_to_device_raw,
+    )
+}
+
+#[cfg(feature = "cuda")]
 pub fn cuda_poseidon2_width16(values: &[u64]) -> Result<Vec<u64>, AccelError> {
     const WIDTH: usize = 16;
 
@@ -4396,6 +4507,18 @@ pub fn cuda_poseidon2_width16_merkle_digest_opening_prefix_batch_device_buffer(
         query_indices,
         prefix_level_count,
         lzvm_cuda_poseidon2_width16_merkle_digest_opening_prefix_batch_to_device_raw,
+    )
+}
+
+#[cfg(feature = "cuda")]
+pub fn cuda_poseidon2_width16_merkle_digest_opening_suffixes_batch_device_buffers(
+    sources: &[CudaMerkleDigestOpeningSuffixSource<'_>],
+) -> Result<Vec<CudaDeviceBuffer>, AccelError> {
+    run_cuda_poseidon2_merkle_digest_opening_suffixes_batch_device_buffer_op(
+        sources,
+        4,
+        4,
+        lzvm_cuda_poseidon2_width16_merkle_digest_opening_suffixes_batch_to_device_raw,
     )
 }
 
@@ -4743,11 +4866,16 @@ mod tests {
         cuda_goldilocks_coset_extend_row_major_columns_strided_device,
         cuda_goldilocks_coset_extend_row_major_columns_strided_device_on_stream,
         cuda_poseidon2_begin_width16_linear_round_row_major_digest_device_on_stream,
-        cuda_poseidon2_width16_linear_round_row_major_digest_device, cuda_setup_init, cuda_status,
-        lzvm_cuda_goldilocks_coset_extend_row_major_columns_device_on_stream_raw,
-        lzvm_cuda_goldilocks_intt, lzvm_cuda_goldilocks_ntt, mul_mod, pow_mod,
-        row_weight_shift_for_target_row, sub_mod, CudaDeviceBuffer, CudaEvent,
-        CudaRowMajorColumnView, CudaRowMajorCosetExtensionGraphRunner, CudaStream,
+        cuda_poseidon2_width16_linear_round_row_major_digest_device,
+        cuda_poseidon2_width16_merkle_digest_opening_prefix_batch_device_buffer,
+        cuda_poseidon2_width16_merkle_digest_opening_suffixes_batch_device_buffers,
+        cuda_poseidon2_width8_merkle_digest_opening_prefix_batch_device_buffer,
+        cuda_poseidon2_width8_merkle_digest_opening_suffixes_batch_device_buffers, cuda_setup_init,
+        cuda_status, lzvm_cuda_goldilocks_coset_extend_row_major_columns_device_on_stream_raw,
+        lzvm_cuda_goldilocks_intt, lzvm_cuda_goldilocks_ntt, merkle_opening_level_count, mul_mod,
+        pow_mod, row_weight_shift_for_target_row, sub_mod, CudaDeviceBuffer, CudaEvent,
+        CudaMerkleDigestOpeningSuffixSource, CudaRowMajorColumnView,
+        CudaRowMajorCosetExtensionGraphRunner, CudaStream,
         CudaStridedRowMajorCosetExtensionGraphRunner, GOLDILOCKS_MODULUS, ROOTS_OF_UNITY, SHIFT,
     };
 
@@ -4777,6 +4905,112 @@ mod tests {
             stage_len <<= 1;
         }
         values
+    }
+
+    #[test]
+    fn digest_opening_suffixes_batch_matches_binary_per_buffer_paths() {
+        let _guard = crate::CUDA_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let state_counts = [1usize, 2, 3, 17, 70];
+        let query_indices = [0usize, 1, 2, 16, 69];
+        let buffers = state_counts
+            .iter()
+            .enumerate()
+            .map(|(group, state_count)| {
+                let words = (0..state_count * 4)
+                    .map(|index| 1000 + group as u64 * 1000 + index as u64)
+                    .collect::<Vec<_>>();
+                CudaDeviceBuffer::from_u64_words(&words).expect("digests should upload")
+            })
+            .collect::<Vec<_>>();
+        let sources = buffers
+            .iter()
+            .zip(query_indices)
+            .map(
+                |(values, query_index)| CudaMerkleDigestOpeningSuffixSource {
+                    values,
+                    query_index,
+                },
+            )
+            .collect::<Vec<_>>();
+
+        let actual =
+            cuda_poseidon2_width8_merkle_digest_opening_suffixes_batch_device_buffers(&sources)
+                .expect("batched paths should launch");
+        for (((values, state_count), query_index), actual) in buffers
+            .iter()
+            .zip(state_counts)
+            .zip(query_indices)
+            .zip(actual)
+        {
+            let level_count = merkle_opening_level_count(state_count, 2);
+            let expected = cuda_poseidon2_width8_merkle_digest_opening_prefix_batch_device_buffer(
+                values,
+                &[query_index],
+                level_count,
+            )
+            .expect("single-buffer path should launch")
+            .to_u64_words()
+            .expect("single-buffer path should download");
+            assert_eq!(
+                actual.to_u64_words().expect("batched path should download"),
+                expected
+            );
+        }
+    }
+
+    #[test]
+    fn digest_opening_suffixes_batch_matches_quaternary_per_buffer_paths() {
+        let _guard = crate::CUDA_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let state_counts = [1usize, 4, 5, 19, 70];
+        let query_indices = [0usize, 3, 4, 18, 69];
+        let buffers = state_counts
+            .iter()
+            .enumerate()
+            .map(|(group, state_count)| {
+                let words = (0..state_count * 4)
+                    .map(|index| 8000 + group as u64 * 1000 + index as u64)
+                    .collect::<Vec<_>>();
+                CudaDeviceBuffer::from_u64_words(&words).expect("digests should upload")
+            })
+            .collect::<Vec<_>>();
+        let sources = buffers
+            .iter()
+            .zip(query_indices)
+            .map(
+                |(values, query_index)| CudaMerkleDigestOpeningSuffixSource {
+                    values,
+                    query_index,
+                },
+            )
+            .collect::<Vec<_>>();
+
+        let actual =
+            cuda_poseidon2_width16_merkle_digest_opening_suffixes_batch_device_buffers(&sources)
+                .expect("batched paths should launch");
+        for (((values, state_count), query_index), actual) in buffers
+            .iter()
+            .zip(state_counts)
+            .zip(query_indices)
+            .zip(actual)
+        {
+            let level_count = merkle_opening_level_count(state_count, 4);
+            let expected = cuda_poseidon2_width16_merkle_digest_opening_prefix_batch_device_buffer(
+                values,
+                &[query_index],
+                level_count,
+            )
+            .expect("single-buffer path should launch")
+            .to_u64_words()
+            .expect("single-buffer path should download");
+            assert_eq!(
+                actual.to_u64_words().expect("batched path should download"),
+                expected
+            );
+        }
     }
 
     #[test]

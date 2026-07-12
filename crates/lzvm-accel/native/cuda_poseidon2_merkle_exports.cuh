@@ -87,6 +87,16 @@ extern "C" int lzvm_cuda_poseidon2_width8_merkle_digest_opening_prefix_batch_to_
         values, query_indices, siblings_out, child_state_count, query_count, prefix_level_count);
 }
 
+extern "C" int lzvm_cuda_poseidon2_width8_merkle_digest_opening_suffixes_batch_to_device(
+    const uint64_t* const* values,
+    const size_t* child_state_counts,
+    const size_t* query_indices,
+    uint64_t* const* siblings_out,
+    size_t group_count) {
+    return run_poseidon2_width8_merkle_digest_opening_suffixes_batch_to_device(
+        values, child_state_counts, query_indices, siblings_out, group_count);
+}
+
 extern "C" int lzvm_cuda_poseidon2_width16_merkle_parent_device(
     const uint64_t* values,
     uint64_t* out,
@@ -174,4 +184,14 @@ extern "C" int lzvm_cuda_poseidon2_width16_merkle_digest_opening_prefix_batch_to
     size_t prefix_level_count) {
     return run_poseidon2_width16_merkle_digest_opening_prefix_batch_to_device(
         values, query_indices, siblings_out, child_state_count, query_count, prefix_level_count);
+}
+
+extern "C" int lzvm_cuda_poseidon2_width16_merkle_digest_opening_suffixes_batch_to_device(
+    const uint64_t* const* values,
+    const size_t* child_state_counts,
+    const size_t* query_indices,
+    uint64_t* const* siblings_out,
+    size_t group_count) {
+    return run_poseidon2_width16_merkle_digest_opening_suffixes_batch_to_device(
+        values, child_state_counts, query_indices, siblings_out, group_count);
 }

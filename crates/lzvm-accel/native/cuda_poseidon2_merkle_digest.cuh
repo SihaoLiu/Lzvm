@@ -128,6 +128,224 @@ __global__ void poseidon2_merkle_digest_prefix_single_sibling_gather_kernel(
         : 0;
 }
 
+struct Poseidon2MerkleDigestOpeningGroup {
+    const uint64_t* current;
+    uint64_t* next;
+    uint64_t* siblings;
+    size_t state_count;
+    size_t query_index;
+    size_t level;
+};
+
+template <size_t Width, size_t Arity>
+__global__ void poseidon2_merkle_digest_opening_groups_kernel(
+    const Poseidon2MerkleDigestOpeningGroup* groups,
+    const size_t* parent_offsets,
+    size_t group_count,
+    size_t total_parent_count) {
+    const size_t global_parent_index = blockIdx.x * blockDim.x + threadIdx.x;
+    if (global_parent_index >= total_parent_count) {
+        return;
+    }
+
+    size_t lower = 0;
+    size_t upper = group_count;
+    while (lower < upper) {
+        const size_t middle = lower + (upper - lower) / 2;
+        if (parent_offsets[middle + 1] <= global_parent_index) {
+            lower = middle + 1;
+        } else {
+            upper = middle;
+        }
+    }
+    const size_t group_index = lower;
+    const Poseidon2MerkleDigestOpeningGroup group = groups[group_index];
+    const size_t parent_index = global_parent_index - parent_offsets[group_index];
+
+    uint64_t state[Width] = {};
+    const size_t first_child = parent_index * Arity;
+    for (size_t slot = 0; slot < Arity; ++slot) {
+        const size_t child_index = first_child + slot;
+        if (child_index < group.state_count) {
+            const size_t child_offset = child_index * kPoseidon2DigestWords;
+            const size_t slot_offset = slot * kPoseidon2DigestWords;
+            for (size_t word = 0; word < kPoseidon2DigestWords; ++word) {
+                state[slot_offset + word] = group.current[child_offset + word];
+            }
+        }
+    }
+
+    if (parent_index == group.query_index / Arity) {
+        const size_t child_slot = group.query_index % Arity;
+        size_t sibling_slot = 0;
+        for (size_t slot = 0; slot < Arity; ++slot) {
+            if (slot == child_slot) {
+                continue;
+            }
+            const size_t out_offset =
+                (group.level * (Arity - 1) + sibling_slot) * kPoseidon2DigestWords;
+            const size_t slot_offset = slot * kPoseidon2DigestWords;
+            for (size_t word = 0; word < kPoseidon2DigestWords; ++word) {
+                group.siblings[out_offset + word] = state[slot_offset + word];
+            }
+            ++sibling_slot;
+        }
+    }
+
+    if constexpr (Width == kPoseidon2Width8) {
+        poseidon2_hash_width8(state);
+    } else {
+        poseidon2_hash_width16(state);
+    }
+    const size_t out_offset = parent_index * kPoseidon2DigestWords;
+    for (size_t word = 0; word < kPoseidon2DigestWords; ++word) {
+        group.next[out_offset + word] = state[word];
+    }
+}
+
+template <size_t Width, size_t Arity>
+int run_poseidon2_merkle_digest_opening_suffixes_batch_to_device(
+    const uint64_t* const* device_values,
+    const size_t* child_state_counts,
+    const size_t* query_indices,
+    uint64_t* const* siblings_out,
+    size_t group_count) {
+    if (group_count == 0) {
+        return 0;
+    }
+    if (device_values == nullptr || child_state_counts == nullptr
+        || query_indices == nullptr || siblings_out == nullptr) {
+        return -1;
+    }
+    if (group_count == std::numeric_limits<size_t>::max()) {
+        return -2;
+    }
+
+    std::vector<size_t> scratch_a_offsets(group_count + 1, 0);
+    std::vector<size_t> scratch_b_offsets(group_count + 1, 0);
+    size_t max_level_count = 0;
+    for (size_t group = 0; group < group_count; ++group) {
+        const size_t state_count = child_state_counts[group];
+        if (state_count == 0 || query_indices[group] >= state_count
+            || device_values[group] == nullptr) {
+            return -2;
+        }
+        const size_t level_count = merkle_opening_level_count(state_count, Arity);
+        if (level_count > 0 && siblings_out[group] == nullptr) {
+            return -1;
+        }
+        max_level_count = std::max(max_level_count, level_count);
+
+        const size_t first_parent_count = (state_count + Arity - 1) / Arity;
+        const size_t second_parent_count =
+            first_parent_count > 1 ? (first_parent_count + Arity - 1) / Arity : 0;
+        if (scratch_a_offsets[group] > std::numeric_limits<size_t>::max() - first_parent_count
+            || scratch_b_offsets[group] > std::numeric_limits<size_t>::max() - second_parent_count) {
+            return -2;
+        }
+        scratch_a_offsets[group + 1] = scratch_a_offsets[group] + first_parent_count;
+        scratch_b_offsets[group + 1] = scratch_b_offsets[group] + second_parent_count;
+    }
+
+    DeviceBuffer<uint64_t> scratch_a;
+    DeviceBuffer<uint64_t> scratch_b;
+    LZVM_CUDA_RETURN_ON_ERROR(scratch_a.reset(
+        scratch_a_offsets[group_count] * kPoseidon2DigestWords));
+    LZVM_CUDA_RETURN_ON_ERROR(scratch_b.reset(
+        scratch_b_offsets[group_count] * kPoseidon2DigestWords));
+
+    std::vector<Poseidon2MerkleDigestOpeningGroup> level_groups;
+    std::vector<size_t> level_parent_offsets;
+    std::vector<size_t> level_group_starts;
+    std::vector<size_t> level_offset_starts;
+    std::vector<size_t> level_parent_counts;
+    level_groups.reserve(max_level_count * group_count);
+    level_parent_offsets.reserve(max_level_count * (group_count + 1));
+    level_group_starts.reserve(max_level_count);
+    level_offset_starts.reserve(max_level_count);
+    level_parent_counts.reserve(max_level_count);
+
+    std::vector<size_t> state_counts(child_state_counts, child_state_counts + group_count);
+    std::vector<size_t> level_queries(query_indices, query_indices + group_count);
+    for (size_t level = 0; level < max_level_count; ++level) {
+        level_group_starts.push_back(level_groups.size());
+        level_offset_starts.push_back(level_parent_offsets.size());
+        level_parent_offsets.push_back(0);
+        size_t total_parent_count = 0;
+        for (size_t group = 0; group < group_count; ++group) {
+            const size_t state_count = state_counts[group];
+            const size_t parent_count = state_count > 1
+                ? (state_count + Arity - 1) / Arity
+                : 0;
+            if (total_parent_count > std::numeric_limits<size_t>::max() - parent_count) {
+                return -2;
+            }
+            total_parent_count += parent_count;
+            level_parent_offsets.push_back(total_parent_count);
+
+            const uint64_t* current = nullptr;
+            uint64_t* next = nullptr;
+            if (state_count > 1) {
+                if (level == 0) {
+                    current = device_values[group];
+                } else if ((level & 1) != 0) {
+                    current = scratch_a.data()
+                        + scratch_a_offsets[group] * kPoseidon2DigestWords;
+                } else {
+                    current = scratch_b.data()
+                        + scratch_b_offsets[group] * kPoseidon2DigestWords;
+                }
+                if ((level & 1) == 0) {
+                    next = scratch_a.data()
+                        + scratch_a_offsets[group] * kPoseidon2DigestWords;
+                } else {
+                    next = scratch_b.data()
+                        + scratch_b_offsets[group] * kPoseidon2DigestWords;
+                }
+            }
+            level_groups.push_back(Poseidon2MerkleDigestOpeningGroup{
+                current,
+                next,
+                siblings_out[group],
+                state_count,
+                level_queries[group],
+                level,
+            });
+            state_counts[group] = parent_count;
+            level_queries[group] /= Arity;
+        }
+        level_parent_counts.push_back(total_parent_count);
+    }
+
+    DeviceBuffer<Poseidon2MerkleDigestOpeningGroup> device_groups;
+    DeviceBuffer<size_t> device_parent_offsets;
+    LZVM_CUDA_RETURN_ON_ERROR(device_groups.reset(level_groups.size()));
+    LZVM_CUDA_RETURN_ON_ERROR(device_parent_offsets.reset(level_parent_offsets.size()));
+    LZVM_CUDA_RETURN_ON_ERROR(device_groups.copy_from_bytes(
+        level_groups.data(),
+        level_groups.size() * sizeof(Poseidon2MerkleDigestOpeningGroup)));
+    LZVM_CUDA_RETURN_ON_ERROR(device_parent_offsets.copy_from_bytes(
+        level_parent_offsets.data(),
+        level_parent_offsets.size() * sizeof(size_t)));
+
+    for (size_t level = 0; level < max_level_count; ++level) {
+        const size_t total_parent_count = level_parent_counts[level];
+        if (total_parent_count == 0) {
+            continue;
+        }
+        const size_t blocks = (total_parent_count + kPoseidon2MerkleDigestParentThreads - 1)
+            / kPoseidon2MerkleDigestParentThreads;
+        poseidon2_merkle_digest_opening_groups_kernel<Width, Arity>
+            <<<blocks, kPoseidon2MerkleDigestParentThreads>>>(
+                device_groups.data() + level_group_starts[level],
+                device_parent_offsets.data() + level_offset_starts[level],
+                group_count,
+                total_parent_count);
+        LZVM_CUDA_RETURN_ON_ERROR(lzvm_cuda_check_launch());
+    }
+    return 0;
+}
+
 template <size_t Width, size_t Arity>
 int run_poseidon2_merkle_digest_root_on_device(
     const uint64_t* device_values,
@@ -736,4 +954,32 @@ int run_poseidon2_width16_merkle_digest_opening_prefix_batch_to_device(
         child_state_count,
         query_count,
         prefix_level_count);
+}
+
+int run_poseidon2_width8_merkle_digest_opening_suffixes_batch_to_device(
+    const uint64_t* const* device_values,
+    const size_t* child_state_counts,
+    const size_t* query_indices,
+    uint64_t* const* siblings_out,
+    size_t group_count) {
+    try {
+        return run_poseidon2_merkle_digest_opening_suffixes_batch_to_device<kPoseidon2Width8, 2>(
+            device_values, child_state_counts, query_indices, siblings_out, group_count);
+    } catch (...) {
+        return -1;
+    }
+}
+
+int run_poseidon2_width16_merkle_digest_opening_suffixes_batch_to_device(
+    const uint64_t* const* device_values,
+    const size_t* child_state_counts,
+    const size_t* query_indices,
+    uint64_t* const* siblings_out,
+    size_t group_count) {
+    try {
+        return run_poseidon2_merkle_digest_opening_suffixes_batch_to_device<kPoseidon2Width16, 4>(
+            device_values, child_state_counts, query_indices, siblings_out, group_count);
+    } catch (...) {
+        return -1;
+    }
 }
