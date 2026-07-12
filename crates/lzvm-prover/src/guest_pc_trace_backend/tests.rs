@@ -1862,6 +1862,36 @@ fn direct_boundary_c_uses_branch_next_pc_outcome() {
 }
 
 #[test]
+fn direct_branch_boundary_c_uses_register_comparisons() {
+    let mut registers = [0_u64; 32];
+    registers[1] = u64::MAX;
+    registers[2] = 1;
+    for (kind, expected) in [
+        (RiscvBranchKind::Beq, 0),
+        (RiscvBranchKind::Bne, 0),
+        (RiscvBranchKind::Blt, 1),
+        (RiscvBranchKind::Bge, 1),
+        (RiscvBranchKind::Bltu, 0),
+        (RiscvBranchKind::Bgeu, 0),
+    ] {
+        let instruction = RiscvInstruction::Branch {
+            kind,
+            rs1: 1,
+            rs2: 2,
+            offset: 16,
+        };
+        assert_eq!(
+            direct_branch_boundary_c_from_registers(instruction, Some(&registers)),
+            Some(expected)
+        );
+        assert_eq!(
+            direct_branch_boundary_c_from_registers(instruction, None),
+            None
+        );
+    }
+}
+
+#[test]
 fn guest_pc_trace_seed_mirror_attaches_pending_segment_seeds_when_enabled() {
     let _env_lock = GUEST_PC_TRACE_ENV_LOCK
         .lock()
@@ -4934,7 +4964,10 @@ fn runner_boundary_seed_snapshot_uses_report_shape_for_branch_boundary_without_r
             register_write_value: GuestRegisterWriteValue::default(),
             memory_accesses: Vec::new().into(),
         };
-    let runner_state = GuestMachineState::new(report.next_pc);
+    let mut runner_state = GuestMachineState::new(report.next_pc);
+    runner_state
+        .set_register(22, 1)
+        .expect("branch source register should be writable");
     let mut boundary_snapshot = ZiskMainRunnerBoundarySnapshot::new(&current_seed);
     record_zisk_main_runner_boundary_snapshot(
         &mut boundary_snapshot,
@@ -4948,20 +4981,7 @@ fn runner_boundary_seed_snapshot_uses_report_shape_for_branch_boundary_without_r
         }),
         runner_state.registers(),
     )
-    .expect("boundary snapshot should record branch report context");
-    let recorded_context = boundary_snapshot.last_branch_report_context;
-    let mut non_branch_report = report.clone();
-    non_branch_report.instruction = RiscvInstruction::OpImm {
-        kind: RiscvOpImmKind::Addi,
-        rd: 0,
-        rs1: 0,
-        immediate: 0,
-    };
-    boundary_snapshot.record_branch_report_context(&non_branch_report);
-    assert_eq!(
-        boundary_snapshot.last_branch_report_context,
-        recorded_context
-    );
+    .expect("boundary snapshot should accept branch report");
     let segment = ZiskMainTraceSegmentInfo {
         trace_instance_index: 0,
         is_last_segment: false,
@@ -4990,7 +5010,7 @@ fn runner_boundary_seed_snapshot_uses_report_shape_for_branch_boundary_without_r
         },
     )
     .expect("shape-only branch boundary seed lift should evaluate")
-    .expect("shape-only branch boundary should use recorded report context");
+    .expect("shape-only branch boundary should use runner registers");
 
     assert_eq!(lifted.previous_c, 0);
     assert_eq!(lifted.initial_state.last_c, 0);
