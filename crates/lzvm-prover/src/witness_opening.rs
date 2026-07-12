@@ -34,9 +34,10 @@ use crate::witness_commitment::{
 };
 #[cfg(feature = "cuda")]
 use crate::witness_commitment::{
-    open_witness_stage_commitment_batches_with_source_devices_timing, WitnessStageCommitment,
-    WitnessStageOpeningBatchRequest, WitnessStageOpeningWorkTiming, WitnessStageSourceDevice,
-    WitnessStageSourceDeviceView,
+    open_witness_stage_commitment_batches_with_precomputed_suffixes,
+    precompute_sparse_parent_checkpoint_suffix_cache, PrecomputedCudaDigestCheckpointSuffixes,
+    WitnessStageCommitment, WitnessStageOpeningBatchRequest, WitnessStageOpeningWorkTiming,
+    WitnessStageSourceDevice, WitnessStageSourceDeviceView,
 };
 use crate::witness_execution::{ProveWitnessCommitments, ProveWitnessTraceCommitments};
 #[cfg(feature = "cuda")]
@@ -784,12 +785,53 @@ struct TraceOutputOpeningUnitWork<'a> {
 }
 
 #[cfg(feature = "cuda")]
+fn precompute_trace_output_parent_checkpoint_suffixes<'a>(
+    schedule: &'a ProveSchedule,
+    query_plan: &'a PcsQueryPlanSegment,
+    outputs_by_unit: &std::collections::BTreeMap<(u32, u32), &'a ProveWitnessTraceCommitments>,
+) -> Result<PrecomputedCudaDigestCheckpointSuffixes, ProveWitnessOpeningSegmentError> {
+    let mut requests = Vec::new();
+    for query_unit in &query_plan.units {
+        let unit_index = query_unit.unit_index as usize;
+        let output = outputs_by_unit
+            .get(&(query_unit.unit_index, query_unit.trace_instance_index))
+            .ok_or(ProveWitnessOpeningSegmentError::MissingOutputUnit { unit_index })?;
+        let unit = schedule.units.get(unit_index).ok_or(
+            ProveWitnessOpeningSegmentError::UnitIndexOutOfRange {
+                unit_index,
+                unit_count: schedule.units.len(),
+            },
+        )?;
+        for commitment in output.commitments().stage_commitments().commitments() {
+            requests.push(WitnessStageOpeningBatchRequest {
+                commitment,
+                row_indices: &query_unit.queries,
+                row_count: unit.extended_domain_size,
+                column_count: witness_stage_width(unit, commitment.stage_index())?,
+                source_device: None,
+            });
+        }
+    }
+    precompute_sparse_parent_checkpoint_suffix_cache(&requests).map_err(|source| {
+        ProveWitnessOpeningSegmentError::StageOpening {
+            unit_index: 0,
+            trace_instance_index: 0,
+            stage_index: 0,
+            source_kind: "embedded",
+            source,
+        }
+    })
+}
+
+#[cfg(feature = "cuda")]
 fn build_witness_opening_segment_from_trace_outputs_cuda_batched(
     schedule: &ProveSchedule,
     query_plan: &PcsQueryPlanSegment,
     outputs_by_unit: &std::collections::BTreeMap<(u32, u32), &ProveWitnessTraceCommitments>,
     mut timing: Option<&mut WitnessProofArtifactTiming>,
 ) -> Result<ProofSegment, ProveWitnessOpeningSegmentError> {
+    let precomputed_parent_suffixes =
+        precompute_trace_output_parent_checkpoint_suffixes(schedule, query_plan, outputs_by_unit)?;
     let mut units = Vec::with_capacity(query_plan.units.len());
     let mut pending_works = Vec::new();
     let mut pending_external_source_works = 0usize;
@@ -804,6 +846,7 @@ fn build_witness_opening_segment_from_trace_outputs_cuda_batched(
             if pending_external_source_works == 0 && !pending_works.is_empty() {
                 append_trace_output_opening_units_from_prepared_cuda_batch(
                     std::mem::take(&mut pending_works),
+                    &precomputed_parent_suffixes,
                     timing.as_deref_mut(),
                     &mut units,
                 )?;
@@ -826,6 +869,7 @@ fn build_witness_opening_segment_from_trace_outputs_cuda_batched(
             if pending_external_source_works >= external_source_batch_size {
                 append_trace_output_opening_units_from_prepared_cuda_batch(
                     std::mem::take(&mut pending_works),
+                    &precomputed_parent_suffixes,
                     timing.as_deref_mut(),
                     &mut units,
                 )?;
@@ -835,6 +879,7 @@ fn build_witness_opening_segment_from_trace_outputs_cuda_batched(
             if pending_external_source_works > 0 {
                 append_trace_output_opening_units_from_prepared_cuda_batch(
                     std::mem::take(&mut pending_works),
+                    &precomputed_parent_suffixes,
                     timing.as_deref_mut(),
                     &mut units,
                 )?;
@@ -848,7 +893,12 @@ fn build_witness_opening_segment_from_trace_outputs_cuda_batched(
             )?);
         }
     }
-    append_trace_output_opening_units_from_prepared_cuda_batch(pending_works, timing, &mut units)?;
+    append_trace_output_opening_units_from_prepared_cuda_batch(
+        pending_works,
+        &precomputed_parent_suffixes,
+        timing,
+        &mut units,
+    )?;
 
     let segment = WitnessOpeningSegment { units };
     Ok(ProofSegment {
@@ -889,6 +939,7 @@ fn trace_output_opening_unit_needs_external_source(output: &ProveWitnessTraceCom
 #[cfg(feature = "cuda")]
 fn append_trace_output_opening_units_from_prepared_cuda_batch(
     mut works: Vec<TraceOutputOpeningUnitWork<'_>>,
+    precomputed_parent_suffixes: &PrecomputedCudaDigestCheckpointSuffixes,
     mut timing: Option<&mut WitnessProofArtifactTiming>,
     units: &mut Vec<WitnessOpeningUnitSegment>,
 ) -> Result<(), ProveWitnessOpeningSegmentError> {
@@ -923,9 +974,10 @@ fn append_trace_output_opening_units_from_prepared_cuda_batch(
         }
     }
     let mut opening_work_timings = vec![WitnessStageOpeningWorkTiming::default(); requests.len()];
-    let stage_opening_groups = open_witness_stage_commitment_batches_with_source_devices_timing(
+    let stage_opening_groups = open_witness_stage_commitment_batches_with_precomputed_suffixes(
         &requests,
         &mut opening_work_timings,
+        precomputed_parent_suffixes,
     )
     .map_err(|source| {
         let (unit_index, trace_instance_index, stage_index, source_kind) = positions

@@ -15,8 +15,10 @@ use crate::merkle_hash::{
 };
 #[cfg(feature = "cuda")]
 use crate::merkle_hash::{
-    synchronize_cuda_digest_root_materializations, CudaDigestCheckpointLevel, CudaDigestRoot,
-    CudaMerkleSiblingBatchDeviceBuffer, MerkleHashError, PendingCudaDigestRootMaterialization,
+    opening_path_siblings_across_digest_checkpoints, synchronize_cuda_digest_root_materializations,
+    CudaDigestCheckpointLevel, CudaDigestCheckpointOpeningKey, CudaDigestCheckpointOpeningSource,
+    CudaDigestCheckpointSiblingBatch, CudaDigestRoot, CudaMerkleSiblingBatchDeviceBuffer,
+    MerkleHashError, PendingCudaDigestRootMaterialization,
     PendingCudaDigestRootMaterializationBatch,
 };
 use crate::witness_layout::WitnessTraceStageValues;
@@ -1328,6 +1330,111 @@ enum PendingWitnessStageOpeningGroup {
     },
 }
 
+#[cfg(feature = "cuda")]
+#[derive(Clone)]
+pub(crate) struct PrecomputedCudaDigestCheckpointSuffix {
+    batch: CudaDigestCheckpointSiblingBatch,
+    duration: Duration,
+}
+
+#[cfg(feature = "cuda")]
+pub(crate) type PrecomputedCudaDigestCheckpointSuffixes =
+    HashMap<CudaDigestCheckpointOpeningKey, PrecomputedCudaDigestCheckpointSuffix>;
+
+#[cfg(feature = "cuda")]
+fn sparse_parent_checkpoint_sources<'a>(
+    requests: &'a [WitnessStageOpeningBatchRequest<'a>],
+) -> Result<Vec<(usize, CudaDigestCheckpointOpeningSource<'a>)>, WitnessStageOpeningError> {
+    let mut sources = Vec::new();
+    for (request_index, request) in requests.iter().enumerate() {
+        if request.row_indices.is_empty() {
+            continue;
+        }
+        let query_rows = checked_witness_stage_opening_rows(
+            request.commitment,
+            request.row_indices,
+            request.row_count,
+            request.column_count,
+        )?;
+        let unique = unique_witness_stage_opening_rows(request.row_indices, &query_rows);
+        let opening_query_rows = unique
+            .as_ref()
+            .map_or(query_rows.as_slice(), |unique| unique.query_rows.as_slice());
+        let row_count = usize::try_from(request.row_count)
+            .map_err(|_| WitnessStageOpeningError::LengthOverflow)?;
+        if let Some(source) = request.commitment.sparse_parent_checkpoint_opening_source(
+            opening_query_rows,
+            row_count,
+            request.column_count,
+        )? {
+            sources.push((request_index, source));
+        }
+    }
+    Ok(sources)
+}
+
+#[cfg(feature = "cuda")]
+pub(crate) fn precompute_sparse_parent_checkpoint_suffix_cache<'a>(
+    requests: &'a [WitnessStageOpeningBatchRequest<'a>],
+) -> Result<PrecomputedCudaDigestCheckpointSuffixes, WitnessStageOpeningError> {
+    const MIN_GROUP_SIZE: usize = 8;
+
+    let mut source_groups =
+        HashMap::<(usize, usize), Vec<CudaDigestCheckpointOpeningSource<'a>>>::new();
+    for (_, source) in sparse_parent_checkpoint_sources(requests)? {
+        source_groups
+            .entry(source.batch_key().map_err(WitnessStageOpeningError::from)?)
+            .or_default()
+            .push(source);
+    }
+
+    let mut cache = HashMap::new();
+    for sources in source_groups.into_values() {
+        if sources.len() < MIN_GROUP_SIZE {
+            continue;
+        }
+        let started = Instant::now();
+        let batches = opening_path_siblings_across_digest_checkpoints(&sources)
+            .map_err(WitnessStageOpeningError::from)?;
+        let elapsed = started.elapsed();
+        if batches.len() != sources.len() {
+            return Err(WitnessStageOpeningError::LengthOverflow);
+        }
+        let divisor =
+            u32::try_from(sources.len()).map_err(|_| WitnessStageOpeningError::LengthOverflow)?;
+        let per_request = elapsed / divisor;
+        for (source, batch) in sources.into_iter().zip(batches) {
+            cache.insert(
+                source.key(),
+                PrecomputedCudaDigestCheckpointSuffix {
+                    batch,
+                    duration: per_request,
+                },
+            );
+        }
+    }
+    Ok(cache)
+}
+
+#[cfg(feature = "cuda")]
+fn precomputed_sparse_parent_checkpoint_suffixes<'a>(
+    requests: &'a [WitnessStageOpeningBatchRequest<'a>],
+    timings: &mut [WitnessStageOpeningWorkTiming],
+    cache: &PrecomputedCudaDigestCheckpointSuffixes,
+) -> Result<Vec<Option<CudaDigestCheckpointSiblingBatch>>, WitnessStageOpeningError> {
+    let mut suffixes = (0..requests.len()).map(|_| None).collect::<Vec<_>>();
+    for (request_index, source) in sparse_parent_checkpoint_sources(requests)? {
+        if let Some(precomputed) = cache.get(&source.key()) {
+            timings
+                .get_mut(request_index)
+                .ok_or(WitnessStageOpeningError::LengthOverflow)?
+                .record_retained_parent_checkpoint_suffix_batch_duration(precomputed.duration);
+            suffixes[request_index] = Some(precomputed.batch.clone());
+        }
+    }
+    Ok(suffixes)
+}
+
 struct UniqueWitnessStageOpeningRows {
     row_indices: Vec<u64>,
     #[cfg_attr(not(feature = "cuda"), allow(dead_code))]
@@ -1410,16 +1517,29 @@ fn expand_unique_witness_stage_openings(
 }
 
 #[cfg(feature = "cuda")]
+#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) fn open_witness_stage_commitment_batches_with_source_devices_timing(
     requests: &[WitnessStageOpeningBatchRequest<'_>],
     timings: &mut [WitnessStageOpeningWorkTiming],
 ) -> Result<Vec<Vec<WitnessStageOpening>>, WitnessStageOpeningError> {
+    let cache = precompute_sparse_parent_checkpoint_suffix_cache(requests)?;
+    open_witness_stage_commitment_batches_with_precomputed_suffixes(requests, timings, &cache)
+}
+
+#[cfg(feature = "cuda")]
+pub(crate) fn open_witness_stage_commitment_batches_with_precomputed_suffixes<'a>(
+    requests: &'a [WitnessStageOpeningBatchRequest<'a>],
+    timings: &mut [WitnessStageOpeningWorkTiming],
+    cache: &PrecomputedCudaDigestCheckpointSuffixes,
+) -> Result<Vec<Vec<WitnessStageOpening>>, WitnessStageOpeningError> {
     if requests.len() != timings.len() {
         return Err(WitnessStageOpeningError::LengthOverflow);
     }
+    let mut precomputed_parent_suffixes =
+        precomputed_sparse_parent_checkpoint_suffixes(requests, timings, cache)?;
     let mut pending_groups = Vec::with_capacity(requests.len());
     let mut sibling_batches = Vec::new();
-    for (request, timing) in requests.iter().zip(timings.iter_mut()) {
+    for (request_index, (request, timing)) in requests.iter().zip(timings.iter_mut()).enumerate() {
         if request.row_indices.is_empty() {
             pending_groups.push(PendingWitnessStageOpeningGroup::Ready(Vec::new()));
             continue;
@@ -1485,13 +1605,14 @@ pub(crate) fn open_witness_stage_commitment_batches_with_source_devices_timing(
                         });
                     }
                     None => {
-                        let openings = open_witness_stage_commitments_inner(
+                        let openings = open_witness_stage_commitments_inner_with_parent_suffix(
                             request.commitment,
                             request.row_indices,
                             request.row_count,
                             request.column_count,
                             request.source_device,
                             Some(timing),
+                            precomputed_parent_suffixes[request_index].take(),
                         )?;
                         pending_groups.push(PendingWitnessStageOpeningGroup::Ready(openings));
                     }
@@ -1706,7 +1827,30 @@ fn open_witness_stage_commitments_inner(
     row_count: u64,
     column_count: usize,
     #[cfg(feature = "cuda")] source_device: Option<&WitnessStageSourceDeviceView>,
+    #[cfg(feature = "cuda")] timing: Option<&mut WitnessStageOpeningWorkTiming>,
+) -> Result<Vec<WitnessStageOpening>, WitnessStageOpeningError> {
+    open_witness_stage_commitments_inner_with_parent_suffix(
+        commitment,
+        row_indices,
+        row_count,
+        column_count,
+        #[cfg(feature = "cuda")]
+        source_device,
+        #[cfg(feature = "cuda")]
+        timing,
+        #[cfg(feature = "cuda")]
+        None,
+    )
+}
+
+fn open_witness_stage_commitments_inner_with_parent_suffix(
+    commitment: &WitnessStageCommitment,
+    row_indices: &[u64],
+    row_count: u64,
+    column_count: usize,
+    #[cfg(feature = "cuda")] source_device: Option<&WitnessStageSourceDeviceView>,
     #[cfg(feature = "cuda")] mut timing: Option<&mut WitnessStageOpeningWorkTiming>,
+    #[cfg(feature = "cuda")] precomputed_parent_suffix: Option<CudaDigestCheckpointSiblingBatch>,
 ) -> Result<Vec<WitnessStageOpening>, WitnessStageOpeningError> {
     if row_indices.is_empty() {
         return Ok(Vec::new());
@@ -1720,7 +1864,7 @@ fn open_witness_stage_commitments_inner(
         if let Some(timing) = timing.as_deref_mut() {
             timing.record_row_dedup(row_indices.len(), unique.row_indices.len());
         }
-        let openings = open_witness_stage_commitments_inner(
+        let openings = open_witness_stage_commitments_inner_with_parent_suffix(
             commitment,
             &unique.row_indices,
             row_count,
@@ -1729,6 +1873,8 @@ fn open_witness_stage_commitments_inner(
             source_device,
             #[cfg(feature = "cuda")]
             timing.as_deref_mut(),
+            #[cfg(feature = "cuda")]
+            precomputed_parent_suffix,
         )?;
         return expand_unique_witness_stage_openings(&openings, &unique.positions);
     }
@@ -1740,6 +1886,7 @@ fn open_witness_stage_commitments_inner(
         column_count,
         source_device,
         timing.as_deref_mut(),
+        precomputed_parent_suffix,
     )?;
     #[cfg(not(feature = "cuda"))]
     let compact_openings =

@@ -39,7 +39,8 @@ use crate::merkle_hash::{
 #[cfg(feature = "cuda")]
 use crate::merkle_hash::{
     linear_hash_level_from_validated_row_major_device_buffer, CudaDigestCheckpointLevel,
-    CudaDigestLevel, CudaMerkleSiblingBatchDeviceBuffer,
+    CudaDigestCheckpointOpeningSource, CudaDigestCheckpointSiblingBatch, CudaDigestLevel,
+    CudaMerkleSiblingBatchDeviceBuffer,
 };
 
 type CompactOnDemandOpening = (Vec<Felt>, Vec<Vec<[Felt; HASH_WORDS]>>);
@@ -316,6 +317,17 @@ impl WitnessStageOpeningWorkTiming {
                 self.path_parent_hash_retained_parent_checkpoint_suffix += duration;
             }
         }
+    }
+
+    #[cfg(feature = "cuda")]
+    pub(crate) fn record_retained_parent_checkpoint_suffix_batch_duration(
+        &mut self,
+        duration: Duration,
+    ) {
+        self.record_path_parent_hash_duration(
+            PathParentHashTimingKind::RetainedParentCheckpointSuffix,
+            duration,
+        );
     }
 }
 
@@ -606,6 +618,21 @@ impl RetainedCudaParentCheckpointLevel {
     ) -> Result<Vec<Vec<Vec<[Felt; HASH_WORDS]>>>, crate::merkle_hash::MerkleHashError> {
         self.level
             .opening_path_siblings_batch_for_source_rows(source_rows)
+    }
+
+    fn opening_source(
+        &self,
+        source_row: usize,
+    ) -> Result<CudaDigestCheckpointOpeningSource<'_>, crate::merkle_hash::MerkleHashError> {
+        CudaDigestCheckpointOpeningSource::new(&self.level, source_row)
+    }
+
+    fn precomputed_opening_path_siblings_batch_for_source_rows(
+        &self,
+        source_rows: &[usize],
+        batch: CudaDigestCheckpointSiblingBatch,
+    ) -> Result<Vec<Vec<Vec<[Felt; HASH_WORDS]>>>, crate::merkle_hash::MerkleHashError> {
+        batch.into_siblings_for_source_rows(&self.level, source_rows)
     }
 }
 
@@ -1566,6 +1593,7 @@ impl WitnessStageCommitment {
         column_count: usize,
         source_device: Option<&WitnessStageSourceDeviceView>,
         timing: Option<&mut WitnessStageOpeningWorkTiming>,
+        precomputed_parent_suffix: Option<CudaDigestCheckpointSiblingBatch>,
     ) -> Result<Option<Vec<CompactOnDemandOpening>>, WitnessStageOpeningError> {
         match &self.tree {
             WitnessStageTreeStorage::Host(_) => Ok(None),
@@ -1578,6 +1606,7 @@ impl WitnessStageCommitment {
                     self.root,
                     source_device,
                     timing,
+                    precomputed_parent_suffix,
                 ),
         }
     }
@@ -1626,6 +1655,25 @@ impl WitnessStageCommitment {
                     self.root,
                     source_device,
                     timing,
+                ),
+        }
+    }
+
+    #[cfg(feature = "cuda")]
+    pub(crate) fn sparse_parent_checkpoint_opening_source(
+        &self,
+        row_indices: &[usize],
+        row_count: usize,
+        column_count: usize,
+    ) -> Result<Option<CudaDigestCheckpointOpeningSource<'_>>, WitnessStageOpeningError> {
+        match &self.tree {
+            WitnessStageTreeStorage::Host(_) => Ok(None),
+            WitnessStageTreeStorage::Compact(storage) => storage
+                .sparse_parent_checkpoint_opening_source(
+                    row_indices,
+                    row_count,
+                    column_count,
+                    self.arity,
                 ),
         }
     }
@@ -1835,6 +1883,9 @@ impl WitnessStageCompactTreeStorage {
         expected_root: [Felt; HASH_WORDS],
         #[cfg(feature = "cuda")] source_device: Option<&WitnessStageSourceDeviceView>,
         #[cfg(feature = "cuda")] mut timing: Option<&mut WitnessStageOpeningWorkTiming>,
+        #[cfg(feature = "cuda")] precomputed_parent_suffix: Option<
+            CudaDigestCheckpointSiblingBatch,
+        >,
     ) -> Result<Option<Vec<CompactOnDemandOpening>>, WitnessStageOpeningError> {
         let should_open_on_demand = self.digest_tree.is_none();
         if !should_open_on_demand {
@@ -1860,8 +1911,14 @@ impl WitnessStageCompactTreeStorage {
 
         #[cfg(feature = "cuda")]
         {
-            self.open_batch_on_demand_cuda(row_indices, expected_root, source_device, timing)
-                .map(Some)
+            self.open_batch_on_demand_cuda(
+                row_indices,
+                expected_root,
+                source_device,
+                timing,
+                precomputed_parent_suffix,
+            )
+            .map(Some)
         }
         #[cfg(not(feature = "cuda"))]
         {
@@ -1869,6 +1926,39 @@ impl WitnessStageCompactTreeStorage {
             let _ = expected_root;
             Err(WitnessStageOpeningError::LengthOverflow)
         }
+    }
+
+    #[cfg(feature = "cuda")]
+    fn sparse_parent_checkpoint_opening_source(
+        &self,
+        row_indices: &[usize],
+        row_count: usize,
+        column_count: usize,
+        arity: usize,
+    ) -> Result<Option<CudaDigestCheckpointOpeningSource<'_>>, WitnessStageOpeningError> {
+        if self.digest_tree.is_some()
+            || self.zero_source
+            || self.retained_leaf_digest_level.is_some()
+            || row_indices.len() != 1
+        {
+            return Ok(None);
+        }
+        if row_count != self.extended_rows || column_count != self.columns || arity != self.arity {
+            return Err(WitnessStageOpeningError::LengthOverflow);
+        }
+        let Some(checkpoint) = &self.retained_parent_checkpoint_level else {
+            return Ok(None);
+        };
+        if checkpoint.source_state_count() != self.extended_rows
+            || checkpoint.arity() != self.arity
+            || checkpoint.folded_level_count() != 1
+        {
+            return Ok(None);
+        }
+        checkpoint
+            .opening_source(row_indices[0])
+            .map(Some)
+            .map_err(WitnessStageOpeningError::from)
     }
 
     #[cfg(feature = "cuda")]
@@ -2522,6 +2612,7 @@ impl WitnessStageCompactTreeStorage {
             expected_root,
             source_buffer,
             timing,
+            None,
         )?;
         openings
             .pop()
@@ -2535,6 +2626,7 @@ impl WitnessStageCompactTreeStorage {
         expected_root: [Felt; HASH_WORDS],
         source_buffer: &SourceDeviceBuffer<'_>,
         mut timing: Option<&mut WitnessStageOpeningWorkTiming>,
+        mut precomputed_parent_suffix: Option<CudaDigestCheckpointSiblingBatch>,
     ) -> Result<Vec<CompactOnDemandOpening>, WitnessStageOpeningError> {
         if rows.is_empty() {
             return Ok(Vec::new());
@@ -2589,6 +2681,7 @@ impl WitnessStageCompactTreeStorage {
                 source_buffer,
                 retained_parent_checkpoint_level,
                 timing.as_deref_mut(),
+                precomputed_parent_suffix.take(),
             ) {
                 Ok(openings) => return Ok(openings),
                 Err(error) if error.is_length_overflow() => {}
@@ -2706,6 +2799,7 @@ impl WitnessStageCompactTreeStorage {
         source_buffer: &SourceDeviceBuffer<'_>,
         checkpoint: &RetainedCudaParentCheckpointLevel,
         mut timing: Option<&mut WitnessStageOpeningWorkTiming>,
+        precomputed_parent_suffix: Option<CudaDigestCheckpointSiblingBatch>,
     ) -> Result<Vec<CompactOnDemandOpening>, WitnessStageOpeningError> {
         if rows.is_empty()
             || self.arity == 0
@@ -2762,15 +2856,20 @@ impl WitnessStageCompactTreeStorage {
         if group_values.len() != source_rows.len() {
             return Err(WitnessStageOpeningError::LengthOverflow);
         }
-        let upper_suffixes = record_path_parent_hash_duration(
-            timing.as_deref_mut(),
-            PathParentHashTimingKind::RetainedParentCheckpointSuffix,
-            || {
-                checkpoint
-                    .opening_path_siblings_batch_for_source_rows(rows)
-                    .map_err(WitnessStageOpeningError::from)
-            },
-        )
+        let upper_suffixes = match precomputed_parent_suffix {
+            Some(batch) => checkpoint
+                .precomputed_opening_path_siblings_batch_for_source_rows(rows, batch)
+                .map_err(WitnessStageOpeningError::from),
+            None => record_path_parent_hash_duration(
+                timing.as_deref_mut(),
+                PathParentHashTimingKind::RetainedParentCheckpointSuffix,
+                || {
+                    checkpoint
+                        .opening_path_siblings_batch_for_source_rows(rows)
+                        .map_err(WitnessStageOpeningError::from)
+                },
+            ),
+        }
         .map_err(|source| {
             WitnessStageOpeningError::context(
                 "compact sparse parent checkpoint suffix path",
@@ -3724,11 +3823,18 @@ impl WitnessStageCompactTreeStorage {
         expected_root: [Felt; HASH_WORDS],
         source_device: Option<&WitnessStageSourceDeviceView>,
         timing: Option<&mut WitnessStageOpeningWorkTiming>,
+        precomputed_parent_suffix: Option<CudaDigestCheckpointSiblingBatch>,
     ) -> Result<Vec<CompactOnDemandOpening>, WitnessStageOpeningError> {
         prepare_gpu_setup(self.target_bits)
             .map_err(|_| WitnessStageOpeningError::LengthOverflow)?;
         let source_buffer = self.source_device_buffer(source_device)?;
-        self.open_batch_with_recomputed_leaf_level_cuda(rows, expected_root, &source_buffer, timing)
+        self.open_batch_with_recomputed_leaf_level_cuda(
+            rows,
+            expected_root,
+            &source_buffer,
+            timing,
+            precomputed_parent_suffix,
+        )
     }
 
     #[cfg(feature = "cuda")]
