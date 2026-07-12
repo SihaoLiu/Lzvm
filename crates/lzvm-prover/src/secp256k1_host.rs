@@ -2,7 +2,10 @@ use std::sync::OnceLock;
 
 use num_bigint::BigUint;
 use num_traits::{One, Zero};
-use secp256k1::PublicKey as NativeSecpPublicKey;
+use secp256k1::{
+    PublicKey as NativeSecpPublicKey, Scalar as NativeSecpScalar, Secp256k1 as NativeSecpContext,
+    VerifyOnly as NativeSecpVerifyOnly,
+};
 
 const SECP256K1_FIELD_MODULUS_LIMBS: [u64; 4] = [
     0xffff_fffe_ffff_fc2f,
@@ -262,6 +265,11 @@ pub(crate) fn secp256k1_double_scalar_mul(
     second_scalar: &[u64; 4],
     second_point: &SecpPoint,
 ) -> Result<SecpPoint, Secp256k1Error> {
+    if let Some(result) =
+        native_secp_double_scalar_mul(first_scalar, first_point, second_scalar, second_point)
+    {
+        return Ok(result);
+    }
     if !secp256k1_point_has_canonical_coordinates(first_point)
         || !secp256k1_point_has_canonical_coordinates(second_point)
     {
@@ -273,6 +281,52 @@ pub(crate) fn secp256k1_double_scalar_mul(
         );
     }
     secp256k1_double_scalar_mul_projective(first_scalar, first_point, second_scalar, second_point)
+}
+
+fn native_secp_double_scalar_mul(
+    first_scalar: &[u64; 4],
+    first_point: &SecpPoint,
+    second_scalar: &[u64; 4],
+    second_point: &SecpPoint,
+) -> Option<SecpPoint> {
+    let first_scalar = native_secp_scalar(first_scalar)?;
+    let second_scalar = native_secp_scalar(second_scalar)?;
+    let first = native_secp_scaled_point(first_scalar, first_point)?;
+    let second = native_secp_scaled_point(second_scalar, second_point)?;
+    match (first, second) {
+        (None, None) => Some(SecpPoint::identity()),
+        (Some(point), None) | (None, Some(point)) => Some(secp256k1_point_from_native(&point)),
+        (Some(first), Some(second)) => match first.combine(&second) {
+            Ok(point) => Some(secp256k1_point_from_native(&point)),
+            Err(_) => Some(SecpPoint::identity()),
+        },
+    }
+}
+
+fn native_secp_scaled_point(
+    scalar: NativeSecpScalar,
+    point: &SecpPoint,
+) -> Option<Option<NativeSecpPublicKey>> {
+    if scalar == NativeSecpScalar::ZERO || point.infinity {
+        return Some(None);
+    }
+    secp256k1_point_to_native(point)?
+        .mul_tweak(native_secp_context(), &scalar)
+        .ok()
+        .map(Some)
+}
+
+fn native_secp_scalar(limbs: &[u64; 4]) -> Option<NativeSecpScalar> {
+    let mut bytes = [0_u8; 32];
+    for (limb, chunk) in limbs.iter().zip(bytes.chunks_exact_mut(8)) {
+        chunk.copy_from_slice(&limb.to_le_bytes());
+    }
+    NativeSecpScalar::from_le_bytes(bytes).ok()
+}
+
+fn native_secp_context() -> &'static NativeSecpContext<NativeSecpVerifyOnly> {
+    static CONTEXT: OnceLock<NativeSecpContext<NativeSecpVerifyOnly>> = OnceLock::new();
+    CONTEXT.get_or_init(NativeSecpContext::verification_only)
 }
 
 fn secp256k1_double_scalar_mul_projective(
@@ -554,7 +608,8 @@ mod tests {
     use num_bigint::BigUint;
 
     use super::{
-        biguint_to_limbs, limb_bit, secp256k1_double_scalar_mul, secp256k1_field_modulus,
+        biguint_to_limbs, limb_bit, native_secp_double_scalar_mul, secp256k1_double_scalar_mul,
+        secp256k1_double_scalar_mul_projective, secp256k1_field_modulus, secp256k1_order,
         secp256k1_point_add, secp256k1_point_add_limbs, secp256k1_point_double,
         secp256k1_point_double_limbs, Secp256k1Error, SecpPoint, SecpProjectivePoint,
     };
@@ -590,6 +645,70 @@ mod tests {
 
             assert_eq!(actual.to_limbs(), expected.to_limbs());
         }
+    }
+
+    #[test]
+    fn native_double_scalar_mul_matches_projective_results() {
+        let g = SecpPoint::from_limbs(&SECP256K1_G);
+        let two_g = secp256k1_point_double(&g).expect("base point should double");
+        for (first, second) in [(0, 0), (1, 0), (0, 1), (2, 3), (7, 11)] {
+            let first = scalar_limbs(first);
+            let second = scalar_limbs(second);
+            let expected = secp256k1_double_scalar_mul_projective(&first, &g, &second, &two_g)
+                .expect("projective reference should run");
+            let actual = native_secp_double_scalar_mul(&first, &g, &second, &two_g)
+                .expect("native path should support valid points and scalars");
+
+            assert_eq!(actual, expected);
+        }
+    }
+
+    #[test]
+    fn native_double_scalar_mul_returns_identity_for_inverse_terms() {
+        let g = SecpPoint::from_limbs(&SECP256K1_G);
+        let one = scalar_limbs(1);
+        let inverse = biguint_to_limbs::<4>(&(secp256k1_order() - BigUint::from(1_u8)));
+
+        let actual = native_secp_double_scalar_mul(&one, &g, &inverse, &g)
+            .expect("native path should support inverse terms");
+
+        assert_eq!(actual, SecpPoint::identity());
+    }
+
+    #[test]
+    fn double_scalar_mul_falls_back_for_off_curve_points() {
+        let g = SecpPoint::from_limbs(&SECP256K1_G);
+        let off_curve = SecpPoint {
+            x: BigUint::from(1_u8),
+            y: BigUint::from(1_u8),
+            infinity: false,
+        };
+        let first = scalar_limbs(3);
+        let second = scalar_limbs(5);
+        let expected = secp256k1_double_scalar_mul_projective(&first, &off_curve, &second, &g)
+            .expect("projective fallback should support raw canonical coordinates");
+
+        assert!(native_secp_double_scalar_mul(&first, &off_curve, &second, &g).is_none());
+        assert_eq!(
+            secp256k1_double_scalar_mul(&first, &off_curve, &second, &g)
+                .expect("double-scalar multiplication should preserve raw coordinates"),
+            expected
+        );
+    }
+
+    #[test]
+    fn double_scalar_mul_falls_back_for_out_of_range_scalars() {
+        let g = SecpPoint::from_limbs(&SECP256K1_G);
+        let order = biguint_to_limbs::<4>(secp256k1_order());
+        let expected = secp256k1_double_scalar_mul_projective(&order, &g, &[0; 4], &g)
+            .expect("projective fallback should accept the curve order");
+
+        assert!(native_secp_double_scalar_mul(&order, &g, &[0; 4], &g).is_none());
+        assert_eq!(
+            secp256k1_double_scalar_mul(&order, &g, &[0; 4], &g)
+                .expect("double-scalar multiplication should preserve scalar semantics"),
+            expected
+        );
     }
 
     #[test]
