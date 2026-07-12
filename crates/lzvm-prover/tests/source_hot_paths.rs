@@ -2975,13 +2975,13 @@ fn source_device_leaf_extension_reuses_only_narrow_output_cache() {
             && source_device_body.contains(
                 "cuda_goldilocks_coset_extend_row_major_columns_to_column_major_device_unsynced",
             )
-            && source_device_body.contains("begin_validate_device_words(extension_workspace")
             && source_device_body.contains(
-                "linear_hash_level_from_validated_column_major_device_buffer",
+                "linear_hash_level_from_checked_column_major_device_buffer",
             )
+            && !source_device_body.contains("begin_validate_device_words(extension_workspace")
             && source_device_body.contains("let mut output_buffer = if use_output_cache")
             && source_device_body.contains("} else {\n        None\n    };"),
-        "wide source-device leaf extension should hash the validated column-major workspace without allocating row-major output"
+        "wide source-device leaf extension should fuse canonical validation into column-major hashing without allocating row-major output"
     );
 }
 

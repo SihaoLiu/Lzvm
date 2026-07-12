@@ -21,6 +21,8 @@ fn lean_digest_prefix_binding_exports_core_contract_projection() {
             && lean_source.contains("RowMajorDigestPrefixEvidence")
             && lean_source.contains("ColumnMajorDigestPrefixValidation")
             && lean_source.contains("ColumnMajorDigestPrefixEvidence")
+            && lean_source.contains("FusedColumnMajorDigestPrefixValidation")
+            && lean_source.contains("FusedColumnMajorDigestPrefixEvidence")
             && lean_source.contains("RuntimeVerifierCoreContract system publicInput proof")
             && lean_source.contains("SoundWitness system publicInput proof"),
         "Lean digest prefix binding should expose checked soundness and verifier core projection"
@@ -41,6 +43,9 @@ fn lean_digest_prefix_binding_exports_core_contract_projection() {
             "column_major_digest_prefix_evidence_implies_wide_linear_digests",
             "column_major_digest_prefix_checked_acceptance_sound",
             "column_major_digest_prefix_checked_acceptance_verifier_core_contract",
+            "fused_column_major_digest_prefix_evidence_projects_column_major_evidence",
+            "fused_column_major_digest_prefix_checked_acceptance_sound",
+            "fused_column_major_digest_prefix_checked_acceptance_verifier_core_contract",
         ],
     );
     lean_binding::assert_theorem_prefix_contains(
@@ -258,6 +263,27 @@ fn lean_digest_prefix_binding_exports_core_contract_projection() {
             "assumption_bundle_public_input_binding",
             "assumption_bundle_pcs_opening_soundness",
             "assumption_bundle_fri_query_soundness",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "fused_column_major_digest_prefix_evidence_projects_column_major_evidence",
+        &["validation.fusedRoundsImplyColumnMajorEvidence", "evidence"],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "fused_column_major_digest_prefix_checked_acceptance_sound",
+        &[
+            "column_major_digest_prefix_checked_acceptance_sound",
+            "fused_column_major_digest_prefix_evidence_projects_column_major_evidence",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "fused_column_major_digest_prefix_checked_acceptance_verifier_core_contract",
+        &[
+            "column_major_digest_prefix_checked_acceptance_verifier_core_contract",
+            "fused_column_major_digest_prefix_evidence_projects_column_major_evidence",
         ],
     );
 }

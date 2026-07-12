@@ -28,7 +28,7 @@ use lzvm_field::{coset_extend_evaluations, Felt};
 use crate::gpu_setup::prepare_gpu_setup;
 #[cfg(feature = "cuda")]
 use crate::merkle_hash::{
-    linear_hash_level_from_validated_column_major_device_buffer,
+    linear_hash_level_from_checked_column_major_device_buffer,
     linear_hash_level_from_validated_row_major_device_buffer,
     linear_hash_level_from_validated_row_major_device_buffer_on_stream,
     linear_hashes_from_validated_wide_row_major_device_buffer, CudaDigestCheckpointLevel,
@@ -1333,27 +1333,26 @@ fn compact_witness_stage_leaf_hash_level_from_source_device_timed(
     })?;
     timing.record_coset_extend_work(out_byte_count, view.column_count, source_bits, target_bits);
     let extended_rows = extended_row_count_from_bytes(out_byte_count, view.column_count)?;
-    let canonical_check = record_duration(&mut timing.validate_duration, || {
-        if use_column_major_output {
-            begin_validate_device_words(extension_workspace, out_byte_count)
-        } else {
+    let (level, canonical_check) = if use_column_major_output {
+        record_duration(&mut timing.leaf_hash_duration, || {
+            linear_hash_level_from_checked_column_major_device_buffer(
+                extension_workspace,
+                extended_rows,
+                view.column_count,
+                arity,
+            )
+            .map_err(WitnessStageCommitmentError::from)
+        })?
+    } else {
+        let canonical_check = record_duration(&mut timing.validate_duration, || {
             begin_validate_row_major_device_words(
                 output_buffer
                     .as_ref()
                     .expect("narrow leaf output should remain allocated"),
                 out_byte_count,
             )
-        }
-    })?;
-    let level = record_duration(&mut timing.leaf_hash_duration, || {
-        if use_column_major_output {
-            linear_hash_level_from_validated_column_major_device_buffer(
-                extension_workspace,
-                extended_rows,
-                view.column_count,
-                arity,
-            )
-        } else {
+        })?;
+        let level = record_duration(&mut timing.leaf_hash_duration, || {
             linear_hash_level_from_validated_row_major_device_buffer(
                 output_buffer
                     .as_ref()
@@ -1362,9 +1361,10 @@ fn compact_witness_stage_leaf_hash_level_from_source_device_timed(
                 view.column_count,
                 arity,
             )
-        }
-        .map_err(WitnessStageCommitmentError::from)
-    })?;
+            .map_err(WitnessStageCommitmentError::from)
+        })?;
+        (level, canonical_check)
+    };
     timing.record_leaf_hash_work(extended_rows, out_byte_count, arity);
     if use_output_cache {
         if let Some(workspace_cache) = workspace_cache {

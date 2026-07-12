@@ -420,4 +420,103 @@ theorem column_major_digest_prefix_checked_acceptance_verifier_core_contract
             proof
             checked.left)))
 
+structure FusedColumnMajorDigestPrefixValidation (system : VerifierModel) where
+  columnMajorValidation : ColumnMajorDigestPrefixValidation system
+  fusedCanonicalHashRoundsBindRows : PublicInput -> Proof -> Prop
+  fusedRoundsImplyColumnMajorEvidence :
+    forall publicInput proof,
+      fusedCanonicalHashRoundsBindRows publicInput proof ->
+        ColumnMajorDigestPrefixEvidence
+          system
+          columnMajorValidation
+          publicInput
+          proof
+
+def FusedColumnMajorDigestPrefixEvidence
+    (system : VerifierModel)
+    (validation : FusedColumnMajorDigestPrefixValidation system)
+    (publicInput : PublicInput)
+    (proof : Proof) : Prop :=
+  validation.fusedCanonicalHashRoundsBindRows publicInput proof
+
+def FusedColumnMajorDigestPrefixCheckedAcceptance
+    (system : VerifierModel)
+    (validation : FusedColumnMajorDigestPrefixValidation system)
+    (publicInput : PublicInput)
+    (proof : Proof) : Prop :=
+  system.accepts publicInput proof
+    /\ FusedColumnMajorDigestPrefixEvidence system validation publicInput proof
+
+theorem fused_column_major_digest_prefix_evidence_projects_column_major_evidence
+    {system : VerifierModel}
+    (validation : FusedColumnMajorDigestPrefixValidation system) :
+    forall publicInput proof,
+      FusedColumnMajorDigestPrefixEvidence system validation publicInput proof ->
+        ColumnMajorDigestPrefixEvidence
+          system
+          validation.columnMajorValidation
+          publicInput
+          proof := by
+  intro publicInput proof evidence
+  exact
+    validation.fusedRoundsImplyColumnMajorEvidence
+      publicInput
+      proof
+      evidence
+
+theorem fused_column_major_digest_prefix_checked_acceptance_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : FusedColumnMajorDigestPrefixValidation system) :
+    forall publicInput proof,
+      FusedColumnMajorDigestPrefixCheckedAcceptance
+          system
+          validation
+          publicInput
+          proof ->
+        validation.columnMajorValidation.rowMajorValidation.leafValidation.wideLinearDigestsBindRows
+            publicInput
+            proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof checked
+  exact
+    column_major_digest_prefix_checked_acceptance_sound
+      assumptions
+      validation.columnMajorValidation
+      publicInput
+      proof
+      (And.intro
+        checked.left
+        (fused_column_major_digest_prefix_evidence_projects_column_major_evidence
+          validation
+          publicInput
+          proof
+          checked.right))
+
+theorem fused_column_major_digest_prefix_checked_acceptance_verifier_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : FusedColumnMajorDigestPrefixValidation system) :
+    forall publicInput proof,
+      FusedColumnMajorDigestPrefixCheckedAcceptance
+          system
+          validation
+          publicInput
+          proof ->
+        RuntimeVerifierCoreContract system publicInput proof := by
+  intro publicInput proof checked
+  exact
+    column_major_digest_prefix_checked_acceptance_verifier_core_contract
+      assumptions
+      validation.columnMajorValidation
+      publicInput
+      proof
+      (And.intro
+        checked.left
+        (fused_column_major_digest_prefix_evidence_projects_column_major_evidence
+          validation
+          publicInput
+          proof
+          checked.right))
+
 end Lzvm

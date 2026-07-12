@@ -5,6 +5,7 @@ use lzvm_accel::{
     cuda_device_synchronize,
     cuda_poseidon2_begin_width16_linear_round_row_major_digest_device_on_stream,
     cuda_poseidon2_begin_width8_linear_round_row_major_digest_device_on_stream,
+    cuda_poseidon2_width16_linear_round_column_major_digest_checked_device,
     cuda_poseidon2_width16_linear_round_column_major_digest_device,
     cuda_poseidon2_width16_linear_round_device,
     cuda_poseidon2_width16_linear_round_row_major_digest_device,
@@ -17,6 +18,7 @@ use lzvm_accel::{
     cuda_poseidon2_width16_merkle_digest_root_device_buffer,
     cuda_poseidon2_width16_merkle_digest_selected_parent_device,
     cuda_poseidon2_width16_merkle_parent_device,
+    cuda_poseidon2_width8_linear_round_column_major_digest_checked_device,
     cuda_poseidon2_width8_linear_round_column_major_digest_device,
     cuda_poseidon2_width8_linear_round_device,
     cuda_poseidon2_width8_linear_round_row_major_digest_device,
@@ -28,7 +30,7 @@ use lzvm_accel::{
     cuda_poseidon2_width8_merkle_digest_root_device,
     cuda_poseidon2_width8_merkle_digest_root_device_buffer,
     cuda_poseidon2_width8_merkle_digest_selected_parent_device,
-    cuda_poseidon2_width8_merkle_parent_device, CudaDeviceBuffer,
+    cuda_poseidon2_width8_merkle_parent_device, CudaCanonicalCheck, CudaDeviceBuffer,
     CudaMerkleDigestOpeningSuffixSource as AccelMerkleDigestOpeningSuffixSource,
     CudaPinnedHostBuffer, CudaStream,
 };
@@ -1233,6 +1235,7 @@ pub(crate) fn linear_hash_level_from_validated_row_major_device_buffer(
 }
 
 #[cfg(feature = "cuda")]
+#[allow(dead_code)]
 pub(crate) fn linear_hash_level_from_validated_column_major_device_buffer(
     column_values: &CudaDeviceBuffer,
     row_count: usize,
@@ -1282,6 +1285,62 @@ pub(crate) fn linear_hash_level_from_validated_column_major_device_buffer(
         }
         _ => Err(MerkleHashError::UnsupportedArity { arity }),
     }
+}
+
+#[cfg(feature = "cuda")]
+pub(crate) fn linear_hash_level_from_checked_column_major_device_buffer(
+    column_values: &CudaDeviceBuffer,
+    row_count: usize,
+    column_count: usize,
+    arity: usize,
+) -> Result<(CudaDigestLevel, CudaCanonicalCheck), MerkleHashError> {
+    validate_arity(arity)?;
+    let expected = row_major_byte_count(row_count, column_count)?;
+    if column_values.len() != expected || row_count == 0 || column_count <= HASH_WORDS {
+        return Err(MerkleHashError::LengthOverflow);
+    }
+
+    let canonical_check = CudaCanonicalCheck::pending().map_err(MerkleHashError::Accel)?;
+    let level = match arity {
+        2 => {
+            let states = cuda_linear_hash_states_with_checked_column_major_device_rounds(
+                row_count,
+                column_count,
+                HASH_WORDS,
+                8,
+                cuda_poseidon2_width8_linear_round_column_major_digest_checked_device,
+                column_values,
+                &canonical_check,
+            )?;
+            let digests = compact_digest_buffer_from_state_buffer(&states, row_count, 8)?;
+            CudaDigestLevel::new(
+                digests,
+                row_count,
+                arity,
+                cuda_poseidon2_width8_merkle_digest_root_device,
+            )
+        }
+        4 => {
+            let states = cuda_linear_hash_states_with_checked_column_major_device_rounds(
+                row_count,
+                column_count,
+                12,
+                16,
+                cuda_poseidon2_width16_linear_round_column_major_digest_checked_device,
+                column_values,
+                &canonical_check,
+            )?;
+            let digests = compact_digest_buffer_from_state_buffer(&states, row_count, 16)?;
+            CudaDigestLevel::new(
+                digests,
+                row_count,
+                arity,
+                cuda_poseidon2_width16_merkle_digest_root_device,
+            )
+        }
+        _ => return Err(MerkleHashError::UnsupportedArity { arity }),
+    };
+    Ok((level, canonical_check))
 }
 
 #[cfg(feature = "cuda")]
@@ -1945,6 +2004,17 @@ type CudaPoseidon2LinearRoundRowMajorOp = fn(
 ) -> Result<(), lzvm_accel::AccelError>;
 
 #[cfg(feature = "cuda")]
+type CudaPoseidon2LinearRoundColumnMajorCheckedOp = fn(
+    &CudaDeviceBuffer,
+    &CudaDeviceBuffer,
+    &mut CudaDeviceBuffer,
+    usize,
+    usize,
+    usize,
+    &CudaCanonicalCheck,
+) -> Result<(), lzvm_accel::AccelError>;
+
+#[cfg(feature = "cuda")]
 type CudaPoseidon2BeginLinearRoundRowMajorOp = unsafe fn(
     &CudaDeviceBuffer,
     &CudaDeviceBuffer,
@@ -2049,6 +2119,43 @@ fn cuda_linear_hash_states_with_row_major_device_rounds(
             value_count,
             offset,
             chunk_len,
+        )
+        .map_err(MerkleHashError::Accel)?;
+        std::mem::swap(&mut current_states, &mut next_states);
+        offset += chunk_len;
+    }
+
+    Ok(current_states)
+}
+
+#[cfg(feature = "cuda")]
+fn cuda_linear_hash_states_with_checked_column_major_device_rounds(
+    row_count: usize,
+    value_count: usize,
+    rate: usize,
+    width: usize,
+    operation: CudaPoseidon2LinearRoundColumnMajorCheckedOp,
+    column_values: &CudaDeviceBuffer,
+    canonical_check: &CudaCanonicalCheck,
+) -> Result<CudaDeviceBuffer, MerkleHashError> {
+    let mut current_states = zero_state_buffer(row_count, width)?;
+    let state_byte_count = row_count
+        .checked_mul(width)
+        .and_then(|words| words.checked_mul(8))
+        .ok_or(MerkleHashError::LengthOverflow)?;
+    let mut next_states =
+        CudaDeviceBuffer::new(state_byte_count).map_err(MerkleHashError::Accel)?;
+    let mut offset = 0;
+    while offset < value_count {
+        let chunk_len = (value_count - offset).min(rate);
+        operation(
+            &current_states,
+            column_values,
+            &mut next_states,
+            value_count,
+            offset,
+            chunk_len,
+            canonical_check,
         )
         .map_err(MerkleHashError::Accel)?;
         std::mem::swap(&mut current_states, &mut next_states);
@@ -2286,6 +2393,7 @@ fn digests_from_hashed_states(
 mod tests {
     use super::{
         cuda_poseidon2_width16_device_words, cuda_poseidon2_width8_device_words, linear_hash,
+        linear_hash_level_from_checked_column_major_device_buffer,
         linear_hash_level_from_validated_column_major_device_buffer, linear_hashes,
         linear_hashes_from_row_major_bytes, opening_path_siblings_across_digest_checkpoints,
         parent_hash, parent_hashes, parent_levels_from_digest_level,
@@ -2449,7 +2557,48 @@ mod tests {
             .expect("column-major digests should download");
             let expected = linear_hashes(&rows, arity).expect("CPU leaf hashes should run");
             assert_eq!(actual, expected);
+
+            let (checked_level, canonical_check) =
+                linear_hash_level_from_checked_column_major_device_buffer(
+                    &column_values,
+                    row_count,
+                    column_count,
+                    arity,
+                )
+                .expect("checked column-major leaf hashes should run");
+            assert!(canonical_check
+                .is_canonical()
+                .expect("fused canonical check should finish"));
+            assert_eq!(
+                checked_level
+                    .to_digests()
+                    .expect("checked column-major digests should download"),
+                expected
+            );
         }
+    }
+
+    #[test]
+    fn cuda_checked_column_major_linear_hashes_reject_non_canonical_last_round_word() {
+        let row_count = 8;
+        let column_count = 19;
+        let mut column_words = (0..row_count * column_count)
+            .map(|index| index as u64 + 1)
+            .collect::<Vec<_>>();
+        column_words[(column_count - 1) * row_count + row_count - 1] = 0xffff_ffff_0000_0001;
+        let column_values =
+            CudaDeviceBuffer::from_u64_words(&column_words).expect("columns should upload");
+
+        let (_level, canonical_check) = linear_hash_level_from_checked_column_major_device_buffer(
+            &column_values,
+            row_count,
+            column_count,
+            4,
+        )
+        .expect("checked column-major leaf hashes should run");
+        assert!(!canonical_check
+            .is_canonical()
+            .expect("fused canonical check should finish"));
     }
 
     #[test]

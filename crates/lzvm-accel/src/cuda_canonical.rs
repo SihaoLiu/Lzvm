@@ -103,6 +103,16 @@ pub unsafe fn cuda_goldilocks_begin_validate_canonical_words_device_on_stream(
 }
 
 impl CudaCanonicalCheck {
+    pub fn pending() -> Result<Self, AccelError> {
+        Ok(Self {
+            found: CudaDeviceBuffer::zeroed(std::mem::size_of::<u32>())?,
+        })
+    }
+
+    pub(crate) fn as_raw_device_ptr(&self) -> *mut u32 {
+        self.found.as_raw_ptr().cast::<u32>()
+    }
+
     pub fn is_canonical(&self) -> Result<bool, AccelError> {
         let bytes = self.found.to_vec()?;
         let found = u32::from_le_bytes(bytes.as_slice().try_into().map_err(|_| {
