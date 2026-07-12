@@ -5,7 +5,7 @@ use lzvm_accel::{
     cuda_device_synchronize,
     cuda_poseidon2_begin_width16_linear_round_row_major_digest_device_on_stream,
     cuda_poseidon2_begin_width8_linear_round_row_major_digest_device_on_stream,
-    cuda_poseidon2_width16_linear_round_column_major_digest_checked_device,
+    cuda_poseidon2_width16_linear_hash_column_major_digest_checked_device,
     cuda_poseidon2_width16_linear_round_column_major_digest_device,
     cuda_poseidon2_width16_linear_round_device,
     cuda_poseidon2_width16_linear_round_row_major_digest_device,
@@ -18,7 +18,7 @@ use lzvm_accel::{
     cuda_poseidon2_width16_merkle_digest_root_device_buffer,
     cuda_poseidon2_width16_merkle_digest_selected_parent_device,
     cuda_poseidon2_width16_merkle_parent_device,
-    cuda_poseidon2_width8_linear_round_column_major_digest_checked_device,
+    cuda_poseidon2_width8_linear_hash_column_major_digest_checked_device,
     cuda_poseidon2_width8_linear_round_column_major_digest_device,
     cuda_poseidon2_width8_linear_round_device,
     cuda_poseidon2_width8_linear_round_row_major_digest_device,
@@ -1301,18 +1301,22 @@ pub(crate) fn linear_hash_level_from_checked_column_major_device_buffer(
     }
 
     let canonical_check = CudaCanonicalCheck::pending().map_err(MerkleHashError::Accel)?;
+    let mut digests = CudaDeviceBuffer::new(
+        row_count
+            .checked_mul(HASH_WORDS)
+            .and_then(|word_count| word_count.checked_mul(8))
+            .ok_or(MerkleHashError::LengthOverflow)?,
+    )
+    .map_err(MerkleHashError::Accel)?;
     let level = match arity {
         2 => {
-            let states = cuda_linear_hash_states_with_checked_column_major_device_rounds(
-                row_count,
-                column_count,
-                HASH_WORDS,
-                8,
-                cuda_poseidon2_width8_linear_round_column_major_digest_checked_device,
+            cuda_poseidon2_width8_linear_hash_column_major_digest_checked_device(
                 column_values,
+                &mut digests,
+                column_count,
                 &canonical_check,
-            )?;
-            let digests = compact_digest_buffer_from_state_buffer(&states, row_count, 8)?;
+            )
+            .map_err(MerkleHashError::Accel)?;
             CudaDigestLevel::new(
                 digests,
                 row_count,
@@ -1321,16 +1325,13 @@ pub(crate) fn linear_hash_level_from_checked_column_major_device_buffer(
             )
         }
         4 => {
-            let states = cuda_linear_hash_states_with_checked_column_major_device_rounds(
-                row_count,
-                column_count,
-                12,
-                16,
-                cuda_poseidon2_width16_linear_round_column_major_digest_checked_device,
+            cuda_poseidon2_width16_linear_hash_column_major_digest_checked_device(
                 column_values,
+                &mut digests,
+                column_count,
                 &canonical_check,
-            )?;
-            let digests = compact_digest_buffer_from_state_buffer(&states, row_count, 16)?;
+            )
+            .map_err(MerkleHashError::Accel)?;
             CudaDigestLevel::new(
                 digests,
                 row_count,
@@ -2004,17 +2005,6 @@ type CudaPoseidon2LinearRoundRowMajorOp = fn(
 ) -> Result<(), lzvm_accel::AccelError>;
 
 #[cfg(feature = "cuda")]
-type CudaPoseidon2LinearRoundColumnMajorCheckedOp = fn(
-    &CudaDeviceBuffer,
-    &CudaDeviceBuffer,
-    &mut CudaDeviceBuffer,
-    usize,
-    usize,
-    usize,
-    &CudaCanonicalCheck,
-) -> Result<(), lzvm_accel::AccelError>;
-
-#[cfg(feature = "cuda")]
 type CudaPoseidon2BeginLinearRoundRowMajorOp = unsafe fn(
     &CudaDeviceBuffer,
     &CudaDeviceBuffer,
@@ -2119,43 +2109,6 @@ fn cuda_linear_hash_states_with_row_major_device_rounds(
             value_count,
             offset,
             chunk_len,
-        )
-        .map_err(MerkleHashError::Accel)?;
-        std::mem::swap(&mut current_states, &mut next_states);
-        offset += chunk_len;
-    }
-
-    Ok(current_states)
-}
-
-#[cfg(feature = "cuda")]
-fn cuda_linear_hash_states_with_checked_column_major_device_rounds(
-    row_count: usize,
-    value_count: usize,
-    rate: usize,
-    width: usize,
-    operation: CudaPoseidon2LinearRoundColumnMajorCheckedOp,
-    column_values: &CudaDeviceBuffer,
-    canonical_check: &CudaCanonicalCheck,
-) -> Result<CudaDeviceBuffer, MerkleHashError> {
-    let mut current_states = zero_state_buffer(row_count, width)?;
-    let state_byte_count = row_count
-        .checked_mul(width)
-        .and_then(|words| words.checked_mul(8))
-        .ok_or(MerkleHashError::LengthOverflow)?;
-    let mut next_states =
-        CudaDeviceBuffer::new(state_byte_count).map_err(MerkleHashError::Accel)?;
-    let mut offset = 0;
-    while offset < value_count {
-        let chunk_len = (value_count - offset).min(rate);
-        operation(
-            &current_states,
-            column_values,
-            &mut next_states,
-            value_count,
-            offset,
-            chunk_len,
-            canonical_check,
         )
         .map_err(MerkleHashError::Accel)?;
         std::mem::swap(&mut current_states, &mut next_states);

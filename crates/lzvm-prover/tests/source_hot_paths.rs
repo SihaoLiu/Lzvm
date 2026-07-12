@@ -2942,6 +2942,9 @@ fn source_device_leaf_extension_reuses_only_narrow_output_cache() {
     let extend_path = crate_root.join("src/witness_commitment/extend.rs");
     let extend_source =
         std::fs::read_to_string(&extend_path).expect("leaf extension source should read");
+    let merkle_path = crate_root.join("src/merkle_hash.rs");
+    let merkle_source =
+        std::fs::read_to_string(&merkle_path).expect("Merkle hash source should read");
 
     let cache_body = function_body(
         &extend_source,
@@ -2982,6 +2985,21 @@ fn source_device_leaf_extension_reuses_only_narrow_output_cache() {
             && source_device_body.contains("let mut output_buffer = if use_output_cache")
             && source_device_body.contains("} else {\n        None\n    };"),
         "wide source-device leaf extension should fuse canonical validation into column-major hashing without allocating row-major output"
+    );
+    let checked_column_major_body = function_body(
+        &merkle_source,
+        "pub(crate) fn linear_hash_level_from_checked_column_major_device_buffer",
+        "pub(crate) fn linear_hash_level_from_validated_row_major_device_buffer_on_stream",
+    );
+    assert!(
+        checked_column_major_body.contains(
+            "cuda_poseidon2_width16_linear_hash_column_major_digest_checked_device",
+        ) && checked_column_major_body.contains(
+            "cuda_poseidon2_width8_linear_hash_column_major_digest_checked_device",
+        ) && !checked_column_major_body.contains(
+            "compact_digest_buffer_from_state_buffer",
+        ),
+        "checked column-major leaf hashing should run all sponge rounds in one kernel and write compact digests directly"
     );
 }
 

@@ -77,3 +77,23 @@ extern "C" int lzvm_cuda_poseidon2_width16_linear_round_column_major_digest_chec
         current_states, column_values, out, row_count, column_count, offset, chunk_len, 0,
         noncanonical_found);
 }
+
+extern "C" int lzvm_cuda_poseidon2_width8_linear_hash_column_major_digest_checked_device(
+    const uint64_t* column_values,
+    uint64_t* out,
+    size_t row_count,
+    size_t column_count,
+    unsigned int* noncanonical_found) {
+    return run_poseidon2_width8_linear_hash_column_major_digest_on_device(
+        column_values, out, row_count, column_count, noncanonical_found);
+}
+
+extern "C" int lzvm_cuda_poseidon2_width16_linear_hash_column_major_digest_checked_device(
+    const uint64_t* column_values,
+    uint64_t* out,
+    size_t row_count,
+    size_t column_count,
+    unsigned int* noncanonical_found) {
+    return run_poseidon2_width16_linear_hash_column_major_digest_on_device(
+        column_values, out, row_count, column_count, noncanonical_found);
+}

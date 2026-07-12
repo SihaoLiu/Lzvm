@@ -493,6 +493,14 @@ unsafe extern "C" {
         chunk_len: usize,
         noncanonical_found: *mut u32,
     ) -> i32;
+    #[link_name = "lzvm_cuda_poseidon2_width8_linear_hash_column_major_digest_checked_device"]
+    fn lzvm_cuda_poseidon2_width8_linear_hash_column_major_digest_checked_device_raw(
+        column_values: *const u64,
+        out: *mut u64,
+        row_count: usize,
+        column_count: usize,
+        noncanonical_found: *mut u32,
+    ) -> i32;
     #[link_name = "lzvm_cuda_poseidon2_width8_linear_round_column_major_digest_device_on_stream"]
     fn lzvm_cuda_poseidon2_width8_linear_round_column_major_digest_device_on_stream_raw(
         current_states: *const u64,
@@ -650,6 +658,14 @@ unsafe extern "C" {
         column_count: usize,
         offset: usize,
         chunk_len: usize,
+        noncanonical_found: *mut u32,
+    ) -> i32;
+    #[link_name = "lzvm_cuda_poseidon2_width16_linear_hash_column_major_digest_checked_device"]
+    fn lzvm_cuda_poseidon2_width16_linear_hash_column_major_digest_checked_device_raw(
+        column_values: *const u64,
+        out: *mut u64,
+        row_count: usize,
+        column_count: usize,
         noncanonical_found: *mut u32,
     ) -> i32;
     #[link_name = "lzvm_cuda_poseidon2_width16_linear_round_column_major_digest_device_on_stream"]
@@ -4208,6 +4224,10 @@ type CudaPoseidon2LinearRoundRowMajorCheckedDeviceOp = unsafe extern "C" fn(
 ) -> i32;
 
 #[cfg(feature = "cuda")]
+type CudaPoseidon2LinearHashColumnMajorCheckedDeviceOp =
+    unsafe extern "C" fn(*const u64, *mut u64, usize, usize, *mut u32) -> i32;
+
+#[cfg(feature = "cuda")]
 type CudaPoseidon2LinearRoundRowMajorDeviceOnStreamOp = unsafe extern "C" fn(
     *const u64,
     *const u64,
@@ -4361,6 +4381,71 @@ fn run_cuda_poseidon2_linear_round_row_major_checked_device_op(
             params.column_count,
             params.offset,
             params.chunk_len,
+            canonical_check.as_raw_device_ptr(),
+        )
+    };
+    cuda_status(code)
+}
+
+#[cfg(feature = "cuda")]
+fn run_cuda_poseidon2_linear_hash_column_major_checked_device_op(
+    column_values: &CudaDeviceBuffer,
+    out: &mut CudaDeviceBuffer,
+    column_count: usize,
+    canonical_check: &CudaCanonicalCheck,
+    width: usize,
+    operation: CudaPoseidon2LinearHashColumnMajorCheckedDeviceOp,
+) -> Result<(), AccelError> {
+    if !column_values.len().is_multiple_of(8) {
+        return Err(AccelError::LengthMismatch {
+            lhs: column_values.len(),
+            rhs: column_values.len() / 8 * 8,
+        });
+    }
+    if !out.len().is_multiple_of(8) {
+        return Err(AccelError::LengthMismatch {
+            lhs: out.len(),
+            rhs: out.len() / 8 * 8,
+        });
+    }
+    if column_count == 0 {
+        return Err(AccelError::InvalidDomain {
+            bits: width,
+            len: column_count,
+        });
+    }
+
+    let word_count = column_values.len() / 8;
+    if !word_count.is_multiple_of(column_count) {
+        return Err(AccelError::InvalidDomain {
+            bits: width,
+            len: word_count,
+        });
+    }
+    let row_count = word_count / column_count;
+    let expected_out_bytes = row_count
+        .checked_mul(4)
+        .and_then(|count| count.checked_mul(8))
+        .ok_or(AccelError::InvalidDomain {
+            bits: width,
+            len: row_count,
+        })?;
+    if out.len() != expected_out_bytes {
+        return Err(AccelError::LengthMismatch {
+            lhs: expected_out_bytes,
+            rhs: out.len(),
+        });
+    }
+    if row_count == 0 {
+        return Ok(());
+    }
+
+    let code = unsafe {
+        operation(
+            column_values.as_raw_ptr() as *const u64,
+            out.as_raw_ptr() as *mut u64,
+            row_count,
+            column_count,
             canonical_check.as_raw_device_ptr(),
         )
     };
@@ -5062,6 +5147,23 @@ pub fn cuda_poseidon2_width8_linear_round_column_major_digest_checked_device(
     )
 }
 
+#[cfg(feature = "cuda")]
+pub fn cuda_poseidon2_width8_linear_hash_column_major_digest_checked_device(
+    column_values: &CudaDeviceBuffer,
+    out: &mut CudaDeviceBuffer,
+    column_count: usize,
+    canonical_check: &CudaCanonicalCheck,
+) -> Result<(), AccelError> {
+    run_cuda_poseidon2_linear_hash_column_major_checked_device_op(
+        column_values,
+        out,
+        column_count,
+        canonical_check,
+        8,
+        lzvm_cuda_poseidon2_width8_linear_hash_column_major_digest_checked_device_raw,
+    )
+}
+
 /// Enqueues a width-8 column-major digest round on `stream` and returns after launch.
 ///
 /// # Safety
@@ -5241,6 +5343,23 @@ pub fn cuda_poseidon2_width16_linear_round_column_major_digest_checked_device(
             chunk_len,
         },
         lzvm_cuda_poseidon2_width16_linear_round_column_major_digest_checked_device_raw,
+    )
+}
+
+#[cfg(feature = "cuda")]
+pub fn cuda_poseidon2_width16_linear_hash_column_major_digest_checked_device(
+    column_values: &CudaDeviceBuffer,
+    out: &mut CudaDeviceBuffer,
+    column_count: usize,
+    canonical_check: &CudaCanonicalCheck,
+) -> Result<(), AccelError> {
+    run_cuda_poseidon2_linear_hash_column_major_checked_device_op(
+        column_values,
+        out,
+        column_count,
+        canonical_check,
+        16,
+        lzvm_cuda_poseidon2_width16_linear_hash_column_major_digest_checked_device_raw,
     )
 }
 
