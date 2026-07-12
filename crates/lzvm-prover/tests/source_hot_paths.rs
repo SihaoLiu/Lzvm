@@ -1284,11 +1284,8 @@ fn cuda_compact_opening_avoids_redundant_path_root_downloads() {
     let merkle_path = crate_root.join("src/merkle_hash.rs");
     let merkle_source =
         std::fs::read_to_string(&merkle_path).expect("Merkle hash source should read");
-    let opening_path_body = function_body(
-        &merkle_source,
-        "pub(crate) fn opening_path_siblings",
-        "pub(crate) fn opening_path_prefix_for_source_row",
-    );
+    let opening_path_body =
+        braced_source_body(&merkle_source, "pub(crate) fn opening_path_siblings(");
     assert!(
         opening_path_body.contains("opening_path_prefix_for_source_row"),
         "CUDA full opening siblings should reuse the prefix primitive so the root stays host-known"

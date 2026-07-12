@@ -10,6 +10,7 @@ use lzvm_accel::{
     cuda_poseidon2_width16_merkle_digest_opening_path_device,
     cuda_poseidon2_width16_merkle_digest_opening_prefix_batch_device_buffer,
     cuda_poseidon2_width16_merkle_digest_opening_prefix_device,
+    cuda_poseidon2_width16_merkle_digest_opening_suffixes_batch_device_buffers,
     cuda_poseidon2_width16_merkle_digest_parent_device,
     cuda_poseidon2_width16_merkle_digest_root_device,
     cuda_poseidon2_width16_merkle_digest_root_device_buffer,
@@ -19,11 +20,14 @@ use lzvm_accel::{
     cuda_poseidon2_width8_merkle_digest_opening_path_device,
     cuda_poseidon2_width8_merkle_digest_opening_prefix_batch_device_buffer,
     cuda_poseidon2_width8_merkle_digest_opening_prefix_device,
+    cuda_poseidon2_width8_merkle_digest_opening_suffixes_batch_device_buffers,
     cuda_poseidon2_width8_merkle_digest_parent_device,
     cuda_poseidon2_width8_merkle_digest_root_device,
     cuda_poseidon2_width8_merkle_digest_root_device_buffer,
     cuda_poseidon2_width8_merkle_digest_selected_parent_device,
-    cuda_poseidon2_width8_merkle_parent_device, CudaDeviceBuffer, CudaPinnedHostBuffer, CudaStream,
+    cuda_poseidon2_width8_merkle_parent_device, CudaDeviceBuffer,
+    CudaMerkleDigestOpeningSuffixSource as AccelMerkleDigestOpeningSuffixSource,
+    CudaPinnedHostBuffer, CudaStream,
 };
 #[cfg(all(test, feature = "cuda"))]
 use lzvm_accel::{cuda_poseidon2_width16_device, cuda_poseidon2_width8_device};
@@ -115,6 +119,27 @@ pub(crate) struct CudaMerkleSiblingBatchDeviceBuffer {
     row_count: usize,
     level_count: usize,
     arity: usize,
+}
+
+#[cfg(feature = "cuda")]
+#[derive(Clone, Copy)]
+pub(crate) struct CudaDigestCheckpointOpeningSource<'a> {
+    checkpoint: &'a CudaDigestCheckpointLevel,
+    source_row: usize,
+}
+
+#[cfg(feature = "cuda")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub(crate) struct CudaDigestCheckpointOpeningKey {
+    checkpoint_device_address: usize,
+    source_row: usize,
+}
+
+#[cfg(feature = "cuda")]
+#[derive(Clone)]
+pub(crate) struct CudaDigestCheckpointSiblingBatch {
+    key: CudaDigestCheckpointOpeningKey,
+    siblings: Vec<Vec<[Felt; HASH_WORDS]>>,
 }
 
 #[cfg(feature = "cuda")]
@@ -226,6 +251,126 @@ impl CudaMerkleSiblingBatchDeviceBuffer {
         .map_err(MerkleHashError::Accel)?;
         Self::new(buffer, self.row_count, level_count, self.arity)
     }
+}
+
+#[cfg(feature = "cuda")]
+impl<'a> CudaDigestCheckpointOpeningSource<'a> {
+    pub(crate) fn new(
+        checkpoint: &'a CudaDigestCheckpointLevel,
+        source_row: usize,
+    ) -> Result<Self, MerkleHashError> {
+        if source_row >= checkpoint.source_state_count() {
+            return Err(MerkleHashError::LengthOverflow);
+        }
+        Ok(Self {
+            checkpoint,
+            source_row,
+        })
+    }
+
+    pub(crate) fn batch_key(&self) -> Result<(usize, usize), MerkleHashError> {
+        Ok((
+            self.checkpoint.arity(),
+            merkle_opening_level_count(self.checkpoint.state_count(), self.checkpoint.arity())?,
+        ))
+    }
+
+    pub(crate) fn key(&self) -> CudaDigestCheckpointOpeningKey {
+        CudaDigestCheckpointOpeningKey {
+            checkpoint_device_address: self.checkpoint.level.digests.as_raw_ptr() as usize,
+            source_row: self.source_row,
+        }
+    }
+
+    fn checkpoint_row(&self) -> Result<usize, MerkleHashError> {
+        Ok(self.source_row / self.checkpoint.source_leaf_span()?)
+    }
+}
+
+#[cfg(feature = "cuda")]
+impl CudaDigestCheckpointSiblingBatch {
+    pub(crate) fn into_siblings_for_source_rows(
+        self,
+        checkpoint: &CudaDigestCheckpointLevel,
+        source_rows: &[usize],
+    ) -> Result<CudaMerkleSiblingBatch, MerkleHashError> {
+        if checkpoint.level.digests.as_raw_ptr() as usize != self.key.checkpoint_device_address
+            || source_rows != [self.key.source_row]
+        {
+            return Err(MerkleHashError::LengthOverflow);
+        }
+        Ok(vec![self.siblings])
+    }
+}
+
+#[cfg(feature = "cuda")]
+pub(crate) fn opening_path_siblings_across_digest_checkpoints(
+    sources: &[CudaDigestCheckpointOpeningSource<'_>],
+) -> Result<Vec<CudaDigestCheckpointSiblingBatch>, MerkleHashError> {
+    const GROUP_SIZE: usize = 64;
+
+    let Some(first) = sources.first() else {
+        return Ok(Vec::new());
+    };
+    let (arity, level_count) = first.batch_key()?;
+    if sources
+        .iter()
+        .any(|source| source.batch_key() != Ok((arity, level_count)))
+    {
+        return Err(MerkleHashError::LengthOverflow);
+    }
+
+    let mut device_batches = Vec::with_capacity(sources.len());
+    for source_group in sources.chunks(GROUP_SIZE) {
+        let accel_sources = source_group
+            .iter()
+            .map(|source| {
+                Ok(AccelMerkleDigestOpeningSuffixSource {
+                    values: &source.checkpoint.level.digests,
+                    query_index: source.checkpoint_row()?,
+                })
+            })
+            .collect::<Result<Vec<_>, MerkleHashError>>()?;
+        let buffers = match arity {
+            2 => cuda_poseidon2_width8_merkle_digest_opening_suffixes_batch_device_buffers(
+                &accel_sources,
+            ),
+            4 => cuda_poseidon2_width16_merkle_digest_opening_suffixes_batch_device_buffers(
+                &accel_sources,
+            ),
+            _ => return Err(MerkleHashError::UnsupportedArity { arity }),
+        }
+        .map_err(MerkleHashError::Accel)?;
+        if buffers.len() != source_group.len() {
+            return Err(MerkleHashError::LengthOverflow);
+        }
+        for buffer in buffers {
+            device_batches.push(CudaMerkleSiblingBatchDeviceBuffer::new(
+                buffer,
+                1,
+                level_count,
+                arity,
+            )?);
+        }
+    }
+
+    let decoded = CudaMerkleSiblingBatchDeviceBuffer::into_siblings_many(device_batches)?;
+    if decoded.len() != sources.len() {
+        return Err(MerkleHashError::LengthOverflow);
+    }
+    sources
+        .iter()
+        .zip(decoded)
+        .map(|(source, mut sibling_batch)| {
+            if sibling_batch.len() != 1 {
+                return Err(MerkleHashError::LengthOverflow);
+            }
+            Ok(CudaDigestCheckpointSiblingBatch {
+                key: source.key(),
+                siblings: sibling_batch.pop().ok_or(MerkleHashError::LengthOverflow)?,
+            })
+        })
+        .collect()
 }
 
 #[cfg(feature = "cuda")]
@@ -2086,9 +2231,11 @@ fn digests_from_hashed_states(
 mod tests {
     use super::{
         cuda_poseidon2_width16_device_words, cuda_poseidon2_width8_device_words, linear_hash,
-        linear_hashes, linear_hashes_from_row_major_bytes, parent_hash, parent_hashes,
+        linear_hashes, linear_hashes_from_row_major_bytes,
+        opening_path_siblings_across_digest_checkpoints, parent_hash, parent_hashes,
         parent_levels_from_digest_level, parent_levels_from_digest_level_on_cpu,
-        root_from_digest_level_on_cuda, CudaDigestLevel, CudaMerkleSiblingBatchDeviceBuffer,
+        root_from_digest_level_on_cuda, CudaDigestCheckpointOpeningSource, CudaDigestLevel,
+        CudaMerkleSiblingBatchDeviceBuffer,
     };
     use lzvm_accel::{
         cuda_poseidon2_width16_merkle_digest_root_device,
@@ -2550,6 +2697,103 @@ mod tests {
             .expect("device checkpoint suffix should decode");
 
         assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn cuda_digest_checkpoint_cross_buffer_suffixes_match_individual_paths() {
+        let state_counts = [70usize, 81, 129];
+        let query_rows = [69usize, 80, 128];
+        let checkpoints = state_counts
+            .iter()
+            .enumerate()
+            .map(|(group, state_count)| {
+                let level = (0..*state_count)
+                    .map(|index| {
+                        let base = 3000 + group as u64 * 1000 + index as u64 * 4;
+                        digest([base, base + 1, base + 2, base + 3])
+                    })
+                    .collect::<Vec<_>>();
+                let buffer = CudaDeviceBuffer::from_u64_words(&digest_words(&level))
+                    .expect("digests should upload");
+                CudaDigestLevel::new(
+                    buffer,
+                    level.len(),
+                    4,
+                    cuda_poseidon2_width16_merkle_digest_root_device,
+                )
+                .parent_checkpoint_level(40)
+                .expect("checkpoint should hash")
+                .expect("checkpoint should fold one level")
+            })
+            .collect::<Vec<_>>();
+        let sources = checkpoints
+            .iter()
+            .zip(query_rows)
+            .map(|(checkpoint, source_row)| {
+                CudaDigestCheckpointOpeningSource::new(checkpoint, source_row)
+                    .expect("opening source should validate")
+            })
+            .collect::<Vec<_>>();
+
+        let batches = opening_path_siblings_across_digest_checkpoints(&sources)
+            .expect("cross-buffer paths should hash");
+        for (((checkpoint, source_row), batch), expected) in
+            checkpoints.iter().zip(query_rows).zip(batches).zip(
+                checkpoints
+                    .iter()
+                    .zip(query_rows)
+                    .map(|(checkpoint, source_row)| {
+                        checkpoint
+                            .opening_path_siblings_batch_for_source_rows(&[source_row])
+                            .expect("individual path should hash")
+                    }),
+            )
+        {
+            let actual = batch
+                .into_siblings_for_source_rows(checkpoint, &[source_row])
+                .expect("batch should match its checkpoint");
+            assert_eq!(actual, expected);
+        }
+    }
+
+    #[test]
+    fn cuda_digest_checkpoint_cross_buffer_suffix_rejects_swapped_checkpoint() {
+        let checkpoints = [0_u64, 1000]
+            .into_iter()
+            .map(|offset| {
+                let level = (0..70)
+                    .map(|index| {
+                        let base = 6000 + offset + index * 4;
+                        digest([base, base + 1, base + 2, base + 3])
+                    })
+                    .collect::<Vec<_>>();
+                let buffer = CudaDeviceBuffer::from_u64_words(&digest_words(&level))
+                    .expect("digests should upload");
+                CudaDigestLevel::new(
+                    buffer,
+                    level.len(),
+                    4,
+                    cuda_poseidon2_width16_merkle_digest_root_device,
+                )
+                .parent_checkpoint_level(20)
+                .expect("checkpoint should hash")
+                .expect("checkpoint should fold")
+            })
+            .collect::<Vec<_>>();
+        let sources = checkpoints
+            .iter()
+            .map(|checkpoint| {
+                CudaDigestCheckpointOpeningSource::new(checkpoint, 69)
+                    .expect("opening source should validate")
+            })
+            .collect::<Vec<_>>();
+        let mut batches = opening_path_siblings_across_digest_checkpoints(&sources)
+            .expect("cross-buffer paths should hash");
+        let first = batches.remove(0);
+
+        assert!(first
+            .into_siblings_for_source_rows(&checkpoints[1], &[69])
+            .is_err());
     }
 
     #[test]
