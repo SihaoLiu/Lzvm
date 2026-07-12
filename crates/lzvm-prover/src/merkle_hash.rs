@@ -5,6 +5,7 @@ use lzvm_accel::{
     cuda_device_synchronize,
     cuda_poseidon2_begin_width16_linear_round_row_major_digest_device_on_stream,
     cuda_poseidon2_begin_width8_linear_round_row_major_digest_device_on_stream,
+    cuda_poseidon2_width16_linear_round_column_major_digest_device,
     cuda_poseidon2_width16_linear_round_device,
     cuda_poseidon2_width16_linear_round_row_major_digest_device,
     cuda_poseidon2_width16_merkle_digest_opening_path_device,
@@ -15,7 +16,9 @@ use lzvm_accel::{
     cuda_poseidon2_width16_merkle_digest_root_device,
     cuda_poseidon2_width16_merkle_digest_root_device_buffer,
     cuda_poseidon2_width16_merkle_digest_selected_parent_device,
-    cuda_poseidon2_width16_merkle_parent_device, cuda_poseidon2_width8_linear_round_device,
+    cuda_poseidon2_width16_merkle_parent_device,
+    cuda_poseidon2_width8_linear_round_column_major_digest_device,
+    cuda_poseidon2_width8_linear_round_device,
     cuda_poseidon2_width8_linear_round_row_major_digest_device,
     cuda_poseidon2_width8_merkle_digest_opening_path_device,
     cuda_poseidon2_width8_merkle_digest_opening_prefix_batch_device_buffer,
@@ -1230,6 +1233,58 @@ pub(crate) fn linear_hash_level_from_validated_row_major_device_buffer(
 }
 
 #[cfg(feature = "cuda")]
+pub(crate) fn linear_hash_level_from_validated_column_major_device_buffer(
+    column_values: &CudaDeviceBuffer,
+    row_count: usize,
+    column_count: usize,
+    arity: usize,
+) -> Result<CudaDigestLevel, MerkleHashError> {
+    validate_arity(arity)?;
+    let expected = row_major_byte_count(row_count, column_count)?;
+    if column_values.len() != expected || row_count == 0 || column_count <= HASH_WORDS {
+        return Err(MerkleHashError::LengthOverflow);
+    }
+
+    match arity {
+        2 => {
+            let states = cuda_linear_hash_states_with_row_major_device_rounds(
+                row_count,
+                column_count,
+                HASH_WORDS,
+                8,
+                cuda_poseidon2_width8_linear_round_column_major_digest_device,
+                column_values,
+            )?;
+            let digests = compact_digest_buffer_from_state_buffer(&states, row_count, 8)?;
+            Ok(CudaDigestLevel::new(
+                digests,
+                row_count,
+                arity,
+                cuda_poseidon2_width8_merkle_digest_root_device,
+            ))
+        }
+        4 => {
+            let states = cuda_linear_hash_states_with_row_major_device_rounds(
+                row_count,
+                column_count,
+                12,
+                16,
+                cuda_poseidon2_width16_linear_round_column_major_digest_device,
+                column_values,
+            )?;
+            let digests = compact_digest_buffer_from_state_buffer(&states, row_count, 16)?;
+            Ok(CudaDigestLevel::new(
+                digests,
+                row_count,
+                arity,
+                cuda_poseidon2_width16_merkle_digest_root_device,
+            ))
+        }
+        _ => Err(MerkleHashError::UnsupportedArity { arity }),
+    }
+}
+
+#[cfg(feature = "cuda")]
 pub(crate) fn linear_hash_level_from_validated_row_major_device_buffer_on_stream(
     row_values: &CudaDeviceBuffer,
     row_count: usize,
@@ -2231,11 +2286,11 @@ fn digests_from_hashed_states(
 mod tests {
     use super::{
         cuda_poseidon2_width16_device_words, cuda_poseidon2_width8_device_words, linear_hash,
-        linear_hashes, linear_hashes_from_row_major_bytes,
-        opening_path_siblings_across_digest_checkpoints, parent_hash, parent_hashes,
-        parent_levels_from_digest_level, parent_levels_from_digest_level_on_cpu,
-        root_from_digest_level_on_cuda, CudaDigestCheckpointOpeningSource, CudaDigestLevel,
-        CudaMerkleSiblingBatchDeviceBuffer,
+        linear_hash_level_from_validated_column_major_device_buffer, linear_hashes,
+        linear_hashes_from_row_major_bytes, opening_path_siblings_across_digest_checkpoints,
+        parent_hash, parent_hashes, parent_levels_from_digest_level,
+        parent_levels_from_digest_level_on_cpu, root_from_digest_level_on_cuda,
+        CudaDigestCheckpointOpeningSource, CudaDigestLevel, CudaMerkleSiblingBatchDeviceBuffer,
     };
     use lzvm_accel::{
         cuda_poseidon2_width16_merkle_digest_root_device,
@@ -2360,6 +2415,41 @@ mod tests {
             .map(|row| linear_hash(row, 4).expect("cpu arity-4 leaf should hash"))
             .collect::<Vec<_>>();
         assert_eq!(actual_arity4, expected_arity4);
+    }
+
+    #[test]
+    fn cuda_column_major_linear_hashes_match_cpu_reference() {
+        let row_count = 8;
+        let column_count = 19;
+        let rows = (0..row_count)
+            .map(|row| {
+                (0..column_count)
+                    .map(|column| Felt::from_u64((row * column_count + column + 1) as u64 * 37))
+                    .collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>();
+        let mut column_words = vec![0_u64; row_count * column_count];
+        for row in 0..row_count {
+            for column in 0..column_count {
+                column_words[column * row_count + row] = rows[row][column].to_u64();
+            }
+        }
+        let column_values =
+            CudaDeviceBuffer::from_u64_words(&column_words).expect("columns should upload");
+
+        for arity in [2, 4] {
+            let actual = linear_hash_level_from_validated_column_major_device_buffer(
+                &column_values,
+                row_count,
+                column_count,
+                arity,
+            )
+            .expect("column-major leaf hashes should run")
+            .to_digests()
+            .expect("column-major digests should download");
+            let expected = linear_hashes(&rows, arity).expect("CPU leaf hashes should run");
+            assert_eq!(actual, expected);
+        }
     }
 
     #[test]

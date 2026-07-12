@@ -250,4 +250,174 @@ theorem row_major_digest_prefix_checked_acceptance_audited_core_contract
         (And.intro checked.right
           (And.intro wideLinear (And.intro core sound))))
 
+def RowMajorMatrixWordAt
+    {α : Type u}
+    (words : List α)
+    (columnCount row column : Nat) : List α :=
+  (words.drop (row * columnCount + column)).take 1
+
+def ColumnMajorMatrixWordAt
+    {α : Type u}
+    (words : List α)
+    (rowCount row column : Nat) : List α :=
+  (words.drop (column * rowCount + row)).take 1
+
+structure ColumnMajorLayoutEvidence (α : Type u) where
+  rowMajorWords : List α
+  columnMajorWords : List α
+  rowCount : Nat
+  columnCount : Nat
+  wordsMatch :
+    forall row column,
+      row < rowCount ->
+        column < columnCount ->
+          ColumnMajorMatrixWordAt columnMajorWords rowCount row column =
+            RowMajorMatrixWordAt rowMajorWords columnCount row column
+
+theorem column_major_layout_evidence_preserves_word_observation
+    (evidence : ColumnMajorLayoutEvidence α) :
+    forall row column,
+      row < evidence.rowCount ->
+        column < evidence.columnCount ->
+          ColumnMajorMatrixWordAt
+              evidence.columnMajorWords
+              evidence.rowCount
+              row
+              column =
+            RowMajorMatrixWordAt
+              evidence.rowMajorWords
+              evidence.columnCount
+              row
+              column := by
+  intro row column rowBound columnBound
+  exact evidence.wordsMatch row column rowBound columnBound
+
+structure ColumnMajorDigestPrefixValidation (system : VerifierModel) where
+  rowMajorValidation : RowMajorDigestPrefixValidation system
+  columnMajorLayoutMatchesRows : PublicInput -> Proof -> Prop
+  layoutMatchImpliesRowMajorEvidence :
+    forall publicInput proof,
+      columnMajorLayoutMatchesRows publicInput proof ->
+        RowMajorDigestPrefixEvidence
+          system
+          rowMajorValidation
+          publicInput
+          proof
+
+def ColumnMajorDigestPrefixEvidence
+    (system : VerifierModel)
+    (validation : ColumnMajorDigestPrefixValidation system)
+    (publicInput : PublicInput)
+    (proof : Proof) : Prop :=
+  validation.columnMajorLayoutMatchesRows publicInput proof
+
+def ColumnMajorDigestPrefixCheckedAcceptance
+    (system : VerifierModel)
+    (validation : ColumnMajorDigestPrefixValidation system)
+    (publicInput : PublicInput)
+    (proof : Proof) : Prop :=
+  system.accepts publicInput proof
+    /\ ColumnMajorDigestPrefixEvidence system validation publicInput proof
+
+theorem column_major_digest_prefix_evidence_projects_row_major_evidence
+    {system : VerifierModel}
+    (validation : ColumnMajorDigestPrefixValidation system) :
+    forall publicInput proof,
+      ColumnMajorDigestPrefixEvidence system validation publicInput proof ->
+        RowMajorDigestPrefixEvidence
+          system
+          validation.rowMajorValidation
+          publicInput
+          proof := by
+  intro publicInput proof evidence
+  exact
+    validation.layoutMatchImpliesRowMajorEvidence
+      publicInput
+      proof
+      evidence
+
+theorem column_major_digest_prefix_evidence_implies_wide_linear_digests
+    {system : VerifierModel}
+    (validation : ColumnMajorDigestPrefixValidation system) :
+    forall publicInput proof,
+      ColumnMajorDigestPrefixEvidence system validation publicInput proof ->
+        validation.rowMajorValidation.leafValidation.wideLinearDigestsBindRows
+          publicInput
+          proof := by
+  intro publicInput proof evidence
+  exact
+    row_major_digest_prefix_evidence_implies_wide_linear_digests
+      validation.rowMajorValidation
+      publicInput
+      proof
+      (column_major_digest_prefix_evidence_projects_row_major_evidence
+        validation
+        publicInput
+        proof
+        evidence)
+
+theorem column_major_digest_prefix_checked_acceptance_sound
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : ColumnMajorDigestPrefixValidation system) :
+    forall publicInput proof,
+      ColumnMajorDigestPrefixCheckedAcceptance
+          system
+          validation
+          publicInput
+          proof ->
+        validation.rowMajorValidation.leafValidation.wideLinearDigestsBindRows
+            publicInput
+            proof
+          /\ SoundWitness system publicInput proof := by
+  intro publicInput proof checked
+  exact
+    And.intro
+      (column_major_digest_prefix_evidence_implies_wide_linear_digests
+        validation
+        publicInput
+        proof
+        checked.right)
+      ((abstract_verifier_sound_with_semantic_evidence assumptions).right
+        publicInput
+        proof
+        checked.left)
+
+theorem column_major_digest_prefix_checked_acceptance_verifier_core_contract
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : ColumnMajorDigestPrefixValidation system) :
+    forall publicInput proof,
+      ColumnMajorDigestPrefixCheckedAcceptance
+          system
+          validation
+          publicInput
+          proof ->
+        RuntimeVerifierCoreContract system publicInput proof := by
+  intro publicInput proof checked
+  exact
+    And.intro
+      (assumption_bundle_fiat_shamir_transcript_binding
+        assumptions
+        publicInput
+        proof
+        checked.left)
+      (And.intro
+        (assumption_bundle_public_input_binding
+          assumptions
+          publicInput
+          proof
+          checked.left)
+        (And.intro
+          (assumption_bundle_pcs_opening_soundness
+            assumptions
+            publicInput
+            proof
+            checked.left)
+          (assumption_bundle_fri_query_soundness
+            assumptions
+            publicInput
+            proof
+            checked.left)))
+
 end Lzvm

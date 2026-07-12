@@ -539,6 +539,7 @@ int run_poseidon2_width16_linear_round_on_device(
 #include "cuda_poseidon2_merkle_root.cuh"
 #include "cuda_poseidon2_merkle_digest.cuh"
 #include "cuda_poseidon2_row_major.cuh"
+#include "cuda_poseidon2_column_major.cuh"
 
 }  // namespace
 
@@ -953,10 +954,13 @@ int run_row_major_columns_device(
     LZVM_CUDA_RETURN_ON_ERROR(run_coset_extend_column_groups_on_device_unsynced(
         columns, source_len, source_bits, target_len, target_bits, column_count,
         source_root_inverse, target_root, shift, stream));
-    const size_t target_blocks = (target_words + kThreads - 1) / kThreads;
-    unpack_row_major_columns_kernel<<<target_blocks, kThreads, 0, stream>>>(
-        columns, out, target_len, column_count);
-    LZVM_CUDA_RETURN_ON_ERROR(lzvm_cuda_check_launch());
+    // Aliased output preserves the column-major workspace for direct hashing.
+    if (out != columns) {
+        const size_t target_blocks = (target_words + kThreads - 1) / kThreads;
+        unpack_row_major_columns_kernel<<<target_blocks, kThreads, 0, stream>>>(
+            columns, out, target_len, column_count);
+        LZVM_CUDA_RETURN_ON_ERROR(lzvm_cuda_check_launch());
+    }
     return synchronize ? lzvm_cuda_synchronize() : 0;
 }
 
@@ -1019,10 +1023,13 @@ int run_row_major_columns_strided_device(
     LZVM_CUDA_RETURN_ON_ERROR(run_coset_extend_column_groups_on_device_unsynced(
         columns, source_len, source_bits, target_len, target_bits, column_count,
         source_root_inverse, target_root, shift, stream));
-    const size_t target_blocks = (target_words + kThreads - 1) / kThreads;
-    unpack_row_major_columns_kernel<<<target_blocks, kThreads, 0, stream>>>(
-        columns, out, target_len, column_count);
-    LZVM_CUDA_RETURN_ON_ERROR(lzvm_cuda_check_launch());
+    // Aliased output preserves the column-major workspace for direct hashing.
+    if (out != columns) {
+        const size_t target_blocks = (target_words + kThreads - 1) / kThreads;
+        unpack_row_major_columns_kernel<<<target_blocks, kThreads, 0, stream>>>(
+            columns, out, target_len, column_count);
+        LZVM_CUDA_RETURN_ON_ERROR(lzvm_cuda_check_launch());
+    }
     return synchronize ? lzvm_cuda_synchronize() : 0;
 }
 
@@ -1285,4 +1292,5 @@ extern "C" int lzvm_cuda_poseidon2_width16_linear_round_device(
 
 #include "cuda_poseidon2_merkle_exports.cuh"
 #include "cuda_poseidon2_row_major_exports.cuh"
+#include "cuda_poseidon2_column_major_exports.cuh"
 #include "cuda_keccak_exports.cuh"

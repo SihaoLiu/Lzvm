@@ -15,6 +15,10 @@ use lzvm_accel::{
     cuda_goldilocks_coset_extend_row_major_columns_strided_device,
     cuda_goldilocks_coset_extend_row_major_columns_strided_device_on_stream,
     cuda_goldilocks_coset_extend_row_major_columns_strided_device_unsynced,
+    cuda_goldilocks_coset_extend_row_major_columns_strided_to_column_major_device_on_stream,
+    cuda_goldilocks_coset_extend_row_major_columns_strided_to_column_major_device_unsynced,
+    cuda_goldilocks_coset_extend_row_major_columns_to_column_major_device_on_stream,
+    cuda_goldilocks_coset_extend_row_major_columns_to_column_major_device_unsynced,
     cuda_goldilocks_validate_canonical_words_device, AccelError, CudaCanonicalCheck,
     CudaDeviceBuffer, CudaEvent, CudaRowMajorColumnView, CudaStream,
 };
@@ -24,6 +28,7 @@ use lzvm_field::{coset_extend_evaluations, Felt};
 use crate::gpu_setup::prepare_gpu_setup;
 #[cfg(feature = "cuda")]
 use crate::merkle_hash::{
+    linear_hash_level_from_validated_column_major_device_buffer,
     linear_hash_level_from_validated_row_major_device_buffer,
     linear_hash_level_from_validated_row_major_device_buffer_on_stream,
     linear_hashes_from_validated_wide_row_major_device_buffer, CudaDigestCheckpointLevel,
@@ -1197,9 +1202,10 @@ fn compact_witness_stage_leaf_hash_level_from_source_device_timed(
         },
     )?;
 
+    let use_column_major_output = view.column_count > HASH_WORDS;
     let use_output_cache = should_cache_leaf_output(view.column_count);
     let mut output_buffer = if use_output_cache {
-        if let Some(workspace_cache) = workspace_cache.as_deref_mut() {
+        let buffer = if let Some(workspace_cache) = workspace_cache.as_deref_mut() {
             workspace_cache.output_buffer(out_byte_count, timing)?
         } else {
             let buffer = record_setup_duration(
@@ -1209,15 +1215,10 @@ fn compact_witness_stage_leaf_hash_level_from_source_device_timed(
             )?;
             timing.record_output_alloc(out_byte_count);
             buffer
-        }
+        };
+        Some(buffer)
     } else {
-        let buffer = record_setup_duration(
-            &mut timing.setup_duration,
-            &mut timing.leaf_setup_output_alloc_duration,
-            || CudaDeviceBuffer::new(out_byte_count).map_err(WitnessStageLeafError::from),
-        )?;
-        timing.record_output_alloc(out_byte_count);
-        buffer
+        None
     };
     let mut extension_workspace_storage;
     let extension_workspace = if let Some(workspace_cache) = workspace_cache.as_deref_mut() {
@@ -1232,70 +1233,144 @@ fn compact_witness_stage_leaf_hash_level_from_source_device_timed(
         &mut extension_workspace_storage
     };
 
-    record_duration(&mut timing.kernel_duration, || match stream {
-        Some(stream) => {
-            let result = if view.source_row_stride == view.column_count && view.column_offset == 0 {
-                cuda_goldilocks_coset_extend_row_major_columns_device_on_stream(
+    record_duration(&mut timing.kernel_duration, || {
+        if use_column_major_output {
+            return match stream {
+                Some(stream) => {
+                    if view.source_row_stride == view.column_count && view.column_offset == 0 {
+                        cuda_goldilocks_coset_extend_row_major_columns_to_column_major_device_on_stream(
+                            source_device,
+                            extension_workspace,
+                            view.column_count,
+                            source_bits,
+                            target_bits,
+                            stream,
+                        )
+                    } else {
+                        cuda_goldilocks_coset_extend_row_major_columns_strided_to_column_major_device_on_stream(
+                            source_device,
+                            extension_workspace,
+                            view,
+                            source_bits,
+                            target_bits,
+                            stream,
+                        )
+                    }
+                    .map_err(WitnessStageLeafError::from)
+                }
+                None => {
+                    if view.source_row_stride == view.column_count && view.column_offset == 0 {
+                        cuda_goldilocks_coset_extend_row_major_columns_to_column_major_device_unsynced(
+                            source_device,
+                            extension_workspace,
+                            view.column_count,
+                            source_bits,
+                            target_bits,
+                        )
+                    } else {
+                        cuda_goldilocks_coset_extend_row_major_columns_strided_to_column_major_device_unsynced(
+                            source_device,
+                            extension_workspace,
+                            view,
+                            source_bits,
+                            target_bits,
+                        )
+                    }
+                    .map_err(WitnessStageLeafError::from)
+                }
+            };
+        }
+
+        let output_buffer = output_buffer
+            .as_mut()
+            .expect("narrow leaf extension should allocate row-major output");
+        match stream {
+            Some(stream) => {
+                if view.source_row_stride == view.column_count && view.column_offset == 0 {
+                    cuda_goldilocks_coset_extend_row_major_columns_device_on_stream(
+                        source_device,
+                        output_buffer,
+                        extension_workspace,
+                        view.column_count,
+                        source_bits,
+                        target_bits,
+                        stream,
+                    )
+                } else {
+                    cuda_goldilocks_coset_extend_row_major_columns_strided_device_on_stream(
+                        source_device,
+                        output_buffer,
+                        extension_workspace,
+                        view,
+                        source_bits,
+                        target_bits,
+                        stream,
+                    )
+                }
+                .map_err(WitnessStageLeafError::from)
+            }
+            None => if view.source_row_stride == view.column_count && view.column_offset == 0 {
+                cuda_goldilocks_coset_extend_row_major_columns_device_unsynced(
                     source_device,
-                    &mut output_buffer,
+                    output_buffer,
                     extension_workspace,
                     view.column_count,
                     source_bits,
                     target_bits,
-                    stream,
                 )
             } else {
-                cuda_goldilocks_coset_extend_row_major_columns_strided_device_on_stream(
+                cuda_goldilocks_coset_extend_row_major_columns_strided_device_unsynced(
                     source_device,
-                    &mut output_buffer,
+                    output_buffer,
                     extension_workspace,
                     view,
                     source_bits,
                     target_bits,
-                    stream,
                 )
-            };
-            result.map_err(WitnessStageLeafError::from)
+            }
+            .map_err(WitnessStageLeafError::from),
         }
-        None => if view.source_row_stride == view.column_count && view.column_offset == 0 {
-            cuda_goldilocks_coset_extend_row_major_columns_device_unsynced(
-                source_device,
-                &mut output_buffer,
-                extension_workspace,
-                view.column_count,
-                source_bits,
-                target_bits,
-            )
-        } else {
-            cuda_goldilocks_coset_extend_row_major_columns_strided_device_unsynced(
-                source_device,
-                &mut output_buffer,
-                extension_workspace,
-                view,
-                source_bits,
-                target_bits,
-            )
-        }
-        .map_err(WitnessStageLeafError::from),
     })?;
     timing.record_coset_extend_work(out_byte_count, view.column_count, source_bits, target_bits);
     let extended_rows = extended_row_count_from_bytes(out_byte_count, view.column_count)?;
     let canonical_check = record_duration(&mut timing.validate_duration, || {
-        begin_validate_row_major_device_words(&output_buffer, out_byte_count)
+        if use_column_major_output {
+            begin_validate_device_words(extension_workspace, out_byte_count)
+        } else {
+            begin_validate_row_major_device_words(
+                output_buffer
+                    .as_ref()
+                    .expect("narrow leaf output should remain allocated"),
+                out_byte_count,
+            )
+        }
     })?;
     let level = record_duration(&mut timing.leaf_hash_duration, || {
-        linear_hash_level_from_validated_row_major_device_buffer(
-            &output_buffer,
-            extended_rows,
-            view.column_count,
-            arity,
-        )
+        if use_column_major_output {
+            linear_hash_level_from_validated_column_major_device_buffer(
+                extension_workspace,
+                extended_rows,
+                view.column_count,
+                arity,
+            )
+        } else {
+            linear_hash_level_from_validated_row_major_device_buffer(
+                output_buffer
+                    .as_ref()
+                    .expect("narrow leaf output should remain allocated"),
+                extended_rows,
+                view.column_count,
+                arity,
+            )
+        }
         .map_err(WitnessStageCommitmentError::from)
     })?;
     timing.record_leaf_hash_work(extended_rows, out_byte_count, arity);
     if use_output_cache {
         if let Some(workspace_cache) = workspace_cache {
-            workspace_cache.store_output_buffer(output_buffer);
+            workspace_cache.store_output_buffer(
+                output_buffer.expect("cached narrow leaf output should remain allocated"),
+            );
         }
     }
     Ok(PendingCanonicalCudaDigestLevel::new(level, canonical_check))
@@ -1383,7 +1458,7 @@ fn validate_row_major_device_words(
 }
 
 #[cfg(feature = "cuda")]
-fn begin_validate_row_major_device_words(
+fn begin_validate_device_words(
     buffer: &CudaDeviceBuffer,
     byte_count: usize,
 ) -> Result<CudaCanonicalCheck, WitnessStageLeafError> {
@@ -1393,6 +1468,14 @@ fn begin_validate_row_major_device_words(
     let word_count = byte_count / WORD_BYTES;
     cuda_goldilocks_begin_validate_canonical_words_device(buffer, word_count)
         .map_err(WitnessStageLeafError::from)
+}
+
+#[cfg(feature = "cuda")]
+fn begin_validate_row_major_device_words(
+    buffer: &CudaDeviceBuffer,
+    byte_count: usize,
+) -> Result<CudaCanonicalCheck, WitnessStageLeafError> {
+    begin_validate_device_words(buffer, byte_count)
 }
 
 #[cfg(all(test, feature = "cuda"))]
@@ -1571,6 +1654,80 @@ mod tests {
                 .expect("default root should materialize")
         );
         assert_eq!(stream_timing.leaf_coset_extend_call_count(), 1);
+    }
+
+    #[test]
+    fn wide_compact_leaf_hashes_column_major_workspace_without_output_allocation() {
+        let source_bits = 2;
+        let target_bits = 3;
+        let source_rows = 1_usize << source_bits;
+        let source_row_stride = 16;
+        let column_offset = 1;
+        let column_count = 13;
+        let arity = 4;
+        let values = (0..source_rows * source_row_stride)
+            .map(|index| Felt::from_u64((index as u64 + 5) * 47))
+            .collect::<Vec<_>>();
+        let source = Arc::new(
+            CudaDeviceBuffer::from_u64_words(Felt::as_u64_slice(&values))
+                .expect("source should upload"),
+        );
+        let view = WitnessStageSourceDeviceView::new(
+            source_rows,
+            column_count,
+            source_row_stride,
+            column_offset,
+            Arc::clone(&source),
+        );
+        let mut workspace_cache = super::WitnessStageLeafWorkspaceCache::default();
+        let mut direct_timing = super::WitnessStageLeafExtendTiming::default();
+        let direct_level =
+            super::compact_witness_stage_leaf_hash_level_from_source_device_view_with_workspace_cache_timing(
+                source_rows,
+                column_count,
+                source_bits,
+                target_bits,
+                arity,
+                &view,
+                Some(&mut workspace_cache),
+                &mut direct_timing,
+            )
+            .expect("column-major source-device leaf level should build");
+        let direct_root = direct_level
+            .root()
+            .expect("column-major root should materialize");
+        direct_level
+            .finish_canonical_check()
+            .expect("column-major output should be canonical");
+
+        let stream = CudaStream::new().expect("stream should create");
+        let mut reference_timing = super::WitnessStageLeafExtendTiming::default();
+        let reference_level =
+            super::begin_compact_witness_stage_leaf_hash_level_from_source_device_view_on_stream_timing(
+                source_rows,
+                column_count,
+                source_bits,
+                target_bits,
+                arity,
+                view,
+                stream,
+                &mut reference_timing,
+            )
+            .expect("row-major reference extension should enqueue")
+            .finish(&mut reference_timing)
+            .expect("row-major reference leaf level should finish");
+
+        assert_eq!(
+            direct_root,
+            reference_level
+                .root()
+                .expect("row-major reference root should materialize")
+        );
+        reference_level
+            .finish_canonical_check()
+            .expect("row-major reference output should be canonical");
+        assert_eq!(direct_timing.leaf_setup_output_alloc_count(), 0);
+        assert_eq!(direct_timing.leaf_setup_workspace_alloc_count(), 1);
     }
 
     #[test]

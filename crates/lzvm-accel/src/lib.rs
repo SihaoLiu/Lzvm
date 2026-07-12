@@ -472,6 +472,27 @@ unsafe extern "C" {
         chunk_len: usize,
         stream: *mut std::ffi::c_void,
     ) -> i32;
+    #[link_name = "lzvm_cuda_poseidon2_width8_linear_round_column_major_digest_device"]
+    fn lzvm_cuda_poseidon2_width8_linear_round_column_major_digest_device_raw(
+        current_states: *const u64,
+        column_values: *const u64,
+        out: *mut u64,
+        row_count: usize,
+        column_count: usize,
+        offset: usize,
+        chunk_len: usize,
+    ) -> i32;
+    #[link_name = "lzvm_cuda_poseidon2_width8_linear_round_column_major_digest_device_on_stream"]
+    fn lzvm_cuda_poseidon2_width8_linear_round_column_major_digest_device_on_stream_raw(
+        current_states: *const u64,
+        column_values: *const u64,
+        out: *mut u64,
+        row_count: usize,
+        column_count: usize,
+        offset: usize,
+        chunk_len: usize,
+        stream: *mut std::ffi::c_void,
+    ) -> i32;
     fn lzvm_cuda_poseidon2_width16(values: *const u64, out: *mut u64, state_count: usize) -> i32;
     #[link_name = "lzvm_cuda_poseidon2_width16_device"]
     fn lzvm_cuda_poseidon2_width16_device_raw(
@@ -592,6 +613,27 @@ unsafe extern "C" {
     fn lzvm_cuda_poseidon2_width16_linear_round_row_major_digest_device_on_stream_raw(
         current_states: *const u64,
         row_values: *const u64,
+        out: *mut u64,
+        row_count: usize,
+        column_count: usize,
+        offset: usize,
+        chunk_len: usize,
+        stream: *mut std::ffi::c_void,
+    ) -> i32;
+    #[link_name = "lzvm_cuda_poseidon2_width16_linear_round_column_major_digest_device"]
+    fn lzvm_cuda_poseidon2_width16_linear_round_column_major_digest_device_raw(
+        current_states: *const u64,
+        column_values: *const u64,
+        out: *mut u64,
+        row_count: usize,
+        column_count: usize,
+        offset: usize,
+        chunk_len: usize,
+    ) -> i32;
+    #[link_name = "lzvm_cuda_poseidon2_width16_linear_round_column_major_digest_device_on_stream"]
+    fn lzvm_cuda_poseidon2_width16_linear_round_column_major_digest_device_on_stream_raw(
+        current_states: *const u64,
+        column_values: *const u64,
         out: *mut u64,
         row_count: usize,
         column_count: usize,
@@ -2166,6 +2208,287 @@ pub unsafe fn cuda_goldilocks_begin_coset_extend_row_major_columns_strided_devic
         )
     };
     cuda_status(code)
+}
+
+#[cfg(feature = "cuda")]
+#[derive(Debug, Clone, Copy)]
+struct CudaColumnMajorCosetExtendDomain {
+    source_len: usize,
+    target_len: usize,
+    source_root_inverse: u64,
+    target_root: u64,
+}
+
+#[cfg(feature = "cuda")]
+fn validate_cuda_column_major_coset_extension(
+    values: &CudaDeviceBuffer,
+    columns: &CudaDeviceBuffer,
+    view: CudaRowMajorColumnView,
+    source_bits: usize,
+    target_bits: usize,
+) -> Result<CudaColumnMajorCosetExtendDomain, AccelError> {
+    let CudaRowMajorColumnView {
+        source_rows,
+        source_row_stride,
+        column_offset,
+        column_count,
+    } = view;
+    if column_count == 0 || source_row_stride == 0 {
+        return Err(AccelError::InvalidDomain {
+            bits: source_bits,
+            len: values.len(),
+        });
+    }
+    if column_offset > source_row_stride || column_count > source_row_stride - column_offset {
+        return Err(AccelError::InvalidDomain {
+            bits: source_row_stride,
+            len: column_count,
+        });
+    }
+    if !values.len().is_multiple_of(8) {
+        return Err(AccelError::LengthMismatch {
+            lhs: values.len(),
+            rhs: values.len() / 8 * 8,
+        });
+    }
+    if !columns.len().is_multiple_of(8) {
+        return Err(AccelError::LengthMismatch {
+            lhs: columns.len(),
+            rhs: columns.len() / 8 * 8,
+        });
+    }
+
+    let (source_len, target_len, source_root, target_root) =
+        coset_extend_domain(source_rows, source_bits, target_bits)?;
+    if source_rows != source_len {
+        return Err(AccelError::InvalidDomain {
+            bits: source_bits,
+            len: source_rows,
+        });
+    }
+    let required_source_words = source_rows
+        .checked_sub(1)
+        .and_then(|last_row| last_row.checked_mul(source_row_stride))
+        .and_then(|base| base.checked_add(column_offset))
+        .and_then(|base| base.checked_add(column_count))
+        .ok_or(AccelError::InvalidDomain {
+            bits: source_bits,
+            len: source_rows,
+        })?;
+    if values.len() / 8 < required_source_words {
+        return Err(AccelError::LengthMismatch {
+            lhs: values.len() / 8,
+            rhs: required_source_words,
+        });
+    }
+    let target_bytes = target_len
+        .checked_mul(column_count)
+        .and_then(|words| words.checked_mul(8))
+        .ok_or(AccelError::InvalidDomain {
+            bits: target_bits,
+            len: source_rows,
+        })?;
+    if columns.len() != target_bytes {
+        return Err(AccelError::LengthMismatch {
+            lhs: target_bytes,
+            rhs: columns.len(),
+        });
+    }
+    ensure_cuda_setup(target_bits)?;
+
+    Ok(CudaColumnMajorCosetExtendDomain {
+        source_len,
+        target_len,
+        source_root_inverse: pow_mod(source_root, 0xffff_ffff_0000_0001 - 2),
+        target_root,
+    })
+}
+
+#[cfg(feature = "cuda")]
+fn enqueue_cuda_column_major_coset_extension(
+    values: &CudaDeviceBuffer,
+    columns: &mut CudaDeviceBuffer,
+    column_count: usize,
+    source_bits: usize,
+    target_bits: usize,
+    stream_raw: *mut std::ffi::c_void,
+) -> Result<(), AccelError> {
+    if column_count == 0 {
+        if values.is_empty() && columns.is_empty() {
+            return Ok(());
+        }
+        return Err(AccelError::InvalidDomain {
+            bits: source_bits,
+            len: values.len(),
+        });
+    }
+    if !values.len().is_multiple_of(8) {
+        return Err(AccelError::LengthMismatch {
+            lhs: values.len(),
+            rhs: values.len() / 8 * 8,
+        });
+    }
+    let source_words = values.len() / 8;
+    if !source_words.is_multiple_of(column_count) {
+        return Err(AccelError::InvalidDomain {
+            bits: source_bits,
+            len: source_words,
+        });
+    }
+    let view = CudaRowMajorColumnView {
+        source_rows: source_words / column_count,
+        source_row_stride: column_count,
+        column_offset: 0,
+        column_count,
+    };
+    let domain = validate_cuda_column_major_coset_extension(
+        values,
+        columns,
+        view,
+        source_bits,
+        target_bits,
+    )?;
+    let columns_ptr = columns.as_raw_ptr() as *mut u64;
+    let code = unsafe {
+        lzvm_cuda_goldilocks_coset_extend_row_major_columns_device_on_stream_raw(
+            values.as_raw_ptr() as *const u64,
+            columns_ptr,
+            columns_ptr,
+            domain.source_len,
+            source_bits,
+            domain.target_len,
+            target_bits,
+            column_count,
+            domain.source_root_inverse,
+            domain.target_root,
+            SHIFT,
+            stream_raw,
+        )
+    };
+    cuda_status(code)
+}
+
+#[cfg(feature = "cuda")]
+fn enqueue_cuda_strided_column_major_coset_extension(
+    values: &CudaDeviceBuffer,
+    columns: &mut CudaDeviceBuffer,
+    view: CudaRowMajorColumnView,
+    source_bits: usize,
+    target_bits: usize,
+    stream_raw: *mut std::ffi::c_void,
+) -> Result<(), AccelError> {
+    if view.column_count == 0 || view.source_row_stride == 0 {
+        if values.is_empty() && columns.is_empty() {
+            return Ok(());
+        }
+        return Err(AccelError::InvalidDomain {
+            bits: source_bits,
+            len: values.len(),
+        });
+    }
+    let domain = validate_cuda_column_major_coset_extension(
+        values,
+        columns,
+        view,
+        source_bits,
+        target_bits,
+    )?;
+    let columns_ptr = columns.as_raw_ptr() as *mut u64;
+    let code = unsafe {
+        lzvm_cuda_goldilocks_coset_extend_row_major_columns_strided_device_on_stream_raw(
+            values.as_raw_ptr() as *const u64,
+            columns_ptr,
+            columns_ptr,
+            domain.source_len,
+            source_bits,
+            domain.target_len,
+            target_bits,
+            view.source_row_stride,
+            view.column_offset,
+            view.column_count,
+            domain.source_root_inverse,
+            domain.target_root,
+            SHIFT,
+            stream_raw,
+        )
+    };
+    cuda_status(code)
+}
+
+#[cfg(feature = "cuda")]
+pub fn cuda_goldilocks_coset_extend_row_major_columns_to_column_major_device_unsynced(
+    values: &CudaDeviceBuffer,
+    columns: &mut CudaDeviceBuffer,
+    column_count: usize,
+    source_bits: usize,
+    target_bits: usize,
+) -> Result<(), AccelError> {
+    enqueue_cuda_column_major_coset_extension(
+        values,
+        columns,
+        column_count,
+        source_bits,
+        target_bits,
+        std::ptr::null_mut(),
+    )
+}
+
+#[cfg(feature = "cuda")]
+pub fn cuda_goldilocks_coset_extend_row_major_columns_to_column_major_device_on_stream(
+    values: &CudaDeviceBuffer,
+    columns: &mut CudaDeviceBuffer,
+    column_count: usize,
+    source_bits: usize,
+    target_bits: usize,
+    stream: &CudaStream,
+) -> Result<(), AccelError> {
+    enqueue_cuda_column_major_coset_extension(
+        values,
+        columns,
+        column_count,
+        source_bits,
+        target_bits,
+        stream.as_raw(),
+    )?;
+    stream.synchronize()
+}
+
+#[cfg(feature = "cuda")]
+pub fn cuda_goldilocks_coset_extend_row_major_columns_strided_to_column_major_device_unsynced(
+    values: &CudaDeviceBuffer,
+    columns: &mut CudaDeviceBuffer,
+    view: CudaRowMajorColumnView,
+    source_bits: usize,
+    target_bits: usize,
+) -> Result<(), AccelError> {
+    enqueue_cuda_strided_column_major_coset_extension(
+        values,
+        columns,
+        view,
+        source_bits,
+        target_bits,
+        std::ptr::null_mut(),
+    )
+}
+
+#[cfg(feature = "cuda")]
+pub fn cuda_goldilocks_coset_extend_row_major_columns_strided_to_column_major_device_on_stream(
+    values: &CudaDeviceBuffer,
+    columns: &mut CudaDeviceBuffer,
+    view: CudaRowMajorColumnView,
+    source_bits: usize,
+    target_bits: usize,
+    stream: &CudaStream,
+) -> Result<(), AccelError> {
+    enqueue_cuda_strided_column_major_coset_extension(
+        values,
+        columns,
+        view,
+        source_bits,
+        target_bits,
+        stream.as_raw(),
+    )?;
+    stream.synchronize()
 }
 
 #[cfg(feature = "cuda")]
@@ -4622,6 +4945,63 @@ pub unsafe fn cuda_poseidon2_begin_width8_linear_round_row_major_digest_device_o
 }
 
 #[cfg(feature = "cuda")]
+pub fn cuda_poseidon2_width8_linear_round_column_major_digest_device(
+    current_states: &CudaDeviceBuffer,
+    column_values: &CudaDeviceBuffer,
+    out: &mut CudaDeviceBuffer,
+    column_count: usize,
+    offset: usize,
+    chunk_len: usize,
+) -> Result<(), AccelError> {
+    run_cuda_poseidon2_linear_round_row_major_device_op(
+        current_states,
+        column_values,
+        out,
+        CudaLinearRoundRowMajorParams {
+            width: 8,
+            rate: 4,
+            column_count,
+            offset,
+            chunk_len,
+        },
+        lzvm_cuda_poseidon2_width8_linear_round_column_major_digest_device_raw,
+    )
+}
+
+/// Enqueues a width-8 column-major digest round on `stream` and returns after launch.
+///
+/// # Safety
+///
+/// The caller must keep `current_states`, `column_values`, `out`, and `stream`
+/// alive until the queued stream work has completed, and must not read or
+/// reuse `out` until that work has completed.
+#[cfg(feature = "cuda")]
+pub unsafe fn cuda_poseidon2_begin_width8_linear_round_column_major_digest_device_on_stream(
+    current_states: &CudaDeviceBuffer,
+    column_values: &CudaDeviceBuffer,
+    out: &mut CudaDeviceBuffer,
+    column_count: usize,
+    offset: usize,
+    chunk_len: usize,
+    stream: &CudaStream,
+) -> Result<(), AccelError> {
+    run_cuda_poseidon2_linear_round_row_major_device_op_on_stream(
+        current_states,
+        column_values,
+        out,
+        CudaLinearRoundRowMajorParams {
+            width: 8,
+            rate: 4,
+            column_count,
+            offset,
+            chunk_len,
+        },
+        stream,
+        lzvm_cuda_poseidon2_width8_linear_round_column_major_digest_device_on_stream_raw,
+    )
+}
+
+#[cfg(feature = "cuda")]
 pub fn cuda_poseidon2_width16_linear_round_device(
     current_states: &CudaDeviceBuffer,
     row_values: &CudaDeviceBuffer,
@@ -4717,6 +5097,63 @@ pub unsafe fn cuda_poseidon2_begin_width16_linear_round_row_major_digest_device_
         },
         stream,
         lzvm_cuda_poseidon2_width16_linear_round_row_major_digest_device_on_stream_raw,
+    )
+}
+
+#[cfg(feature = "cuda")]
+pub fn cuda_poseidon2_width16_linear_round_column_major_digest_device(
+    current_states: &CudaDeviceBuffer,
+    column_values: &CudaDeviceBuffer,
+    out: &mut CudaDeviceBuffer,
+    column_count: usize,
+    offset: usize,
+    chunk_len: usize,
+) -> Result<(), AccelError> {
+    run_cuda_poseidon2_linear_round_row_major_device_op(
+        current_states,
+        column_values,
+        out,
+        CudaLinearRoundRowMajorParams {
+            width: 16,
+            rate: 12,
+            column_count,
+            offset,
+            chunk_len,
+        },
+        lzvm_cuda_poseidon2_width16_linear_round_column_major_digest_device_raw,
+    )
+}
+
+/// Enqueues a width-16 column-major digest round on `stream` and returns after launch.
+///
+/// # Safety
+///
+/// The caller must keep `current_states`, `column_values`, `out`, and `stream`
+/// alive until the queued stream work has completed, and must not read or
+/// reuse `out` until that work has completed.
+#[cfg(feature = "cuda")]
+pub unsafe fn cuda_poseidon2_begin_width16_linear_round_column_major_digest_device_on_stream(
+    current_states: &CudaDeviceBuffer,
+    column_values: &CudaDeviceBuffer,
+    out: &mut CudaDeviceBuffer,
+    column_count: usize,
+    offset: usize,
+    chunk_len: usize,
+    stream: &CudaStream,
+) -> Result<(), AccelError> {
+    run_cuda_poseidon2_linear_round_row_major_device_op_on_stream(
+        current_states,
+        column_values,
+        out,
+        CudaLinearRoundRowMajorParams {
+            width: 16,
+            rate: 12,
+            column_count,
+            offset,
+            chunk_len,
+        },
+        stream,
+        lzvm_cuda_poseidon2_width16_linear_round_column_major_digest_device_on_stream_raw,
     )
 }
 
@@ -4865,10 +5302,16 @@ mod tests {
         cuda_goldilocks_coset_extend_row_major_columns_output_bytes,
         cuda_goldilocks_coset_extend_row_major_columns_strided_device,
         cuda_goldilocks_coset_extend_row_major_columns_strided_device_on_stream,
+        cuda_goldilocks_coset_extend_row_major_columns_strided_to_column_major_device_on_stream,
+        cuda_goldilocks_coset_extend_row_major_columns_to_column_major_device_unsynced,
+        cuda_poseidon2_begin_width16_linear_round_column_major_digest_device_on_stream,
         cuda_poseidon2_begin_width16_linear_round_row_major_digest_device_on_stream,
+        cuda_poseidon2_width16_linear_round_column_major_digest_device,
         cuda_poseidon2_width16_linear_round_row_major_digest_device,
         cuda_poseidon2_width16_merkle_digest_opening_prefix_batch_device_buffer,
         cuda_poseidon2_width16_merkle_digest_opening_suffixes_batch_device_buffers,
+        cuda_poseidon2_width8_linear_round_column_major_digest_device,
+        cuda_poseidon2_width8_linear_round_row_major_digest_device,
         cuda_poseidon2_width8_merkle_digest_opening_prefix_batch_device_buffer,
         cuda_poseidon2_width8_merkle_digest_opening_suffixes_batch_device_buffers, cuda_setup_init,
         cuda_status, lzvm_cuda_goldilocks_coset_extend_row_major_columns_device_on_stream_raw,
@@ -4905,6 +5348,20 @@ mod tests {
             stage_len <<= 1;
         }
         values
+    }
+
+    fn transpose_row_major_words(
+        values: &[u64],
+        row_count: usize,
+        column_count: usize,
+    ) -> Vec<u64> {
+        let mut columns = vec![0_u64; values.len()];
+        for row in 0..row_count {
+            for column in 0..column_count {
+                columns[column * row_count + row] = values[row * column_count + column];
+            }
+        }
+        columns
     }
 
     #[test]
@@ -5187,6 +5644,112 @@ mod tests {
             default_out
                 .to_u64_words()
                 .expect("default output should download")
+        );
+    }
+
+    #[test]
+    fn column_major_coset_extension_matches_transposed_row_major_output() {
+        let _guard = crate::CUDA_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let source_bits = 2;
+        let target_bits = 3;
+        let source_rows = 1_usize << source_bits;
+        let target_rows = 1_usize << target_bits;
+        let column_count = 3;
+        let values = (0..source_rows * column_count)
+            .map(|index| (index as u64 + 1) * 41)
+            .collect::<Vec<_>>();
+        let out_byte_count = cuda_goldilocks_coset_extend_row_major_columns_output_bytes(
+            values.len(),
+            column_count,
+            source_bits,
+            target_bits,
+        )
+        .expect("output shape should be valid");
+        let source = CudaDeviceBuffer::from_u64_words(&values).expect("source should upload");
+        let mut row_major =
+            CudaDeviceBuffer::new(out_byte_count).expect("row-major output should allocate");
+        cuda_goldilocks_coset_extend_row_major_columns_device(
+            &source,
+            &mut row_major,
+            column_count,
+            source_bits,
+            target_bits,
+        )
+        .expect("row-major extension should run");
+        let mut column_major =
+            CudaDeviceBuffer::new(out_byte_count).expect("column-major output should allocate");
+        cuda_goldilocks_coset_extend_row_major_columns_to_column_major_device_unsynced(
+            &source,
+            &mut column_major,
+            column_count,
+            source_bits,
+            target_bits,
+        )
+        .expect("column-major extension should enqueue");
+
+        let expected = transpose_row_major_words(
+            &row_major
+                .to_u64_words()
+                .expect("row-major output should download"),
+            target_rows,
+            column_count,
+        );
+        assert_eq!(
+            column_major
+                .to_u64_words()
+                .expect("column-major output should download"),
+            expected
+        );
+
+        let source_row_stride = 5;
+        let column_offset = 1;
+        let strided_values = (0..source_rows * source_row_stride)
+            .map(|index| (index as u64 + 7) * 43)
+            .collect::<Vec<_>>();
+        let view = CudaRowMajorColumnView {
+            source_rows,
+            source_row_stride,
+            column_offset,
+            column_count,
+        };
+        let strided_source =
+            CudaDeviceBuffer::from_u64_words(&strided_values).expect("source should upload");
+        let mut strided_row_major =
+            CudaDeviceBuffer::new(out_byte_count).expect("row-major output should allocate");
+        cuda_goldilocks_coset_extend_row_major_columns_strided_device(
+            &strided_source,
+            &mut strided_row_major,
+            view,
+            source_bits,
+            target_bits,
+        )
+        .expect("strided row-major extension should run");
+        let mut strided_column_major =
+            CudaDeviceBuffer::new(out_byte_count).expect("column-major output should allocate");
+        let stream = CudaStream::new().expect("CUDA stream should create");
+        cuda_goldilocks_coset_extend_row_major_columns_strided_to_column_major_device_on_stream(
+            &strided_source,
+            &mut strided_column_major,
+            view,
+            source_bits,
+            target_bits,
+            &stream,
+        )
+        .expect("strided column-major extension should run");
+        let expected = transpose_row_major_words(
+            &strided_row_major
+                .to_u64_words()
+                .expect("strided row-major output should download"),
+            target_rows,
+            column_count,
+        );
+        assert_eq!(
+            strided_column_major
+                .to_u64_words()
+                .expect("strided column-major output should download"),
+            expected
         );
     }
 
@@ -5688,6 +6251,132 @@ mod tests {
             default_out
                 .to_u64_words()
                 .expect("default output should download")
+        );
+    }
+
+    #[test]
+    fn column_major_digest_rounds_match_row_major_layout() {
+        let _guard = crate::CUDA_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let row_count = 16;
+
+        let width8 = 8;
+        let column_count8 = 9;
+        let current_words8 = (0..row_count * width8)
+            .map(|index| (index as u64 + 3) * 17)
+            .collect::<Vec<_>>();
+        let row_words8 = (0..row_count * column_count8)
+            .map(|index| (index as u64 + 5) * 19)
+            .collect::<Vec<_>>();
+        let column_words8 = transpose_row_major_words(&row_words8, row_count, column_count8);
+        let current_states8 =
+            CudaDeviceBuffer::from_u64_words(&current_words8).expect("states should upload");
+        let row_values8 =
+            CudaDeviceBuffer::from_u64_words(&row_words8).expect("row values should upload");
+        let column_values8 =
+            CudaDeviceBuffer::from_u64_words(&column_words8).expect("column values should upload");
+        let byte_count8 = current_words8.len() * std::mem::size_of::<u64>();
+        let mut row_out8 =
+            CudaDeviceBuffer::zeroed(byte_count8).expect("row output should allocate");
+        let mut column_out8 =
+            CudaDeviceBuffer::zeroed(byte_count8).expect("column output should allocate");
+        cuda_poseidon2_width8_linear_round_row_major_digest_device(
+            &current_states8,
+            &row_values8,
+            &mut row_out8,
+            column_count8,
+            3,
+            4,
+        )
+        .expect("row-major width-8 digest should run");
+        cuda_poseidon2_width8_linear_round_column_major_digest_device(
+            &current_states8,
+            &column_values8,
+            &mut column_out8,
+            column_count8,
+            3,
+            4,
+        )
+        .expect("column-major width-8 digest should run");
+        assert_eq!(
+            column_out8
+                .to_u64_words()
+                .expect("column output should download"),
+            row_out8.to_u64_words().expect("row output should download")
+        );
+
+        let width16 = 16;
+        let column_count16 = 19;
+        let current_words16 = (0..row_count * width16)
+            .map(|index| (index as u64 + 7) * 23)
+            .collect::<Vec<_>>();
+        let row_words16 = (0..row_count * column_count16)
+            .map(|index| (index as u64 + 11) * 29)
+            .collect::<Vec<_>>();
+        let column_words16 = transpose_row_major_words(&row_words16, row_count, column_count16);
+        let current_states16 =
+            CudaDeviceBuffer::from_u64_words(&current_words16).expect("states should upload");
+        let row_values16 =
+            CudaDeviceBuffer::from_u64_words(&row_words16).expect("row values should upload");
+        let column_values16 =
+            CudaDeviceBuffer::from_u64_words(&column_words16).expect("column values should upload");
+        let byte_count16 = current_words16.len() * std::mem::size_of::<u64>();
+        let mut row_out16 =
+            CudaDeviceBuffer::zeroed(byte_count16).expect("row output should allocate");
+        cuda_poseidon2_width16_linear_round_row_major_digest_device(
+            &current_states16,
+            &row_values16,
+            &mut row_out16,
+            column_count16,
+            5,
+            12,
+        )
+        .expect("row-major width-16 digest should run");
+        let mut column_default_out16 =
+            CudaDeviceBuffer::zeroed(byte_count16).expect("column output should allocate");
+        cuda_poseidon2_width16_linear_round_column_major_digest_device(
+            &current_states16,
+            &column_values16,
+            &mut column_default_out16,
+            column_count16,
+            5,
+            12,
+        )
+        .expect("column-major width-16 digest should run");
+        assert_eq!(
+            column_default_out16
+                .to_u64_words()
+                .expect("column output should download"),
+            row_out16
+                .to_u64_words()
+                .expect("row output should download")
+        );
+        let stream = CudaStream::new().expect("CUDA stream should create");
+        let mut column_out16 =
+            CudaDeviceBuffer::zeroed(byte_count16).expect("column output should allocate");
+        unsafe {
+            cuda_poseidon2_begin_width16_linear_round_column_major_digest_device_on_stream(
+                &current_states16,
+                &column_values16,
+                &mut column_out16,
+                column_count16,
+                5,
+                12,
+                &stream,
+            )
+        }
+        .expect("column-major width-16 digest should enqueue");
+        stream
+            .synchronize()
+            .expect("column-major width-16 digest should finish");
+        assert_eq!(
+            column_out16
+                .to_u64_words()
+                .expect("column output should download"),
+            row_out16
+                .to_u64_words()
+                .expect("row output should download")
         );
     }
 

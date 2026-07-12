@@ -19,6 +19,8 @@ fn lean_digest_prefix_binding_exports_core_contract_projection() {
     assert!(
         lean_source.contains("RowMajorDigestPrefixValidation")
             && lean_source.contains("RowMajorDigestPrefixEvidence")
+            && lean_source.contains("ColumnMajorDigestPrefixValidation")
+            && lean_source.contains("ColumnMajorDigestPrefixEvidence")
             && lean_source.contains("RuntimeVerifierCoreContract system publicInput proof")
             && lean_source.contains("SoundWitness system publicInput proof"),
         "Lean digest prefix binding should expose checked soundness and verifier core projection"
@@ -34,6 +36,11 @@ fn lean_digest_prefix_binding_exports_core_contract_projection() {
             "row_major_digest_prefix_checked_acceptance_evidence_core_and_sound",
             "row_major_digest_prefix_checked_acceptance_accepts_evidence_core_and_sound",
             "row_major_digest_prefix_checked_acceptance_audited_core_contract",
+            "column_major_layout_evidence_preserves_word_observation",
+            "column_major_digest_prefix_evidence_projects_row_major_evidence",
+            "column_major_digest_prefix_evidence_implies_wide_linear_digests",
+            "column_major_digest_prefix_checked_acceptance_sound",
+            "column_major_digest_prefix_checked_acceptance_verifier_core_contract",
         ],
     );
     lean_binding::assert_theorem_prefix_contains(
@@ -206,6 +213,51 @@ fn lean_digest_prefix_binding_exports_core_contract_projection() {
             "row_major_digest_prefix_checked_acceptance_evidence_core_and_sound",
             "row_major_digest_prefix_checked_acceptance_sound",
             "sound_witness_implies_verifier_core_contract",
+        ],
+    );
+    lean_binding::assert_theorem_prefix_contains(
+        &lean_source,
+        "column_major_layout_evidence_preserves_word_observation",
+        &[
+            "evidence : ColumnMajorLayoutEvidence α",
+            "ColumnMajorMatrixWordAt",
+            "RowMajorMatrixWordAt",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "column_major_layout_evidence_preserves_word_observation",
+        &["evidence.wordsMatch row column rowBound columnBound"],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "column_major_digest_prefix_evidence_projects_row_major_evidence",
+        &["validation.layoutMatchImpliesRowMajorEvidence", "evidence"],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "column_major_digest_prefix_evidence_implies_wide_linear_digests",
+        &[
+            "row_major_digest_prefix_evidence_implies_wide_linear_digests",
+            "column_major_digest_prefix_evidence_projects_row_major_evidence",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "column_major_digest_prefix_checked_acceptance_sound",
+        &[
+            "column_major_digest_prefix_evidence_implies_wide_linear_digests",
+            "abstract_verifier_sound_with_semantic_evidence",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "column_major_digest_prefix_checked_acceptance_verifier_core_contract",
+        &[
+            "assumption_bundle_fiat_shamir_transcript_binding",
+            "assumption_bundle_public_input_binding",
+            "assumption_bundle_pcs_opening_soundness",
+            "assumption_bundle_fri_query_soundness",
         ],
     );
 }

@@ -2969,6 +2969,20 @@ fn source_device_leaf_extension_reuses_only_narrow_output_cache() {
             && source_device_body.contains("workspace_cache.output_buffer("),
         "source-device leaf extension should reuse output allocation only for narrow stages"
     );
+    assert!(
+        source_device_body
+            .contains("let use_column_major_output = view.column_count > HASH_WORDS")
+            && source_device_body.contains(
+                "cuda_goldilocks_coset_extend_row_major_columns_to_column_major_device_unsynced",
+            )
+            && source_device_body.contains("begin_validate_device_words(extension_workspace")
+            && source_device_body.contains(
+                "linear_hash_level_from_validated_column_major_device_buffer",
+            )
+            && source_device_body.contains("let mut output_buffer = if use_output_cache")
+            && source_device_body.contains("} else {\n        None\n    };"),
+        "wide source-device leaf extension should hash the validated column-major workspace without allocating row-major output"
+    );
 }
 
 #[test]
