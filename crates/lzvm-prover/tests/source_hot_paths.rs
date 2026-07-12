@@ -12647,11 +12647,19 @@ fn guest_machine_fast_path_handles_pending_dma_pairs() {
         "fn try_advance_guest_machine_report_fast_path",
         "fn write_fast_reported_register",
     );
+    let pending_body = function_body(
+        &source,
+        "fn advance_fast_pending_dma_instruction(",
+        "fn try_advance_guest_machine_report_fast_path(",
+    );
     let dma_body = function_body(&source, "fn execute_fast_dma", "fn advance_timing_started");
 
     assert!(
         fast_body.contains("if let Some(pending_dma) = state.pending_dma")
-            && fast_body.contains("execute_fast_pending_dma(")
+            && fast_body.contains("return advance_fast_pending_dma_instruction(")
+            && source
+                .contains("#[cold]\n#[inline(never)]\nfn advance_fast_pending_dma_instruction(")
+            && pending_body.contains("execute_fast_pending_dma(")
             && dma_body.contains("write_fast_reported_register(state, rd, result)"),
         "pending DMA pairs should stay on the prepared advance fast path"
     );

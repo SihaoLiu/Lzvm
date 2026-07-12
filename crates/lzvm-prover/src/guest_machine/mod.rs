@@ -2881,6 +2881,43 @@ fn advance_fast_atomic_instruction(
     })
 }
 
+#[allow(clippy::too_many_arguments)]
+#[cold]
+#[inline(never)]
+fn advance_fast_pending_dma_instruction(
+    memory: &mut GuestMachineMemory,
+    state: &mut GuestMachineState,
+    address: u64,
+    byte_len: u8,
+    sequential_pc: u64,
+    instruction: RiscvInstruction,
+    pending_dma: GuestDmaPrepare,
+    report: &mut MaybeUninit<GuestMachineReport>,
+) -> Result<GuestMachineReportShape, GuestMachineError> {
+    let checkpoint = GuestMachineStateCheckpoint::new(state, instruction);
+    state.pending_dma = None;
+    state.set_pc(sequential_pc);
+    let register_write =
+        match execute_fast_pending_dma(memory, address, instruction, state, pending_dma) {
+            Ok(register_write) => register_write,
+            Err(error) => {
+                checkpoint.restore(state);
+                return Err(error);
+            }
+        };
+    state.retire_instruction();
+    report.write(GuestMachineReport::new_single_effect_sequential(
+        address,
+        byte_len,
+        instruction,
+        register_write,
+    ));
+    Ok(GuestMachineReportShape {
+        instruction,
+        has_memory_write: false,
+    })
+}
+
 fn try_advance_guest_machine_report_fast_path(
     memory: &mut GuestMachineMemory,
     state: &mut GuestMachineState,
@@ -2891,28 +2928,17 @@ fn try_advance_guest_machine_report_fast_path(
     report: &mut MaybeUninit<GuestMachineReport>,
 ) -> Result<Option<GuestMachineReportShape>, GuestMachineError> {
     if let Some(pending_dma) = state.pending_dma {
-        let checkpoint = GuestMachineStateCheckpoint::new(state, instruction);
-        state.pending_dma = None;
-        state.set_pc(sequential_pc);
-        let register_write =
-            match execute_fast_pending_dma(memory, address, instruction, state, pending_dma) {
-                Ok(register_write) => register_write,
-                Err(error) => {
-                    checkpoint.restore(state);
-                    return Err(error);
-                }
-            };
-        state.retire_instruction();
-        report.write(GuestMachineReport::new_single_effect_sequential(
+        return advance_fast_pending_dma_instruction(
+            memory,
+            state,
             address,
             byte_len,
+            sequential_pc,
             instruction,
-            register_write,
-        ));
-        return Ok(Some(GuestMachineReportShape {
-            instruction,
-            has_memory_write: false,
-        }));
+            pending_dma,
+            report,
+        )
+        .map(Some);
     }
 
     let mut register_write = None;
