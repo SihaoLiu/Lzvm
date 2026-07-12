@@ -1,5 +1,8 @@
 use std::fmt;
 
+pub const GUEST_PC_TRACE_GPU_SIZE_THRESHOLD: u64 = 1_000_000;
+pub const LARGE_GUEST_PC_TRACE_MIN_FREE_GPU_BYTES: usize = 1024 * 1024 * 1024;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum GpuSetupError {
     #[cfg(feature = "cuda")]

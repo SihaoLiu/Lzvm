@@ -5,6 +5,8 @@ use std::collections::{btree_map::Entry, BTreeMap, VecDeque};
 use std::fmt;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+#[cfg(feature = "cuda")]
+use std::sync::{Mutex, OnceLock};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -3989,6 +3991,9 @@ pub enum ProveWitnessCommitmentError {
     SegmentCommitOutputOrder {
         message: String,
     },
+    GuestPcTraceGpuMemoryPreflight {
+        message: String,
+    },
     RegularConstraintViolation {
         unit_index: usize,
         constraint_index: usize,
@@ -4178,6 +4183,7 @@ impl fmt::Display for ProveWitnessCommitmentError {
                 f,
                 "guest PC segment commit output ordering failed: {message}"
             ),
+            Self::GuestPcTraceGpuMemoryPreflight { message } => f.write_str(message),
             Self::RegularConstraintViolation {
                 unit_index,
                 constraint_index,
@@ -4229,6 +4235,7 @@ impl std::error::Error for ProveWitnessCommitmentError {
             | Self::SourceLookupSet { .. }
             | Self::PreloadedStageSource { .. }
             | Self::SegmentCommitOutputOrder { .. }
+            | Self::GuestPcTraceGpuMemoryPreflight { .. }
             | Self::RegularConstraintViolation { .. } => None,
         }
     }
@@ -4503,6 +4510,9 @@ fn run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_optiona
     timing_observer: Option<&mut dyn FnMut(ProveWitnessGuestPcTraceTiming)>,
 ) -> Result<Vec<ProveWitnessTraceCommitments>, ProveWitnessCommitmentError> {
     validate_witness_unit_index(plan, unit_index)?;
+    #[cfg(feature = "cuda")]
+    let gpu_memory_preflight =
+        GuestPcTraceGpuMemoryPreflight::for_instruction_limit(instruction_limit);
     let shared_inputs = load_witness_shared_inputs(plan)?;
     let auxiliary_inputs = Arc::new(auxiliary_inputs);
     let mut timing_observer = timing_observer;
@@ -4515,8 +4525,12 @@ fn run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_optiona
     let mut segment_commit_memory_timing = GuestPcTraceSegmentCommitMemoryTiming::default();
     let mut segment_commit_attempt_duration = Duration::ZERO;
     let mut segment_commit_oom_retry_duration = Duration::ZERO;
+    #[cfg(feature = "cuda")]
+    let sample_attempt_start_memory = gpu_memory_preflight.is_none();
+    #[cfg(not(feature = "cuda"))]
+    let sample_attempt_start_memory = true;
     loop {
-        if collect_segment_commit_memory_timing {
+        if collect_segment_commit_memory_timing && sample_attempt_start_memory {
             let sample_started = Instant::now();
             let sample = sample_guest_pc_segment_commit_cuda_memory();
             segment_commit_memory_timing
@@ -4552,12 +4566,25 @@ fn run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_optiona
                     timing_observer: attempt_timing_observer,
                     segment_commit_mode,
                     segment_commit_worker_timing,
+                    #[cfg(feature = "cuda")]
+                    gpu_memory_preflight: gpu_memory_preflight.clone(),
                 },
             )
         };
         let segment_commit_attempt_elapsed = segment_commit_attempt_started.elapsed();
         segment_commit_attempt_duration += segment_commit_attempt_elapsed;
         if collect_segment_commit_memory_timing {
+            #[cfg(feature = "cuda")]
+            if !segment_commit_memory_timing.cuda_memory_initial_observed {
+                if let Some(preflight) = gpu_memory_preflight.as_ref() {
+                    if let Ok(observation) = preflight.wait() {
+                        segment_commit_memory_timing.observe_attempt_start_with_duration(
+                            observation.sample,
+                            observation.duration,
+                        );
+                    }
+                }
+            }
             let sample_started = Instant::now();
             let sample = sample_guest_pc_segment_commit_cuda_memory();
             segment_commit_memory_timing
@@ -4601,6 +4628,8 @@ struct GuestPcTraceSegmentCommitAttemptOptions<'timing> {
     timing_observer: Option<&'timing mut dyn FnMut(ProveWitnessGuestPcTraceTiming)>,
     segment_commit_mode: GuestPcTraceSegmentCommitMode,
     segment_commit_worker_timing: GuestPcTraceSegmentCommitWorkerTiming,
+    #[cfg(feature = "cuda")]
+    gpu_memory_preflight: Option<GuestPcTraceGpuMemoryPreflight>,
 }
 
 fn run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_attempt(
@@ -4615,6 +4644,8 @@ fn run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_attempt
         timing_observer,
         segment_commit_mode,
         segment_commit_worker_timing,
+        #[cfg(feature = "cuda")]
+        gpu_memory_preflight,
     } = options;
     let mut source_lookup_balance = SourceLookupBalance::default();
     let defer_cross_unit_source_lookup = should_defer_cross_unit_source_lookup(plan, unit_index);
@@ -4630,6 +4661,8 @@ fn run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_attempt
                 timing_observer,
                 segment_commit_mode,
                 segment_commit_worker_timing,
+                #[cfg(feature = "cuda")]
+                gpu_memory_preflight: gpu_memory_preflight.clone(),
             },
         )?
     } else {
@@ -4644,6 +4677,8 @@ fn run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_attempt
                 timing_observer,
                 segment_commit_mode,
                 segment_commit_worker_timing,
+                #[cfg(feature = "cuda")]
+                gpu_memory_preflight,
             },
         )?;
         let global_auxiliary_inputs =
@@ -5784,6 +5819,163 @@ fn sample_guest_pc_segment_commit_cuda_memory() -> GuestPcTraceSegmentCommitCuda
     GuestPcTraceSegmentCommitCudaMemorySample::default()
 }
 
+#[cfg(feature = "cuda")]
+const GUEST_PC_TRACE_GPU_PREFLIGHT_DEFERRED_SEGMENT_LIMIT: usize = 8;
+
+#[cfg(feature = "cuda")]
+#[derive(Clone)]
+struct GuestPcTraceGpuMemoryPreflight {
+    inner: Arc<GuestPcTraceGpuMemoryPreflightInner>,
+}
+
+#[cfg(feature = "cuda")]
+struct GuestPcTraceGpuMemoryPreflightInner {
+    result:
+        OnceLock<Result<GuestPcTraceGpuMemoryPreflightObservation, ProveWitnessCommitmentError>>,
+    worker: Mutex<
+        Option<
+            thread::JoinHandle<
+                Result<GuestPcTraceGpuMemoryPreflightObservation, ProveWitnessCommitmentError>,
+            >,
+        >,
+    >,
+}
+
+#[cfg(feature = "cuda")]
+#[derive(Clone, Copy)]
+struct GuestPcTraceGpuMemoryPreflightObservation {
+    sample: GuestPcTraceSegmentCommitCudaMemorySample,
+    duration: Duration,
+}
+
+#[cfg(feature = "cuda")]
+impl GuestPcTraceGpuMemoryPreflight {
+    fn for_instruction_limit(instruction_limit: u64) -> Option<Self> {
+        (instruction_limit >= crate::gpu_setup::GUEST_PC_TRACE_GPU_SIZE_THRESHOLD).then(Self::start)
+    }
+
+    fn start() -> Self {
+        let spawn_result = thread::Builder::new()
+            .name("lzvm-gpu-memory-preflight".to_owned())
+            .spawn(run_guest_pc_trace_gpu_memory_preflight);
+        let result = OnceLock::new();
+        let worker = match spawn_result {
+            Ok(worker) => Some(worker),
+            Err(_) => {
+                let _ = result.set(run_guest_pc_trace_gpu_memory_preflight());
+                None
+            }
+        };
+        Self {
+            inner: Arc::new(GuestPcTraceGpuMemoryPreflightInner {
+                result,
+                worker: Mutex::new(worker),
+            }),
+        }
+    }
+
+    fn is_ready(&self) -> bool {
+        if self.inner.result.get().is_some() {
+            return true;
+        }
+        self.inner
+            .worker
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .as_ref()
+            .is_some_and(thread::JoinHandle::is_finished)
+    }
+
+    fn wait(
+        &self,
+    ) -> Result<GuestPcTraceGpuMemoryPreflightObservation, ProveWitnessCommitmentError> {
+        if let Some(result) = self.inner.result.get() {
+            return result.clone();
+        }
+        let mut worker = self
+            .inner
+            .worker
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if let Some(result) = self.inner.result.get() {
+            return result.clone();
+        }
+        if let Some(handle) = worker.take() {
+            let result = handle.join().unwrap_or_else(|_| {
+                Err(
+                    ProveWitnessCommitmentError::GuestPcTraceGpuMemoryPreflight {
+                        message: "large --guest-pc-trace GPU memory preflight worker panicked"
+                            .to_owned(),
+                    },
+                )
+            });
+            let _ = self.inner.result.set(result);
+        }
+        self.inner
+            .result
+            .get()
+            .expect("GPU memory preflight should publish a result")
+            .clone()
+    }
+}
+
+#[cfg(feature = "cuda")]
+fn run_guest_pc_trace_gpu_memory_preflight(
+) -> Result<GuestPcTraceGpuMemoryPreflightObservation, ProveWitnessCommitmentError> {
+    let started = Instant::now();
+    let memory_info = lzvm_accel::cuda_memory_info().map_err(|error| {
+        let message = if matches!(error, lzvm_accel::AccelError::Cuda { code: 2 }) {
+            "large --guest-pc-trace GPU memory preflight failed: CUDA reported out of memory while querying free memory; free GPU memory and retry".to_owned()
+        } else {
+            format!(
+                "large --guest-pc-trace GPU memory preflight failed: prover GPU setup failed: {error}"
+            )
+        };
+        ProveWitnessCommitmentError::GuestPcTraceGpuMemoryPreflight { message }
+    })?;
+    validate_guest_pc_trace_gpu_memory_info(memory_info.free_bytes, memory_info.total_bytes)?;
+    let allocator_stats = lzvm_accel::cuda_allocator_stats().ok();
+    Ok(GuestPcTraceGpuMemoryPreflightObservation {
+        sample: GuestPcTraceSegmentCommitCudaMemorySample {
+            cuda_memory_total_byte_count: memory_info.total_bytes,
+            cuda_memory_free_byte_count: memory_info.free_bytes,
+            cuda_allocator_cached_byte_count: allocator_stats
+                .as_ref()
+                .map(|stats| stats.cached_bytes)
+                .unwrap_or(0),
+        },
+        duration: started.elapsed(),
+    })
+}
+
+#[cfg(feature = "cuda")]
+fn validate_guest_pc_trace_gpu_memory_info(
+    free_bytes: usize,
+    total_bytes: usize,
+) -> Result<(), ProveWitnessCommitmentError> {
+    if free_bytes < crate::gpu_setup::LARGE_GUEST_PC_TRACE_MIN_FREE_GPU_BYTES {
+        return Err(ProveWitnessCommitmentError::GuestPcTraceGpuMemoryPreflight {
+            message: format!(
+                "large --guest-pc-trace requires at least {} MiB free CUDA memory: free {} MiB of {} MiB",
+                bytes_to_mib_ceil(crate::gpu_setup::LARGE_GUEST_PC_TRACE_MIN_FREE_GPU_BYTES),
+                bytes_to_mib_floor(free_bytes),
+                bytes_to_mib_floor(total_bytes),
+            ),
+        });
+    }
+    Ok(())
+}
+
+#[cfg(feature = "cuda")]
+fn bytes_to_mib_floor(bytes: usize) -> usize {
+    bytes / (1024 * 1024)
+}
+
+#[cfg(feature = "cuda")]
+fn bytes_to_mib_ceil(bytes: usize) -> usize {
+    bytes.saturating_add(1024 * 1024 - 1) / (1024 * 1024)
+}
+
 struct GuestPcTraceSegmentCommitDriver<'scope, 'env, 'b> {
     context: GuestPcTraceSegmentCommitContext<'env>,
     auxiliary_inputs: Arc<ProveWitnessAuxiliaryInputs>,
@@ -5798,6 +5990,10 @@ struct GuestPcTraceSegmentCommitDriver<'scope, 'env, 'b> {
     trace_timing: ProveWitnessTraceTimingAccumulator,
     segment_count: usize,
     worker_pool: GuestPcTraceSegmentCommitWorkerPool<'scope, 'env>,
+    #[cfg(feature = "cuda")]
+    gpu_memory_preflight: Option<GuestPcTraceGpuMemoryPreflight>,
+    #[cfg(feature = "cuda")]
+    deferred_segment_outputs: VecDeque<GuestPcTraceSegmentRunOutput>,
     #[cfg(feature = "cuda")]
     pending_root_materialization_window: usize,
 }
@@ -5819,6 +6015,7 @@ impl<'scope, 'env, 'b> GuestPcTraceSegmentCommitDriver<'scope, 'env, 'b> {
         source_lookup_balance: Option<&'b mut SourceLookupBalance>,
         collect_timing: bool,
         segment_commit_mode: GuestPcTraceSegmentCommitMode,
+        #[cfg(feature = "cuda")] gpu_memory_preflight: Option<GuestPcTraceGpuMemoryPreflight>,
     ) -> Self {
         #[cfg(feature = "cuda")]
         let pending_root_materialization_window =
@@ -5838,6 +6035,10 @@ impl<'scope, 'env, 'b> GuestPcTraceSegmentCommitDriver<'scope, 'env, 'b> {
             segment_count: 0,
             worker_pool: GuestPcTraceSegmentCommitWorkerPool::new(scope, segment_commit_mode),
             #[cfg(feature = "cuda")]
+            gpu_memory_preflight,
+            #[cfg(feature = "cuda")]
+            deferred_segment_outputs: VecDeque::new(),
+            #[cfg(feature = "cuda")]
             pending_root_materialization_window,
         }
     }
@@ -5847,6 +6048,27 @@ impl<'scope, 'env, 'b> GuestPcTraceSegmentCommitDriver<'scope, 'env, 'b> {
         segment_output: GuestPcTraceSegmentRunOutput,
     ) -> Result<(), ProveWitnessCommitmentError> {
         self.record_segment_input_gap();
+        #[cfg(feature = "cuda")]
+        if self.gpu_memory_preflight.is_some() {
+            self.deferred_segment_outputs.push_back(segment_output);
+            let should_activate = self
+                .gpu_memory_preflight
+                .as_ref()
+                .is_some_and(GuestPcTraceGpuMemoryPreflight::is_ready)
+                || self.deferred_segment_outputs.len()
+                    >= GUEST_PC_TRACE_GPU_PREFLIGHT_DEFERRED_SEGMENT_LIMIT;
+            if should_activate {
+                self.activate_gpu_memory_preflight()?;
+            }
+            return Ok(());
+        }
+        self.commit_ready_segment(segment_output)
+    }
+
+    fn commit_ready_segment(
+        &mut self,
+        segment_output: GuestPcTraceSegmentRunOutput,
+    ) -> Result<(), ProveWitnessCommitmentError> {
         let ready_results = self.worker_pool.submit_segment(
             self.context,
             Arc::clone(&self.auxiliary_inputs),
@@ -5856,6 +6078,20 @@ impl<'scope, 'env, 'b> GuestPcTraceSegmentCommitDriver<'scope, 'env, 'b> {
         )?;
         for result in ready_results {
             self.collect_committed_segment_result(result)?;
+        }
+        Ok(())
+    }
+
+    #[cfg(feature = "cuda")]
+    fn activate_gpu_memory_preflight(&mut self) -> Result<(), ProveWitnessCommitmentError> {
+        if let Some(preflight) = self.gpu_memory_preflight.take() {
+            if let Err(error) = preflight.wait() {
+                self.deferred_segment_outputs.clear();
+                return Err(error);
+            }
+        }
+        while let Some(segment_output) = self.deferred_segment_outputs.pop_front() {
+            self.commit_ready_segment(segment_output)?;
         }
         Ok(())
     }
@@ -5923,6 +6159,8 @@ impl<'scope, 'env, 'b> GuestPcTraceSegmentCommitDriver<'scope, 'env, 'b> {
     fn finish(
         mut self,
     ) -> Result<GuestPcTraceSegmentCommitDriverOutput, ProveWitnessCommitmentError> {
+        #[cfg(feature = "cuda")]
+        self.activate_gpu_memory_preflight()?;
         let pending_results = self.worker_pool.finish()?;
         for result in pending_results {
             self.collect_committed_segment_result(result)?;
@@ -6313,6 +6551,8 @@ struct GuestPcTraceSegmentCommitRunOptions<'shared, 'balance, 'timing> {
     timing_observer: Option<&'timing mut dyn FnMut(ProveWitnessGuestPcTraceTiming)>,
     segment_commit_mode: GuestPcTraceSegmentCommitMode,
     segment_commit_worker_timing: GuestPcTraceSegmentCommitWorkerTiming,
+    #[cfg(feature = "cuda")]
+    gpu_memory_preflight: Option<GuestPcTraceGpuMemoryPreflight>,
 }
 
 fn run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_inner(
@@ -6328,6 +6568,8 @@ fn run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_inner(
         mut timing_observer,
         segment_commit_mode,
         segment_commit_worker_timing,
+        #[cfg(feature = "cuda")]
+        gpu_memory_preflight,
     } = options;
     let unit_count = plan.run_plan.schedule.units.len();
     let unit = plan.run_plan.schedule.units.get(unit_index).ok_or(
@@ -6373,6 +6615,8 @@ fn run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_inner(
                 source_lookup_balance,
                 collect_timing,
                 segment_commit_mode,
+                #[cfg(feature = "cuda")]
+                gpu_memory_preflight.clone(),
             );
             let guest_trace_stream_started = collect_timing.then(Instant::now);
             let stream_result =
@@ -6448,6 +6692,8 @@ fn run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_inner(
             source_lookup_balance,
             collect_timing,
             segment_commit_mode,
+            #[cfg(feature = "cuda")]
+            gpu_memory_preflight,
         );
         let guest_trace_stream_started = collect_timing.then(Instant::now);
         let stream_timing = for_each_guest_pc_trace_segment_with_context(
@@ -8821,6 +9067,69 @@ mod tests {
             trace_timing: None,
             guest_segment_commit_duration: None,
         }
+    }
+
+    #[cfg(feature = "cuda")]
+    #[test]
+    fn guest_pc_gpu_memory_preflight_rejects_memory_below_shared_floor() {
+        let error =
+            validate_guest_pc_trace_gpu_memory_info(230 * 1024 * 1024, 32_607 * 1024 * 1024)
+                .expect_err("memory below the shared floor should fail");
+
+        assert_eq!(
+            error.to_string(),
+            "large --guest-pc-trace requires at least 1024 MiB free CUDA memory: free 230 MiB of 32607 MiB"
+        );
+        assert_eq!(
+            crate::gpu_setup::LARGE_GUEST_PC_TRACE_MIN_FREE_GPU_BYTES,
+            1024 * 1024 * 1024
+        );
+    }
+
+    #[cfg(feature = "cuda")]
+    #[test]
+    fn guest_pc_gpu_memory_preflight_accepts_shared_floor() {
+        validate_guest_pc_trace_gpu_memory_info(
+            crate::gpu_setup::LARGE_GUEST_PC_TRACE_MIN_FREE_GPU_BYTES,
+            32_607 * 1024 * 1024,
+        )
+        .expect("memory at the shared floor should pass");
+    }
+
+    #[cfg(feature = "cuda")]
+    #[test]
+    fn guest_pc_gpu_memory_preflight_publishes_one_shared_result() {
+        let observation = GuestPcTraceGpuMemoryPreflightObservation {
+            sample: GuestPcTraceSegmentCommitCudaMemorySample {
+                cuda_memory_total_byte_count: 2,
+                cuda_memory_free_byte_count: 1,
+                cuda_allocator_cached_byte_count: 0,
+            },
+            duration: Duration::from_millis(7),
+        };
+        let result = OnceLock::new();
+        assert!(result.set(Ok(observation)).is_ok());
+        assert!(result
+            .set(Err(
+                ProveWitnessCommitmentError::GuestPcTraceGpuMemoryPreflight {
+                    message: "late result should be ignored".to_owned(),
+                },
+            ))
+            .is_err());
+        let preflight = GuestPcTraceGpuMemoryPreflight {
+            inner: Arc::new(GuestPcTraceGpuMemoryPreflightInner {
+                result,
+                worker: Mutex::new(None),
+            }),
+        };
+
+        assert!(preflight.is_ready());
+        let published = preflight
+            .wait()
+            .expect("first result should remain published");
+        assert_eq!(published.sample, observation.sample);
+        assert_eq!(published.duration, observation.duration);
+        assert_eq!(GUEST_PC_TRACE_GPU_PREFLIGHT_DEFERRED_SEGMENT_LIMIT, 8);
     }
 
     #[test]

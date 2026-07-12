@@ -156,11 +156,13 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
         let _ = writeln!(stderr, "prove witness failed: {message}");
         return 1;
     }
-    if let Err(message) =
-        validate_large_guest_pc_runtime_gpu(parsed.guest_pc_trace_instruction_limit)
-    {
-        let _ = writeln!(stderr, "prove witness failed: {message}");
-        return 1;
+    if plan.run_plan.gpu.preallocate {
+        if let Err(message) =
+            validate_large_guest_pc_runtime_gpu(parsed.guest_pc_trace_instruction_limit)
+        {
+            let _ = writeln!(stderr, "prove witness failed: {message}");
+            return 1;
+        }
     }
     timings.mark("gpu_memory_preflight");
     if let Err(error) = prepare_requested_gpu_setup(&plan) {
@@ -544,6 +546,12 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
                 }
             }
         } else {
+            if let Err(message) =
+                validate_large_guest_pc_runtime_gpu(parsed.guest_pc_trace_instruction_limit)
+            {
+                let _ = writeln!(stderr, "prove witness failed: {message}");
+                return 1;
+            }
             let backend = GuestPcTraceBackend::new(instruction_limit);
             let mut timing = None;
             let output = if parsed.timings {

@@ -96,6 +96,7 @@ pub use fixed_material::{
 };
 pub use gpu_setup::{
     gpu_memory_info, gpu_setup_available, prepare_gpu_setup, GpuMemoryInfo, GpuSetupError,
+    GUEST_PC_TRACE_GPU_SIZE_THRESHOLD, LARGE_GUEST_PC_TRACE_MIN_FREE_GPU_BYTES,
 };
 pub use proof_artifact::{
     build_witness_contribution_proof_artifact_for_all_units,

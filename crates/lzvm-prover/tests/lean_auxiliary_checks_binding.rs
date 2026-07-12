@@ -3935,22 +3935,41 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
                 "guest_pc_trace_large_gpu_gate_checked_acceptance_verifier_core_contract"
             )
             && lean_source.contains("guest_pc_trace_large_gpu_gate_checked_acceptance_core_and_sound")
-            && prove_witness_source.contains("validate_large_guest_pc_runtime_gpu")
+            && prove_witness_source.contains("validate_large_guest_pc_gpu")
+            && prove_witness_source.contains("if plan.run_plan.gpu.preallocate")
+            && prove_witness_source
+                .matches("validate_large_guest_pc_runtime_gpu(")
+                .count()
+                >= 2
             && gpu_preflight_source.contains("fn validate_large_guest_pc_gpu")
             && gpu_preflight_source.contains("fn validate_large_guest_pc_runtime_gpu")
-            && gpu_preflight_source.contains("const GUEST_PC_TRACE_GPU_SIZE_THRESHOLD: u64 = 1_000_000")
             && gpu_preflight_source.contains(
-                "const LARGE_GUEST_PC_TRACE_MIN_FREE_GPU_BYTES: usize = 1024 * 1024 * 1024"
+                "lzvm_prover::GUEST_PC_TRACE_GPU_SIZE_THRESHOLD"
             )
+            && gpu_preflight_source
+                .contains("lzvm_prover::LARGE_GUEST_PC_TRACE_MIN_FREE_GPU_BYTES")
             && gpu_preflight_source
                 .contains("instruction_limit.unwrap_or(0) >= GUEST_PC_TRACE_GPU_SIZE_THRESHOLD")
             && gpu_preflight_source.contains("lzvm_prover::gpu_setup_available()")
-            && gpu_preflight_source.contains("lzvm_prover::gpu_memory_info()")
-            && gpu_preflight_source.contains("validate_large_guest_pc_gpu_memory(info)")
-            && gpu_preflight_source
-                .contains("info.free_bytes >= LARGE_GUEST_PC_TRACE_MIN_FREE_GPU_BYTES")
-            && gpu_preflight_source.contains("validate_large_guest_pc_gpu_memory"),
-        "Lean auxiliary checks should bind the large guest trace GPU gate to the Rust runtime guard and memory preflight"
+            && witness_execution_source.contains(
+                "GuestPcTraceGpuMemoryPreflight::for_instruction_limit(instruction_limit)"
+            )
+            && witness_execution_source.contains("run_guest_pc_trace_gpu_memory_preflight")
+            && witness_execution_source.contains("lzvm_accel::cuda_memory_info()")
+            && witness_execution_source.contains(
+                "validate_guest_pc_trace_gpu_memory_info(memory_info.free_bytes, memory_info.total_bytes)"
+            )
+            && witness_execution_source.contains(
+                "free_bytes < crate::gpu_setup::LARGE_GUEST_PC_TRACE_MIN_FREE_GPU_BYTES"
+            )
+            && witness_execution_source.contains(
+                "GUEST_PC_TRACE_GPU_PREFLIGHT_DEFERRED_SEGMENT_LIMIT"
+            )
+            && witness_execution_source
+                .contains("self.deferred_segment_outputs.push_back(segment_output)")
+            && witness_execution_source.contains("preflight.wait()")
+            && witness_execution_source.contains("self.commit_ready_segment(segment_output)"),
+        "Lean auxiliary checks should bind the large guest trace GPU gate to the deferred Rust runtime memory preflight"
     );
     assert!(
         lean_source.contains("GuestPcTraceTracelessCommitmentInputConfig")

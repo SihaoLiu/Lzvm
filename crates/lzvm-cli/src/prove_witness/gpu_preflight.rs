@@ -1,6 +1,7 @@
 #[cfg(any(test, feature = "cuda"))]
-pub(super) const LARGE_GUEST_PC_TRACE_MIN_FREE_GPU_BYTES: usize = 1024 * 1024 * 1024;
-const GUEST_PC_TRACE_GPU_SIZE_THRESHOLD: u64 = 1_000_000;
+pub(super) const LARGE_GUEST_PC_TRACE_MIN_FREE_GPU_BYTES: usize =
+    lzvm_prover::LARGE_GUEST_PC_TRACE_MIN_FREE_GPU_BYTES;
+const GUEST_PC_TRACE_GPU_SIZE_THRESHOLD: u64 = lzvm_prover::GUEST_PC_TRACE_GPU_SIZE_THRESHOLD;
 
 pub(super) fn validate_large_guest_pc_gpu(
     instruction_limit: Option<u64>,
@@ -9,6 +10,10 @@ pub(super) fn validate_large_guest_pc_gpu(
         true => Err("large --guest-pc-trace runs require a CUDA-enabled lzvm-cli build"),
         false => Ok(()),
     }
+}
+
+pub(super) fn is_large_guest_pc_trace(instruction_limit: Option<u64>) -> bool {
+    instruction_limit.unwrap_or(0) >= GUEST_PC_TRACE_GPU_SIZE_THRESHOLD
 }
 
 pub(super) fn validate_large_guest_pc_runtime_gpu(
@@ -26,10 +31,6 @@ pub(super) fn validate_large_guest_pc_runtime_gpu(
     {
         Ok(())
     }
-}
-
-pub(super) fn is_large_guest_pc_trace(instruction_limit: Option<u64>) -> bool {
-    instruction_limit.unwrap_or(0) >= GUEST_PC_TRACE_GPU_SIZE_THRESHOLD
 }
 
 #[cfg(feature = "cuda")]
