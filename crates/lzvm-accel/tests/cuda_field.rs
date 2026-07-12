@@ -567,8 +567,8 @@ fn cuda_extends_shifted_main_trace_rows_directly_from_compact_descriptors() {
         u64::from(lhs as u32) | (u64::from(rhs as u32) << 32)
     }
 
-    let source_bits = 4;
-    let target_bits = 6;
+    let source_bits = 8;
+    let target_bits = 9;
     let row_count = 1_usize << source_bits;
     let descriptor_count = row_count - 3;
     let terminal_pc = 0x8000_1000;
