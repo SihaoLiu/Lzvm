@@ -2755,6 +2755,132 @@ fn advance_guest_machine_prepared_inner_report_shape_at_pc_generic(
     Ok(GuestMachineAdvanceReport { report, shape })
 }
 
+#[cold]
+#[inline(never)]
+fn advance_fast_atomic_instruction(
+    memory: &mut GuestMachineMemory,
+    state: &mut GuestMachineState,
+    address: u64,
+    byte_len: u8,
+    sequential_pc: u64,
+    instruction: RiscvInstruction,
+    report: &mut MaybeUninit<GuestMachineReport>,
+) -> Result<GuestMachineReportShape, GuestMachineError> {
+    let (register_write, memory_access, has_memory_write) = match instruction {
+        RiscvInstruction::Amo {
+            kind,
+            width,
+            rd,
+            rs1,
+            rs2,
+            ..
+        } => {
+            let write_address = state.read_decoded_register(rs1);
+            let loaded = read_guest_amo(memory, width, write_address)?;
+            let stored = execute_amo(kind, width, loaded, state.read_decoded_register(rs2));
+            write_guest_amo(memory, width, write_address, stored)?;
+            let access_byte_len = amo_width_byte_len(width);
+            let read_access = GuestMemoryAccess {
+                kind: GuestMemoryAccessKind::Read,
+                address: write_address,
+                byte_len: guest_memory_access_byte_len(access_byte_len),
+                value: loaded,
+            };
+            let write_access = GuestMemoryAccess {
+                kind: GuestMemoryAccessKind::Write,
+                address: write_address,
+                byte_len: guest_memory_access_byte_len(access_byte_len),
+                value: low_bytes_value(stored, access_byte_len),
+            };
+            let register_write = write_fast_reported_register(state, rd, amo_result(width, loaded));
+            state.clear_reservation_if_overlaps(write_address, access_byte_len);
+            state.set_pc(sequential_pc);
+            state.retire_instruction();
+            report.write(GuestMachineReport::new(
+                address,
+                byte_len,
+                instruction,
+                sequential_pc,
+                register_write
+                    .map(GuestRegisterWriteList::one)
+                    .unwrap_or_default(),
+                GuestMemoryAccessList::from(vec![read_access, write_access]),
+                None,
+            ));
+            return Ok(GuestMachineReportShape {
+                instruction,
+                has_memory_write: true,
+            });
+        }
+        RiscvInstruction::LoadReserved { width, rd, rs1, .. } => {
+            let read_address = state.read_decoded_register(rs1);
+            let loaded = read_guest_amo(memory, width, read_address)?;
+            let memory_access = GuestMemoryAccess {
+                kind: GuestMemoryAccessKind::Read,
+                address: read_address,
+                byte_len: guest_memory_access_byte_len(amo_width_byte_len(width)),
+                value: loaded,
+            };
+            let register_write = write_fast_reported_register(state, rd, amo_result(width, loaded));
+            state.set_reservation(read_address, width);
+            (register_write, Some(memory_access), false)
+        }
+        RiscvInstruction::StoreConditional {
+            width,
+            rd,
+            rs1,
+            rs2,
+            ..
+        } => {
+            let write_address = state.read_decoded_register(rs1);
+            validate_guest_amo_address(memory, width, write_address)?;
+            let wrote = state.reservation_matches(write_address, width);
+            let (register_write, memory_access) = if wrote {
+                let value = state.read_decoded_register(rs2);
+                write_guest_amo(memory, width, write_address, value)?;
+                let byte_len = amo_width_byte_len(width);
+                let memory_access = GuestMemoryAccess {
+                    kind: GuestMemoryAccessKind::Write,
+                    address: write_address,
+                    byte_len: guest_memory_access_byte_len(byte_len),
+                    value: low_bytes_value(value, byte_len),
+                };
+                (
+                    write_fast_reported_register(state, rd, 0),
+                    Some(memory_access),
+                )
+            } else {
+                (write_fast_reported_register(state, rd, 1), None)
+            };
+            state.clear_reservation();
+            (register_write, memory_access, wrote)
+        }
+        _ => unreachable!("atomic fast path requires an atomic instruction"),
+    };
+    state.set_pc(sequential_pc);
+    state.retire_instruction();
+    let completed_report = match memory_access {
+        Some(memory_access) => GuestMachineReport::new_single_memory_effect_sequential(
+            address,
+            byte_len,
+            instruction,
+            register_write,
+            memory_access,
+        ),
+        None => GuestMachineReport::new_single_effect_sequential(
+            address,
+            byte_len,
+            instruction,
+            register_write,
+        ),
+    };
+    report.write(completed_report);
+    Ok(GuestMachineReportShape {
+        instruction,
+        has_memory_write,
+    })
+}
+
 fn try_advance_guest_machine_report_fast_path(
     memory: &mut GuestMachineMemory,
     state: &mut GuestMachineState,
@@ -2983,88 +3109,19 @@ fn try_advance_guest_machine_report_fast_path(
             });
             state.clear_reservation_if_overlaps(write_address, byte_len);
         }
-        RiscvInstruction::Amo {
-            kind,
-            width,
-            rd,
-            rs1,
-            rs2,
-            ..
-        } => {
-            let write_address = state.read_decoded_register(rs1);
-            let loaded = read_guest_amo(memory, width, write_address)?;
-            let stored = execute_amo(kind, width, loaded, state.read_decoded_register(rs2));
-            write_guest_amo(memory, width, write_address, stored)?;
-            let access_byte_len = amo_width_byte_len(width);
-            let read_access = GuestMemoryAccess {
-                kind: GuestMemoryAccessKind::Read,
-                address: write_address,
-                byte_len: guest_memory_access_byte_len(access_byte_len),
-                value: loaded,
-            };
-            let write_access = GuestMemoryAccess {
-                kind: GuestMemoryAccessKind::Write,
-                address: write_address,
-                byte_len: guest_memory_access_byte_len(access_byte_len),
-                value: low_bytes_value(stored, access_byte_len),
-            };
-            let register_write = write_fast_reported_register(state, rd, amo_result(width, loaded));
-            state.clear_reservation_if_overlaps(write_address, access_byte_len);
-            state.set_pc(sequential_pc);
-            state.retire_instruction();
-            report.write(GuestMachineReport::new(
+        RiscvInstruction::Amo { .. }
+        | RiscvInstruction::LoadReserved { .. }
+        | RiscvInstruction::StoreConditional { .. } => {
+            return advance_fast_atomic_instruction(
+                memory,
+                state,
                 address,
                 byte_len,
-                instruction,
                 sequential_pc,
-                register_write
-                    .map(GuestRegisterWriteList::one)
-                    .unwrap_or_default(),
-                GuestMemoryAccessList::from(vec![read_access, write_access]),
-                None,
-            ));
-            return Ok(Some(GuestMachineReportShape {
                 instruction,
-                has_memory_write: true,
-            }));
-        }
-        RiscvInstruction::LoadReserved { width, rd, rs1, .. } => {
-            let read_address = state.read_decoded_register(rs1);
-            let loaded = read_guest_amo(memory, width, read_address)?;
-            memory_access = Some(GuestMemoryAccess {
-                kind: GuestMemoryAccessKind::Read,
-                address: read_address,
-                byte_len: guest_memory_access_byte_len(amo_width_byte_len(width)),
-                value: loaded,
-            });
-            register_write = write_fast_reported_register(state, rd, amo_result(width, loaded));
-            state.set_reservation(read_address, width);
-        }
-        RiscvInstruction::StoreConditional {
-            width,
-            rd,
-            rs1,
-            rs2,
-            ..
-        } => {
-            let write_address = state.read_decoded_register(rs1);
-            validate_guest_amo_address(memory, width, write_address)?;
-            if state.reservation_matches(write_address, width) {
-                let value = state.read_decoded_register(rs2);
-                write_guest_amo(memory, width, write_address, value)?;
-                let byte_len = amo_width_byte_len(width);
-                has_memory_write = true;
-                memory_access = Some(GuestMemoryAccess {
-                    kind: GuestMemoryAccessKind::Write,
-                    address: write_address,
-                    byte_len: guest_memory_access_byte_len(byte_len),
-                    value: low_bytes_value(value, byte_len),
-                });
-                register_write = write_fast_reported_register(state, rd, 0);
-            } else {
-                register_write = write_fast_reported_register(state, rd, 1);
-            }
-            state.clear_reservation();
+                report,
+            )
+            .map(Some);
         }
         RiscvInstruction::CsrRead { csr, rd } => {
             register_write = write_fast_reported_register(

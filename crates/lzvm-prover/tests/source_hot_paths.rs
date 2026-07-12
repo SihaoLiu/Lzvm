@@ -12324,6 +12324,35 @@ fn guest_machine_fast_reports_split_sequential_and_control_flow_effects() {
 }
 
 #[test]
+fn guest_machine_outlines_atomic_fast_path() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let source_path = crate_root.join("src/guest_machine/mod.rs");
+    let source = std::fs::read_to_string(&source_path).expect("guest machine source should read");
+    let atomic_body = function_body(
+        &source,
+        "fn advance_fast_atomic_instruction(",
+        "fn try_advance_guest_machine_report_fast_path(",
+    );
+    let fast_body = function_body(
+        &source,
+        "fn try_advance_guest_machine_report_fast_path(",
+        "fn write_fast_reported_register",
+    );
+
+    assert!(
+        source.contains("#[cold]\n#[inline(never)]\nfn advance_fast_atomic_instruction(")
+            && atomic_body.contains("read_guest_amo(")
+            && atomic_body.contains("write_guest_amo(")
+            && atomic_body.contains("RiscvInstruction::LoadReserved")
+            && atomic_body.contains("RiscvInstruction::StoreConditional")
+            && fast_body.contains("return advance_fast_atomic_instruction(")
+            && !fast_body.contains("let stored = execute_amo(")
+            && !fast_body.contains("validate_guest_amo_address("),
+        "uncommon atomic instructions should stay outside the main advance body"
+    );
+}
+
+#[test]
 fn guest_machine_branch_fast_path_reuses_same_register_read() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let source_path = crate_root.join("src/guest_machine/mod.rs");
