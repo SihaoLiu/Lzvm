@@ -6998,11 +6998,21 @@ fn guest_pc_trace_runner_seed_snapshot_tracks_boundary_inside_runner_slice() {
         "fn run_guest_pc_trace_segment_slice_inner",
         "fn zisk_main_instruction_max_rows",
     );
+    let live_runner_body = function_body(
+        &backend_source,
+        "fn run_guest_pc_trace_segment_slice_with_live_report_chunks",
+        "fn run_guest_pc_trace_segment_slice_with_streaming_device_material",
+    );
     assert!(
         runner_body.contains("record_zisk_main_runner_pre_boundary_snapshot")
-            && runner_body.contains("record_zisk_main_runner_amo_scratch_snapshot")
+            && runner_body.contains("record_runner_amo_scratch_snapshot")
             && runner_body.contains("last_report_shape"),
         "runner boundary snapshots should be updated while guest reports are produced"
+    );
+    let atomic_gate = "if matches!(advanced.shape.instruction, RiscvInstruction::Amo { .. })";
+    assert!(
+        runner_body.contains(atomic_gate) && live_runner_body.contains(atomic_gate),
+        "runner atomic scratch updates should stay behind instruction-kind gates"
     );
 }
 

@@ -4696,7 +4696,9 @@ fn run_guest_pc_trace_segment_slice_with_live_report_chunks(
         last_report_shape = Some(advanced.shape);
         if let Some(snapshot) = boundary_snapshot.as_deref_mut() {
             snapshot.record_report_shape_state(advanced.shape);
-            record_zisk_main_runner_amo_scratch_snapshot(snapshot, &advanced.report)?;
+            if matches!(advanced.shape.instruction, RiscvInstruction::Amo { .. }) {
+                record_runner_amo_scratch_snapshot(snapshot, &advanced.report)?;
+            }
         }
         if let Some(previous) = pending_report.replace(advanced.report) {
             emit_report(previous)?;
@@ -5483,7 +5485,9 @@ fn run_guest_pc_trace_segment_slice_inner_configured<
         if TRACK_BOUNDARY {
             if let Some(snapshot) = boundary_snapshot.as_deref_mut() {
                 snapshot.record_report_shape_state(advanced.shape);
-                record_zisk_main_runner_amo_scratch_snapshot(snapshot, &advanced.report)?;
+                if matches!(advanced.shape.instruction, RiscvInstruction::Amo { .. }) {
+                    record_runner_amo_scratch_snapshot(snapshot, &advanced.report)?;
+                }
             }
         }
         record_runner_detail_duration(post_boundary_started, &mut timing, |timing| {
@@ -16450,7 +16454,7 @@ fn record_zisk_main_runner_scratch_update(
     report: &GuestMachineReport,
     next_instruction: Option<RiscvInstruction>,
 ) -> Result<(), GuestPcTraceBackendError> {
-    record_zisk_main_amo_scratch_update(internal_memory, report)?;
+    record_amo_scratch_update(internal_memory, report)?;
     record_zisk_main_runner_scratch_update_from_shape(
         internal_memory,
         registers,
@@ -16459,14 +16463,16 @@ fn record_zisk_main_runner_scratch_update(
     )
 }
 
-fn record_zisk_main_runner_amo_scratch_snapshot(
+#[cold]
+fn record_runner_amo_scratch_snapshot(
     snapshot: &mut ZiskMainRunnerBoundarySnapshot,
     report: &GuestMachineReport,
 ) -> Result<(), GuestPcTraceBackendError> {
-    record_zisk_main_amo_scratch_update(&mut snapshot.internal_memory, report)
+    record_amo_scratch_update(&mut snapshot.internal_memory, report)
 }
 
-fn record_zisk_main_amo_scratch_update(
+#[cold]
+fn record_amo_scratch_update(
     internal_memory: &mut ZiskMainInternalMemory,
     report: &GuestMachineReport,
 ) -> Result<(), GuestPcTraceBackendError> {
