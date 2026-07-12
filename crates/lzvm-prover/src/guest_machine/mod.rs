@@ -846,6 +846,13 @@ const _: [(); 16] = [(); std::mem::size_of::<GuestReportMemoryAccessList>()];
 #[cfg(all(feature = "cuda", not(test)))]
 impl GuestReportMemoryAccessList {
     #[inline(always)]
+    fn empty() -> Self {
+        Self {
+            entries: GuestReportMemoryAccessEntries::Empty,
+        }
+    }
+
+    #[inline(always)]
     fn single_entry(
         instruction: RiscvInstruction,
         effect_value: u64,
@@ -859,15 +866,14 @@ impl GuestReportMemoryAccessList {
     }
 
     #[inline(always)]
-    fn from_single(
+    fn one(
         instruction: RiscvInstruction,
         effect_value: u64,
-        memory_access: Option<GuestMemoryAccess>,
+        memory_access: GuestMemoryAccess,
     ) -> Self {
-        let entries = memory_access.map_or(GuestReportMemoryAccessEntries::Empty, |access| {
-            Self::single_entry(instruction, effect_value, access)
-        });
-        Self { entries }
+        Self {
+            entries: Self::single_entry(instruction, effect_value, memory_access),
+        }
     }
 
     fn from_parts(
@@ -1158,25 +1164,75 @@ impl GuestMachineReport {
         instruction_byte_len: u8,
         instruction: RiscvInstruction,
         register_write: Option<GuestRegisterWrite>,
-        memory_access: Option<GuestMemoryAccess>,
     ) -> Self {
-        let effect_value = register_write
-            .map(|write| write.value)
-            .or_else(|| memory_access.map(|access| access.value))
-            .unwrap_or(0);
-        let register_write_value = register_write
-            .map(|write| GuestRegisterWriteValue::new(write.value))
-            .unwrap_or_default();
-        let next_pc = address.wrapping_add(u64::from(instruction_byte_len));
-        Self::new_single_effect_with_values(
-            address,
-            instruction_byte_len,
+        #[cfg(all(feature = "cuda", not(test)))]
+        let effect_value = match register_write {
+            Some(write) => write.value,
+            None => 0,
+        };
+        #[cfg(any(not(feature = "cuda"), test))]
+        let register_write_value = match register_write {
+            Some(write) => GuestRegisterWriteValue::new(write.value),
+            None => GuestRegisterWriteValue::default(),
+        };
+        Self {
+            address_and_instruction_len: pack_report_address_and_instruction_len(
+                address,
+                instruction_byte_len,
+            ),
             instruction,
-            next_pc,
+            #[cfg(any(not(feature = "cuda"), test))]
+            next_pc: address.wrapping_add(u64::from(instruction_byte_len)),
+            #[cfg(any(not(feature = "cuda"), test))]
             register_write_value,
+            #[cfg(all(feature = "cuda", not(test)))]
             effect_value,
-            memory_access,
-        )
+            #[cfg(all(feature = "cuda", not(test)))]
+            memory_accesses: GuestReportMemoryAccessList::empty(),
+            #[cfg(any(not(feature = "cuda"), test))]
+            memory_accesses: GuestMemoryAccessList::default(),
+        }
+    }
+
+    #[inline(always)]
+    fn new_single_memory_effect_sequential(
+        address: u64,
+        instruction_byte_len: u8,
+        instruction: RiscvInstruction,
+        register_write: Option<GuestRegisterWrite>,
+        memory_access: GuestMemoryAccess,
+    ) -> Self {
+        #[cfg(all(feature = "cuda", not(test)))]
+        let effect_value = match register_write {
+            Some(write) => write.value,
+            None => memory_access.value,
+        };
+        #[cfg(any(not(feature = "cuda"), test))]
+        let register_write_value = match register_write {
+            Some(write) => GuestRegisterWriteValue::new(write.value),
+            None => GuestRegisterWriteValue::default(),
+        };
+        Self {
+            address_and_instruction_len: pack_report_address_and_instruction_len(
+                address,
+                instruction_byte_len,
+            ),
+            instruction,
+            #[cfg(any(not(feature = "cuda"), test))]
+            next_pc: address.wrapping_add(u64::from(instruction_byte_len)),
+            #[cfg(any(not(feature = "cuda"), test))]
+            register_write_value,
+            #[cfg(all(feature = "cuda", not(test)))]
+            effect_value,
+            #[cfg(all(feature = "cuda", not(test)))]
+            memory_accesses: GuestReportMemoryAccessList::one(
+                instruction,
+                effect_value,
+                memory_access,
+            ),
+            #[cfg(any(not(feature = "cuda"), test))]
+            memory_accesses: GuestMemoryAccessList::one(memory_access),
+        }
     }
 
     #[inline(always)]
@@ -1185,39 +1241,13 @@ impl GuestMachineReport {
         instruction_byte_len: u8,
         instruction: RiscvInstruction,
         next_pc: u64,
-        register_write: Option<GuestRegisterWrite>,
+        _register_write: Option<GuestRegisterWrite>,
     ) -> Self {
-        let register_write_value = register_write
-            .map(|write| GuestRegisterWriteValue::new(write.value))
-            .unwrap_or_default();
-        Self::new_single_effect_with_values(
-            address,
-            instruction_byte_len,
-            instruction,
-            next_pc,
-            register_write_value,
-            next_pc,
-            None,
-        )
-    }
-
-    #[inline(always)]
-    fn new_single_effect_with_values(
-        address: u64,
-        instruction_byte_len: u8,
-        instruction: RiscvInstruction,
-        _next_pc: u64,
-        _register_write_value: GuestRegisterWriteValue,
-        _effect_value: u64,
-        memory_access: Option<GuestMemoryAccess>,
-    ) -> Self {
-        #[cfg(all(feature = "cuda", not(test)))]
-        let memory_accesses =
-            GuestReportMemoryAccessList::from_single(instruction, _effect_value, memory_access);
         #[cfg(any(not(feature = "cuda"), test))]
-        let memory_accesses = memory_access
-            .map(GuestMemoryAccessList::one)
-            .unwrap_or_default();
+        let register_write_value = match _register_write {
+            Some(write) => GuestRegisterWriteValue::new(write.value),
+            None => GuestRegisterWriteValue::default(),
+        };
         Self {
             address_and_instruction_len: pack_report_address_and_instruction_len(
                 address,
@@ -1225,12 +1255,15 @@ impl GuestMachineReport {
             ),
             instruction,
             #[cfg(any(not(feature = "cuda"), test))]
-            next_pc: _next_pc,
+            next_pc,
             #[cfg(any(not(feature = "cuda"), test))]
-            register_write_value: _register_write_value,
+            register_write_value,
             #[cfg(all(feature = "cuda", not(test)))]
-            effect_value: _effect_value,
-            memory_accesses,
+            effect_value: next_pc,
+            #[cfg(all(feature = "cuda", not(test)))]
+            memory_accesses: GuestReportMemoryAccessList::empty(),
+            #[cfg(any(not(feature = "cuda"), test))]
+            memory_accesses: GuestMemoryAccessList::default(),
         }
     }
 
@@ -2749,7 +2782,6 @@ fn try_advance_guest_machine_report_fast_path(
             byte_len,
             instruction,
             register_write,
-            None,
         ));
         return Ok(Some(GuestMachineReportShape {
             instruction,
@@ -3059,13 +3091,22 @@ fn try_advance_guest_machine_report_fast_path(
 
     state.set_pc(sequential_pc);
     state.retire_instruction();
-    report.write(GuestMachineReport::new_single_effect_sequential(
-        address,
-        byte_len,
-        instruction,
-        register_write,
-        memory_access,
-    ));
+    let completed_report = match memory_access {
+        Some(memory_access) => GuestMachineReport::new_single_memory_effect_sequential(
+            address,
+            byte_len,
+            instruction,
+            register_write,
+            memory_access,
+        ),
+        None => GuestMachineReport::new_single_effect_sequential(
+            address,
+            byte_len,
+            instruction,
+            register_write,
+        ),
+    };
+    report.write(completed_report);
     Ok(Some(GuestMachineReportShape {
         instruction,
         has_memory_write,

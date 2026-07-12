@@ -9173,8 +9173,10 @@ fn guest_machine_reports_inline_common_effect_storage() {
             && source.contains("pub fn memory_accesses(&self) -> GuestMemoryAccessView<'_>")
             && compact_storage_body.contains("== Some(access)")
             && compact_storage_body.contains("OwnedOne(Box::new(access))")
-            && compact_storage_body.contains("fn from_single(")
-            && report_body.contains("GuestReportMemoryAccessList::from_single(")
+            && compact_storage_body.contains("fn empty()")
+            && compact_storage_body.contains("fn one(")
+            && report_body.contains("GuestReportMemoryAccessList::empty()")
+            && report_body.contains("GuestReportMemoryAccessList::one(")
             && compact_access_body.contains("RiscvInstruction::Load")
             && compact_access_body.contains("RiscvInstruction::Store")
             && compact_access_body.contains("RiscvInstruction::LoadReserved")
@@ -12255,12 +12257,17 @@ fn guest_machine_fast_reports_split_sequential_and_control_flow_effects() {
     let sequential_constructor = function_body(
         &source,
         "fn new_single_effect_sequential(",
+        "fn new_single_memory_effect_sequential(",
+    );
+    let memory_constructor = function_body(
+        &source,
+        "fn new_single_memory_effect_sequential(",
         "fn new_single_effect_control_flow(",
     );
     let control_flow_constructor = function_body(
         &source,
         "fn new_single_effect_control_flow(",
-        "fn new_single_effect_with_values(",
+        "pub fn address(&self)",
     );
     let fast_path = function_body(
         &source,
@@ -12269,21 +12276,28 @@ fn guest_machine_fast_reports_split_sequential_and_control_flow_effects() {
     );
 
     assert!(
-        compact_source_contains(
-            sequential_constructor,
-            "let next_pc = address.wrapping_add(u64::from(instruction_byte_len));"
-        ) && compact_source_contains(
-            sequential_constructor,
-            "let effect_value = register_write.map(|write| write.value).or_else(|| memory_access.map(|access| access.value)).unwrap_or(0);"
-        )
+        compact_source_contains(sequential_constructor, "None => 0")
+            && compact_source_contains(
+                sequential_constructor,
+                "memory_accesses: GuestReportMemoryAccessList::empty()"
+            )
+            && !sequential_constructor.contains("memory_access: GuestMemoryAccess")
             && !sequential_constructor.contains("guest_report_effect_value"),
-        "sequential fast reports should derive their next PC and packed effect without reclassifying the instruction"
+        "no-memory sequential reports should avoid optional memory-effect dispatch"
     );
     assert!(
-        compact_source_contains(
-            control_flow_constructor,
-            "register_write_value, next_pc, None"
-        ) && !control_flow_constructor.contains("guest_report_effect_value"),
+        compact_source_contains(memory_constructor, "None => memory_access.value")
+            && memory_constructor.contains("GuestReportMemoryAccessList::one(")
+            && !memory_constructor.contains("guest_report_effect_value"),
+        "single-memory sequential reports should build compact memory effects directly"
+    );
+    assert!(
+        compact_source_contains(control_flow_constructor, "effect_value: next_pc")
+            && compact_source_contains(
+                control_flow_constructor,
+                "memory_accesses: GuestReportMemoryAccessList::empty()"
+            )
+            && !control_flow_constructor.contains("guest_report_effect_value"),
         "control-flow fast reports should store their already known next PC directly"
     );
     assert!(
@@ -12292,7 +12306,9 @@ fn guest_machine_fast_reports_split_sequential_and_control_flow_effects() {
                 .matches("finish_fast_control_flow_report(")
                 .count()
                 == 3
-            && fast_path.contains("new_single_effect_sequential("),
+            && fast_path.contains("new_single_effect_sequential(")
+            && fast_path.contains("new_single_memory_effect_sequential(")
+            && fast_path.contains("let completed_report = match memory_access"),
         "the common sequential tail should not merge or reclassify control-flow next PCs"
     );
 }
