@@ -9133,6 +9133,16 @@ fn guest_machine_reports_inline_common_effect_storage() {
         "pub struct GuestMachineReport",
         "pub(crate) struct GuestMachinePreparedInstruction",
     );
+    let compact_storage_body = function_body(
+        &source,
+        "impl GuestReportMemoryAccessList",
+        "pub struct GuestPrecompileReportEffects",
+    );
+    let compact_access_body = function_body(
+        &source,
+        "fn compact_single_memory_access(",
+        "pub(crate) fn pack_report_address_and_instruction_len",
+    );
 
     assert!(
         source.contains("pub struct GuestRegisterWriteList")
@@ -9149,6 +9159,36 @@ fn guest_machine_reports_inline_common_effect_storage() {
             && source.contains("GuestMemoryAccessEntries::One")
             && source.contains("GuestMemoryAccessList::one"),
         "guest memory accesses should keep one inline slot for the dominant single-access case"
+    );
+    assert!(
+        source.contains("struct GuestReportMemoryAccessList")
+            && source.contains("One(u64),")
+            && source.contains("OwnedOne(Box<GuestMemoryAccess>),")
+            && source.contains("Pair(Box<[GuestMemoryAccess; 2]>),")
+            && source.contains("Many(Box<Vec<GuestMemoryAccess>>),")
+            && source.contains("fn compact_single_memory_access(")
+            && source.contains("const _: [(); 16]")
+            && source.contains("const _: [(); 40]")
+            && report_body.contains("memory_accesses: GuestReportMemoryAccessList")
+            && source.contains("pub fn memory_accesses(&self) -> GuestMemoryAccessView<'_>")
+            && compact_storage_body.contains("== Some(access)")
+            && compact_storage_body.contains("OwnedOne(Box::new(access))")
+            && compact_storage_body.contains("fn from_single(")
+            && report_body.contains("GuestReportMemoryAccessList::from_single(")
+            && compact_access_body.contains("RiscvInstruction::Load")
+            && compact_access_body.contains("RiscvInstruction::Store")
+            && compact_access_body.contains("RiscvInstruction::LoadReserved")
+            && compact_access_body.contains("RiscvInstruction::StoreConditional")
+            && compact_access_body.contains("rd: 0")
+            && compact_access_body.contains("low_bytes_value(effect_value, byte_len)"),
+        "CUDA guest reports should reconstruct common single accesses from compact storage"
+    );
+    assert!(
+        compact_source_contains(
+            &source,
+            "GuestReportMemoryAccessEntries::Precompile(effects) => { effects.normal_memory_accesses.is_empty() }",
+        ),
+        "compact report emptiness should match the logical normal access view"
     );
     assert!(
         source.contains("pub type GuestPrecompileMemoryAccessList = Box<[GuestMemoryAccess]>;"),
@@ -12232,7 +12272,10 @@ fn guest_machine_fast_reports_split_sequential_and_control_flow_effects() {
         compact_source_contains(
             sequential_constructor,
             "let next_pc = address.wrapping_add(u64::from(instruction_byte_len));"
-        ) && sequential_constructor.contains("let effect_value = register_write_value.value;")
+        ) && compact_source_contains(
+            sequential_constructor,
+            "let effect_value = register_write.map(|write| write.value).or_else(|| memory_access.map(|access| access.value)).unwrap_or(0);"
+        )
             && !sequential_constructor.contains("guest_report_effect_value"),
         "sequential fast reports should derive their next PC and packed effect without reclassifying the instruction"
     );

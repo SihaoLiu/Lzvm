@@ -6579,7 +6579,7 @@ fn matching_memory_access_rejects_duplicate_matches() {
     ];
     let effects = ZiskMainReportEffects {
         register_writes: Vec::new().into(),
-        memory_accesses: &accesses,
+        memory_accesses: GuestMemoryAccessView::borrowed(&accesses),
         precompile_memory_accesses: &[],
         precompile_result: None,
     };
@@ -6595,7 +6595,7 @@ fn zisk_main_source_value_requires_ordered_memory_access() {
     let accesses = [memory_read(72, 13), memory_read(64, 96)];
     let effects = ZiskMainReportEffects {
         register_writes: Vec::new().into(),
-        memory_accesses: &accesses,
+        memory_accesses: GuestMemoryAccessView::borrowed(&accesses),
         precompile_memory_accesses: &[],
         precompile_result: None,
     };
@@ -6622,7 +6622,7 @@ fn ordered_memory_access_value_returns_value_after_order_validation() {
     let accesses = [memory_read(64, 96), memory_read(104, 13)];
     let effects = ZiskMainReportEffects {
         register_writes: Vec::new().into(),
-        memory_accesses: &accesses,
+        memory_accesses: GuestMemoryAccessView::borrowed(&accesses),
         precompile_memory_accesses: &[],
         precompile_result: None,
     };
@@ -6964,7 +6964,7 @@ fn copy_register_indirect_store_fast_path_preserves_row_effects() {
     let accesses = [memory_write(0x108, 0xaa55)];
     let effects = ZiskMainReportEffects {
         register_writes: Vec::new().into(),
-        memory_accesses: &accesses,
+        memory_accesses: GuestMemoryAccessView::borrowed(&accesses),
         precompile_memory_accesses: &[],
         precompile_result: None,
     };
@@ -7041,7 +7041,7 @@ fn copy_indirect_no_store_fast_path_preserves_row_effects() {
     let accesses = [memory_read(0x108, 0xaa55)];
     let effects = ZiskMainReportEffects {
         register_writes: Vec::new().into(),
-        memory_accesses: &accesses,
+        memory_accesses: GuestMemoryAccessView::borrowed(&accesses),
         precompile_memory_accesses: &[],
         precompile_result: None,
     };
@@ -7190,7 +7190,7 @@ fn copy_immediate_indirect_store_fast_path_preserves_row_effects() {
     let accesses = [memory_write(0x108, 0x1122_3344_5566_7788)];
     let effects = ZiskMainReportEffects {
         register_writes: Vec::new().into(),
-        memory_accesses: &accesses,
+        memory_accesses: GuestMemoryAccessView::borrowed(&accesses),
         precompile_memory_accesses: &[],
         precompile_result: None,
     };
@@ -7879,7 +7879,7 @@ fn simple_copy_register_store_fast_path_preserves_row_effects() {
     }];
     let effects = ZiskMainReportEffects {
         register_writes: writes.to_vec().into(),
-        memory_accesses: &[],
+        memory_accesses: GuestMemoryAccessView::borrowed(&[]),
         precompile_memory_accesses: &[],
         precompile_result: None,
     };
@@ -7949,7 +7949,7 @@ fn simple_copy_register_store_fast_path_preserves_row_effects() {
 fn internal_memory_copy_fast_path_requires_store_columns() {
     let effects = ZiskMainReportEffects {
         register_writes: Vec::new().into(),
-        memory_accesses: &[],
+        memory_accesses: GuestMemoryAccessView::borrowed(&[]),
         precompile_memory_accesses: &[],
         precompile_result: None,
     };
@@ -8020,7 +8020,7 @@ fn sign_extend_indirect_register_store_fast_path_preserves_row_effects() {
     }];
     let effects = ZiskMainReportEffects {
         register_writes: writes.to_vec().into(),
-        memory_accesses: &accesses,
+        memory_accesses: GuestMemoryAccessView::borrowed(&accesses),
         precompile_memory_accesses: &[],
         precompile_result: None,
     };
@@ -8295,7 +8295,7 @@ fn arithmetic_fast_path_preserves_row_effects() {
     }];
     let effects = ZiskMainReportEffects {
         register_writes: writes.to_vec().into(),
-        memory_accesses: &[],
+        memory_accesses: GuestMemoryAccessView::borrowed(&[]),
         precompile_memory_accesses: &[],
         precompile_result: None,
     };
@@ -8415,7 +8415,7 @@ fn branch_fast_path_parts_match_generic_lowering() {
 fn taken_branch_fast_path_preserves_row_effects() {
     let effects = ZiskMainReportEffects {
         register_writes: Vec::new().into(),
-        memory_accesses: &[],
+        memory_accesses: GuestMemoryAccessView::borrowed(&[]),
         precompile_memory_accesses: &[],
         precompile_result: None,
     };
@@ -8488,7 +8488,7 @@ fn taken_branch_fast_path_preserves_row_effects() {
 fn fallthrough_branch_fast_path_preserves_row_effects() {
     let effects = ZiskMainReportEffects {
         register_writes: Vec::new().into(),
-        memory_accesses: &[],
+        memory_accesses: GuestMemoryAccessView::borrowed(&[]),
         precompile_memory_accesses: &[],
         precompile_result: None,
     };
@@ -8765,7 +8765,7 @@ fn pc_relative_fast_path_preserves_row_effects() {
     }];
     let effects = ZiskMainReportEffects {
         register_writes: writes.to_vec().into(),
-        memory_accesses: &[],
+        memory_accesses: GuestMemoryAccessView::borrowed(&[]),
         precompile_memory_accesses: &[],
         precompile_result: None,
     };
@@ -8838,7 +8838,7 @@ fn linked_jump_fast_path_preserves_row_effects() {
     }];
     let effects = ZiskMainReportEffects {
         register_writes: writes.to_vec().into(),
-        memory_accesses: &[],
+        memory_accesses: GuestMemoryAccessView::borrowed(&[]),
         precompile_memory_accesses: &[],
         precompile_result: None,
     };
@@ -8911,7 +8911,7 @@ fn linked_jump_fast_path_preserves_row_effects() {
 fn x0_jump_fast_path_preserves_no_store_effects() {
     let effects = ZiskMainReportEffects {
         register_writes: Vec::new().into(),
-        memory_accesses: &[],
+        memory_accesses: GuestMemoryAccessView::borrowed(&[]),
         precompile_memory_accesses: &[],
         precompile_result: None,
     };
@@ -8977,7 +8977,7 @@ fn no_memory_copy_fast_path_preserves_row_effects() {
     }];
     let effects = ZiskMainReportEffects {
         register_writes: writes.to_vec().into(),
-        memory_accesses: &[],
+        memory_accesses: GuestMemoryAccessView::borrowed(&[]),
         precompile_memory_accesses: &[],
         precompile_result: None,
     };
@@ -9065,7 +9065,7 @@ fn no_memory_external_register_store_fast_path_preserves_row_effects() {
     }];
     let effects = ZiskMainReportEffects {
         register_writes: writes.to_vec().into(),
-        memory_accesses: &[],
+        memory_accesses: GuestMemoryAccessView::borrowed(&[]),
         precompile_memory_accesses: &[],
         precompile_result: None,
     };
@@ -9142,7 +9142,7 @@ fn no_memory_external_register_store_fast_path_preserves_row_effects() {
 fn no_memory_external_no_store_fast_path_preserves_source_steps() {
     let effects = ZiskMainReportEffects {
         register_writes: Vec::new().into(),
-        memory_accesses: &[],
+        memory_accesses: GuestMemoryAccessView::borrowed(&[]),
         precompile_memory_accesses: &[],
         precompile_result: None,
     };
@@ -9241,7 +9241,7 @@ fn copy_indirect_register_store_fast_path_preserves_row_effects() {
         },
         effects: ZiskMainReportEffects {
             register_writes: writes.to_vec().into(),
-            memory_accesses: &accesses,
+            memory_accesses: GuestMemoryAccessView::borrowed(&accesses),
             precompile_memory_accesses: &[],
             precompile_result: None,
         },
@@ -9323,7 +9323,7 @@ fn copy_indirect_register_store_fast_path_rejects_invalid_registers() {
     };
     let effects = ZiskMainReportEffects {
         register_writes: writes.to_vec().into(),
-        memory_accesses: &accesses,
+        memory_accesses: GuestMemoryAccessView::borrowed(&accesses),
         precompile_memory_accesses: &[],
         precompile_result: None,
     };
@@ -9384,7 +9384,7 @@ fn zisk_main_source_value_reports_memory_access_count() {
     let accesses = [memory_read(64, 96), memory_read(104, 13)];
     let effects = ZiskMainReportEffects {
         register_writes: Vec::new().into(),
-        memory_accesses: &accesses,
+        memory_accesses: GuestMemoryAccessView::borrowed(&accesses),
         precompile_memory_accesses: &[],
         precompile_result: None,
     };
@@ -9496,7 +9496,7 @@ fn zisk_main_memory_access_validation_preserves_source_then_store_order() {
     let ordered_accesses = [memory_read(64, 96), memory_read(72, 13), store_access];
     let effects = ZiskMainReportEffects {
         register_writes: Vec::new().into(),
-        memory_accesses: &ordered_accesses,
+        memory_accesses: GuestMemoryAccessView::borrowed(&ordered_accesses),
         precompile_memory_accesses: &[],
         precompile_result: None,
     };
@@ -9515,7 +9515,7 @@ fn zisk_main_memory_access_validation_preserves_source_then_store_order() {
     let reordered_accesses = [memory_read(72, 13), memory_read(64, 96), store_access];
     let effects = ZiskMainReportEffects {
         register_writes: Vec::new().into(),
-        memory_accesses: &reordered_accesses,
+        memory_accesses: GuestMemoryAccessView::borrowed(&reordered_accesses),
         precompile_memory_accesses: &[],
         precompile_result: None,
     };
@@ -9548,7 +9548,7 @@ fn zisk_main_memory_access_validation_after_source_values_checks_store_position(
     let ordered_accesses = [memory_read(64, 96), memory_read(72, 13), store_access];
     let effects = ZiskMainReportEffects {
         register_writes: Vec::new().into(),
-        memory_accesses: &ordered_accesses,
+        memory_accesses: GuestMemoryAccessView::borrowed(&ordered_accesses),
         precompile_memory_accesses: &[],
         precompile_result: None,
     };
@@ -9559,7 +9559,7 @@ fn zisk_main_memory_access_validation_after_source_values_checks_store_position(
     let misplaced_store = [memory_read(64, 96), store_access, memory_read(72, 13)];
     let effects = ZiskMainReportEffects {
         register_writes: Vec::new().into(),
-        memory_accesses: &misplaced_store,
+        memory_accesses: GuestMemoryAccessView::borrowed(&misplaced_store),
         precompile_memory_accesses: &[],
         precompile_result: None,
     };

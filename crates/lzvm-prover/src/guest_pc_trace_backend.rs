@@ -29,8 +29,9 @@ use crate::guest_machine::{
     GuestMachineAdvanceTiming, GuestMachineHalt, GuestMachineMemory,
     GuestMachineMemoryOverlaySnapshot, GuestMachineReport, GuestMachineReportShape,
     GuestMachineRunError, GuestMachineState, GuestMachineTraceSliceStatus, GuestMemoryAccess,
-    GuestMemoryAccessKind, GuestMemoryAccessList, GuestPrecompileMemoryAccessList,
-    GuestRegisterWrite, GuestRegisterWriteList, GuestRegisterWriteValue,
+    GuestMemoryAccessKind, GuestMemoryAccessList, GuestMemoryAccessView,
+    GuestPrecompileMemoryAccessList, GuestRegisterWrite, GuestRegisterWriteList,
+    GuestRegisterWriteValue,
 };
 use crate::guest_memory::{load_guest_memory_image, GuestMemoryError};
 use crate::witness_layout::{ResolvedTraceColumn, WitnessTraceBuildError, WitnessTraceLayout};
@@ -5602,10 +5603,10 @@ fn zisk_main_report_row_count_from_report_shape(
 }
 
 fn guest_machine_report_shape_from_report(report: &GuestMachineReport) -> GuestMachineReportShape {
+    let memory_accesses = report.memory_accesses();
     GuestMachineReportShape {
         instruction: report.instruction,
-        has_memory_write: report
-            .memory_accesses
+        has_memory_write: memory_accesses
             .iter()
             .chain(report.precompile_memory_accesses())
             .any(|access| access.kind == GuestMemoryAccessKind::Write),
@@ -11448,7 +11449,7 @@ struct ZiskMainReportTraceValues {
 #[derive(Debug, Clone, Copy)]
 struct ZiskMainReportEffects<'a> {
     register_writes: GuestRegisterWriteList,
-    memory_accesses: &'a [GuestMemoryAccess],
+    memory_accesses: GuestMemoryAccessView<'a>,
     precompile_memory_accesses: &'a [GuestMemoryAccess],
     precompile_result: Option<u64>,
 }
@@ -11457,7 +11458,7 @@ impl<'a> ZiskMainReportEffects<'a> {
     fn empty() -> Self {
         Self {
             register_writes: GuestRegisterWriteList::default(),
-            memory_accesses: &[],
+            memory_accesses: GuestMemoryAccessView::borrowed(&[]),
             precompile_memory_accesses: &[],
             precompile_result: None,
         }
@@ -11466,7 +11467,7 @@ impl<'a> ZiskMainReportEffects<'a> {
     fn from_report(report: &'a GuestMachineReport) -> Self {
         Self {
             register_writes: report.register_writes(),
-            memory_accesses: &report.memory_accesses,
+            memory_accesses: report.memory_accesses(),
             precompile_memory_accesses: report.precompile_memory_accesses(),
             precompile_result: report.precompile_result(),
         }
@@ -11478,7 +11479,7 @@ impl<'a> ZiskMainReportEffects<'a> {
     ) -> Self {
         Self {
             register_writes: report.register_writes_with_index(register_write_index),
-            memory_accesses: &report.memory_accesses,
+            memory_accesses: report.memory_accesses(),
             precompile_memory_accesses: report.precompile_memory_accesses(),
             precompile_result: None,
         }
@@ -11490,7 +11491,7 @@ impl<'a> ZiskMainReportEffects<'a> {
     ) -> Self {
         Self {
             register_writes: report.register_writes_with_index(register_write_index),
-            memory_accesses: &report.memory_accesses,
+            memory_accesses: report.memory_accesses(),
             precompile_memory_accesses: &[],
             precompile_result: None,
         }
@@ -12685,7 +12686,7 @@ fn fcall_result_register_store_fast_path_parts(
         return Ok(None);
     };
     if rd == 0
-        || !report.memory_accesses.is_empty()
+        || !report.memory_accesses_is_empty()
         || !report.precompile_memory_accesses().is_empty()
     {
         return Ok(None);
@@ -12884,7 +12885,7 @@ fn dma_prepare_internal_memory_copy_fast_path_parts(
         return Ok(None);
     };
     if !valid_main_register_index(rs2)
-        || !report.memory_accesses.is_empty()
+        || !report.memory_accesses_is_empty()
         || !report.precompile_memory_accesses().is_empty()
     {
         return Ok(None);
@@ -12935,7 +12936,7 @@ fn dma_prepare_fast_path_parts(
         return dma_prepare_internal_memory_copy_fast_path_parts(row, report, next_instruction);
     }
     if next_instruction.is_none()
-        || !report.memory_accesses.is_empty()
+        || !report.memory_accesses_is_empty()
         || !report.precompile_memory_accesses().is_empty()
     {
         return Ok(None);
@@ -13212,7 +13213,7 @@ fn pc_relative_fast_path_parts(
         RiscvInstruction::Auipc { rd, immediate } => (rd, immediate),
         _ => return Ok(None),
     };
-    if !report.memory_accesses.is_empty() || !report.precompile_memory_accesses().is_empty() {
+    if !report.memory_accesses_is_empty() || !report.precompile_memory_accesses().is_empty() {
         return Ok(None);
     }
     let Some(instruction_size) = sequential_report_fast_path_instruction_size(row, report)? else {
@@ -13266,7 +13267,7 @@ fn special_no_memory_fast_path_parts(
         } => {}
         _ => return Ok(None),
     }
-    if !report.memory_accesses.is_empty() || !report.precompile_memory_accesses().is_empty() {
+    if !report.memory_accesses_is_empty() || !report.precompile_memory_accesses().is_empty() {
         return Ok(None);
     }
     let Some(instruction_size) = sequential_report_fast_path_instruction_size(row, report)? else {
@@ -13486,7 +13487,7 @@ fn arithmetic_fast_path_parts(
         }
         _ => return Ok(None),
     };
-    if !report.memory_accesses.is_empty() || !report.precompile_memory_accesses().is_empty() {
+    if !report.memory_accesses_is_empty() || !report.precompile_memory_accesses().is_empty() {
         return Ok(None);
     }
     let Some(instruction_size) = sequential_report_fast_path_instruction_size(row, report)? else {
@@ -13616,7 +13617,7 @@ fn branch_fast_path_parts(
         } => (kind, rs1, rs2, offset),
         _ => return Ok(None),
     };
-    if !report.memory_accesses.is_empty() || !report.precompile_memory_accesses().is_empty() {
+    if !report.memory_accesses_is_empty() || !report.precompile_memory_accesses().is_empty() {
         return Ok(None);
     }
     let instruction_size = report_fast_path_instruction_size(row, report)?;
@@ -13687,7 +13688,7 @@ fn jump_fast_path_parts(
         }
         _ => return Ok(None),
     };
-    if !report.memory_accesses.is_empty() || !report.precompile_memory_accesses().is_empty() {
+    if !report.memory_accesses_is_empty() || !report.precompile_memory_accesses().is_empty() {
         return Ok(None);
     }
     let instruction_size = report_fast_path_instruction_size(row, report)?;
@@ -13787,7 +13788,7 @@ fn apply_copy_indirect_register_store_fast_path(
     }
     let byte_len = usize::from(width);
     let a = state.registers[usize::from(a_index)];
-    let [access] = effects.memory_accesses else {
+    let [access] = effects.memory_accesses.as_slice() else {
         return Err(GuestPcTraceBackendError::ZiskMainEffectMismatch {
             row: output_row,
             message: format!(
@@ -13907,7 +13908,7 @@ fn apply_copy_indirect_no_store_fast_path(
     }
     let byte_len = usize::from(width);
     let a = state.registers[usize::from(a_index)];
-    let [access] = effects.memory_accesses else {
+    let [access] = effects.memory_accesses.as_slice() else {
         return Err(GuestPcTraceBackendError::ZiskMainEffectMismatch {
             row: output_row,
             message: format!(
@@ -14451,7 +14452,7 @@ fn apply_sign_extend_indirect_register_store_fast_path(
     }
     let byte_len = usize::from(width);
     let a = state.registers[usize::from(a_index)];
-    let [access] = effects.memory_accesses else {
+    let [access] = effects.memory_accesses.as_slice() else {
         return Err(GuestPcTraceBackendError::ZiskMainEffectMismatch {
             row: output_row,
             message: format!(
@@ -14808,7 +14809,7 @@ fn apply_copy_register_indirect_store_fast_path(
             message: "store indirect row reported register writes".to_owned(),
         });
     }
-    let [write] = effects.memory_accesses else {
+    let [write] = effects.memory_accesses.as_slice() else {
         return Err(GuestPcTraceBackendError::ZiskMainEffectMismatch {
             row: output_row,
             message: format!(
@@ -14913,7 +14914,7 @@ fn apply_copy_immediate_indirect_store_fast_path(
             message: "store indirect row reported register writes".to_owned(),
         });
     }
-    let [write] = effects.memory_accesses else {
+    let [write] = effects.memory_accesses.as_slice() else {
         return Err(GuestPcTraceBackendError::ZiskMainEffectMismatch {
             row: output_row,
             message: format!(
@@ -15370,13 +15371,12 @@ fn lower_amo_report_rows(
             message: format!("unsupported AMO operation {kind:?}"),
         });
     }
-    let [read_access, write_access] = report.memory_accesses.as_slice() else {
+    let memory_accesses = report.memory_accesses();
+    let found = memory_accesses.len();
+    let [read_access, write_access] = memory_accesses.as_slice() else {
         return Err(GuestPcTraceBackendError::ZiskMainEffectMismatch {
             row,
-            message: format!(
-                "AMO row reported {} memory accesses",
-                report.memory_accesses.len()
-            ),
+            message: format!("AMO row reported {found} memory accesses"),
         });
     };
     if read_access.kind != GuestMemoryAccessKind::Read
@@ -15446,10 +15446,10 @@ fn lower_amo_report_rows(
     store_row.ind_width = ind_width;
 
     let mut load_effects = ZiskMainReportEffects::empty();
-    load_effects.memory_accesses = &report.memory_accesses[..1];
+    load_effects.memory_accesses = GuestMemoryAccessView::One(*read_access);
     let compute_effects = ZiskMainReportEffects::empty();
     let mut store_effects = ZiskMainReportEffects::empty();
-    store_effects.memory_accesses = &report.memory_accesses[1..2];
+    store_effects.memory_accesses = GuestMemoryAccessView::One(*write_access);
 
     if aliases_result {
         let register_jump = zisk_main_pc_delta(row, register_pc, report.next_pc())?;
@@ -15547,8 +15547,8 @@ fn lower_store_conditional_report_rows(
     rs1: u8,
     rs2: u8,
 ) -> Result<Vec<ZiskMainLoweredReportRow<'_>>, GuestPcTraceBackendError> {
-    if !report
-        .memory_accesses
+    let memory_accesses = report.memory_accesses();
+    if !memory_accesses
         .iter()
         .any(|access| access.kind == GuestMemoryAccessKind::Write)
     {
@@ -15572,7 +15572,7 @@ fn lower_store_conditional_report_rows(
     store_row.ind_width = ind_width;
 
     let mut memory_effects = ZiskMainReportEffects::empty();
-    memory_effects.memory_accesses = &report.memory_accesses;
+    memory_effects.memory_accesses = memory_accesses;
     if rd == 0 {
         return Ok(vec![ZiskMainLoweredReportRow {
             instruction: store_row,
@@ -16489,8 +16489,8 @@ fn record_zisk_main_amo_scratch_update(
     } = report.instruction
     {
         if rd != 0 && (rd == rs1 || rd == rs2) {
-            let Some(read_access) = report
-                .memory_accesses
+            let memory_accesses = report.memory_accesses();
+            let Some(read_access) = memory_accesses
                 .iter()
                 .find(|access| access.kind == GuestMemoryAccessKind::Read)
             else {
@@ -18858,8 +18858,8 @@ fn direct_zisk_main_report_sign_extend_c(
 }
 
 fn direct_zisk_main_report_single_read_value(report: &GuestMachineReport) -> Option<u64> {
-    let mut reads = report
-        .memory_accesses
+    let memory_accesses = report.memory_accesses();
+    let mut reads = memory_accesses
         .iter()
         .filter(|access| access.kind == GuestMemoryAccessKind::Read);
     let read = reads.next()?;
@@ -18904,8 +18904,8 @@ fn direct_zisk_main_full_width_memory_store_c(
     if !matches!(instruction.store, ZiskMainStore::Indirect(_)) || instruction.ind_width != 8 {
         return None;
     }
-    let mut writes = report
-        .memory_accesses
+    let memory_accesses = report.memory_accesses();
+    let mut writes = memory_accesses
         .iter()
         .filter(|access| access.kind == GuestMemoryAccessKind::Write && access.byte_len == 8);
     let write = writes.next()?;
@@ -18973,6 +18973,7 @@ fn write_report_columns(
     report: &GuestMachineReport,
     columns: &GuestTraceColumns<'_>,
 ) -> Result<(), GuestPcTraceBackendError> {
+    let memory_accesses = report.memory_accesses();
     if let Some(pc_columns) = &columns.pc {
         write_column(builder, row, &pc_columns.pc, report.address())?;
         write_column(builder, row, &pc_columns.next_pc, report.next_pc())?;
@@ -18990,7 +18991,7 @@ fn write_report_columns(
         write_memory_columns(
             builder,
             row,
-            &report.memory_accesses,
+            memory_accesses.as_slice(),
             GuestMemoryAccessKind::Read,
             memory_read_columns,
         )?;
@@ -18999,7 +19000,7 @@ fn write_report_columns(
         write_memory_columns(
             builder,
             row,
-            &report.memory_accesses,
+            memory_accesses.as_slice(),
             GuestMemoryAccessKind::Write,
             memory_write_columns,
         )?;

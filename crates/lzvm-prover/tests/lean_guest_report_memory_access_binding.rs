@@ -57,7 +57,28 @@ fn lean_guest_report_memory_access_binding_tracks_runtime_storage_shape() {
             "folded_guest_memory_precompile_preserves_normal_accesses",
             "folded_guest_memory_precompile_preserves_precompile_accesses",
             "folded_guest_memory_precompile_preserves_result",
+            "low_bytes_full_width",
+            "compact_guest_memory_one_reconstructs",
+            "compact_guest_memory_owned_one_preserves_access",
+            "compact_guest_memory_pair_preserves_accesses",
+            "compact_guest_memory_many_preserves_accesses",
+            "compact_guest_memory_precompile_preserves_views",
+            "compact_guest_memory_precompile_empty_matches_normal_view",
+            "compact_single_guest_memory_access_preserves_view",
+            "compact_single_guest_memory_access_uses_one_on_exact_match",
+            "compact_single_guest_memory_access_falls_back_on_mismatch",
         ],
+    );
+    assert!(
+        lean_source.contains("inductive CompactSingleAccessShape where")
+            && lean_source.contains("def CompactSingleAccessShape.reconstruct")
+            && lean_source.contains("inductive CompactGuestMemoryAccessStorage where")
+            && lean_source.contains("| ownedOne (access : GuestMemoryAccess)")
+            && lean_source.contains("| pair (first second : GuestMemoryAccess)")
+            && lean_source.contains("def CompactGuestMemoryAccessStorage.normalAccesses")
+            && lean_source.contains("def CompactGuestMemoryAccessStorage.normalIsEmpty")
+            && lean_source.contains("def compactSingleGuestMemoryAccess"),
+        "Lean compact report storage should expose reconstruction, fallback, and logical views"
     );
     assert!(
         runtime_source.contains("pub struct GuestMemoryAccess")
@@ -74,5 +95,18 @@ fn lean_guest_report_memory_access_binding_tracks_runtime_storage_shape() {
             && runtime_source.contains("fn precompile_memory_accesses(&self)")
             && runtime_source.contains("fn precompile_result(&self)"),
         "runtime guest memory storage should keep the folded shape represented in Lean"
+    );
+    assert!(
+        runtime_source.contains("struct GuestReportMemoryAccessList")
+            && runtime_source.contains("enum GuestReportMemoryAccessEntries")
+            && runtime_source.contains("One(u64),")
+            && runtime_source.contains("OwnedOne(Box<GuestMemoryAccess>),")
+            && runtime_source.contains("Pair(Box<[GuestMemoryAccess; 2]>),")
+            && runtime_source.contains("Many(Box<Vec<GuestMemoryAccess>>),")
+            && runtime_source.contains("fn compact_single_memory_access(")
+            && runtime_source.contains("== Some(access)")
+            && runtime_source.contains("OwnedOne(Box::new(access))")
+            && runtime_source.contains("effects.normal_memory_accesses.is_empty()"),
+        "runtime compact report storage should match the Lean reconstruction and fallback model"
     );
 }

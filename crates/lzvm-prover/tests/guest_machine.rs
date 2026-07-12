@@ -17,7 +17,7 @@ const FIRST_REGISTER: usize = 1;
 #[cfg(feature = "cuda")]
 #[test]
 fn cuda_guest_machine_report_uses_compact_effect_storage() {
-    assert_eq!(std::mem::size_of::<GuestMachineReport>(), 48);
+    assert_eq!(std::mem::size_of::<GuestMachineReport>(), 40);
 }
 
 fn sample_guest_image() -> Vec<u8> {

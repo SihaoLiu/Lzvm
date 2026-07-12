@@ -299,7 +299,7 @@ fn advances_zisk_keccak_precompile() {
         .read_range_into(data_address, &mut stored)
         .expect("keccak state should read");
     assert_eq!(stored, expected);
-    assert!(report.memory_accesses.is_empty());
+    assert!(report.memory_accesses().is_empty());
     let precompile_accesses = report.precompile_memory_accesses();
     assert_eq!(precompile_accesses.len(), 50);
     assert_eq!(
@@ -589,7 +589,7 @@ fn advances_zisk_add256_precompile() {
 
     assert_eq!(read_u64_array(&memory, c_address), [0, 0, 0, 0]);
     assert_eq!(state.register(5), Some(1));
-    assert!(report.memory_accesses.is_empty());
+    assert!(report.memory_accesses().is_empty());
     assert_eq!(report.precompile_result(), Some(1));
     let precompile_accesses = report.precompile_memory_accesses();
     assert_eq!(precompile_accesses.len(), 16);

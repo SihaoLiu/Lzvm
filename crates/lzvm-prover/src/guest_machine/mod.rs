@@ -592,6 +592,7 @@ enum GuestMemoryAccessEntries {
     Empty,
     One(GuestMemoryAccess),
     Many(Box<[GuestMemoryAccess]>),
+    #[cfg(any(not(feature = "cuda"), test))]
     Precompile(Box<GuestPrecompileReportEffects>),
 }
 
@@ -604,6 +605,7 @@ impl Default for GuestMemoryAccessList {
 }
 
 impl GuestMemoryAccessList {
+    #[cfg(any(not(feature = "cuda"), test))]
     fn one(value: GuestMemoryAccess) -> Self {
         Self {
             entries: GuestMemoryAccessEntries::One(value),
@@ -624,6 +626,7 @@ impl GuestMemoryAccessList {
                 entries.push(value);
                 GuestMemoryAccessEntries::Many(entries.into_boxed_slice())
             }
+            #[cfg(any(not(feature = "cuda"), test))]
             GuestMemoryAccessEntries::Precompile(mut effects) => {
                 let mut entries = std::mem::take(&mut effects.normal_memory_accesses).into_vec();
                 entries.push(value);
@@ -638,6 +641,7 @@ impl GuestMemoryAccessList {
             GuestMemoryAccessEntries::Empty => &[],
             GuestMemoryAccessEntries::One(value) => std::slice::from_ref(value),
             GuestMemoryAccessEntries::Many(entries) => entries,
+            #[cfg(any(not(feature = "cuda"), test))]
             GuestMemoryAccessEntries::Precompile(effects) => {
                 effects.normal_memory_accesses.as_ref()
             }
@@ -652,6 +656,7 @@ impl GuestMemoryAccessList {
         self.as_slice().is_empty()
     }
 
+    #[cfg(any(not(feature = "cuda"), test))]
     fn with_precompile_effects(
         memory_accesses: Self,
         precompile_effects: Option<Box<GuestPrecompileReportEffects>>,
@@ -671,11 +676,13 @@ impl GuestMemoryAccessList {
             GuestMemoryAccessEntries::Empty => Vec::new().into_boxed_slice(),
             GuestMemoryAccessEntries::One(value) => vec![value].into_boxed_slice(),
             GuestMemoryAccessEntries::Many(entries) => entries,
+            #[cfg(any(not(feature = "cuda"), test))]
             GuestMemoryAccessEntries::Precompile(effects) => effects.into_normal_memory_accesses(),
         }
     }
 
     #[inline(always)]
+    #[cfg(any(not(feature = "cuda"), test))]
     fn precompile_memory_accesses(&self) -> &[GuestMemoryAccess] {
         match &self.entries {
             GuestMemoryAccessEntries::Precompile(effects) => effects.memory_accesses.as_ref(),
@@ -683,6 +690,7 @@ impl GuestMemoryAccessList {
         }
     }
 
+    #[cfg(any(not(feature = "cuda"), test))]
     fn precompile_result(&self) -> Option<u64> {
         match &self.entries {
             GuestMemoryAccessEntries::Precompile(effects) => effects.result,
@@ -744,6 +752,201 @@ impl<'a> IntoIterator for &'a GuestMemoryAccessList {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GuestMemoryAccessView<'a> {
+    Borrowed(&'a [GuestMemoryAccess]),
+    One(GuestMemoryAccess),
+}
+
+impl<'a> GuestMemoryAccessView<'a> {
+    #[cfg(all(feature = "cuda", not(test)))]
+    fn empty() -> Self {
+        Self::Borrowed(&[])
+    }
+
+    pub(crate) fn borrowed(accesses: &'a [GuestMemoryAccess]) -> Self {
+        Self::Borrowed(accesses)
+    }
+
+    pub fn as_slice(&self) -> &[GuestMemoryAccess] {
+        match self {
+            Self::Borrowed(accesses) => accesses,
+            Self::One(access) => std::slice::from_ref(access),
+        }
+    }
+}
+
+impl std::ops::Deref for GuestMemoryAccessView<'_> {
+    type Target = [GuestMemoryAccess];
+
+    fn deref(&self) -> &Self::Target {
+        self.as_slice()
+    }
+}
+
+pub enum GuestMemoryAccessViewIter<'a> {
+    Borrowed(std::iter::Copied<std::slice::Iter<'a, GuestMemoryAccess>>),
+    One(std::option::IntoIter<GuestMemoryAccess>),
+}
+
+impl Iterator for GuestMemoryAccessViewIter<'_> {
+    type Item = GuestMemoryAccess;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self {
+            Self::Borrowed(iter) => iter.next(),
+            Self::One(iter) => iter.next(),
+        }
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        match self {
+            Self::Borrowed(iter) => iter.size_hint(),
+            Self::One(iter) => iter.size_hint(),
+        }
+    }
+}
+
+impl ExactSizeIterator for GuestMemoryAccessViewIter<'_> {}
+
+impl<'a> IntoIterator for GuestMemoryAccessView<'a> {
+    type Item = GuestMemoryAccess;
+    type IntoIter = GuestMemoryAccessViewIter<'a>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        match self {
+            Self::Borrowed(accesses) => {
+                GuestMemoryAccessViewIter::Borrowed(accesses.iter().copied())
+            }
+            Self::One(access) => GuestMemoryAccessViewIter::One(Some(access).into_iter()),
+        }
+    }
+}
+
+#[cfg(all(feature = "cuda", not(test)))]
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct GuestReportMemoryAccessList {
+    entries: GuestReportMemoryAccessEntries,
+}
+
+#[cfg(all(feature = "cuda", not(test)))]
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum GuestReportMemoryAccessEntries {
+    Empty,
+    One(u64),
+    OwnedOne(Box<GuestMemoryAccess>),
+    Pair(Box<[GuestMemoryAccess; 2]>),
+    Many(Box<Vec<GuestMemoryAccess>>),
+    Precompile(Box<GuestPrecompileReportEffects>),
+}
+
+#[cfg(all(feature = "cuda", not(test)))]
+const _: [(); 16] = [(); std::mem::size_of::<GuestReportMemoryAccessList>()];
+
+#[cfg(all(feature = "cuda", not(test)))]
+impl GuestReportMemoryAccessList {
+    #[inline(always)]
+    fn single_entry(
+        instruction: RiscvInstruction,
+        effect_value: u64,
+        access: GuestMemoryAccess,
+    ) -> GuestReportMemoryAccessEntries {
+        if compact_single_memory_access(instruction, effect_value, access.address) == Some(access) {
+            GuestReportMemoryAccessEntries::One(access.address)
+        } else {
+            GuestReportMemoryAccessEntries::OwnedOne(Box::new(access))
+        }
+    }
+
+    #[inline(always)]
+    fn from_single(
+        instruction: RiscvInstruction,
+        effect_value: u64,
+        memory_access: Option<GuestMemoryAccess>,
+    ) -> Self {
+        let entries = memory_access.map_or(GuestReportMemoryAccessEntries::Empty, |access| {
+            Self::single_entry(instruction, effect_value, access)
+        });
+        Self { entries }
+    }
+
+    fn from_parts(
+        instruction: RiscvInstruction,
+        effect_value: u64,
+        memory_accesses: GuestMemoryAccessList,
+        precompile_effects: Option<Box<GuestPrecompileReportEffects>>,
+    ) -> Self {
+        if let Some(effects) = precompile_effects {
+            return Self {
+                entries: GuestReportMemoryAccessEntries::Precompile(
+                    effects.with_normal_memory_accesses(memory_accesses),
+                ),
+            };
+        }
+        let entries = match memory_accesses.entries {
+            GuestMemoryAccessEntries::Empty => GuestReportMemoryAccessEntries::Empty,
+            GuestMemoryAccessEntries::One(access) => {
+                Self::single_entry(instruction, effect_value, access)
+            }
+            GuestMemoryAccessEntries::Many(accesses) if accesses.len() == 2 => {
+                GuestReportMemoryAccessEntries::Pair(Box::new([accesses[0], accesses[1]]))
+            }
+            GuestMemoryAccessEntries::Many(accesses) => {
+                GuestReportMemoryAccessEntries::Many(Box::new(accesses.into_vec()))
+            }
+        };
+        Self { entries }
+    }
+
+    #[inline(always)]
+    fn view(&self, instruction: RiscvInstruction, effect_value: u64) -> GuestMemoryAccessView<'_> {
+        match &self.entries {
+            GuestReportMemoryAccessEntries::Empty => GuestMemoryAccessView::empty(),
+            GuestReportMemoryAccessEntries::One(address) => GuestMemoryAccessView::One(
+                compact_single_memory_access(instruction, effect_value, *address)
+                    .expect("compact report memory access should reconstruct"),
+            ),
+            GuestReportMemoryAccessEntries::OwnedOne(access) => {
+                GuestMemoryAccessView::borrowed(std::slice::from_ref(access.as_ref()))
+            }
+            GuestReportMemoryAccessEntries::Pair(accesses) => {
+                GuestMemoryAccessView::borrowed(accesses.as_slice())
+            }
+            GuestReportMemoryAccessEntries::Many(accesses) => {
+                GuestMemoryAccessView::borrowed(accesses.as_slice())
+            }
+            GuestReportMemoryAccessEntries::Precompile(effects) => {
+                GuestMemoryAccessView::borrowed(effects.normal_memory_accesses.as_ref())
+            }
+        }
+    }
+
+    #[inline(always)]
+    fn is_empty(&self) -> bool {
+        match &self.entries {
+            GuestReportMemoryAccessEntries::Empty => true,
+            GuestReportMemoryAccessEntries::Precompile(effects) => {
+                effects.normal_memory_accesses.is_empty()
+            }
+            _ => false,
+        }
+    }
+
+    fn precompile_memory_accesses(&self) -> &[GuestMemoryAccess] {
+        match &self.entries {
+            GuestReportMemoryAccessEntries::Precompile(effects) => effects.memory_accesses.as_ref(),
+            _ => &[],
+        }
+    }
+
+    fn precompile_result(&self) -> Option<u64> {
+        match &self.entries {
+            GuestReportMemoryAccessEntries::Precompile(effects) => effects.result,
+            _ => None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GuestPrecompileReportEffects {
     pub memory_accesses: GuestPrecompileMemoryAccessList,
@@ -790,6 +993,7 @@ impl GuestPrecompileReportEffects {
         self
     }
 
+    #[cfg(any(not(feature = "cuda"), test))]
     fn into_normal_memory_accesses(self: Box<Self>) -> GuestPrecompileMemoryAccessList {
         let GuestPrecompileReportEffects {
             normal_memory_accesses,
@@ -892,11 +1096,14 @@ pub struct GuestMachineReport {
     pub(crate) register_write_value: GuestRegisterWriteValue,
     #[cfg(all(feature = "cuda", not(test)))]
     effect_value: u64,
+    #[cfg(any(not(feature = "cuda"), test))]
     pub memory_accesses: GuestMemoryAccessList,
+    #[cfg(all(feature = "cuda", not(test)))]
+    memory_accesses: GuestReportMemoryAccessList,
 }
 
 #[cfg(all(feature = "cuda", not(test)))]
-const _: [(); 48] = [(); std::mem::size_of::<GuestMachineReport>()];
+const _: [(); 40] = [(); std::mem::size_of::<GuestMachineReport>()];
 
 impl GuestMachineReport {
     #[inline(always)]
@@ -917,7 +1124,16 @@ impl GuestMachineReport {
             instruction,
             next_pc,
             register_write_value,
+            &memory_accesses,
         );
+        #[cfg(all(feature = "cuda", not(test)))]
+        let memory_accesses = GuestReportMemoryAccessList::from_parts(
+            instruction,
+            effect_value,
+            memory_accesses,
+            precompile_effects,
+        );
+        #[cfg(any(not(feature = "cuda"), test))]
         let memory_accesses =
             GuestMemoryAccessList::with_precompile_effects(memory_accesses, precompile_effects);
         Self {
@@ -944,11 +1160,14 @@ impl GuestMachineReport {
         register_write: Option<GuestRegisterWrite>,
         memory_access: Option<GuestMemoryAccess>,
     ) -> Self {
+        let effect_value = register_write
+            .map(|write| write.value)
+            .or_else(|| memory_access.map(|access| access.value))
+            .unwrap_or(0);
         let register_write_value = register_write
             .map(|write| GuestRegisterWriteValue::new(write.value))
             .unwrap_or_default();
         let next_pc = address.wrapping_add(u64::from(instruction_byte_len));
-        let effect_value = register_write_value.value;
         Self::new_single_effect_with_values(
             address,
             instruction_byte_len,
@@ -992,6 +1211,10 @@ impl GuestMachineReport {
         _effect_value: u64,
         memory_access: Option<GuestMemoryAccess>,
     ) -> Self {
+        #[cfg(all(feature = "cuda", not(test)))]
+        let memory_accesses =
+            GuestReportMemoryAccessList::from_single(instruction, _effect_value, memory_access);
+        #[cfg(any(not(feature = "cuda"), test))]
         let memory_accesses = memory_access
             .map(GuestMemoryAccessList::one)
             .unwrap_or_default();
@@ -1044,6 +1267,24 @@ impl GuestMachineReport {
 
     pub fn precompile_result(&self) -> Option<u64> {
         self.memory_accesses.precompile_result()
+    }
+
+    #[inline(always)]
+    pub fn memory_accesses(&self) -> GuestMemoryAccessView<'_> {
+        #[cfg(all(feature = "cuda", not(test)))]
+        {
+            self.memory_accesses
+                .view(self.instruction, self.effect_value)
+        }
+        #[cfg(any(not(feature = "cuda"), test))]
+        {
+            GuestMemoryAccessView::borrowed(self.memory_accesses.as_slice())
+        }
+    }
+
+    #[inline(always)]
+    pub(crate) fn memory_accesses_is_empty(&self) -> bool {
+        self.memory_accesses.is_empty()
     }
 
     pub fn register_writes(&self) -> GuestRegisterWriteList {
@@ -1129,6 +1370,7 @@ fn guest_report_effect_value(
     instruction: RiscvInstruction,
     next_pc: u64,
     register_write_value: GuestRegisterWriteValue,
+    memory_accesses: &GuestMemoryAccessList,
 ) -> u64 {
     if guest_report_stores_next_pc(instruction) {
         next_pc
@@ -1138,8 +1380,45 @@ fn guest_report_effect_value(
             address.wrapping_add(u64::from(instruction_byte_len)),
             "sequential guest report next pc should match its instruction length"
         );
-        register_write_value.value
+        if guest_instruction_register_write_index(instruction).is_some() {
+            register_write_value.value
+        } else {
+            memory_accesses
+                .as_slice()
+                .first()
+                .map_or(register_write_value.value, |access| access.value)
+        }
     }
+}
+
+#[cfg(all(feature = "cuda", not(test)))]
+#[inline(always)]
+fn compact_single_memory_access(
+    instruction: RiscvInstruction,
+    effect_value: u64,
+    address: u64,
+) -> Option<GuestMemoryAccess> {
+    let (kind, byte_len) = match instruction {
+        RiscvInstruction::Load { kind, .. } => {
+            (GuestMemoryAccessKind::Read, guest_load_byte_len(kind))
+        }
+        RiscvInstruction::Store { kind, .. } => {
+            (GuestMemoryAccessKind::Write, guest_store_byte_len(kind))
+        }
+        RiscvInstruction::LoadReserved { width, .. } => {
+            (GuestMemoryAccessKind::Read, amo_width_byte_len(width))
+        }
+        RiscvInstruction::StoreConditional { width, rd: 0, .. } => {
+            (GuestMemoryAccessKind::Write, amo_width_byte_len(width))
+        }
+        _ => return None,
+    };
+    Some(GuestMemoryAccess {
+        kind,
+        address,
+        byte_len: guest_memory_access_byte_len(byte_len),
+        value: low_bytes_value(effect_value, byte_len),
+    })
 }
 
 #[inline(always)]
@@ -1366,8 +1645,8 @@ impl GuestInstructionCache {
     }
 
     pub(crate) fn invalidate_report(&mut self, report: &GuestMachineReport) {
-        for access in report
-            .memory_accesses
+        let memory_accesses = report.memory_accesses();
+        for access in memory_accesses
             .iter()
             .chain(report.precompile_memory_accesses())
         {
@@ -1422,8 +1701,8 @@ impl GuestInstructionCache {
         report: &GuestMachineReport,
         stats: &mut GuestInstructionCacheStats,
     ) {
-        for access in report
-            .memory_accesses
+        let memory_accesses = report.memory_accesses();
+        for access in memory_accesses
             .iter()
             .chain(report.precompile_memory_accesses())
         {
@@ -1539,16 +1818,11 @@ fn common_instruction_write_range(
     if !shape.has_memory_write {
         return None;
     }
-    let access = match &report.memory_accesses.entries {
-        GuestMemoryAccessEntries::One(access) => access,
-        GuestMemoryAccessEntries::Many(accesses)
-            if matches!(shape.instruction, RiscvInstruction::Amo { .. }) =>
-        {
-            accesses.last()?
-        }
-        GuestMemoryAccessEntries::Empty
-        | GuestMemoryAccessEntries::Many(_)
-        | GuestMemoryAccessEntries::Precompile(_) => return None,
+    let memory_accesses = report.memory_accesses();
+    let access = match memory_accesses.as_slice() {
+        [access] => access,
+        accesses if matches!(shape.instruction, RiscvInstruction::Amo { .. }) => accesses.last()?,
+        _ => return None,
     };
     debug_assert_eq!(access.kind, GuestMemoryAccessKind::Write);
     (access.kind == GuestMemoryAccessKind::Write)
@@ -3276,6 +3550,17 @@ fn write_guest_store(
         }
     };
     Ok(byte_len)
+}
+
+#[inline(always)]
+#[cfg(all(feature = "cuda", not(test)))]
+fn guest_store_byte_len(kind: RiscvStoreKind) -> usize {
+    match kind {
+        RiscvStoreKind::Sb => 1,
+        RiscvStoreKind::Sh => 2,
+        RiscvStoreKind::Sw => 4,
+        RiscvStoreKind::Sd => 8,
+    }
 }
 
 fn low_bytes_value(value: u64, byte_len: usize) -> u64 {
