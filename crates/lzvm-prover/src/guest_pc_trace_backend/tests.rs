@@ -4949,6 +4949,19 @@ fn runner_boundary_seed_snapshot_uses_report_shape_for_branch_boundary_without_r
         runner_state.registers(),
     )
     .expect("boundary snapshot should record branch report context");
+    let recorded_context = boundary_snapshot.last_branch_report_context;
+    let mut non_branch_report = report.clone();
+    non_branch_report.instruction = RiscvInstruction::OpImm {
+        kind: RiscvOpImmKind::Addi,
+        rd: 0,
+        rs1: 0,
+        immediate: 0,
+    };
+    boundary_snapshot.record_branch_report_context(&non_branch_report);
+    assert_eq!(
+        boundary_snapshot.last_branch_report_context,
+        recorded_context
+    );
     let segment = ZiskMainTraceSegmentInfo {
         trace_instance_index: 0,
         is_last_segment: false,
