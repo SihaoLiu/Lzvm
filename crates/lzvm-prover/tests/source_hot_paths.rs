@@ -11515,6 +11515,25 @@ fn guest_pc_report_level_fast_path_dispatches_by_instruction() {
 }
 
 #[test]
+fn guest_pc_rare_report_paths_stay_outlined() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let source_path = crate_root.join("src/guest_pc_trace_backend.rs");
+    let source = std::fs::read_to_string(&source_path).expect("guest PC trace source should read");
+
+    for function_name in [
+        "apply_precompile_no_store_fast_path",
+        "apply_internal_memory_copy_fast_path",
+        "apply_fcall_result_register_store_fast_path",
+    ] {
+        let marker = format!("#[inline(never)]\nfn {function_name}");
+        assert!(
+            source.contains(&marker),
+            "rare report path {function_name} should stay outside the main validation body"
+        );
+    }
+}
+
+#[test]
 fn guest_pc_report_size_inlines_generic_validator() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let source_path = crate_root.join("src/guest_pc_trace_backend.rs");
