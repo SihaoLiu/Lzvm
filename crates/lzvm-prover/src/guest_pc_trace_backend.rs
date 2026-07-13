@@ -7470,17 +7470,27 @@ fn lower_guest_pc_trace_owned_streaming_pending_segment(
     let timing_config = ZiskMainTraceLowerTimingConfig::from_env_if_enabled(timing.is_some());
     let report_start_index =
         timing_config.segment_report_start_index(segment, layout.row_count())?;
-    let mut feeder =
-        ZiskMainStreamingDeviceReportFeeder::new_with_start(timing_config, report_start_index);
+    let mut next_report_index = report_start_index;
     let aggregate_report_started = timing.as_ref().map(|_| Instant::now());
-    for report in &pending.reports {
-        feeder.push_report(&mut builder, report, timing.as_deref_mut())?;
+    if let Some((last_report, leading_reports)) = pending.reports.split_last() {
+        for (report, next_report) in leading_reports.iter().zip(&pending.reports[1..]) {
+            builder.push_report_at(
+                next_report_index,
+                report,
+                || Some(next_report.instruction),
+                timing_config,
+                timing.as_deref_mut(),
+            )?;
+            timing_config.advance_report_index(&mut next_report_index)?;
+        }
+        builder.push_report_at(
+            next_report_index,
+            last_report,
+            || pending.lookahead_instruction,
+            timing_config,
+            timing.as_deref_mut(),
+        )?;
     }
-    feeder.finish(
-        &mut builder,
-        pending.lookahead_instruction,
-        timing.as_deref_mut(),
-    )?;
     record_aggregate_trace_report_duration(&mut timing, aggregate_report_started);
     let GuestPcTraceDeviceSegmentBuild {
         device_segment_material,
@@ -11138,14 +11148,14 @@ impl ZiskMainTraceLowerTimingConfig {
     }
 }
 
-#[cfg(feature = "cuda")]
+#[cfg(all(feature = "cuda", test))]
 struct ZiskMainStreamingDeviceReportFeeder<'a> {
     pending_report: Option<&'a GuestMachineReport>,
     next_report_index: usize,
     timing_config: ZiskMainTraceLowerTimingConfig,
 }
 
-#[cfg(feature = "cuda")]
+#[cfg(all(feature = "cuda", test))]
 impl<'a> ZiskMainStreamingDeviceReportFeeder<'a> {
     #[cfg(test)]
     fn new(timing_config: ZiskMainTraceLowerTimingConfig) -> Self {
@@ -16138,13 +16148,27 @@ fn build_layout_zisk_main_trace_segment_device_material(
     let timing_config = ZiskMainTraceLowerTimingConfig::from_env_if_enabled(timing.is_some());
     let report_start_index =
         timing_config.segment_report_start_index(segment, layout.row_count())?;
-    let mut feeder =
-        ZiskMainStreamingDeviceReportFeeder::new_with_start(timing_config, report_start_index);
+    let mut next_report_index = report_start_index;
     let aggregate_report_started = timing.as_ref().map(|_| Instant::now());
-    for report in reports {
-        feeder.push_report(&mut builder, report, timing.as_deref_mut())?;
+    if let Some((last_report, leading_reports)) = reports.split_last() {
+        for (report, next_report) in leading_reports.iter().zip(&reports[1..]) {
+            builder.push_report_at(
+                next_report_index,
+                report,
+                || Some(next_report.instruction),
+                timing_config,
+                timing.as_deref_mut(),
+            )?;
+            timing_config.advance_report_index(&mut next_report_index)?;
+        }
+        builder.push_report_at(
+            next_report_index,
+            last_report,
+            || lookahead_instruction,
+            timing_config,
+            timing.as_deref_mut(),
+        )?;
     }
-    feeder.finish(&mut builder, lookahead_instruction, timing.as_deref_mut())?;
     record_aggregate_trace_report_duration(&mut timing, aggregate_report_started);
     builder.finish(terminal_pc, timing).map(Some)
 }

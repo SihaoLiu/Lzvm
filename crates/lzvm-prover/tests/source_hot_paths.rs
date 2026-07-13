@@ -3186,15 +3186,26 @@ fn guest_pc_trace_device_material_skips_redundant_row_column_validation() {
         "device material lowering should aggregate report timing counts per segment"
     );
     assert!(
-        device_material_body.contains("for report in reports")
-            && device_material_body.contains("feeder.push_report")
-            && device_material_body.contains("feeder.finish"),
-        "device material builder should iterate reports"
+        device_material_body.contains("reports.split_last()")
+            && device_material_body.contains("leading_reports.iter().zip(&reports[1..])")
+            && device_material_body
+                .matches("builder.push_report_at")
+                .count()
+                == 2
+            && !device_material_body.contains("feeder.push_report"),
+        "device material builder should lower adjacent report pairs directly"
+    );
+    let test_only_feeder = concat!(
+        "#[cfg(all(feature = \"cuda\", test))]\nstruct ",
+        "Zi",
+        "sk",
+        "MainStreamingDeviceReportFeeder"
     );
     assert!(
-        feeder_struct_body.contains("pending_report: Option<&'a GuestMachineReport>")
+        backend_source.contains(test_only_feeder)
+            && feeder_struct_body.contains("pending_report: Option<&'a GuestMachineReport>")
             && feeder_impl_body.contains("pending_report.take()"),
-        "device material report feeder should retain only one pending report"
+        "the report feeder compatibility check should stay test-only"
     );
 
     let host_segment_body = function_body(
