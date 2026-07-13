@@ -11525,7 +11525,7 @@ fn guest_pc_rare_report_paths_stay_outlined() {
         "apply_internal_memory_copy_fast_path",
         "apply_fcall_result_register_store_fast_path",
     ] {
-        let marker = format!("#[inline(never)]\nfn {function_name}");
+        let marker = format!("#[cold]\n#[inline(never)]\nfn {function_name}");
         assert!(
             source.contains(&marker),
             "rare report path {function_name} should stay outside the main validation body"

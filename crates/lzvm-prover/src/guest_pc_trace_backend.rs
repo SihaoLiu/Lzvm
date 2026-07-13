@@ -14183,6 +14183,7 @@ fn apply_no_memory_fast_path(
 }
 
 #[allow(clippy::too_many_arguments)]
+#[cold]
 #[inline(never)]
 fn apply_precompile_no_store_fast_path(
     output_row: usize,
@@ -14257,6 +14258,7 @@ fn apply_precompile_no_store_fast_path(
 }
 
 #[allow(clippy::too_many_arguments)]
+#[cold]
 #[inline(never)]
 fn apply_internal_memory_copy_fast_path(
     output_row: usize,
@@ -14664,6 +14666,7 @@ fn apply_simple_copy_register_store_fast_path(
 }
 
 #[allow(clippy::too_many_arguments)]
+#[cold]
 #[inline(never)]
 fn apply_fcall_result_register_store_fast_path(
     output_row: usize,
