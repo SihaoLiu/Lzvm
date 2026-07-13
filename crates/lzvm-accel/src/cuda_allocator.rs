@@ -6,6 +6,7 @@ use super::{cuda_status, AccelError};
 unsafe extern "C" {
     fn lzvm_cuda_alloc_bytes(out: *mut *mut c_void, bytes: usize) -> i32;
     fn lzvm_cuda_free_bytes(ptr: *mut c_void);
+    fn lzvm_cuda_reap_host_copy_registrations() -> i32;
     fn lzvm_cuda_allocator_clear_cache() -> i32;
     fn lzvm_cuda_allocator_stats(out: *mut CudaAllocatorStats) -> i32;
 }
@@ -98,6 +99,11 @@ pub fn cuda_allocator_stats() -> Result<CudaAllocatorStats, AccelError> {
     Ok(stats)
 }
 
+pub fn cuda_reap_host_copy_registrations() -> Result<(), AccelError> {
+    let code = unsafe { lzvm_cuda_reap_host_copy_registrations() };
+    cuda_status(code)
+}
+
 pub fn cuda_allocator_clear_cache() -> Result<(), AccelError> {
     let code = unsafe { lzvm_cuda_allocator_clear_cache() };
     cuda_status(code)
@@ -179,5 +185,15 @@ mod tests {
         );
 
         cuda_allocator_clear_cache().expect("allocator cache should clear");
+    }
+
+    #[test]
+    fn cuda_host_copy_registration_reaper_accepts_an_empty_queue() {
+        let _guard = crate::CUDA_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        cuda_allocator_clear_cache().expect("allocator cache should clear");
+
+        cuda_reap_host_copy_registrations().expect("empty registration queue should reap");
     }
 }

@@ -6,7 +6,10 @@ use std::fmt;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 #[cfg(feature = "cuda")]
-use std::sync::{Mutex, OnceLock};
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Mutex, OnceLock,
+};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -4513,6 +4516,9 @@ fn run_prove_witness_commitments_with_guest_pc_trace_segment_commitments_optiona
     #[cfg(feature = "cuda")]
     let gpu_memory_preflight =
         GuestPcTraceGpuMemoryPreflight::for_instruction_limit(instruction_limit);
+    #[cfg(feature = "cuda")]
+    let _host_registration_reaper =
+        GuestPcTraceHostRegistrationReaper::for_instruction_limit(instruction_limit);
     let shared_inputs = load_witness_shared_inputs(plan)?;
     let auxiliary_inputs = Arc::new(auxiliary_inputs);
     let mut timing_observer = timing_observer;
@@ -5821,6 +5827,54 @@ fn sample_guest_pc_segment_commit_cuda_memory() -> GuestPcTraceSegmentCommitCuda
 
 #[cfg(feature = "cuda")]
 const GUEST_PC_TRACE_GPU_PREFLIGHT_DEFERRED_SEGMENT_LIMIT: usize = 8;
+
+#[cfg(feature = "cuda")]
+const GUEST_PC_TRACE_HOST_REGISTRATION_REAP_INTERVAL: Duration = Duration::from_millis(4);
+
+#[cfg(feature = "cuda")]
+struct GuestPcTraceHostRegistrationReaper {
+    stop: Arc<AtomicBool>,
+    worker: Option<thread::JoinHandle<()>>,
+}
+
+#[cfg(feature = "cuda")]
+impl GuestPcTraceHostRegistrationReaper {
+    fn for_instruction_limit(instruction_limit: u64) -> Option<Self> {
+        (instruction_limit >= crate::gpu_setup::GUEST_PC_TRACE_GPU_SIZE_THRESHOLD).then(Self::start)
+    }
+
+    fn start() -> Self {
+        let stop = Arc::new(AtomicBool::new(false));
+        let worker_stop = Arc::clone(&stop);
+        let worker = thread::Builder::new()
+            .name("lzvm-host-registration-reaper".to_owned())
+            .spawn(move || {
+                while !worker_stop.load(Ordering::Acquire) {
+                    thread::park_timeout(GUEST_PC_TRACE_HOST_REGISTRATION_REAP_INTERVAL);
+                    if worker_stop.load(Ordering::Acquire) {
+                        break;
+                    }
+                    if lzvm_accel::cuda_reap_host_copy_registrations().is_err() {
+                        break;
+                    }
+                }
+            })
+            .ok();
+        Self { stop, worker }
+    }
+}
+
+#[cfg(feature = "cuda")]
+impl Drop for GuestPcTraceHostRegistrationReaper {
+    fn drop(&mut self) {
+        self.stop.store(true, Ordering::Release);
+        if let Some(worker) = self.worker.take() {
+            worker.thread().unpark();
+            let _ = worker.join();
+        }
+        let _ = lzvm_accel::cuda_reap_host_copy_registrations();
+    }
+}
 
 #[cfg(feature = "cuda")]
 #[derive(Clone)]
@@ -9067,6 +9121,17 @@ mod tests {
             trace_timing: None,
             guest_segment_commit_duration: None,
         }
+    }
+
+    #[cfg(feature = "cuda")]
+    #[test]
+    fn host_registration_reaper_only_runs_for_large_traces() {
+        let threshold = crate::gpu_setup::GUEST_PC_TRACE_GPU_SIZE_THRESHOLD;
+        assert!(GuestPcTraceHostRegistrationReaper::for_instruction_limit(threshold - 1).is_none());
+
+        let reaper = GuestPcTraceHostRegistrationReaper::for_instruction_limit(threshold)
+            .expect("large traces should start the registration reaper");
+        drop(reaper);
     }
 
     #[cfg(feature = "cuda")]
