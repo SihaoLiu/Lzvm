@@ -3054,7 +3054,13 @@ fn try_advance_guest_machine_report_fast_path(
                 } else {
                     state.read_decoded_register(rs2)
                 };
-                let value = execute_op(kind, lhs, rhs);
+                let value = match kind {
+                    RiscvOpKind::Or => lhs | rhs,
+                    RiscvOpKind::Add => lhs.wrapping_add(rhs),
+                    RiscvOpKind::And => lhs & rhs,
+                    RiscvOpKind::Sub => lhs.wrapping_sub(rhs),
+                    _ => execute_op(kind, lhs, rhs),
+                };
                 register_write = write_fast_reported_register(state, rd, value);
             }
         }
