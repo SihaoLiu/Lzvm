@@ -3,11 +3,14 @@ use lzvm_prover::guest_instruction::{
     RiscvAmoKind, RiscvAmoWidth, RiscvBranchKind, RiscvFenceKind, RiscvInstruction, RiscvLoadKind,
     RiscvOp32Kind, RiscvOpImm32Kind, RiscvOpImmKind, RiscvOpKind, RiscvStoreKind,
 };
-#[cfg(feature = "cuda")]
-use lzvm_prover::guest_machine::GuestMachineReport;
 use lzvm_prover::guest_machine::{
     advance_guest_machine, run_guest_machine, GuestMachineError, GuestMachineHalt,
     GuestMachineMemory, GuestMachineState, GuestRegisterWrite,
+};
+#[cfg(feature = "cuda")]
+use lzvm_prover::guest_machine::{
+    GuestMachineReport, GuestMemoryAccess, GuestMemoryAccessKind, GuestPrecompileReportEffects,
+    GuestRegisterWriteList,
 };
 use lzvm_prover::guest_memory::{load_guest_memory_image, GuestMemoryError, GuestMemoryImage};
 
@@ -17,7 +20,84 @@ const FIRST_REGISTER: usize = 1;
 #[cfg(feature = "cuda")]
 #[test]
 fn cuda_guest_machine_report_uses_compact_effect_storage() {
-    assert_eq!(std::mem::size_of::<GuestMachineReport>(), 40);
+    assert_eq!(std::mem::size_of::<GuestMachineReport>(), 32);
+}
+
+#[cfg(feature = "cuda")]
+#[test]
+fn cuda_guest_machine_report_tagged_memory_storage_preserves_variants() {
+    let instruction = RiscvInstruction::Store {
+        kind: RiscvStoreKind::Sw,
+        rs1: 1,
+        rs2: 2,
+        offset: 0,
+    };
+    let access = |address, value| GuestMemoryAccess {
+        kind: GuestMemoryAccessKind::Write,
+        address,
+        byte_len: 4,
+        value,
+    };
+    let make_report =
+        |memory_accesses: Vec<GuestMemoryAccess>,
+         precompile_effects: Option<Box<GuestPrecompileReportEffects>>| {
+            GuestMachineReport::new(
+                ENTRY,
+                4,
+                instruction,
+                ENTRY + 4,
+                GuestRegisterWriteList::default(),
+                memory_accesses.into(),
+                precompile_effects,
+            )
+        };
+
+    let compact = access(ENTRY + 0x100, 7);
+    let large_address = ((usize::MAX >> 3) as u64) + 1;
+    let owned = access(large_address, 11);
+    let pair = vec![access(ENTRY + 0x200, 13), access(ENTRY + 0x204, 17)];
+    let many = vec![
+        access(ENTRY + 0x300, 19),
+        access(ENTRY + 0x304, 23),
+        access(ENTRY + 0x308, 29),
+    ];
+    let normal_precompile = access(ENTRY + 0x400, 31);
+    let precompile = access(ENTRY + 0x500, 37);
+
+    let cases = vec![
+        (make_report(vec![], None), vec![], vec![], None),
+        (
+            make_report(vec![compact], None),
+            vec![compact],
+            vec![],
+            None,
+        ),
+        (make_report(vec![owned], None), vec![owned], vec![], None),
+        (make_report(pair.clone(), None), pair, vec![], None),
+        (make_report(many.clone(), None), many, vec![], None),
+        (
+            make_report(
+                vec![normal_precompile],
+                GuestPrecompileReportEffects::from_vec(vec![precompile], Some(41)),
+            ),
+            vec![normal_precompile],
+            vec![precompile],
+            Some(41),
+        ),
+    ];
+
+    for (report, normal_accesses, precompile_accesses, precompile_result) in cases {
+        assert_eq!(report.memory_accesses().as_slice(), normal_accesses);
+        assert_eq!(report.precompile_memory_accesses(), precompile_accesses);
+        assert_eq!(report.precompile_result(), precompile_result);
+
+        let cloned = report.clone();
+        assert_eq!(cloned, report);
+        assert_eq!(cloned.memory_accesses().as_slice(), normal_accesses);
+        assert_eq!(cloned.precompile_memory_accesses(), precompile_accesses);
+        assert_eq!(cloned.precompile_result(), precompile_result);
+        assert!(!format!("{cloned:?}").is_empty());
+    }
 }
 
 fn sample_guest_image() -> Vec<u8> {

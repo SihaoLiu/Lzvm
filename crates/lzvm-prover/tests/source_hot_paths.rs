@@ -9212,17 +9212,19 @@ fn guest_machine_reports_inline_common_effect_storage() {
     );
     assert!(
         source.contains("struct GuestReportMemoryAccessList")
+            && source.contains("tagged: usize")
             && source.contains("One(u64),")
-            && source.contains("OwnedOne(Box<GuestMemoryAccess>),")
-            && source.contains("Pair(Box<[GuestMemoryAccess; 2]>),")
-            && source.contains("Many(Box<Vec<GuestMemoryAccess>>),")
+            && source.contains("OwnedOne(&'a GuestMemoryAccess),")
+            && source.contains("Pair(&'a [GuestMemoryAccess; 2]),")
+            && source.contains("Many(&'a Vec<GuestMemoryAccess>),")
             && source.contains("fn compact_single_memory_access(")
-            && source.contains("const _: [(); 16]")
-            && source.contains("const _: [(); 40]")
+            && source.contains("const _: [(); 8]")
+            && source.contains("const _: [(); 32]")
             && report_body.contains("memory_accesses: GuestReportMemoryAccessList")
             && source.contains("pub fn memory_accesses(&self) -> GuestMemoryAccessView<'_>")
             && compact_storage_body.contains("== Some(access)")
-            && compact_storage_body.contains("OwnedOne(Box::new(access))")
+            && compact_storage_body
+                .contains("Self::from_box(Box::new(access), Self::OWNED_ONE_TAG)")
             && compact_storage_body.contains("fn empty()")
             && compact_storage_body.contains("fn one(")
             && report_body.contains("GuestReportMemoryAccessList::empty()")
@@ -9238,7 +9240,7 @@ fn guest_machine_reports_inline_common_effect_storage() {
     assert!(
         compact_source_contains(
             &source,
-            "GuestReportMemoryAccessEntries::Precompile(effects) => { effects.normal_memory_accesses.is_empty() }",
+            "GuestReportMemoryAccessRef::Precompile(effects) => { effects.normal_memory_accesses.is_empty() }",
         ),
         "compact report emptiness should match the logical normal access view"
     );

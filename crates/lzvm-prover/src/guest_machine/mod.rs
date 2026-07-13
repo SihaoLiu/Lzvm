@@ -824,31 +824,48 @@ impl<'a> IntoIterator for GuestMemoryAccessView<'a> {
 }
 
 #[cfg(all(feature = "cuda", not(test)))]
-#[derive(Debug, Clone, PartialEq, Eq)]
 struct GuestReportMemoryAccessList {
-    entries: GuestReportMemoryAccessEntries,
+    tagged: usize,
 }
 
 #[cfg(all(feature = "cuda", not(test)))]
-#[derive(Debug, Clone, PartialEq, Eq)]
-enum GuestReportMemoryAccessEntries {
+#[derive(Debug, PartialEq, Eq)]
+enum GuestReportMemoryAccessRef<'a> {
     Empty,
     One(u64),
-    OwnedOne(Box<GuestMemoryAccess>),
-    Pair(Box<[GuestMemoryAccess; 2]>),
-    Many(Box<Vec<GuestMemoryAccess>>),
-    Precompile(Box<GuestPrecompileReportEffects>),
+    OwnedOne(&'a GuestMemoryAccess),
+    Pair(&'a [GuestMemoryAccess; 2]),
+    Many(&'a Vec<GuestMemoryAccess>),
+    Precompile(&'a GuestPrecompileReportEffects),
 }
 
 #[cfg(all(feature = "cuda", not(test)))]
-const _: [(); 16] = [(); std::mem::size_of::<GuestReportMemoryAccessList>()];
+const _: [(); 8] = [(); std::mem::size_of::<GuestReportMemoryAccessList>()];
+#[cfg(all(feature = "cuda", not(test)))]
+const _: [(); 8] = [(); std::mem::size_of::<usize>()];
+#[cfg(all(feature = "cuda", not(test)))]
+const _: [(); 8] = [(); std::mem::align_of::<GuestMemoryAccess>()];
+#[cfg(all(feature = "cuda", not(test)))]
+const _: [(); 8] = [(); std::mem::align_of::<[GuestMemoryAccess; 2]>()];
+#[cfg(all(feature = "cuda", not(test)))]
+const _: [(); 8] = [(); std::mem::align_of::<Vec<GuestMemoryAccess>>()];
+#[cfg(all(feature = "cuda", not(test)))]
+const _: [(); 8] = [(); std::mem::align_of::<GuestPrecompileReportEffects>()];
 
 #[cfg(all(feature = "cuda", not(test)))]
 impl GuestReportMemoryAccessList {
+    const TAG_MASK: usize = 0b111;
+    const EMPTY_TAG: usize = 0;
+    const ONE_TAG: usize = 1;
+    const OWNED_ONE_TAG: usize = 2;
+    const PAIR_TAG: usize = 3;
+    const MANY_TAG: usize = 4;
+    const PRECOMPILE_TAG: usize = 5;
+
     #[inline(always)]
     fn empty() -> Self {
         Self {
-            entries: GuestReportMemoryAccessEntries::Empty,
+            tagged: Self::EMPTY_TAG,
         }
     }
 
@@ -857,11 +874,15 @@ impl GuestReportMemoryAccessList {
         instruction: RiscvInstruction,
         effect_value: u64,
         access: GuestMemoryAccess,
-    ) -> GuestReportMemoryAccessEntries {
-        if compact_single_memory_access(instruction, effect_value, access.address) == Some(access) {
-            GuestReportMemoryAccessEntries::One(access.address)
+    ) -> Self {
+        if compact_single_memory_access(instruction, effect_value, access.address) == Some(access)
+            && access.address <= (usize::MAX >> 3) as u64
+        {
+            Self {
+                tagged: ((access.address as usize) << 3) | Self::ONE_TAG,
+            }
         } else {
-            GuestReportMemoryAccessEntries::OwnedOne(Box::new(access))
+            Self::from_box(Box::new(access), Self::OWNED_ONE_TAG)
         }
     }
 
@@ -871,9 +892,7 @@ impl GuestReportMemoryAccessList {
         effect_value: u64,
         memory_access: GuestMemoryAccess,
     ) -> Self {
-        Self {
-            entries: Self::single_entry(instruction, effect_value, memory_access),
-        }
+        Self::single_entry(instruction, effect_value, memory_access)
     }
 
     fn from_parts(
@@ -883,45 +902,43 @@ impl GuestReportMemoryAccessList {
         precompile_effects: Option<Box<GuestPrecompileReportEffects>>,
     ) -> Self {
         if let Some(effects) = precompile_effects {
-            return Self {
-                entries: GuestReportMemoryAccessEntries::Precompile(
-                    effects.with_normal_memory_accesses(memory_accesses),
-                ),
-            };
+            return Self::from_box(
+                effects.with_normal_memory_accesses(memory_accesses),
+                Self::PRECOMPILE_TAG,
+            );
         }
-        let entries = match memory_accesses.entries {
-            GuestMemoryAccessEntries::Empty => GuestReportMemoryAccessEntries::Empty,
+        match memory_accesses.entries {
+            GuestMemoryAccessEntries::Empty => Self::empty(),
             GuestMemoryAccessEntries::One(access) => {
                 Self::single_entry(instruction, effect_value, access)
             }
             GuestMemoryAccessEntries::Many(accesses) if accesses.len() == 2 => {
-                GuestReportMemoryAccessEntries::Pair(Box::new([accesses[0], accesses[1]]))
+                Self::from_box(Box::new([accesses[0], accesses[1]]), Self::PAIR_TAG)
             }
             GuestMemoryAccessEntries::Many(accesses) => {
-                GuestReportMemoryAccessEntries::Many(Box::new(accesses.into_vec()))
+                Self::from_box(Box::new(accesses.into_vec()), Self::MANY_TAG)
             }
-        };
-        Self { entries }
+        }
     }
 
     #[inline(always)]
     fn view(&self, instruction: RiscvInstruction, effect_value: u64) -> GuestMemoryAccessView<'_> {
-        match &self.entries {
-            GuestReportMemoryAccessEntries::Empty => GuestMemoryAccessView::empty(),
-            GuestReportMemoryAccessEntries::One(address) => GuestMemoryAccessView::One(
-                compact_single_memory_access(instruction, effect_value, *address)
+        match self.entry() {
+            GuestReportMemoryAccessRef::Empty => GuestMemoryAccessView::empty(),
+            GuestReportMemoryAccessRef::One(address) => GuestMemoryAccessView::One(
+                compact_single_memory_access(instruction, effect_value, address)
                     .expect("compact report memory access should reconstruct"),
             ),
-            GuestReportMemoryAccessEntries::OwnedOne(access) => {
-                GuestMemoryAccessView::borrowed(std::slice::from_ref(access.as_ref()))
+            GuestReportMemoryAccessRef::OwnedOne(access) => {
+                GuestMemoryAccessView::borrowed(std::slice::from_ref(access))
             }
-            GuestReportMemoryAccessEntries::Pair(accesses) => {
+            GuestReportMemoryAccessRef::Pair(accesses) => {
                 GuestMemoryAccessView::borrowed(accesses.as_slice())
             }
-            GuestReportMemoryAccessEntries::Many(accesses) => {
+            GuestReportMemoryAccessRef::Many(accesses) => {
                 GuestMemoryAccessView::borrowed(accesses.as_slice())
             }
-            GuestReportMemoryAccessEntries::Precompile(effects) => {
+            GuestReportMemoryAccessRef::Precompile(effects) => {
                 GuestMemoryAccessView::borrowed(effects.normal_memory_accesses.as_ref())
             }
         }
@@ -929,9 +946,9 @@ impl GuestReportMemoryAccessList {
 
     #[inline(always)]
     fn is_empty(&self) -> bool {
-        match &self.entries {
-            GuestReportMemoryAccessEntries::Empty => true,
-            GuestReportMemoryAccessEntries::Precompile(effects) => {
+        match self.entry() {
+            GuestReportMemoryAccessRef::Empty => true,
+            GuestReportMemoryAccessRef::Precompile(effects) => {
                 effects.normal_memory_accesses.is_empty()
             }
             _ => false,
@@ -939,16 +956,117 @@ impl GuestReportMemoryAccessList {
     }
 
     fn precompile_memory_accesses(&self) -> &[GuestMemoryAccess] {
-        match &self.entries {
-            GuestReportMemoryAccessEntries::Precompile(effects) => effects.memory_accesses.as_ref(),
+        match self.entry() {
+            GuestReportMemoryAccessRef::Precompile(effects) => effects.memory_accesses.as_ref(),
             _ => &[],
         }
     }
 
     fn precompile_result(&self) -> Option<u64> {
-        match &self.entries {
-            GuestReportMemoryAccessEntries::Precompile(effects) => effects.result,
+        match self.entry() {
+            GuestReportMemoryAccessRef::Precompile(effects) => effects.result,
             _ => None,
+        }
+    }
+
+    #[inline(always)]
+    fn tag(&self) -> usize {
+        self.tagged & Self::TAG_MASK
+    }
+
+    #[inline(always)]
+    fn from_box<T>(value: Box<T>, tag: usize) -> Self {
+        let address = Box::into_raw(value) as usize;
+        debug_assert_eq!(address & Self::TAG_MASK, 0);
+        Self {
+            tagged: address | tag,
+        }
+    }
+
+    #[inline(always)]
+    unsafe fn boxed_ref<T>(&self) -> &T {
+        unsafe { &*((self.tagged & !Self::TAG_MASK) as *const T) }
+    }
+
+    #[inline(always)]
+    unsafe fn drop_box<T>(&mut self) {
+        unsafe {
+            drop(Box::from_raw((self.tagged & !Self::TAG_MASK) as *mut T));
+        }
+    }
+
+    #[inline(always)]
+    fn entry(&self) -> GuestReportMemoryAccessRef<'_> {
+        match self.tag() {
+            Self::EMPTY_TAG => GuestReportMemoryAccessRef::Empty,
+            Self::ONE_TAG => GuestReportMemoryAccessRef::One((self.tagged >> 3) as u64),
+            Self::OWNED_ONE_TAG => {
+                GuestReportMemoryAccessRef::OwnedOne(unsafe { self.boxed_ref() })
+            }
+            Self::PAIR_TAG => GuestReportMemoryAccessRef::Pair(unsafe { self.boxed_ref() }),
+            Self::MANY_TAG => GuestReportMemoryAccessRef::Many(unsafe { self.boxed_ref() }),
+            Self::PRECOMPILE_TAG => {
+                GuestReportMemoryAccessRef::Precompile(unsafe { self.boxed_ref() })
+            }
+            _ => unreachable!("invalid guest report memory access tag"),
+        }
+    }
+}
+
+#[cfg(all(feature = "cuda", not(test)))]
+impl Clone for GuestReportMemoryAccessList {
+    fn clone(&self) -> Self {
+        match self.entry() {
+            GuestReportMemoryAccessRef::Empty => Self::empty(),
+            GuestReportMemoryAccessRef::One(address) => Self {
+                tagged: ((address as usize) << 3) | Self::ONE_TAG,
+            },
+            GuestReportMemoryAccessRef::OwnedOne(access) => {
+                Self::from_box(Box::new(*access), Self::OWNED_ONE_TAG)
+            }
+            GuestReportMemoryAccessRef::Pair(accesses) => {
+                Self::from_box(Box::new(*accesses), Self::PAIR_TAG)
+            }
+            GuestReportMemoryAccessRef::Many(accesses) => {
+                Self::from_box(Box::new((*accesses).clone()), Self::MANY_TAG)
+            }
+            GuestReportMemoryAccessRef::Precompile(effects) => {
+                Self::from_box(Box::new((*effects).clone()), Self::PRECOMPILE_TAG)
+            }
+        }
+    }
+}
+
+#[cfg(all(feature = "cuda", not(test)))]
+impl std::fmt::Debug for GuestReportMemoryAccessList {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("GuestReportMemoryAccessList")
+            .field("entries", &self.entry())
+            .finish()
+    }
+}
+
+#[cfg(all(feature = "cuda", not(test)))]
+impl PartialEq for GuestReportMemoryAccessList {
+    fn eq(&self, other: &Self) -> bool {
+        self.entry() == other.entry()
+    }
+}
+
+#[cfg(all(feature = "cuda", not(test)))]
+impl Eq for GuestReportMemoryAccessList {}
+
+#[cfg(all(feature = "cuda", not(test)))]
+impl Drop for GuestReportMemoryAccessList {
+    fn drop(&mut self) {
+        match self.tag() {
+            Self::EMPTY_TAG | Self::ONE_TAG => {}
+            Self::OWNED_ONE_TAG => unsafe { self.drop_box::<GuestMemoryAccess>() },
+            Self::PAIR_TAG => unsafe { self.drop_box::<[GuestMemoryAccess; 2]>() },
+            Self::MANY_TAG => unsafe { self.drop_box::<Vec<GuestMemoryAccess>>() },
+            Self::PRECOMPILE_TAG => unsafe { self.drop_box::<GuestPrecompileReportEffects>() },
+            _ => unreachable!("invalid guest report memory access tag"),
         }
     }
 }
@@ -1109,7 +1227,7 @@ pub struct GuestMachineReport {
 }
 
 #[cfg(all(feature = "cuda", not(test)))]
-const _: [(); 40] = [(); std::mem::size_of::<GuestMachineReport>()];
+const _: [(); 32] = [(); std::mem::size_of::<GuestMachineReport>()];
 
 impl GuestMachineReport {
     #[inline(always)]

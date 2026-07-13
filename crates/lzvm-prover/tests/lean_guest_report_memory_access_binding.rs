@@ -98,14 +98,20 @@ fn lean_guest_report_memory_access_binding_tracks_runtime_storage_shape() {
     );
     assert!(
         runtime_source.contains("struct GuestReportMemoryAccessList")
-            && runtime_source.contains("enum GuestReportMemoryAccessEntries")
+            && runtime_source.contains("tagged: usize")
+            && runtime_source.contains("enum GuestReportMemoryAccessRef")
             && runtime_source.contains("One(u64),")
-            && runtime_source.contains("OwnedOne(Box<GuestMemoryAccess>),")
-            && runtime_source.contains("Pair(Box<[GuestMemoryAccess; 2]>),")
-            && runtime_source.contains("Many(Box<Vec<GuestMemoryAccess>>),")
+            && runtime_source.contains("OwnedOne(&'a GuestMemoryAccess),")
+            && runtime_source.contains("Pair(&'a [GuestMemoryAccess; 2]),")
+            && runtime_source.contains("Many(&'a Vec<GuestMemoryAccess>),")
+            && runtime_source.contains("const TAG_MASK: usize = 0b111;")
+            && runtime_source.contains("const OWNED_ONE_TAG: usize = 2;")
+            && runtime_source.contains("const PRECOMPILE_TAG: usize = 5;")
             && runtime_source.contains("fn compact_single_memory_access(")
             && runtime_source.contains("== Some(access)")
-            && runtime_source.contains("OwnedOne(Box::new(access))")
+            && runtime_source.contains("access.address <= (usize::MAX >> 3) as u64")
+            && runtime_source.contains("Self::from_box(Box::new(access), Self::OWNED_ONE_TAG)")
+            && runtime_source.contains("impl Drop for GuestReportMemoryAccessList")
             && runtime_source.contains("effects.normal_memory_accesses.is_empty()"),
         "runtime compact report storage should match the Lean reconstruction and fallback model"
     );
