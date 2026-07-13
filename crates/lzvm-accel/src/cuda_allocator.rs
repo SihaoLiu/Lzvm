@@ -7,6 +7,7 @@ unsafe extern "C" {
     fn lzvm_cuda_alloc_bytes(out: *mut *mut c_void, bytes: usize) -> i32;
     fn lzvm_cuda_free_bytes(ptr: *mut c_void);
     fn lzvm_cuda_reap_host_copy_registrations() -> i32;
+    fn lzvm_cuda_drain_host_copy_registrations() -> i32;
     fn lzvm_cuda_allocator_clear_cache() -> i32;
     fn lzvm_cuda_allocator_stats(out: *mut CudaAllocatorStats) -> i32;
 }
@@ -104,6 +105,11 @@ pub fn cuda_reap_host_copy_registrations() -> Result<(), AccelError> {
     cuda_status(code)
 }
 
+pub fn cuda_drain_host_copy_registrations() -> Result<(), AccelError> {
+    let code = unsafe { lzvm_cuda_drain_host_copy_registrations() };
+    cuda_status(code)
+}
+
 pub fn cuda_allocator_clear_cache() -> Result<(), AccelError> {
     let code = unsafe { lzvm_cuda_allocator_clear_cache() };
     cuda_status(code)
@@ -112,7 +118,7 @@ pub fn cuda_allocator_clear_cache() -> Result<(), AccelError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::CudaDeviceBuffer;
+    use crate::{CudaDeviceBuffer, CudaStream};
 
     #[test]
     fn cuda_device_buffer_reuses_freed_same_size_allocation_without_device_synchronizing() {
@@ -195,5 +201,41 @@ mod tests {
         cuda_allocator_clear_cache().expect("allocator cache should clear");
 
         cuda_reap_host_copy_registrations().expect("empty registration queue should reap");
+        cuda_drain_host_copy_registrations().expect("empty registration queue should drain");
+    }
+
+    #[test]
+    fn cuda_host_copy_registration_drain_waits_for_pending_upload() {
+        let _guard = crate::CUDA_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        cuda_allocator_clear_cache().expect("allocator cache should clear");
+
+        let words = (0..=(1 << 17))
+            .map(|index| index as u64)
+            .collect::<Vec<_>>();
+        let stream = CudaStream::new().expect("CUDA stream should create");
+        let mut buffer = CudaDeviceBuffer::new(words.len() * std::mem::size_of::<u64>())
+            .expect("device buffer should allocate");
+        unsafe {
+            buffer
+                .copy_from_u64_words_on_stream(&words, &stream)
+                .expect("stream upload should enqueue");
+        }
+
+        cuda_drain_host_copy_registrations().expect("pending registration should drain");
+        stream.synchronize().expect("stream upload should finish");
+        assert_eq!(
+            buffer
+                .to_u64_words()
+                .expect("uploaded words should download"),
+            words
+        );
+
+        let stats = cuda_allocator_stats().expect("allocator stats should read");
+        assert_eq!(stats.cuda_host_register_calls, 1);
+        assert_eq!(stats.cuda_host_unregister_calls, 1);
+        assert_eq!(stats.cuda_event_synchronize_calls, 1);
+        cuda_allocator_clear_cache().expect("allocator cache should clear");
     }
 }

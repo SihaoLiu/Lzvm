@@ -902,6 +902,14 @@ extern "C" int lzvm_cuda_reap_host_copy_registrations(void) {
     }
 }
 
+extern "C" int lzvm_cuda_drain_host_copy_registrations(void) {
+    try {
+        return release_pending_host_copy_registrations();
+    } catch (...) {
+        return -1;
+    }
+}
+
 extern "C" int lzvm_cuda_allocator_clear_cache(void) {
     try {
         const int registration_status = release_pending_host_copy_registrations();

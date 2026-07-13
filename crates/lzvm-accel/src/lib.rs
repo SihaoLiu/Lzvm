@@ -29,8 +29,8 @@ mod cuda_setup;
 mod cuda_stream;
 #[cfg(feature = "cuda")]
 pub use cuda_allocator::{
-    cuda_allocator_clear_cache, cuda_allocator_stats, cuda_reap_host_copy_registrations,
-    CudaAllocatorStats,
+    cuda_allocator_clear_cache, cuda_allocator_stats, cuda_drain_host_copy_registrations,
+    cuda_reap_host_copy_registrations, CudaAllocatorStats,
 };
 #[cfg(feature = "cuda")]
 pub use cuda_buffer::{CudaDeviceBuffer, CudaPinnedHostBuffer, MainTraceDeviceLayout};

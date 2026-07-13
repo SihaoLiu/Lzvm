@@ -5854,7 +5854,7 @@ impl GuestPcTraceHostRegistrationReaper {
                     if worker_stop.load(Ordering::Acquire) {
                         break;
                     }
-                    if lzvm_accel::cuda_reap_host_copy_registrations().is_err() {
+                    if lzvm_accel::cuda_drain_host_copy_registrations().is_err() {
                         break;
                     }
                 }
