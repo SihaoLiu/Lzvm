@@ -2390,7 +2390,7 @@ pub(crate) fn instruction_cache_update_for_instruction_with_handler(
     instruction_cache_update_for_non_fcall_instruction(state, instruction)
 }
 
-#[inline]
+#[inline(always)]
 fn instruction_cache_update_for_non_fcall_instruction(
     state: &GuestMachineState,
     instruction: RiscvInstruction,
@@ -2398,6 +2398,16 @@ fn instruction_cache_update_for_non_fcall_instruction(
     let Some(pending) = state.pending_dma else {
         return GuestInstructionCacheUpdate::None;
     };
+    instruction_cache_update_for_pending_dma(state, pending, instruction)
+}
+
+#[cold]
+#[inline(never)]
+fn instruction_cache_update_for_pending_dma(
+    state: &GuestMachineState,
+    pending: GuestDmaPrepare,
+    instruction: RiscvInstruction,
+) -> GuestInstructionCacheUpdate {
     if !matches!(
         pending.kind,
         RiscvDmaKind::Memcpy | RiscvDmaKind::Memset | RiscvDmaKind::Inputcpy

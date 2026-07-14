@@ -12686,6 +12686,14 @@ fn guest_instruction_cache_hit_path_borrows_entry() {
         !body.contains("let entry = self.entries[index];"),
         "guest instruction cache hit checks should not copy entries before checking for a hit"
     );
+    assert!(
+        source.contains(
+            "#[inline(always)]\nfn instruction_cache_update_for_non_fcall_instruction("
+        ) && source.contains(
+            "#[cold]\n#[inline(never)]\nfn instruction_cache_update_for_pending_dma("
+        ),
+        "guest instruction cache policy should keep the empty pending check inline and rare work cold"
+    );
 }
 
 #[test]
