@@ -12,6 +12,11 @@ fn lean_runtime_soundness_binding_exports_core_contract_projection() {
     let runtime_soundness_core_path = crate_root.join("../../lean/Lzvm/RuntimeSoundness/Core.lean");
     let runtime_soundness_core_source = std::fs::read_to_string(&runtime_soundness_core_path)
         .expect("Lean runtime soundness core source should read");
+    let runtime_soundness_audited_core_path =
+        crate_root.join("../../lean/Lzvm/RuntimeSoundness/AuditedCore.lean");
+    let runtime_soundness_audited_core_source =
+        std::fs::read_to_string(&runtime_soundness_audited_core_path)
+            .expect("Lean runtime soundness audited-core source should read");
     let runtime_soundness_external_source_path =
         crate_root.join("../../lean/Lzvm/RuntimeSoundness/ExternalSource.lean");
     let runtime_soundness_external_source =
@@ -32,7 +37,7 @@ fn lean_runtime_soundness_binding_exports_core_contract_projection() {
     let segment_ids_source = std::fs::read_to_string(&segment_ids_path)
         .expect("Lean runtime soundness segment-id source should read");
     let lean_source = format!(
-        "{runtime_soundness_source}\n{runtime_soundness_core_source}\n{runtime_soundness_external_source}\n{segment_ids_source}\n{contracts_source}\n{contracts_base_source}\n{contracts_external_source}"
+        "{runtime_soundness_source}\n{runtime_soundness_core_source}\n{runtime_soundness_audited_core_source}\n{runtime_soundness_external_source}\n{segment_ids_source}\n{contracts_source}\n{contracts_base_source}\n{contracts_external_source}"
     );
     let top_level_path = crate_root.join("../../lean/Lzvm.lean");
     let top_level_source =

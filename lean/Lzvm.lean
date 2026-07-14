@@ -26,7 +26,9 @@ import Lzvm.ProofSegmentIds
 import Lzvm.ProofArtifactBinding
 import Lzvm.ProgramImageCacheBinding
 import Lzvm.OpeningValidation
+import Lzvm.OpeningValidation.RequiredExternalSource
 import Lzvm.OpeningSegmentBinding
+import Lzvm.OpeningSegmentBinding.FullSoundness
 import Lzvm.OpeningSegmentBinding.SegmentIds
 import Lzvm.PipelineBinding
 import Lzvm.PipelineBinding.Accepts

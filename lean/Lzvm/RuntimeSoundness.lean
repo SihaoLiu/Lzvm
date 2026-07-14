@@ -5,6 +5,7 @@ Authors: Sihao Liu
 -/
 
 import Lzvm.RuntimeSoundness.Core
+import Lzvm.RuntimeSoundness.AuditedCore
 import Lzvm.RuntimeSoundness.ExternalSource
 import Lzvm.RuntimeSoundness.SegmentIds
 import Lzvm.RuntimeSoundness.Contracts

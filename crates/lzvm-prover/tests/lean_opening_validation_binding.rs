@@ -7,8 +7,13 @@ mod lean_binding;
 fn lean_opening_validation_binding_exports_core_contract_projection() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let lean_path = crate_root.join("../../lean/Lzvm/OpeningValidation.lean");
-    let lean_source =
+    let core_source =
         std::fs::read_to_string(&lean_path).expect("Lean opening validation should read");
+    let required_external_source_path =
+        crate_root.join("../../lean/Lzvm/OpeningValidation/RequiredExternalSource.lean");
+    let required_external_source = std::fs::read_to_string(&required_external_source_path)
+        .expect("Lean required external-source opening validation should read");
+    let lean_source = format!("{core_source}\n{required_external_source}");
     let top_level_path = crate_root.join("../../lean/Lzvm.lean");
     let top_level_source =
         std::fs::read_to_string(&top_level_path).expect("Lean top-level source should read");

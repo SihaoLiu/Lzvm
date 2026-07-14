@@ -10,6 +10,7 @@ fn lean_opening_segment_binding_exports_core_contract_projection() {
         crate_root,
         &[
             "../../lean/Lzvm/OpeningSegmentBinding.lean",
+            "../../lean/Lzvm/OpeningSegmentBinding/FullSoundness.lean",
             "../../lean/Lzvm/OpeningSegmentBinding/SegmentIds.lean",
         ],
     );
