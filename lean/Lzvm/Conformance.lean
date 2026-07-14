@@ -110,6 +110,10 @@ structure RuntimeConformanceValidation (system : VerifierModel) where
     forall artifact publicInput proof,
       artifactAccepted artifact publicInput proof ->
         artifactPublicInputMatches artifact publicInput proof
+  artifactPublicInputMatchesImpliesPublicInputBound :
+    forall artifact publicInput proof,
+      artifactPublicInputMatches artifact publicInput proof ->
+        system.publicInputBound publicInput proof
   artifactAcceptedImpliesProofMatches :
     forall artifact publicInput proof,
       artifactAccepted artifact publicInput proof ->
@@ -219,9 +223,23 @@ theorem runtime_artifact_checked_acceptance_evidence
         proof
         artifactAccepted)
 
-theorem runtime_artifact_checked_acceptance_obligations
+theorem runtime_artifact_evidence_implies_public_input_bound
     {system : VerifierModel}
-    (assumptions : AssumptionBundle system)
+    (validation : RuntimeConformanceValidation system) :
+    forall artifact publicInput proof,
+      RuntimeArtifactEvidence system validation artifact publicInput proof ->
+        system.publicInputBound publicInput proof := by
+  intro artifact publicInput proof evidence
+  exact
+    validation.artifactPublicInputMatchesImpliesPublicInputBound
+      artifact
+      publicInput
+      proof
+      evidence.left
+
+theorem runtime_artifact_checked_acceptance_crypto_obligations
+    {system : VerifierModel}
+    (assumptions : CryptographicAssumptions system)
     (validation : RuntimeConformanceValidation system) :
     forall artifact publicInput proof,
       RuntimeArtifactCheckedAcceptance system validation artifact publicInput proof ->
@@ -246,27 +264,30 @@ theorem runtime_artifact_checked_acceptance_obligations
       publicInput
       proof
       artifactAccepted
+  have auditedCrypto :=
+    cryptographic_assumptions_carry_required_evidence assumptions
   have transcriptBound :=
-    assumption_bundle_fiat_shamir_transcript_binding
-      assumptions
+    required_crypto_assumptions_fiat_shamir_transcript_binding
+      auditedCrypto
       publicInput
       proof
       verifierAccepts
   have publicInputBound :=
-    assumption_bundle_public_input_binding
-      assumptions
+    runtime_artifact_evidence_implies_public_input_bound
+      validation
+      artifact
       publicInput
       proof
-      verifierAccepts
+      evidence
   have pcsOpenings :=
-    assumption_bundle_pcs_opening_soundness
-      assumptions
+    required_crypto_assumptions_pcs_opening_soundness
+      auditedCrypto
       publicInput
       proof
       verifierAccepts
   have friQueries :=
-    assumption_bundle_fri_query_soundness
-      assumptions
+    required_crypto_assumptions_fri_query_soundness
+      auditedCrypto
       publicInput
       proof
       verifierAccepts
@@ -276,6 +297,28 @@ theorem runtime_artifact_checked_acceptance_obligations
         (And.intro transcriptBound
           (And.intro publicInputBound
             (And.intro pcsOpenings friQueries))))
+
+theorem runtime_artifact_checked_acceptance_obligations
+    {system : VerifierModel}
+    (assumptions : AssumptionBundle system)
+    (validation : RuntimeConformanceValidation system) :
+    forall artifact publicInput proof,
+      RuntimeArtifactCheckedAcceptance system validation artifact publicInput proof ->
+        RuntimeArtifactSoundnessObligations
+          system
+          validation
+          artifact
+          publicInput
+          proof := by
+  intro artifact publicInput proof artifactAccepted
+  exact
+    runtime_artifact_checked_acceptance_crypto_obligations
+      assumptions.crypto
+      validation
+      artifact
+      publicInput
+      proof
+      artifactAccepted
 
 theorem runtime_artifact_checked_acceptance_sound
     {system : VerifierModel}
@@ -307,6 +350,24 @@ theorem runtime_artifact_checked_acceptance_sound
         proof
         verifierAccepts)
 
+theorem runtime_artifact_checked_acceptance_crypto_verifier_core_contract
+    {system : VerifierModel}
+    (assumptions : CryptographicAssumptions system)
+    (validation : RuntimeConformanceValidation system) :
+    forall artifact publicInput proof,
+      RuntimeArtifactCheckedAcceptance system validation artifact publicInput proof ->
+        RuntimeVerifierCoreContract system publicInput proof := by
+  intro artifact publicInput proof artifactAccepted
+  have obligations :=
+    runtime_artifact_checked_acceptance_crypto_obligations
+      assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      artifactAccepted
+  exact obligations.right.right
+
 theorem runtime_artifact_checked_acceptance_verifier_core_contract
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)
@@ -315,15 +376,14 @@ theorem runtime_artifact_checked_acceptance_verifier_core_contract
       RuntimeArtifactCheckedAcceptance system validation artifact publicInput proof ->
         RuntimeVerifierCoreContract system publicInput proof := by
   intro artifact publicInput proof artifactAccepted
-  have obligations :=
-    runtime_artifact_checked_acceptance_obligations
-      assumptions
+  exact
+    runtime_artifact_checked_acceptance_crypto_verifier_core_contract
+      assumptions.crypto
       validation
       artifact
       publicInput
       proof
       artifactAccepted
-  exact obligations.right.right
 
 theorem runtime_artifact_checked_acceptance_evidence_core_and_sound
     {system : VerifierModel}

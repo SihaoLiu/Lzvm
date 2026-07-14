@@ -24,6 +24,7 @@ fn lean_conformance_binding_exports_core_contract_projection() {
     );
     assert!(
         lean_source.contains("RuntimeConformanceValidation")
+            && lean_source.contains("artifactPublicInputMatchesImpliesPublicInputBound")
             && lean_source.contains("RuntimeArtifactSoundnessObligations")
             && lean_source.contains("RuntimeGuestReportStorageEvidence")
             && lean_source.contains("RuntimeGuestReportStorageLogicalViews")
@@ -43,7 +44,10 @@ fn lean_conformance_binding_exports_core_contract_projection() {
             "runtime_guest_report_storage_evidence_precompile_result",
             "runtime_guest_report_storage_evidence_logical_views",
             "runtime_conformance_agreement_evidence_iff",
+            "runtime_artifact_evidence_implies_public_input_bound",
+            "runtime_artifact_checked_acceptance_crypto_obligations",
             "runtime_artifact_checked_acceptance_sound",
+            "runtime_artifact_checked_acceptance_crypto_verifier_core_contract",
             "runtime_artifact_checked_acceptance_verifier_core_contract",
             "runtime_artifact_checked_acceptance_evidence_core_and_sound",
             "runtime_artifact_checked_acceptance_accepts_evidence_core_and_sound",
@@ -70,23 +74,33 @@ fn lean_conformance_binding_exports_core_contract_projection() {
     );
     lean_binding::assert_theorem_body_contains(
         &lean_source,
-        "runtime_artifact_checked_acceptance_obligations",
+        "runtime_artifact_checked_acceptance_crypto_obligations",
         &[
-            "assumption_bundle_fiat_shamir_transcript_binding",
-            "assumption_bundle_pcs_opening_soundness",
-            "assumption_bundle_fri_query_soundness",
-            "assumption_bundle_public_input_binding",
+            "cryptographic_assumptions_carry_required_evidence",
+            "required_crypto_assumptions_fiat_shamir_transcript_binding",
+            "required_crypto_assumptions_pcs_opening_soundness",
+            "required_crypto_assumptions_fri_query_soundness",
+            "runtime_artifact_evidence_implies_public_input_bound",
         ],
     );
     lean_binding::assert_theorem_body_omits(
         &lean_source,
-        "runtime_artifact_checked_acceptance_obligations",
+        "runtime_artifact_checked_acceptance_crypto_obligations",
         &[
-            "assumptions.crypto.transcript_binding",
-            "assumptions.crypto.pcs_opening_sound",
-            "assumptions.crypto.fri_query_sound",
-            "assumptions.semantic.public_input_binding",
+            "assumption_bundle_public_input_binding",
+            "SemanticAssumptions",
+            "assumptions.semantic",
         ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_artifact_checked_acceptance_obligations",
+        &["runtime_artifact_checked_acceptance_crypto_obligations"],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &lean_source,
+        "runtime_artifact_checked_acceptance_obligations",
+        &["assumption_bundle_public_input_binding"],
     );
     lean_binding::assert_theorem_body_contains(
         &lean_source,
@@ -109,7 +123,7 @@ fn lean_conformance_binding_exports_core_contract_projection() {
     lean_binding::assert_theorem_body_contains(
         &lean_source,
         "runtime_artifact_checked_acceptance_verifier_core_contract",
-        &["runtime_artifact_checked_acceptance_obligations"],
+        &["runtime_artifact_checked_acceptance_crypto_verifier_core_contract"],
     );
     lean_binding::assert_theorem_body_omits(
         &lean_source,
@@ -118,6 +132,20 @@ fn lean_conformance_binding_exports_core_contract_projection() {
             "runtime_artifact_checked_acceptance_sound",
             "sound_witness_implies_verifier_core_contract",
             "abstract_verifier_sound",
+        ],
+    );
+    lean_binding::assert_theorem_body_contains(
+        &lean_source,
+        "runtime_artifact_checked_acceptance_crypto_verifier_core_contract",
+        &["runtime_artifact_checked_acceptance_crypto_obligations"],
+    );
+    lean_binding::assert_theorem_body_omits(
+        &lean_source,
+        "runtime_artifact_checked_acceptance_crypto_verifier_core_contract",
+        &[
+            "runtime_artifact_checked_acceptance_sound",
+            "abstract_verifier_sound",
+            "assumptions.semantic",
         ],
     );
     lean_binding::assert_theorem_prefix_contains(
