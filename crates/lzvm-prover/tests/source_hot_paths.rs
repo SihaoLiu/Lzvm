@@ -11673,17 +11673,23 @@ fn guest_machine_load_reads_memory_once_after_shape_decode() {
     let source_path = crate_root.join("src/guest_machine/mod.rs");
     let source = std::fs::read_to_string(&source_path).expect("guest machine source should read");
 
-    let load_body = function_body(&source, "fn read_guest_load", "fn write_guest_store");
+    let load_body = function_body(&source, "fn read_guest_load", "fn guest_load_byte_len");
     assert_eq!(
         load_body.matches("memory.read_u64_le(address,").count(),
         1,
         "guest load decoding should make exactly one memory read after selecting load shape"
     );
     assert!(
-        load_body.contains("let byte_len = guest_load_byte_len(kind);")
+        load_body.contains("let (byte_len, sign_shift): (usize, u32) = match kind")
             && load_body.contains("let memory_value = memory.read_u64_le(address, byte_len)?;")
-            && load_body.contains("let register_value = match kind"),
-        "guest load decoding should select byte length before its single memory read"
+            && load_body.contains("let register_value = if sign_shift == 0")
+            && load_body.contains("((memory_value << sign_shift) as i64 >> sign_shift) as u64"),
+        "guest load decoding should select width and sign extension in one kind dispatch"
+    );
+    assert_eq!(
+        load_body.matches("match kind").count(),
+        1,
+        "guest load decoding should dispatch on load kind exactly once"
     );
 }
 
@@ -11693,13 +11699,16 @@ fn guest_machine_load_helpers_are_inlined_on_runner_hot_path() {
     let source_path = crate_root.join("src/guest_machine/mod.rs");
     let source = std::fs::read_to_string(&source_path).expect("guest machine source should read");
 
-    for function_name in ["read_guest_load", "guest_load_byte_len"] {
-        let needle = format!("#[inline(always)]\nfn {function_name}");
-        assert!(
-            source.contains(&needle),
-            "guest load helper {function_name} should stay inlined on the runner hot path"
-        );
-    }
+    assert!(
+        source.contains("#[inline(always)]\nfn read_guest_load"),
+        "guest load decoding should stay inlined on the runner hot path"
+    );
+    assert!(
+        source.contains(
+            "#[inline(always)]\n#[cfg(all(feature = \"cuda\", not(test)))]\nfn guest_load_byte_len"
+        ),
+        "compact report reconstruction should retain its inlined load width helper"
+    );
 }
 
 #[test]

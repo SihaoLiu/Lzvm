@@ -3746,15 +3746,20 @@ fn read_guest_load(
     kind: RiscvLoadKind,
     address: u64,
 ) -> Result<GuestLoadResult, GuestMachineError> {
-    let byte_len = guest_load_byte_len(kind);
+    let (byte_len, sign_shift): (usize, u32) = match kind {
+        RiscvLoadKind::Lb => (1, 56),
+        RiscvLoadKind::Lh => (2, 48),
+        RiscvLoadKind::Lw => (4, 32),
+        RiscvLoadKind::Ld => (8, 0),
+        RiscvLoadKind::Lbu => (1, 0),
+        RiscvLoadKind::Lhu => (2, 0),
+        RiscvLoadKind::Lwu => (4, 0),
+    };
     let memory_value = memory.read_u64_le(address, byte_len)?;
-    let register_value = match kind {
-        RiscvLoadKind::Lb => i64::from(memory_value as u8 as i8) as u64,
-        RiscvLoadKind::Lh => i64::from(memory_value as u16 as i16) as u64,
-        RiscvLoadKind::Lw => i64::from(memory_value as u32 as i32) as u64,
-        RiscvLoadKind::Ld | RiscvLoadKind::Lbu | RiscvLoadKind::Lhu | RiscvLoadKind::Lwu => {
-            memory_value
-        }
+    let register_value = if sign_shift == 0 {
+        memory_value
+    } else {
+        ((memory_value << sign_shift) as i64 >> sign_shift) as u64
     };
     Ok(GuestLoadResult {
         byte_len,
@@ -3764,6 +3769,7 @@ fn read_guest_load(
 }
 
 #[inline(always)]
+#[cfg(all(feature = "cuda", not(test)))]
 fn guest_load_byte_len(kind: RiscvLoadKind) -> usize {
     match kind {
         RiscvLoadKind::Lb | RiscvLoadKind::Lbu => 1,
