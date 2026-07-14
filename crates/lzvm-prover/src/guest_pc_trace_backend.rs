@@ -4682,17 +4682,7 @@ fn run_guest_pc_trace_segment_slice_with_live_report_chunks(
         }
         let report_rows =
             zisk_main_report_row_count_from_report_shape(report_count, advanced.shape)?;
-        let next_trace_rows = trace_rows.checked_add(report_rows).ok_or_else(|| {
-            GuestPcTraceBackendError::InvalidPcTraceLayout {
-                message: "Zisk Main row count overflow".to_owned(),
-            }
-        })?;
-        if next_trace_rows > row_limit {
-            return Err(GuestPcTraceBackendError::InvalidPcTraceLayout {
-                message: "Zisk Main report rows exceed layout rows".to_owned(),
-            });
-        }
-        trace_rows = next_trace_rows;
+        trace_rows = add_report_rows_within_capacity(trace_rows, report_rows, row_limit);
         last_report_shape = Some(advanced.shape);
         if let Some(snapshot) = boundary_snapshot.as_deref_mut() {
             snapshot.record_report_shape_state(advanced.shape);
@@ -4900,17 +4890,7 @@ fn run_guest_pc_trace_segment_slice_with_streaming_device_material(
         );
         let report_rows =
             zisk_main_report_row_count_from_report_shape(reports.len(), advanced.shape)?;
-        let next_trace_rows = trace_rows.checked_add(report_rows).ok_or_else(|| {
-            GuestPcTraceBackendError::InvalidPcTraceLayout {
-                message: "main trace row count overflow".to_owned(),
-            }
-        })?;
-        if next_trace_rows > row_limit {
-            return Err(GuestPcTraceBackendError::InvalidPcTraceLayout {
-                message: "main trace report rows exceed layout rows".to_owned(),
-            });
-        }
-        trace_rows = next_trace_rows;
+        trace_rows = add_report_rows_within_capacity(trace_rows, report_rows, row_limit);
         last_report_shape = Some(advanced.shape);
         push_guest_pc_trace_streaming_device_report(
             &mut builder,
@@ -5464,16 +5444,7 @@ fn run_guest_pc_trace_segment_slice_inner_configured<
         let row_count_started = detail_duration_started(&timing, report_detail_timing);
         let report_rows =
             zisk_main_report_row_count_from_report_shape(report_count, advanced.shape)?;
-        let next_trace_rows = trace_rows.checked_add(report_rows).ok_or_else(|| {
-            GuestPcTraceBackendError::InvalidPcTraceLayout {
-                message: "Zisk Main row count overflow".to_owned(),
-            }
-        })?;
-        if next_trace_rows > row_limit {
-            return Err(GuestPcTraceBackendError::InvalidPcTraceLayout {
-                message: "Zisk Main report rows exceed layout rows".to_owned(),
-            });
-        }
+        let next_trace_rows = add_report_rows_within_capacity(trace_rows, report_rows, row_limit);
         record_runner_detail_duration(row_count_started, &mut timing, |timing| {
             &mut timing.runner_row_count_duration
         });
@@ -5559,6 +5530,18 @@ fn run_guest_pc_trace_segment_slice_inner_configured<
 }
 
 const ZISK_MAIN_MAX_INSTRUCTION_ROWS: usize = 4;
+
+#[inline(always)]
+fn add_report_rows_within_capacity(
+    trace_rows: usize,
+    report_rows: usize,
+    row_limit: usize,
+) -> usize {
+    debug_assert!(trace_rows <= row_limit);
+    debug_assert!(report_rows <= 4);
+    debug_assert!(report_rows <= row_limit - trace_rows);
+    trace_rows + report_rows
+}
 
 #[inline(always)]
 fn main_instruction_capacity_needs_exact_check(trace_rows: usize, row_limit: usize) -> bool {
