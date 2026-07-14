@@ -576,11 +576,24 @@ fn cuda_extends_shifted_main_trace_rows_directly_from_compact_descriptors() {
     let mut descriptors = Vec::with_capacity(descriptor_count * WORDS_PER_DESCRIPTOR);
     for row in 0..descriptor_count {
         let row_u64 = row as u64;
-        let a_kind = 1 + row_u64 % 4;
-        let b_kind = 1 + (row_u64 + 1) % 4;
+        let a_kind = if row < 3 {
+            KIND_REGISTER
+        } else {
+            1 + row_u64 % 4
+        };
+        let b_kind = match row {
+            0 => KIND_INDIRECT,
+            1 => KIND_REGISTER,
+            2 => KIND_IMMEDIATE,
+            _ => 1 + (row_u64 + 1) % 4,
+        };
         let explicit_source_count = usize::from(matches!(a_kind, KIND_MEMORY | KIND_INDIRECT))
             + usize::from(matches!(b_kind, KIND_MEMORY | KIND_INDIRECT));
-        let mut store_kind = row_u64 % 4;
+        let mut store_kind = match row {
+            0 | 2 => STORE_REGISTER,
+            1 => STORE_INDIRECT,
+            _ => row_u64 % 4,
+        };
         if explicit_source_count == 2 && matches!(store_kind, STORE_MEMORY | STORE_INDIRECT) {
             store_kind = STORE_REGISTER;
         }

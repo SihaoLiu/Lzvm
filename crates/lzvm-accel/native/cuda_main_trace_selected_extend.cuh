@@ -2,6 +2,115 @@
 
 constexpr size_t kMainTraceSelectedRowsPerBlock = 176;
 constexpr size_t kMainTraceSelectedTargetBatch = 4;
+constexpr uint64_t kMainTraceSelectedRegisterRowKindMask = 0x187ULL;
+constexpr uint64_t kMainTraceSelectedRegisterRowKindValue = 0x83ULL;
+
+__device__ uint64_t main_trace_register_row_column(
+    size_t column,
+    uint64_t a,
+    uint64_t b,
+    uint64_t c,
+    uint64_t pc,
+    uint64_t a_payload,
+    uint64_t b_payload,
+    uint64_t store_payload,
+    uint64_t control,
+    uint64_t jmp_offset1,
+    uint64_t jmp_offset2,
+    uint64_t a_prev_mem_step,
+    uint64_t b_prev_mem_step,
+    uint64_t store_prev_mem_step,
+    uint64_t store_prev_value,
+    uint64_t b_kind,
+    uint64_t store_kind) {
+    const bool b_is_immediate = b_kind == kMainTraceSourceImmediate;
+    const bool b_is_register = b_kind == kMainTraceSourceRegister;
+    const bool b_is_indirect = b_kind == kMainTraceSourceIndirect;
+    const bool store_is_register = store_kind == kMainTraceStoreRegister;
+    const bool store_is_indirect = store_kind == kMainTraceStoreIndirect;
+    const uint64_t b_offset = b_is_register
+                                  ? b_payload
+                                  : (b_is_indirect
+                                         ? main_trace_signed_field(b_payload)
+                                         : main_trace_low32(b_payload));
+    switch (column) {
+        case 0:
+            return main_trace_low32(a);
+        case 1:
+            return main_trace_high32(a);
+        case 2:
+            return main_trace_low32(b);
+        case 3:
+            return main_trace_high32(b);
+        case 4:
+            return main_trace_low32(c);
+        case 5:
+            return main_trace_high32(c);
+        case 6:
+            return (control >> 8) & 1;
+        case 7:
+            return pc;
+        case 10:
+            return a_payload;
+        case 12:
+            return (control >> 13) & 1;
+        case 13:
+            return b_is_immediate ? 1 : 0;
+        case 15:
+            return b_offset;
+        case 16:
+            return b_is_immediate ? main_trace_high32(b_payload) : 0;
+        case 17:
+            return b_is_indirect ? 1 : 0;
+        case 18:
+            return (control >> 16) & 0xffffULL;
+        case 19:
+            return (control >> 12) & 1;
+        case 20:
+            return control & 0xffULL;
+        case 21:
+            return (control >> 9) & 1;
+        case 23:
+            return store_is_indirect ? 1 : 0;
+        case 24:
+            return store_is_register ? store_payload
+                                     : main_trace_signed_field(store_payload);
+        case 25:
+            return (control >> 10) & 1;
+        case 26:
+            return main_trace_signed_field(jmp_offset1);
+        case 27:
+            return main_trace_signed_field(jmp_offset2);
+        case 28:
+            return (control >> 11) & 1;
+        case 29:
+            return b_is_indirect
+                       ? main_trace_signed_address_field(b_payload, a)
+                       : b_offset;
+        case 30:
+            return store_is_indirect
+                       ? main_trace_signed_address_field(store_payload, a)
+                       : store_payload;
+        case 31:
+            return a_prev_mem_step;
+        case 32:
+            return b_prev_mem_step;
+        case 33:
+            return store_prev_mem_step;
+        case 34:
+            return main_trace_low32(store_prev_value);
+        case 35:
+            return main_trace_high32(store_prev_value);
+        case 36:
+            return 1;
+        case 37:
+            return b_is_register ? 1 : 0;
+        case 38:
+            return store_is_register ? 1 : 0;
+        default:
+            return 0;
+    }
+}
 
 __global__ __launch_bounds__(kThreads, 4)
 void extend_main_trace_compact_descriptors_shifted_rows_partial_kernel(
@@ -41,18 +150,45 @@ void extend_main_trace_compact_descriptors_shifted_rows_partial_kernel(
             const uint64_t d0 = main_trace_shuffle_u64(local, 0);
             const uint64_t d1 = main_trace_shuffle_u64(local, 1);
             const uint64_t d2 = main_trace_shuffle_u64(local, 2);
-            const uint64_t d3 = main_trace_shuffle_u64(local, 3);
-            const uint64_t d4 = main_trace_shuffle_u64(local, 4);
             const uint64_t d5 = main_trace_shuffle_u64(local, 5);
             const uint64_t d6 = main_trace_shuffle_u64(local, 6);
             const uint64_t d7 = main_trace_shuffle_u64(local, 7);
             const uint64_t d8 = main_trace_shuffle_u64(local, 8);
             const uint64_t d9 = main_trace_shuffle_u64(local, 9);
+            const uint64_t source_kinds = d5 >> kMainTraceAKindShift;
+            const uint64_t a_kind = source_kinds & kMainTraceKindMask;
+            const uint64_t b_kind = (source_kinds >> 3) & kMainTraceKindMask;
+            const uint64_t store_kind = (source_kinds >> 6) & kMainTraceKindMask;
+            const bool register_row =
+                layout_kind == kMainTraceLayoutWithStoreAddress &&
+                (source_kinds & kMainTraceSelectedRegisterRowKindMask) ==
+                    kMainTraceSelectedRegisterRowKindValue &&
+                b_kind - kMainTraceSourceImmediate <=
+                    kMainTraceSourceIndirect - kMainTraceSourceImmediate;
             uint64_t a_payload;
             uint64_t b_payload;
             uint64_t store_payload;
-            main_trace_decode_compact_payloads(
-                d0, d1, d3, d4, d5, &a_payload, &b_payload, &store_payload);
+            if (register_row) {
+                a_payload =
+                    (d5 >> kMainTraceARegisterShift) & kMainTraceRegisterMask;
+                b_payload = b_kind == kMainTraceSourceRegister
+                                ? (d5 >> kMainTraceBRegisterShift) &
+                                      kMainTraceRegisterMask
+                                : (b_kind == kMainTraceSourceImmediate
+                                       ? d1
+                                       : main_trace_shuffle_u64(local, 3));
+                store_payload = store_kind == kMainTraceStoreRegister
+                                    ? (d5 >> kMainTraceStoreRegisterShift) &
+                                          kMainTraceRegisterMask
+                                    : main_trace_shuffle_u64(
+                                          local,
+                                          b_kind == kMainTraceSourceIndirect ? 4 : 3);
+            } else {
+                const uint64_t d3 = main_trace_shuffle_u64(local, 3);
+                const uint64_t d4 = main_trace_shuffle_u64(local, 4);
+                main_trace_decode_compact_payloads(
+                    d0, d1, d3, d4, d5, &a_payload, &b_payload, &store_payload);
+            }
             const uint64_t pc = d6 & 0xffffffffULL;
             const uint64_t jmp_offset1 =
                 main_trace_i32_bits_to_i64_bits(static_cast<uint32_t>(d7));
@@ -62,42 +198,86 @@ void extend_main_trace_compact_descriptors_shifted_rows_partial_kernel(
             const uint64_t b_prev_mem_step = d8 >> 32;
             const uint64_t store_prev_mem_step = d6 >> 32;
             if (lane < column_count) {
-                value = main_trace_expanded_column(
-                    column_offset + lane,
-                    d0,
-                    d1,
-                    d2,
-                    pc,
-                    a_payload,
-                    b_payload,
-                    store_payload,
-                    d5,
-                    jmp_offset1,
-                    jmp_offset2,
-                    a_prev_mem_step,
-                    b_prev_mem_step,
-                    store_prev_mem_step,
-                    d9,
-                    layout_kind);
+                value = register_row
+                            ? main_trace_register_row_column(
+                                  column_offset + lane,
+                                  d0,
+                                  d1,
+                                  d2,
+                                  pc,
+                                  a_payload,
+                                  b_payload,
+                                  store_payload,
+                                  d5,
+                                  jmp_offset1,
+                                  jmp_offset2,
+                                  a_prev_mem_step,
+                                  b_prev_mem_step,
+                                  store_prev_mem_step,
+                                  d9,
+                                  b_kind,
+                                  store_kind)
+                            : main_trace_expanded_column_with_kinds(
+                                  column_offset + lane,
+                                  d0,
+                                  d1,
+                                  d2,
+                                  pc,
+                                  a_payload,
+                                  b_payload,
+                                  store_payload,
+                                  d5,
+                                  jmp_offset1,
+                                  jmp_offset2,
+                                  a_prev_mem_step,
+                                  b_prev_mem_step,
+                                  store_prev_mem_step,
+                                  d9,
+                                  a_kind,
+                                  b_kind,
+                                  store_kind,
+                                  layout_kind);
             }
             if (lane + kMainTraceWarpLanes < column_count) {
-                tail_value = main_trace_expanded_column(
-                    column_offset + lane + kMainTraceWarpLanes,
-                    d0,
-                    d1,
-                    d2,
-                    pc,
-                    a_payload,
-                    b_payload,
-                    store_payload,
-                    d5,
-                    jmp_offset1,
-                    jmp_offset2,
-                    a_prev_mem_step,
-                    b_prev_mem_step,
-                    store_prev_mem_step,
-                    d9,
-                    layout_kind);
+                tail_value = register_row
+                                 ? main_trace_register_row_column(
+                                       column_offset + lane + kMainTraceWarpLanes,
+                                       d0,
+                                       d1,
+                                       d2,
+                                       pc,
+                                       a_payload,
+                                       b_payload,
+                                       store_payload,
+                                       d5,
+                                       jmp_offset1,
+                                       jmp_offset2,
+                                       a_prev_mem_step,
+                                       b_prev_mem_step,
+                                       store_prev_mem_step,
+                                       d9,
+                                       b_kind,
+                                       store_kind)
+                                 : main_trace_expanded_column_with_kinds(
+                                       column_offset + lane + kMainTraceWarpLanes,
+                                       d0,
+                                       d1,
+                                       d2,
+                                       pc,
+                                       a_payload,
+                                       b_payload,
+                                       store_payload,
+                                       d5,
+                                       jmp_offset1,
+                                       jmp_offset2,
+                                       a_prev_mem_step,
+                                       b_prev_mem_step,
+                                       store_prev_mem_step,
+                                       d9,
+                                       a_kind,
+                                       b_kind,
+                                       store_kind,
+                                       layout_kind);
             }
         } else {
             if (lane < column_count) {

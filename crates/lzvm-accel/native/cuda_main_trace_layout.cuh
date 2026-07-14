@@ -288,7 +288,7 @@ __device__ void main_trace_write_expanded_row(
     }
 }
 
-__device__ uint64_t main_trace_expanded_column(
+__device__ uint64_t main_trace_expanded_column_with_kinds(
     size_t column,
     uint64_t a,
     uint64_t b,
@@ -304,10 +304,10 @@ __device__ uint64_t main_trace_expanded_column(
     uint64_t b_prev_mem_step,
     uint64_t store_prev_mem_step,
     uint64_t store_prev_value,
+    uint64_t a_kind,
+    uint64_t b_kind,
+    uint64_t store_kind,
     unsigned layout_kind) {
-    const uint64_t a_kind = (control >> kMainTraceAKindShift) & kMainTraceKindMask;
-    const uint64_t b_kind = (control >> kMainTraceBKindShift) & kMainTraceKindMask;
-    const uint64_t store_kind = (control >> kMainTraceStoreKindShift) & kMainTraceKindMask;
     switch (column) {
         case 0:
             return main_trace_low32(a);
@@ -412,6 +412,45 @@ __device__ uint64_t main_trace_expanded_column(
         default:
             return 0;
     }
+}
+
+__device__ uint64_t main_trace_expanded_column(
+    size_t column,
+    uint64_t a,
+    uint64_t b,
+    uint64_t c,
+    uint64_t pc,
+    uint64_t a_payload,
+    uint64_t b_payload,
+    uint64_t store_payload,
+    uint64_t control,
+    uint64_t jmp_offset1,
+    uint64_t jmp_offset2,
+    uint64_t a_prev_mem_step,
+    uint64_t b_prev_mem_step,
+    uint64_t store_prev_mem_step,
+    uint64_t store_prev_value,
+    unsigned layout_kind) {
+    return main_trace_expanded_column_with_kinds(
+        column,
+        a,
+        b,
+        c,
+        pc,
+        a_payload,
+        b_payload,
+        store_payload,
+        control,
+        jmp_offset1,
+        jmp_offset2,
+        a_prev_mem_step,
+        b_prev_mem_step,
+        store_prev_mem_step,
+        store_prev_value,
+        (control >> kMainTraceAKindShift) & kMainTraceKindMask,
+        (control >> kMainTraceBKindShift) & kMainTraceKindMask,
+        (control >> kMainTraceStoreKindShift) & kMainTraceKindMask,
+        layout_kind);
 }
 
 __device__ uint64_t main_trace_sparse_high32(
