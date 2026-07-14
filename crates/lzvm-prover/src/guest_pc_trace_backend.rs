@@ -4563,6 +4563,7 @@ fn run_guest_pc_trace_segment_slice_with_live_report_chunks(
     let mut report_count = 0_usize;
     let mut executed_instructions = 0_u64;
     let mut trace_rows = 0_usize;
+    let exact_row_check_start = main_instruction_exact_check_start(row_limit);
     let runner_instruction_cache_stats = guest_pc_trace_runner_cache_stats_enabled();
     let mut instruction_cache_stats = GuestInstructionCacheStats::default();
     macro_rules! finish_live_trace_slice {
@@ -4622,7 +4623,7 @@ fn run_guest_pc_trace_segment_slice_with_live_report_chunks(
                 last_report_shape,
             ));
         }
-        if main_instruction_capacity_needs_exact_check(trace_rows, row_limit) {
+        if trace_rows >= exact_row_check_start {
             let max_rows = zisk_main_instruction_max_rows(current);
             if max_rows > row_limit {
                 return Err(GuestPcTraceBackendError::InvalidPcTraceLayout {
@@ -4800,6 +4801,7 @@ fn run_guest_pc_trace_segment_slice_with_streaming_device_material(
     let mut next_report_index = 0_usize;
     let mut executed_instructions = 0_u64;
     let mut trace_rows = 0_usize;
+    let exact_row_check_start = main_instruction_exact_check_start(row_limit);
     let mut instruction_cache = GuestInstructionCache::default();
 
     loop {
@@ -4844,7 +4846,7 @@ fn run_guest_pc_trace_segment_slice_with_streaming_device_material(
             )
             .map(Some);
         }
-        if main_instruction_capacity_needs_exact_check(trace_rows, row_limit) {
+        if trace_rows >= exact_row_check_start {
             let max_rows = zisk_main_instruction_max_rows(current);
             if max_rows > row_limit {
                 return Err(GuestPcTraceBackendError::InvalidPcTraceLayout {
@@ -5164,6 +5166,7 @@ fn run_guest_pc_trace_segment_slice_inner_configured<
     let mut report_count = 0_usize;
     let mut executed_instructions = 0_u64;
     let mut trace_rows = 0_usize;
+    let exact_row_check_start = main_instruction_exact_check_start(row_limit);
     let mut next_report_sample_index = if RUNNER_DIAGNOSTICS {
         runner_timing_config.segment_report_start_index(trace_instance_index, row_limit)?
     } else {
@@ -5258,7 +5261,7 @@ fn run_guest_pc_trace_segment_slice_inner_configured<
             });
         }
         let row_plan_started = detail_duration_started(&timing, report_detail_timing);
-        if main_instruction_capacity_needs_exact_check(trace_rows, row_limit) {
+        if trace_rows >= exact_row_check_start {
             let max_rows = zisk_main_instruction_max_rows(current);
             if max_rows > row_limit {
                 return Err(GuestPcTraceBackendError::InvalidPcTraceLayout {
@@ -5529,7 +5532,7 @@ fn run_guest_pc_trace_segment_slice_inner_configured<
     }
 }
 
-const ZISK_MAIN_MAX_INSTRUCTION_ROWS: usize = 4;
+const MAIN_MAX_INSTRUCTION_ROWS: usize = 4;
 
 #[inline(always)]
 fn add_report_rows_within_capacity(
@@ -5544,8 +5547,8 @@ fn add_report_rows_within_capacity(
 }
 
 #[inline(always)]
-fn main_instruction_capacity_needs_exact_check(trace_rows: usize, row_limit: usize) -> bool {
-    row_limit.saturating_sub(trace_rows) < ZISK_MAIN_MAX_INSTRUCTION_ROWS
+fn main_instruction_exact_check_start(row_limit: usize) -> usize {
+    row_limit.saturating_sub(MAIN_MAX_INSTRUCTION_ROWS - 1)
 }
 
 fn zisk_main_instruction_max_rows(instruction: RiscvInstruction) -> usize {

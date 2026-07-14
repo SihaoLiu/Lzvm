@@ -9798,11 +9798,9 @@ fn zisk_main_report_row_count_uses_lightweight_runner_shape() {
 
 #[test]
 fn main_row_capacity_check_only_near_segment_boundary() {
-    assert!(!main_instruction_capacity_needs_exact_check(0, 4));
-    assert!(!main_instruction_capacity_needs_exact_check(10, 14));
-    assert!(main_instruction_capacity_needs_exact_check(0, 3));
-    assert!(main_instruction_capacity_needs_exact_check(11, 14));
-    assert!(main_instruction_capacity_needs_exact_check(14, 14));
+    assert_eq!(main_instruction_exact_check_start(4), 1);
+    assert_eq!(main_instruction_exact_check_start(14), 11);
+    assert_eq!(main_instruction_exact_check_start(3), 0);
 
     assert_eq!(add_report_rows_within_capacity(0, 4, 4), 4);
     assert_eq!(add_report_rows_within_capacity(10, 4, 14), 14);

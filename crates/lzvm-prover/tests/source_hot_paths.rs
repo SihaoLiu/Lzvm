@@ -6942,7 +6942,7 @@ fn guest_pc_trace_runner_specializes_disabled_diagnostics() {
     let configured_body = function_body(
         &backend_source,
         "fn run_guest_pc_trace_segment_slice_inner_configured<",
-        "const ZISK_MAIN_MAX_INSTRUCTION_ROWS",
+        "const MAIN_MAX_INSTRUCTION_ROWS",
     );
 
     assert!(
@@ -12819,7 +12819,7 @@ fn guest_pc_trace_retained_reports_preallocate_segment_buffer() {
     let runner_body = function_body(
         &source,
         "fn run_guest_pc_trace_segment_slice_inner",
-        "const ZISK_MAIN_MAX_INSTRUCTION_ROWS",
+        "const MAIN_MAX_INSTRUCTION_ROWS",
     );
 
     assert!(
