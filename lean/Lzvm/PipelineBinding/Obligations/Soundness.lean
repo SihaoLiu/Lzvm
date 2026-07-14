@@ -693,6 +693,137 @@ theorem runtime_pipeline_binding_checked_acceptance_runtime_artifact_evidence
       proof
       runtimeAccepted
 
+theorem runtime_pipeline_binding_checked_acceptance_sound_witness_without_assumptions
+    {system : VerifierModel}
+    (validation : RuntimePipelineBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimePipelineBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        SoundWitness system publicInput proof := by
+  intro artifact publicInput proof accepted
+  have coreObligations :=
+    runtime_pipeline_binding_checked_acceptance_core_obligations_without_assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have traceAccepted :=
+    runtime_pipeline_binding_checked_acceptance_trace
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have traceConstraintAccepted :=
+    runtime_trace_constraint_artifact_binding_checked_acceptance_trace_constraint
+      validation.traceBindingValidation
+      artifact
+      publicInput
+      proof
+      traceAccepted
+  have traceWitnessEvidence :=
+    runtime_trace_constraint_checked_acceptance_trace_witness_evidence
+      validation.traceBindingValidation.traceConstraintValidation
+      artifact
+      publicInput
+      proof
+      traceConstraintAccepted
+  rcases coreObligations with
+    ⟨transcriptBound, publicInputBound, pcsOpeningsValid, friQueriesValid⟩
+  rcases traceWitnessEvidence with
+    ⟨witness,
+      trace,
+      constraints,
+      _traceExtracted,
+      _constraintsEvaluated,
+      _witnessExtracted,
+      _backendConformant,
+      traceConsistent,
+      constraintsSatisfied,
+      witnessMatchesTrace⟩
+  exact
+    Exists.intro witness
+      (Exists.intro trace
+        (Exists.intro constraints
+          (And.intro transcriptBound
+            (And.intro publicInputBound
+              (And.intro pcsOpeningsValid
+                (And.intro friQueriesValid
+                  (And.intro traceConsistent
+                    (And.intro constraintsSatisfied witnessMatchesTrace))))))))
+
+theorem runtime_pipeline_binding_checked_acceptance_direct_soundness_contract
+    {system : VerifierModel}
+    (validation : RuntimePipelineBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimePipelineBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        system.accepts publicInput proof
+          /\ RuntimeArtifactEvidence
+            system
+            validation.ethBindingValidation.proofArtifactBindingValidation.runtimeValidation
+            artifact
+            publicInput
+            proof
+          /\ RuntimeVerifierCoreContract system publicInput proof
+          /\ RuntimeTraceConstraintSemanticEvidenceComplete
+            system
+            validation.traceBindingValidation.traceConstraintValidation
+            artifact
+            publicInput
+            proof
+          /\ SoundWitness system publicInput proof := by
+  intro artifact publicInput proof accepted
+  have verifierAccepts :=
+    runtime_pipeline_binding_checked_acceptance_verifier_accepts
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have runtimeArtifactEvidence :=
+    runtime_pipeline_binding_checked_acceptance_runtime_artifact_evidence
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have coreObligations :=
+    runtime_pipeline_binding_checked_acceptance_core_obligations_without_assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have traceSemanticEvidence :=
+    runtime_pipeline_binding_checked_acceptance_trace_semantic_evidence_complete
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have soundWitness :=
+    runtime_pipeline_binding_checked_acceptance_sound_witness_without_assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  exact
+    And.intro verifierAccepts
+      (And.intro runtimeArtifactEvidence
+        (And.intro coreObligations
+          (And.intro traceSemanticEvidence soundWitness)))
+
 theorem runtime_pipeline_binding_checked_acceptance_runtime_soundness_contract
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)

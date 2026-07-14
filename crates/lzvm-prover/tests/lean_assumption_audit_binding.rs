@@ -489,12 +489,12 @@ fn lean_assumption_audit_exports_runtime_soundness_coverage() {
         "abstract_verifier_sound_with_audited_soundness_obligations",
         &[
             "abstract_verifier_sound_with_audited_assumptions",
-            "assumption_bundle_carries_required_evidence",
+            "assumption_bundle_carries_required_crypto_evidence",
+            "assumption_bundle_carries_required_semantic_evidence",
         ],
     );
     for identifier in [
-        "assumption_bundle_carries_required_crypto_evidence",
-        "assumption_bundle_carries_required_semantic_evidence",
+        "assumption_bundle_carries_required_evidence",
         "abstract_verifier_sound",
     ] {
         lean_binding::assert_theorem_body_omits_identifier(

@@ -10270,11 +10270,11 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
                 "SoundWitness system publicInput proof",
             ][..],
             &[
-                "assumption_bundle_carries_required_crypto_evidence",
-                "assumption_bundle_carries_required_semantic_evidence",
-                "source_lookup_checked_acceptance_accepts_auxiliary_evidence_core_and_sound",
+                "source_lookup_checked_acceptance_projects_verifier_acceptance",
+                "source_lookup_checked_acceptance_auxiliary_evidence_audited_core_contract",
             ][..],
             &[
+                "source_lookup_checked_acceptance_accepts_auxiliary_evidence_core_and_sound",
                 "source_lookup_auxiliary_acceptance_sound",
                 "source_lookup_checked_acceptance_verifier_core_contract",
                 "auxiliary_checked_acceptance_core_and_sound",
@@ -10293,11 +10293,11 @@ fn lean_auxiliary_checks_binding_exports_core_contract_projections() {
                 "SoundWitness system publicInput proof",
             ][..],
             &[
-                "assumption_bundle_carries_required_crypto_evidence",
-                "assumption_bundle_carries_required_semantic_evidence",
-                "witness_leaf_digest_checked_acceptance_accepts_evidence_core_and_sound",
+                "witness_leaf_digest_checked_acceptance_projects_verifier_acceptance",
+                "witness_leaf_digest_checked_acceptance_evidence_audited_core_contract",
             ][..],
             &[
+                "witness_leaf_digest_checked_acceptance_accepts_evidence_core_and_sound",
                 "witness_leaf_digest_acceptance_sound",
                 "witness_leaf_digest_checked_acceptance_verifier_core_contract",
                 "auxiliary_checked_acceptance_core_and_sound",

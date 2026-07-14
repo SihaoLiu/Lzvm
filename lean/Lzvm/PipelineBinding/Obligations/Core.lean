@@ -477,6 +477,43 @@ theorem runtime_pipeline_binding_checked_acceptance_core_obligations_from_semant
     And.intro transcriptBound
       (And.intro publicInputBound pcsAndFri)
 
+theorem runtime_pipeline_binding_checked_acceptance_core_obligations_without_assumptions
+    {system : VerifierModel}
+    (validation : RuntimePipelineBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimePipelineBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        RuntimeVerifierCoreContract system publicInput proof := by
+  intro artifact publicInput proof accepted
+  have transcriptBound :=
+    runtime_pipeline_binding_checked_acceptance_transcript_bound_without_assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have publicInputBound :=
+    runtime_pipeline_binding_checked_acceptance_public_input_bound_without_assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have pcsAndFri :=
+    runtime_pipeline_binding_checked_acceptance_pcs_and_fri_without_assumptions
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  exact
+    And.intro transcriptBound
+      (And.intro publicInputBound pcsAndFri)
+
 theorem runtime_pipeline_binding_checked_acceptance_core_obligations
     {system : VerifierModel}
     (assumptions : AssumptionBundle system)

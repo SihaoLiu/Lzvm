@@ -846,19 +846,28 @@ theorem source_lookup_checked_acceptance_accepts_auxiliary_evidence_audited_core
           /\ RuntimeVerifierCoreContract system publicInput proof
           /\ SoundWitness system publicInput proof := by
   intro publicInput proof checked
-  have acceptsEvidenceCoreSound :=
-    source_lookup_checked_acceptance_accepts_auxiliary_evidence_core_and_sound
+  have accepts :=
+    source_lookup_checked_acceptance_projects_verifier_acceptance
+      auxiliary
+      publicInput
+      proof
+      checked
+  have audited :=
+    source_lookup_checked_acceptance_auxiliary_evidence_audited_core_contract
       assumptions
       auxiliary
       publicInput
       proof
       checked
+  rcases audited with
+    ⟨cryptoEvidence, semanticEvidence, auxiliaryEvidence, coreContract, soundWitness⟩
   exact
-    And.intro
-      (assumption_bundle_carries_required_crypto_evidence assumptions)
-      (And.intro
-        (assumption_bundle_carries_required_semantic_evidence assumptions)
-        acceptsEvidenceCoreSound)
+    ⟨cryptoEvidence,
+      semanticEvidence,
+      accepts,
+      auxiliaryEvidence,
+      coreContract,
+      soundWitness⟩
 
 theorem witness_leaf_digest_checked_acceptance_evidence_audited_core_contract
     {system : VerifierModel}
@@ -904,19 +913,28 @@ theorem witness_leaf_digest_checked_acceptance_accepts_evidence_audited_core_con
           /\ RuntimeVerifierCoreContract system publicInput proof
           /\ SoundWitness system publicInput proof := by
   intro publicInput proof checked
-  have acceptsEvidenceCoreSound :=
-    witness_leaf_digest_checked_acceptance_accepts_evidence_core_and_sound
+  have accepts :=
+    witness_leaf_digest_checked_acceptance_projects_verifier_acceptance
+      validation
+      publicInput
+      proof
+      checked
+  have audited :=
+    witness_leaf_digest_checked_acceptance_evidence_audited_core_contract
       assumptions
       validation
       publicInput
       proof
       checked
+  rcases audited with
+    ⟨cryptoEvidence, semanticEvidence, evidence, coreContract, soundWitness⟩
   exact
-    And.intro
-      (assumption_bundle_carries_required_crypto_evidence assumptions)
-      (And.intro
-        (assumption_bundle_carries_required_semantic_evidence assumptions)
-        acceptsEvidenceCoreSound)
+    ⟨cryptoEvidence,
+      semanticEvidence,
+      accepts,
+      evidence,
+      coreContract,
+      soundWitness⟩
 
 theorem gpu_canonical_leaf_checked_acceptance_leaf_bytes_audited_core_contract
     {system : VerifierModel}

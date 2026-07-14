@@ -160,6 +160,40 @@ theorem runtime_pipeline_binding_checked_acceptance_transcript_bound
       proof
       accepted
 
+theorem runtime_pipeline_binding_checked_acceptance_public_input_bound_without_assumptions
+    {system : VerifierModel}
+    (validation : RuntimePipelineBindingValidation system) :
+    forall artifact publicInput proof,
+      RuntimePipelineBindingCheckedAcceptance
+          system
+          validation
+          artifact
+          publicInput
+          proof ->
+        system.publicInputBound publicInput proof := by
+  intro artifact publicInput proof accepted
+  have proofArtifactEvidence :=
+    runtime_pipeline_binding_checked_acceptance_proof_artifact_evidence
+      validation
+      artifact
+      publicInput
+      proof
+      accepted
+  have runtimeArtifactEvidence :=
+    runtime_proof_artifact_binding_evidence_implies_runtime_evidence
+      validation.ethBindingValidation.proofArtifactBindingValidation
+      artifact
+      publicInput
+      proof
+      proofArtifactEvidence
+  exact
+    runtime_artifact_evidence_implies_public_input_bound
+      validation.ethBindingValidation.proofArtifactBindingValidation.runtimeValidation
+      artifact
+      publicInput
+      proof
+      runtimeArtifactEvidence
+
 theorem runtime_pipeline_binding_checked_acceptance_public_input_bound_from_semantic_assumptions
     {system : VerifierModel}
     (semanticAssumptions : SemanticAssumptions system)

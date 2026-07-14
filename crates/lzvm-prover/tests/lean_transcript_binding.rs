@@ -43,6 +43,7 @@ fn lean_transcript_binding_exports_core_contract_projection() {
             "runtime_transcript_binding_checked_acceptance_accepts_evidence_core_and_sound",
             "runtime_transcript_binding_checked_acceptance_audited_core_contract",
             "runtime_transcript_binding_checked_acceptance_concrete_core_sound_contract",
+            "runtime_transcript_binding_checked_acceptance_audited_concrete_core_sound_contract",
             "runtime_transcript_binding_checked_acceptance_extension_payload_order_canonical",
             "runtime_transcript_binding_evidence_implies_payload_contract",
             "runtime_transcript_binding_checked_acceptance_payload_contract",

@@ -82,6 +82,7 @@ fn lean_proof_artifact_binding_exports_core_contract_projection() {
             "runtime_proof_artifact_finalized_evidence_core_and_sound",
             "runtime_proof_artifact_finalized_accepts_evidence_core_and_sound",
             "runtime_proof_artifact_finalized_audited_core_contract",
+            "runtime_proof_artifact_finalized_audited_concrete_core_sound_contract",
         ],
     );
     lean_binding::assert_theorem_body_contains(
