@@ -171,10 +171,7 @@ fn rejects_encoding_withdrawal_preimages_without_root() {
 
     let error = encode_eth_block_input(&input).expect_err("block input should reject withdrawals");
 
-    assert!(matches!(
-        error,
-        EthBlockInputError::MissingWithdrawalsRoot
-    ));
+    assert!(matches!(error, EthBlockInputError::MissingWithdrawalsRoot));
 }
 
 #[test]

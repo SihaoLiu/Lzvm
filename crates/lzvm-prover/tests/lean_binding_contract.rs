@@ -479,9 +479,7 @@ fn collect_rust_test_source(path: &Path, source: &mut String) {
         if path.extension().and_then(|extension| extension.to_str()) != Some("rs") {
             continue;
         }
-        source.push_str(
-            &std::fs::read_to_string(&path).expect("Rust test source should read"),
-        );
+        source.push_str(&std::fs::read_to_string(&path).expect("Rust test source should read"));
         source.push('\n');
     }
 }

@@ -2553,7 +2553,10 @@ fn lean_pipeline_binding_exports_required_external_source_soundness() {
     lean_binding::assert_theorem_prefix_omits(
         &lean_source,
         "runtime_pipeline_binding_checked_acceptance_audited_seeded_core_sound_witness_contract",
-        &["RuntimeProofArtifactFinalized", "RuntimePipelineBindingEvidence"],
+        &[
+            "RuntimeProofArtifactFinalized",
+            "RuntimePipelineBindingEvidence",
+        ],
     );
     lean_binding::assert_theorem_body_contains(
         &lean_source,

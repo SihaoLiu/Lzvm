@@ -556,7 +556,10 @@ fn lean_query_plan_binding_exports_opening_segment_projections() {
     lean_binding::assert_theorem_prefix_omits(
         &lean_source,
         "runtime_query_plan_binding_audited_seeded_core_sound_witness_contract",
-        &["RuntimeQueryPlanBindingEvidence", "RuntimeProofArtifactFinalized"],
+        &[
+            "RuntimeQueryPlanBindingEvidence",
+            "RuntimeProofArtifactFinalized",
+        ],
     );
     lean_binding::assert_theorem_body_contains(
         &lean_source,

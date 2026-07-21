@@ -80,13 +80,12 @@ fn lean_framed_guest_input_binding_exports_soundness_structural_contract() {
         lean_binding::assert_theorem_prefix_contains(
             &lean_source,
             name,
-            &["RuntimeFramedGuestInputBindingCheckedAcceptance", projection],
+            &[
+                "RuntimeFramedGuestInputBindingCheckedAcceptance",
+                projection,
+            ],
         );
-        lean_binding::assert_theorem_body_contains_identifier(
-            &lean_source,
-            name,
-            accepted_implies,
-        );
+        lean_binding::assert_theorem_body_contains_identifier(&lean_source, name, accepted_implies);
     }
     lean_binding::assert_theorem_prefix_contains(
         &lean_source,
